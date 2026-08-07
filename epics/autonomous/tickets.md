@@ -123,10 +123,19 @@ narrative (AUTO-3); parallel execution; anything touching main.
   conditions with a status-log entry saying why, and ends by opening the
   release PR from `epic/<name>` to main carrying the full evidence trail. It
   never merges the release PR.
+- **Each ticket runs in a fresh-context subagent; the run session itself
+  never implements** (added at sign-off, 2026-08-08). The driver orchestrates
+  and logs which subagent ran each ticket; the ticket agent starts empty and
+  works from documents alone. This is soft-enforced (skill text) and
+  observable (the run log names each spawned agent) — and it makes every
+  autonomous run a live test of the documents' sufficiency.
 - README + METHODOLOGY.md: why the human gate moves to the release PR, why
   main stays sacred, why stop conditions beat retries, and what the
-  permission surface must allow before an unattended run (documented as
-  environment setup, not plugin code).
+  environment must provide before an unattended run — the pre-authorized
+  permission surface, and **branch protection on the default branch** (require
+  pull requests, no force pushes, human-only merge). Skills are soft
+  enforcement; protection is the hard floor that holds even against a
+  misbehaving agent. Documented as environment setup, not plugin code.
 - Version 1.9.0 + CHANGELOG.
 
 **Not in scope.** Auto-merging anything into main; retro changes;
@@ -158,8 +167,12 @@ AUTO-2/AUTO-3 bugs the run exposes — a failed run stops, is logged, and fixes
 are new tickets.
 
 **Acceptance criteria.**
+- Before the run starts: branch protection on the default branch is verified
+  present (`gh api` shows PRs required and force pushes blocked) — the hard
+  floor under every soft rule the run relies on.
 - Every guinea-pig ticket reaches `integrated` on the board; a release PR to
   main exists; `git log origin/main` contains no commit from the run.
+- The run log names the fresh subagent that executed each ticket.
 - The status-log entry cites the external record showing zero human
   interventions between sign-off and release PR — or the run's stop reason,
   verbatim.

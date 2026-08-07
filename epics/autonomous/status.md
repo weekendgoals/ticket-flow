@@ -56,3 +56,25 @@ targets main); the step 9 wording fix is owed.
 **Owed:** The `skills/ticket` step 9 first-ticket base-branch wording fix —
 inherit by the next quick ticket (proposed Q-6) or fold into AUTO-2, which
 rewrites adjacent step 9 text anyway.
+
+**Addendum — review — 2026-08-08 — fable/high:** No Important findings, four
+nits, all fixed in the review-fix commit except where noted. (1) Fixed: mode
+*label* near-misses (`**Release mode:**` bolded, doubled space) silently
+parsed as absent with no doctor warning — doctor now flags any mode-shaped
+preamble line the strict parse rejects, with a test (the failure direction
+was already closed: a missed autonomous line yields attended, a missed
+release line trips the contradiction fail). (2) Fixed: the doctor half of the
+refusal test asserted only the exit code — `runFail` now returns stdout and
+the test pins the exit to the contradiction row itself. (3) Correction to
+this entry's Decisions paragraph, as an addendum since the log is
+append-only: the quote "in serial mode the docs reach the default branch for
+free…" is from the epic skill's step 7, not README; README's wording is
+"travel to the default branch with it" (README §Serial or integration). The
+contradiction itself was independently confirmed by the reviewer as real and
+pre-existing, already owed to AUTO-2/Q-6. (4) Fixed: case-insensitive parsing
+was specified but untested — fixture added. Suite now 15 tests, 15 pass.
+Also at sign-off, two requirements were added to the epic doc with the
+user's approval: each autonomous ticket runs in a fresh-context subagent
+(AUTO-3), and branch protection on the default branch becomes documented
+environment setup verified by AUTO-4 before the live run. Nothing deferred
+beyond what was already owed.

@@ -398,6 +398,11 @@ function doctor() {
   const epics = discoverEpics()
   if (!epics.length) add('ok', 'no epics yet — /flow:epic creates epics/<name>/')
 
+  // A mode line that ALMOST parses — bolded label, doubled space — reads as
+  // absent and silently defaults. Same failure class as heading near-misses:
+  // flag anything mode-shaped in the preamble that the strict parse rejects.
+  const modeNear = /^[^A-Za-z]*\b(release|run)\s+mode\b/i
+  const modeStrict = /^(Release mode|Run mode)\s*:\s*[A-Za-z-]+/i
   for (const epic of epics) {
     if (modeContradiction(epic))
       add('fail', `${epic.epic}: Run mode: autonomous with Release mode: ${epic.releaseMode} — autonomous requires integration topology; unattended merges may only target the epic branch`)
@@ -405,6 +410,10 @@ function doctor() {
       add('warn', `${epic.epic}: unrecognised release mode "${epic.releaseMode}" (known: serial, integration) — skills reading this line will not know which branch topology to use`)
     if (epic.runMode && !RUN_MODES.has(epic.runMode))
       add('warn', `${epic.epic}: unrecognised run mode "${epic.runMode}" (known: autonomous) — treated as attended`)
+    readFileSync(epic.ticketsDoc, 'utf8').split(/^##\s/m)[0].split('\n').forEach((line, i) => {
+      if (modeNear.test(line) && !modeStrict.test(line))
+        add('warn', `${epic.epic}/tickets.md:${i + 1} — looks like a mode line but will not parse, so it silently defaults (needs "Release mode: <value>" / "Run mode: <value>" at line start, no formatting): ${line.trim()}`)
+    })
   }
 
   const nearTicket = new RegExp(`^##\\s+[A-Za-z][A-Za-z0-9]*-\\d+`)

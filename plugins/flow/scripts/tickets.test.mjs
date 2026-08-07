@@ -28,7 +28,7 @@ const runFail = (cwd, ...args) => {
     sh(cwd, process.execPath, [SCRIPT, ...args])
     return null
   } catch (e) {
-    return { status: e.status, stderr: String(e.stderr) }
+    return { status: e.status, stderr: String(e.stderr), stdout: String(e.stdout) }
   }
 }
 
@@ -203,8 +203,43 @@ test('autonomous + serial is refused by find and failed by doctor', () => {
 
     const doc = runFail(repo, 'doctor', '--json')
     assert.equal(doc.status, 1, 'a mode contradiction is a doctor fail')
+    const row = JSON.parse(doc.stdout).find((r) => r.level === 'fail' && /autonomous/.test(r.msg))
+    assert.ok(row, 'the exit code must come from the contradiction row specifically')
+    assert.match(row.msg, /rogue/)
   } finally {
     rmSync(join(repo, 'epics/rogue'), { recursive: true, force: true })
+  }
+})
+
+test('mode lines parse case-insensitively', () => {
+  mkdirSync(join(repo, 'epics/shout'), { recursive: true })
+  writeFileSync(
+    join(repo, 'epics/shout/tickets.md'),
+    '# Shout\n\nRELEASE MODE: Integration\n\nrun mode: AUTONOMOUS\n\n## S-1 — loud modes\n\n**Scope.** S.\n',
+  )
+  try {
+    const data = JSON.parse(run(repo, 'list', '--json'))
+    assert.deepEqual(data.modes.shout, { releaseMode: 'integration', runMode: 'autonomous' })
+  } finally {
+    rmSync(join(repo, 'epics/shout'), { recursive: true, force: true })
+  }
+})
+
+test('a mode line that almost parses is a doctor warning, not a silent default', () => {
+  mkdirSync(join(repo, 'epics/fancy'), { recursive: true })
+  writeFileSync(
+    join(repo, 'epics/fancy/tickets.md'),
+    '# Fancy\n\n**Release mode:** integration\n\nRun  mode: autonomous\n\n## F-1 — formatted modes\n\n**Scope.** F.\n',
+  )
+  try {
+    const data = JSON.parse(run(repo, 'list', '--json'))
+    assert.deepEqual(data.modes.fancy, { releaseMode: 'serial', runMode: null }, 'both lines must read as absent')
+    const rows = JSON.parse(run(repo, 'doctor', '--json'))
+    const warns = rows.filter((r) => r.level === 'warn' && r.msg.includes('fancy/tickets.md'))
+    assert.equal(warns.length, 2, 'both near-miss lines must be flagged')
+    for (const w of warns) assert.match(w.msg, /will not parse/)
+  } finally {
+    rmSync(join(repo, 'epics/fancy'), { recursive: true, force: true })
   }
 })
 
