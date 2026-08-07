@@ -162,8 +162,10 @@ The session that wrote the code cannot review it. It will agree with itself.
 
 Spawn the reviewer with the **Agent** tool:
 
-- `subagent_type: "flow:ticket-reviewer"`, `model: "opus"`, regardless of what
-  this session is running
+- `subagent_type: "flow:ticket-reviewer"`, and `model`: the **strongest model
+  available**, regardless of what this session is running — review is where
+  capability pays. Pass it explicitly (`opus` at the time of writing; if that is
+  not available, the strongest that is).
 - `effort`: scale it to the diff. `medium` for docs or config with no behavioural
   change; `high` for any normal implementation ticket; `xhigh` for authentication
   or authorization boundaries, secrets, crypto, network exposure, migrations, or
@@ -227,8 +229,11 @@ environment variable, a migration, a script that runs after).
 
 Do not add Claude as a co-author. **Do not merge it, ever** — no `gh pr merge`,
 no `git merge`, no pushing to the default branch. A human merges in the GitHub
-UI with *Create a merge commit*, because squashing collapses the per-ticket
-commit subjects that `tickets.mjs` reads to decide what has shipped.
+UI. A single-ticket pull request titled `<ID>: <title>` may be squashed — the
+squash commit inherits the title, so `tickets.mjs` still sees the ID. What must
+**never** be squashed is an integration release pull request: it carries many
+tickets, and squashing collapses their subjects into one, making every ticket
+but one read as unshipped.
 
 ## 10. Stop
 

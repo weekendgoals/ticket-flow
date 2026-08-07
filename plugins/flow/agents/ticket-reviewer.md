@@ -1,7 +1,6 @@
 ---
 name: ticket-reviewer
 description: Reviews a commit range for a finished ticket with no memory of writing it. Reports findings and never fixes them. Use after a ticket's work is committed, spawned from /flow:ticket.
-model: opus
 memory: user
 ---
 

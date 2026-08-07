@@ -44,8 +44,14 @@ Two consequences that look arbitrary until you know this:
 - **Prefixing commit subjects with the ticket ID is load-bearing.** It is how
   shipped state is detected. Reading it off the default branch also catches work
   merged under a branch name that predates the convention.
-- **Merges must create a merge commit, never squash.** Squashing collapses those
-  subjects into one and makes shipped tickets read as unshipped.
+- **A multi-ticket pull request must merge with a merge commit, never squash.**
+  Squashing collapses those subjects into one and makes every ticket but one
+  read as unshipped. The rule originally banned squash outright; that was
+  over-broad — a single-ticket pull request titled `<ID>: <title>` survives
+  squash, because the squash commit inherits the title and the detection regex
+  matches it. Only the integration release pull request genuinely cannot be
+  squashed. Relaxing this removed a real adoption barrier: many organisations
+  mandate squash and cannot turn it off per-repository.
 
 ## Why a human merges, and nothing runs after
 
@@ -125,6 +131,31 @@ is too big to review, the epic was too big to plan that way.
 Integration mode exists for the real exception: tickets that cannot ship alone.
 Even then each ticket keeps its own small pull request; only the release is
 batched.
+
+## Why small work has a path
+
+For a while the flow had no answer for a one-off bugfix. Everything went
+through an epic folder, so sub-epic work faced a choice between ceremony it did
+not earn and no flow at all — and in practice people choose "no flow at all",
+which means no written scope, no fresh-eyes review, no log entry, no record.
+The ambiguity itself was the defect: a methodology that is silent about small
+work is implicitly telling people to skip it for small work, and "small" is
+self-declared.
+
+`/flow:quick` resolves it by keeping the parts that pay for themselves — scope
+with a binding "Not in scope", verification with counts, the fresh-context
+reviewer, an append-only log entry, a pull request — and dropping only the
+planning conversation, the sign-off gate and the epic branch. The tickets live
+in `epics/quick/`, a standing epic folder, so the board derives their state
+with **no special case**: a quick ticket is just a ticket whose epic never
+needed planning. The branch is cut straight from the default branch and carries
+the ticket doc with it, which is why no epic branch is needed.
+
+The size gate is the load-bearing part. Quick work must fit one concern, a
+couple of acceptance bullets and a reviewable diff — and when it does not, the
+instruction is to stop and plan an epic, not to proceed quickly anyway. Without
+that gate, "quick" becomes the path around the methodology instead of a path
+through it.
 
 ## The failure modes this is designed against
 

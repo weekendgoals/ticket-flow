@@ -179,10 +179,16 @@ add one line for this epic there.
 
 ```bash
 REPO=$(git rev-parse --show-toplevel)
-git checkout -b epic/<name>
+git fetch origin --prune
+git checkout -b epic/<name> origin/<default-branch>
 git add "$REPO/epics/<name>"
 git commit
 ```
+
+**Cut the epic branch from `origin/<default-branch>`, never from whatever
+happens to be checked out.** Planning often runs from a stale or unrelated
+branch, and an epic branch cut from one silently carries that branch's commits
+into every ticket.
 
 Anchor the paths to `$REPO`. `git add epics/…` is interpreted relative to the
 shell's cwd, which is not necessarily the repo root.

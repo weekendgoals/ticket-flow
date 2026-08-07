@@ -13,11 +13,21 @@ will agree with itself.
 commit). If empty, default to everything on this branch:
 `git merge-base origin/<base-branch>`..`HEAD`.
 
-## 1. Establish the range and refuse the wrong ones
+## 1. Establish the base, then the range — and refuse the wrong ones
+
+The base is **what this branch will merge into**, which is not always the
+default branch:
+
+- If the branch already has a pull request, `gh pr view --json baseRefName`
+  is the answer.
+- Else, if this is ticket work and the epic's ticket doc says
+  `Release mode: integration`, the base is `epic/<name>` — diffing against the
+  default branch would drag every previously integrated ticket into this review.
+- Otherwise it is the default branch (`origin/HEAD`).
 
 ```bash
-git log --oneline $(git merge-base origin/HEAD HEAD)..HEAD
-git diff --stat $(git merge-base origin/HEAD HEAD)..HEAD
+git log --oneline $(git merge-base origin/<base> HEAD)..HEAD
+git diff --stat $(git merge-base origin/<base> HEAD)..HEAD
 ```
 
 - **If the range is empty, stop.** Say so; do not fall back to reviewing the

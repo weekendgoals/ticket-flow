@@ -148,7 +148,7 @@ function pullRequests() {
   try {
     const out = execFileSync(
       'gh',
-      ['pr', 'list', '--state', 'all', '--limit', '200', '--json', 'number,headRefName,state,url,isDraft'],
+      ['pr', 'list', '--state', 'all', '--limit', '200', '--json', 'number,headRefName,baseRefName,state,url,isDraft'],
       { cwd: repoRoot, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] },
     )
     const byBranch = {}
@@ -164,16 +164,20 @@ function pullRequests() {
 // only matches when the author followed the convention — work merged under any
 // other branch name would read as unshipped forever. One log call, matched
 // against every commit subject, which is why CLAUDE.md requires the ID prefix.
+const MAIN_SCAN_LIMIT = 4000
+
 function idsOnMain() {
-  const out = git(['log', `origin/${defaultBranch}`, '--format=%s', '-n', '4000'], { allowFail: true })
+  const out = git(['log', `origin/${defaultBranch}`, '--format=%s', '-n', String(MAIN_SCAN_LIMIT)], { allowFail: true })
   const ids = new Set()
-  if (!out) return ids
+  if (!out) return { ids, capped: false }
+  const subjects = out.split('\n')
   const re = new RegExp(`^(${TICKET_ID})[:\\s]`)
-  for (const subject of out.split('\n')) {
+  for (const subject of subjects) {
     const m = subject.match(re)
     if (m) ids.add(m[1])
   }
-  return ids
+  // A silent cap reads as "scanned everything" when it didn't — say so instead.
+  return { ids, capped: subjects.length >= MAIN_SCAN_LIMIT }
 }
 
 function commitsAhead(branch) {
@@ -183,7 +187,7 @@ function commitsAhead(branch) {
 
 // ── state resolution ─────────────────────────────────────────────────────────
 
-const STATES = ['shipped', 'in-review', 'done', 'in-progress', 'blocked', 'todo']
+const STATES = ['shipped', 'integrated', 'in-review', 'done', 'in-progress', 'blocked', 'todo']
 
 function resolveState(ticket, status, branches, prs, onMain) {
   const branch = branchNameFor(ticket.id)
@@ -191,7 +195,13 @@ function resolveState(ticket, status, branches, prs, onMain) {
   const entry = status[ticket.id]
 
   if (onMain.has(ticket.id)) return { state: 'shipped', branch, pr }
-  if (pr && pr.state === 'MERGED') return { state: 'shipped', branch, pr }
+  if (pr && pr.state === 'MERGED') {
+    // A PR merged into an epic branch (integration mode) has not shipped — it is
+    // waiting on the epic's release PR. Only a merge into the default branch is
+    // "shipped".
+    const state = !pr.baseRefName || pr.baseRefName === defaultBranch ? 'shipped' : 'integrated'
+    return { state, branch, pr }
+  }
   if (pr && pr.state === 'OPEN') return { state: 'in-review', branch, pr }
   if (entry?.outcome === 'BLOCKED' || entry?.outcome === 'ABANDONED') return { state: 'blocked', branch, pr }
   if (entry?.outcome === 'DONE') return { state: 'done', branch, pr }
@@ -210,15 +220,25 @@ function board(epicFilter) {
   for (const epic of epics) {
     const status = parseStatus(epic)
     for (const t of parseTickets(epic)) {
-      tickets.push({ ...t, ...resolveState(t, status, branches, prs, onMain) })
+      tickets.push({ ...t, ...resolveState(t, status, branches, prs, onMain.ids) })
     }
   }
+
+  // An ID defined in two epics resolves to one of them arbitrarily — the exact
+  // "ran against the wrong epic's documents" failure this layout exists to
+  // prevent. Detected here, refused in `find`, flagged on the board.
+  const byIdAll = {}
+  for (const t of tickets) (byIdAll[t.id] ||= []).push(t.epic)
+  const duplicates = Object.fromEntries(Object.entries(byIdAll).filter(([, es]) => es.length > 1))
+
   return {
     epics,
     tickets,
     byId: Object.fromEntries(tickets.map((t) => [t.id, t])),
+    duplicates,
     current: currentEpic(allEpics),
     prsAvailable: prs.available,
+    onMainCapped: onMain.capped,
     defaultBranch,
   }
 }
@@ -226,11 +246,12 @@ function board(epicFilter) {
 // ── output ───────────────────────────────────────────────────────────────────
 
 const C = process.stdout.isTTY
-  ? { dim: '\x1b[2m', red: '\x1b[31m', green: '\x1b[32m', yellow: '\x1b[33m', blue: '\x1b[34m', bold: '\x1b[1m', off: '\x1b[0m' }
-  : { dim: '', red: '', green: '', yellow: '', blue: '', bold: '', off: '' }
+  ? { dim: '\x1b[2m', red: '\x1b[31m', green: '\x1b[32m', yellow: '\x1b[33m', blue: '\x1b[34m', cyan: '\x1b[36m', bold: '\x1b[1m', off: '\x1b[0m' }
+  : { dim: '', red: '', green: '', yellow: '', blue: '', cyan: '', bold: '', off: '' }
 
 const BADGE = {
   shipped: `${C.green}shipped${C.off}`,
+  integrated: `${C.cyan}integrated${C.off}`,
   'in-review': `${C.blue}in review${C.off}`,
   done: `${C.yellow}done, unpushed${C.off}`,
   'in-progress': `${C.yellow}in progress${C.off}`,
@@ -246,6 +267,15 @@ function printBoard(data, epicFilter) {
   if (!data.prsAvailable) {
     console.log(`${C.dim}(gh unavailable — PR state omitted, "done" may already be merged)${C.off}\n`)
   }
+  if (data.onMainCapped) {
+    console.log(
+      `${C.dim}(shipped detection scanned only the last ${MAIN_SCAN_LIMIT} commits on ${data.defaultBranch} — older tickets may read as unshipped)${C.off}\n`,
+    )
+  }
+  for (const [id, epics] of Object.entries(data.duplicates)) {
+    console.log(`${C.red}duplicate ID ${id} — defined in: ${epics.join(', ')}. Rename one; \`find\` refuses ambiguous IDs.${C.off}`)
+  }
+  if (Object.keys(data.duplicates).length) console.log()
 
   for (const epic of data.epics) {
     const ts = data.tickets.filter((t) => t.epic === epic.epic)
@@ -315,6 +345,13 @@ switch (cmd) {
     }
     const id = arg.toUpperCase()
     const data = board(null)
+    if (data.duplicates[id]) {
+      console.error(
+        `tickets: "${id}" is defined in more than one epic (${data.duplicates[id].join(', ')}). ` +
+          'IDs must be unique across epics — rename one before running the ticket.',
+      )
+      process.exit(1)
+    }
     const t = data.byId[id]
     if (!t) {
       console.error(`tickets: no ticket "${id}". Known IDs: ${data.tickets.map((x) => x.id).join(', ') || '(none)'}`)
@@ -360,8 +397,10 @@ switch (cmd) {
       emit({
         defaultBranch: data.defaultBranch,
         prsAvailable: data.prsAvailable,
+        onMainCapped: data.onMainCapped,
         current: data.current?.epic || null,
         epics: data.epics.map((e) => e.epic),
+        duplicates: data.duplicates,
         tickets: data.tickets.map(({ body, ...t }) => t),
       })
     } else printBoard(data, arg)
