@@ -4,6 +4,14 @@ The plugin is the methodology's distribution mechanism: a change to a skill is
 a behaviour change in every project that installs it. This file is what makes
 those changes deliberate and visible.
 
+## 1.6.0 — 2026-08-08
+
+- **The ticket skill's `xhigh` review tier inherits payments and
+  data-deleting/rewriting changes** (Q-4), aligning it with the quick path's
+  entry triggers. The two lists measure the same thing — consequence — at two
+  doors; when one learns a new trigger, the other inherits it in the same
+  commit.
+
 ## 1.5.0 — 2026-08-08
 
 Four items adopted from an external methodology review; its other proposals

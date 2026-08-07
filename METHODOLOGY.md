@@ -233,13 +233,13 @@ The instinct already existed in one place: the ticket skill scales review
 effort to consequence, forcing the highest tier for auth boundaries, secrets,
 crypto, network exposure, migrations, anything that fails open. But review
 effort is applied after the work is built; the entry gate is where the
-decision is cheap. So the quick skill carries a superset of that list —
-adding payments and data rewrites — as triggers that route work to
-`/flow:epic` at any size. A single-ticket epic is fine; what consequential
-work must not skip is the plan review and the human sign-off. The two lists
-live in their own skills and are deliberately not mirrored here — whether the
-ticket skill's tier list should inherit the two extra triggers is Q-4's
-question.
+decision is cheap. So the quick skill carries the same triggers — plus
+payments and data rewrites, which the ticket skill's tier then inherited —
+routing such work to `/flow:epic` at any size. A single-ticket epic is fine;
+what consequential work must not skip is the plan review and the human
+sign-off. The two skills each carry the list where it is executed; when one
+learns a new trigger, the other inherits it in the same commit, because they
+measure the same thing — consequence — at two doors.
 
 ## Why small work has a path
 

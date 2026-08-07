@@ -168,8 +168,11 @@ Spawn the reviewer with the **Agent** tool:
   not available, the strongest that is).
 - `effort`: scale it to the diff. `medium` for docs or config with no behavioural
   change; `high` for any normal implementation ticket; `xhigh` for authentication
-  or authorization boundaries, secrets, crypto, network exposure, migrations, or
-  anything that can fail open. Pick it yourself and say which; do not ask.
+  or authorization boundaries, secrets, crypto, network exposure, migrations,
+  anything that deletes or rewrites data, payments or billing, or anything that
+  can fail open. This is the same list that gates entry to `/flow:quick` —
+  consequence is measured once, at both doors. Pick it yourself and say which;
+  do not ask.
 
 Tell it to follow **the `/flow:review` skill** and give it:
 
