@@ -79,6 +79,13 @@ thrown away.
 
 Source: <where this came from, with date. Point at context/ if there is material>
 
+Outcome: <the problem and who has it, the observable change that should result,
+the evidence that would show it worked, and what would make us reverse or
+remove it. Falsifiable, or it is decoration — "improve UX" can never fail;
+"support requests about X stop arriving" can be checked at the retro.
+Acceptance criteria prove the build behaves as intended; this line is what
+proves it was worth building.>
+
 Areas in scope: <the services, packages or directories this epic touches, and
 the instruction file that binds each — e.g. `api-gateway` (api-gateway/CLAUDE.md).
 A ticket reads these before it starts; naming them here is what stops each
@@ -90,7 +97,10 @@ merged before the next starts. This is the default; choose it unless a ticket
 genuinely cannot ship alone.
 integration — the epic's tickets are not independently deployable, so each
 ticket's pull request targets `epic/<name>` and one release pull request goes to
-the default branch. Say in one line WHY they cannot ship alone.>
+the default branch. Say in one line WHY they cannot ship alone — and treat
+"cannot ship alone" as a design choice to challenge first, not a fact:
+expand/contract migrations and feature flags usually make a ticket shippable
+on its own.>
 
 Status log: `epics/<name>/status.md`. Run a ticket with `/flow:ticket <ID>`.
 

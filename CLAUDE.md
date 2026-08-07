@@ -49,6 +49,10 @@ path explicitly.
 - **Reviewers report and never fix.** Do not give `ticket-reviewer` or
   `plan-reviewer` write instructions, and do not add post-merge steps to any
   skill — a human merges, nothing runs after.
+- **New artifacts and gates must pass the admission test** (METHODOLOGY.md §
+  "The admission test"): reduce uncertainty, constrain blast radius, preserve
+  necessary knowledge, or provide decision evidence — at least one, or it is
+  ceremony and does not land.
 - **Docs style: every constraint carries its reason.** A bare rule ("never
   squash") without its mechanism (subjects are how shipped is detected) will
   be "simplified" away by a future session.

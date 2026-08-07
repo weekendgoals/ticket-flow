@@ -1,6 +1,6 @@
 ---
 name: quick
-description: Run one small piece of work — a bugfix, a tweak, a chore — through the full ticket loop without planning an epic. Use when the user runs /flow:quick <description>, or asks for a small change that still deserves review and a record.
+description: Run one small, low-risk piece of work — a bugfix, a tweak, a chore — through the full ticket loop without planning an epic. Size- and risk-gated; auth, migrations, secrets and other consequential work is routed to /flow:epic at any size. Use when the user runs /flow:quick <description>, or asks for a small change that still deserves review and a record.
 ---
 
 # Quick ticket: $ARGUMENTS
@@ -13,7 +13,7 @@ the only alternative is ceremony. This command is the third option.
 
 `$ARGUMENTS` is the request in prose. The conversation so far is also input.
 
-## 1. Check it is actually small
+## 1. Check it is actually small — and actually low-risk
 
 Quick work fits **all** of these:
 
@@ -22,9 +22,23 @@ Quick work fits **all** of these:
 - A reviewable diff — well under ~400 changed lines.
 - No dependency on other unshipped work.
 
-If any of these fail, stop and say so: this is an epic, and `/flow:epic` costs
-one planning conversation now versus a failed oversized ticket later. Do not
-"quickly" start it anyway.
+Size is not the only gate. **Some work is never quick, at any size:**
+
+- an authentication or authorization boundary
+- secrets, keys, or cryptography
+- a schema or data migration, or anything that deletes or rewrites data
+- new network exposure — a new public endpoint, a widened CORS rule, an
+  opened port
+- payment or billing behaviour
+- anything that can fail open
+
+A two-line change to an auth check is more dangerous than a 300-line internal
+refactor; line count measures neither blast radius nor reversibility.
+
+If a size bullet fails **or** a risk trigger matches, stop and say which:
+this goes through `/flow:epic` — the plan review and the sign-off gate are the
+point for consequential work, not overhead — even if the epic holds a single
+ticket. Do not "quickly" start it anyway.
 
 ## 2. Write the ticket into the standing quick epic
 

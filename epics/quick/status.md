@@ -42,3 +42,54 @@ Nothing deferred from this ticket. The plugin's own reviewer agent was not
 loadable in the working session, so the reviewer ran as a general agent
 instructed by `agents/ticket-reviewer.md` + the review skill — same fresh
 context, same rules.
+
+### Q-3 — adopt the external review's shortlist — 2026-08-08 — DONE
+
+**Built:** Plugin v1.5.0, four changes from the 2026-08-07 external
+methodology review. (1) `skills/quick`: six risk triggers (auth boundaries,
+secrets/crypto, migrations/data rewrites, new network exposure, payments,
+fail-open) route work to `/flow:epic` at any size. (2) `skills/epic`: the
+tickets.md template opens with a falsifiable **Outcome** block — problem,
+observable change, evidence, reversal condition — and the integration-mode
+text challenges "cannot ship alone" with expand/contract and flags.
+(3) `agents/plan-reviewer`: two new findings — an outcome that cannot fail,
+and integration mode chosen to avoid shippability design. (4) `skills/retro`:
+fifth mining question checks the Outcome evidence (achieved / not achieved /
+not yet assessable). METHODOLOGY.md gained the philosophy's name
+(evidence-driven development under disposable context), the admission test,
+and reasoning sections for the risk gate and the outcome line. CHANGELOG and
+README updated.
+
+**Files touched:** `plugins/flow/skills/quick/SKILL.md`,
+`plugins/flow/skills/epic/SKILL.md`, `plugins/flow/skills/retro/SKILL.md`,
+`plugins/flow/agents/plan-reviewer.md`,
+`plugins/flow/.claude-plugin/plugin.json`, `METHODOLOGY.md`, `CHANGELOG.md`,
+`README.md`, `epics/quick/tickets.md` (Q-3 plan), this file. Branch `q-3`,
+cut from `origin/main` at the PR #1 merge commit.
+
+**Verified:** `node --test plugins/flow/scripts/tickets.test.mjs` — 9 tests,
+9 pass, 0 fail. `node plugins/flow/scripts/tickets.mjs doctor` — exit 0, all
+five checks ✓. `plugin.json` version 1.5.0 equals the top CHANGELOG entry.
+
+**Decisions:** The review's other proposals (standalone principles document,
+per-ticket risk matrix, canary/shadow/kill-switch toolkit, production
+observation artifacts) were rejected under the admission test as ceremony at
+this project's scale — reasoning recorded in METHODOLOGY.md's admission-test
+section so it is not re-argued later. Outcome checking was placed in retro
+rather than any post-merge step, preserving "no command after the merge".
+Older epics without an Outcome line are explicitly not retrofitted.
+
+**Owed:** Nothing.
+
+**Addendum — review — 2026-08-08 — fable/high:** Two nits, no Important
+findings; approvable as-is. Both fixed in a review-fix commit. (1) Confirmed:
+METHODOLOGY's new risk-gate section misquoted the ticket skill's xhigh list
+(omitted network exposure) and falsely called the quick triggers "the same
+list" — reworded to "a superset", and the substantive question (should the
+ticket skill's xhigh tier inherit payments and data rewrites?) handed to
+**Q-4**, added to the ticket doc. (2) Plausible, accepted: the admission test
+was a binding rule living only in the reasoning-only document, unreachable by
+the future sessions it gates — a pointer invariant added to CLAUDE.md.
+Reviewer independently re-ran all three acceptance criteria (9/9, doctor 0,
+1.5.0 = CHANGELOG head) and confirmed scope discipline incl. Q-2's line
+untouched. Nothing deferred beyond Q-4.

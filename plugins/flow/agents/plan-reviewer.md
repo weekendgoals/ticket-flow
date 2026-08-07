@@ -29,6 +29,11 @@ quoted.
 
 ## What you are looking for
 
+- **An outcome that cannot fail.** The Outcome line promises something no
+  evidence could refute ("improve reliability", "better DX") or names no
+  reversal condition. If nothing observable could prove the epic pointless,
+  sign-off is being asked to approve unfalsifiable work — and the retro will
+  have nothing to check.
 - **A ticket too big to review.** Acceptance criteria that will not fit a
   handful of bullets, or a scope that plainly implies a diff far past ~400
   changed lines. Name the seam to split it on if you see one.
@@ -46,7 +51,10 @@ quoted.
 - **Work the request implies that no ticket owns**, and tickets for problems
   the code shows do not exist.
 - **The wrong release mode.** Integration without a one-line reason, or serial
-  tickets that cannot actually ship alone.
+  tickets that cannot actually ship alone. Treat "cannot ship alone" itself
+  with suspicion: an expand/contract migration or a feature flag usually makes
+  a ticket independently shippable, and integration mode chosen to avoid that
+  design work is a finding.
 - **Project facts posing as ground rules.** A ground rule that describes what
   the project *is* belongs in the instruction file, where it is maintained;
   epic ground rules are for what *this work* must respect.

@@ -20,6 +20,11 @@ That is what makes context disposable, and disposable context is what makes
 clearing between tickets free rather than lossy. Every other decision follows
 from wanting that property.
 
+If the methodology needs a name, it is **evidence-driven development under
+disposable context**: durable knowledge lives in versioned documents, progress
+is derived from evidence rather than reported, and no context window is ever
+load-bearing.
+
 ## Why an epic is a folder
 
 Making the directory name **be** the epic name removes a whole class of problem.
@@ -179,6 +184,62 @@ is too big to review, the epic was too big to plan that way.
 Integration mode exists for the real exception: tickets that cannot ship alone.
 Even then each ticket keeps its own small pull request; only the release is
 batched.
+
+## The admission test
+
+Every artifact and gate in this workflow must do at least one of four things:
+**reduce uncertainty, constrain blast radius, preserve necessary knowledge, or
+provide decision evidence.** If it does none of them, it is ceremony — however
+disciplined it looks.
+
+The rule arrived in an external review of this workflow, and was adopted
+partly because it worked on its source: about half of that review's own
+proposals failed it at this project's scale (a standalone principles document,
+a per-ticket risk matrix, a canary-and-kill-switch toolkit) and were rejected,
+while the ones that passed are now in the skills. It cuts both ways by design:
+it is the bar any proposed addition must clear, and the test for removing
+pieces that no longer earn their keep. The workflow's failure mode is not
+chaos — it is immaculate records with rising lead time, gates multiplying
+faster than the risk they retire.
+
+## Why an epic states its outcome
+
+Acceptance criteria prove the implementation behaves as intended. For a long
+time nothing in the flow asked whether the feature was worth building — the
+loop could execute perfectly and still ship something nobody needed, and no
+document would ever notice. That is the most expensive kind of success, and it
+is invisible to a delivery engine.
+
+So the epic template opens with an **Outcome** line: the problem and who has
+it, the observable change expected, the evidence that would show it, and the
+condition that would reverse the decision — written at planning time, when
+disagreeing costs one conversation. The plan reviewer flags an outcome that
+cannot fail, because an unfalsifiable outcome is a promise to never learn
+anything. The retro closes the loop by checking the evidence.
+
+This is the only part of the flow that looks past the merge, and it does so
+without violating "nothing runs after the merge": the check belongs to the
+next human-invoked retro, not to a post-merge hook. There is still no command
+after the merge.
+
+## Why risk, not just size, gates the quick path
+
+The quick path's original gate was size alone: one concern, a few bullets of
+criteria, a small diff. A two-line change to an authorization check passes
+every one of those bullets and is still the most dangerous diff of the week —
+line count measures neither blast radius nor reversibility.
+
+The instinct already existed in one place: the ticket skill scales review
+effort to consequence, forcing the highest tier for auth boundaries, secrets,
+crypto, network exposure, migrations, anything that fails open. But review
+effort is applied after the work is built; the entry gate is where the
+decision is cheap. So the quick skill carries a superset of that list —
+adding payments and data rewrites — as triggers that route work to
+`/flow:epic` at any size. A single-ticket epic is fine; what consequential
+work must not skip is the plan review and the human sign-off. The two lists
+live in their own skills and are deliberately not mirrored here — whether the
+ticket skill's tier list should inherit the two extra triggers is Q-4's
+question.
 
 ## Why small work has a path
 
