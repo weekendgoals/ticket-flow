@@ -39,3 +39,30 @@ version (a repo-level doc changes no skill behaviour); per-skill documentation.
 
 **Acceptance criteria.**
 - `grep -n "four skills" METHODOLOGY.md` — no matches.
+
+## Q-3 — adopt the external review's shortlist: risk gate, outcomes, admission test, deployability nudge
+
+**Scope.** The four accepted items from the 2026-08-07 external methodology
+review (the rest was rejected as ceremony at this project's scale):
+- `skills/quick`: risk triggers that route work to `/flow:epic` at any size
+  (auth, secrets/crypto, migrations/data loss, new network exposure,
+  payments, fail-open).
+- `skills/epic`: an **Outcome** block in the tickets.md template — problem,
+  observable change, evidence, reversal condition; plus one line steering
+  integration mode toward expand/contract and flags first.
+- `agents/plan-reviewer`: flag unfalsifiable outcomes and avoidable
+  integration mode.
+- `skills/retro`: a fifth mining question — was the outcome achieved?
+- `METHODOLOGY.md`: name the philosophy, add the admission test, and record
+  the reasoning for the risk gate and the outcome block.
+- Version 1.5.0 + CHANGELOG entry (behaviour changes).
+
+**Not in scope.** The review's rejected proposals: a standalone principles
+document, a per-ticket risk matrix, a deployment toolkit (canary/shadow/kill
+switches), production observation artifacts. Q-2 owns the "four skills" line.
+
+**Acceptance criteria.**
+- `node --test plugins/flow/scripts/tickets.test.mjs` — all tests pass, 0 fail.
+- `node plugins/flow/scripts/tickets.mjs doctor` — exit 0.
+- `plugins/flow/.claude-plugin/plugin.json` version equals the top
+  CHANGELOG.md entry (1.5.0).
