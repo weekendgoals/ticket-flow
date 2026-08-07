@@ -9,7 +9,7 @@ state stored anywhere.
 
 | | |
 |---|---|
-| `/flow:epic <name>` | Turn a request, report or conversation into `epics/<name>/`. **Stops for sign-off**, then commits — no pull request |
+| `/flow:epic <name> [source...]` | Turn a request, report or conversation into `epics/<name>/`. Sources are files, globs or URLs, saved into `context/`; with none, the conversation is the brief. **Stops for sign-off**, then commits — no pull request |
 | `/flow:ticket <ID>` | One ticket end to end: branch, implement, verify, log, commit, review, fix, push, pull request |
 | `/flow:tickets [epic]` | The board — shipped, in flight, blocked, todo |
 | `/flow:review [range]` | Review a commit range and report. Used by `/flow:ticket`; runnable on its own |
@@ -58,7 +58,9 @@ drifts within days.
 
 ## Serial or integration
 
-Every epic declares a **release mode** in its ticket document.
+Every epic declares a **release mode** in its ticket document. Either way the
+epic has exactly one branch, `epic/<name>`, created by `/flow:epic` to hold its
+documents.
 
 **serial** (the default) — each ticket opens a pull request against the default
 branch and is merged before the next starts. `/flow:ticket` checks that the
@@ -69,6 +71,10 @@ branching off unmerged work.
 split across tickets, a guard whose secret must exist first). Each ticket still
 gets its own small pull request, targeting `epic/<name>`; one release pull
 request goes to the default branch.
+
+In both modes the epic's **first** ticket branches from `epic/<name>`, so the
+ticket document, status log and context travel to the default branch with it. A
+ticket that skipped that step would leave the board blind to its own epic.
 
 What is never allowed is one pull request carrying a whole epic. Past roughly 400
 changed lines, review stops finding defects — and an epic-sized diff is the

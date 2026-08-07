@@ -8,26 +8,57 @@ description: Turn a feature request, investigation or conversation into an epic 
 You are producing **a folder and a decision**, not code. Nothing is implemented
 in this session.
 
-`$ARGUMENTS` is the epic's name, and it becomes the directory `epics/$ARGUMENTS/`.
-If the user gave no name, propose one from what they described and confirm it
-before writing anything — the name is permanent, since it prefixes nothing but
-names everything.
+## 1. Read the arguments, then get the input
 
-## 1. Get the input
+`$ARGUMENTS` is **the epic name, optionally followed by any number of sources**:
 
-An epic starts from one of:
+```
+/flow:epic venue-identity
+/flow:epic security ~/reports/audit-2026-07-30.md
+/flow:epic leagues docs/census.md https://example.com/spec  epics/*/context/prior.csv
+```
 
-- **A conversation** — the user describes what they want. Ask about anything you
-  would otherwise guess at.
-- **Context they hand you** — a pasted spec, a file, a link, a findings report.
-  Read it fully before proposing anything.
-- **An investigation** — you or a previous session found a cluster of related
-  problems.
+Parse it like this:
 
-If they gave you material, it belongs to the epic. Copy it into
-`epics/$ARGUMENTS/context/` so a fresh session six tickets later can still read
-the thing this was all based on. A link is not context; if it is a URL, fetch it
-and save what it said, with the URL and the date.
+- The **first whitespace-delimited token is the epic name**, and it becomes the
+  directory `epics/<name>/`. It must be kebab-case with no slashes or dots.
+- **If that first token looks like a path or a URL** — it contains `/`, ends in a
+  file extension, or starts with a scheme — then no name was given. Treat every
+  token as a source, and propose a name once you have read them.
+- **Everything after the name is a source**: a file path, a glob, or a URL.
+
+Below, **`<name>`** means the epic name you parsed out — never the raw
+`$ARGUMENTS` string, which now also holds the sources.
+
+**The conversation is always input, and sources are added to it — never instead
+of it.** If the user has been describing the problem for ten minutes and then
+passes a file, both matter. If they passed sources and said nothing, the sources
+are the whole brief. If they passed nothing, the conversation is.
+
+Say in the sign-off which shaped what, so a disagreement lands in the right place.
+
+### Handling sources
+
+Read every source **in full** before proposing anything, and copy each into
+`epics/<name>/context/`:
+
+- A **file or glob** — copy it verbatim. Do not summarise it into the ticket doc
+  and discard the original; the ticket doc is your reading of it, and a future
+  session may need to disagree with your reading.
+- A **URL** — fetch it and save what it said as a file, with the URL and today's
+  date at the top. A link is not context. It rots, it moves, and it may need
+  credentials a later session does not have.
+- Anything **unreadable** — a path that does not exist, a URL that fails, a file
+  you lack permission for — **stop and say so**. Do not proceed on a partial
+  brief and do not guess at what it contained.
+
+### If there is no source at all
+
+The epic then rests on the conversation, an investigation you just ran, or the
+user's description. That is legitimate — but **ask about anything you would
+otherwise guess at**, and write what you learn into the ticket document, because
+this conversation is the only place it currently exists and it is about to be
+thrown away.
 
 ## 2. Ground yourself before decomposing
 
@@ -41,7 +72,7 @@ and save what it said, with the URL and the date.
 - `node "${CLAUDE_PLUGIN_ROOT}/scripts/tickets.mjs" list` — what other epics are
   open, and where they overlap this one.
 
-## 3. Write `epics/$ARGUMENTS/tickets.md`
+## 3. Write `epics/<name>/tickets.md`
 
 ```markdown
 # <Name> epic — tickets
@@ -120,7 +151,7 @@ after three tickets are built on a wrong decomposition.
 
 ## 5. After sign-off
 
-Create `epics/$ARGUMENTS/status.md`:
+Create `epics/<name>/status.md`:
 
 ```markdown
 # <Name> epic — status log
@@ -148,8 +179,8 @@ add one line for this epic there.
 
 ```bash
 REPO=$(git rev-parse --show-toplevel)
-git checkout -b epic-$ARGUMENTS
-git add "$REPO/epics/$ARGUMENTS"
+git checkout -b epic/<name>
+git add "$REPO/epics/<name>"
 git commit
 ```
 
@@ -165,7 +196,7 @@ they land with the release pull request.
 request is too large to review, the epic was too large — split the work, not the
 record.
 
-Commit on `epic-$ARGUMENTS`, not on the default branch. Committing to a local
+Commit on `epic/<name>`, not on the default branch. Committing to a local
 default branch leaves it diverged from the remote once ticket one merges.
 
 ## 7. Hand over

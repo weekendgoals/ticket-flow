@@ -45,36 +45,54 @@ to `repoRoot`.
 Where two documents disagree, or the code contradicts a document, **stop and
 report it. Do not adapt silently.**
 
-## 3. Branch — from a clean base, unless the epic says otherwise
+## 3. Branch — from the right base
 
 ```bash
 git fetch origin --prune
 ```
 
-**Serial mode (the default).** Start from the merged default branch. First check
-that the previous ticket actually landed:
+There is one epic branch, `epic/<epic-name>`. `/flow:epic` created it and
+committed the epic's documents there. Which base you use depends on the release
+mode and on whether those documents have reached the default branch yet.
+
+**First, have the epic's documents shipped?**
+
+```bash
+git ls-tree origin/<default-branch> "epics/<epic-name>/tickets.md"
+```
+
+Empty output means they have not. **Then this ticket must branch from
+`epic/<epic-name>`**, whatever the release mode — otherwise the epic's ticket
+doc, status log and context never reach the default branch, and the board goes
+blind to the whole epic. This is normally ticket one.
+
+**Serial mode (the default), documents already shipped.** Start from the merged
+default branch, but check the previous ticket actually landed:
 
 ```bash
 gh pr list --state open --json number,title,headRefName
 ```
 
-- If no pull request from this epic is open, or the only open ones are unrelated:
-  `git checkout <default-branch> && git pull && git checkout -b <branch>`.
-- If the **previous ticket in this epic** still has an open pull request, **stop
-  and say so.** Do not silently branch off unmerged work — that is how an
-  unplanned stack forms. The user either merges it or tells you to stack
-  deliberately.
+- No open pull request from this epic: `git checkout <default-branch> && git pull
+  && git checkout -b <branch>`.
+- The **previous ticket in this epic** still has an open pull request: **stop and
+  say so.** Do not silently branch off unmerged work — that is how an unplanned
+  stack forms. The user either merges it or tells you to stack deliberately.
 
-**Integration mode.** The epic's tickets are not independently deployable:
+**Integration mode.** Every ticket branches from the epic branch and returns to
+it:
 
 ```bash
-git checkout epic-<epic-name> 2>/dev/null || git checkout -b epic-<epic-name> origin/<default-branch>
+git checkout epic/<epic-name>
 git pull --ff-only 2>/dev/null || true
 git checkout -b <branch>
 ```
 
-Keep the integration branch current with the default branch as the epic runs, or
-the release merge becomes its own big-bang.
+Keep `epic/<epic-name>` current with the default branch as the epic runs, or the
+release merge becomes its own big-bang.
+
+**Whatever the mode, the base branch you used is what step 7 diffs against and
+step 9 targets.** Note it now.
 
 ## 4. Implement
 
@@ -153,9 +171,8 @@ Spawn the reviewer with the **Agent** tool:
 
 Tell it to follow **the `/flow:review` skill** and give it:
 
-- the commit range — `git merge-base origin/<base-branch> HEAD`..`HEAD`, where
-  the base branch is the default branch in serial mode and `epic/<name>` in
-  integration mode,
+- the commit range — `git merge-base origin/<base-branch> HEAD`..`HEAD`, using
+  the base branch you noted in step 3,
 - `ticketsDoc` (the epic ground rules **and** this ticket's Acceptance criteria
   and Not in scope — straying outside scope is a finding),
 - `statusDoc`,
@@ -199,8 +216,9 @@ git push -u origin <branch>
 gh pr create --base <base-branch> --title "<ID>: <title>" --body "<body>"
 ```
 
-`<base-branch>` is the default branch in serial mode, `epic/<name>` in
-integration mode.
+`<base-branch>` is the base you noted in step 3 — the default branch, or
+`epic/<epic-name>` in integration mode, or `epic/<epic-name>` for the first
+ticket of any epic whose documents have not shipped yet.
 
 The pull request body is the only thing read before this ships, so it carries:
 what changed and why, the acceptance criteria with evidence and counts, the
