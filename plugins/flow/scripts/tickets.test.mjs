@@ -90,6 +90,23 @@ Malformed on purpose: no date, so this heading must not parse.
 `,
 )
 
+// gamma: integration + autonomous, with a prose-decorated Release mode line —
+// the tolerant-parse case, and the fixture for run-mode exposure.
+mkdirSync(join(repo, 'epics/gamma'), { recursive: true })
+writeFileSync(
+  join(repo, 'epics/gamma/tickets.md'),
+  `# Gamma epic — tickets
+
+Release mode: integration — these tickets share a schema change and cannot ship alone.
+
+Run mode: autonomous
+
+## G-1 — expand the schema
+
+**Scope.** Expansion.
+`,
+)
+
 git(repo, 'add', '.')
 git(repo, 'commit', '-m', 'A-1: ship the walking skeleton')
 git(repo, 'remote', 'add', 'origin', remote)
@@ -144,7 +161,66 @@ test('find refuses an unknown ID and lists what it knows', () => {
 
 test('next proposes the first unstarted ticket in document order', () => {
   const open = JSON.parse(run(repo, 'next', '--json'))
-  assert.deepEqual(open.map((t) => t.id), ['A-4'])
+  assert.deepEqual(open.map((t) => t.id), ['A-4', 'G-1'])
+})
+
+test('mode lines parse tolerantly and expose in find and list', () => {
+  const g = JSON.parse(run(repo, 'find', 'G-1', '--json'))
+  assert.equal(g.releaseMode, 'integration', 'prose after the value must not break the parse')
+  assert.equal(g.runMode, 'autonomous')
+
+  const a = JSON.parse(run(repo, 'find', 'A-2', '--json'))
+  assert.equal(a.releaseMode, 'serial')
+  assert.equal(a.runMode, null)
+
+  const data = JSON.parse(run(repo, 'list', '--json'))
+  assert.deepEqual(data.modes.gamma, { releaseMode: 'integration', runMode: 'autonomous' })
+  assert.deepEqual(data.modes.alpha, { releaseMode: 'serial', runMode: null })
+})
+
+test('an epic with no mode lines defaults to serial, attended', () => {
+  mkdirSync(join(repo, 'epics/delta'), { recursive: true })
+  writeFileSync(join(repo, 'epics/delta/tickets.md'), '# Delta\n\n## D-1 — bare epic\n\n**Scope.** Bare.\n')
+  try {
+    const data = JSON.parse(run(repo, 'list', '--json'))
+    assert.deepEqual(data.modes.delta, { releaseMode: 'serial', runMode: null })
+  } finally {
+    rmSync(join(repo, 'epics/delta'), { recursive: true, force: true })
+  }
+})
+
+test('autonomous + serial is refused by find and failed by doctor', () => {
+  mkdirSync(join(repo, 'epics/rogue'), { recursive: true })
+  writeFileSync(
+    join(repo, 'epics/rogue/tickets.md'),
+    '# Rogue\n\nRelease mode: serial\n\nRun mode: autonomous\n\n## R-1 — unattended to main\n\n**Scope.** No.\n',
+  )
+  try {
+    const find = runFail(repo, 'find', 'R-1')
+    assert.equal(find.status, 1)
+    assert.match(find.stderr, /autonomous/)
+    assert.match(find.stderr, /integration topology/)
+
+    const doc = runFail(repo, 'doctor', '--json')
+    assert.equal(doc.status, 1, 'a mode contradiction is a doctor fail')
+  } finally {
+    rmSync(join(repo, 'epics/rogue'), { recursive: true, force: true })
+  }
+})
+
+test('an unrecognised mode value is a doctor warning, never a silent default', () => {
+  mkdirSync(join(repo, 'epics/typo'), { recursive: true })
+  writeFileSync(join(repo, 'epics/typo/tickets.md'), '# Typo\n\nRelease mode: sequential\n\n## T-1 — typo mode\n\n**Scope.** T.\n')
+  try {
+    const rows = JSON.parse(run(repo, 'doctor', '--json'))
+    const warn = rows.find((r) => r.msg.includes('sequential'))
+    assert.ok(warn, 'doctor must flag the unrecognised value')
+    assert.equal(warn.level, 'warn')
+    const data = JSON.parse(run(repo, 'list', '--json'))
+    assert.equal(data.modes.typo.releaseMode, 'sequential', 'the raw value is exposed, not coerced')
+  } finally {
+    rmSync(join(repo, 'epics/typo'), { recursive: true, force: true })
+  }
 })
 
 test('a ticket ID defined in two epics is flagged on the board and refused by find', () => {
