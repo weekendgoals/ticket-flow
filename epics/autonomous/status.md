@@ -119,3 +119,32 @@ behavioural. Squash explicitly forbidden for the self-merge: the release PR
 needs per-ticket subjects.
 
 **Owed:** Nothing.
+
+**Addendum — review — 2026-08-08 — fable/xhigh:** Three Important, three
+nits; all fixed in the review-fix commit. Important: (1) step 3's "what step
+9 targets" sentence recreated the exact serial-first-ticket contradiction
+this ticket claimed fixed — rewritten to separate the cut-from branch from
+the PR base. (2) The merge gate required a review addendum to exist but not
+that Important findings were resolved — the gate now also requires the
+addendum committed and stops on any unfixed Important finding: in an
+autonomous run that disposition is not the agent's to judge. (3) Step 10's
+"continue to the next ticket" collided with the signed-off driver
+architecture (a driver-spawned worker would race the driver's own loop) —
+carve-out added: a driver-spawned agent stops after the merge; only a
+driverless run continues itself. Nits fixed: the plan-reviewer's sign-off
+check was dead text (it runs before sign-off exists — now checks the draft's
+Run mode block, which the sign-off is written from; CHANGELOG reworded to
+match); step 2 now names Run mode as load-bearing; the base check is pinned
+to the `epic` field from `find --json` instead of convention. Correction to
+this entry's Files-touched paragraph, as a dated addendum: "retargets to
+main when #5 merges" holds only if the `auto-1` branch is deleted at merge —
+GitHub does not retarget otherwise; nothing rides on it. Pre-existing,
+handed on: the epic branch is never pushed to origin (epic skill commits
+locally only) — load-bearing for unattended runs, added to AUTO-3's scope by
+re-plan; step 8 never said to commit the review addendum — fixed here as
+part of Important (2) since the merge gate reads it. Reviewer confirmed the
+runMode gate fails closed, the doctrine texts agree across all five
+documents, README/METHODOLOGY contradictions are AUTO-3's assigned scope,
+and standing checks pass (15/15, doctor 0). AUTO-5 (attended supervisor
+default, interactive by flag, static hook) added to the ticket doc by
+re-plan on user proposal, sequenced after AUTO-4.

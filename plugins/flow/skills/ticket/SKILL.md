@@ -40,8 +40,8 @@ to `repoRoot`.
 1. The root agent instructions (`CLAUDE.md` or `AGENTS.md`), then the same file
    for every area named in the ticket doc's **Areas in scope** line.
 2. `statusDoc` — the whole thing. This is what previous tickets did and left owed.
-3. The preamble of `ticketsDoc` — ground rules bind every ticket in the epic, and
-   the **Release mode** line decides step 3 and step 9.
+3. The preamble of `ticketsDoc` — ground rules bind every ticket in the epic,
+   and the **Release mode** and **Run mode** lines decide steps 3, 9 and 10.
 4. The section for **$ARGUMENTS** — Scope, Not in scope, Acceptance criteria.
 5. Anything in `contextDir` the ticket points at.
 
@@ -94,8 +94,12 @@ git checkout -b <branch>
 Keep `epic/<epic-name>` current with the default branch as the epic runs, or the
 release merge becomes its own big-bang.
 
-**Whatever the mode, the base branch you used is what step 7 diffs against and
-step 9 targets.** Note it now.
+**Whatever the mode, note two things now: the branch you cut from, and the
+pull request base.** The PR base is what step 7 diffs against and step 9
+targets: the default branch in serial mode — including the first ticket,
+which cuts from `epic/<epic-name>` but ships its pull request, documents and
+all, to the default branch — or `epic/<epic-name>` in integration mode. The
+cut-from branch and the PR base differ only in that serial first-ticket case.
 
 ## 4. Implement
 
@@ -201,7 +205,9 @@ recorded and handed to a named ticket, never silently dropped. Every disposition
 needs a written reason.
 
 Append the outcome to `statusDoc` as a dated addendum — never edit the original
-entry:
+entry — and **commit the addendum** (with the fix commits, or on its own when
+nothing was fixed). An uncommitted addendum never reaches the remote or the
+pull request's evidence trail:
 
 ```markdown
 **Addendum — review — <YYYY-MM-DD> — <model>/<effort>:** <findings. What was
@@ -257,17 +263,26 @@ stop. Do not start the next ticket. There is nothing to run after the merge.
 **If `runMode` is `autonomous`:**
 
 - **An unreviewed ticket is never merged, anywhere.** Reaching this step
-  requires the review addendum from step 8 in the status log. If the reviewer
-  agent could not be spawned, the sanctioned fallback is a general agent
-  instructed by the reviewer definition plus the review skill; if that also
-  fails, stop — write a BLOCKED entry and merge nothing.
-- Verify the pull request's base is `epic/<epic-name>` — `gh pr view --json
-  baseRefName`. Anything else: stop. Do not retarget, do not merge.
+  requires the review addendum from step 8 in the status log, **committed**,
+  and with **no Important finding left unfixed** — in an autonomous run, a
+  not-fixed disposition on an Important finding is not yours to judge,
+  whatever the proposed reason: stop, write a BLOCKED entry naming the
+  finding, merge nothing. If the reviewer agent could not be spawned, the
+  sanctioned fallback is a general agent instructed by the reviewer
+  definition plus the review skill; if that also fails, stop — BLOCKED entry,
+  no merge.
+- Verify the pull request's base equals `epic/` + the `epic` field from step
+  1's `find --json` output — `gh pr view --json baseRefName`. Anything else:
+  stop. Do not retarget, do not merge.
 - Merge your own pull request into the epic branch with a merge commit:
   `gh pr merge <number> --merge`. Never squash — the release pull request
   needs the per-ticket subjects.
-- Report as in step 9, then **continue to the next ticket in document order**
-  instead of stopping. The epic's ground-rule stop conditions bind the whole
-  run; halting on one is the mechanism working, not a failure.
+- **If a driver spawned you for this one ticket** (the prompt that launched
+  you says so), report as in step 9 and **stop after the merge** — the driver
+  owns the loop, the between-ticket refresh of the epic branch, and the fresh
+  context of the next ticket's agent. Continue to the next ticket in document
+  order yourself **only when you are the whole run** and no driver exists.
+  Either way, the epic's ground-rule stop conditions bind everything; halting
+  on one is the mechanism working, not a failure.
 - The default branch remains untouchable. The release pull request at the end
   of the run is opened by the driver and merged by a human — never by you.

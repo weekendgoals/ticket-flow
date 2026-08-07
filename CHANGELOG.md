@@ -18,7 +18,8 @@ into an epic branch.
   agents in every mode.
 - **The epic template gains the optional `Run mode: autonomous` line**, and
   an autonomous sign-off must state the unattended consequence in plain
-  terms; the plan reviewer flags its absence.
+  terms; the plan reviewer flags a draft whose Run mode block omits that
+  consequence.
 - **Fixed (owed by AUTO-1):** step 9 no longer tells a serial epic's first
   ticket to base its PR on the epic branch — that stranded the epic docs;
   the PR targets the default branch, which is how the docs ship.

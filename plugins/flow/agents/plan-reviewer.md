@@ -56,8 +56,10 @@ quoted.
   a ticket independently shippable, and integration mode chosen to avoid that
   design work is a finding. One reason needs no challenge: `Run mode:
   autonomous` requires integration topology, so unattended merges never touch
-  the default branch — but then the sign-off text must state the unattended
-  consequence, and its absence is a finding.
+  the default branch — but then the draft's Run mode block must itself state
+  the unattended consequence (what runs without a human after sign-off), and
+  its absence is a finding. The sign-off message you never see; the draft you
+  do, and the sign-off is written from it.
 - **Project facts posing as ground rules.** A ground rule that describes what
   the project *is* belongs in the instruction file, where it is maintained;
   epic ground rules are for what *this work* must respect.
