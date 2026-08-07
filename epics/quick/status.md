@@ -125,3 +125,51 @@ docs-only change. It also swept for other stale counts: `README.md:7`
 hand-maintained-mirror shape — noted here as an observation, not a defect;
 whoever next changes the skill roster should prefer dropping that count too.
 Nothing fixed, nothing deferred.
+
+### Q-4 — ticket skill's xhigh tier inherits payments and data rewrites — 2026-08-08 — DONE
+
+**Built:** Plugin v1.6.0. The decision the ticket asked for, made and
+recorded: the two risk lists are now aligned. `skills/ticket` step 7's
+`xhigh` tier adds "anything that deletes or rewrites data" and "payments or
+billing", with a sentence naming the coupling to the quick path's entry
+triggers. METHODOLOGY.md's risk-gate section replaces "deliberately not
+mirrored, Q-4's question" with the resolved rule: the two skills each carry
+the list where it is executed, and when one learns a trigger the other
+inherits it in the same commit. Also planned **Q-5** into the ticket doc: the
+board prints `/ticket <ID>` but the installed command is `/flow:ticket <ID>`
+— found live by the user following the board's own suggestion.
+
+**Files touched:** `plugins/flow/skills/ticket/SKILL.md`, `METHODOLOGY.md`,
+`plugins/flow/.claude-plugin/plugin.json`, `CHANGELOG.md`,
+`epics/quick/tickets.md` (Q-5 plan), this file. Branch `q-4`, cut from
+`origin/main` after PR #3 merged.
+
+**Verified:** `grep -n "payment" plugins/flow/skills/ticket/SKILL.md
+METHODOLOGY.md` — both hits present (SKILL.md:172, METHODOLOGY.md:237), lists
+match. Standing checks: 9/9 tests, 0 fail; doctor exit 0; plugin.json 1.6.0
+equals top CHANGELOG entry.
+
+**Decisions:** Chose "align" over "explain the difference" — both lists
+measure consequence, one at the entry gate and one at review; a payment
+change routed to an epic for being consequential but reviewed at `high` was
+incoherent. The alternative (documented divergence) would have preserved a
+distinction with no reason behind it. Coupling rule written into both the
+skill and METHODOLOGY so the lists cannot silently diverge again.
+
+**Owed:** Nothing.
+
+**Addendum — review — 2026-08-08 — fable/high:** One Important (confirmed),
+one nit (confirmed); both fixed in the review-fix commit. Important: the
+same-commit inheritance rule lived only in METHODOLOGY.md — the document
+CLAUDE.md declares rules-free — and the quick skill, the door where the last
+divergence actually started, carried no cue at all. Fixed by putting the rule
+where it executes: in the quick skill beside its triggers, in the ticket
+skill beside its tier, and as a CLAUDE.md invariant (the heading-regex
+coupling precedent). Correction to this entry's Decisions line: as originally
+committed, the mechanism was one-directional and "cannot silently diverge
+again" overstated it; true only as of the review fix. Nit: METHODOLOGY's
+risk-gate paragraph still enumerated the tier list, a stale third copy —
+fixed by removing the enumeration entirely and saying why it is absent. The
+reviewer confirmed the two lists match item for item (the Q-3 error class was
+not repeated), acceptance criterion and standing checks re-run and green,
+scope clean, Q-5 addition is plan-only. Nothing deferred.

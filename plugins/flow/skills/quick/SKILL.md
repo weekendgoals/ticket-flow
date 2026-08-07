@@ -35,6 +35,11 @@ Size is not the only gate. **Some work is never quick, at any size:**
 A two-line change to an auth check is more dangerous than a 300-line internal
 refactor; line count measures neither blast radius nor reversibility.
 
+This list is coupled to the ticket skill's `xhigh` review tier — the same
+consequences, measured at two doors. **A trigger added to either list is added
+to the other in the same commit**; they diverged silently once and that cost a
+ticket to reconcile.
+
 If a size bullet fails **or** a risk trigger matches, stop and say which:
 this goes through `/flow:epic` — the plan review and the sign-off gate are the
 point for consequential work, not overhead — even if the epic holds a single
