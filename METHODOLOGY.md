@@ -1,8 +1,8 @@
 # Why it works this way
 
 **This document contains no rules.** The rules live where they are executed, in
-the four skills. Those are self-sufficient — an agent never needs to read this
-file to do its job.
+the skills. Those are self-sufficient — an agent never needs to read this file
+to do its job.
 
 This is the reasoning behind them: what each piece defends against, and what
 happened when it was absent. Read it before **changing** the workflow, so a

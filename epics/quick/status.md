@@ -93,3 +93,25 @@ the future sessions it gates — a pointer invariant added to CLAUDE.md.
 Reviewer independently re-ran all three acceptance criteria (9/9, doctor 0,
 1.5.0 = CHANGELOG head) and confirmed scope discipline incl. Q-2's line
 untouched. Nothing deferred beyond Q-4.
+
+### Q-2 — METHODOLOGY.md says "four skills"; there are seven — 2026-08-08 — DONE
+
+**Built:** `METHODOLOGY.md` header now says the rules live "in the skills",
+with no count — the number was dropped rather than corrected to seven, so the
+line cannot go stale when the next skill is added. One line changed; nothing
+else in the document touched, per Not in scope.
+
+**Files touched:** `METHODOLOGY.md` (one line), this file. Branch `q-2`, cut
+from `origin/main` after PR #2 merged.
+
+**Verified:** `grep -n "four skills" METHODOLOGY.md` — no matches (exit 1).
+Standing checks: `node --test plugins/flow/scripts/tickets.test.mjs` — 9 pass,
+0 fail; `node plugins/flow/scripts/tickets.mjs doctor` — exit 0. No plugin
+version bump: docs-only, no behaviour change.
+
+**Decisions:** Chose "drop the number" over "fix the count" — the ticket
+offered both; a count is a hand-maintained mirror of the skills directory and
+would drift again (it already had, from four to seven, unnoticed until Q-1's
+review).
+
+**Owed:** Nothing.
