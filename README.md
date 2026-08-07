@@ -4,16 +4,18 @@ A Claude Code plugin that runs work as **epics** and **tickets**, from a request
 through to a reviewed pull request — and derives the board from git instead of
 asking anyone to maintain one.
 
-Five skills, one reviewer agent, one script. No database, no config file, no
+Seven skills, two reviewer agents, one script. No database, no config file, no
 state stored anywhere.
 
 | | |
 |---|---|
-| `/flow:epic <name> [source...]` | Turn a request, report or conversation into `epics/<name>/`. Sources are files, globs or URLs, saved into `context/`; with none, the conversation is the brief. **Stops for sign-off**, then commits — no pull request |
+| `/flow:epic <name> [source...]` | Turn a request, report or conversation into `epics/<name>/`. Sources are files, globs or URLs, saved into `context/`; with none, the conversation is the brief. A fresh-context **plan reviewer** challenges the decomposition, then it **stops for sign-off** and commits — no pull request |
 | `/flow:ticket <ID>` | One ticket end to end: branch, implement, verify, log, commit, review, fix, push, pull request |
 | `/flow:quick <description>` | One **small** piece of work through the same loop — scope, review, log, pull request — with no epic ceremony. Writes a `Q-<n>` ticket into the standing `epics/quick/` epic and runs it |
 | `/flow:tickets [epic]` | The board — shipped, in flight, blocked, todo |
 | `/flow:review [range]` | Review a commit range and report. Used by `/flow:ticket`; runnable on its own |
+| `/flow:doctor` | Is this project ready for the flow? Preconditions, merge settings, instruction-file quality, and headings that would silently misparse |
+| `/flow:retro [epic]` | Close a finished epic: mine the status log and review addenda for owed work and lessons, then ship them into instruction files and tickets |
 
 You review the pull request and merge it. **There is no command after the merge.**
 
@@ -28,7 +30,8 @@ Local edits are picked up live; run `/reload-plugins` to pick them up mid-sessio
 
 ## What it expects from a project
 
-Almost nothing, and nothing you have to create up front.
+Almost nothing, and nothing you have to create up front — and `/flow:doctor`
+checks all of it, so run that first in a new project.
 
 - **A git repository with a remote**, and `gh` authenticated. Without `gh` the
   board degrades to git-only facts and says so.
@@ -85,18 +88,21 @@ changed lines, review stops finding defects — and an epic-sized diff is the
 situation where documentation gets deleted to make the diff smaller, which
 destroys the only memory the next session has.
 
-## Why the reviewer is a separate agent
+## Why the reviewers are separate agents
 
-A session that has just spent hours justifying its own design decisions is the
-worst possible reviewer of them. `flow:ticket-reviewer` starts empty, sees only
-the diff and the documents, and **reports without fixing** — because an agent
-that can edit its own finding will edit it into agreement. Fixes land as new
-commits, never amendments, so the review stays auditable against exactly what was
-reviewed.
+A session that has just spent hours justifying its own decisions is the worst
+possible reviewer of them — and that is as true of a plan as of a diff.
+`flow:ticket-reviewer` starts empty, sees only the commit range and the
+documents, and **reports without fixing** — because an agent that can edit its
+own finding will edit it into agreement. Fixes land as new commits, never
+amendments, so the review stays auditable against exactly what was reviewed.
+`flow:plan-reviewer` does the same to a draft epic before sign-off, reading the
+decomposition against the actual code — a wrong split caught there costs one
+edit instead of every ticket built on it.
 
-It ships under its own name rather than a generic one, because project and user
-`.claude/agents/` definitions override same-named plugin agents. If you already
-have a `code-review-expert`, the two do not collide.
+They ship under their own names rather than generic ones, because project and
+user `.claude/agents/` definitions override same-named plugin agents. If you
+already have a `code-review-expert`, they do not collide.
 
 ## Reading the board
 

@@ -19,6 +19,8 @@
 //   tickets.mjs next [epic] [--json]     what to start next
 //   tickets.mjs epics [--json]           list known epics
 //   tickets.mjs current [--json]         the epic this folder belongs to
+//   tickets.mjs doctor [--json]          check the flow's preconditions and
+//                                        flag headings that silently misparse
 //
 // The repo is resolved from the current working directory, not from this file's
 // location, so running it out of the plugin cache is correct.
@@ -30,6 +32,15 @@ import { readFileSync, readdirSync, existsSync, statSync } from 'node:fs'
 import { join, basename } from 'node:path'
 
 const TICKET_ID = '[A-Z][A-Z0-9]*-\\d+'
+
+// The two parsed heading shapes. Doctor checks near-misses against these exact
+// patterns — a heading that almost matches silently reads as "not started" /
+// "not done", which is the one way derived state can lie.
+const TICKET_HEADING = new RegExp(`^##\\s+(${TICKET_ID})\\s*[—–-]\\s*(.+?)\\s*$`)
+const STATUS_HEADING = new RegExp(
+  `^###\\s+(${TICKET_ID})\\s*[—–-]\\s*(.+?)\\s*[—–-]\\s*(\\d{4}-\\d{2}-\\d{2})\\s*[—–-]\\s*([A-Z]+)\\s*$`,
+)
+const KNOWN_OUTCOMES = new Set(['DONE', 'BLOCKED', 'ABANDONED'])
 
 // ── shell helpers ────────────────────────────────────────────────────────────
 
@@ -96,12 +107,11 @@ function currentEpic(epics) {
 // such heading is epic preamble (ground rules, ordering) and is not a ticket.
 function parseTickets(epic) {
   const text = readFileSync(epic.ticketsDoc, 'utf8')
-  const heading = new RegExp(`^##\\s+(${TICKET_ID})\\s*[—–-]\\s*(.+?)\\s*$`)
 
   const tickets = []
   let current = null
   for (const line of text.split('\n')) {
-    const m = line.match(heading)
+    const m = line.match(TICKET_HEADING)
     if (m) {
       // Strip any status glyph a human hand-added to the heading — the state
       // comes from git, and a stale ✅ in a title is exactly the drift this
@@ -122,11 +132,8 @@ function parseTickets(epic) {
 function parseStatus(epic) {
   const byId = {}
   if (!epic.statusDoc) return byId
-  const heading = new RegExp(
-    `^###\\s+(${TICKET_ID})\\s*[—–-]\\s*(.+?)\\s*[—–-]\\s*(\\d{4}-\\d{2}-\\d{2})\\s*[—–-]\\s*([A-Z]+)\\s*$`,
-  )
   for (const line of readFileSync(epic.statusDoc, 'utf8').split('\n')) {
-    const m = line.match(heading)
+    const m = line.match(STATUS_HEADING)
     // Append-only means an ID can appear more than once; the last one wins.
     if (m) byId[m[1]] = { id: m[1], date: m[3], outcome: m[4] }
   }
@@ -314,6 +321,81 @@ function printBoard(data, epicFilter) {
   }
 }
 
+// ── doctor ───────────────────────────────────────────────────────────────────
+
+// Everything here is a deterministic precondition or a silent-misreport risk.
+// Judgment calls (are the instruction files any good?) belong to the skill that
+// wraps this, not to code.
+function doctor() {
+  const rows = []
+  const add = (level, msg) => rows.push({ level, msg })
+
+  const origin = git(['remote', 'get-url', 'origin'], { allowFail: true })
+  if (origin) add('ok', `remote origin: ${origin}`)
+  else add('fail', 'no "origin" remote — the flow pushes branches and opens pull requests; add a remote first')
+
+  const head = git(['symbolic-ref', '--short', 'refs/remotes/origin/HEAD'], { allowFail: true })
+  if (head) add('ok', `default branch: ${defaultBranch} (from origin/HEAD)`)
+  else add('warn', `origin/HEAD not set — assuming "${defaultBranch}"; fix with: git remote set-head origin -a`)
+
+  if (origin && git(['rev-parse', '--verify', '--quiet', `origin/${defaultBranch}`], { allowFail: true }) === null) {
+    add('fail', `no local ref for origin/${defaultBranch} — run git fetch origin; shipped detection reads it`)
+  }
+
+  const prs = pullRequests()
+  if (prs.available) add('ok', 'gh reachable — pull request state available')
+  else add('warn', 'gh unavailable or unauthenticated — the board degrades to git-only facts')
+
+  if (prs.available) {
+    try {
+      const view = JSON.parse(
+        execFileSync('gh', ['repo', 'view', '--json', 'mergeCommitAllowed'], {
+          cwd: repoRoot, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'],
+        }),
+      )
+      if (view.mergeCommitAllowed) add('ok', 'merge commits allowed')
+      else
+        add('warn',
+          'merge commits are disabled on this repository — an integration release pull request cannot merge without collapsing its ticket subjects. Single-ticket PRs titled "<ID>: …" are still fine squashed.')
+    } catch { /* repo view needs a resolvable GitHub remote; nothing to report without it */ }
+  }
+
+  const instructions = ['CLAUDE.md', 'AGENTS.md'].find((f) => existsSync(join(repoRoot, f)))
+  if (instructions) add('ok', `root agent instructions: ${instructions}`)
+  else add('warn', 'no CLAUDE.md or AGENTS.md at the repository root — skills read run and test commands from it instead of guessing')
+
+  const epics = discoverEpics()
+  if (!epics.length) add('ok', 'no epics yet — /flow:epic creates epics/<name>/')
+
+  const nearTicket = new RegExp(`^##\\s+[A-Za-z][A-Za-z0-9]*-\\d+`)
+  const nearStatus = new RegExp(`^###\\s+[A-Za-z][A-Za-z0-9]*-\\d+`)
+  for (const epic of epics) {
+    readFileSync(epic.ticketsDoc, 'utf8').split('\n').forEach((line, i) => {
+      if (nearTicket.test(line) && !TICKET_HEADING.test(line))
+        add('warn', `${epic.epic}/tickets.md:${i + 1} — heading will not parse as a ticket (needs "## <ID> — <name>", ID uppercase): ${line.trim()}`)
+    })
+    if (!epic.statusDoc) {
+      add('warn', `${epic.epic}: no status.md — created at sign-off by /flow:epic; without it DONE/BLOCKED are invisible`)
+      continue
+    }
+    readFileSync(epic.statusDoc, 'utf8').split('\n').forEach((line, i) => {
+      if (!nearStatus.test(line)) return
+      const m = line.match(STATUS_HEADING)
+      if (!m)
+        add('warn', `${epic.epic}/status.md:${i + 1} — heading will not parse, so this ticket reads as not done (needs "### <ID> — <name> — YYYY-MM-DD — DONE|BLOCKED|ABANDONED"): ${line.trim()}`)
+      else if (!KNOWN_OUTCOMES.has(m[4]))
+        add('warn', `${epic.epic}/status.md:${i + 1} — unknown outcome "${m[4]}" is ignored by the board (known: DONE, BLOCKED, ABANDONED)`)
+    })
+  }
+
+  const seen = {}
+  for (const epic of epics) for (const t of parseTickets(epic)) (seen[t.id] ||= []).push(epic.epic)
+  for (const [dupId, dupEpics] of Object.entries(seen).filter(([, es]) => es.length > 1))
+    add('fail', `duplicate ticket ID ${dupId} — defined in: ${dupEpics.join(', ')}; find refuses ambiguous IDs`)
+
+  return rows
+}
+
 // ── entry point ──────────────────────────────────────────────────────────────
 
 const argv = process.argv.slice(2)
@@ -407,7 +489,18 @@ switch (cmd) {
     break
   }
 
+  case 'doctor': {
+    const rows = doctor()
+    if (json) emit(rows)
+    else {
+      const MARK = { ok: `${C.green}✓${C.off}`, warn: `${C.yellow}!${C.off}`, fail: `${C.red}✗${C.off}` }
+      for (const r of rows) console.log(`${MARK[r.level]} ${r.msg}`)
+    }
+    if (rows.some((r) => r.level === 'fail')) process.exit(1)
+    break
+  }
+
   default:
-    console.error(`tickets: unknown command "${cmd}" (try: list, find, next, epics, current)`)
+    console.error(`tickets: unknown command "${cmd}" (try: list, find, next, epics, current, doctor)`)
     process.exit(2)
 }

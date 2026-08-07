@@ -4,6 +4,28 @@ The plugin is the methodology's distribution mechanism: a change to a skill is
 a behaviour change in every project that installs it. This file is what makes
 those changes deliberate and visible.
 
+## 1.4.0 — 2026-08-07
+
+- **New agent `flow:plan-reviewer`, wired into `/flow:epic`.** Before the
+  sign-off gate, a fresh-context agent reads the draft decomposition against
+  the actual code and reports — oversized tickets, ordering that doesn't
+  de-risk, uncheckable criteria, dependencies hiding in prose — plus questions
+  only the human can settle, carried into sign-off unchanged. It never rewrites
+  the plan.
+- **New skill `/flow:doctor`** — is this project ready for the flow? The
+  deterministic half is `tickets.mjs doctor`: remote, `origin/HEAD`, `gh`,
+  merge settings, instruction-file existence, duplicate IDs — and headings
+  that *almost* parse, which otherwise silently read as "not done". The
+  judgment half reads the instruction files for what the skills will actually
+  ask of them (the exact test command above all).
+- **New skill `/flow:retro`** — close a finished epic: collect Owed lines
+  nothing inherited, constraints rediscovered by multiple tickets, defect
+  classes review kept finding, and planning misses. Proposes at a hard gate;
+  approved lessons ship via `/flow:quick`, owed work becomes tickets, and the
+  status log gains one final appended `## Retro` section.
+
+## 1.3.0 — 2026-08-07
+
 ## 1.3.0 — 2026-08-07
 
 - **New skill `/flow:quick <description>`** — one small piece of work through

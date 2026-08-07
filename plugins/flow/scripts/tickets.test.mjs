@@ -178,3 +178,24 @@ test('current is null in a checkout not named for an epic', () => {
   const out = run(repo, 'current')
   assert.match(out, /not an epic folder/)
 })
+
+test('doctor flags the near-miss status heading that the board silently ignores', () => {
+  const rows = JSON.parse(run(repo, 'doctor', '--json'))
+  const msgs = rows.map((r) => r.msg)
+
+  const nearMiss = rows.find((r) => r.msg.includes('status.md') && r.msg.includes('A-3'))
+  assert.ok(nearMiss, `expected a warning about the malformed A-3 heading, got:\n${msgs.join('\n')}`)
+  assert.equal(nearMiss.level, 'warn')
+  assert.match(nearMiss.msg, /reads as not done/)
+
+  assert.ok(rows.some((r) => r.level === 'warn' && /CLAUDE\.md or AGENTS\.md/.test(r.msg)))
+  assert.ok(rows.some((r) => r.level === 'ok' && /remote origin/.test(r.msg)))
+  assert.ok(!rows.some((r) => r.level === 'fail'), 'fixture repo has all hard preconditions')
+})
+
+test('doctor fails hard when there is no origin remote', () => {
+  const bare = join(tmp, 'no-remote')
+  git(tmp, 'init', '--initial-branch=main', bare)
+  const fail = runFail(bare, 'doctor')
+  assert.equal(fail.status, 1)
+})

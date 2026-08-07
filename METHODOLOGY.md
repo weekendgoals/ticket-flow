@@ -89,6 +89,54 @@ fix riskier than the bug, the premise verified wrong. Each is a disposition
 **with a written reason in the status log**. The written reason is the point: it
 stops the same finding being re-argued three tickets later.
 
+## Why the plan is reviewed before sign-off
+
+Every defence in this workflow used to start after the plan was signed off —
+but the most expensive mistakes are made before that, in the decomposition. A
+ticket built on a wrong split is not saved by a good code review; the review
+approves a correct implementation of the wrong thing, and the cost is every
+ticket stacked on it. The sign-off gate existed for exactly this, yet it left
+the human to catch decomposition faults alone, reading a document written by a
+session with every incentive to find its own plan convincing.
+
+So the same trick used on code is used on the plan: a fresh-context agent with
+no stake in the decomposition, reading it against the actual code, reporting
+without rewriting. External evidence points the same way — Cloudflare reports
+that pre-implementation design review by agents caught architectural problems
+in roughly six hundred designs before any code existed. The human still signs
+off; they just do it with adversarial findings and the reviewer's open
+questions in hand, instead of with prose written to be agreed with.
+
+## Why doctor is a script first, and judgment second
+
+The board's one honest failure mode is a heading that *almost* parses: a status
+line missing its date, a lowercase ticket ID, an outcome word the parser does
+not know. Nothing errors — the ticket just silently reads as not done, and the
+derived state that everything else trusts is wrong. Detection of that is
+mechanical, so it lives in `tickets.mjs doctor` next to the parsing rules it
+checks, not in a prompt. What a script cannot judge is whether the instruction
+files are any good — whether the test command is really there, whether the
+standards the reviewer judges against actually exist in writing. That half
+stays with the model. The split follows a lesson learned elsewhere in this
+workflow: spend inference only where judgment is needed, and make everything
+routine deterministic.
+
+## Why an epic ends with a retro
+
+The status log is written so that lessons survive — but surviving in a diary is
+not the same as operating. A constraint two sessions each rediscovered, a
+defect class review flagged three times, an Owed line nothing inherited: all of
+it is already written down, and none of it changes the next epic unless
+something moves it from the record into the rules. That move is the retro: owed
+work becomes tickets, repeated rediscoveries become instruction-file lines,
+repeated review findings become invariants the next reviewer judges against.
+
+Two constraints keep it honest. The retro proposes and stops — the human
+approves what becomes a rule. And its output ships through `/flow:quick`, not
+by committing to the default branch directly: lessons are changes like any
+other, and they go through a reviewed pull request. The status log itself is
+never edited — the retro appends a final dated section and the epic is closed.
+
 ## Why the reviewer is told what *not* to flag
 
 A reviewer prompted only to find problems will find them, sound work or not. The

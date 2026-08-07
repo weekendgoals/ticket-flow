@@ -139,17 +139,39 @@ Rules that matter:
 - **No status column.** State is derived by `tickets.mjs`; a hand-maintained
   table drifts within days.
 
-## 4. Get sign-off — hard gate
+## 4. Plan review — fresh eyes before the gate
+
+The session that wrote the decomposition cannot review it. It will agree with
+itself — and a wrong decomposition caught after sign-off costs every ticket
+built on it.
+
+Spawn `flow:plan-reviewer` with the **Agent** tool — `model`: the strongest
+available, `effort: high`. Give it: the draft `epics/<name>/tickets.md`, the
+`context/` directory, the root instruction file and each in-scope area's, and
+one line on what was requested. It reads the plan against the actual code and
+reports; it does not rewrite anything.
+
+Then, before showing the user:
+
+- **Fix what is right.** This is the cheap moment to re-split a ticket or
+  reorder — edit `tickets.md` now.
+- **Keep what you reject, with a reason.** A finding you disagree with goes to
+  the user, not into silence.
+- **Carry its "Questions for sign-off" forward unchanged.** Those are the
+  human's to answer, not yours.
+
+## 5. Get sign-off — hard gate
 
 Show the user: the ticket list with one line each, the order, what ticket one
-proves, the release mode and why, and anything you found while grounding that
-changes the shape of the work.
+proves, the release mode and why, anything you found while grounding that
+changes the shape of the work — and the plan review's outcome: what it flagged,
+what you changed, what you rejected and why, and its open questions.
 
 **Ask explicitly, and wait.** Do not write the status doc, do not touch the root
 instruction file, do not start ticket one. Re-planning is cheap now and expensive
 after three tickets are built on a wrong decomposition.
 
-## 5. After sign-off
+## 6. After sign-off
 
 Create `epics/<name>/status.md`:
 
@@ -175,7 +197,7 @@ derives that from git. Do not add a summary table to it.
 If the repository's root instruction file carries a short "current work" section,
 add one line for this epic there.
 
-## 6. Commit — no pull request
+## 7. Commit — no pull request
 
 ```bash
 REPO=$(git rev-parse --show-toplevel)
@@ -205,7 +227,7 @@ record.
 Commit on `epic/<name>`, not on the default branch. Committing to a local
 default branch leaves it diverged from the remote once ticket one merges.
 
-## 7. Hand over
+## 8. Hand over
 
 Say which ticket is first and that `/flow:ticket <first-ID>` runs next, from this
 same working copy.
