@@ -4,6 +4,23 @@ The plugin is the methodology's distribution mechanism: a change to a skill is
 a behaviour change in every project that installs it. This file is what makes
 those changes deliberate and visible.
 
+## 1.7.0 — 2026-08-08
+
+First ticket of the autonomous epic (AUTO-1): the epic's modes become parsed
+facts, ahead of any behaviour that reads them.
+
+- **`tickets.mjs` parses `Release mode:` and `Run mode:`** from the epic
+  preamble — tolerant (first word after the colon, prose ignored), defaulting
+  to serial/attended when absent. Exposed as `releaseMode`/`runMode` in
+  `find --json` and as a `modes` map in `list --json`; the board labels
+  non-default epics.
+- **`Run mode: autonomous` with serial topology is refused mechanically** —
+  a `doctor` fail and a `find` error — because unattended merges may only
+  ever target an epic branch, never the default branch.
+- **Unrecognised mode values are doctor warnings**, exposed raw rather than
+  silently coerced.
+- Test suite grows 9 → 13.
+
 ## 1.6.0 — 2026-08-08
 
 - **The ticket skill's `xhigh` review tier inherits payments and

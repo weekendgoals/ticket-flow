@@ -68,6 +68,30 @@ const defaultBranch =
 
 // ── epic discovery ───────────────────────────────────────────────────────────
 
+// Recognised mode values. Anything else still parses (and is exposed as-is)
+// but doctor flags it — an unrecognised value must never silently default.
+const RELEASE_MODES = new Set(['serial', 'integration'])
+const RUN_MODES = new Set(['autonomous'])
+
+// Tolerant parse of the epic preamble's mode lines: the value is the first
+// word after the colon, case-insensitive; anything after it is prose, so
+// "Release mode: serial — each ticket ships alone" parses as serial. An
+// absent Release mode line defaults to serial; an absent Run mode is null
+// (attended). Only the preamble is read — text above the first "## " heading.
+function parseModes(ticketsDoc) {
+  const preamble = readFileSync(ticketsDoc, 'utf8').split(/^##\s/m)[0]
+  const grab = (label) => {
+    const m = preamble.match(new RegExp(`^${label}\\s*:\\s*([A-Za-z-]+)`, 'im'))
+    return m ? m[1].toLowerCase() : null
+  }
+  return { releaseMode: grab('Release mode') ?? 'serial', runMode: grab('Run mode') }
+}
+
+// An autonomous run's merge surface is the epic branch, which only exists as
+// a target in integration topology. Serial + autonomous would mean unattended
+// merges to the default branch — refused mechanically, everywhere.
+const modeContradiction = (e) => e.runMode === 'autonomous' && e.releaseMode !== 'integration'
+
 // An epic is a directory under epics/ containing tickets.md. Its status log and
 // context live beside it, so there is no index file to keep honest.
 function discoverEpics() {
@@ -81,12 +105,14 @@ function discoverEpics() {
     .map((name) => {
       const dir = join(root, name)
       const optional = (f) => (existsSync(join(dir, f)) ? join(dir, f) : null)
+      const ticketsDoc = join(dir, 'tickets.md')
       return {
         epic: name,
         dir,
-        ticketsDoc: join(dir, 'tickets.md'),
+        ticketsDoc,
         statusDoc: optional('status.md'),
         contextDir: optional('context'),
+        ...parseModes(ticketsDoc),
       }
     })
     .sort((a, b) => a.epic.localeCompare(b.epic))
@@ -289,8 +315,13 @@ function printBoard(data, epicFilter) {
     if (!ts.length) continue
     const counts = STATES.map((s) => [s, ts.filter((t) => t.state === s).length]).filter(([, n]) => n)
     const here = data.current?.epic === epic.epic ? `${C.green}  ← this folder${C.off}` : ''
+    // Serial-attended is the default and stays unlabelled; anything else is
+    // worth a glance before starting a ticket in it.
+    const modes =
+      (epic.releaseMode !== 'serial' ? ` · ${epic.releaseMode}` : '') +
+      (epic.runMode ? ` · ${C.off}${C.cyan}${epic.runMode}${C.off}${C.dim}` : '')
     console.log(
-      `${C.bold}${epic.epic}${C.off} ${C.dim}— ${ts.length} tickets · ` +
+      `${C.bold}${epic.epic}${C.off} ${C.dim}— ${ts.length} tickets${modes} · ` +
         counts.map(([s, n]) => `${n} ${s}`).join(' · ') + `${C.off}${here}`,
     )
     for (const t of ts) {
@@ -367,6 +398,24 @@ function doctor() {
   const epics = discoverEpics()
   if (!epics.length) add('ok', 'no epics yet — /flow:epic creates epics/<name>/')
 
+  // A mode line that ALMOST parses — bolded label, doubled space — reads as
+  // absent and silently defaults. Same failure class as heading near-misses:
+  // flag anything mode-shaped in the preamble that the strict parse rejects.
+  const modeNear = /^[^A-Za-z]*\b(release|run)\s+mode\b/i
+  const modeStrict = /^(Release mode|Run mode)\s*:\s*[A-Za-z-]+/i
+  for (const epic of epics) {
+    if (modeContradiction(epic))
+      add('fail', `${epic.epic}: Run mode: autonomous with Release mode: ${epic.releaseMode} — autonomous requires integration topology; unattended merges may only target the epic branch`)
+    if (!RELEASE_MODES.has(epic.releaseMode))
+      add('warn', `${epic.epic}: unrecognised release mode "${epic.releaseMode}" (known: serial, integration) — skills reading this line will not know which branch topology to use`)
+    if (epic.runMode && !RUN_MODES.has(epic.runMode))
+      add('warn', `${epic.epic}: unrecognised run mode "${epic.runMode}" (known: autonomous) — treated as attended`)
+    readFileSync(epic.ticketsDoc, 'utf8').split(/^##\s/m)[0].split('\n').forEach((line, i) => {
+      if (modeNear.test(line) && !modeStrict.test(line))
+        add('warn', `${epic.epic}/tickets.md:${i + 1} — looks like a mode line but will not parse, so it silently defaults (needs "Release mode: <value>" / "Run mode: <value>" at line start, no formatting): ${line.trim()}`)
+    })
+  }
+
   const nearTicket = new RegExp(`^##\\s+[A-Za-z][A-Za-z0-9]*-\\d+`)
   const nearStatus = new RegExp(`^###\\s+[A-Za-z][A-Za-z0-9]*-\\d+`)
   for (const epic of epics) {
@@ -440,6 +489,13 @@ switch (cmd) {
       process.exit(1)
     }
     const epic = data.epics.find((e) => e.epic === t.epic)
+    if (modeContradiction(epic)) {
+      console.error(
+        `tickets: epic "${epic.epic}" declares Run mode: autonomous with Release mode: ${epic.releaseMode}. ` +
+          'Autonomous requires integration topology — unattended merges may only target the epic branch, never the default branch. Fix the epic preamble first.',
+      )
+      process.exit(1)
+    }
     // Absolute paths, always. The caller may be anywhere in the tree — a skill
     // that has just run `cd api-gateway` still has to open these, and the Read
     // tool takes absolute paths anyway.
@@ -449,6 +505,8 @@ switch (cmd) {
       epic: t.epic,
       state: t.state,
       branch: t.branch,
+      releaseMode: epic.releaseMode,
+      runMode: epic.runMode,
       repoRoot,
       epicDir: epic.dir,
       ticketsDoc: epic.ticketsDoc,
@@ -482,6 +540,7 @@ switch (cmd) {
         onMainCapped: data.onMainCapped,
         current: data.current?.epic || null,
         epics: data.epics.map((e) => e.epic),
+        modes: Object.fromEntries(data.epics.map((e) => [e.epic, { releaseMode: e.releaseMode, runMode: e.runMode }])),
         duplicates: data.duplicates,
         tickets: data.tickets.map(({ body, ...t }) => t),
       })
