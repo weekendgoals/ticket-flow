@@ -4,6 +4,29 @@ The plugin is the methodology's distribution mechanism: a change to a skill is
 a behaviour change in every project that installs it. This file is what makes
 those changes deliberate and visible.
 
+## 1.5.0 — 2026-08-08
+
+Four items adopted from an external methodology review; its other proposals
+(a standalone principles document, a per-ticket risk matrix, a deployment
+toolkit) were rejected under the new admission test.
+
+- **The quick path is risk-gated, not just size-gated.** Auth or authorization
+  boundaries, secrets/crypto, migrations and data rewrites, new network
+  exposure, payments, and anything that can fail open route to `/flow:epic`
+  at any size — a single-ticket epic is fine; the plan review and sign-off
+  are what consequential work must not skip.
+- **Epics state a falsifiable Outcome** — problem, observable change,
+  evidence, reversal condition. The plan reviewer flags outcomes that cannot
+  fail; `/flow:retro` gains a fifth question checking the evidence. The only
+  part of the flow that looks past the merge, and it stays human-invoked.
+- **Integration mode is challenged as a design choice.** The epic template and
+  the plan reviewer both push expand/contract and feature flags before
+  accepting "cannot ship alone".
+- **METHODOLOGY.md names the philosophy** (evidence-driven development under
+  disposable context) and adopts **the admission test**: every artifact and
+  gate must reduce uncertainty, constrain blast radius, preserve necessary
+  knowledge, or provide decision evidence — or it is ceremony.
+
 ## 1.4.0 — 2026-08-07
 
 - **New agent `flow:plan-reviewer`, wired into `/flow:epic`.** Before the

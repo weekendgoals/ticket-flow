@@ -32,8 +32,16 @@ anything in `context/`, and the shipped work itself:
 `git log origin/<default> --oneline | grep <epic's IDs>`. The instruction files
 for the areas the epic touched, as they are **now**.
 
-## 3. Mine it — four questions
+## 3. Mine it — five questions
 
+- **Did it work?** The epic's **Outcome** line named an observable change, its
+  evidence, and a reversal condition — check them. Three honest answers:
+  achieved (cite the evidence), not achieved (that is a planning finding, not
+  a failure to hide — say what the reversal condition implies), or not yet
+  assessable (say what evidence is still to arrive, and when to look again).
+  An epic that shipped every ticket and changed nothing observable is the
+  most expensive kind of success. Older epics without an Outcome line: say
+  so and move on — do not retrofit one.
 - **What is still owed?** Collect every **Owed** line and every review finding
   dispositioned as "pre-existing, handed to ticket X" or "out of scope, owned
   later". For each: did a shipped ticket actually inherit it? What survives is

@@ -11,7 +11,7 @@ state stored anywhere.
 |---|---|
 | `/flow:epic <name> [source...]` | Turn a request, report or conversation into `epics/<name>/`. Sources are files, globs or URLs, saved into `context/`; with none, the conversation is the brief. A fresh-context **plan reviewer** challenges the decomposition, then it **stops for sign-off** and commits — no pull request |
 | `/flow:ticket <ID>` | One ticket end to end: branch, implement, verify, log, commit, review, fix, push, pull request |
-| `/flow:quick <description>` | One **small** piece of work through the same loop — scope, review, log, pull request — with no epic ceremony. Writes a `Q-<n>` ticket into the standing `epics/quick/` epic and runs it |
+| `/flow:quick <description>` | One **small, low-risk** piece of work through the same loop — scope, review, log, pull request — with no epic ceremony. Size- **and risk-gated**: auth, secrets, migrations and other consequential work is routed to `/flow:epic` at any size. Writes a `Q-<n>` ticket into the standing `epics/quick/` epic and runs it |
 | `/flow:tickets [epic]` | The board — shipped, in flight, blocked, todo |
 | `/flow:review [range]` | Review a commit range and report. Used by `/flow:ticket`; runnable on its own |
 | `/flow:doctor` | Is this project ready for the flow? Preconditions, merge settings, instruction-file quality, and headings that would silently misparse |
