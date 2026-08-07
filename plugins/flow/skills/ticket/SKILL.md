@@ -16,9 +16,12 @@ nothing about this epic that is not written down.
 node "${CLAUDE_PLUGIN_ROOT}/scripts/tickets.mjs" find $ARGUMENTS --json
 ```
 
-This returns the epic's `ticketsDoc`, `statusDoc`, `contextDir`, `repoRoot` and
-the `branch` to create, as **absolute paths**. Never hardcode a path, and never
-turn them back into relative ones.
+This returns the epic's `ticketsDoc`, `statusDoc`, `contextDir`, `repoRoot`,
+the `branch` to create — as **absolute paths**; never hardcode a path or turn
+them back into relative ones — and the epic's `releaseMode` and `runMode`.
+The modes decide step 3, step 9 and step 10. `runMode: "autonomous"` only
+ever appears with integration topology; the contradiction is refused by the
+script before you see it.
 
 Both this command and every `git` command below work from anywhere in the tree —
 but your shell's cwd persists between calls, and verification moves it into a
@@ -221,26 +224,50 @@ git push -u origin <branch>
 gh pr create --base <base-branch> --title "<ID>: <title>" --body "<body>"
 ```
 
-`<base-branch>` is the base you noted in step 3 — the default branch, or
-`epic/<epic-name>` in integration mode, or `epic/<epic-name>` for the first
-ticket of any epic whose documents have not shipped yet.
+`<base-branch>` is the base you noted in step 3 — the default branch in
+serial mode, or `epic/<epic-name>` in integration mode. The first ticket of a
+serial epic **branches from** `epic/<epic-name>` (step 3) but its pull
+request still targets the default branch — that pull request is how the
+epic's documents ship; basing it on the epic branch would strand them there,
+since serial mode has no release pull request.
 
 The pull request body is the only thing read before this ships, so it carries:
 what changed and why, the acceptance criteria with evidence and counts, the
 review summary, and any precondition that must exist before deploy (a new
 environment variable, a migration, a script that runs after).
 
-Do not add Claude as a co-author. **Do not merge it, ever** — no `gh pr merge`,
-no `git merge`, no pushing to the default branch. A human merges in the GitHub
-UI. A single-ticket pull request titled `<ID>: <title>` may be squashed — the
-squash commit inherits the title, so `tickets.mjs` still sees the ID. What must
+Do not add Claude as a co-author. **No agent ever merges toward the default
+branch, in any mode** — no `gh pr merge` on a pull request based on main, no
+`git merge`, no pushing to main. A human merges those in the GitHub UI. A
+single-ticket pull request titled `<ID>: <title>` may be squashed — the squash
+commit inherits the title, so `tickets.mjs` still sees the ID. What must
 **never** be squashed is an integration release pull request: it carries many
 tickets, and squashing collapses their subjects into one, making every ticket
 but one read as unshipped.
 
-## 10. Stop
+The **one sanctioned agent merge** exists only in an autonomous epic, and its
+surface is the epic branch only — step 10.
 
-Print the pull request URL and
-`node "${CLAUDE_PLUGIN_ROOT}/scripts/tickets.mjs" next`.
+## 10. Stop — or, in an autonomous epic, integrate and continue
 
-Then stop. Do not start the next ticket. There is nothing to run after the merge.
+**If `runMode` is not `autonomous`** (every attended epic): print the pull
+request URL and `node "${CLAUDE_PLUGIN_ROOT}/scripts/tickets.mjs" next`. Then
+stop. Do not start the next ticket. There is nothing to run after the merge.
+
+**If `runMode` is `autonomous`:**
+
+- **An unreviewed ticket is never merged, anywhere.** Reaching this step
+  requires the review addendum from step 8 in the status log. If the reviewer
+  agent could not be spawned, the sanctioned fallback is a general agent
+  instructed by the reviewer definition plus the review skill; if that also
+  fails, stop — write a BLOCKED entry and merge nothing.
+- Verify the pull request's base is `epic/<epic-name>` — `gh pr view --json
+  baseRefName`. Anything else: stop. Do not retarget, do not merge.
+- Merge your own pull request into the epic branch with a merge commit:
+  `gh pr merge <number> --merge`. Never squash — the release pull request
+  needs the per-ticket subjects.
+- Report as in step 9, then **continue to the next ticket in document order**
+  instead of stopping. The epic's ground-rule stop conditions bind the whole
+  run; halting on one is the mechanism working, not a failure.
+- The default branch remains untouchable. The release pull request at the end
+  of the run is opened by the driver and merged by a human — never by you.

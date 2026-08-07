@@ -100,7 +100,16 @@ ticket's pull request targets `epic/<name>` and one release pull request goes to
 the default branch. Say in one line WHY they cannot ship alone — and treat
 "cannot ship alone" as a design choice to challenge first, not a fact:
 expand/contract migrations and feature flags usually make a ticket shippable
-on its own.>
+on its own. An autonomous run mode is the other legitimate reason: it
+requires integration topology, so unattended merges never target the default
+branch.>
+
+Run mode: autonomous
+<OPTIONAL — omit the line entirely for attended epics, which is the default.
+Only valid with integration topology; `tickets.mjs` refuses the combination
+with serial. Declaring it means: after sign-off, each ticket implements,
+reviews, fixes and merges its own pull request into `epic/<name>` unattended,
+and the human's next decision point is the release pull request.>
 
 Status log: `epics/<name>/status.md`. Run a ticket with `/flow:ticket <ID>`.
 
@@ -176,6 +185,12 @@ Show the user: the ticket list with one line each, the order, what ticket one
 proves, the release mode and why, anything you found while grounding that
 changes the shape of the work — and the plan review's outcome: what it flagged,
 what you changed, what you rejected and why, and its open questions.
+
+**If the epic declares `Run mode: autonomous`, the sign-off must say so in
+plain terms**: "after your approval, tickets will implement, review and merge
+into `epic/<name>` unattended; your next decision point is the release pull
+request." Approval of an autonomous epic is approval of that, and the user
+must be able to see it.
 
 **Ask explicitly, and wait.** Do not write the status doc, do not touch the root
 instruction file, do not start ticket one. Re-planning is cheap now and expensive

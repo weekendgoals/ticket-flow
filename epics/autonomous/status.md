@@ -78,3 +78,44 @@ user's approval: each autonomous ticket runs in a fresh-context subagent
 (AUTO-3), and branch protection on the default branch becomes documented
 environment setup verified by AUTO-4 before the live run. Nothing deferred
 beyond what was already owed.
+
+### AUTO-2 — the gated self-merge path in the ticket loop — 2026-08-08 — DONE
+
+**Built:** Plugin v1.8.0. `skills/ticket` step 10 forks on `runMode`:
+attended epics unchanged (stop at the PR); autonomous epics verify the review
+addendum exists (unreviewed is never merged — reviewer-spawn failure falls
+back to an instructed general agent, and stops if that fails), verify the
+PR's base is `epic/<name>` via `gh pr view`, merge with a merge commit only,
+report, and continue to the next ticket. Step 9's merge doctrine rescoped:
+"no agent ever merges toward the default branch, in any mode" with the one
+sanctioned exception pointing at step 10. Step 1 documents the
+`releaseMode`/`runMode` fields AUTO-1 added to `find --json`. `skills/epic`
+template gains the optional `Run mode: autonomous` line with the sign-off
+obligation to state the unattended consequence in plain terms;
+`agents/plan-reviewer` accepts autonomy as a legitimate integration-mode
+reason and flags a sign-off that hides the consequence. `CLAUDE.md` merge
+invariant rescoped in the same commit. Inherited fix landed: step 9 no
+longer tells a serial epic's first ticket to base its PR on the epic branch
+(AUTO-1's owed contradiction — the docs would strand there; verified against
+README §Serial or integration and epic skill step 7).
+
+**Files touched:** `plugins/flow/skills/ticket/SKILL.md`,
+`plugins/flow/skills/epic/SKILL.md`, `plugins/flow/agents/plan-reviewer.md`,
+`CLAUDE.md`, `plugins/flow/.claude-plugin/plugin.json`, `CHANGELOG.md`, this
+file. Branch `auto-2`, cut from `auto-1` — deliberate stack on user
+instruction while AUTO-1's PR #5 is in review; its PR bases on `auto-1` and
+retargets to main when #5 merges.
+
+**Verified:** 15 tests, 15 pass, 0 fail (no script changes in this ticket;
+standing checks). `doctor` exit 0. Guard citations per acceptance criteria:
+step 10 "If `runMode` is not `autonomous` … If `runMode` is `autonomous`";
+step 9 "No agent ever merges toward the default branch, in any mode".
+
+**Decisions:** The base-branch verification (`gh pr view --json baseRefName`
+before the sanctioned merge) was added beyond the epic's literal scope text —
+it is the cheapest mechanical check that the one sanctioned merge is aimed at
+the only sanctioned surface, and omitting it would leave the rule purely
+behavioural. Squash explicitly forbidden for the self-merge: the release PR
+needs per-ticket subjects.
+
+**Owed:** Nothing.
