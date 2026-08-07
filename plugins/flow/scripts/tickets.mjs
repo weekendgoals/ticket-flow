@@ -1,0 +1,374 @@
+#!/usr/bin/env node
+// tickets — derive epic/ticket state instead of maintaining it by hand.
+//
+// Hand-maintained status tables drift from the thing they describe, so nothing
+// here is read from one. Every fact comes from a source that cannot misreport
+// itself:
+//
+//   what the tickets are  ->  "## <ID> — <title>" headings in epics/<e>/tickets.md
+//   what is implemented   ->  "### <ID> — … — DONE" headings in epics/<e>/status.md
+//   what is in flight     ->  local git branches named for the ticket
+//   what has shipped      ->  commit subjects on main, and gh pr list
+//
+// Usage — run with node from anywhere inside the target repo. Shipped with the
+// `flow` plugin, so skills invoke it as
+// `node "${CLAUDE_PLUGIN_ROOT}/scripts/tickets.mjs" <command>`:
+//
+//   tickets.mjs list [epic] [--json]     status board, all epics or one
+//   tickets.mjs find <ID> [--json]       resolve an ID to its epic's doc paths
+//   tickets.mjs next [epic] [--json]     what to start next
+//   tickets.mjs epics [--json]           list known epics
+//   tickets.mjs current [--json]         the epic this folder belongs to
+//
+// The repo is resolved from the current working directory, not from this file's
+// location, so running it out of the plugin cache is correct.
+//
+// Zero dependencies, no configuration, stores nothing.
+
+import { execFileSync } from 'node:child_process'
+import { readFileSync, readdirSync, existsSync, statSync } from 'node:fs'
+import { join, basename } from 'node:path'
+
+const TICKET_ID = '[A-Z][A-Z0-9]*-\\d+'
+
+// ── shell helpers ────────────────────────────────────────────────────────────
+
+function git(args, { allowFail = false } = {}) {
+  try {
+    return execFileSync('git', args, { cwd: repoRoot, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim()
+  } catch (e) {
+    if (allowFail) return null
+    throw new Error(`git ${args.join(' ')} failed: ${e.stderr || e.message}`)
+  }
+}
+
+const repoRoot = (() => {
+  try {
+    return execFileSync('git', ['rev-parse', '--show-toplevel'], { encoding: 'utf8' }).trim()
+  } catch {
+    console.error('tickets: not inside a git repository')
+    process.exit(1)
+  }
+})()
+
+const defaultBranch =
+  (git(['symbolic-ref', '--short', 'refs/remotes/origin/HEAD'], { allowFail: true }) || 'origin/main')
+    .replace(/^origin\//, '')
+
+// ── epic discovery ───────────────────────────────────────────────────────────
+
+// An epic is a directory under epics/ containing tickets.md. Its status log and
+// context live beside it, so there is no index file to keep honest.
+function discoverEpics() {
+  const root = join(repoRoot, 'epics')
+  if (!existsSync(root)) return []
+  return readdirSync(root)
+    .filter((name) => {
+      const dir = join(root, name)
+      return statSync(dir).isDirectory() && existsSync(join(dir, 'tickets.md'))
+    })
+    .map((name) => {
+      const dir = join(root, name)
+      const optional = (f) => (existsSync(join(dir, f)) ? join(dir, f) : null)
+      return {
+        epic: name,
+        dir,
+        ticketsDoc: join(dir, 'tickets.md'),
+        statusDoc: optional('status.md'),
+        contextDir: optional('context'),
+      }
+    })
+    .sort((a, b) => a.epic.localeCompare(b.epic))
+}
+
+// The wg folder IS the epic — a folder named <name> works the epic in
+// epics/<name>/. So the folder's own name is the answer whenever it names a real
+// epic, and no search is needed. The main checkout is not an epic folder and
+// returns null.
+function currentEpic(epics) {
+  const folder = basename(repoRoot)
+  return epics.find((e) => e.epic === folder) || null
+}
+
+// ── ticket-doc parsing ───────────────────────────────────────────────────────
+
+// Split a ticket doc into "## <ID> — <title>" sections. Anything above the first
+// such heading is epic preamble (ground rules, ordering) and is not a ticket.
+function parseTickets(epic) {
+  const text = readFileSync(epic.ticketsDoc, 'utf8')
+  const heading = new RegExp(`^##\\s+(${TICKET_ID})\\s*[—–-]\\s*(.+?)\\s*$`)
+
+  const tickets = []
+  let current = null
+  for (const line of text.split('\n')) {
+    const m = line.match(heading)
+    if (m) {
+      // Strip any status glyph a human hand-added to the heading — the state
+      // comes from git, and a stale ✅ in a title is exactly the drift this
+      // script exists to stop mattering.
+      current = { id: m[1], title: m[2].replace(/[\s✅✓☑️❌⛔️🚧]+$/u, '').trim(), epic: epic.epic, body: [] }
+      tickets.push(current)
+    } else if (current) {
+      current.body.push(line)
+    }
+  }
+  for (const t of tickets) t.body = t.body.join('\n').trim()
+  return tickets
+}
+
+// ── status-log parsing ───────────────────────────────────────────────────────
+
+// "### <ID> — <title> — <YYYY-MM-DD> — DONE|BLOCKED|ABANDONED"
+function parseStatus(epic) {
+  const byId = {}
+  if (!epic.statusDoc) return byId
+  const heading = new RegExp(
+    `^###\\s+(${TICKET_ID})\\s*[—–-]\\s*(.+?)\\s*[—–-]\\s*(\\d{4}-\\d{2}-\\d{2})\\s*[—–-]\\s*([A-Z]+)\\s*$`,
+  )
+  for (const line of readFileSync(epic.statusDoc, 'utf8').split('\n')) {
+    const m = line.match(heading)
+    // Append-only means an ID can appear more than once; the last one wins.
+    if (m) byId[m[1]] = { id: m[1], date: m[3], outcome: m[4] }
+  }
+  return byId
+}
+
+// ── git and GitHub state ─────────────────────────────────────────────────────
+
+const branchNameFor = (id) => id.toLowerCase()
+
+function localBranches() {
+  const out = git(['for-each-ref', '--format=%(refname:short)', 'refs/heads'], { allowFail: true })
+  return new Set(out ? out.split('\n').filter(Boolean) : [])
+}
+
+// One gh call for the whole board. Offline or unauthenticated is not fatal —
+// the board degrades to git-only facts and says so.
+function pullRequests() {
+  try {
+    const out = execFileSync(
+      'gh',
+      ['pr', 'list', '--state', 'all', '--limit', '200', '--json', 'number,headRefName,state,url,isDraft'],
+      { cwd: repoRoot, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] },
+    )
+    const byBranch = {}
+    for (const pr of JSON.parse(out)) if (!byBranch[pr.headRefName]) byBranch[pr.headRefName] = pr
+    return { byBranch, available: true }
+  } catch {
+    return { byBranch: {}, available: false }
+  }
+}
+
+// Ticket IDs that already have commits on the default branch. This is the
+// authority on "shipped", rather than the PR head branch, because a branch name
+// only matches when the author followed the convention — work merged under any
+// other branch name would read as unshipped forever. One log call, matched
+// against every commit subject, which is why CLAUDE.md requires the ID prefix.
+function idsOnMain() {
+  const out = git(['log', `origin/${defaultBranch}`, '--format=%s', '-n', '4000'], { allowFail: true })
+  const ids = new Set()
+  if (!out) return ids
+  const re = new RegExp(`^(${TICKET_ID})[:\\s]`)
+  for (const subject of out.split('\n')) {
+    const m = subject.match(re)
+    if (m) ids.add(m[1])
+  }
+  return ids
+}
+
+function commitsAhead(branch) {
+  const n = git(['rev-list', '--count', `origin/${defaultBranch}..${branch}`], { allowFail: true })
+  return n === null ? 0 : Number(n)
+}
+
+// ── state resolution ─────────────────────────────────────────────────────────
+
+const STATES = ['shipped', 'in-review', 'done', 'in-progress', 'blocked', 'todo']
+
+function resolveState(ticket, status, branches, prs, onMain) {
+  const branch = branchNameFor(ticket.id)
+  const pr = prs.byBranch[branch]
+  const entry = status[ticket.id]
+
+  if (onMain.has(ticket.id)) return { state: 'shipped', branch, pr }
+  if (pr && pr.state === 'MERGED') return { state: 'shipped', branch, pr }
+  if (pr && pr.state === 'OPEN') return { state: 'in-review', branch, pr }
+  if (entry?.outcome === 'BLOCKED' || entry?.outcome === 'ABANDONED') return { state: 'blocked', branch, pr }
+  if (entry?.outcome === 'DONE') return { state: 'done', branch, pr }
+  if (branches.has(branch) && commitsAhead(branch) > 0) return { state: 'in-progress', branch, pr }
+  return { state: 'todo', branch, pr }
+}
+
+function board(epicFilter) {
+  const allEpics = discoverEpics()
+  const epics = allEpics.filter((e) => !epicFilter || e.epic === epicFilter)
+  const branches = localBranches()
+  const prs = pullRequests()
+  const onMain = idsOnMain()
+
+  const tickets = []
+  for (const epic of epics) {
+    const status = parseStatus(epic)
+    for (const t of parseTickets(epic)) {
+      tickets.push({ ...t, ...resolveState(t, status, branches, prs, onMain) })
+    }
+  }
+  return {
+    epics,
+    tickets,
+    byId: Object.fromEntries(tickets.map((t) => [t.id, t])),
+    current: currentEpic(allEpics),
+    prsAvailable: prs.available,
+    defaultBranch,
+  }
+}
+
+// ── output ───────────────────────────────────────────────────────────────────
+
+const C = process.stdout.isTTY
+  ? { dim: '\x1b[2m', red: '\x1b[31m', green: '\x1b[32m', yellow: '\x1b[33m', blue: '\x1b[34m', bold: '\x1b[1m', off: '\x1b[0m' }
+  : { dim: '', red: '', green: '', yellow: '', blue: '', bold: '', off: '' }
+
+const BADGE = {
+  shipped: `${C.green}shipped${C.off}`,
+  'in-review': `${C.blue}in review${C.off}`,
+  done: `${C.yellow}done, unpushed${C.off}`,
+  'in-progress': `${C.yellow}in progress${C.off}`,
+  blocked: `${C.red}blocked${C.off}`,
+  todo: `${C.dim}todo${C.off}`,
+}
+
+function printBoard(data, epicFilter) {
+  if (!data.tickets.length) {
+    console.log(epicFilter ? `no epic "${epicFilter}" under epics/` : 'no epics found under epics/')
+    return
+  }
+  if (!data.prsAvailable) {
+    console.log(`${C.dim}(gh unavailable — PR state omitted, "done" may already be merged)${C.off}\n`)
+  }
+
+  for (const epic of data.epics) {
+    const ts = data.tickets.filter((t) => t.epic === epic.epic)
+    if (!ts.length) continue
+    const counts = STATES.map((s) => [s, ts.filter((t) => t.state === s).length]).filter(([, n]) => n)
+    const here = data.current?.epic === epic.epic ? `${C.green}  ← this folder${C.off}` : ''
+    console.log(
+      `${C.bold}${epic.epic}${C.off} ${C.dim}— ${ts.length} tickets · ` +
+        counts.map(([s, n]) => `${n} ${s}`).join(' · ') + `${C.off}${here}`,
+    )
+    for (const t of ts) {
+      const title = t.title.length > 46 ? t.title.slice(0, 45) + '…' : t.title
+      console.log(
+        `  ${t.id.padEnd(8)} ${title.padEnd(46)} ${BADGE[t.state]}` + (t.pr ? `  #${t.pr.number}` : ''),
+      )
+    }
+    console.log()
+  }
+
+  // Document order is the epic's intended order — the ticket docs deliberately
+  // put the de-risking probe or the live regression first.
+  const open = data.tickets.filter((t) => t.state === 'todo')
+  if (!open.length) {
+    console.log(data.tickets.length ? 'Nothing left to start.' : '')
+    return
+  }
+  console.log(`${C.bold}Next up${C.off}`)
+  for (const epic of data.epics) {
+    const mine = open.filter((t) => t.epic === epic.epic)
+    if (!mine.length) continue
+    const rest = mine.length - 1
+    console.log(
+      `  ${C.green}/ticket ${mine[0].id}${C.off}  ${mine[0].title}` +
+        (rest ? `  ${C.dim}(+${rest} more in ${epic.epic})${C.off}` : ''),
+    )
+  }
+}
+
+// ── entry point ──────────────────────────────────────────────────────────────
+
+const argv = process.argv.slice(2)
+const json = argv.includes('--json')
+const [cmd, arg] = argv.filter((a) => !a.startsWith('--'))
+const emit = (o) => console.log(JSON.stringify(o, null, 2))
+
+switch (cmd) {
+  case 'epics': {
+    const epics = discoverEpics()
+    if (json) emit(epics.map((e) => ({ ...e, repoRoot, isCurrent: currentEpic(epics)?.epic === e.epic })))
+    else if (!epics.length) console.log('no epics found under epics/')
+    else for (const e of epics) console.log(`${e.epic.padEnd(20)} ${e.ticketsDoc}`)
+    break
+  }
+
+  case 'current': {
+    const epic = currentEpic(discoverEpics())
+    if (json) emit(epic ? { ...epic, repoRoot } : null)
+    else if (!epic) console.log(`this folder (${basename(repoRoot)}) is not an epic folder`)
+    else console.log(epic.epic)
+    break
+  }
+
+  case 'find': {
+    if (!arg) {
+      console.error('usage: tickets.mjs find <ID>')
+      process.exit(2)
+    }
+    const id = arg.toUpperCase()
+    const data = board(null)
+    const t = data.byId[id]
+    if (!t) {
+      console.error(`tickets: no ticket "${id}". Known IDs: ${data.tickets.map((x) => x.id).join(', ') || '(none)'}`)
+      process.exit(1)
+    }
+    const epic = data.epics.find((e) => e.epic === t.epic)
+    // Absolute paths, always. The caller may be anywhere in the tree — a skill
+    // that has just run `cd api-gateway` still has to open these, and the Read
+    // tool takes absolute paths anyway.
+    const out = {
+      id: t.id,
+      title: t.title,
+      epic: t.epic,
+      state: t.state,
+      branch: t.branch,
+      repoRoot,
+      epicDir: epic.dir,
+      ticketsDoc: epic.ticketsDoc,
+      statusDoc: epic.statusDoc || join(epic.dir, 'status.md'),
+      statusDocExists: Boolean(epic.statusDoc),
+      contextDir: epic.contextDir,
+      isCurrentFolderEpic: data.current?.epic === t.epic,
+      pr: t.pr || null,
+    }
+    if (json) emit(out)
+    else for (const [k, v] of Object.entries(out)) console.log(`${k.padEnd(22)} ${v}`)
+    break
+  }
+
+  case 'next': {
+    const data = board(arg || null)
+    const open = data.tickets.filter((t) => t.state === 'todo')
+    if (json) emit(open.map((t) => ({ id: t.id, title: t.title, epic: t.epic })))
+    else if (!open.length) console.log('nothing left to start')
+    else for (const t of open) console.log(`${t.id.padEnd(8)} ${t.title}`)
+    break
+  }
+
+  case 'list':
+  case undefined: {
+    const data = board(arg || null)
+    if (json) {
+      emit({
+        defaultBranch: data.defaultBranch,
+        prsAvailable: data.prsAvailable,
+        current: data.current?.epic || null,
+        epics: data.epics.map((e) => e.epic),
+        tickets: data.tickets.map(({ body, ...t }) => t),
+      })
+    } else printBoard(data, arg)
+    break
+  }
+
+  default:
+    console.error(`tickets: unknown command "${cmd}" (try: list, find, next, epics, current)`)
+    process.exit(2)
+}

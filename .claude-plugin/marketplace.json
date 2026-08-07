@@ -1,0 +1,16 @@
+{
+  "name": "ticket-flow",
+  "description": "Epic-and-ticket workflow for Claude Code: plan an epic, run one ticket end to end, review it with a fresh agent, ship it as a pull request.",
+  "owner": {
+    "name": "Vadim Tarasov"
+  },
+  "plugins": [
+    {
+      "name": "flow",
+      "source": "./plugins/flow",
+      "description": "Turn a request into an epic, run its tickets one at a time to reviewed pull requests, and derive the board from git instead of maintaining it.",
+      "category": "workflow",
+      "keywords": ["epic", "ticket", "workflow", "code-review", "pull-request"]
+    }
+  ]
+}
