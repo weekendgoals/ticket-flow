@@ -27,3 +27,15 @@ version (a repo-level doc changes no skill behaviour); per-skill documentation.
 - `node --test plugins/flow/scripts/tickets.test.mjs` — 9 tests, 9 pass.
 - `node plugins/flow/scripts/tickets.mjs doctor` — reports
   `root agent instructions: CLAUDE.md` as ✓ and exits 0.
+
+## Q-2 — METHODOLOGY.md says "four skills"; there are seven
+
+**Scope.**
+- `METHODOLOGY.md:3` — "the rules live where they are executed, in the four
+  skills" predates quick, doctor and retro. Fix the count (or drop the number
+  so it cannot go stale again). Found by Q-1's review as pre-existing.
+
+**Not in scope.** Any other METHODOLOGY.md editing.
+
+**Acceptance criteria.**
+- `grep -n "four skills" METHODOLOGY.md` — no matches.
