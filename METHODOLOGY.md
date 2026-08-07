@@ -230,16 +230,21 @@ every one of those bullets and is still the most dangerous diff of the week —
 line count measures neither blast radius nor reversibility.
 
 The instinct already existed in one place: the ticket skill scales review
-effort to consequence, forcing the highest tier for auth boundaries, secrets,
-crypto, network exposure, migrations, anything that fails open. But review
-effort is applied after the work is built; the entry gate is where the
-decision is cheap. So the quick skill carries the same triggers — plus
-payments and data rewrites, which the ticket skill's tier then inherited —
-routing such work to `/flow:epic` at any size. A single-ticket epic is fine;
-what consequential work must not skip is the plan review and the human
-sign-off. The two skills each carry the list where it is executed; when one
-learns a new trigger, the other inherits it in the same commit, because they
-measure the same thing — consequence — at two doors.
+effort to consequence, forcing its highest tier for changes of exactly this
+shape. But review effort is applied after the work is built; the entry gate is
+where the decision is cheap. So the quick skill carries the triggers at the
+door, routing such work to `/flow:epic` at any size — a single-ticket epic is
+fine; what consequential work must not skip is the plan review and the human
+sign-off.
+
+The triggers themselves are deliberately not listed here — the two skills each
+carry the one list where it is executed, bound by a same-commit inheritance
+rule (in both skills, and in the repository's own instruction file), because
+they measure the same thing at two doors. They diverged silently once: the
+quick path learned payments and data rewrites at its birth, the review tier
+did not, and reconciling them cost a ticket. An enumeration in this document
+would be a third copy with no execution site, which is how the last drift
+started.
 
 ## Why small work has a path
 

@@ -49,6 +49,9 @@ path explicitly.
 - **Reviewers report and never fix.** Do not give `ticket-reviewer` or
   `plan-reviewer` write instructions, and do not add post-merge steps to any
   skill — a human merges, nothing runs after.
+- **The two risk lists are one list.** The quick skill's entry triggers and
+  the ticket skill's `xhigh` review tier measure the same consequences at two
+  doors — a trigger added to either is added to the other in the same commit.
 - **New artifacts and gates must pass the admission test** (METHODOLOGY.md §
   "The admission test"): reduce uncertainty, constrain blast radius, preserve
   necessary knowledge, or provide decision evidence — at least one, or it is

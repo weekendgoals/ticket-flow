@@ -170,9 +170,9 @@ Spawn the reviewer with the **Agent** tool:
   change; `high` for any normal implementation ticket; `xhigh` for authentication
   or authorization boundaries, secrets, crypto, network exposure, migrations,
   anything that deletes or rewrites data, payments or billing, or anything that
-  can fail open. This is the same list that gates entry to `/flow:quick` —
-  consequence is measured once, at both doors. Pick it yourself and say which;
-  do not ask.
+  can fail open. This is the same list that gates entry to `/flow:quick` — a
+  trigger added to either list is added to the other **in the same commit**.
+  Pick the effort yourself and say which; do not ask.
 
 Tell it to follow **the `/flow:review` skill** and give it:
 

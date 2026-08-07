@@ -157,3 +157,19 @@ distinction with no reason behind it. Coupling rule written into both the
 skill and METHODOLOGY so the lists cannot silently diverge again.
 
 **Owed:** Nothing.
+
+**Addendum — review — 2026-08-08 — fable/high:** One Important (confirmed),
+one nit (confirmed); both fixed in the review-fix commit. Important: the
+same-commit inheritance rule lived only in METHODOLOGY.md — the document
+CLAUDE.md declares rules-free — and the quick skill, the door where the last
+divergence actually started, carried no cue at all. Fixed by putting the rule
+where it executes: in the quick skill beside its triggers, in the ticket
+skill beside its tier, and as a CLAUDE.md invariant (the heading-regex
+coupling precedent). Correction to this entry's Decisions line: as originally
+committed, the mechanism was one-directional and "cannot silently diverge
+again" overstated it; true only as of the review fix. Nit: METHODOLOGY's
+risk-gate paragraph still enumerated the tier list, a stale third copy —
+fixed by removing the enumeration entirely and saying why it is absent. The
+reviewer confirmed the two lists match item for item (the Q-3 error class was
+not repeated), acceptance criterion and standing checks re-run and green,
+scope clean, Q-5 addition is plan-only. Nothing deferred.
