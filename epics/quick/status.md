@@ -115,3 +115,13 @@ would drift again (it already had, from four to seven, unnoticed until Q-1's
 review).
 
 **Owed:** Nothing.
+
+**Addendum — review — 2026-08-08 — fable/medium:** No findings; approved
+as-is. Reviewer independently re-ran the acceptance criterion (grep exit 1)
+and standing checks (9/9 tests, doctor 0), confirmed the range touches only
+the header sentence and this log, and that no version bump is correct for a
+docs-only change. It also swept for other stale counts: `README.md:7`
+("Seven skills, two reviewer agents") is accurate today but is the same
+hand-maintained-mirror shape — noted here as an observation, not a defect;
+whoever next changes the skill roster should prefer dropping that count too.
+Nothing fixed, nothing deferred.
