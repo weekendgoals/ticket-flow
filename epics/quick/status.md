@@ -80,3 +80,16 @@ rather than any post-merge step, preserving "no command after the merge".
 Older epics without an Outcome line are explicitly not retrofitted.
 
 **Owed:** Nothing.
+
+**Addendum — review — 2026-08-08 — fable/high:** Two nits, no Important
+findings; approvable as-is. Both fixed in a review-fix commit. (1) Confirmed:
+METHODOLOGY's new risk-gate section misquoted the ticket skill's xhigh list
+(omitted network exposure) and falsely called the quick triggers "the same
+list" — reworded to "a superset", and the substantive question (should the
+ticket skill's xhigh tier inherit payments and data rewrites?) handed to
+**Q-4**, added to the ticket doc. (2) Plausible, accepted: the admission test
+was a binding rule living only in the reasoning-only document, unreachable by
+the future sessions it gates — a pointer invariant added to CLAUDE.md.
+Reviewer independently re-ran all three acceptance criteria (9/9, doctor 0,
+1.5.0 = CHANGELOG head) and confirmed scope discipline incl. Q-2's line
+untouched. Nothing deferred beyond Q-4.

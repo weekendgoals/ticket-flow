@@ -66,3 +66,21 @@ switches), production observation artifacts. Q-2 owns the "four skills" line.
 - `node plugins/flow/scripts/tickets.mjs doctor` — exit 0.
 - `plugins/flow/.claude-plugin/plugin.json` version equals the top
   CHANGELOG.md entry (1.5.0).
+
+## Q-4 — decide whether the ticket skill's xhigh tier inherits payments and data rewrites
+
+**Scope.**
+- Q-3 made the quick skill's risk triggers a superset of the ticket skill's
+  xhigh review-effort list (`skills/ticket` step 7): payments and
+  data-deleting/rewriting changes route to an epic but then review at `high`,
+  not `xhigh`. Found by Q-3's review. Decide deliberately — either add both
+  triggers to the ticket skill's xhigh list, or record in METHODOLOGY.md why
+  entry gating and review effort intentionally differ. Version bump if the
+  skill changes.
+
+**Not in scope.** Any other change to the effort scale or the quick triggers.
+
+**Acceptance criteria.**
+- The two lists either match or the difference is explained in METHODOLOGY.md
+  with a reason; `grep -n "payment" plugins/flow/skills/ticket/SKILL.md
+  METHODOLOGY.md` shows whichever was chosen.
