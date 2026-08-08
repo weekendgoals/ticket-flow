@@ -388,6 +388,16 @@ test('a mode line that almost parses is a doctor warning, not a silent default',
   }
 })
 
+test('well-formed mode and Reviewer model lines are doctor-silent', () => {
+  // The ACCEPTING branch of doctor's strict preamble parse. gamma carries all
+  // three labels well-formed (two prose-decorated) — none may warn. Mutation
+  // found by Q-7's review: with the Reviewer model alternative deleted from
+  // modeStrict, every correctly configured epic warned and no test noticed.
+  const rows = JSON.parse(run(repo, 'doctor', '--json'))
+  const gamma = rows.filter((r) => r.msg.includes('gamma/tickets.md'))
+  assert.deepEqual(gamma, [], 'no doctor row may point at gamma/tickets.md')
+})
+
 test('an unrecognised mode value is a doctor warning, never a silent default', () => {
   mkdirSync(join(repo, 'epics/typo'), { recursive: true })
   writeFileSync(join(repo, 'epics/typo/tickets.md'), '# Typo\n\nRelease mode: sequential\n\n## T-1 — typo mode\n\n**Scope.** T.\n')

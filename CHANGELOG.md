@@ -20,6 +20,10 @@ Q-7: configurable reviewer model.
   the reviewer and keeps today's default when the line is absent: the
   strongest model available. **`skills/run`** states the same rule where the
   driver's workers spawn their reviewers. The default itself is unchanged.
+  The line governs the **ticket reviewer only**: the plan reviewer is spawned
+  on the draft the line lives in, before sign-off makes it configuration, and
+  stays on the strongest model available (review fix — the first README
+  wording implied both reviewers).
 - **`doctor`** extends its preamble near-miss scan to the new line: a
   formatted `**Reviewer model:**` reads as absent and would silently fall
   back to the default model, the same failure class as a near-miss mode line.

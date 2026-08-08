@@ -79,10 +79,10 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/tickets.mjs" find $ARGUMENTS --json
 
 This returns the epic's `ticketsDoc`, `statusDoc`, `contextDir`, `repoRoot`,
 the `branch` to create — as **absolute paths**; never hardcode a path or turn
-them back into relative ones — and the epic's `releaseMode` and `runMode`.
-The modes decide step 3, step 9 and step 10. `runMode: "autonomous"` only
-ever appears with integration topology; the contradiction is refused by the
-script before you see it.
+them back into relative ones — and the epic's `releaseMode`, `runMode` and
+`reviewerModel`. The modes decide step 3, step 9 and step 10; `reviewerModel`
+is read by step 7. `runMode: "autonomous"` only ever appears with integration
+topology; the contradiction is refused by the script before you see it.
 
 Both this command and every `git` command below work from anywhere in the tree —
 but your shell's cwd persists between calls, and verification moves it into a
