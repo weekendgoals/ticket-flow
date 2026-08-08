@@ -150,12 +150,15 @@ already have a `code-review-expert`, they do not collide.
 | `blocked` | Status log records BLOCKED or ABANDONED |
 | `todo` | Not started |
 
-Before starting a ticket, `node plugins/flow/scripts/tickets.mjs brief [ID]`
-prints everything in one place: the ticket's full section from its epic's
+Before starting a ticket, the board script's `brief [ID]` subcommand prints
+everything in one place: the ticket's full section from its epic's
 `tickets.md` — Scope, Not in scope, Acceptance criteria — plus the derived
 facts the board knows (state, branch, epic, modes, pull request). With no ID
 it briefs the first startable ticket, naming the epic it came from; `--json`
-returns the `find` payload with the section text as a `body` field.
+returns the `find` payload with the section text as a `body` field. The
+script ships inside the plugin, so it runs the same way every skill runs it:
+`node "${CLAUDE_PLUGIN_ROOT}/scripts/tickets.mjs" brief [ID]` — there is no
+`/flow:brief` slash command.
 
 Two blind spots worth knowing: the board reads *this checkout's* view of the
 remote, so fetch first when the answer matters; and `shipped` means some commit

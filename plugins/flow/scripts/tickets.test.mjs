@@ -252,10 +252,25 @@ test('brief refuses an unknown ID with find\'s refusal, verbatim', () => {
 })
 
 test('Next up hints that the brief exists', () => {
-  // Named as the script subcommand — /flow:brief is not an installed command,
-  // and the board never suggests a command that does not exist (BOARD-1).
+  // Named as this script's subcommand — /flow:brief is not an installed
+  // command and tickets.mjs is not on any PATH, and the board never suggests
+  // a command that does not survive being run (BOARD-1).
   const out = run(repo, 'list')
-  assert.match(out, /tickets\.mjs brief \[ID\]/)
+  assert.match(out, /this script's `brief \[ID\]` subcommand/)
+})
+
+test('brief with nothing startable says so instead of erroring', () => {
+  // In an autonomous run a bare nonzero exit is a stop condition — a board
+  // with nothing left to start is a fact, not an error, so brief mirrors
+  // next's honest empty answer: plain says so, --json emits null, exit 0.
+  const allDone = join(tmp, 'all-done')
+  git(tmp, 'init', '--initial-branch=main', allDone)
+  mkdirSync(join(allDone, 'epics/omega'), { recursive: true })
+  writeFileSync(join(allDone, 'epics/omega/tickets.md'), '# Omega\n\n## O-1 — finished work\n\n**Scope.** O.\n')
+  writeFileSync(join(allDone, 'epics/omega/status.md'), '### O-1 — finished work — 2026-08-08 — DONE\n')
+  const out = run(allDone, 'brief')
+  assert.match(out, /nothing left to start/)
+  assert.equal(run(allDone, 'brief', '--json').trim(), 'null')
 })
 
 test('mode lines parse tolerantly and expose in find and list', () => {

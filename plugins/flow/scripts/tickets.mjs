@@ -355,9 +355,10 @@ function printBoard(data, epicFilter) {
         (rest ? `  ${C.dim}(+${rest} more in ${epic.epic})${C.off}` : ''),
     )
   }
-  // Named as the script subcommand, not a slash command — /flow:brief does not
-  // exist, and the board never suggests a command that does not (BOARD-1).
-  console.log(`  ${C.dim}(tickets.mjs brief [ID] — a ticket's full scope, criteria and derived state)${C.off}`)
+  // Named as a subcommand of this script, not as a pasteable command line —
+  // /flow:brief does not exist and tickets.mjs is not on any PATH, and the
+  // board never suggests a command that does not survive being run (BOARD-1).
+  console.log(`  ${C.dim}(this script's \`brief [ID]\` subcommand prints a ticket's full scope, criteria and derived state)${C.off}`)
 }
 
 // ── doctor ───────────────────────────────────────────────────────────────────
