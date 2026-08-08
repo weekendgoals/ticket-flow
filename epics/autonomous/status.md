@@ -447,3 +447,61 @@ doctrine or routes through a worker is a retro decision, and its answer
 belongs in the quick skill's text with its reason. Re-verified after
 fixes: guard suite 10 pass 0 fail; tickets suite 24 pass 0 fail; doctor
 exit 0. Nothing else deferred.
+
+## Retro — 2026-08-08
+
+**Outcome: achieved, one recorded deviation.** The guinea-pig epic
+`board-ux` ran sign-off → release PR in ~40 minutes: 3/3 tickets
+`integrated` (PRs #9/#10/#11, each 0 comments, 0 reviews), `origin/main`
+unmoved during the run, release PR #12 opened by the driver and merged by
+the human (`9da46a4`). Reviewers caught one Important finding and several
+nits unattended. The mid-run reviewer-model directive is dispositioned in
+this epic's tickets.md (AUTO-4's amended criterion). The reversal condition
+— routine stalls, or release pull requests the human rejects — did not
+fire; one run is one data point, to be reassessed at the next autonomous
+epic's retro.
+
+**Lessons shipped as rules (all via Q-5, this section's carrier):**
+
+- Cross-document doctrine drift appeared in four of five reviews (AUTO-1's
+  step 9 contradiction, AUTO-2's step 3 recreating it, AUTO-3's CLAUDE.md
+  merge undercount, AUTO-5's README/CLAUDE.md denying the hook's state) →
+  CLAUDE.md invariant: a rule stated in more than one document is one rule.
+- Gates at the wrong door appeared in three tickets (AUTO-1's silent
+  mode-label near-misses, AUTO-3's refusal living in `find`/`doctor` while
+  the driver ran `list` plus the BLOCKED-resume hole, AUTO-5's guard
+  blocking its own advertised recovery) → CLAUDE.md invariant: a gate is
+  verified at the door its actor walks through, with a recovery that works.
+- The run-day 403 waiver (branch protection assumed at planning, found
+  unavailable on the free plan minutes before run start) → epic skill: an
+  autonomous plan probes its environment prerequisites at plan time.
+- AUTO-5's owed check handed to a lane that never reaches the step it
+  verifies → ticket skill: an Owed line names a carrier that can
+  structurally reach the check.
+- "The external record shows zero interventions" was unfalsifiable from the
+  day it was written — every actor acts under the human's GitHub identity →
+  epic skill Outcome template + METHODOLOGY: evidence names an observer
+  that can distinguish the outcomes.
+
+**Owed work dispositioned — all ticketed, none declined.** The four items
+from AUTO-4: configurable reviewer model → Q-7; unfiltered `list`'s false
+"no epics found" → Q-8; plain `find`'s `pr [object Object]` → Q-9; the run
+skill's undocumented 403 and the waiver path → Q-10. Retro-gate decisions:
+`/flow:quick` routes through the ticket loop's lane fork (user decision;
+closes the marked-session hole AUTO-5's review handed here) → Q-6. New
+user requests at the gate: per-ticket token accounting → Q-11;
+fresh-context retro → Q-12. AUTO-5's two owed live checks: criterion 1
+rides the first of Q-6–Q-12 run via `/flow:ticket` in supervisor mode;
+criterion 2 is a throwaway `--interactive` invocation in a fresh
+post-merge session — both results land as dated addenda to AUTO-5's entry.
+
+**Rediscovered twice, now documented once.** The GitHub protection
+endpoints' behaviour (404→rulesets in AUTO-3's review, free-plan 403 in
+AUTO-4's run) goes to the run skill with Q-10; the serial-first-ticket
+PR-base rule's second discovery (AUTO-1 found it, AUTO-2 recreated it) is
+the doctrine-drift invariant's founding case.
+
+**What planning got right is recorded too:** both mid-epic re-plans (fresh
+subagents and branch protection at AUTO-1's sign-off; AUTO-5 added after
+AUTO-2) were dated, recorded amendments — the gates worked as designed and
+nothing here changes them.

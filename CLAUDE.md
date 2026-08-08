@@ -67,6 +67,17 @@ path explicitly.
   "The admission test"): reduce uncertainty, constrain blast radius, preserve
   necessary knowledge, or provide decision evidence — at least one, or it is
   ceremony and does not land.
+- **A rule stated in more than one document is one rule.** Before changing a
+  sentence that states doctrine (merge rules, branch topology, mode
+  behaviour), grep its key phrase across the skills, README, METHODOLOGY and
+  this file and update every statement in the same commit — four of the
+  autonomous epic's five reviews found drift between documents that each
+  read correctly alone.
+- **A gate is verified at the door its actor walks through.** A refusal or
+  check must live in the command or step the guarded actor actually runs —
+  a sibling command that also checks guards nothing — and the refusal's
+  advertised recovery must work in the refused state. Both failure shapes
+  shipped repeatedly in the autonomous epic before review caught them.
 - **Docs style: every constraint carries its reason.** A bare rule ("never
   squash") without its mechanism (subjects are how shipped is detected) will
   be "simplified" away by a future session.

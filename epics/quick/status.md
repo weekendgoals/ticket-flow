@@ -173,3 +173,59 @@ fixed by removing the enumeration entirely and saying why it is absent. The
 reviewer confirmed the two lists match item for item (the Q-3 error class was
 not repeated), acceptance criterion and standing checks re-run and green,
 scope clean, Q-5 addition is plan-only. Nothing deferred.
+
+### Q-5 — ship the autonomous epic's retro — 2026-08-08 — DONE
+
+**Built:** Plugin v1.14.0 — the autonomous epic's retro, shipped as
+documents. `epics/autonomous/status.md` gains its `## Retro — 2026-08-08`
+section: outcome achieved with one recorded deviation, five lessons with
+their destinations, all owed work dispositioned. Root `CLAUDE.md` gains two
+invariants distilled from the epic's five reviews: a rule stated in more
+than one document is one rule (drift appeared in four of five reviews), and
+a gate is verified at the door its actor walks through (three tickets
+shipped checks a sibling command ran, or recoveries the rule itself
+blocked). `skills/epic`: declaring `Run mode: autonomous` obligates probing
+environment prerequisites at plan time (the first live run hit an unprobed
+free-plan 403 minutes before start), and the Outcome template requires the
+evidence line to name an observer that can distinguish the outcomes.
+`skills/ticket`: the Owed line requires a structurally capable carrier.
+METHODOLOGY.md § "Why the human gate can move to the release pull request"
+records the observer lesson. The retro's owed-work queue lands as Q-6–Q-12
+in `epics/quick/tickets.md`: quick routes through the lane fork (Q-6, retro
+gate decision), configurable reviewer model (Q-7), list's false "no epics
+found" (Q-8), find's `pr [object Object]` (Q-9), the run skill's 403 +
+waiver path (Q-10), token accounting (Q-11, user request), fresh-context
+retro (Q-12, user request).
+
+**Mode:** quick — in-session (/flow:quick).
+
+**Files touched:** `epics/autonomous/status.md`, `epics/quick/tickets.md`
+(Q-5 plan + Q-6–Q-12 queue), `CLAUDE.md`,
+`plugins/flow/skills/epic/SKILL.md`, `plugins/flow/skills/ticket/SKILL.md`,
+`METHODOLOGY.md`, `plugins/flow/.claude-plugin/plugin.json`,
+`CHANGELOG.md`, this file. Branch `q-5`, cut from `origin/main`.
+
+**Verified:** `node --test plugins/flow/scripts/tickets.test.mjs` — 24
+tests, 24 pass, 0 fail. `node --test
+plugins/flow/hooks/ticket-session-guard.test.mjs` — 10 tests, 10 pass, 0
+fail. `node --check plugins/flow/scripts/tickets.mjs` clean. `doctor` exit
+0, all five checks ✓. `plugin.json` 1.14.0 equals top CHANGELOG entry.
+`grep -c "## Retro — 2026-08-08" epics/autonomous/status.md` — 1.
+
+**Decisions:** (1) The retro's status-log section is `## Retro` (h2), per
+the retro skill — it collides with no parsed heading (those need an
+ID-shaped token). (2) All seven owed items became tickets; none declined —
+the user chose "ticket all three" for the review-found defects at the retro
+gate. (3) The quick-lane question was decided at the gate for routing
+through the ticket loop's step 0 (Q-6), over guard-only or a documented
+opt-out: quick's savings are planning ceremony, not execution hygiene. (4)
+The observer rule was written into the epic skill's Outcome template, not
+just METHODOLOGY — skills are self-sufficient, and the template is where an
+outcome is written. (5) Q-5 itself ran in-session through /flow:quick, the
+sanctioned lane as of v1.13.0; Q-6 is what changes that lane, and running
+it here would have been scope creep.
+
+**Owed:** AUTO-5's two live checks, unchanged owners: criterion 1 rides the
+first of Q-6–Q-12 run via `/flow:ticket` in supervisor mode; criterion 2 is
+a throwaway `--interactive` in a fresh post-merge session. Both land as
+addenda to AUTO-5's entry in `epics/autonomous/status.md`, not here.
