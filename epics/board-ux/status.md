@@ -123,3 +123,23 @@ also pins the valid-filter answer (`next alpha --json` → A-4, `list alpha
 tickets and a broken guard must fail the suite, not the run.
 
 **Owed:** Nothing.
+
+**Addendum — review — 2026-08-08 — opus/high:** Two findings, no Important
+ones. (1) Nit, fixed: the reworded ticketless-epic message in `printBoard`
+(`epic "<name>" has no tickets yet`) was a new user-facing string with no
+test — the one behaviour in the diff nothing caught. Fixed in commit
+"BOARD-2: pin the ticketless-epic message with a test (review fix)": a test
+builds a real epic with a sectionless tickets.md, asserts the honest wording
+and rejects the old `no epic … under epics/` lie. Suite 19 pass, 0 fail;
+doctor exit 0. (2) Pre-existing, not fixed — out of this ticket's scope and
+outside BOARD-3's too: unfiltered `list` on a repository whose epics all
+lack ticket sections prints `no epics found under epics/`, which is false
+(the reviewer reproduced it live; the string predates this ticket and is
+unchanged by it). Handed to a `/flow:quick` ticket to be filed after this
+run — this epic's write surface excludes other epics' documents, so it is
+recorded here for the retro rather than filed mid-run. Nothing else
+deferred. The reviewer also verified the new tests are not vacuous (deleting
+both guard call sites fails exactly the two new tests), the guard/entry-point
+matrix is complete, the driver-facing script contract is byte-identical for
+valid filters, every epic-filtered caller in the skills passes a real epic
+name, and the write surface holds.
