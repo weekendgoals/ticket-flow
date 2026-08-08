@@ -164,6 +164,15 @@ test('next proposes the first unstarted ticket in document order', () => {
   assert.deepEqual(open.map((t) => t.id), ['A-4', 'G-1'])
 })
 
+test('Next up suggests the installed, namespaced command', () => {
+  // Plugin commands are namespaced: the installed command is /flow:ticket.
+  // A bare /ticket suggestion is a live regression — a user ran it verbatim
+  // and got "Unknown command" (BOARD-1).
+  const out = run(repo, 'list')
+  assert.match(out, /\/flow:ticket A-4/, 'Next up proposes the namespaced command')
+  assert.ok(!/(?<!flow:)\/ticket /.test(out), `found a bare /ticket suggestion in:\n${out}`)
+})
+
 test('mode lines parse tolerantly and expose in find and list', () => {
   const g = JSON.parse(run(repo, 'find', 'G-1', '--json'))
   assert.equal(g.releaseMode, 'integration', 'prose after the value must not break the parse')

@@ -346,7 +346,7 @@ function printBoard(data, epicFilter) {
     if (!mine.length) continue
     const rest = mine.length - 1
     console.log(
-      `  ${C.green}/ticket ${mine[0].id}${C.off}  ${mine[0].title}` +
+      `  ${C.green}/flow:ticket ${mine[0].id}${C.off}  ${mine[0].title}` +
         (rest ? `  ${C.dim}(+${rest} more in ${epic.epic})${C.off}` : ''),
     )
   }
