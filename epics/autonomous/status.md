@@ -78,3 +78,73 @@ user's approval: each autonomous ticket runs in a fresh-context subagent
 (AUTO-3), and branch protection on the default branch becomes documented
 environment setup verified by AUTO-4 before the live run. Nothing deferred
 beyond what was already owed.
+
+### AUTO-2 — the gated self-merge path in the ticket loop — 2026-08-08 — DONE
+
+**Built:** Plugin v1.8.0. `skills/ticket` step 10 forks on `runMode`:
+attended epics unchanged (stop at the PR); autonomous epics verify the review
+addendum exists (unreviewed is never merged — reviewer-spawn failure falls
+back to an instructed general agent, and stops if that fails), verify the
+PR's base is `epic/<name>` via `gh pr view`, merge with a merge commit only,
+report, and continue to the next ticket. Step 9's merge doctrine rescoped:
+"no agent ever merges toward the default branch, in any mode" with the one
+sanctioned exception pointing at step 10. Step 1 documents the
+`releaseMode`/`runMode` fields AUTO-1 added to `find --json`. `skills/epic`
+template gains the optional `Run mode: autonomous` line with the sign-off
+obligation to state the unattended consequence in plain terms;
+`agents/plan-reviewer` accepts autonomy as a legitimate integration-mode
+reason and flags a sign-off that hides the consequence. `CLAUDE.md` merge
+invariant rescoped in the same commit. Inherited fix landed: step 9 no
+longer tells a serial epic's first ticket to base its PR on the epic branch
+(AUTO-1's owed contradiction — the docs would strand there; verified against
+README §Serial or integration and epic skill step 7).
+
+**Files touched:** `plugins/flow/skills/ticket/SKILL.md`,
+`plugins/flow/skills/epic/SKILL.md`, `plugins/flow/agents/plan-reviewer.md`,
+`CLAUDE.md`, `plugins/flow/.claude-plugin/plugin.json`, `CHANGELOG.md`, this
+file. Branch `auto-2`, cut from `auto-1` — deliberate stack on user
+instruction while AUTO-1's PR #5 is in review; its PR bases on `auto-1` and
+retargets to main when #5 merges.
+
+**Verified:** 15 tests, 15 pass, 0 fail (no script changes in this ticket;
+standing checks). `doctor` exit 0. Guard citations per acceptance criteria:
+step 10 "If `runMode` is not `autonomous` … If `runMode` is `autonomous`";
+step 9 "No agent ever merges toward the default branch, in any mode".
+
+**Decisions:** The base-branch verification (`gh pr view --json baseRefName`
+before the sanctioned merge) was added beyond the epic's literal scope text —
+it is the cheapest mechanical check that the one sanctioned merge is aimed at
+the only sanctioned surface, and omitting it would leave the rule purely
+behavioural. Squash explicitly forbidden for the self-merge: the release PR
+needs per-ticket subjects.
+
+**Owed:** Nothing.
+
+**Addendum — review — 2026-08-08 — fable/xhigh:** Three Important, three
+nits; all fixed in the review-fix commit. Important: (1) step 3's "what step
+9 targets" sentence recreated the exact serial-first-ticket contradiction
+this ticket claimed fixed — rewritten to separate the cut-from branch from
+the PR base. (2) The merge gate required a review addendum to exist but not
+that Important findings were resolved — the gate now also requires the
+addendum committed and stops on any unfixed Important finding: in an
+autonomous run that disposition is not the agent's to judge. (3) Step 10's
+"continue to the next ticket" collided with the signed-off driver
+architecture (a driver-spawned worker would race the driver's own loop) —
+carve-out added: a driver-spawned agent stops after the merge; only a
+driverless run continues itself. Nits fixed: the plan-reviewer's sign-off
+check was dead text (it runs before sign-off exists — now checks the draft's
+Run mode block, which the sign-off is written from; CHANGELOG reworded to
+match); step 2 now names Run mode as load-bearing; the base check is pinned
+to the `epic` field from `find --json` instead of convention. Correction to
+this entry's Files-touched paragraph, as a dated addendum: "retargets to
+main when #5 merges" holds only if the `auto-1` branch is deleted at merge —
+GitHub does not retarget otherwise; nothing rides on it. Pre-existing,
+handed on: the epic branch is never pushed to origin (epic skill commits
+locally only) — load-bearing for unattended runs, added to AUTO-3's scope by
+re-plan; step 8 never said to commit the review addendum — fixed here as
+part of Important (2) since the merge gate reads it. Reviewer confirmed the
+runMode gate fails closed, the doctrine texts agree across all five
+documents, README/METHODOLOGY contradictions are AUTO-3's assigned scope,
+and standing checks pass (15/15, doctor 0). AUTO-5 (attended supervisor
+default, interactive by flag, static hook) added to the ticket doc by
+re-plan on user proposal, sequenced after AUTO-4.

@@ -47,8 +47,13 @@ path explicitly.
   the same commit — installed projects update live, so an unversioned change
   is a silent one.
 - **Reviewers report and never fix.** Do not give `ticket-reviewer` or
-  `plan-reviewer` write instructions, and do not add post-merge steps to any
-  skill — a human merges, nothing runs after.
+  `plan-reviewer` write instructions.
+- **A human merges into main; nothing runs after that merge.** Absolute in
+  every mode: no agent merges or pushes toward the default branch, and no
+  skill gains a post-merge step. The one sanctioned agent merge is into the
+  epic branch inside a `Run mode: autonomous` epic (ticket skill step 10) —
+  there, the human gate moves to the release pull request, and branch
+  protection on main is the hard floor under the rule.
 - **The two risk lists are one list.** The quick skill's entry triggers and
   the ticket skill's `xhigh` review tier measure the same consequences at two
   doors — a trigger added to either is added to the other in the same commit.

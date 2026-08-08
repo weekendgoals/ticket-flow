@@ -4,6 +4,27 @@ The plugin is the methodology's distribution mechanism: a change to a skill is
 a behaviour change in every project that installs it. This file is what makes
 those changes deliberate and visible.
 
+## 1.8.0 — 2026-08-08
+
+AUTO-2: the gated self-merge path — the one sanctioned agent merge, and only
+into an epic branch.
+
+- **`/flow:ticket` step 10 forks on `runMode`.** Attended epics: unchanged —
+  stop at the pull request. Autonomous epics: after the review addendum
+  exists (an unreviewed ticket is never merged, anywhere; reviewer-spawn
+  failure falls back to an instructed general agent, and stops if that fails
+  too), verify the PR's base is `epic/<name>`, merge it with a merge commit,
+  and continue to the next ticket. Merging toward main remains forbidden to
+  agents in every mode.
+- **The epic template gains the optional `Run mode: autonomous` line**, and
+  an autonomous sign-off must state the unattended consequence in plain
+  terms; the plan reviewer flags a draft whose Run mode block omits that
+  consequence.
+- **Fixed (owed by AUTO-1):** step 9 no longer tells a serial epic's first
+  ticket to base its PR on the epic branch — that stranded the epic docs;
+  the PR targets the default branch, which is how the docs ship.
+- CLAUDE.md merge doctrine rescoped in the same commit.
+
 ## 1.7.0 — 2026-08-08
 
 First ticket of the autonomous epic (AUTO-1): the epic's modes become parsed
