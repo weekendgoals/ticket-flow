@@ -4,6 +4,47 @@ The plugin is the methodology's distribution mechanism: a change to a skill is
 a behaviour change in every project that installs it. This file is what makes
 those changes deliberate and visible.
 
+## 1.12.0 — 2026-08-08
+
+BOARD-3: the next-ticket brief — a ticket's whole picture from one command.
+
+- **New subcommand `tickets.mjs brief [ID]`**: prints the ticket's full
+  section from its epic's `tickets.md` (Scope, Not in scope, Acceptance
+  criteria) plus the derived facts `find` reports — state, branch, epic,
+  modes, pull request — so a session can read what a ticket demands without
+  opening the ticket doc. With no ID it briefs the first startable ticket in
+  document order (the same one Next up proposes), naming its epic. An unknown
+  ID gets `find`'s refusal verbatim (shared code path, not a copy). `--json`
+  emits the `find` payload plus a `body` field carrying the section text.
+- The board's Next up section gains a hint line that the brief exists — named
+  as the script subcommand, since `/flow:brief` is not an installed command
+  and the board never suggests a command that does not exist.
+
+## 1.11.0 — 2026-08-08
+
+BOARD-2: an unknown epic filter is an error, not an empty board.
+
+- **`tickets.mjs next <epic>` and `list <epic>` refuse a filter that names no
+  epic**: `no epic "<arg>" under epics/` on stderr, exit 1, in plain and
+  `--json` forms alike (the `--json` forms emit no payload on that error).
+  Before, `next` with a typo'd epic printed `nothing left to start` with exit
+  0 — indistinguishable from a finished epic (found live, 2026-08-08) — and
+  `list --json` silently emitted a valid empty payload. One rule, all
+  commands, all forms; valid filters are unchanged. Plain `list` of a real
+  epic whose tickets.md has no ticket sections now says
+  `epic "<name>" has no tickets yet` instead of falsely claiming the epic
+  does not exist.
+
+## 1.10.0 — 2026-08-08
+
+BOARD-1: the board's Next up suggestion is now a command that exists.
+
+- **`tickets.mjs` Next up prints `/flow:ticket <ID>`**, not the bare
+  `/ticket <ID>` — plugin commands are namespaced, and a user who ran the
+  board's suggestion verbatim got "Unknown command" (found live, 2026-08-08).
+  A sweep of the script found no other non-namespaced command suggestion; a
+  test now pins the namespaced string and rejects any bare `/ticket `.
+
 ## 1.9.0 — 2026-08-08
 
 AUTO-3: the `/flow:run` driver — an autonomous epic runs start to finish with

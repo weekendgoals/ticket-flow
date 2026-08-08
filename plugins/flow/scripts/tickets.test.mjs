@@ -164,6 +164,115 @@ test('next proposes the first unstarted ticket in document order', () => {
   assert.deepEqual(open.map((t) => t.id), ['A-4', 'G-1'])
 })
 
+test('next refuses an unknown epic filter instead of reporting an empty board', () => {
+  // "nothing left to start" from a typo'd epic name is indistinguishable from
+  // a finished epic (BOARD-2). Plain and --json alike: stderr names the
+  // missing epic, exit 1, and the --json form emits no payload.
+  for (const args of [['next', 'no-such-epic'], ['next', 'no-such-epic', '--json']]) {
+    const fail = runFail(repo, ...args)
+    assert.ok(fail, `\`${args.join(' ')}\` must exit nonzero`)
+    assert.equal(fail.status, 1)
+    assert.match(fail.stderr, /no epic "no-such-epic" under epics\//)
+    assert.equal(fail.stdout, '', 'no payload on the error')
+  }
+  // A valid filter is untouched — the driver contract reads this between tickets.
+  const open = JSON.parse(run(repo, 'next', 'alpha', '--json'))
+  assert.deepEqual(open.map((t) => t.id), ['A-4'])
+})
+
+test('list refuses an unknown epic filter instead of reporting an empty board', () => {
+  for (const args of [['list', 'no-such-epic'], ['list', 'no-such-epic', '--json']]) {
+    const fail = runFail(repo, ...args)
+    assert.ok(fail, `\`${args.join(' ')}\` must exit nonzero`)
+    assert.equal(fail.status, 1)
+    assert.match(fail.stderr, /no epic "no-such-epic" under epics\//)
+    assert.equal(fail.stdout, '', 'no payload on the error')
+  }
+  // A valid filter is untouched.
+  const data = JSON.parse(run(repo, 'list', 'alpha', '--json'))
+  assert.deepEqual(data.epics, ['alpha'])
+})
+
+test('a real epic with no ticket sections is reported as ticketless, not nonexistent', () => {
+  // The filtered-empty branch of printBoard is only reachable for an epic
+  // that exists but has no `## <ID> — …` sections — an unknown filter errors
+  // at the entry point before it (BOARD-2). The old string here claimed
+  // `no epic "<x>" under epics/` for a real epic, at exit 0, on stdout —
+  // the same lie the guard removed. Pin the honest wording.
+  mkdirSync(join(repo, 'epics/hollow'), { recursive: true })
+  writeFileSync(join(repo, 'epics/hollow/tickets.md'), '# Hollow epic — tickets\n\nNo sections yet.\n')
+  try {
+    const out = run(repo, 'list', 'hollow')
+    assert.match(out, /epic "hollow" has no tickets yet/)
+    assert.ok(!/no epic "hollow" under epics\//.test(out), 'a real epic must never be reported as nonexistent')
+  } finally {
+    rmSync(join(repo, 'epics/hollow'), { recursive: true, force: true })
+  }
+})
+
+test('Next up suggests the installed, namespaced command', () => {
+  // Plugin commands are namespaced: the installed command is /flow:ticket.
+  // A bare /ticket suggestion is a live regression — a user ran it verbatim
+  // and got "Unknown command" (BOARD-1).
+  const out = run(repo, 'list')
+  assert.match(out, /\/flow:ticket A-4/, 'Next up proposes the namespaced command')
+  assert.ok(!/(?<!flow:)\/ticket /.test(out), `found a bare /ticket suggestion in:\n${out}`)
+})
+
+test('brief prints a ticket\'s full section plus the derived facts find reports', () => {
+  // The brief exists so a session can read the next ticket's scope and
+  // acceptance criteria from one command instead of opening the ticket doc
+  // (BOARD-3). --json is the find payload plus a body field.
+  const briefed = JSON.parse(run(repo, 'brief', 'a-2', '--json'))
+  const found = JSON.parse(run(repo, 'find', 'a-2', '--json'))
+  assert.deepEqual(briefed, { ...found, body: briefed.body }, 'the brief payload is the find payload plus body')
+  assert.match(briefed.body, /\*\*Scope\.\*\* Persistence\./, 'the body carries the section content')
+
+  const out = run(repo, 'brief', 'A-2')
+  assert.match(out, /A-2 — persist the results/)
+  assert.match(out, /state done/, 'the derived state is reported')
+  assert.match(out, /\*\*Scope\.\*\* Persistence\./)
+})
+
+test('brief with no argument briefs the first startable ticket and names its epic', () => {
+  // The same ticket Next up proposes: first todo in document order.
+  const out = run(repo, 'brief')
+  assert.match(out, /A-4 — polish the output/)
+  assert.match(out, /epic alpha/, 'the epic it came from is named')
+  assert.match(out, /\*\*Scope\.\*\* Polish\./)
+  assert.equal(JSON.parse(run(repo, 'brief', '--json')).id, 'A-4')
+})
+
+test('brief refuses an unknown ID with find\'s refusal, verbatim', () => {
+  const brief = runFail(repo, 'brief', 'A-99')
+  const find = runFail(repo, 'find', 'A-99')
+  assert.equal(brief.status, 1)
+  assert.equal(brief.stderr, find.stderr, 'one refusal, not two copies drifting apart')
+  assert.match(brief.stderr, /no ticket "A-99"/)
+})
+
+test('Next up hints that the brief exists', () => {
+  // Named as this script's subcommand — /flow:brief is not an installed
+  // command and tickets.mjs is not on any PATH, and the board never suggests
+  // a command that does not survive being run (BOARD-1).
+  const out = run(repo, 'list')
+  assert.match(out, /this script's `brief \[ID\]` subcommand/)
+})
+
+test('brief with nothing startable says so instead of erroring', () => {
+  // In an autonomous run a bare nonzero exit is a stop condition — a board
+  // with nothing left to start is a fact, not an error, so brief mirrors
+  // next's honest empty answer: plain says so, --json emits null, exit 0.
+  const allDone = join(tmp, 'all-done')
+  git(tmp, 'init', '--initial-branch=main', allDone)
+  mkdirSync(join(allDone, 'epics/omega'), { recursive: true })
+  writeFileSync(join(allDone, 'epics/omega/tickets.md'), '# Omega\n\n## O-1 — finished work\n\n**Scope.** O.\n')
+  writeFileSync(join(allDone, 'epics/omega/status.md'), '### O-1 — finished work — 2026-08-08 — DONE\n')
+  const out = run(allDone, 'brief')
+  assert.match(out, /nothing left to start/)
+  assert.equal(run(allDone, 'brief', '--json').trim(), 'null')
+})
+
 test('mode lines parse tolerantly and expose in find and list', () => {
   const g = JSON.parse(run(repo, 'find', 'G-1', '--json'))
   assert.equal(g.releaseMode, 'integration', 'prose after the value must not break the parse')
