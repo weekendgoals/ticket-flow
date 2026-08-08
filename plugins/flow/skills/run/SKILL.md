@@ -25,20 +25,31 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/tickets.mjs" list <epic> --json
 ```
 
 Read `defaultBranch`, and the epic's entry in `modes`. **Stop and report
-unless `runMode` is `"autonomous"`** — an attended epic is run one ticket at a
-time by `/flow:ticket`, and driving it unattended would exceed what its
-sign-off approved. (`releaseMode` will be `integration`; the script refuses
-the serial+autonomous contradiction before you can see it.)
+unless `runMode` is `"autonomous"` and `releaseMode` is `"integration"`** —
+both, checked here. An attended epic is run one ticket at a time by
+`/flow:ticket`, and driving it unattended would exceed what its sign-off
+approved. And the script's serial+autonomous refusal lives in `find` and
+`doctor`, **not** in the `list` command this step runs — without your own
+`releaseMode` check, a contradictory epic would pass this door and mutate
+`origin/epic/<name>` (step 4a merges and pushes) before a worker's `find`
+finally refused it.
 
 Stop and report too if:
 
 - the epic does not resolve — list the epics the script knows;
 - the working tree has uncommitted changes you did not make;
-- any of this epic's tickets is already `in progress`, `in review`, or
-  `done, unpushed` — a previous run died mid-ticket, and skipping past or
-  redoing half-finished work destroys the evidence trail. A ticket that is
-  already `integrated` or `shipped` is fine: re-running the driver resumes
-  after it.
+- any of this epic's tickets is in state `in-progress`, `in-review`, or
+  `done` (those are the JSON values; the board renders the last as "done,
+  unpushed") — a previous run died mid-ticket, and skipping past or redoing
+  half-finished work destroys the evidence trail;
+- any ticket is `blocked` — a previous run halted on it, and `next` only
+  hands out `todo` tickets, so starting now would silently build every
+  successor on the blocked one and open a release pull request missing its
+  work. The human resolves or re-plans the blocked ticket first; resuming
+  past it is not yours to decide.
+
+A ticket that is already `integrated` or `shipped` is fine: re-running the
+driver resumes after it.
 
 ## 2. Verify sign-off actually happened
 
@@ -76,9 +87,12 @@ will die at its first prompt.
   decision, 2026-08-08): the prompt will not be answered, and a run wedged on
   a prompt looks exactly like a run making progress.
 - **Branch protection on the default branch** — require pull requests, no
-  force pushes, human-only merge. Verify it is present (`gh api
-  "repos/{owner}/{repo}/branches/<default-branch>/protection"` succeeding is
-  the signal; a 404 means unprotected). This is environment setup, not plugin
+  force pushes, human-only merge. Verify it is present: `gh api
+  "repos/{owner}/{repo}/branches/<default-branch>/protection"` succeeding
+  signals classic branch protection; on a 404, check `gh api
+  "repos/{owner}/{repo}/rules/branches/<default-branch>"` — rulesets are the
+  newer mechanism, invisible to the first endpoint, and an empty rule list
+  from both means unprotected. This is environment setup, not plugin
   code: every rule in this skill is soft enforcement obeyed by a cooperating
   agent, and protection is the hard floor that holds even against a
   misbehaving one. Missing protection is a warning to report before

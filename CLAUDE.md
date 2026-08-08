@@ -50,10 +50,13 @@ path explicitly.
   `plan-reviewer` write instructions.
 - **A human merges into main; nothing runs after that merge.** Absolute in
   every mode: no agent merges or pushes toward the default branch, and no
-  skill gains a post-merge step. The one sanctioned agent merge is into the
-  epic branch inside a `Run mode: autonomous` epic (ticket skill step 10) —
-  there, the human gate moves to the release pull request, and branch
-  protection on main is the hard floor under the rule.
+  skill gains a post-merge step. The one sanctioned agent merge **of a pull
+  request** is into the epic branch inside a `Run mode: autonomous` epic
+  (ticket skill step 10) — there, the human gate moves to the release pull
+  request, and branch protection on main is the hard floor under the rule.
+  Refreshing an epic branch **from** the default branch (ticket skill step 3,
+  run skill step 4a) is the safe direction — main is the source, never the
+  target — and is not a merge toward main.
 - **The two risk lists are one list.** The quick skill's entry triggers and
   the ticket skill's `xhigh` review tier measure the same consequences at two
   doors — a trigger added to either is added to the other in the same commit.

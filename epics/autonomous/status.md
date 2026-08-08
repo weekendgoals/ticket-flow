@@ -214,3 +214,36 @@ PR title format `Release: <epic>` deliberately does not match `<ID>: <title>`
 so it can never be mistaken for a squashable single-ticket PR.
 
 **Owed:** Nothing.
+
+**Addendum — review — 2026-08-08 — fable/xhigh:** Two Important, four nits;
+five fixed in the review-fix commit, one kept with a reason. Important,
+fixed: (1) the run skill's step 1 claimed the script refuses the
+serial+autonomous contradiction "before you see it", but that refusal lives
+in `find` and `doctor`, not in the `list` command step 1 actually runs — a
+contradictory epic would have passed the door and mutated
+`origin/epic/<name>` (step 4a merges and pushes) before a worker's `find`
+halted the run. The driver now checks `releaseMode === "integration"`
+itself, at the door, and the skill says why. (2) Re-invoking the driver
+after a halt on BLOCKED silently resumed past the blocked ticket — `next`
+hands out only `todo` tickets, so every successor would be built on the
+blocked predecessor and the release PR would omit its work while reading
+"completed". `blocked` now joins the refused states at step 1's door; the
+human resolves or re-plans the blocked ticket before any resume. Nits fixed:
+step 1 named board display labels ("in progress", "done, unpushed") while
+directing the driver at `--json`, whose values are `in-progress`,
+`in-review`, `done` — the JSON values are now the ones named; the
+branch-protection probe read a 404 from the classic-protection endpoint as
+"unprotected", missing rulesets — a 404 now falls through to
+`rules/branches/<default-branch>`; CLAUDE.md's "one sanctioned agent merge"
+undercounted the driver's refresh merge — reworded to "one sanctioned agent
+merge of a pull request", with refresh-from-main named as the safe
+direction. Not fixed, with reason: the epic skill's step 8 handover sentence
+sits outside AUTO-3's literal scope bullets — kept, because the driver is
+undiscoverable from the flow that creates autonomous epics without it;
+already declared in Decisions (5), and the reviewer marked it
+for-the-record, not blocking. Reviewer confirmed all three acceptance
+criteria (standing checks live; stop conditions verbatim against the ground
+rules; pre-authorizations documented with the mid-run-prompt stop
+condition), and verified the run-record heading against all four parser
+regexes empirically. Re-verified after fixes: 15 tests, 15 pass, 0 fail;
+doctor exit 0. Nothing deferred.
