@@ -84,22 +84,3 @@ switches), production observation artifacts. Q-2 owns the "four skills" line.
 - The two lists either match or the difference is explained in METHODOLOGY.md
   with a reason; `grep -n "payment" plugins/flow/skills/ticket/SKILL.md
   METHODOLOGY.md` shows whichever was chosen.
-
-## Q-5 — the board tells users to run a command that does not exist
-
-**Scope.**
-- `tickets.mjs` prints `/ticket <ID>` in its "Next up" section and the
-  `tickets` skill's frontmatter/template references match — but the installed
-  command is `/flow:ticket <ID>` (plugin commands are namespaced). A user
-  followed the board's suggestion verbatim and got "Unknown command"
-  (found live, 2026-08-08). Fix the printed string, sweep the plugin's other
-  user-facing strings for the same mistake, and cover the output shape in the
-  test suite.
-
-**Not in scope.** Renaming skills or changing how the marketplace namespaces
-them.
-
-**Acceptance criteria.**
-- `node plugins/flow/scripts/tickets.mjs list` output contains
-  `/flow:ticket` and never bare `/ticket ` in Next up.
-- A test asserts the Next up line's command string; full suite passes.

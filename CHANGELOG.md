@@ -4,6 +4,16 @@ The plugin is the methodology's distribution mechanism: a change to a skill is
 a behaviour change in every project that installs it. This file is what makes
 those changes deliberate and visible.
 
+## 1.10.0 — 2026-08-08
+
+BOARD-1: the board's Next up suggestion is now a command that exists.
+
+- **`tickets.mjs` Next up prints `/flow:ticket <ID>`**, not the bare
+  `/ticket <ID>` — plugin commands are namespaced, and a user who ran the
+  board's suggestion verbatim got "Unknown command" (found live, 2026-08-08).
+  A sweep of the script found no other non-namespaced command suggestion; a
+  test now pins the namespaced string and rejects any bare `/ticket `.
+
 ## 1.9.0 — 2026-08-08
 
 AUTO-3: the `/flow:run` driver — an autonomous epic runs start to finish with

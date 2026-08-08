@@ -25,3 +25,55 @@ BOARD-1 in-run; unknown-epic strictness is one rule, all commands, all
 forms. Plan reviewed 2026-08-08 (fable/high): one Blocking finding (write
 surface vs BOARD-1's cross-epic edit) fixed before sign-off, four nits
 fixed, driver-facing script contract pinned as a ground rule.
+
+### BOARD-1 — the board suggests a command that does not exist — 2026-08-08 — DONE
+
+**Built:** The board's "Next up" section now prints `/flow:ticket <ID>` — the
+installed, namespaced command — instead of the bare `/ticket <ID>` that got a
+user "Unknown command" when run verbatim. A sweep of `tickets.mjs` for other
+non-namespaced command suggestions found none (the only other slash-command
+strings are the already-namespaced `/flow:epic` mentions; the `/tickets.md`
+matches are file paths, not commands). A new test pins the output: Next up
+must contain `/flow:ticket <ID>` and the whole `list` output must contain no
+`/ticket ` not preceded by `flow:`. Q-5 of the quick epic — the same defect,
+planned there before this epic superseded it — is removed from
+`epics/quick/tickets.md` (a re-plan edit, per sign-off), so the board no
+longer carries the todo twice. Plugin version 1.10.0 with a CHANGELOG entry.
+
+**Files touched:** `plugins/flow/scripts/tickets.mjs`,
+`plugins/flow/scripts/tickets.test.mjs`, `epics/quick/tickets.md`,
+`plugins/flow/.claude-plugin/plugin.json`, `CHANGELOG.md`,
+`epics/board-ux/status.md`. Branch `board-1`, cut from `epic/board-ux`.
+
+**Verified:** `node --check plugins/flow/scripts/tickets.mjs` — exit 0.
+`node --test plugins/flow/scripts/tickets.test.mjs` — 16 tests, 16 pass,
+0 fail (15 before, +1 new). `node plugins/flow/scripts/tickets.mjs list` —
+Next up prints `/flow:ticket AUTO-5` and `/flow:ticket BOARD-2`;
+`grep -cE "(^|[^:])/ticket "` over the full output finds 0 bare suggestions.
+`! grep -q "Q-5" epics/quick/tickets.md` — exit 0. `node
+plugins/flow/scripts/tickets.mjs doctor` — exit 0.
+
+**Decisions:** The new test asserts with a negative lookbehind
+(`(?<!flow:)\/ticket `) over the entire plain `list` output rather than only
+the Next up line, so any future bare suggestion anywhere in the board output
+fails the suite, not just a regression of this exact line. Q-5's whole
+section was removed rather than annotated: the ticket doc is edited to
+re-plan, never to record progress (skill rule the epic plan cites), and the
+supersession is recorded here and in the quick epic's board disappearance,
+not as a tombstone there.
+
+**Owed:** Nothing.
+
+**Addendum — review — 2026-08-08 — fable/high:** No findings; nothing fixed,
+nothing deferred, no pre-existing defects flagged. The reviewer verified the
+sweep independently (line 349 was the only bare command suggestion in
+`plugins/flow` and `README.md`), traced the new test's fixture to confirm the
+positive assertion passes for the right reason and the negative one catches a
+revert, confirmed the driver-facing script contract (`list --json`,
+`find --json`, `next`) is untouched by the diff, confirmed the write surface
+holds (the quick-epic diff is precisely the Q-5 section), and re-ran the
+acceptance criteria live: 16/16 tests pass 0 fail, doctor exit 0, Next up
+namespaced with no bare suggestion, Q-5 grep negative. One remark below the
+finding bar: the test's `(?<!flow:)` lookbehind is redundant (`/flow:ticket`
+never contains the substring `/ticket `) but the check it implements — no
+bare `/ticket ` anywhere — is exactly right; left as is.
