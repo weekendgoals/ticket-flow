@@ -129,6 +129,10 @@ narrative (AUTO-3); parallel execution; anything touching main.
   works from documents alone. This is soft-enforced (skill text) and
   observable (the run log names each spawned agent) — and it makes every
   autonomous run a live test of the documents' sufficiency.
+- `skills/epic` step 7 pushes `epic/<name>` to origin at creation
+  (pre-existing gap found by AUTO-2's review, 2026-08-08: integration-mode
+  pull requests need their base on the remote, and an unattended run cannot
+  stop to ask).
 - README + METHODOLOGY.md: why the human gate moves to the release PR, why
   main stays sacred, why stop conditions beat retries, and what the
   environment must provide before an unattended run — the pre-authorized
@@ -176,3 +180,34 @@ are new tickets.
 - The status-log entry cites the external record showing zero human
   interventions between sign-off and release PR — or the run's stop reason,
   verbatim.
+
+## AUTO-5 — attended tickets get the same fresh context: supervisor by default, interactive by flag
+
+Added by re-plan 2026-08-08, user-proposed. Sequenced after AUTO-4 so the
+spawn mechanism it reuses has survived a live run first.
+
+**Scope.**
+- `/flow:ticket <ID>` (attended) defaults to the **supervisor pattern**: the
+  user's session resolves the ticket and spawns the same fresh-context worker
+  the AUTO-3 driver uses; the supervisor also spawns the reviewer — the party
+  under review no longer hires its own judge — relays stop-and-report moments
+  to the user, and stops at the pull request as ever. Multiple tickets per
+  session become legitimate: each worker starts empty.
+- `/flow:ticket <ID> --interactive` runs in-session as today, for conversing
+  with the implementing agent mid-ticket. The run drops a session marker and
+  the status log records which mode ran the ticket.
+- The plugin ships a **static hook**: a `/flow:ticket` invocation in a
+  session whose marker shows a previous interactive run is refused with
+  "this session already carries a ticket's context — /clear first, or use
+  the default supervisor mode." Supervisor runs never set the marker.
+- Version bump + CHANGELOG.
+
+**Not in scope.** Changing the autonomous path (AUTO-2/AUTO-3's); removing
+interactive mode; hook enforcement beyond the one rule above.
+
+**Acceptance criteria.**
+- Default run: the status entry names the worker agent, and the supervisor
+  session's transcript contains no implementation edits of its own.
+- Interactive run twice in one session: the second invocation is refused by
+  the hook with the documented message.
+- Standing checks green.
