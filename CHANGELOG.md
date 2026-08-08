@@ -4,6 +4,28 @@ The plugin is the methodology's distribution mechanism: a change to a skill is
 a behaviour change in every project that installs it. This file is what makes
 those changes deliberate and visible.
 
+## 1.16.0 — 2026-08-08
+
+Q-7: configurable reviewer model.
+
+- **`Reviewer model: <model>`** — an optional line in an epic's tickets.md
+  preamble. `tickets.mjs` parses it alongside the mode lines (same tolerant
+  parse: first word after the colon, case-insensitive label, prose after the
+  value ignored; the value charset admits digits and dots for real model
+  identifiers) and exposes it as `reviewerModel` in `find --json` and
+  `list --json` — null when absent, never a default. The model was fixed in
+  skill text before this; redirecting it took a mid-run conversational
+  directive (AUTO-4, 2026-08-08). Now it is configuration.
+- **`skills/ticket` step 7** passes the epic's `reviewerModel` when spawning
+  the reviewer and keeps today's default when the line is absent: the
+  strongest model available. **`skills/run`** states the same rule where the
+  driver's workers spawn their reviewers. The default itself is unchanged.
+- **`doctor`** extends its preamble near-miss scan to the new line: a
+  formatted `**Reviewer model:**` reads as absent and would silently fall
+  back to the default model, the same failure class as a near-miss mode line.
+- Tests: present, absent, prose-decorated, case/charset, and near-miss
+  shapes (tickets suite 24 → 26).
+
 ## 1.15.0 — 2026-08-08
 
 Q-6: `/flow:quick` routes through the ticket loop's lane fork.

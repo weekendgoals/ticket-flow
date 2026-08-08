@@ -139,7 +139,11 @@ ticket — without it, the worker and this loop would both start the next
 ticket. The worker does everything else itself, including spawning its own
 reviewer and fixing findings; you do not review its diff, because a driver
 that re-reviews every ticket becomes the context-laden judge the fresh
-reviewer exists to replace.
+reviewer exists to replace. The reviewer's model follows the ticket skill's
+step 7: the epic's optional `Reviewer model:` preamble line when present —
+step 1's `list --json` carries it in `modes` as `reviewerModel`, and the
+worker's own `find --json` re-reads it — the strongest model available when
+absent.
 
 **Record the worker's identity** (the agent name/ID the Agent tool returns)
 against the ticket ID — the run record in step 6 names the agent that ran

@@ -145,6 +145,13 @@ They ship under their own names rather than generic ones, because project and
 user `.claude/agents/` definitions override same-named plugin agents. If you
 already have a `code-review-expert`, they do not collide.
 
+Reviewers default to the strongest model available — review is where
+capability pays. An epic can pin a different one with an optional
+`Reviewer model: <model>` line in its tickets.md preamble, parsed like the
+mode lines (first word after the colon; prose after it is ignored) — so
+redirecting the reviewer is an edit to the epic's documents, not a mid-run
+conversational directive.
+
 ## Reading the board
 
 | State | Means |

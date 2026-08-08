@@ -241,10 +241,15 @@ mode's own rules (step 10).
 
 Spawn the reviewer with the **Agent** tool:
 
-- `subagent_type: "flow:ticket-reviewer"`, and `model`: the **strongest model
-  available**, regardless of what this session is running — review is where
-  capability pays. Pass it explicitly (`opus` at the time of writing; if that is
-  not available, the strongest that is).
+- `subagent_type: "flow:ticket-reviewer"`, and `model`: the epic's **Reviewer
+  model** when it declares one — an optional `Reviewer model: <model>` line in
+  the tickets.md preamble, exposed by step 1's `find --json` as
+  `reviewerModel`. It is configuration so that redirecting the reviewer is an
+  edit to the epic's documents, never a mid-run conversational directive.
+  Absent (`reviewerModel: null`), the default is unchanged: the **strongest
+  model available**, regardless of what this session is running — review is
+  where capability pays. Pass it explicitly (`opus` at the time of writing; if
+  that is not available, the strongest that is).
 - `effort`: scale it to the diff. `medium` for docs or config with no behavioural
   change; `high` for any normal implementation ticket; `xhigh` for authentication
   or authorization boundaries, secrets, crypto, network exposure, migrations,
