@@ -439,3 +439,40 @@ is optional configuration documented in README, not planning ceremony the
 template should prompt for.
 
 **Owed:** Nothing.
+
+**Addendum — review — 2026-08-08 — opus/high:** Two Important, two nits, one
+pre-existing; both Importants and one nit fixed in the review-fix commit
+(e1f8823), one nit handed with the pre-existing class to a new ticket.
+Important (1): README's new paragraph sat in a section covering both
+reviewer agents and said an epic "can pin a different one", but the epic
+skill spawns the plan reviewer on the strongest model unconditionally — a
+one-rule violation between README and the skills. Fixed by narrowing the
+claim, the direction Q-7's scope supports (it names the ticket and run
+skills only): the line governs the ticket reviewer; the plan reviewer is
+judging the very draft the line lives in, and configuration binds only
+after sign-off — reason now stated in README and the CHANGELOG entry. No
+skill behaviour changed by the fix, so 1.16.0 stands. Important (2):
+doctor's strict-parse extension had zero test pressure on its accepting
+branch — the reviewer mutation-verified that deleting the Reviewer model
+alternative from modeStrict left the suite green while every well-formed
+line warned. Fixed with a doctor-silence test over gamma's three
+well-formed preamble lines; the mutation was re-applied to confirm the
+test kills it (26 pass 1 fail under the mutant), suite 26 -> 27. Nit
+fixed: ticket skill step 1 now names `reviewerModel` among `find --json`'s
+returns, which step 7 already referenced. Nit not fixed here, with the
+pre-existing finding: the shared preamble parse's `\s*` matches newlines,
+so a value-less label line scavenges the first word of the next paragraph
+(reviewer verified a bare `Run mode:` reading `autonomous` out of prose
+that rejects it), and doctor's warning misdescribes that failure. The mode
+lines predate this ticket; Q-7 added a third label to the one shared
+`grab` rather than forking it into two parse behaviours mid-ticket, so
+the whole class — all three labels, the doctor wording, value-less-line
+tests — is handed to **Q-14**, opened in this epic's ticket doc in the
+same commit (Q-6/Q-13 precedent). Also confirmed sound by the reviewer:
+scope holds (default unchanged, no per-ticket override, effort tiers
+untouched; the doctor extension judged defended, not creep), the widened
+charset genuinely tested, run skill step 4c accurate, 1.16.0 = CHANGELOG
+head, and quick has no third reviewer door. Re-verified after fixes:
+tickets suite 27 pass 0 fail; guard suite 13 pass 0 fail; `node --check`
+clean; doctor exit 0; `list` parses all 14 quick tickets including Q-14.
+Nothing deferred beyond Q-14.
