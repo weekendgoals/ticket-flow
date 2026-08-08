@@ -356,6 +356,21 @@ instruction is to stop and plan an epic, not to proceed quickly anyway. Without
 that gate, "quick" becomes the path around the methodology instead of a path
 through it.
 
+Execution moved out of the invoking session at the autonomous epic's retro
+(2026-08-08): quick now routes through the ticket skill's lane fork — the
+session keeps the parts that need the conversation (the gate, writing the
+ticket, cutting the branch) and then supervises, while a fresh-context worker
+implements from the ticket text and the supervisor hires the reviewer. The
+alternative on the table, a documented opt-out, was rejected because it
+misreads what quick saves: quick's savings are planning ceremony — the
+planning conversation, the sign-off gate, the epic branch — never execution
+hygiene. Until then quick was the hole in the fresh-context doctrine twice
+over: a session marked by an earlier interactive ticket could still implement
+on contaminated context by phrasing the work as quick, and quick's implementer
+hired its own reviewer. `--interactive` survives at the same price as any
+interactive ticket — the session guard watches both doors with one marker,
+because a gate is verified at the door its actor walks through.
+
 ## The failure modes this is designed against
 
 - **Scope creep in a fresh session.** An agent doesn't know what it doesn't know,

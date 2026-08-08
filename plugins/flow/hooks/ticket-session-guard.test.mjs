@@ -36,13 +36,36 @@ test('guard behaviours', async (t) => {
     for (const s of used) rmSync(markerOf(s), { force: true })
   })
 
-  await t.test('non-ticket prompts pass even in a marked session', () => {
+  await t.test('non-interactive prompts pass even in a marked session', () => {
     const s = fresh('other')
     mark(s)
     for (const prompt of ['/flow:tickets', '/flow:quick fix a typo', 'plain prose']) {
       const r = run({ session_id: s, prompt })
       assert.equal(r.status, 0, `${prompt} must pass through`)
     }
+  })
+
+  await t.test('quick --interactive marks the session; flagless quick does not', () => {
+    const s = fresh('quick-marks')
+    const r = run({ session_id: s, prompt: '/flow:quick fix the typo --interactive' })
+    assert.equal(r.status, 0, 'the first interactive run is allowed at either door')
+    assert.equal(existsSync(markerOf(s)), true, 'quick --interactive drops the same marker')
+    const s2 = fresh('quick-flagless')
+    const r2 = run({ session_id: s2, prompt: '/flow:quick an interactive tutorial' })
+    assert.equal(r2.status, 0)
+    assert.equal(existsSync(markerOf(s2)), false, 'no marker without a literal --interactive flag')
+  })
+
+  await t.test('one marker guards both doors: either --interactive form refused, plain quick passes', () => {
+    const s = fresh('cross-door')
+    run({ session_id: s, prompt: '/flow:quick fix the typo --interactive' })
+    const ticketI = run({ session_id: s, prompt: '/flow:ticket SEC-4 --interactive' })
+    assert.equal(ticketI.status, 2, 'a quick-marked session refuses an interactive ticket')
+    assert.equal(ticketI.stderr.trim(), REFUSAL, 'same documented refusal at either door')
+    const quickI = run({ session_id: s, prompt: '/flow:quick another thing --interactive' })
+    assert.equal(quickI.status, 2, 'a second interactive quick is refused too')
+    const quickPlain = run({ session_id: s, prompt: '/flow:quick another thing' })
+    assert.equal(quickPlain.status, 0, 'supervisor-lane quick passes in a marked session')
   })
 
   await t.test('supervisor invocations pass and set no marker', () => {

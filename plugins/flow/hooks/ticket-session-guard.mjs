@@ -1,12 +1,15 @@
 #!/usr/bin/env node
-// One interactive ticket per session — the guard behind /flow:ticket's lanes.
+// One interactive ticket per session — the guard behind the ticket loop's
+// lanes, watching both doors that reach them: /flow:ticket and /flow:quick.
 //
-// An interactive /flow:ticket run leaves its context in the session, and a
-// second ticket implemented on that context defeats the fresh-context rule
-// the supervisor mode exists for. This hook makes the rule mechanical
-// instead of remembered: `/flow:ticket <ID> --interactive` drops a marker
-// keyed to the session; a later `--interactive` invocation in the same
-// session is refused (exit 2 blocks the prompt; stderr carries the message).
+// An interactive run leaves its context in the session, and a second ticket
+// implemented on that context defeats the fresh-context rule the supervisor
+// mode exists for. This hook makes the rule mechanical instead of
+// remembered: `--interactive` on either command drops a marker keyed to the
+// session; a later `--interactive` invocation in the same session — either
+// command again — is refused (exit 2 blocks the prompt; stderr carries the
+// message). Both doors, one marker: a gate is verified at the door its
+// actor walks through, and quick was the door around the rule until Q-6.
 // Supervisor-mode invocations pass even in a marked session — their workers
 // start empty, which is the property this rule protects, so blocking them
 // would refuse the very recovery the refusal recommends.
@@ -52,7 +55,7 @@ if (String(data.hook_event_name ?? '') === 'SessionStart') {
 }
 
 const prompt = String(data.prompt ?? '')
-if (!/^\s*\/flow:ticket\b/.test(prompt)) process.exit(0)
+if (!/^\s*\/flow:(ticket|quick)\b/.test(prompt)) process.exit(0)
 
 const interactive = /\s--interactive\b/.test(prompt)
 
