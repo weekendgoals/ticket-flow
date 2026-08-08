@@ -308,3 +308,36 @@ request, 2026-08-08); unfiltered `list` prints the false `no epics found`
 when all epics lack ticket sections (BOARD-2's review, pre-existing); plain
 `find` prints `pr [object Object]` (BOARD-3's review, pre-existing). All
 three also listed in release PR #12's body.
+
+**Addendum — review — 2026-08-08 — opus/medium:** Two Important, two nits;
+all four addressed. (1) Important, corrected here (the log is append-only,
+so the correction is this addendum): the entry's sentence "the external
+record shows zero interventions" overclaims — agents act under the human's
+own GitHub identity, so the record cannot distinguish agent from human
+action, and an auditor reading only the record sees a human account merging
+PRs #9/#10/#11 and opening #12. What the record supports is exactly the
+narrower parenthetical already in the entry: 0 PR comments, 0 PR reviews,
+`origin/main` unmoved. (2) Important, fixed in the same commit as this
+addendum: the run's breach of Scope's "no human between sign-off and the
+release PR" clause had no recorded disposition, while the
+environment-blocked criterion got a formal waiver — asymmetry closed by
+annotating AUTO-4's external-record acceptance criterion in
+`epics/autonomous/tickets.md` with the recorded deviation. Stated plainly:
+the no-human clause was not literally achieved on this first run; the
+mid-run reviewer-model directive was a human intervention, disclosed at the
+time and now dispositioned. (3) Nit, corrected here: the Verified line's
+board check (`list board-ux` → 3/3 `integrated`) reproduces on
+`origin/epic/board-ux`, not on this branch's tree, whose `epics/` has no
+board-ux — the branch qualification was missing. (4) Nit, fixed by
+extending Owed here: a **fourth** owed quick ticket — the run skill's
+environment gate documents only success and 404 from the protection
+endpoints, but a private free-plan repo returns **403** on both, an
+undocumented condition whose nonzero exit is itself a stop condition; and
+the skill gives an unattended driver no way to learn of a pre-recorded
+human waiver. Exposed by this run's waiver, shipped by AUTO-3, correctly
+not fixed here per Not-in-scope. Reviewer confirmed acceptance criteria 1–3
+satisfied outright (the waiver a genuine timestamped re-plan — committed
+19 seconds before run start — not a retrofit), every cited number in the
+entry exact against `gh`/`git`, and standing checks green on a throwaway
+worktree of the reviewed tree (15 tests, 15 pass, 0 fail; doctor exit 0;
+epic branch 24/24). Nothing else deferred.

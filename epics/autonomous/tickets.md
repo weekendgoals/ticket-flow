@@ -186,7 +186,15 @@ are new tickets.
 - The run log names the fresh subagent that executed each ticket.
 - The status-log entry cites the external record showing zero human
   interventions between sign-off and release PR — or the run's stop reason,
-  verbatim.
+  verbatim. **Recorded deviation, 2026-08-08 (first live run):** one
+  conversational human input arrived mid-run — a reviewer-model directive,
+  applied from BOARD-2 onward — so Scope's "no human between sign-off and
+  the release PR" was not literally achieved; and the external record
+  cannot by itself distinguish agent from human action, because agents act
+  under the human's own GitHub identity. The record's checkable facts (zero
+  PR comments, zero PR reviews, the default branch unmoved) stand; the
+  stronger "shows zero interventions" reading does not, and the status
+  entry's addendum says so.
 
 ## AUTO-5 — attended tickets get the same fresh context: supervisor by default, interactive by flag
 
