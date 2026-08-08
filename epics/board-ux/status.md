@@ -143,3 +143,60 @@ both guard call sites fails exactly the two new tests), the guard/entry-point
 matrix is complete, the driver-facing script contract is byte-identical for
 valid filters, every epic-filtered caller in the skills passes a real epic
 name, and the write surface holds.
+
+### BOARD-3 — the next-ticket brief — 2026-08-08 — DONE
+
+**Built:** New subcommand `tickets.mjs brief [ID]`: prints a ticket's full
+section from its epic's `tickets.md` (Scope, Not in scope, Acceptance
+criteria — the section body the parser already carried) plus the derived
+facts `find` reports (state, branch, epic, release/run modes, PR), so a
+session can read what a ticket demands from one command instead of opening
+the ticket doc. With no ID it briefs the first startable ticket in document
+order — the same ticket Next up proposes — naming the epic it came from
+(plain: `epic <name>` in the facts line; nothing startable prints `nothing
+left to start`, `--json` emits `null`). An unknown ID gets `find`'s refusal
+verbatim: `find`'s resolution was factored into two shared helpers
+(`resolveTicket` for the unknown/duplicate refusals, `ticketFacts` for the
+mode-contradiction refusal and the payload) that both commands call — one
+behaviour, not two copies. `brief --json` emits the `find` payload plus a
+`body` field carrying the section text. The board's Next up section gains one
+hint line, `(tickets.mjs brief [ID] — a ticket's full scope, criteria and
+derived state)` — named as the script subcommand because `/flow:brief` is not
+an installed command and the board never suggests a command that does not
+exist (BOARD-1's rule). README documents the command in "Reading the board";
+the script's usage comment and the unknown-command help string list `brief`.
+Four new tests: brief by ID (payload = find payload + body, plain output
+carries section and state), brief with no argument (first startable, epic
+named), unknown ID (stderr equal to `find`'s, byte for byte), and the Next up
+hint. Plugin version 1.12.0 with a CHANGELOG entry.
+
+**Files touched:** `plugins/flow/scripts/tickets.mjs`,
+`plugins/flow/scripts/tickets.test.mjs`, `README.md`,
+`plugins/flow/.claude-plugin/plugin.json`, `CHANGELOG.md`,
+`epics/board-ux/status.md`. Branch `board-3`, cut from `epic/board-ux`.
+
+**Verified:** `node --check plugins/flow/scripts/tickets.mjs` — exit 0.
+`node --test plugins/flow/scripts/tickets.test.mjs` — 23 tests, 23 pass,
+0 fail (19 before, +4 new). Live: `brief BOARD-1` prints BOARD-1's Scope,
+Not in scope and Acceptance criteria with `state integrated`; `brief` with
+no argument prints AUTO-5's brief naming `epic autonomous`; `brief NO-99`
+exits 1 with `find`'s refusal listing the known IDs. `node
+plugins/flow/scripts/tickets.mjs doctor` — exit 0. Driver contract checked
+mechanically: `find --json` for BOARD-1, BOARD-3, AUTO-5, Q-1 and `next
+board-ux --json` are byte-identical between the epic-branch script and this
+one; `list --json` keys and `modes` unchanged.
+
+**Decisions:** `find`'s refusals were extracted and shared rather than
+duplicated into `brief`, because "verbatim behaviour" enforced by a copy
+drifts the first time one side changes — the test pins stderr equality
+between the two commands. The Next up hint names `tickets.mjs brief [ID]`,
+not a slash command, because no `/flow:brief` command exists and BOARD-1
+established that the board never suggests a command that does not exist.
+`brief` with no ID and nothing startable mirrors `next`'s honest empty
+answer (`nothing left to start`, exit 0) — an empty board is a fact, not an
+error, unlike BOARD-2's unknown-epic case. `brief` with no ID selects
+`tickets` array order (epics alphabetical, document order within), which is
+exactly the ticket the first Next up line proposes; "which ticket Next up
+proposes" itself is untouched.
+
+**Owed:** Nothing.
