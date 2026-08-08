@@ -505,3 +505,18 @@ the doctrine-drift invariant's founding case.
 subagents and branch protection at AUTO-1's sign-off; AUTO-5 added after
 AUTO-2) were dated, recorded amendments — the gates worked as designed and
 nothing here changes them.
+
+**Addendum — 2026-08-08 (from Q-5's review, opus/high):** Two corrections to
+the section above, as an addendum since the log is append-only. (1) "All
+ticketed, none declined" overclaimed: AUTO-5's criterion-2 live check — the
+interactive-twice refusal with hooks actually loaded — is not a ticket and
+can never be one: the guard fires on UserPromptSubmit, which no spawned
+agent triggers, so only a human typing in a fresh session can perform it.
+Correct claim: six owed items ticketed (Q-6–Q-12 minus none — Q-6 through
+Q-12 all stand), one check riding a recorded human action; it stays open
+until its result lands as a dated addendum to AUTO-5's entry. (2) The owed
+sweep missed AUTO-1's Owed line, whose "proposed Q-6" pointer now
+dangerously resolves to an unrelated ticket: AUTO-1's owed wording fix was
+in fact inherited and landed by AUTO-2 (its Built paragraph records the
+step 9 fix), and the "Q-6" it proposed was never created — today's Q-6 in
+epics/quick reuses the number by coincidence. Closed here.

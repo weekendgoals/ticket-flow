@@ -229,3 +229,39 @@ it here would have been scope creep.
 first of Q-6–Q-12 run via `/flow:ticket` in supervisor mode; criterion 2 is
 a throwaway `--interactive` in a fresh post-merge session. Both land as
 addenda to AUTO-5's entry in `epics/autonomous/status.md`, not here.
+
+**Addendum — review — 2026-08-08 — opus/high:** One Important, five nits,
+two more withheld as below-bar; the Important and all five nits fixed in
+the review-fix commit. Important: the retro section's "all ticketed, none
+declined" contradicted its own last sentence — AUTO-5's criterion-2 live
+check is a human action (the guard fires on UserPromptSubmit, which no
+spawned agent triggers) and exists on no board; corrected by a dated
+addendum beneath the retro section, since that log is append-only: six
+items ticketed, one check open on a recorded human action. Nits fixed:
+(1) Q-6's scope now states which steps the routed quick lane keeps (quick's
+own 1–3) and what the worker executes (ticket steps 4–6 via a scoped spawn
+prompt), resolving the who-branches ambiguity; (2) README's
+autonomous-epics section now says the prerequisites are probed at plan
+time — this range's own one-rule invariant, applied to this range's own
+change; (3) the epic skill now names where the probe result is recorded
+(prose on the Run mode line or under the ground rules, never a mode-shaped
+preamble line, which doctor's near-miss scan would flag — the reviewer
+verified both parse outcomes against the regexes empirically); (4) AUTO-1's
+stale "proposed Q-6" Owed pointer — which now resolved to an unrelated
+ticket coincidentally reusing the number — dispositioned in the same
+status-log addendum: inherited and landed by AUTO-2; (5) the epic skill no
+longer claims probe commands exist for the permission surface — the run
+skill enumerates that list; only branch protection has probe commands. Also
+adopted from the withheld pair: "minutes before start" corrected to seconds
+in the epic skill, README and CHANGELOG (the waiver commit landed 19
+seconds before run start — the record's number, not a softer one). The
+"both mid-epic re-plans" phrasing stands: it counts plan-content re-plans,
+and AUTO-4's waiver is separately recorded as a criterion amendment.
+Reviewer re-ran all three acceptance criteria and verified every retro
+number against `gh` and `git` externally (PR bases, comment and review
+counts, timestamps, the ~40-minute wall time, the drift and wrong-door
+tallies), confirmed Q-6's carrier structurally reaches supervisor mode, and
+confirmed all twelve quick tickets parse (`list`: 12 tickets, Q-6–Q-12
+todo). Re-verified after fixes: tickets suite 24 pass 0 fail; guard suite
+10 pass 0 fail; doctor exit 0; `node --check` clean. Nothing deferred
+beyond the two live checks already in this entry's Owed line.

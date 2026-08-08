@@ -11,7 +11,7 @@ Q-5: the autonomous epic's retro ships its lessons as rules.
 - **`skills/epic`:** declaring `Run mode: autonomous` now obligates probing
   the environment prerequisites at plan time and recording the result — the
   first live run discovered a free-plan 403 on the branch-protection
-  endpoints minutes before start and needed a same-day waiver. The Outcome
+  endpoints on run day, and its waiver landed seconds before start. The Outcome
   template asks the evidence line to name an observer that can distinguish
   success from failure ("zero interventions" was unfalsifiable under a
   shared GitHub identity).

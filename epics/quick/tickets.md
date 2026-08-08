@@ -122,9 +122,15 @@ retrofitting Outcome lines onto older epics.
   ticket skill's **step 0** instead: after writing the ticket and branching,
   the session becomes the supervisor — a fresh-context worker implements from
   the ticket text, the supervisor hires the reviewer; `--interactive` remains
-  available and marks the session like any interactive ticket. Retro
-  decision, 2026-08-08: the user chose routing over a documented opt-out —
-  quick's savings are planning ceremony, never execution hygiene.
+  available and marks the session like any interactive ticket. The routed
+  lane keeps quick's own steps 1–3 (gate, ticket written, `q-<n>` cut from
+  the default branch, plan committed): the supervisor spawns the worker onto
+  that existing branch with ticket steps 1–3 scoped out of its prompt —
+  step 0 already lets a spawn prompt scope steps — so the worker executes
+  implement-through-log (ticket steps 4–6) and the review loop follows as
+  the ticket skill writes it. Retro decision, 2026-08-08: the user chose
+  routing over a documented opt-out — quick's savings are planning ceremony,
+  never execution hygiene.
 - METHODOLOGY records that reasoning in the same commit.
 - Version bump + CHANGELOG.
 
