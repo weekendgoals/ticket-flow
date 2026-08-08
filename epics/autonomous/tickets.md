@@ -173,7 +173,14 @@ are new tickets.
 **Acceptance criteria.**
 - Before the run starts: branch protection on the default branch is verified
   present (`gh api` shows PRs required and force pushes blocked) — the hard
-  floor under every soft rule the run relies on.
+  floor under every soft rule the run relies on — **or its absence is waived
+  by the human at sign-off, and the waiver recorded**. Waived 2026-08-08:
+  the repository is private under an org on GitHub's free plan, where branch
+  protection is unavailable (`gh api` returns 403 on both the protection and
+  rules endpoints); the user chose to run without the hard floor rather than
+  make the repository public or upgrade the plan, so this run's
+  "main is untouchable" guarantee rests on skill text alone. Protection
+  remains the documented standard wherever it is available.
 - Every guinea-pig ticket reaches `integrated` on the board; a release PR to
   main exists; `git log origin/main` contains no commit from the run.
 - The run log names the fresh subagent that executed each ticket.
