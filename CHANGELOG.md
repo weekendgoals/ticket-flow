@@ -4,6 +4,38 @@ The plugin is the methodology's distribution mechanism: a change to a skill is
 a behaviour change in every project that installs it. This file is what makes
 those changes deliberate and visible.
 
+## 1.15.0 — 2026-08-08
+
+Q-6: `/flow:quick` routes through the ticket loop's lane fork.
+
+- **`skills/quick` step 4**: after quick's own steps 1–3 — the gate, the
+  written ticket, `q-<n>` cut with the plan committed, the parts that need
+  the conversation — the session becomes the **supervisor** per the ticket
+  skill's step 0: a fresh-context worker implements from the ticket text
+  (ticket steps 4–6, with steps 1–3 scoped out of its prompt — the branch
+  already exists), and the supervisor hires the reviewer. This closes the
+  two holes AUTO-5's review handed to the retro: a session marked by an
+  earlier `--interactive` run could still implement on contaminated context
+  through quick, and quick's implementer hired its own reviewer. Retro
+  decision, 2026-08-08: routing over a documented opt-out — quick's savings
+  are planning ceremony, never execution hygiene (reasoning in
+  METHODOLOGY.md § "Why small work has a path").
+- **`/flow:quick <description> --interactive`** keeps the in-session lane at
+  the same price as any interactive ticket: the session guard
+  (`hooks/ticket-session-guard.mjs`) now watches both doors — a quick
+  `--interactive` sets the same session marker, and a marked session is
+  refused any later `--interactive` run of either command. Marker lifecycle
+  (set at invocation, wiped on clear/startup, survives resume/compact)
+  unchanged; plain invocations of both commands still pass in a marked
+  session. Guard suite grows 10 → 13.
+- Review fixes (opus/high): the routed worker's spawn prompt keeps ticket
+  step 2 — the reading obligation and its stop-on-contradiction rule — and
+  receives absolute document paths from the supervisor's own `find`; the
+  guard's refusal message is door-agnostic ("rerun the command without
+  --interactive" — the old text named a recovery not performable at the
+  quick door), with the ticket skill's step 0 quote updated in the same
+  commit under a dated re-plan note in Q-6's scope.
+
 ## 1.14.0 — 2026-08-08
 
 Q-5: the autonomous epic's retro ships its lessons as rules.

@@ -14,7 +14,7 @@ import test from 'node:test'
 
 const SCRIPT = join(dirname(fileURLToPath(import.meta.url)), 'ticket-session-guard.mjs')
 const REFUSAL =
-  'this session already ran a ticket interactively and carries its context — run /flow:ticket without --interactive (supervisor mode: a fresh worker implements), or /clear to reset the session.'
+  'this session already ran a ticket interactively and carries its context — rerun the command without --interactive (supervisor mode: a fresh worker implements), or /clear to reset the session.'
 
 const run = (payload) =>
   spawnSync(process.execPath, [SCRIPT], { input: JSON.stringify(payload), encoding: 'utf8' })
@@ -36,13 +36,53 @@ test('guard behaviours', async (t) => {
     for (const s of used) rmSync(markerOf(s), { force: true })
   })
 
-  await t.test('non-ticket prompts pass even in a marked session', () => {
+  await t.test('non-interactive prompts pass even in a marked session', () => {
     const s = fresh('other')
     mark(s)
     for (const prompt of ['/flow:tickets', '/flow:quick fix a typo', 'plain prose']) {
       const r = run({ session_id: s, prompt })
       assert.equal(r.status, 0, `${prompt} must pass through`)
     }
+  })
+
+  await t.test('quick --interactive marks the session; flagless quick does not', () => {
+    const s = fresh('quick-marks')
+    const r = run({ session_id: s, prompt: '/flow:quick fix the typo --interactive' })
+    assert.equal(r.status, 0, 'the first interactive run is allowed at either door')
+    assert.equal(existsSync(markerOf(s)), true, 'quick --interactive drops the same marker')
+    const s2 = fresh('quick-flagless')
+    const r2 = run({ session_id: s2, prompt: '/flow:quick an interactive tutorial' })
+    assert.equal(r2.status, 0)
+    assert.equal(existsSync(markerOf(s2)), false, 'no marker without a literal --interactive flag')
+    // Pinned as deliberate (Q-6 review): a literal flag token mid-prose marks.
+    // Quick's arguments are free prose, the skill reads the same ambiguous
+    // prompt, and the guard errs toward marking — a false positive costs one
+    // slot recoverable by /clear; a false negative defeats the rule silently.
+    const s3 = fresh('quick-prose-flag')
+    const r3 = run({ session_id: s3, prompt: '/flow:quick add a --interactive flag to the run script' })
+    assert.equal(r3.status, 0)
+    assert.equal(existsSync(markerOf(s3)), true, 'a literal --interactive token counts, even mid-prose')
+  })
+
+  await t.test('lookalike prompts never trip a marked session: sibling command, mid-sentence mention', () => {
+    const s = fresh('lookalike')
+    mark(s)
+    const sibling = run({ session_id: s, prompt: '/flow:tickets --interactive' })
+    assert.equal(sibling.status, 0, '/flow:tickets is neither guarded command — the \\b boundary holds')
+    const midSentence = run({ session_id: s, prompt: 'explain what /flow:quick foo --interactive would do' })
+    assert.equal(midSentence.status, 0, 'a mention mid-prompt is not an invocation — the ^ anchor holds')
+  })
+
+  await t.test('one marker guards both doors: either --interactive form refused, plain quick passes', () => {
+    const s = fresh('cross-door')
+    run({ session_id: s, prompt: '/flow:quick fix the typo --interactive' })
+    const ticketI = run({ session_id: s, prompt: '/flow:ticket SEC-4 --interactive' })
+    assert.equal(ticketI.status, 2, 'a quick-marked session refuses an interactive ticket')
+    assert.equal(ticketI.stderr.trim(), REFUSAL, 'same documented refusal at either door')
+    const quickI = run({ session_id: s, prompt: '/flow:quick another thing --interactive' })
+    assert.equal(quickI.status, 2, 'a second interactive quick is refused too')
+    const quickPlain = run({ session_id: s, prompt: '/flow:quick another thing' })
+    assert.equal(quickPlain.status, 0, 'supervisor-lane quick passes in a marked session')
   })
 
   await t.test('supervisor invocations pass and set no marker', () => {

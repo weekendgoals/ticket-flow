@@ -1,12 +1,15 @@
 #!/usr/bin/env node
-// One interactive ticket per session — the guard behind /flow:ticket's lanes.
+// One interactive ticket per session — the guard behind the ticket loop's
+// lanes, watching both doors that reach them: /flow:ticket and /flow:quick.
 //
-// An interactive /flow:ticket run leaves its context in the session, and a
-// second ticket implemented on that context defeats the fresh-context rule
-// the supervisor mode exists for. This hook makes the rule mechanical
-// instead of remembered: `/flow:ticket <ID> --interactive` drops a marker
-// keyed to the session; a later `--interactive` invocation in the same
-// session is refused (exit 2 blocks the prompt; stderr carries the message).
+// An interactive run leaves its context in the session, and a second ticket
+// implemented on that context defeats the fresh-context rule the supervisor
+// mode exists for. This hook makes the rule mechanical instead of
+// remembered: `--interactive` on either command drops a marker keyed to the
+// session; a later `--interactive` invocation in the same session — either
+// command again — is refused (exit 2 blocks the prompt; stderr carries the
+// message). Both doors, one marker: a gate is verified at the door its
+// actor walks through, and quick was the door around the rule until Q-6.
 // Supervisor-mode invocations pass even in a marked session — their workers
 // start empty, which is the property this rule protects, so blocking them
 // would refuse the very recovery the refusal recommends.
@@ -25,7 +28,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 const REFUSAL =
-  'this session already ran a ticket interactively and carries its context — run /flow:ticket without --interactive (supervisor mode: a fresh worker implements), or /clear to reset the session.'
+  'this session already ran a ticket interactively and carries its context — rerun the command without --interactive (supervisor mode: a fresh worker implements), or /clear to reset the session.'
 
 let data
 try {
@@ -52,8 +55,14 @@ if (String(data.hook_event_name ?? '') === 'SessionStart') {
 }
 
 const prompt = String(data.prompt ?? '')
-if (!/^\s*\/flow:ticket\b/.test(prompt)) process.exit(0)
+if (!/^\s*\/flow:(ticket|quick)\b/.test(prompt)) process.exit(0)
 
+// The flag is recognized anywhere in the invocation — deliberate, pinned by
+// Q-6's review. Quick's arguments are free prose, so a literal
+// "--interactive" mid-description is ambiguous; the skill reading the same
+// prompt faces the same ambiguity, and the guard errs toward marking: a
+// false positive costs one slot recoverable by /clear, a false negative
+// silently defeats the fresh-context rule.
 const interactive = /\s--interactive\b/.test(prompt)
 
 if (existsSync(marker)) {

@@ -147,6 +147,16 @@ itself.
   implementation edits — recorded as a dated addendum to AUTO-5's entry in
   `epics/autonomous/status.md`.
 
+**Re-plan, 2026-08-08 (from Q-6's review, opus/high):** scope widens by two
+lines — the guard's refusal message, and ticket-skill step 0's verbatim
+quote of it. The rule now fires at the quick door, where the message's
+named recovery ("run /flow:ticket without --interactive") is not
+performable: no ticket ID exists yet. That violates the
+advertised-recovery invariant, so the message becomes door-agnostic
+("rerun the command without --interactive") and both documents change in
+the same commit, per the one-rule invariant. Step 0 is otherwise
+untouched; the marker's lifecycle stays out of scope.
+
 ## Q-7 — configurable reviewer model
 
 **Scope.**
@@ -252,3 +262,20 @@ cannot provide.
 **Acceptance criteria.**
 - The retro skill instructs the fresh-context spawn and keeps the gate
   in-session (grep). Doctor exit 0.
+
+## Q-13 — the "standard append-only preamble" is referenced where it is not defined
+
+**Scope.**
+- The quick skill (step 4) and the ticket skill (step 6) tell an agent to
+  create a status log "with the standard append-only preamble", but the
+  preamble's text lives only in the epic skill's template — a worker that
+  never loads the epic skill must invent one. Skills are self-sufficient:
+  carry the exact preamble text (or a single named source for it) in the
+  skills that instruct the creation. Found pre-existing by Q-6's review.
+
+**Not in scope.** Changing the preamble's content.
+
+**Acceptance criteria.**
+- Each skill that instructs status-log creation carries or points to the
+  exact preamble text (grep "append-only" across quick and ticket skills).
+  Doctor exit 0.

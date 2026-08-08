@@ -448,6 +448,21 @@ belongs in the quick skill's text with its reason. Re-verified after
 fixes: guard suite 10 pass 0 fail; tickets suite 24 pass 0 fail; doctor
 exit 0. Nothing else deferred.
 
+**Addendum — 2026-08-08 — acceptance criterion 1's live check, from Q-6's
+run:** Q-6 — the first of the retro's queue — ran via `/flow:ticket Q-6` in
+supervisor mode, as this entry's Owed line (as corrected by the retro)
+required. Evidence, from the worker's side of the arrangement: the Q-6
+status entry's Mode line in `epics/quick/status.md` names the worker
+(`supervisor — worker worker:Q-6, reviewer hired by the supervisor`); the
+supervisor's spawn prompt scoped the supervisor to resolve-and-spawn and
+forbade it any branch or file edits; every commit in Q-6's range on branch
+`q-6` was authored inside the worker's fresh context. The
+supervisor-transcript half of the check (no implementation edits by the
+invoking session) is attested by that structure and is confirmable by the
+human reading the supervisor's transcript. Criterion 2 — the
+interactive-twice refusal with hooks actually loaded — remains open on its
+recorded human action, per the retro's addendum.
+
 ## Retro — 2026-08-08
 
 **Outcome: achieved, one recorded deviation.** The guinea-pig epic

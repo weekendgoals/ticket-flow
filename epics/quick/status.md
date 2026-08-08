@@ -265,3 +265,111 @@ confirmed all twelve quick tickets parse (`list`: 12 tickets, Q-6–Q-12
 todo). Re-verified after fixes: tickets suite 24 pass 0 fail; guard suite
 10 pass 0 fail; doctor exit 0; `node --check` clean. Nothing deferred
 beyond the two live checks already in this entry's Owed line.
+
+### Q-6 — /flow:quick routes through the ticket loop's lane fork — 2026-08-08 — DONE
+
+**Built:** Plugin v1.15.0. `skills/quick` step 4 no longer enters the ticket
+skill at step 4 in-session: after quick's own steps 1–3 (gate, ticket
+written, `q-<n>` cut from the default branch, plan committed — the parts
+that need the conversation), the session becomes the **supervisor** per the
+ticket skill's step 0 — a fresh-context worker executes ticket steps 4–6 on
+the existing branch, with steps 1–3 scoped out of its spawn prompt, and the
+supervisor hires the reviewer. `--interactive` keeps the in-session lane at
+the interactive ticket's price: the session guard
+(`hooks/ticket-session-guard.mjs`) now matches `/flow:quick` as well as
+`/flow:ticket` — a quick `--interactive` sets the same session marker, a
+marked session is refused any later `--interactive` of either command, and
+plain invocations of both still pass; the marker's lifecycle is untouched.
+Guard suite grew 10 → 12 (quick `--interactive` marks / flagless quick does
+not; cross-door refusals carry the verbatim message; plain quick passes in
+a marked session). METHODOLOGY § "Why small work has a path" records the
+retro decision — routing over a documented opt-out; quick's savings are
+planning ceremony, never execution hygiene. README's quick row updated.
+AUTO-5's owed live check (acceptance criterion 1) recorded as a dated
+addendum beneath AUTO-5's entry in `epics/autonomous/status.md`.
+
+**Mode:** supervisor — worker worker:Q-6, reviewer hired by the supervisor.
+
+**Files touched:** `plugins/flow/skills/quick/SKILL.md`,
+`plugins/flow/hooks/ticket-session-guard.mjs`,
+`plugins/flow/hooks/ticket-session-guard.test.mjs`, `METHODOLOGY.md`,
+`README.md`, `plugins/flow/.claude-plugin/plugin.json`, `CHANGELOG.md`,
+`epics/autonomous/status.md`, this file. Branch `q-6`, cut from
+`origin/main` (9e1dbd2, PR #15's merge commit).
+
+**Verified:** `node --test plugins/flow/scripts/tickets.test.mjs` — 24
+pass, 0 fail. `node --test plugins/flow/hooks/ticket-session-guard.test.mjs`
+— 12 pass, 0 fail. `node --check` clean on both `tickets.mjs` and the hook.
+`doctor` exit 0, all five checks ✓. Acceptance: `grep -n "step 0"
+plugins/flow/skills/quick/SKILL.md` — 3 hits; `grep -n "from step 4"` on the
+same file — no matches (exit 1), so the in-session default is gone.
+`plugin.json` 1.15.0 equals the top CHANGELOG entry.
+
+**Decisions:** (1) The scope's "`--interactive` … marks the session like
+any interactive ticket" is a behavioural claim only the hook can make true —
+it is the sole marking mechanism, and it matched `/flow:ticket` only — so
+the guard's prompt match was extended to `/flow:quick`. Read against Not in
+scope: "the guard's marker semantics" protects the marker's lifecycle (set
+at invocation, wiped on clear/startup, survives resume/compact, keyed by
+session id), which is untouched; this change is trigger surface only.
+(2) The refusal message is unchanged even though it names `/flow:ticket
+without --interactive` as the recovery: the ticket skill's step 0 quotes
+that message verbatim and step 0 is out of scope, and both named recoveries
+(supervisor mode, `/clear`) work from the quick door too — the quick skill's
+own text says dropping the flag is the supervisor lane. (3) The ticket
+skill's step 6 Mode enumeration keeps `quick — in-session (/flow:quick)`
+unchanged: after this change the only in-session quick run is an
+`--interactive` one, so the label still names exactly one lane. (4) The
+implementation commit was amended pre-review to drop an auto-added Claude
+co-author trailer, per the ticket skill's rule; step 8's no-amendment rule
+binds after a review has run, and none had.
+
+**Owed:** Nothing. (AUTO-5's criterion-2 live check stays open on its
+recorded human action in `epics/autonomous/status.md` — a human typing
+`--interactive` twice in a fresh session; per Q-5's review it structurally
+cannot ride any ticket, so it is not carried here.)
+
+**Addendum — review — 2026-08-08 — opus/high:** Two Important, four nits,
+one pre-existing; both Importants and all four nits fixed in the review-fix
+commit (3a5c50a). Important (1): the routed worker's spawn prompt scoped
+ticket steps 1–3 out wholesale, deleting step 2's reading obligation and
+its stop-on-contradiction rule — the only lane that handed an empty worker
+an implement instruction with the reading removed. Fixed in-range: the
+quick skill now scopes out steps 1 and 3 only and says step 2 stays in the
+worker's prompt; the ticket text's "steps 1–3 scoped out" shorthand was
+read against its own stated rationale (ticket written, branch exists),
+which never covered step 2. Important (2): the guard now fires at the
+quick door, where the refusal's named recovery ("run /flow:ticket without
+--interactive") is not performable — no ticket ID exists yet — and the
+ticket skill's step 0 quotes the message verbatim, outside Q-6's scope.
+Disposition: fixed under a dated re-plan note appended to Q-6's section in
+tickets.md (AUTO-5 precedent) — chosen over a hook-only fix, which would
+leave the two documents disagreeing against the one-rule invariant, and
+over a hand-off ticket, which would knowingly ship a broken advertised
+recovery at a live door. The message is now door-agnostic ("rerun the
+command without --interactive"), changed in the hook, the test's verbatim
+assertion, and step 0's quote in one commit; step 0's rule sentence now
+names both doors. Nits fixed: (1) two mutation-survivable regex gaps
+closed with discriminating payloads — `/flow:tickets --interactive` in a
+marked session pins the `\b` boundary, a mid-sentence mention pins the
+`^\s*` anchor; guard suite 12 → 13. (2) The mid-prose flag match
+(`/flow:quick add a --interactive flag …` marks the session) pinned as
+deliberate, with a test and a comment in the hook: quick's arguments are
+free prose, the skill reads the same ambiguous prompt, and the guard errs
+toward marking — a false positive costs one slot recoverable by `/clear`,
+a false negative silently defeats the fresh-context rule. (3) The
+"refused … toward supervisor mode or /clear" sentence reworded so the
+recoveries cannot parse as among the refused. (4) The spawn prompt now
+hands the worker absolute `ticketsDoc`/`statusDoc`/`repoRoot` from the
+supervisor's own step-1 `find` — the worker's cwd moves during
+verification and relative paths break there. Pre-existing, handed to
+**Q-13** (added to this epic's ticket doc): "the standard append-only
+preamble" is referenced by the quick and ticket skills but defined only in
+the epic skill's template. Reviewer confirmed clean: all three acceptance
+criteria re-run (12/12 guard pre-fix, 24/24 tickets, doctor 0, greps as
+specified), the AUTO-5 criterion-1 addendum correctly hedged, the
+trigger-surface-not-marker-semantics scope reading, fail-open behaviour
+preserved, version/CHANGELOG discipline, no step-0 leakage in the range.
+Re-verified after fixes: guard suite 13 pass 0 fail; tickets suite 24 pass
+0 fail; `node --check` clean on the hook; doctor exit 0; `list` parses all
+13 quick tickets including Q-13. Nothing deferred beyond Q-13.
