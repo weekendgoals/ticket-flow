@@ -10,6 +10,56 @@ One command, one ticket, ending at a pull request the user reviews and merges.
 You are working from documents, not conversation history. Assume you know
 nothing about this epic that is not written down.
 
+## 0. Choose the lane: supervisor (default) or --interactive
+
+This step exists only for the session a human typed `/flow:ticket` into.
+**If the prompt that launched you says a driver or a supervisor spawned you,
+skip this step — you are the worker**: execute the skill from step 1 exactly
+as written, honoring whatever your spawn prompt scopes or forbids.
+
+**Default — supervisor mode.** The invoking session almost never starts
+empty: it has planned, discussed, or run earlier tickets, and that context
+biases everything it would build. So the session becomes the **supervisor**
+and implements nothing:
+
+1. Resolve the ticket (step 1) and stop there — no branch, no file edits,
+   at any point, for the rest of the ticket.
+2. Spawn a fresh-context **worker** — a general agent, full toolset, empty
+   context — telling it: a supervisor spawned it for this one ticket; run
+   the `flow:ticket` skill for the ID from step 1 exactly as written;
+   execute steps 1–6 (through the committed status entry) and stop with a
+   report (built, verified with counts, branch, cut-from base, commit
+   range); do not spawn a reviewer, do not push, do not open a pull
+   request — those are owned elsewhere; and record the worker label you
+   give it in the step 6 **Mode** line.
+3. When the worker reports, spawn the reviewer yourself (step 7,
+   unchanged). **The supervisor hires the judge, never the party under
+   review** — a worker that picks its own reviewer recreates self-review
+   one level down.
+4. Hand the findings back to the **same worker** to disposition, fix and
+   append the addendum (step 8) — it has the branch context; new commits,
+   never amendments.
+5. Have the worker push and open the pull request (step 9); relay its
+   report, print the URL and `next` (step 10), and stop, exactly as an
+   in-session run would.
+
+Relay every stop-and-report moment to the user verbatim — a worker halting
+on a contradiction is the mechanism working, and the supervisor's job is to
+surface it, not to smooth it over. Multiple tickets per session are
+legitimate in this mode precisely because every worker starts empty.
+
+**`--interactive` — run in-session, the steps below, yourself.** For when
+the human wants to converse with the implementing agent mid-ticket. The
+plugin's session hook records this choice at invocation, and it is one-way:
+**a session that has invoked a ticket interactively is refused every later
+`/flow:ticket`** with "this session already carries a ticket's context —
+/clear first, or use the default supervisor mode." Supervisor runs set no
+marker.
+
+**Autonomous epics are unchanged by this step**: `/flow:run`'s driver plays
+the supervisor's role, and its workers self-review and self-merge per
+step 10.
+
 ## 1. Resolve it
 
 ```bash
@@ -146,6 +196,11 @@ gets an entry saying why.
 **Built:** <what exists now that didn't, in enough detail that the next session
 needs no archaeology>
 
+**Mode:** <how this ticket ran — `supervisor — worker <label>, reviewer
+hired by the supervisor`, or `interactive — in-session`, or `autonomous —
+driver-spawned worker <label>`. This line is what makes the fresh-context
+rule auditable after the fact.>
+
 **Files touched:** <list>. Branch `<branch>`, cut from `<base>`.
 
 **Verified:** <exact commands and counts; manual checks with evidence>
@@ -166,6 +221,9 @@ was reviewed.
 ## 7. Review — empty context, strongest model, the review skill
 
 The session that wrote the code cannot review it. It will agree with itself.
+In supervisor mode this step belongs to the **supervisor**, never the
+worker (step 0); in an autonomous run the worker spawns it per this epic
+mode's own rules (step 10).
 
 Spawn the reviewer with the **Agent** tool:
 

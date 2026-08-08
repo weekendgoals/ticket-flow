@@ -159,6 +159,32 @@ in roughly six hundred designs before any code existed. The human still signs
 off; they just do it with adversarial findings and the reviewer's open
 questions in hand, instead of with prose written to be agreed with.
 
+## Why attended tickets get a supervisor
+
+The autonomous epic's live run proved something that had nothing to do with
+autonomy: three tickets executed by fresh-context agents, from documents
+alone, produced work whose reviews came back clean or nearly so. The
+fresh context was doing real work — and attended tickets, run in whatever
+session the human happened to be planning in, never got it. The invoking
+session has argued for its own decomposition, carries opinions about the
+code, and — when it runs several tickets — carries the previous ticket too.
+
+So the attended default became the same shape the driver already proved:
+the session supervises, a fresh worker implements from the documents, and —
+one step further than the autonomous lane — **the supervisor hires the
+reviewer**, because a worker that picks its own judge recreates self-review
+one level down. Interactive mode survives behind a flag for the real case
+it serves (conversing with the implementing agent mid-ticket), but the
+choice is one-way per session and enforced by a hook, not by memory: an
+interactive run marks the session, and every later `/flow:ticket` in it is
+refused toward `/clear` or supervisor mode. A rule that survives only if
+every future session remembers it is not a rule; the hook is deterministic,
+which is the same lesson as doctor's — spend inference only where judgment
+is needed. The marker records the mode chosen at invocation, in the OS temp
+dir: session-scoped state given session-scoped lifetime, deliberately not
+in the repository — it is a fact about a conversation, not about the
+project.
+
 ## Why doctor is a script first, and judgment second
 
 The board's one honest failure mode is a heading that *almost* parses: a status

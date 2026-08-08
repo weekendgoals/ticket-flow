@@ -341,3 +341,72 @@ satisfied outright (the waiver a genuine timestamped re-plan — committed
 entry exact against `gh`/`git`, and standing checks green on a throwaway
 worktree of the reviewed tree (15 tests, 15 pass, 0 fail; doctor exit 0;
 epic branch 24/24). Nothing else deferred.
+
+### AUTO-5 — attended tickets get the same fresh context: supervisor by default, interactive by flag — 2026-08-08 — DONE
+
+**Built:** Plugin v1.13.0. `skills/ticket` gains step 0, the lane fork:
+attended `/flow:ticket <ID>` now defaults to **supervisor mode** — the
+invoking session resolves the ticket and implements nothing; a
+fresh-context worker executes steps 1–6 from the documents, the
+**supervisor spawns the reviewer** (the party under review no longer hires
+its own judge), findings go back to the same worker for step 8, the worker
+pushes and opens the PR, the supervisor relays and stops. A driver- or
+supervisor-spawned agent skips step 0 (it is the worker). `--interactive`
+runs in-session as before, once per session. The step 6 template gains a
+**Mode** line naming how the ticket ran and which worker ran it — the
+audit trail for the fresh-context rule. New static hook:
+`hooks/hooks.json` registers a UserPromptSubmit guard
+(`hooks/ticket-session-guard.mjs`, zero dependencies): `--interactive`
+drops a marker keyed to the session id in the OS temp dir at invocation;
+any later `/flow:ticket` in that session exits 2 with "this session
+already carries a ticket's context — /clear first, or use the default
+supervisor mode." Supervisor runs set no marker. The guard has its own
+6-test suite. METHODOLOGY gains "Why attended tickets get a supervisor"
+(same commit as the constraint, per the root invariant); README's ticket
+row and CLAUDE.md's test commands updated. Autonomous epics unchanged.
+
+**Mode:** interactive — in-session, necessarily: this ticket ships the
+supervisor default that did not exist when it started, and it ran under
+the v1.12.0 skill in a session already carrying four tickets' context —
+the exact condition it exists to prevent. The hook was not yet loaded, so
+no marker guards this session.
+
+**Files touched:** `plugins/flow/skills/ticket/SKILL.md`,
+`plugins/flow/hooks/hooks.json` (new),
+`plugins/flow/hooks/ticket-session-guard.mjs` (new),
+`plugins/flow/hooks/ticket-session-guard.test.mjs` (new),
+`METHODOLOGY.md`, `README.md`, `CLAUDE.md`,
+`plugins/flow/.claude-plugin/plugin.json`, `CHANGELOG.md`, this file.
+Branch `auto-5`, cut from `main`.
+
+**Verified:** `node --test plugins/flow/scripts/tickets.test.mjs` — 24
+pass, 0 fail. `node --test plugins/flow/hooks/ticket-session-guard.test.mjs`
+— 6 pass, 0 fail (supervisor invocations set no marker; interactive sets
+one; both follow-up forms refused with the documented message, exit 2;
+cross-session isolation; garbage input never blocks). `node --check` on the
+guard: clean. `doctor` exit 0. Acceptance criteria: (2) verified at the
+script level — the exact two-invocation sequence is a test asserting exit 2
+and the documented message; the **live** in-session check needs a fresh
+session with the plugin's hooks loaded and is owed. (1) needs the first
+real supervisor-mode run and is owed with it.
+
+**Decisions:** (1) The hook marks the session at invocation, not at
+completion — contamination begins when the interactive ticket starts, and
+a failed interactive run still leaves its context behind. (2) The marker
+lives in the OS temp dir keyed by session id, not in the repository: it is
+a fact about a conversation, and repo state would outlive the session it
+describes (and dirty the working tree mid-ticket). (3) The guard fails
+open on its own errors (unparseable input, unwritable marker) — a broken
+guard must degrade to today's behaviour, never block legitimate work.
+(4) The refusal blocks ALL later `/flow:ticket` forms in a marked session,
+including a second `--interactive`, per the epic doc's rule as written.
+(5) In supervisor mode the reviewer-hiring moved to the supervisor, one
+step beyond the autonomous lane, per this ticket's scope; the autonomous
+lane was left untouched per Not in scope.
+
+**Owed:** Two live checks to the first post-merge session: a real
+supervisor-mode ticket (status entry naming the worker, supervisor
+transcript free of implementation edits — acceptance criterion 1), and the
+interactive-twice refusal with hooks actually loaded (criterion 2, verified
+here only at script level). Natural carrier: the first of the four owed
+quick tickets, run supervisor-mode after this merges.
