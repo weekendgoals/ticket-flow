@@ -116,6 +116,16 @@ Hence three design choices:
   setup rather than shipped as plugin code — the plugin cannot grant itself
   a guarantee that must bind it.
 
+The first live run taught one more thing, now part of how outcomes are
+written: **an evidence criterion is only as strong as its observer.** The
+epic's outcome promised an external record "showing zero human
+interventions" — but every actor, human or agent, acts under the same GitHub
+identity, so no record could ever show that; the claim was unfalsifiable the
+day it was written, and only the run's own review caught it. The epic skill
+now asks the outcome's evidence line to name its observer and claim only
+what that observer can distinguish — there: zero pull-request comments, zero
+reviews, a default branch that never moved.
+
 The mode's own reversal condition is written in its epic: if unattended runs
 routinely stall, or produce release pull requests the human rejects, the mode
 is removed and this section becomes the record of what it cost to learn.

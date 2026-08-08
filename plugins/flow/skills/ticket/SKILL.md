@@ -218,7 +218,10 @@ This line is what makes the fresh-context rule auditable after the fact.>
 **Decisions:** <every judgment call, with the why>
 
 **Owed:** <anything deferred and which ticket inherits it — "Nothing" if
-genuinely nothing, never omit the line>
+genuinely nothing, never omit the line. Verify the named carrier can
+structurally reach the thing being checked: an owed check was once handed to
+a lane whose entry point never touches the step it was meant to verify, and
+only review caught it>
 ```
 
 Write for someone who was not there: no codenames, no "as discussed", no

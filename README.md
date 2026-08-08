@@ -113,8 +113,12 @@ firing mid-run, or any failing command. Halting is the mechanism working —
 a run that pushes through is a run whose release pull request can no longer
 be trusted.
 
-Two things are **environment setup, not plugin code**, and both must exist
-before the first unattended run:
+Two things are **environment setup, not plugin code**. Both must exist
+before the first unattended run — and both are probed while the epic is
+planned, not discovered on run day: declaring `Run mode: autonomous`
+obligates the plan to run the probes and record the result (the first live
+run hit an unprobed free-plan 403, and its waiver landed seconds before
+start):
 
 - **A pre-authorized permission surface.** The session must already be
   allowed to run git, `gh`, the project's test commands, file edits and agent

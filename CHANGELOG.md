@@ -4,6 +4,25 @@ The plugin is the methodology's distribution mechanism: a change to a skill is
 a behaviour change in every project that installs it. This file is what makes
 those changes deliberate and visible.
 
+## 1.14.0 — 2026-08-08
+
+Q-5: the autonomous epic's retro ships its lessons as rules.
+
+- **`skills/epic`:** declaring `Run mode: autonomous` now obligates probing
+  the environment prerequisites at plan time and recording the result — the
+  first live run discovered a free-plan 403 on the branch-protection
+  endpoints on run day, and its waiver landed seconds before start. The Outcome
+  template asks the evidence line to name an observer that can distinguish
+  success from failure ("zero interventions" was unfalsifiable under a
+  shared GitHub identity).
+- **`skills/ticket`:** the status entry's **Owed** line requires a carrier
+  that can structurally reach the deferred check — an owed check was once
+  handed to a lane whose entry point never touches the step it verifies.
+- The repository's root instructions gain two invariants distilled from the
+  epic's five reviews (cross-document doctrine drift; gates checked at the
+  wrong door), METHODOLOGY.md records the observer lesson, and the retro's
+  owed-work queue lands as quick tickets Q-6–Q-12.
+
 ## 1.13.0 — 2026-08-08
 
 AUTO-5: attended tickets get the same fresh context the autonomous run just

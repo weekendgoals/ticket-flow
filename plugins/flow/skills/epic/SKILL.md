@@ -84,7 +84,11 @@ the evidence that would show it worked, and what would make us reverse or
 remove it. Falsifiable, or it is decoration — "improve UX" can never fail;
 "support requests about X stop arriving" can be checked at the retro.
 Acceptance criteria prove the build behaves as intended; this line is what
-proves it was worth building.>
+proves it was worth building. Name the observer for each piece of evidence
+and check it can distinguish success from failure: "the record shows zero X"
+is evidence only if a record showing some X is possible — an epic once
+promised a git record proving no human intervened, when every actor shared
+the human's own identity.>
 
 Areas in scope: <the services, packages or directories this epic touches, and
 the instruction file that binds each — e.g. `api-gateway` (api-gateway/CLAUDE.md).
@@ -109,7 +113,16 @@ Run mode: autonomous
 Only valid with integration topology; `tickets.mjs` refuses the combination
 with serial. Declaring it means: after sign-off, each ticket implements,
 reviews, fixes and merges its own pull request into `epic/<name>` unattended,
-and the human's next decision point is the release pull request.>
+and the human's next decision point is the release pull request. Declaring it
+also obligates the plan to probe the environment prerequisites NOW — branch
+protection on the default branch (the run skill's step 3 has the probe
+commands) and the pre-authorized permission surface (step 3 enumerates what
+must be allowed; check that list against what the environment actually
+pre-authorizes) — and record the result as prose on this Run mode line or
+under the ground rules, never as its own mode-shaped preamble line, which
+doctor's near-miss scan would flag. A prerequisite first probed on run day is
+discovered at the worst moment: the first live run hit an unprobed free-plan
+403, and its waiver landed seconds before run start.>
 
 Status log: `epics/<name>/status.md`. Run a ticket with `/flow:ticket <ID>`.
 
