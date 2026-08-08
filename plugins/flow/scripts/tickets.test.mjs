@@ -219,6 +219,45 @@ test('Next up suggests the installed, namespaced command', () => {
   assert.ok(!/(?<!flow:)\/ticket /.test(out), `found a bare /ticket suggestion in:\n${out}`)
 })
 
+test('brief prints a ticket\'s full section plus the derived facts find reports', () => {
+  // The brief exists so a session can read the next ticket's scope and
+  // acceptance criteria from one command instead of opening the ticket doc
+  // (BOARD-3). --json is the find payload plus a body field.
+  const briefed = JSON.parse(run(repo, 'brief', 'a-2', '--json'))
+  const found = JSON.parse(run(repo, 'find', 'a-2', '--json'))
+  assert.deepEqual(briefed, { ...found, body: briefed.body }, 'the brief payload is the find payload plus body')
+  assert.match(briefed.body, /\*\*Scope\.\*\* Persistence\./, 'the body carries the section content')
+
+  const out = run(repo, 'brief', 'A-2')
+  assert.match(out, /A-2 — persist the results/)
+  assert.match(out, /state done/, 'the derived state is reported')
+  assert.match(out, /\*\*Scope\.\*\* Persistence\./)
+})
+
+test('brief with no argument briefs the first startable ticket and names its epic', () => {
+  // The same ticket Next up proposes: first todo in document order.
+  const out = run(repo, 'brief')
+  assert.match(out, /A-4 — polish the output/)
+  assert.match(out, /epic alpha/, 'the epic it came from is named')
+  assert.match(out, /\*\*Scope\.\*\* Polish\./)
+  assert.equal(JSON.parse(run(repo, 'brief', '--json')).id, 'A-4')
+})
+
+test('brief refuses an unknown ID with find\'s refusal, verbatim', () => {
+  const brief = runFail(repo, 'brief', 'A-99')
+  const find = runFail(repo, 'find', 'A-99')
+  assert.equal(brief.status, 1)
+  assert.equal(brief.stderr, find.stderr, 'one refusal, not two copies drifting apart')
+  assert.match(brief.stderr, /no ticket "A-99"/)
+})
+
+test('Next up hints that the brief exists', () => {
+  // Named as the script subcommand — /flow:brief is not an installed command,
+  // and the board never suggests a command that does not exist (BOARD-1).
+  const out = run(repo, 'list')
+  assert.match(out, /tickets\.mjs brief \[ID\]/)
+})
+
 test('mode lines parse tolerantly and expose in find and list', () => {
   const g = JSON.parse(run(repo, 'find', 'G-1', '--json'))
   assert.equal(g.releaseMode, 'integration', 'prose after the value must not break the parse')

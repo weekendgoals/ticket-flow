@@ -16,6 +16,8 @@
 //
 //   tickets.mjs list [epic] [--json]     status board, all epics or one
 //   tickets.mjs find <ID> [--json]       resolve an ID to its epic's doc paths
+//   tickets.mjs brief [ID] [--json]      a ticket's full section + derived state;
+//                                        no ID briefs the first startable ticket
 //   tickets.mjs next [epic] [--json]     what to start next
 //   tickets.mjs epics [--json]           list known epics
 //   tickets.mjs current [--json]         the epic this folder belongs to
@@ -353,6 +355,9 @@ function printBoard(data, epicFilter) {
         (rest ? `  ${C.dim}(+${rest} more in ${epic.epic})${C.off}` : ''),
     )
   }
+  // Named as the script subcommand, not a slash command — /flow:brief does not
+  // exist, and the board never suggests a command that does not (BOARD-1).
+  console.log(`  ${C.dim}(tickets.mjs brief [ID] — a ticket's full scope, criteria and derived state)${C.off}`)
 }
 
 // ── doctor ───────────────────────────────────────────────────────────────────
@@ -466,6 +471,60 @@ function requireKnownEpic(data, epicFilter) {
   }
 }
 
+// Resolve an ID against the board, with find's refusals: an ambiguous ID and
+// an unknown ID both exit 1 with the message naming what is known. `brief`
+// shares this path so its refusals stay verbatim find's — one behaviour, not
+// two copies drifting apart.
+function resolveTicket(data, id) {
+  if (data.duplicates[id]) {
+    console.error(
+      `tickets: "${id}" is defined in more than one epic (${data.duplicates[id].join(', ')}). ` +
+        'IDs must be unique across epics — rename one before running the ticket.',
+    )
+    process.exit(1)
+  }
+  const t = data.byId[id]
+  if (!t) {
+    console.error(`tickets: no ticket "${id}". Known IDs: ${data.tickets.map((x) => x.id).join(', ') || '(none)'}`)
+    process.exit(1)
+  }
+  return t
+}
+
+// The derived facts for one resolved ticket — the exact payload `find --json`
+// emits (the unattended driver reads it between tickets; its shape is
+// contract). Refuses the serial+autonomous contradiction at the source.
+function ticketFacts(data, t) {
+  const epic = data.epics.find((e) => e.epic === t.epic)
+  if (modeContradiction(epic)) {
+    console.error(
+      `tickets: epic "${epic.epic}" declares Run mode: autonomous with Release mode: ${epic.releaseMode}. ` +
+        'Autonomous requires integration topology — unattended merges may only target the epic branch, never the default branch. Fix the epic preamble first.',
+    )
+    process.exit(1)
+  }
+  // Absolute paths, always. The caller may be anywhere in the tree — a skill
+  // that has just run `cd api-gateway` still has to open these, and the Read
+  // tool takes absolute paths anyway.
+  return {
+    id: t.id,
+    title: t.title,
+    epic: t.epic,
+    state: t.state,
+    branch: t.branch,
+    releaseMode: epic.releaseMode,
+    runMode: epic.runMode,
+    repoRoot,
+    epicDir: epic.dir,
+    ticketsDoc: epic.ticketsDoc,
+    statusDoc: epic.statusDoc || join(epic.dir, 'status.md'),
+    statusDocExists: Boolean(epic.statusDoc),
+    contextDir: epic.contextDir,
+    isCurrentFolderEpic: data.current?.epic === t.epic,
+    pr: t.pr || null,
+  }
+}
+
 switch (cmd) {
   case 'epics': {
     const epics = discoverEpics()
@@ -488,50 +547,45 @@ switch (cmd) {
       console.error('usage: tickets.mjs find <ID>')
       process.exit(2)
     }
-    const id = arg.toUpperCase()
     const data = board(null)
-    if (data.duplicates[id]) {
-      console.error(
-        `tickets: "${id}" is defined in more than one epic (${data.duplicates[id].join(', ')}). ` +
-          'IDs must be unique across epics — rename one before running the ticket.',
-      )
-      process.exit(1)
-    }
-    const t = data.byId[id]
-    if (!t) {
-      console.error(`tickets: no ticket "${id}". Known IDs: ${data.tickets.map((x) => x.id).join(', ') || '(none)'}`)
-      process.exit(1)
-    }
-    const epic = data.epics.find((e) => e.epic === t.epic)
-    if (modeContradiction(epic)) {
-      console.error(
-        `tickets: epic "${epic.epic}" declares Run mode: autonomous with Release mode: ${epic.releaseMode}. ` +
-          'Autonomous requires integration topology — unattended merges may only target the epic branch, never the default branch. Fix the epic preamble first.',
-      )
-      process.exit(1)
-    }
-    // Absolute paths, always. The caller may be anywhere in the tree — a skill
-    // that has just run `cd api-gateway` still has to open these, and the Read
-    // tool takes absolute paths anyway.
-    const out = {
-      id: t.id,
-      title: t.title,
-      epic: t.epic,
-      state: t.state,
-      branch: t.branch,
-      releaseMode: epic.releaseMode,
-      runMode: epic.runMode,
-      repoRoot,
-      epicDir: epic.dir,
-      ticketsDoc: epic.ticketsDoc,
-      statusDoc: epic.statusDoc || join(epic.dir, 'status.md'),
-      statusDocExists: Boolean(epic.statusDoc),
-      contextDir: epic.contextDir,
-      isCurrentFolderEpic: data.current?.epic === t.epic,
-      pr: t.pr || null,
-    }
+    const t = resolveTicket(data, arg.toUpperCase())
+    const out = ticketFacts(data, t)
     if (json) emit(out)
     else for (const [k, v] of Object.entries(out)) console.log(`${k.padEnd(22)} ${v}`)
+    break
+  }
+
+  case 'brief': {
+    // The next-ticket brief: everything a session needs to start a ticket —
+    // the full section from the epic's tickets.md (Scope, Not in scope,
+    // Acceptance criteria) plus the derived facts `find` reports — without
+    // opening the ticket doc. With no ID, brief the first startable ticket in
+    // document order: the same one Next up proposes.
+    const data = board(null)
+    let t
+    if (arg) {
+      t = resolveTicket(data, arg.toUpperCase())
+    } else {
+      t = data.tickets.find((x) => x.state === 'todo')
+      if (!t) {
+        if (json) emit(null)
+        else console.log('nothing left to start')
+        break
+      }
+    }
+    const out = { ...ticketFacts(data, t), body: t.body }
+    if (json) emit(out)
+    else {
+      console.log(`${C.bold}${out.id} — ${out.title}${C.off}`)
+      console.log(
+        `${C.dim}epic ${out.epic} · state ${out.state} · branch ${out.branch} · release ${out.releaseMode}` +
+          (out.runMode ? ` · run ${out.runMode}` : '') +
+          (out.pr ? ` · PR #${out.pr.number} (${out.pr.state})` : '') +
+          C.off,
+      )
+      console.log()
+      console.log(out.body)
+    }
     break
   }
 
@@ -576,6 +630,6 @@ switch (cmd) {
   }
 
   default:
-    console.error(`tickets: unknown command "${cmd}" (try: list, find, next, epics, current, doctor)`)
+    console.error(`tickets: unknown command "${cmd}" (try: list, find, brief, next, epics, current, doctor)`)
     process.exit(2)
 }

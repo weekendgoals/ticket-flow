@@ -4,6 +4,22 @@ The plugin is the methodology's distribution mechanism: a change to a skill is
 a behaviour change in every project that installs it. This file is what makes
 those changes deliberate and visible.
 
+## 1.12.0 — 2026-08-08
+
+BOARD-3: the next-ticket brief — a ticket's whole picture from one command.
+
+- **New subcommand `tickets.mjs brief [ID]`**: prints the ticket's full
+  section from its epic's `tickets.md` (Scope, Not in scope, Acceptance
+  criteria) plus the derived facts `find` reports — state, branch, epic,
+  modes, pull request — so a session can read what a ticket demands without
+  opening the ticket doc. With no ID it briefs the first startable ticket in
+  document order (the same one Next up proposes), naming its epic. An unknown
+  ID gets `find`'s refusal verbatim (shared code path, not a copy). `--json`
+  emits the `find` payload plus a `body` field carrying the section text.
+- The board's Next up section gains a hint line that the brief exists — named
+  as the script subcommand, since `/flow:brief` is not an installed command
+  and the board never suggests a command that does not exist.
+
 ## 1.11.0 — 2026-08-08
 
 BOARD-2: an unknown epic filter is an error, not an empty board.
