@@ -73,6 +73,53 @@ An earlier version ended the loop at review instead of at an open pull request.
 Finished, reviewed work then sat unpushed for a day, invisible to everyone. The
 loop now ends at a pull request for that reason.
 
+## Why the human gate can move to the release pull request
+
+Autonomous mode looks like a breach of the rule above; it is actually the
+same rule with the gate relocated. The insight is that "a human merges" was
+never about the merge click — it was about unverified work not reaching the
+branch that deploys. In an integration epic the branch that deploys is only
+ever touched by the release pull request, so a human reviewing *that* pull
+request guards exactly what the per-ticket gate guarded, once, with the full
+evidence trail in front of them. That is why autonomous mode **requires**
+integration topology and the script refuses the serial combination
+mechanically: in serial mode every ticket merge is a deploy-branch merge,
+and there is no downstream gate left to move to.
+
+What the mode buys is the elimination of the human as a between-tickets
+scheduler while keeping them as the judge. What it costs is that every
+defence that used to be a human noticing — a stalled loop, a review skipped,
+a wrong merge target — has to become either mechanical or a reason to stop.
+Hence three design choices:
+
+- **Stop conditions beat retries.** An attended session that hits a conflict
+  can ask; an unattended one that improvises past a failed gate produces a
+  release pull request whose evidence can no longer be trusted — and a
+  corrupted evidence trail defeats the one gate remaining. Halting converts
+  every unforeseen situation into the attended problem the flow already
+  knows how to handle. The same logic makes a mid-run permission prompt a
+  stop rather than a wait: nobody is there to answer, and a run wedged on a
+  prompt is indistinguishable from a run making progress.
+- **Each ticket runs in a fresh-context agent, and the driver never
+  implements.** Partly the standing self-review argument — but mostly
+  because it turns every unattended run into a live test of the core bet.
+  If the documents are not sufficient, a fresh agent fails visibly, instead
+  of the driver silently patching the gap from context that will not exist
+  next time. The run log naming each worker is what makes the rule
+  observable after the fact.
+- **The environment is verified before ticket one, not discovered mid-run.**
+  The permission surface must be pre-authorized, and the default branch must
+  carry branch protection — pull requests required, force pushes blocked,
+  human-only merge. Skills are soft enforcement: they constrain an agent
+  that reads and obeys them. Protection is the hard floor that holds even
+  against a misbehaving agent, which is why it is documented as environment
+  setup rather than shipped as plugin code — the plugin cannot grant itself
+  a guarantee that must bind it.
+
+The mode's own reversal condition is written in its epic: if unattended runs
+routinely stall, or produce release pull requests the human rejects, the mode
+is removed and this section becomes the record of what it cost to learn.
+
 ## Why the reviewer is a separate agent
 
 A session that has just spent hours justifying its own design decisions is the

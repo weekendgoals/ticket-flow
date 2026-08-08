@@ -4,6 +4,33 @@ The plugin is the methodology's distribution mechanism: a change to a skill is
 a behaviour change in every project that installs it. This file is what makes
 those changes deliberate and visible.
 
+## 1.9.0 — 2026-08-08
+
+AUTO-3: the `/flow:run` driver — an autonomous epic runs start to finish with
+nobody present, and the human gate moves to the release pull request.
+
+- **New skill `/flow:run <epic>`.** Refuses anything but a signed-off
+  `Run mode: autonomous` epic (sign-off is verified mechanically: the epic's
+  documents on `origin/epic/<name>`). Loops the tickets in document order,
+  **each in a fresh-context agent** — the driver orchestrates, logs which
+  agent ran each ticket, and never implements — refreshing `epic/<name>`
+  from the default branch between tickets. Halts on the epic's ground-rule
+  stop conditions (BLOCKED, an unfixable Important finding, a document/code
+  contradiction, a merge conflict, reviewer-spawn failure past the fallback,
+  a permission prompt firing mid-run, any failing command) with a run record
+  in the status log saying why, and never improvises past one. Ends by
+  **opening** the release pull request with the full evidence trail — and
+  never merges it.
+- **`/flow:epic` pushes `epic/<name>` to origin at creation** (gap found by
+  AUTO-2's review): integration-mode pull requests need their base on the
+  remote, and an unattended run cannot stop to ask — the push is also what
+  lets `/flow:run` verify sign-off happened.
+- **README + METHODOLOGY** carry the narrative: why the gate moves and never
+  disappears, why main stays sacred, why stop conditions beat retries, and
+  the two pieces of environment setup an unattended run needs first — a
+  pre-authorized permission surface, and branch protection on the default
+  branch as the hard floor under every soft rule.
+
 ## 1.8.0 — 2026-08-08
 
 AUTO-2: the gated self-merge path — the one sanctioned agent merge, and only

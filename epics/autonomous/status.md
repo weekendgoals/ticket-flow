@@ -148,3 +148,69 @@ documents, README/METHODOLOGY contradictions are AUTO-3's assigned scope,
 and standing checks pass (15/15, doctor 0). AUTO-5 (attended supervisor
 default, interactive by flag, static hook) added to the ticket doc by
 re-plan on user proposal, sequenced after AUTO-4.
+
+### AUTO-3 — the /flow:run driver — 2026-08-08 — DONE
+
+**Built:** Plugin v1.9.0. New skill `plugins/flow/skills/run/SKILL.md` —
+`/flow:run <epic>`: refuses any epic whose `runMode` is not `autonomous`
+and any epic with tickets stuck in intermediate states (a dead previous run);
+verifies sign-off mechanically (`tickets.md` **and** `status.md` present on
+`origin/epic/<name>` — status.md exists only after the sign-off gate);
+checks the environment before ticket one (pre-authorized permission surface
+enumerated; branch protection on the default branch checked via `gh api`,
+missing = report before starting); loops tickets in document order via
+`tickets.mjs next`, refreshing `epic/<name>` from the default branch between
+tickets (conflict → `git merge --abort` and halt); spawns each ticket's
+worker as a fresh-context general agent whose prompt carries the load-bearing
+"A driver spawned you" phrase (ticket skill step 10's stop-after-merge key),
+records the worker's identity per ticket, and verifies the outcome by
+`find --json` state `integrated` — never by the worker's own report; halts
+on the epic's seven ground-rule stop conditions, reproduced verbatim, never
+improvising past one; appends a `### Run — <date> — <completed|halted>`
+record to the status log, committed and pushed on `epic/<name>`; ends by
+opening the release PR (`Release: <epic>`, merge-commit-only warning at the
+top of the body, full per-ticket evidence trail) and never merges, approves
+or comments on it. `skills/epic` step 7 now pushes `epic/<name>` to origin at
+creation (AUTO-2's review handed this on: PR bases must exist on the remote,
+and an unattended run cannot stop to ask) and step 8's handover points
+autonomous epics at `/flow:run`. README: eight skills, `/flow:run` table row,
+new "Autonomous epics" section with the two environment prerequisites.
+METHODOLOGY.md: new section "Why the human gate can move to the release pull
+request" — the gate relocates rather than disappears, why autonomy requires
+integration topology, why stop conditions beat retries, why the driver never
+implements, why branch protection is environment setup rather than plugin
+code.
+
+**Files touched:** `plugins/flow/skills/run/SKILL.md` (new),
+`plugins/flow/skills/epic/SKILL.md`, `README.md`, `METHODOLOGY.md`,
+`plugins/flow/.claude-plugin/plugin.json`, `CHANGELOG.md`, this file.
+Branch `auto-3`, cut from `main` (serial mode, epic docs already shipped,
+no open epic PRs).
+
+**Verified:** `node --test plugins/flow/scripts/tickets.test.mjs` — 15
+tests, 15 pass, 0 fail (no script changes; standing checks). `node --check
+plugins/flow/scripts/tickets.mjs` clean. `doctor` exit 0 live. Acceptance
+criteria: the run skill's step 5 lists the seven stop conditions with the
+ground rules' wording verbatim; step 3 documents the required
+pre-authorizations and states that a permission prompt firing mid-run is a
+stop condition (sign-off decision, 2026-08-08).
+
+**Decisions:** (1) The run record heading (`### Run — …`) deliberately
+matches neither parsed heading shape nor doctor's near-miss regexes — those
+require an ID-like `X-\d+` token — verified against `tickets.mjs` lines
+419-420, so the board ignores run records instead of misparsing them. (2)
+Sign-off verification requires `status.md` on the remote epic branch, not
+just `tickets.md`, because the epic skill creates status.md only after the
+human approves — the cheapest mechanical trace of the gate. (3) The driver
+verifies each ticket reached `integrated` via the board, not the worker's
+report — the merged PR is evidence, a report is a claim. (4) Missing branch
+protection reports-and-stops at run start (the invoking human is present
+then and can waive); it is not a doctor check because it is environment
+setup AUTO-4 verifies before the live run. (5) Step 8 of the epic skill
+gained one handover sentence pointing autonomous epics at `/flow:run` —
+adjacent to the scoped step 7 change; without it the driver is
+undiscoverable from the flow that creates the epics it runs. (6) The release
+PR title format `Release: <epic>` deliberately does not match `<ID>: <title>`
+so it can never be mistaken for a squashable single-ticket PR.
+
+**Owed:** Nothing.
