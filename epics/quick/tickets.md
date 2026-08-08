@@ -84,3 +84,30 @@ switches), production observation artifacts. Q-2 owns the "four skills" line.
 - The two lists either match or the difference is explained in METHODOLOGY.md
   with a reason; `grep -n "payment" plugins/flow/skills/ticket/SKILL.md
   METHODOLOGY.md` shows whichever was chosen.
+
+## Q-5 — ship the autonomous epic's retro
+
+**Scope.**
+- Append the `## Retro — 2026-08-08` section to `epics/autonomous/status.md`:
+  outcome verdict, lessons, and where each one went.
+- `CLAUDE.md`: two invariants distilled from the epic's five reviews — a rule
+  stated in more than one document is one rule; a gate is verified at the
+  door its actor walks through.
+- `skills/epic`: the Run-mode template obligates probing environment
+  prerequisites at plan time; the Outcome template asks the evidence line to
+  name an observer that can distinguish the outcomes.
+- `skills/ticket`: the status entry's **Owed** line requires a carrier that
+  can structurally reach the deferred check.
+- `METHODOLOGY.md` § "Why the human gate can move to the release pull
+  request": the observer lesson from the first live run.
+- Append the retro's owed-work queue as tickets Q-6–Q-12 below.
+- Version 1.14.0 + CHANGELOG (skill templates change installed behaviour).
+
+**Not in scope.** Executing Q-6–Q-12; the quick skill's lane change (Q-6);
+retrofitting Outcome lines onto older epics.
+
+**Acceptance criteria.**
+- Standing checks green: both test suites all pass, `doctor` exit 0,
+  `node --check plugins/flow/scripts/tickets.mjs` clean.
+- `plugin.json` version equals the top CHANGELOG entry (1.14.0).
+- `grep -c "## Retro — 2026-08-08" epics/autonomous/status.md` — exactly 1.
