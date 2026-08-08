@@ -200,3 +200,38 @@ exactly the ticket the first Next up line proposes; "which ticket Next up
 proposes" itself is untouched.
 
 **Owed:** Nothing.
+
+**Addendum — review — 2026-08-08 — opus/high:** Three findings — one
+Important, two nits — plus one pre-existing defect. (1) Important, fixed:
+the new README paragraph gave `node plugins/flow/scripts/tickets.mjs brief
+[ID]`, a path that only exists in this repository — in any installed project
+the script lives in the plugin cache, so a user following the manual
+verbatim gets "Cannot find module". BOARD-1's defect class (a documented
+command that fails when run verbatim) reproduced in the manual by the ticket
+citing BOARD-1's rule. Fixed in commit "BOARD-3: document and hint the brief
+as a subcommand, not a fake command line; pin the empty-board branch (review
+fix)": the paragraph names the subcommand and the plugin-root invocation
+every skill uses (`node "${CLAUDE_PLUGIN_ROOT}/scripts/tickets.mjs" brief
+[ID]`), and says explicitly there is no `/flow:brief` slash command. (2)
+Nit, fixed same commit: the nothing-startable branch of `brief` (plain
+`nothing left to start`, `--json` `null`, exit 0) was two new user-facing
+outputs with no test — the exact coverage gap BOARD-2's review flagged one
+ticket ago; the reviewer confirmed the behaviour correct in a scratch repo,
+and a new test now pins it (a nonzero exit here would be an autonomous stop
+condition). (3) Nit, fixed same commit with the same decision as (1): the
+Next up hint printed `(tickets.mjs brief [ID] — …)`, which typed verbatim is
+"command not found" since the script is on no PATH; it now names `brief
+[ID]` as this script's subcommand. Suite after fixes: 24 tests, 24 pass, 0
+fail; doctor exit 0. Pre-existing, not fixed — outside BOARD-3's scope and
+this epic's write surface: plain `find` prints `pr [object Object]` (the
+generic key-value print loop, byte-identical before and after this ticket's
+refactor); handed to the `/flow:quick` ticket already owed after this run,
+the one carrying BOARD-2's review handoff (unfiltered `list` printing `no
+epics found under epics/` when every epic lacks ticket sections). Nothing
+else deferred. The reviewer also verified mechanically: the driver-facing
+contract byte-identical between the epic-branch script and HEAD (`find`,
+`next`, `list`, plain and `--json`, plus the BOARD-2 error paths); the four
+new tests non-vacuous by mutation (each mutation fails exactly its test);
+brief-with-no-ID provably the same ticket as Next up's first line; version
+pin 1.12.0, write surface, zero dependencies, append-only status log all
+holding.
