@@ -4,20 +4,23 @@ A Claude Code plugin that runs work as **epics** and **tickets**, from a request
 through to a reviewed pull request — and derives the board from git instead of
 asking anyone to maintain one.
 
-Seven skills, two reviewer agents, one script. No database, no config file, no
+Eight skills, two reviewer agents, one script. No database, no config file, no
 state stored anywhere.
 
 | | |
 |---|---|
 | `/flow:epic <name> [source...]` | Turn a request, report or conversation into `epics/<name>/`. Sources are files, globs or URLs, saved into `context/`; with none, the conversation is the brief. A fresh-context **plan reviewer** challenges the decomposition, then it **stops for sign-off** and commits — no pull request |
 | `/flow:ticket <ID>` | One ticket end to end: branch, implement, verify, log, commit, review, fix, push, pull request |
+| `/flow:run <epic>` | Run a `Run mode: autonomous` epic end to end with nobody present: verifies sign-off happened, loops the tickets in document order — each in a **fresh-context agent** that implements, reviews, fixes and merges into `epic/<name>` — halts on any stop condition, and ends by **opening** the release pull request. Never merges toward the default branch |
 | `/flow:quick <description>` | One **small, low-risk** piece of work through the same loop — scope, review, log, pull request — with no epic ceremony. Size- **and risk-gated**: auth, secrets, migrations and other consequential work is routed to `/flow:epic` at any size. Writes a `Q-<n>` ticket into the standing `epics/quick/` epic and runs it |
 | `/flow:tickets [epic]` | The board — shipped, in flight, blocked, todo |
 | `/flow:review [range]` | Review a commit range and report. Used by `/flow:ticket`; runnable on its own |
 | `/flow:doctor` | Is this project ready for the flow? Preconditions, merge settings, instruction-file quality, and headings that would silently misparse |
 | `/flow:retro [epic]` | Close a finished epic: mine the status log and review addenda for owed work and lessons, then ship them into instruction files and tickets |
 
-You review the pull request and merge it. **There is no command after the merge.**
+You review the pull request and merge it. **There is no command after the
+merge.** In an autonomous epic the pull request you review is the release one —
+the gate moves, it never disappears.
 
 ## Install
 
@@ -87,6 +90,37 @@ What is never allowed is one pull request carrying a whole epic. Past roughly 40
 changed lines, review stops finding defects — and an epic-sized diff is the
 situation where documentation gets deleted to make the diff smaller, which
 destroys the only memory the next session has.
+
+## Autonomous epics
+
+An integration epic can additionally declare `Run mode: autonomous` in its
+preamble. Sign-off then approves an unattended run: `/flow:run <epic>` loops
+the tickets in document order, each in a **fresh-context agent** that
+implements, is reviewed, fixes findings and merges its own pull request into
+`epic/<name>`, and the run ends by opening the release pull request. **The
+human gate moves to that release pull request; it does not disappear.** Main
+never sees an agent merge in any mode — an unreviewed ticket is never merged
+anywhere, and the combination with serial mode is refused mechanically,
+because unattended merges may only ever target an epic branch.
+
+A run **halts** rather than improvises: on a blocked ticket, an Important
+review finding it cannot fix, a document/code contradiction, a merge
+conflict, reviewer-spawn failure after its fallback, a permission prompt
+firing mid-run, or any failing command. Halting is the mechanism working —
+a run that pushes through is a run whose release pull request can no longer
+be trusted.
+
+Two things are **environment setup, not plugin code**, and both must exist
+before the first unattended run:
+
+- **A pre-authorized permission surface.** The session must already be
+  allowed to run git, `gh`, the project's test commands, file edits and agent
+  spawns without prompting — a prompt mid-run stops the run, because nobody
+  is there to answer it.
+- **Branch protection on the default branch** — require pull requests, block
+  force pushes, human-only merge. The skills are soft enforcement obeyed by a
+  cooperating agent; protection is the hard floor that holds even against a
+  misbehaving one.
 
 ## Why the reviewers are separate agents
 

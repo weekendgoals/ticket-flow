@@ -222,7 +222,7 @@ derives that from git. Do not add a summary table to it.
 If the repository's root instruction file carries a short "current work" section,
 add one line for this epic there.
 
-## 7. Commit — no pull request
+## 7. Commit and push — no pull request
 
 ```bash
 REPO=$(git rev-parse --show-toplevel)
@@ -230,6 +230,7 @@ git fetch origin --prune
 git checkout -b epic/<name> origin/<default-branch>
 git add "$REPO/epics/<name>"
 git commit
+git push -u origin epic/<name>
 ```
 
 **Cut the epic branch from `origin/<default-branch>`, never from whatever
@@ -239,6 +240,12 @@ into every ticket.
 
 Anchor the paths to `$REPO`. `git add epics/…` is interpreted relative to the
 shell's cwd, which is not necessarily the repo root.
+
+**Push the epic branch now**, not when someone first needs it: in integration
+mode every ticket's pull request uses `epic/<name>` as its base, and a base
+that exists only locally makes `gh pr create` fail — in an autonomous run,
+with nobody there to answer. The push is also what lets `/flow:run` verify
+sign-off happened before starting an unattended run.
 
 **Do not open a pull request for the plan.** In serial mode the docs reach the
 default branch for free: ticket one branches from here, so they land in that
@@ -255,7 +262,9 @@ default branch leaves it diverged from the remote once ticket one merges.
 ## 8. Hand over
 
 Say which ticket is first and that `/flow:ticket <first-ID>` runs next, from this
-same working copy.
+same working copy. If the epic declares `Run mode: autonomous`, say instead
+that `/flow:run <name>` starts the unattended run — that is what the sign-off
+approved.
 
 If the project uses one checkout per epic and you were **not** run from this
 epic's own checkout, say so — a fresh checkout resets to the remote default
