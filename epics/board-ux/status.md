@@ -26,6 +26,32 @@ forms. Plan reviewed 2026-08-08 (fable/high): one Blocking finding (write
 surface vs BOARD-1's cross-epic edit) fixed before sign-off, four nits
 fixed, driver-facing script contract pinned as a ground rule.
 
+### Run — 2026-08-08 — completed
+
+**Driver:** /flow:run, unattended; the driver session orchestrated only and
+implemented nothing. **Tickets this run, in order, each in a fresh-context
+general agent:**
+
+- BOARD-1 — worker:BOARD-1 — integrated (PR #9, merged 2026-08-08T07:30:29Z)
+- BOARD-2 — worker:BOARD-2 — integrated (PR #10, merged 2026-08-08T07:44:13Z)
+- BOARD-3 — worker:BOARD-3 — integrated (PR #11, merged 2026-08-08T08:00:45Z)
+
+Run start 2026-08-08T07:22:44Z. Epic branch refreshed from main before each
+ticket, conflict-free every time. Branch protection on main: absent, waived
+by the human at sign-off (recorded in `epics/autonomous/tickets.md`,
+AUTO-4). **Human input mid-run, recorded for honesty:** at ~07:30Z the user
+directed that reviewer agents run on opus rather than fable (BOARD-1's
+review had already run on fable and stands as recorded; applied from
+BOARD-2 onward) and requested the reviewer model become configurable —
+queued as a post-run quick ticket. The directive arrived in conversation;
+the external record shows no human pushes, PR comments, or PR reviews in
+the window (PRs #9/#10/#11: 0 comments, 0 reviews each).
+
+**Halted on:** ran to completion.
+
+**Release PR:** https://github.com/weekendgoals/ticket-flow/pull/12 —
+opened by the driver, merged by nobody but a human.
+
 ### BOARD-1 — the board suggests a command that does not exist — 2026-08-08 — DONE
 
 **Built:** The board's "Next up" section now prints `/flow:ticket <ID>` — the
