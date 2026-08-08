@@ -2,7 +2,9 @@
 
 A Claude Code plugin marketplace with one plugin, `flow` (`plugins/flow/`):
 skills and agents that run work as epics and tickets, plus `tickets.mjs`, the
-script that derives the board from git. `README.md` is the user-facing manual;
+script that derives the board from git, and one session hook (the
+interactive-ticket guard, whose only state is a per-session marker in the OS
+temp dir). `README.md` is the user-facing manual;
 `METHODOLOGY.md` is reasoning only and contains no rules — if it contradicts a
 skill, the skill wins.
 
@@ -14,7 +16,8 @@ into `epics/quick/`, and commit subjects carry the ticket ID (`Q-1: …`).
 - **Tests:** `node --test plugins/flow/scripts/tickets.test.mjs` — expect
   every test passing (`# pass 9`, `# fail 0` as of Q-1; the count grows, the
   fail line does not). The suite builds a throwaway git repo in a temp dir; it
-  needs `git` on PATH and nothing else.
+  needs `git` on PATH and nothing else. The session-guard hook has its own
+  suite: `node --test plugins/flow/hooks/ticket-session-guard.test.mjs`.
 - **Smoke:** `node plugins/flow/scripts/tickets.mjs doctor` — must exit 0 on
   this repo. `… list` shows the board.
 - **Syntax check:** `node --check plugins/flow/scripts/tickets.mjs`.

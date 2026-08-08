@@ -4,6 +4,36 @@ The plugin is the methodology's distribution mechanism: a change to a skill is
 a behaviour change in every project that installs it. This file is what makes
 those changes deliberate and visible.
 
+## 1.13.0 — 2026-08-08
+
+AUTO-5: attended tickets get the same fresh context the autonomous run just
+proved — supervisor by default, interactive by flag.
+
+- **`/flow:ticket <ID>` defaults to supervisor mode** (new step 0): the
+  invoking session resolves the ticket and implements nothing; a
+  fresh-context worker executes the skill from the documents alone, and
+  **the supervisor hires the reviewer** — the party under review no longer
+  picks its own judge. Multiple tickets per session become legitimate:
+  every worker starts empty. The status entry gains a **Mode** line naming
+  the worker, which is what makes the rule auditable after the fact.
+- **`/flow:ticket <ID> --interactive` runs in-session as before**, for
+  conversing with the implementing agent mid-ticket — once per session.
+- **New static hook** (`hooks/hooks.json` + `hooks/ticket-session-guard.mjs`,
+  UserPromptSubmit + SessionStart): an interactive invocation drops a
+  session marker in the OS temp dir; a later `--interactive` run in that
+  session is refused ("this session already ran a ticket interactively and
+  carries its context — run /flow:ticket without --interactive (supervisor
+  mode: a fresh worker implements), or /clear to reset the session").
+  Supervisor invocations pass even in a marked session — their workers
+  start empty, which is the property the rule protects — and set no marker.
+  The marker is wiped on SessionStart clear/startup and survives
+  resume/compact, so /clear works even where the session id does not
+  rotate. Zero dependencies; the guard has its own test suite
+  (`node --test plugins/flow/hooks/ticket-session-guard.test.mjs`).
+- Autonomous epics are unchanged: the `/flow:run` driver already plays the
+  supervisor's role, and its workers self-review per the ticket skill's
+  step 10.
+
 ## 1.12.0 — 2026-08-08
 
 BOARD-3: the next-ticket brief — a ticket's whole picture from one command.
