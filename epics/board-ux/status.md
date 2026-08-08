@@ -63,3 +63,17 @@ supersession is recorded here and in the quick epic's board disappearance,
 not as a tombstone there.
 
 **Owed:** Nothing.
+
+**Addendum — review — 2026-08-08 — fable/high:** No findings; nothing fixed,
+nothing deferred, no pre-existing defects flagged. The reviewer verified the
+sweep independently (line 349 was the only bare command suggestion in
+`plugins/flow` and `README.md`), traced the new test's fixture to confirm the
+positive assertion passes for the right reason and the negative one catches a
+revert, confirmed the driver-facing script contract (`list --json`,
+`find --json`, `next`) is untouched by the diff, confirmed the write surface
+holds (the quick-epic diff is precisely the Q-5 section), and re-ran the
+acceptance criteria live: 16/16 tests pass 0 fail, doctor exit 0, Next up
+namespaced with no bare suggestion, Q-5 grep negative. One remark below the
+finding bar: the test's `(?<!flow:)` lookbehind is redundant (`/flow:ticket`
+never contains the substring `/ticket `) but the check it implements — no
+bare `/ticket ` anywhere — is exactly right; left as is.
