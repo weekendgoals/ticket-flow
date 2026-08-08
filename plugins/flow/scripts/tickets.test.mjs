@@ -193,6 +193,23 @@ test('list refuses an unknown epic filter instead of reporting an empty board', 
   assert.deepEqual(data.epics, ['alpha'])
 })
 
+test('a real epic with no ticket sections is reported as ticketless, not nonexistent', () => {
+  // The filtered-empty branch of printBoard is only reachable for an epic
+  // that exists but has no `## <ID> — …` sections — an unknown filter errors
+  // at the entry point before it (BOARD-2). The old string here claimed
+  // `no epic "<x>" under epics/` for a real epic, at exit 0, on stdout —
+  // the same lie the guard removed. Pin the honest wording.
+  mkdirSync(join(repo, 'epics/hollow'), { recursive: true })
+  writeFileSync(join(repo, 'epics/hollow/tickets.md'), '# Hollow epic — tickets\n\nNo sections yet.\n')
+  try {
+    const out = run(repo, 'list', 'hollow')
+    assert.match(out, /epic "hollow" has no tickets yet/)
+    assert.ok(!/no epic "hollow" under epics\//.test(out), 'a real epic must never be reported as nonexistent')
+  } finally {
+    rmSync(join(repo, 'epics/hollow'), { recursive: true, force: true })
+  }
+})
+
 test('Next up suggests the installed, namespaced command', () => {
   // Plugin commands are namespaced: the installed command is /flow:ticket.
   // A bare /ticket suggestion is a live regression — a user ran it verbatim
