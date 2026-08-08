@@ -14,7 +14,7 @@ import test from 'node:test'
 
 const SCRIPT = join(dirname(fileURLToPath(import.meta.url)), 'ticket-session-guard.mjs')
 const REFUSAL =
-  'this session already ran a ticket interactively and carries its context — run /flow:ticket without --interactive (supervisor mode: a fresh worker implements), or /clear to reset the session.'
+  'this session already ran a ticket interactively and carries its context — rerun the command without --interactive (supervisor mode: a fresh worker implements), or /clear to reset the session.'
 
 const run = (payload) =>
   spawnSync(process.execPath, [SCRIPT], { input: JSON.stringify(payload), encoding: 'utf8' })
@@ -54,6 +54,23 @@ test('guard behaviours', async (t) => {
     const r2 = run({ session_id: s2, prompt: '/flow:quick an interactive tutorial' })
     assert.equal(r2.status, 0)
     assert.equal(existsSync(markerOf(s2)), false, 'no marker without a literal --interactive flag')
+    // Pinned as deliberate (Q-6 review): a literal flag token mid-prose marks.
+    // Quick's arguments are free prose, the skill reads the same ambiguous
+    // prompt, and the guard errs toward marking — a false positive costs one
+    // slot recoverable by /clear; a false negative defeats the rule silently.
+    const s3 = fresh('quick-prose-flag')
+    const r3 = run({ session_id: s3, prompt: '/flow:quick add a --interactive flag to the run script' })
+    assert.equal(r3.status, 0)
+    assert.equal(existsSync(markerOf(s3)), true, 'a literal --interactive token counts, even mid-prose')
+  })
+
+  await t.test('lookalike prompts never trip a marked session: sibling command, mid-sentence mention', () => {
+    const s = fresh('lookalike')
+    mark(s)
+    const sibling = run({ session_id: s, prompt: '/flow:tickets --interactive' })
+    assert.equal(sibling.status, 0, '/flow:tickets is neither guarded command — the \\b boundary holds')
+    const midSentence = run({ session_id: s, prompt: 'explain what /flow:quick foo --interactive would do' })
+    assert.equal(midSentence.status, 0, 'a mention mid-prompt is not an invocation — the ^ anchor holds')
   })
 
   await t.test('one marker guards both doors: either --interactive form refused, plain quick passes', () => {

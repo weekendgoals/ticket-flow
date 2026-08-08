@@ -53,11 +53,12 @@ legitimate in this mode precisely because every worker starts empty.
 **`--interactive` — run in-session, the steps below, yourself.** For when
 the human wants to converse with the implementing agent mid-ticket. The
 plugin's session hook records this choice at invocation, and it is
-once-per-session: **a session that has invoked a ticket interactively is
-refused every later `--interactive` run** with "this session already ran a
-ticket interactively and carries its context — run /flow:ticket without
---interactive (supervisor mode: a fresh worker implements), or /clear to
-reset the session." Supervisor invocations still pass in that session —
+once-per-session: **a session that has invoked a ticket interactively —
+through this command or `/flow:quick` — is refused every later
+`--interactive` run** with "this session already ran a ticket interactively
+and carries its context — rerun the command without --interactive
+(supervisor mode: a fresh worker implements), or /clear to reset the
+session." Supervisor invocations still pass in that session —
 their workers start empty, which is the property the rule protects — and
 never set the marker; the marker is wiped when the session's context is
 wiped (/clear, new session) and survives resume/compact.

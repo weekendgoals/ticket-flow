@@ -28,7 +28,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 const REFUSAL =
-  'this session already ran a ticket interactively and carries its context — run /flow:ticket without --interactive (supervisor mode: a fresh worker implements), or /clear to reset the session.'
+  'this session already ran a ticket interactively and carries its context — rerun the command without --interactive (supervisor mode: a fresh worker implements), or /clear to reset the session.'
 
 let data
 try {
@@ -57,6 +57,12 @@ if (String(data.hook_event_name ?? '') === 'SessionStart') {
 const prompt = String(data.prompt ?? '')
 if (!/^\s*\/flow:(ticket|quick)\b/.test(prompt)) process.exit(0)
 
+// The flag is recognized anywhere in the invocation — deliberate, pinned by
+// Q-6's review. Quick's arguments are free prose, so a literal
+// "--interactive" mid-description is ambiguous; the skill reading the same
+// prompt faces the same ambiguity, and the guard errs toward marking: a
+// false positive costs one slot recoverable by /clear, a false negative
+// silently defeats the fresh-context rule.
 const interactive = /\s--interactive\b/.test(prompt)
 
 if (existsSync(marker)) {

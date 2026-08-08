@@ -115,16 +115,24 @@ the parts already done: the ticket is written, and `q-<n>` exists with the
 plan committed.
 
 **Default — supervisor.** From this point the session makes no file edits.
-Spawn the fresh-context worker as step 0 directs, scoping ticket steps 1–3
-out of its prompt (step 0 lets a spawn prompt scope steps). Tell it: a
-supervisor spawned it for this one ticket; `ticketsDoc` =
-`epics/quick/tickets.md`, `statusDoc` = `epics/quick/status.md` — create the
-status log with the standard append-only preamble on first use; the branch
-`q-<n>` already exists with the plan committed — work on it, cut nothing;
-the base for review and the pull request is the default branch. The worker
-executes ticket steps 4–6 — implement, verify with counts, append and commit
-the status entry — and stops with a report. The rest runs as the ticket
-skill writes it: the supervisor hires the reviewer (step 7 — never the
+Run ticket step 1's `find Q-<n> --json` yourself — it returns `ticketsDoc`,
+`statusDoc` and `repoRoot` as **absolute paths**, which is what the worker
+must receive: its cwd moves during verification, and relative paths break
+there. Then spawn the fresh-context worker as step 0 directs, scoping ticket
+steps **1 and 3 — and only those** — out of its prompt (step 0 lets a spawn
+prompt scope steps; those two are already done here: the ticket is resolved
+and `q-<n>` exists). Tell it: a supervisor spawned it for this one ticket;
+the absolute `ticketsDoc`, `statusDoc` and `repoRoot` from your `find` —
+create the status log with the standard append-only preamble on first use;
+the branch `q-<n>` already exists with the plan committed — work on it, cut
+nothing; the base for review and the pull request is the default branch.
+**Ticket step 2 stays in the worker's prompt**: it reads the documents in
+step 2's order before implementing — an empty context is the point of this
+lane, and an empty context that reads nothing is worse than none — and
+step 2's halt rule binds it: where documents disagree, stop and report,
+never adapt. The worker then executes ticket steps 4–6 — implement, verify
+with counts, append and commit the status entry — and stops with a report.
+The rest runs as the ticket skill writes it: the supervisor hires the reviewer (step 7 — never the
 worker; the party under review does not pick its own judge), hands the
 findings and the reviewer's model and effort back to the same worker
 (step 8), the worker pushes and opens the pull request (step 9), and
@@ -134,8 +142,9 @@ everything stops there (step 10, attended).
 yourself. It costs what any interactive ticket costs: the session guard
 marks the session at invocation — same marker, same once-per-session rule —
 and a marked session is refused every later `--interactive` run, quick or
-ticket alike, toward supervisor mode or `/clear`. The guard watches both
-doors because a gate is verified at the door its actor walks through.
+ticket alike; what stays open is supervisor mode (rerun the command without
+the flag) and `/clear`. The guard watches both doors because a gate is
+verified at the door its actor walks through.
 
 Everything in the ticket skill binds as usual: ID-prefixed commits, counts
 not adjectives, every finding dispositioned in writing, and a full stop at

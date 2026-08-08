@@ -27,7 +27,14 @@ Q-6: `/flow:quick` routes through the ticket loop's lane fork.
   refused any later `--interactive` run of either command. Marker lifecycle
   (set at invocation, wiped on clear/startup, survives resume/compact)
   unchanged; plain invocations of both commands still pass in a marked
-  session. Guard suite grows 10 → 12.
+  session. Guard suite grows 10 → 13.
+- Review fixes (opus/high): the routed worker's spawn prompt keeps ticket
+  step 2 — the reading obligation and its stop-on-contradiction rule — and
+  receives absolute document paths from the supervisor's own `find`; the
+  guard's refusal message is door-agnostic ("rerun the command without
+  --interactive" — the old text named a recovery not performable at the
+  quick door), with the ticket skill's step 0 quote updated in the same
+  commit under a dated re-plan note in Q-6's scope.
 
 ## 1.14.0 — 2026-08-08
 
