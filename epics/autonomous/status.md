@@ -410,3 +410,40 @@ transcript free of implementation edits — acceptance criterion 1), and the
 interactive-twice refusal with hooks actually loaded (criterion 2, verified
 here only at script level). Natural carrier: the first of the four owed
 quick tickets, run supervisor-mode after this merges.
+
+**Addendum — review — 2026-08-08 — opus/high:** Two Important, five nits
+(two more withheld as below-bar), one pre-existing; both Importants and all
+five nits fixed in the review-fix commit. Important (1): the guard blocked
+every later `/flow:ticket` while its own refusal message advertised
+supervisor mode as the recovery — the rule blocked its own advice — and
+"/clear first" relied on session-id rotation that /clear does not
+guarantee, risking a permanent lockout. Redesigned with the epic doc
+re-planned in the same commit (dated note in AUTO-5's scope): only a
+second `--interactive` is refused; supervisor invocations pass in a marked
+session (their workers start empty — the property the rule protects); the
+marker is wiped by a new SessionStart registration on clear/startup and
+survives resume/compact, keying the reset to the event, never to id
+rotation. New message names both working recoveries. Important (2): the
+owed carrier for acceptance criterion 1 was structurally wrong —
+`/flow:quick` enters the ticket loop at step 4 and never reaches step 0's
+lane fork, so a quick ticket cannot demonstrate supervisor mode.
+**Corrected owed hand-off:** criterion 1's live check rides the next epic
+ticket invoked via `/flow:ticket` (first candidate: the retro's first
+output ticket), not a quick run; criterion 2's live check is a throwaway
+`--interactive` invocation in a fresh session after this merges. Nits
+fixed: three mutation-survivable test gaps closed (the `/flow:tickets`
+boundary now tested against a *marked* session, the refusal message
+asserted verbatim, a flagless "interactive" word asserted non-marking) and
+the suite grew 6 → 10 with leak-proof cleanup; the supervisor ending now
+routes an autonomous epic's directly-invoked ticket through step 10's gate
+(the worker merges and stops) instead of contradicting it; the supervisor
+now hands the reviewer's model/effort to the worker for the addendum
+header; README's inventory line and CLAUDE.md's opening now name the hook
+and its one marker instead of denying state exists; the Mode enumeration
+gained `quick — in-session (/flow:quick)`. Pre-existing, handed to the
+epic's retro: a marked session can still implement in-session through
+`/flow:quick` — whether quick deliberately opts out of the fresh-context
+doctrine or routes through a worker is a retro decision, and its answer
+belongs in the quick skill's text with its reason. Re-verified after
+fixes: guard suite 10 pass 0 fail; tickets suite 24 pass 0 fail; doctor
+exit 0. Nothing else deferred.

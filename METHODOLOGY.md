@@ -175,9 +175,11 @@ one step further than the autonomous lane — **the supervisor hires the
 reviewer**, because a worker that picks its own judge recreates self-review
 one level down. Interactive mode survives behind a flag for the real case
 it serves (conversing with the implementing agent mid-ticket), but the
-choice is one-way per session and enforced by a hook, not by memory: an
-interactive run marks the session, and every later `/flow:ticket` in it is
-refused toward `/clear` or supervisor mode. A rule that survives only if
+choice is once-per-session and enforced by a hook, not by memory: an
+interactive run marks the session, and every later `--interactive` run in
+it is refused — toward supervisor mode, which stays open because its
+workers start empty, or toward `/clear`, which wipes the marker along with
+the context it describes. A rule that survives only if
 every future session remembers it is not a rule; the hook is deterministic,
 which is the same lesson as doctor's — spend inference only where judgment
 is needed. The marker records the mode chosen at invocation, in the OS temp

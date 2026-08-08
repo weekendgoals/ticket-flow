@@ -2,7 +2,9 @@
 
 A Claude Code plugin marketplace with one plugin, `flow` (`plugins/flow/`):
 skills and agents that run work as epics and tickets, plus `tickets.mjs`, the
-script that derives the board from git. `README.md` is the user-facing manual;
+script that derives the board from git, and one session hook (the
+interactive-ticket guard, whose only state is a per-session marker in the OS
+temp dir). `README.md` is the user-facing manual;
 `METHODOLOGY.md` is reasoning only and contains no rules — if it contradicts a
 skill, the skill wins.
 

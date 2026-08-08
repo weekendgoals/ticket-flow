@@ -36,12 +36,14 @@ and implements nothing:
    unchanged). **The supervisor hires the judge, never the party under
    review** — a worker that picks its own reviewer recreates self-review
    one level down.
-4. Hand the findings back to the **same worker** to disposition, fix and
-   append the addendum (step 8) — it has the branch context; new commits,
-   never amendments.
+4. Hand back to the **same worker** the findings **and the reviewer's
+   model and effort** — the addendum header needs them and only you know
+   them — to disposition, fix and append the addendum (step 8); it has the
+   branch context; new commits, never amendments.
 5. Have the worker push and open the pull request (step 9); relay its
-   report, print the URL and `next` (step 10), and stop, exactly as an
-   in-session run would.
+   report and finish per step 10 for the epic's mode — attended: print the
+   URL and `next`, stop; autonomous (invoked directly by a human): the
+   worker performs step 10's gate and merge and stops after it.
 
 Relay every stop-and-report moment to the user verbatim — a worker halting
 on a contradiction is the mechanism working, and the supervisor's job is to
@@ -50,15 +52,23 @@ legitimate in this mode precisely because every worker starts empty.
 
 **`--interactive` — run in-session, the steps below, yourself.** For when
 the human wants to converse with the implementing agent mid-ticket. The
-plugin's session hook records this choice at invocation, and it is one-way:
-**a session that has invoked a ticket interactively is refused every later
-`/flow:ticket`** with "this session already carries a ticket's context —
-/clear first, or use the default supervisor mode." Supervisor runs set no
-marker.
+plugin's session hook records this choice at invocation, and it is
+once-per-session: **a session that has invoked a ticket interactively is
+refused every later `--interactive` run** with "this session already ran a
+ticket interactively and carries its context — run /flow:ticket without
+--interactive (supervisor mode: a fresh worker implements), or /clear to
+reset the session." Supervisor invocations still pass in that session —
+their workers start empty, which is the property the rule protects — and
+never set the marker; the marker is wiped when the session's context is
+wiped (/clear, new session) and survives resume/compact.
 
-**Autonomous epics are unchanged by this step**: `/flow:run`'s driver plays
-the supervisor's role, and its workers self-review and self-merge per
-step 10.
+**Autonomous epics keep their own ending**: `/flow:run`'s driver plays the
+supervisor's role, and its workers self-review and self-merge per step 10.
+When a human invokes one autonomous-epic ticket directly, step 0's lanes
+still apply, but the ticket ends per step 10's autonomous gate — in
+supervisor mode the worker performs that gate and the epic-branch merge,
+then stops (it was spawned for one ticket; the carve-out in step 10
+applies).
 
 ## 1. Resolve it
 
@@ -198,8 +208,8 @@ needs no archaeology>
 
 **Mode:** <how this ticket ran — `supervisor — worker <label>, reviewer
 hired by the supervisor`, or `interactive — in-session`, or `autonomous —
-driver-spawned worker <label>`. This line is what makes the fresh-context
-rule auditable after the fact.>
+driver-spawned worker <label>`, or `quick — in-session (/flow:quick)`.
+This line is what makes the fresh-context rule auditable after the fact.>
 
 **Files touched:** <list>. Branch `<branch>`, cut from `<base>`.
 

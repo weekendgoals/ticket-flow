@@ -4,13 +4,16 @@ A Claude Code plugin that runs work as **epics** and **tickets**, from a request
 through to a reviewed pull request — and derives the board from git instead of
 asking anyone to maintain one.
 
-Eight skills, two reviewer agents, one script. No database, no config file, no
-state stored anywhere.
+Eight skills, two reviewer agents, one script, one session hook. No database,
+no config file, no state stored anywhere — except one per-session marker in
+the OS temp dir (the interactive-ticket guard's memory of the current
+conversation; it dies with the session's context and never touches the
+repository).
 
 | | |
 |---|---|
 | `/flow:epic <name> [source...]` | Turn a request, report or conversation into `epics/<name>/`. Sources are files, globs or URLs, saved into `context/`; with none, the conversation is the brief. A fresh-context **plan reviewer** challenges the decomposition, then it **stops for sign-off** and commits — no pull request |
-| `/flow:ticket <ID>` | One ticket end to end: branch, implement, verify, log, commit, review, fix, push, pull request. Runs **supervisor-mode by default** — a fresh-context worker implements from the documents and the supervisor hires the reviewer; `--interactive` runs in-session, once per session (a hook refuses the second) |
+| `/flow:ticket <ID>` | One ticket end to end: branch, implement, verify, log, commit, review, fix, push, pull request. Runs **supervisor-mode by default** — a fresh-context worker implements from the documents and the supervisor hires the reviewer; `--interactive` runs in-session, once per session (a hook refuses a second interactive run; supervisor runs stay open) |
 | `/flow:run <epic>` | Run a `Run mode: autonomous` epic end to end with nobody present: verifies sign-off happened, loops the tickets in document order — each in a **fresh-context agent** that implements, reviews, fixes and merges into `epic/<name>` — halts on any stop condition, and ends by **opening** the release pull request. Never merges toward the default branch |
 | `/flow:quick <description>` | One **small, low-risk** piece of work through the same loop — scope, review, log, pull request — with no epic ceremony. Size- **and risk-gated**: auth, secrets, migrations and other consequential work is routed to `/flow:epic` at any size. Writes a `Q-<n>` ticket into the standing `epics/quick/` epic and runs it |
 | `/flow:tickets [epic]` | The board — shipped, in flight, blocked, todo |

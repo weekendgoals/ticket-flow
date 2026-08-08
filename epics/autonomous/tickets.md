@@ -211,10 +211,21 @@ spawn mechanism it reuses has survived a live run first.
 - `/flow:ticket <ID> --interactive` runs in-session as today, for conversing
   with the implementing agent mid-ticket. The run drops a session marker and
   the status log records which mode ran the ticket.
-- The plugin ships a **static hook**: a `/flow:ticket` invocation in a
-  session whose marker shows a previous interactive run is refused with
-  "this session already carries a ticket's context — /clear first, or use
-  the default supervisor mode." Supervisor runs never set the marker.
+- The plugin ships a **static hook**: a `/flow:ticket --interactive`
+  invocation in a session whose marker shows a previous interactive run is
+  refused with "this session already ran a ticket interactively and carries
+  its context — run /flow:ticket without --interactive (supervisor mode: a
+  fresh worker implements), or /clear to reset the session." Supervisor
+  invocations pass even in a marked session — their workers start empty,
+  which is the property the rule protects — and never set the marker. The
+  marker is wiped when the session's context is wiped (SessionStart with
+  source clear/startup) and survives resume/compact; the reset keys to the
+  event, never to session-id rotation, which /clear does not guarantee.
+  *(Re-planned 2026-08-08 at AUTO-5's review: the rule as first written
+  refused every later `/flow:ticket`, while its own refusal message
+  advertised supervisor mode as the recovery — the rule blocked its own
+  advice, and "/clear first" could strand a session whose id survives
+  /clear. The rule now blocks exactly the contaminated lane.)*
 - Version bump + CHANGELOG.
 
 **Not in scope.** Changing the autonomous path (AUTO-2/AUTO-3's); removing

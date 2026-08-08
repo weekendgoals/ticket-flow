@@ -1,24 +1,31 @@
 #!/usr/bin/env node
-// UserPromptSubmit guard: one interactive ticket per session.
+// One interactive ticket per session — the guard behind /flow:ticket's lanes.
 //
 // An interactive /flow:ticket run leaves its context in the session, and a
-// second ticket built on that context defeats the fresh-context rule the
-// supervisor mode exists for. This hook makes the rule mechanical instead of
-// remembered: invoking `/flow:ticket <ID> --interactive` drops a marker
-// keyed to the session; ANY later /flow:ticket in the same session is then
-// refused (exit 2 blocks the prompt; stderr carries the message). Supervisor
-// runs set no marker — their workers start empty, so any number of tickets
-// per session is legitimate.
+// second ticket implemented on that context defeats the fresh-context rule
+// the supervisor mode exists for. This hook makes the rule mechanical
+// instead of remembered: `/flow:ticket <ID> --interactive` drops a marker
+// keyed to the session; a later `--interactive` invocation in the same
+// session is refused (exit 2 blocks the prompt; stderr carries the message).
+// Supervisor-mode invocations pass even in a marked session — their workers
+// start empty, which is the property this rule protects, so blocking them
+// would refuse the very recovery the refusal recommends.
+//
+// The marker's lifetime follows the context it describes: SessionStart with
+// source "clear" or "startup" wipes it (the context is gone), while
+// "resume"/"compact" keep it (the context survives). Session ids are not
+// guaranteed to rotate on /clear, so the reset is keyed to the event, never
+// to id rotation.
 //
 // Zero dependencies, no state beyond one marker file per session in the OS
-// temp dir — it dies with the machine's tmp cleanup, which is the correct
-// lifetime for a fact about a session.
-import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+// temp dir — it dies with the machine's tmp cleanup, the correct lifetime
+// for a fact about a conversation.
+import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 const REFUSAL =
-  "this session already carries a ticket's context — /clear first, or use the default supervisor mode."
+  'this session already ran a ticket interactively and carries its context — run /flow:ticket without --interactive (supervisor mode: a fresh worker implements), or /clear to reset the session.'
 
 let data
 try {
@@ -27,20 +34,37 @@ try {
   process.exit(0) // no parseable input — never block on our own failure
 }
 
-const prompt = String(data.prompt ?? '')
 const sessionId = String(data.session_id ?? '')
-// Only /flow:ticket invocations concern this guard. Session id is the marker
-// key; without one there is nothing coherent to guard.
-if (!sessionId || !/^\s*\/flow:ticket\b/.test(prompt)) process.exit(0)
+if (!sessionId) process.exit(0) // the marker is keyed by session; nothing coherent to guard
 
 const marker = join(tmpdir(), `flow-interactive-${sessionId}`)
 
-if (existsSync(marker)) {
-  console.error(REFUSAL)
-  process.exit(2)
+if (String(data.hook_event_name ?? '') === 'SessionStart') {
+  const source = String(data.source ?? '')
+  // "clear"/"startup" mean the conversational context is gone; the marker
+  // describing it must go too. "resume" and "compact" carry the context on.
+  if (source === 'clear' || source === 'startup') {
+    try {
+      rmSync(marker, { force: true })
+    } catch {}
+  }
+  process.exit(0)
 }
 
-if (/\s--interactive\b/.test(prompt)) {
+const prompt = String(data.prompt ?? '')
+if (!/^\s*\/flow:ticket\b/.test(prompt)) process.exit(0)
+
+const interactive = /\s--interactive\b/.test(prompt)
+
+if (existsSync(marker)) {
+  if (interactive) {
+    console.error(REFUSAL)
+    process.exit(2)
+  }
+  process.exit(0) // supervisor lane: the worker starts empty; the mark is irrelevant to it
+}
+
+if (interactive) {
   // Marked at invocation, not completion: the context contamination begins
   // the moment the ticket starts, not when it succeeds.
   try {
