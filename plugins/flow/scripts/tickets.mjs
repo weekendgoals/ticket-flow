@@ -294,7 +294,10 @@ const BADGE = {
 
 function printBoard(data, epicFilter) {
   if (!data.tickets.length) {
-    console.log(epicFilter ? `no epic "${epicFilter}" under epics/` : 'no epics found under epics/')
+    // An unknown filter never reaches here — the entry point rejects it with
+    // exit 1 (BOARD-2). Empty output here means real, existing epics with no
+    // ticket sections yet.
+    console.log(epicFilter ? `epic "${epicFilter}" has no tickets yet` : 'no epics found under epics/')
     return
   }
   if (!data.prsAvailable) {
@@ -452,6 +455,17 @@ const json = argv.includes('--json')
 const [cmd, arg] = argv.filter((a) => !a.startsWith('--'))
 const emit = (o) => console.log(JSON.stringify(o, null, 2))
 
+// An unknown epic filter is an error, everywhere: a typo'd name that prints
+// "nothing left to start" (or an empty JSON payload) is indistinguishable from
+// a finished epic. One rule, `next` and `list`, plain and --json alike — the
+// --json forms emit no payload on this error (BOARD-2).
+function requireKnownEpic(data, epicFilter) {
+  if (epicFilter && !data.epics.length) {
+    console.error(`no epic "${epicFilter}" under epics/`)
+    process.exit(1)
+  }
+}
+
 switch (cmd) {
   case 'epics': {
     const epics = discoverEpics()
@@ -523,6 +537,7 @@ switch (cmd) {
 
   case 'next': {
     const data = board(arg || null)
+    requireKnownEpic(data, arg)
     const open = data.tickets.filter((t) => t.state === 'todo')
     if (json) emit(open.map((t) => ({ id: t.id, title: t.title, epic: t.epic })))
     else if (!open.length) console.log('nothing left to start')
@@ -533,6 +548,7 @@ switch (cmd) {
   case 'list':
   case undefined: {
     const data = board(arg || null)
+    requireKnownEpic(data, arg)
     if (json) {
       emit({
         defaultBranch: data.defaultBranch,

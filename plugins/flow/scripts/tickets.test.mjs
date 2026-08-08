@@ -164,6 +164,35 @@ test('next proposes the first unstarted ticket in document order', () => {
   assert.deepEqual(open.map((t) => t.id), ['A-4', 'G-1'])
 })
 
+test('next refuses an unknown epic filter instead of reporting an empty board', () => {
+  // "nothing left to start" from a typo'd epic name is indistinguishable from
+  // a finished epic (BOARD-2). Plain and --json alike: stderr names the
+  // missing epic, exit 1, and the --json form emits no payload.
+  for (const args of [['next', 'no-such-epic'], ['next', 'no-such-epic', '--json']]) {
+    const fail = runFail(repo, ...args)
+    assert.ok(fail, `\`${args.join(' ')}\` must exit nonzero`)
+    assert.equal(fail.status, 1)
+    assert.match(fail.stderr, /no epic "no-such-epic" under epics\//)
+    assert.equal(fail.stdout, '', 'no payload on the error')
+  }
+  // A valid filter is untouched — the driver contract reads this between tickets.
+  const open = JSON.parse(run(repo, 'next', 'alpha', '--json'))
+  assert.deepEqual(open.map((t) => t.id), ['A-4'])
+})
+
+test('list refuses an unknown epic filter instead of reporting an empty board', () => {
+  for (const args of [['list', 'no-such-epic'], ['list', 'no-such-epic', '--json']]) {
+    const fail = runFail(repo, ...args)
+    assert.ok(fail, `\`${args.join(' ')}\` must exit nonzero`)
+    assert.equal(fail.status, 1)
+    assert.match(fail.stderr, /no epic "no-such-epic" under epics\//)
+    assert.equal(fail.stdout, '', 'no payload on the error')
+  }
+  // A valid filter is untouched.
+  const data = JSON.parse(run(repo, 'list', 'alpha', '--json'))
+  assert.deepEqual(data.epics, ['alpha'])
+})
+
 test('Next up suggests the installed, namespaced command', () => {
   // Plugin commands are namespaced: the installed command is /flow:ticket.
   // A bare /ticket suggestion is a live regression — a user ran it verbatim

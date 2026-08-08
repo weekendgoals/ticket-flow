@@ -4,6 +4,21 @@ The plugin is the methodology's distribution mechanism: a change to a skill is
 a behaviour change in every project that installs it. This file is what makes
 those changes deliberate and visible.
 
+## 1.11.0 — 2026-08-08
+
+BOARD-2: an unknown epic filter is an error, not an empty board.
+
+- **`tickets.mjs next <epic>` and `list <epic>` refuse a filter that names no
+  epic**: `no epic "<arg>" under epics/` on stderr, exit 1, in plain and
+  `--json` forms alike (the `--json` forms emit no payload on that error).
+  Before, `next` with a typo'd epic printed `nothing left to start` with exit
+  0 — indistinguishable from a finished epic (found live, 2026-08-08) — and
+  `list --json` silently emitted a valid empty payload. One rule, all
+  commands, all forms; valid filters are unchanged. Plain `list` of a real
+  epic whose tickets.md has no ticket sections now says
+  `epic "<name>" has no tickets yet` instead of falsely claiming the epic
+  does not exist.
+
 ## 1.10.0 — 2026-08-08
 
 BOARD-1: the board's Next up suggestion is now a command that exists.
