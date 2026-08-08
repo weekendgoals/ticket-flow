@@ -247,3 +247,64 @@ rules; pre-authorizations documented with the mid-run-prompt stop
 condition), and verified the run-record heading against all four parser
 regexes empirically. Re-verified after fixes: 15 tests, 15 pass, 0 fail;
 doctor exit 0. Nothing deferred.
+
+### AUTO-4 — a real epic runs itself — 2026-08-08 — DONE
+
+**Built:** The live proof. A guinea-pig epic `board-ux` (3 genuinely useful
+tickets: the `/ticket`→`/flow:ticket` Next up fix superseding quick's Q-5;
+unknown epic filters become errors everywhere; the `tickets.mjs brief`
+subcommand) was planned per the epic skill, plan-reviewed (fable/high — one
+Blocking finding fixed pre-sign-off: the epic's own write-surface rule
+forbade BOARD-1's sanctioned cross-epic edit), signed off as `Run mode:
+autonomous` with the unattended consequence stated, and executed end to end
+by `/flow:run board-ux`. The run: started 2026-08-08T07:22:44Z; each ticket
+in a named fresh-context general agent (worker:BOARD-1/2/3 — the driver
+implemented nothing); epic branch refreshed from main before each ticket,
+conflict-free; no stop condition fired; release PR #12 opened by the driver
+to main at 2026-08-08T08:02:49Z. Wall time sign-off to release PR: ~40
+minutes. Reviewers caught unattended: BOARD-2 opus/high 1 nit fixed + 1
+pre-existing handed off; BOARD-3 opus/high 1 Important fixed (README
+documented a path that fails in installed projects) + 2 nits fixed + 1
+pre-existing handed off; BOARD-1 fable/high clean. Plugin 1.9.0 → 1.12.0
+across the run.
+
+**External record (the acceptance criterion's evidence):** every guinea-pig
+ticket reads `integrated` on the board (PRs #9/#10/#11, merged
+07:30:29Z/07:44:13Z/08:00:45Z, each with 0 comments and 0 reviews); `git
+log origin/main` tip is 556e790 (AUTO-3's merge) — no commit from the run
+reached main; the run record in `epics/board-ux/status.md` names the worker
+agent per ticket. **Disclosed for honesty:** one human input arrived in
+conversation mid-run (~07:30Z): reviewer agents should run on opus, not
+fable, and the model should become configurable. It changed no code and
+touched no PR — the external record shows zero interventions — but it did
+redirect the reviewer model from BOARD-2 onward, and this entry does not
+pretend otherwise. The configurability request is owed below.
+
+**Files touched:** `epics/autonomous/tickets.md` (AUTO-4's
+branch-protection criterion amended at sign-off: the repo is private under
+a free-plan org where GitHub offers no protection; the user waived the hard
+floor for this run rather than go public or upgrade — recorded re-plan),
+this file. The guinea-pig epic's own files travel in release PR #12, not
+here. Branch `auto-4`, cut from `main`.
+
+**Verified:** Board: `list board-ux` shows 3/3 `integrated` with PR
+numbers. Release PR #12 exists, base `main`, head `epic/board-ux`, opened
+by the driver and merged by no agent. `git log origin/main -1` = 556e790.
+Standing checks on this branch: tests 15/15 (the suite grew to 24/24 on the
+epic branch — arrives with PR #12), doctor exit 0.
+
+**Decisions:** (1) Branch protection waived rather than blocked-on: GitHub
+returns 403 for protection on private free-plan repos; the user chose at
+sign-off to run on soft enforcement alone, and AUTO-4's criterion was
+amended to admit a recorded human waiver — a re-plan, not a silent
+adaptation. (2) The mid-run reviewer-model directive was applied from the
+next un-spawned worker onward instead of being refused for run purity or
+halting the run — the human owns the experiment; the record discloses the
+input rather than defending a fiction. (3) BOARD-1's fable review stands as
+recorded; review addenda are append-only history.
+
+**Owed:** Three post-run quick tickets: configurable reviewer model (user
+request, 2026-08-08); unfiltered `list` prints the false `no epics found`
+when all epics lack ticket sections (BOARD-2's review, pre-existing); plain
+`find` prints `pr [object Object]` (BOARD-3's review, pre-existing). All
+three also listed in release PR #12's body.
