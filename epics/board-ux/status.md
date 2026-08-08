@@ -77,3 +77,69 @@ namespaced with no bare suggestion, Q-5 grep negative. One remark below the
 finding bar: the test's `(?<!flow:)` lookbehind is redundant (`/flow:ticket`
 never contains the substring `/ticket `) but the check it implements — no
 bare `/ticket ` anywhere — is exactly right; left as is.
+
+### BOARD-2 — an unknown epic filter answers honestly — 2026-08-08 — DONE
+
+**Built:** An epic filter that names no epic under `epics/` is now an error
+everywhere: `tickets.mjs next <arg>` and `list <arg>`, plain and `--json`
+alike, print `no epic "<arg>" under epics/` to stderr and exit 1, and the
+`--json` forms emit no payload on that error. Implemented as one guard
+(`requireKnownEpic`, called from both commands' entry-point cases right after
+`board(...)`) so no per-command judgment remains. Before: `next` with an
+unknown epic printed `nothing left to start` exit 0 — indistinguishable from
+a finished epic; plain `list` had the right message but on stdout with exit
+0; `list --json` silently emitted a valid empty payload. Consequential
+cleanup inside `printBoard`: its filtered-empty branch is now unreachable for
+unknown epics, so its message — which falsely claimed `no epic "<x>" under
+epics/` for a real epic whose tickets.md has no ticket sections — now says
+`epic "<name>" has no tickets yet`. Two new tests (one for `next`, one for
+`list`) each cover the plain and `--json` forms, assert exit 1, the stderr
+message naming the epic, empty stdout, and that a valid filter still returns
+the same answer as before. Plugin version 1.11.0 with a CHANGELOG entry.
+
+**Files touched:** `plugins/flow/scripts/tickets.mjs`,
+`plugins/flow/scripts/tickets.test.mjs`,
+`plugins/flow/.claude-plugin/plugin.json`, `CHANGELOG.md`,
+`epics/board-ux/status.md`. Branch `board-2`, cut from `epic/board-ux`.
+
+**Verified:** `node --check plugins/flow/scripts/tickets.mjs` — exit 0.
+`node --test plugins/flow/scripts/tickets.test.mjs` — 18 tests, 18 pass,
+0 fail (16 before, +2 new). Live: `next no-such-epic`, `next no-such-epic
+--json`, `list no-such-epic`, `list no-such-epic --json` all exit 1 with
+`no epic "no-such-epic" under epics/` on stderr and 0 bytes on stdout.
+`next board-ux` exits 0 and lists BOARD-3 (the only todo while this branch
+runs). `node plugins/flow/scripts/tickets.mjs doctor` — exit 0.
+
+**Decisions:** The guard tests `!data.epics.length` after `board(filter)`
+rather than searching `allEpics`, so "epics/ missing entirely plus a filter"
+also errors with the same message — still true, and one code path. The
+`printBoard` filtered-empty message was reworded (valid-but-ticketless epic)
+because leaving the literal `no epic "<x>" under epics/` string reachable at
+exit 0 on stdout would recreate the exact ambiguity this ticket removes; the
+meaning of a valid filter (which epics it matches, exit 0, board output) is
+unchanged, so the "Not in scope" line on valid filters holds. Each new test
+also pins the valid-filter answer (`next alpha --json` → A-4, `list alpha
+--json` → epics ["alpha"]) because the unattended driver reads these between
+tickets and a broken guard must fail the suite, not the run.
+
+**Owed:** Nothing.
+
+**Addendum — review — 2026-08-08 — opus/high:** Two findings, no Important
+ones. (1) Nit, fixed: the reworded ticketless-epic message in `printBoard`
+(`epic "<name>" has no tickets yet`) was a new user-facing string with no
+test — the one behaviour in the diff nothing caught. Fixed in commit
+"BOARD-2: pin the ticketless-epic message with a test (review fix)": a test
+builds a real epic with a sectionless tickets.md, asserts the honest wording
+and rejects the old `no epic … under epics/` lie. Suite 19 pass, 0 fail;
+doctor exit 0. (2) Pre-existing, not fixed — out of this ticket's scope and
+outside BOARD-3's too: unfiltered `list` on a repository whose epics all
+lack ticket sections prints `no epics found under epics/`, which is false
+(the reviewer reproduced it live; the string predates this ticket and is
+unchanged by it). Handed to a `/flow:quick` ticket to be filed after this
+run — this epic's write surface excludes other epics' documents, so it is
+recorded here for the retro rather than filed mid-run. Nothing else
+deferred. The reviewer also verified the new tests are not vacuous (deleting
+both guard call sites fails exactly the two new tests), the guard/entry-point
+matrix is complete, the driver-facing script contract is byte-identical for
+valid filters, every epic-filtered caller in the skills passes a real epic
+name, and the write surface holds.
