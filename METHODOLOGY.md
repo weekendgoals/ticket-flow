@@ -221,8 +221,14 @@ something moves it from the record into the rules. That move is the retro: owed
 work becomes tickets, repeated rediscoveries become instruction-file lines,
 repeated review findings become invariants the next reviewer judges against.
 
-Two constraints keep it honest. The retro proposes and stops — the human
-approves what becomes a rule. And its output ships through `/flow:quick`, not
+Three constraints keep it honest. The mining runs in a fresh-context agent
+(user request at the autonomous epic's retro, 2026-08-08): the invoking
+session is usually the one that planned the epic or ran its tickets, and it
+carries exactly the opinions the record is supposed to be examined against —
+the same reason a ticket's implementer is a fresh worker rather than the
+session that discussed the work. The retro proposes and stops — the human
+approves what becomes a rule, at a gate held in their own session. And its
+output ships through `/flow:quick`, not
 by committing to the default branch directly: lessons are changes like any
 other, and they go through a reviewed pull request. The status log itself is
 never edited — the retro appends a final dated section and the epic is closed.
