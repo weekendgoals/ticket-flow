@@ -672,3 +672,62 @@ the driver reads, not a parsed line. (5) Version bumped minor (1.19.0):
 skill text is installed behaviour.
 
 **Owed:** Nothing.
+
+**Addendum — review — 2026-08-09 — opus/xhigh:** Four Important, two nits,
+one pre-existing; all four Importants and both nits fixed in the review-fix
+commit (43755ab). Important (1): the waiver's location was defined as
+exactly where the epic skill records the probe's *result*, so a recorded
+finding ("403 on both endpoints") satisfied the waiver test word for word
+with no human ever accepting the risk — and no skill instructed anyone to
+write a waiver at all (the gate invariant inverted: a reader's side of a
+handshake with no writer). Fixed on both sides: the run skill now defines a
+waiver as a **recorded decision, never a recorded finding** — text showing
+no human acceptance is no waiver, with AUTO-4's discriminating shape quoted
+("waived <date>: … chose to run without the hard floor") — and the epic
+skill's Run mode template gains the writer's side: probe finds protection
+missing/unavailable → the human decides at sign-off, fix or waive, the
+waiver written as a decision in the same tickets.md spots. Touching the
+epic skill is justified by the "gate verified at the door its actor walks
+through" invariant — the waiver's author is the planner at sign-off, so the
+instruction lives in the planning skill; behaviour change already covered
+by this ticket's 1.19.0 bump, entry text extended. Important (2): the cited
+precedent was not at the location the rule named — the first live run
+(board-ux) recorded its waiver in `epics/board-ux/status.md` and in
+AUTO-4's criterion in a *different epic's* tickets.md, so the "amended
+acceptance criterion, as the first live run did it" clause was false and
+the rule as written would refuse the very run it cited. Fixed by dropping
+the miscitation; the location rule stands as the epic's **own**
+`tickets.md` — sign-off-gated and verified on the remote by step 2, the
+fail-closed direction, where `status.md` is agent-appended unattended.
+Accepted consequence, recorded deliberately: resuming `/flow:run board-ux`
+today would stop at step 3 until a human copies the recorded waiver into
+`epics/board-ux/tickets.md` — a one-line human action, and the correct
+failure direction for a gate. Important (3): the tolerated-exit carve-out
+was granted to the two *commands*, swallowing every other way `gh api`
+fails (401, no network, 429, 5xx, wrong repo) — an unauthenticated `gh`
+plus a waiver line would have started a run that dies at its first
+`pr create`. Fixed: steps 3 and 5 now tolerate exactly a **404 or 403 from
+the two probes**; any other probe failure halts as before. Important (4):
+README's halt list still said "or any failing command" and its "Both must
+exist" had never matched the skill's waivable protection (the pre-existing
+finding, same paragraph pair) — the commit claimed a two-statement sweep
+that was really three documents. Fixed: README names the one tolerated
+exception and admits the protection waiver with its location. The
+pre-existing half was fixed in-range rather than handed to a ticket, with
+reason: it states the exact rule Q-10 changes, in the paragraph finding 4
+already required editing — shipping a known-false sentence this commit's
+own sweep touches would be the one-rule drift the invariant forbids, and
+the reviewer recommended it ride finding 4's disposition. Nits fixed:
+(1) the rulesets endpoint is now probed "on a 404 or a 403" — previously a
+403 from the first endpoint gave no instruction to reach the second, so
+the "403 from both endpoints" conclusion was unreachable as written;
+(2) step 6's run-record template gains a **Protection:** slot and step 7's
+release-PR body enumeration carries the waiver right under the never-squash
+line — a run without the hard floor must say so at the only human gate
+left. Re-verified after fixes: tickets suite 29 pass, 0 fail; guard suite
+13 pass, 0 fail; `node --check plugins/flow/scripts/tickets.mjs` clean;
+doctor exit 0, all five checks ✓; acceptance greps — "403" 5 hits,
+"waiver" (case-insensitive) 7 hits in the run skill; plugin.json 1.19.0
+equals the top CHANGELOG entry (entry text updated for the grown shape; no
+second bump — same release, same behaviour-change family). Nothing
+deferred.
