@@ -225,8 +225,11 @@ test('unfiltered list names ticketless epics instead of claiming no epics exist'
   mkdirSync(join(barren, 'epics/hollow'), { recursive: true })
   writeFileSync(join(barren, 'epics/hollow/tickets.md'), '# Hollow epic — tickets\n\nNo sections yet.\n')
   const out = run(barren, 'list')
-  assert.match(out, /hollow/, 'the epic is named')
-  assert.match(out, /no tickets yet/, 'its empty state is named')
+  // Pin the composed line, not fragments — the filtered branch's message
+  // (`epic "hollow" has no tickets yet`) also contains both fragments, so
+  // independent matches could not tell the two branches apart (review fix;
+  // the sibling BOARD-2 test above pins its exact string the same way).
+  assert.match(out, /^hollow — no tickets yet$/m, 'the epic is named with its empty state, as one line')
   assert.ok(!/no epics found/.test(out), 'existing epics must not be reported as nonexistent')
 
   // A repo with no epics/ at all keeps the honest "no epics found" answer.

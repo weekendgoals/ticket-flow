@@ -306,3 +306,22 @@ stay as they are.
 - New tests: a value-less `Run mode:` (and `Reviewer model:`) followed by a
   prose paragraph parses as absent (null / serial default), never as the
   paragraph's first word. Suite green, doctor exit 0.
+
+## Q-15 — mixed board omits ticketless epics entirely
+
+**Scope.**
+- `tickets.mjs` `printBoard`: when at least one epic has tickets, the
+  per-epic loop skips any epic whose tickets.md has no ticket sections
+  (`if (!ts.length) continue`) — that epic is absent from the unfiltered
+  board entirely, existing work reported as nonexistent at larger blast
+  radius than Q-8's all-empty case (Q-8's review, pre-existing; verified
+  live against a fixture with one ticketed and one ticketless epic). Name
+  ticketless epics on the mixed board too, with their empty state. Test
+  fixture. Version bump + CHANGELOG.
+
+**Not in scope.** Any other change to list output.
+
+**Acceptance criteria.**
+- New test: a repo with one ticketed epic and one ticketless epic →
+  unfiltered `list` names both, the ticketless one with its empty state.
+  Suite green, doctor exit 0.
