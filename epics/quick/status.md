@@ -939,3 +939,77 @@ diff exceeds the house wrap. Correction to this entry's **Tokens** line,
 per the Q-11 mechanism (the hirer passes the figure down): the worker's
 spend through step 6 was harness-reported as 79,496 tokens, not
 `unknown`. Reviewer tokens: 77,435.
+
+### Q-13 — the "standard append-only preamble" is referenced where it is not defined — 2026-08-09 — DONE
+
+**Built:** Plugin v1.22.0. The status-log preamble is now defined at the
+door where creation happens. The ticket skill's step 6 said "Create the
+file if it does not exist" and defined none of its content, and the quick
+skill's step 4 spawn prompt told the worker to "create the status log with
+the standard append-only preamble" — text that lived only in the epic
+skill's status-log template, a document a mid-ticket worker never loads, so
+it would have had to invent one (pre-existing, found by Q-6's review).
+Skills are self-sufficient: ticket step 6 now carries the exact preamble —
+the `# <Name> epic — status log` heading, the "Append-only record" line and
+the **Rules** block, verbatim from the epic skill's template — and says why
+it lives there; the quick skill's spawn prompt now points at ticket step 6
+as the preamble's single named source (the worker executes that step, so
+the text is in its hands); and the epic skill's template gains one sentence
+naming the coupling on its side — one rule, two documents, either copy
+moves the other in the same commit (the Q-4 risk-list precedent). The
+preamble's content is unchanged, per Not in scope. CHANGELOG entry for
+1.22.0.
+
+**Mode:** supervisor — worker worker-q13, reviewer hired by the supervisor.
+
+**Tokens:** worker unknown — the harness exposes no usage figure to the
+worker agent; the reviewer's figure follows in the review addendum, per the
+template Q-11 added.
+
+**Files touched:** `plugins/flow/skills/ticket/SKILL.md`,
+`plugins/flow/skills/quick/SKILL.md`, `plugins/flow/skills/epic/SKILL.md`,
+`plugins/flow/.claude-plugin/plugin.json`, `CHANGELOG.md`, this file.
+Branch `q-13`, cut from `origin/q-12` (82931bf, Q-12's review-addendum
+commit) — a deliberate stack, user-directed: Q-10's PR #20, Q-11's PR #21
+and Q-12's PR #22 were open and the user chose to run the remaining tickets
+back to back, merging the pull requests in sequence, rather than waiting on
+each merge.
+
+**Verified:** Acceptance: `grep -in "append.only"
+plugins/flow/skills/quick/SKILL.md plugins/flow/skills/ticket/SKILL.md` —
+4 hits (quick step 4's pointer; ticket step 6's rule line plus the carried
+preamble's two lines), exit 0; `node plugins/flow/scripts/tickets.mjs
+doctor` — exit 0, all five checks ✓. Standing checks: `node --test
+plugins/flow/scripts/tickets.test.mjs` — 29 tests, 29 pass, 0 fail;
+`node --test plugins/flow/hooks/ticket-session-guard.test.mjs` — 13 tests,
+13 pass, 0 fail; `node --check plugins/flow/scripts/tickets.mjs` clean.
+`plugin.json` 1.22.0 equals the top CHANGELOG entry.
+
+**Decisions:** (1) The ticket's premise is imprecise on one point, recorded
+rather than halted on: only the quick skill carries the literal phrase
+"standard append-only preamble"; ticket step 6 referenced no preamble at
+all — it instructed creation with the content entirely undefined, which is
+the same defect class (creation instructed, content unreachable), and the
+scope's operative instruction — carry the text or a single named source in
+the skills that instruct creation — applies to both doors unchanged, so
+this did not rise to step 2's stop condition. (2) The exact text went into
+ticket step 6 and a pointer into the quick skill, not text in both: step 6
+is the door where the file is actually created (quick's worker executes
+ticket steps 4–6, so step 6 is already in its hands), and a third verbatim
+copy would widen the sync surface the one-rule invariant has to police.
+(3) The epic skill was touched — one coupling sentence after its template —
+though the scope names only the skills that instruct creation: without the
+producing side naming the coupling, a future edit to the template diverges
+from step 6's copy silently, the exact failure the Q-4 review found on the
+risk lists; the sentence changes no preamble content. (4) The carried
+preamble excludes the epic template's Baseline section, and both documents
+say so — Baseline is planning's own record; a mid-ticket worker creating a
+missing log has no baseline to write. (5) Version bumped minor (1.22.0):
+skill text is installed behaviour (Q-10 precedent), even though this
+ticket's scope, unlike Q-14/Q-15's, does not spell the bump out — the
+CLAUDE.md invariant binds regardless. (6) The branch was cut from
+`origin/q-12` on the user's explicit direction (deliberate stack),
+overriding the skill's stop-on-open-PR rule for this run; recorded here so
+the base needs no archaeology.
+
+**Owed:** Nothing.
