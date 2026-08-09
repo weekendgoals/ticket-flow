@@ -1387,3 +1387,93 @@ checks ✓. Nothing deferred. Correction to this entry's **Tokens** line,
 per the Q-11 mechanism (the hirer passes the figure down): the worker's
 spend through step 6 was harness-reported as 95,616 tokens, not
 `unknown`. Reviewer tokens: 56,452.
+
+### Q-17 — ticketless epics never get the "← this folder" marker — 2026-08-09 — DONE
+
+**Built:** Plugin v1.26.0. A ticketless epic now gets the `← this folder`
+marker in its own checkout. The shared `ticketlessLine` in `tickets.mjs`
+rendered a ticketless epic's empty state without the marker every ticketed
+epic gets — in a checkout whose root directory is named after a ticketless
+epic (exactly a freshly-cut epic's state, the one-checkout-per-epic
+convention `currentEpic` reads), an unfiltered board showed the marker on
+no epic at all, while `current` answered correctly (Q-15's review,
+pre-existing). The marker is now rendered by one `hereMarker(current,
+name)` helper shared by the ticketed header and `ticketlessLine` — the
+ticketed branch's `here` was previously an inline second copy of the
+marker string, so the factoring puts the marker in exactly one place —
+and `ticketlessLine` takes `data.current` at both call sites, so the fix
+lands once for the all-empty board (Q-8's branch) and the mixed board
+(Q-15's). The sanctioned adjacent tidy rode: the "Nothing left to start."
+line's dead false branch (`data.tickets.length ? … : ''` — the empty
+board returns at the top of `printBoard`, so the length is always truthy
+there) is removed, with a comment saying why it is unconditional; no
+output change. New test builds a repo whose root directory is named
+after its ticketless epic (`hollow/` with `epics/hollow/`), asserts the
+marked composed line on the all-empty board, then adds a ticketed
+`epics/peopled/` and asserts the same marked line on the mixed board
+beside an unmarked ticketed neighbour — all pinned to end-of-line, so
+the unmarked assertions also prove the absence of a marker. Tickets
+suite 32 → 33. CHANGELOG entry for 1.26.0.
+
+**Mode:** supervisor — worker worker-q17, reviewer hired by the supervisor.
+
+**Tokens:** worker unknown — the harness exposes no usage figure to the
+worker agent; the reviewer's figure follows in the review addendum, per the
+template Q-11 added.
+
+**Files touched:** `plugins/flow/scripts/tickets.mjs`,
+`plugins/flow/scripts/tickets.test.mjs`,
+`plugins/flow/.claude-plugin/plugin.json`, `CHANGELOG.md`, this file.
+Branch `q-17`, cut from `origin/q-16` (16e2572, Q-16's review-addendum
+commit) — a deliberate stack, user-directed: Q-10 through Q-16's PRs
+#20–#26 were open and the user chose to run the remaining tickets back to
+back, merging the pull requests in sequence, rather than waiting on each
+merge.
+
+**Verified:** Acceptance: the new test — a repo whose root directory is
+named after a ticketless epic → the unfiltered board renders that epic's
+empty-state line with the `← this folder` marker, on the all-empty and
+mixed boards alike — passes inside the suite: `node --test
+plugins/flow/scripts/tickets.test.mjs` — 33 tests, 33 pass, 0 fail.
+Mutation check, run on scratchpad copies of the script and suite (never by
+mutating and restoring the working tree — the Q-16 checkout hazard):
+reverting `ticketlessLine` to drop the marker fails exactly the new test
+(32 pass, 1 fail), so the test pins the behaviour. `node
+plugins/flow/scripts/tickets.mjs doctor` — exit 0, all five checks ✓.
+Standing checks: `node --test
+plugins/flow/hooks/ticket-session-guard.test.mjs` — 13 tests, 13 pass,
+0 fail; `node --check plugins/flow/scripts/tickets.mjs` clean. Live
+smoke: unfiltered `list` on this repo still renders the board (every
+epic here has tickets and the root is `ticket-flow`, so the changed
+lines are exercised by the test fixture). Executable bit on
+`tickets.mjs` confirmed intact (100755). `plugin.json` 1.26.0 equals the
+top CHANGELOG entry.
+
+**Decisions:** (1) The marker was factored into a shared `hereMarker`
+helper rather than composed inline inside `ticketlessLine`: the ticketed
+branch already rendered the marker inline, and appending a second verbatim
+copy of the marker string would widen the drift surface the one-rule
+invariant polices — in code as in documents (Q-15's Decision 1
+precedent). The ticketed header's output is unchanged. (2) The adjacent
+dead-branch tidy rode this ticket: its sanction is "may ride … only if
+the pass already touches it", and the pass edits `printBoard` — the
+function carrying the line — at both ticketless call sites and the
+`here` assignment; the removed branch was unreachable, so no output
+changes. (3) One test, one repo, both boards: the acceptance criterion
+asks for the marker "on the all-empty and mixed boards alike", and both
+renderings share the one line, so the test asserts the all-empty board
+first and then grows the same repo a ticketed epic for the mixed board —
+composed lines pinned to end-of-line per Q-8's review lesson, which also
+makes the ticketed neighbour's unmarked assertion discriminating.
+(4) `current`'s own detection is untouched, per Not in scope — the
+helper reads `data.current`, which `deriveBoard` already computes.
+(5) Version bumped minor (1.26.0): script output is installed behaviour
+(Q-8/Q-9/Q-15 precedent). (6) The branch was cut from `origin/q-16` on
+the user's explicit direction (deliberate stack), overriding the skill's
+stop-on-open-PR rule for this run; recorded here so the base needs no
+archaeology. (7) The mutation check ran on copies in the session
+scratchpad, per the supervisor's caution — two earlier workers lost
+uncommitted edits cleaning up in-tree mutation checks with
+`git checkout --`.
+
+**Owed:** Nothing.
