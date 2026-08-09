@@ -546,3 +546,55 @@ one-ticketed-plus-one-ticketless fixture, and out of this ticket's scope
 by the reviewer: mutation check on the new test passed, both new branches
 exercised live, scope respected, 1.17.0 = CHANGELOG head, suite 28/28,
 doctor exit 0. Nothing deferred beyond Q-15.
+
+### Q-9 — plain find prints "pr [object Object]" — 2026-08-09 — DONE
+
+**Built:** Plugin v1.18.0. Plain `find <ID>` no longer stringifies the PR
+object. The human-readable branch of `tickets.mjs`'s `find` interpolated
+every fact raw — `pr` is the one non-scalar among them, so any ticket with a
+pull request printed `pr [object Object]` (BOARD-3's review, pre-existing).
+The line now renders what a human acts on: `#<number> (<STATE>) <url>`,
+e.g. `pr  #18 (MERGED) https://github.com/weekendgoals/ticket-flow/pull/18`.
+A ticket without a PR keeps printing `null`, and `find --json` is untouched
+(it was already correct, per Not in scope). New test pins the composed
+rendered line — `/^pr {21}#7 \(OPEN\) https:\/\/example\.invalid\/pull\/7$/m`
+— by stubbing `gh` with a fake executable on PATH for that one run, because
+the fixture's origin is a local bare repo where real `gh` always fails and
+every ticket reads `pr: null`; the same test asserts `[object Object]`
+appears nowhere and that the no-PR line still reads `null`. Tickets suite
+28 → 29. CHANGELOG entry for 1.18.0.
+
+**Mode:** supervisor — worker worker-q9, reviewer hired by the supervisor.
+
+**Files touched:** `plugins/flow/scripts/tickets.mjs`,
+`plugins/flow/scripts/tickets.test.mjs`,
+`plugins/flow/.claude-plugin/plugin.json`, `CHANGELOG.md`, this file.
+Branch `q-9`, cut from `origin/main` (76cfe3d, PR #18's merge commit).
+
+**Verified:** `node --test plugins/flow/scripts/tickets.test.mjs` — 29
+tests, 29 pass, 0 fail (the new test among them). `node --test
+plugins/flow/hooks/ticket-session-guard.test.mjs` — 13 pass, 0 fail.
+`node --check plugins/flow/scripts/tickets.mjs` clean.
+`node plugins/flow/scripts/tickets.mjs doctor` — exit 0, all five checks ✓.
+Live smoke on this repo: `find Q-8` prints `pr  #18 (MERGED) <url>`;
+`find Q-9` prints `pr  null`. `plugin.json` 1.18.0 equals the top CHANGELOG
+entry.
+
+**Decisions:** (1) Only the `pr` value gets a renderer — every other fact is
+already a scalar, and the null case keeps printing `null` like `contextDir`
+and `runMode` do; inventing a friendlier absent-marker for one line would be
+a wider output change than the ticket scopes ("Not in scope: any other
+change"... the scope names only the PR rendering). (2) The rendered shape
+follows `brief`'s existing `#<number> (<state>)` style and adds the URL the
+ticket asks for; `isDraft` and `baseRefName` stay unrendered — number, state
+and URL are what the scope names. (3) The test stubs `gh` on PATH rather
+than exporting the formatter for unit testing — the suite's stated approach
+is real throwaway repos over unit-tested internals, and the stub exercises
+the full CLI path including `pullRequests()`. (4) The test pins the composed
+line with its exact padding rather than fragments, per Q-8's review lesson.
+(5) Version bumped minor (1.18.0): script output is installed behaviour.
+(6) The implementation commit was amended pre-review to drop an auto-added
+Claude co-author trailer, per the ticket skill's rule and Q-6/Q-8 precedent;
+step 8's no-amendment rule binds only after a review has run.
+
+**Owed:** Nothing.
