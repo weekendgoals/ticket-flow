@@ -1171,3 +1171,77 @@ CHANGELOG entry. Correction to this entry's **Tokens** line, per the Q-11
 mechanism (the hirer passes the figure down): the worker's spend through
 step 6 was harness-reported as 99,941 tokens, not `unknown`. Reviewer
 tokens: 67,888.
+
+### Q-15 — mixed board omits ticketless epics entirely — 2026-08-09 — DONE
+
+**Built:** Plugin v1.24.0. The mixed board no longer omits ticketless
+epics. Q-8 fixed the all-empty unfiltered board, but when at least one
+epic had tickets, `printBoard`'s per-epic loop in `tickets.mjs` still
+skipped any epic whose tickets.md has no `## <ID> — …` sections
+(`if (!ts.length) continue`) — that epic was absent from the unfiltered
+board entirely, existing work reported as nonexistent at larger blast
+radius than Q-8's case (Q-8's review, pre-existing; verified live by that
+reviewer against a one-ticketed-plus-one-ticketless fixture). The loop now
+prints the ticketless epic's empty state instead of skipping it — the same
+composed line the all-empty branch renders (`<epic> — no tickets yet`,
+bold name, dim state), factored into one `ticketlessLine` helper both
+branches call, so the two renderings cannot drift apart. A blank line
+follows it, keeping the board's per-epic block rhythm. New test builds a
+dedicated throwaway repo with one ticketed epic (`peopled`, one `## P-1`
+section) and one ticketless epic (`hollow`) — the shared fixture's epics
+all have tickets and Q-8's barren repo has none — asserting the ticketless
+epic renders its composed empty-state line, the ticketed epic's header and
+ticket rows still render, all pinned as composed lines per Q-8's review
+lesson. Tickets suite 30 → 31. CHANGELOG entry for 1.24.0.
+
+**Mode:** supervisor — worker worker-q15, reviewer hired by the supervisor.
+
+**Tokens:** worker unknown — the harness exposes no usage figure to the
+worker agent; the reviewer's figure follows in the review addendum, per the
+template Q-11 added.
+
+**Files touched:** `plugins/flow/scripts/tickets.mjs`,
+`plugins/flow/scripts/tickets.test.mjs`,
+`plugins/flow/.claude-plugin/plugin.json`, `CHANGELOG.md`, this file.
+Branch `q-15`, cut from `origin/q-14` (5184c2d, Q-14's review-addendum
+commit) — a deliberate stack, user-directed: Q-10's PR #20, Q-11's PR #21,
+Q-12's PR #22, Q-13's PR #23 and Q-14's PR #24 were open and the user chose
+to run the remaining tickets back to back, merging the pull requests in
+sequence, rather than waiting on each merge.
+
+**Verified:** Acceptance: the new test — a repo with one ticketed and one
+ticketless epic → unfiltered `list` names both, the ticketless one with its
+empty state — passes inside the suite: `node --test
+plugins/flow/scripts/tickets.test.mjs` — 31 tests, 31 pass, 0 fail.
+Mutation check: reverting the loop fix back to `if (!ts.length) continue`
+fails exactly the new test (30 pass, 1 fail), so the test pins the
+behaviour. `node plugins/flow/scripts/tickets.mjs doctor` — exit 0, all
+five checks ✓. Standing checks: `node --test
+plugins/flow/hooks/ticket-session-guard.test.mjs` — 13 tests, 13 pass,
+0 fail; `node --check plugins/flow/scripts/tickets.mjs` clean. Live smoke:
+unfiltered `list` on this repo still renders the board (every epic here has
+tickets, so the new branch is exercised only by the test fixture).
+`plugin.json` 1.24.0 equals the top CHANGELOG entry.
+
+**Decisions:** (1) The empty-state line was factored into a shared
+`ticketlessLine` helper rather than copied into the loop — two verbatim
+renderings of one fact is the drift surface the one-rule invariant polices
+in documents, applied here to code. (2) The ticketless epic's line is
+followed by a blank line inside the loop, matching every ticketed epic's
+block, so the board's separation rhythm survives whichever epics are
+empty. (3) The new test builds its own throwaway repo rather than mutating
+the shared fixture: the mixed case needs a ticketed and a ticketless epic
+side by side, and the shared fixture's epics all carry tickets. (4) All
+three assertions pin composed lines (`/^hollow — no tickets yet$/m`,
+`/^peopled — 1 tickets/m`, `/^  P-1 /m`), per Q-8's review lesson that
+fragments cannot tell branches apart. (5) Version bumped minor (1.24.0):
+script output is installed behaviour (Q-8/Q-9 precedent). (6) The branch
+was cut from `origin/q-14` on the user's explicit direction (deliberate
+stack), overriding the skill's stop-on-open-PR rule for this run; recorded
+here so the base needs no archaeology. (7) The implementation commit was
+amended pre-review to restore the executable bit on `tickets.mjs`, dropped
+by the mutation-check's file rewrite during verification; step 8's
+no-amendment rule binds only after a review has run (Q-6/Q-8/Q-9/Q-12/Q-14
+precedent).
+
+**Owed:** Nothing.
