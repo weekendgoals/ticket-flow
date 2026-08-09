@@ -307,9 +307,14 @@ const BADGE = {
 function printBoard(data, epicFilter) {
   if (!data.tickets.length) {
     // An unknown filter never reaches here — the entry point rejects it with
-    // exit 1 (BOARD-2). Empty output here means real, existing epics with no
-    // ticket sections yet.
-    console.log(epicFilter ? `epic "${epicFilter}" has no tickets yet` : 'no epics found under epics/')
+    // exit 1 (BOARD-2). So a ticketless board is one of two facts, and they
+    // must not share a message: no epics at all, or real epics whose ticket
+    // docs have no sections yet — claiming "no epics found" for the latter
+    // reports existing work as nonexistent (Q-8). Name each epic and its
+    // empty state instead.
+    if (epicFilter) console.log(`epic "${epicFilter}" has no tickets yet`)
+    else if (!data.epics.length) console.log('no epics found under epics/')
+    else for (const e of data.epics) console.log(`${C.bold}${e.epic}${C.off} ${C.dim}— no tickets yet${C.off}`)
     return
   }
   if (!data.prsAvailable) {

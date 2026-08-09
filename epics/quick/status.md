@@ -476,3 +476,73 @@ head, and quick has no third reviewer door. Re-verified after fixes:
 tickets suite 27 pass 0 fail; guard suite 13 pass 0 fail; `node --check`
 clean; doctor exit 0; `list` parses all 14 quick tickets including Q-14.
 Nothing deferred beyond Q-14.
+
+### Q-8 — unfiltered list claims "no epics found" when epics exist — 2026-08-09 — DONE
+
+**Built:** Plugin v1.17.0. The unfiltered board no longer reports existing
+work as nonexistent. `printBoard`'s empty-board branch in `tickets.mjs` used
+one message for two different facts: with no epic filter, epic folders that
+exist but have no `## <ID> — …` ticket sections yet printed `no epics found
+under epics/` — even though the comment directly above that line already
+acknowledged the "real, existing epics with no ticket sections yet" case
+(BOARD-2's review, pre-existing). The branch now distinguishes three cases:
+a filtered empty epic keeps `epic "<name>" has no tickets yet` (unchanged);
+genuinely no epics keeps `no epics found under epics/`; and existing
+ticketless epics are each named on their own line with their empty state
+(`<epic> — no tickets yet`, styled like the board's epic header). New test
+builds a dedicated throwaway repo — the shared fixture always has tickets —
+asserting the epic is named, its empty state is named, "no epics found"
+does not appear, and a repo with no `epics/` at all keeps the old honest
+answer. Tickets suite 27 → 28. CHANGELOG entry for 1.17.0.
+
+**Mode:** supervisor — worker worker-q8, reviewer hired by the supervisor.
+
+**Files touched:** `plugins/flow/scripts/tickets.mjs`,
+`plugins/flow/scripts/tickets.test.mjs`,
+`plugins/flow/.claude-plugin/plugin.json`, `CHANGELOG.md`, this file.
+Branch `q-8`, cut from `origin/main` (7fa8a3e, PR #17's merge commit).
+
+**Verified:** `node --test plugins/flow/scripts/tickets.test.mjs` — 28
+tests, 28 pass, 0 fail (the new test among them). `node --test
+plugins/flow/hooks/ticket-session-guard.test.mjs` — 13 pass, 0 fail.
+`node --check plugins/flow/scripts/tickets.mjs` clean.
+`node plugins/flow/scripts/tickets.mjs doctor` — exit 0, all five checks ✓.
+Live smoke: unfiltered `list` on this repo still renders the board.
+`plugin.json` 1.17.0 equals the top CHANGELOG entry.
+
+**Decisions:** (1) The mixed board — some epics with tickets, some without —
+is untouched: the ticket scopes the all-empty unfiltered case, and "any
+other change to list output" is Not in scope, so `printBoard`'s per-epic
+loop still skips ticketless epics when any tickets exist. (2) The `epics`
+subcommand's own `no epics found under epics/` line is untouched — there it
+is only printed when no epics exist, which is true. (3) Version bumped
+minor (1.17.0) matching every prior entry's convention; script output is
+installed behaviour, so the bump and CHANGELOG entry ride the same commit.
+(4) The implementation commit was amended pre-review to drop an auto-added
+Claude co-author trailer, per the ticket skill's rule and Q-6's precedent;
+step 8's no-amendment rule binds only after a review has run.
+
+**Owed:** Nothing.
+
+**Addendum — review — 2026-08-09 — opus/high:** One nit (confirmed), one
+pre-existing; no Important findings. Nit fixed in the review-fix commit
+(3464ab9): the new test matched `/hollow/` and `/no tickets yet/` as two
+independent patterns instead of pinning the composed line — the filtered
+branch's message (`epic "hollow" has no tickets yet`) contains both
+fragments, so a future change emitting that wrong message from the
+unfiltered branch would have passed all three assertions. Now pinned as
+`/^hollow — no tickets yet$/m`, the file's convention (the sibling BOARD-2
+test pins its exact string); the reviewer had verified by mutation that the
+original test did catch the actual regression, so the exposure was narrow.
+Re-run after the fix: tickets suite 28 pass, 0 fail; doctor exit 0.
+Pre-existing, not fixed here, handed to **Q-15** (opened in this epic's
+ticket doc in the same review-fix commit, Q-13/Q-14 precedent): the mixed
+board still omits ticketless epics entirely — when at least one epic has
+tickets, `printBoard`'s per-epic loop `continue`s past an epic with no
+sections, so it never appears on the unfiltered board; same defect class as
+Q-8 at larger blast radius, verified live by the reviewer with a
+one-ticketed-plus-one-ticketless fixture, and out of this ticket's scope
+("any other change to list output" is Not in scope). Also confirmed sound
+by the reviewer: mutation check on the new test passed, both new branches
+exercised live, scope respected, 1.17.0 = CHANGELOG head, suite 28/28,
+doctor exit 0. Nothing deferred beyond Q-15.

@@ -214,6 +214,30 @@ test('a real epic with no ticket sections is reported as ticketless, not nonexis
   }
 })
 
+test('unfiltered list names ticketless epics instead of claiming no epics exist', () => {
+  // Epic folders exist but none has a `## <ID> — …` section yet. The
+  // unfiltered board used to print "no epics found under epics/" — the same
+  // existing-work-reported-as-nonexistent lie the filtered branch told
+  // (BOARD-2's review, pre-existing; Q-8). Name each epic and its empty
+  // state instead. Needs its own repo: the shared fixture always has tickets.
+  const barren = join(tmp, 'barren')
+  git(tmp, 'init', '--initial-branch=main', barren)
+  mkdirSync(join(barren, 'epics/hollow'), { recursive: true })
+  writeFileSync(join(barren, 'epics/hollow/tickets.md'), '# Hollow epic — tickets\n\nNo sections yet.\n')
+  const out = run(barren, 'list')
+  // Pin the composed line, not fragments — the filtered branch's message
+  // (`epic "hollow" has no tickets yet`) also contains both fragments, so
+  // independent matches could not tell the two branches apart (review fix;
+  // the sibling BOARD-2 test above pins its exact string the same way).
+  assert.match(out, /^hollow — no tickets yet$/m, 'the epic is named with its empty state, as one line')
+  assert.ok(!/no epics found/.test(out), 'existing epics must not be reported as nonexistent')
+
+  // A repo with no epics/ at all keeps the honest "no epics found" answer.
+  const empty = join(tmp, 'no-epics-at-all')
+  git(tmp, 'init', '--initial-branch=main', empty)
+  assert.match(run(empty, 'list'), /no epics found under epics\//)
+})
+
 test('Next up suggests the installed, namespaced command', () => {
   // Plugin commands are namespaced: the installed command is /flow:ticket.
   // A bare /ticket suggestion is a live regression — a user ran it verbatim
