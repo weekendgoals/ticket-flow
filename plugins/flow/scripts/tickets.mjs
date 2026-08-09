@@ -470,7 +470,11 @@ function doctor() {
         add('warn', `${epic.epic}/tickets.md:${i + 1} — heading will not parse as a ticket (needs "## <ID> — <name>", ID uppercase): ${line.trim()}`)
     })
     if (!epic.statusDoc) {
-      add('warn', `${epic.epic}: no status.md — created at sign-off by /flow:epic; without it DONE/BLOCKED are invisible`)
+      // Two doors create this file — /flow:epic at sign-off, or ticket step 6
+      // when the first ticket logs (the quick lane's only door, since quick
+      // never runs /flow:epic). Name both, or the hint advertises a recovery
+      // unreachable from the state that triggers it (Q-16).
+      add('warn', `${epic.epic}: no status.md — created at sign-off by /flow:epic, or by the first ticket's status entry (ticket step 6 — the quick lane's only door); without it DONE/BLOCKED are invisible`)
       continue
     }
     readFileSync(epic.statusDoc, 'utf8').split('\n').forEach((line, i) => {

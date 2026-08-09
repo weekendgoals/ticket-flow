@@ -4,6 +4,21 @@ The plugin is the methodology's distribution mechanism: a change to a skill is
 a behaviour change in every project that installs it. This file is what makes
 those changes deliberate and visible.
 
+## 1.25.0 — 2026-08-09
+
+Q-16: doctor's no-status.md hint now names both creation doors
+(pre-existing, found by Q-13's review).
+
+- **`scripts/tickets.mjs`**: the warning for a missing status.md said
+  "created at sign-off by /flow:epic" — but the quick lane never runs
+  `/flow:epic`; its log is created by ticket step 6, so between quick
+  step 3 (plan committed) and the worker reaching step 6 the hint
+  advertised a recovery unreachable from the state that triggers it. The
+  message now names both doors: sign-off by `/flow:epic`, or the first
+  ticket's status entry (ticket step 6 — the quick lane's only door).
+- Tests: the full warning text is pinned verbatim on an epic without
+  status.md, so neither door can silently drop from the hint.
+
 ## 1.24.0 — 2026-08-09
 
 Q-15: the mixed board no longer omits ticketless epics (pre-existing, found
