@@ -232,6 +232,11 @@ ID), so the board ignores it and `doctor` will not flag it:
 **Driver:** /flow:run, unattended. **Tickets this run:** <one line per
 ticket, in order: ID — the worker agent that ran it — integrated | halted>.
 
+**Tokens:** <per ticket, what the harness reports for its worker and its
+reviewer — `unknown` where it exposes nothing, never an estimate — and the
+run's total of the known figures. Planning evidence, never a gate: nothing
+in this skill reads it to decide anything.>
+
 **Halted on:** <the stop condition, verbatim from step 5, and where it fired
 — or "ran to completion".>
 

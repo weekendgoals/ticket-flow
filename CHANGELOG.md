@@ -4,6 +4,29 @@ The plugin is the methodology's distribution mechanism: a change to a skill is
 a behaviour change in every project that installs it. This file is what makes
 those changes deliberate and visible.
 
+## 1.20.0 — 2026-08-09
+
+Q-11: token accounting — a **Tokens** line per ticket, a sum per epic (user
+request at the autonomous retro, 2026-08-08).
+
+- **`skills/ticket` step 6 template**: the status entry gains a **Tokens**
+  line — what the harness reports for the ticket's work, per agent where the
+  agents are separate. `unknown` is tolerated and honest when the harness
+  exposes no figure; estimating one is not. The number is planning evidence
+  for future sizing, never a gate — no step reads it to decide anything.
+- **`skills/ticket` steps 0 and 8**: the entry is committed before the review
+  runs, so the reviewer's figure cannot ride the step 6 line — it lands in
+  the step 8 review addendum on the same terms, and the supervisor's step 0
+  hand-back passes the reviewer's token figure alongside model and effort,
+  because only the hirer knows it.
+- **`skills/run` step 6**: the run record template gains a **Tokens** slot on
+  the same terms — per ticket (worker and reviewer) and the run's total of
+  the known figures.
+- **`skills/retro` step 4**: the report sums the status log's **Tokens**
+  lines per epic, naming `unknown` entries rather than counting them as zero.
+- Nothing is stored or parsed outside the status documents: `tickets.mjs` is
+  untouched and reads no cost data.
+
 ## 1.19.0 — 2026-08-09
 
 Q-10: the run skill's protection gate documents 403 and honors a recorded

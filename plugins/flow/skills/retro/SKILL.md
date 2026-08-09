@@ -66,7 +66,10 @@ for the areas the epic touched, as they are **now**.
 
 Show: proposed instruction-file edits as concrete before/after lines, owed work
 as draft ticket sections ready to append, planning lessons with the evidence
-(quote the log), and anything transferable beyond this project. **Ask, and
+(quote the log), the epic's token spend — the sum of the status log's
+**Tokens** lines, per ticket where recorded, naming any `unknown` entries
+rather than counting them as zero (planning evidence for future sizing, never
+a gate) — and anything transferable beyond this project. **Ask, and
 wait.**
 
 ## 5. After approval, ship the lessons the normal way
