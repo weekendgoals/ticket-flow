@@ -901,3 +901,41 @@ the ticket skill's rule and Q-6/Q-8/Q-9 precedent; step 8's no-amendment
 rule binds only after a review has run.
 
 **Owed:** Nothing.
+
+**Addendum — review — 2026-08-09 — opus/high:** One Important, two nits;
+all three fixed in the review-fix commit (2c0e00f). Important: step 2
+ordered the supervisor to hand the miner absolute paths that no command in
+the skill produces — step 1's `list --json` carries no paths, so the only
+way to comply was constructing `epics/<name>/…` by hand, which the ticket
+skill explicitly forbids — and `repoRoot` was missing from the handed set
+entirely, though step 3's `git log origin/<default>` and instruction-file
+reads need a repo anchor once the miner's cwd moves (the exact hazard the
+step's own rationale names); secondarily, `contextDir` was handed
+unconditionally though it is `null` for epics without `context/`,
+including this one. Fixed: step 2 now fetches the paths from
+`tickets.mjs epics --json` — the command that already returns `ticketsDoc`,
+`statusDoc`, `contextDir` and `repoRoot` per epic — hands `repoRoot`
+always and `contextDir` only when not null, and step 3 anchors its git
+command (`git -C <repoRoot>`) and instruction-file reads to `repoRoot`.
+Nit (1): the miner is told to execute the skill "exactly as written", and
+the document gave a spawned miner no way to know it should skip step 2 —
+nested miners on a literal reading. Fixed with the ticket skill's step 0
+pattern: step 2 opens with a reciprocal guard ("you are the miner …
+spawn no miner of your own"). Nit (2): three edited paragraphs left
+short unreflowed lines (retro skill steps 2 and 5, METHODOLOGY's retro
+section) — rewrapped to the house width. CHANGELOG's 1.21.0 entry text
+updated for the grown shape in the fix commit; no second bump — same
+release, same behaviour-change family. Reviewer confirmed sound: range
+coherent after the pre-review amend, the human gate intact across all
+three statements, no cross-document drift (skill, README row,
+METHODOLOGY agree), version/CHANGELOG discipline, miner self-sufficiency
+otherwise holds. No pre-existing findings; nothing deferred. Re-verified
+after fixes: tickets suite 29 pass, 0 fail; guard suite 13 pass, 0 fail;
+`node --check plugins/flow/scripts/tickets.mjs` clean; doctor exit 0,
+all five checks ✓; `grep -c "fresh-context"` on the retro skill — 3;
+`grep -n "epics --json"` and `"repoRoot"` hit in steps 2 and 3;
+plugin.json 1.21.0 equals the top CHANGELOG entry; no line in the fix
+diff exceeds the house wrap. Correction to this entry's **Tokens** line,
+per the Q-11 mechanism (the hirer passes the figure down): the worker's
+spend through step 6 was harness-reported as 79,496 tokens, not
+`unknown`. Reviewer tokens: 77,435.
