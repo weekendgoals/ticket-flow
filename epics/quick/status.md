@@ -1245,3 +1245,42 @@ no-amendment rule binds only after a review has run (Q-6/Q-8/Q-9/Q-12/Q-14
 precedent).
 
 **Owed:** Nothing.
+
+**Addendum — review — 2026-08-09 — opus/high:** One nit, one pre-existing;
+nothing fixed in this range, on the reviewer's own recommendation. Nit,
+confirmed, not fixed here — handed to **Q-17** (opened in this epic's
+ticket doc in this commit, Q-13/Q-14/Q-15 precedent): the new ticketless
+branch prints only the empty-state line and drops the `← this folder`
+marker every ticketed epic gets — in a checkout whose root directory is
+named after a ticketless epic (exactly a freshly-cut epic's state, the
+convention the script documents), an unfiltered mixed board shows the
+marker on no epic at all, while `tickets.mjs current` answers correctly
+(verified live by the reviewer: root `hollow/` with ticketless
+`epics/hollow/` plus ticketed `epics/peopled/` prints `hollow — no
+tickets yet` bare; renaming the root to `peopled` restores the marker).
+Reason not fixed in-range: this ticket's Not in scope is "any other
+change to list output", and the shape originates in Q-8's all-empty
+branch, which omits the marker the same way — both renderings share
+`ticketlessLine`, so Q-17 covers both branches in one fix and one test.
+Pre-existing, recorded with its reason rather than ticketed: the "Nothing
+left to start." line in `tickets.mjs` carries a dead false branch
+(`data.tickets.length ? … : ''` — the early return above makes the length
+always truthy there); harmless, not introduced by this range, and too low
+value for its own ticket — fold into a future tidy ticket only if one
+opens for other reasons; Q-17's section names it as adjacent-if-touching,
+not an obligation. Also confirmed sound by the reviewer, with depth: the
+new test mutation-checked in both directions — reverting the loop fix
+fails exactly the mixed-board test, and mutating `ticketlessLine`'s text
+fails both the all-empty and mixed tests, so the no-drift claim is pinned
+on both sides; `list --json` never had the omission (its epics array
+includes ticketless epics, verified live), so the scope rightly excluded
+it; filtered list and BOARD-2 behaviour preserved; no amend residue —
+`tickets.mjs` is 100755 at base and HEAD, the diff additive-only, nothing
+from Q-14 lost; Next up correctly never shows ticketless epics; no
+document drift ("no tickets yet" appears in no README, METHODOLOGY or
+skill text, and the tickets skill passes the board through without
+parsing). Suite 31 pass, 0 fail; doctor exit 0, all five checks ✓.
+Nothing deferred beyond Q-17. Correction to this entry's **Tokens** line,
+per the Q-11 mechanism (the hirer passes the figure down): the worker's
+spend through step 6 was harness-reported as 97,709 tokens, not
+`unknown`. Reviewer tokens: 65,184.

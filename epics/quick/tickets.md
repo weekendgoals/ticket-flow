@@ -345,3 +345,32 @@ file is created.
 **Acceptance criteria.**
 - The warning names both creation doors (grep the message in `tickets.mjs`
   and its test if one pins the text). Suite green, doctor exit 0.
+
+## Q-17 — ticketless epics never get the "← this folder" marker
+
+**Scope.**
+- `tickets.mjs` `printBoard`: the shared `ticketlessLine` renders a
+  ticketless epic without the `← this folder` marker every ticketed epic
+  gets — in a checkout whose root directory is named after a ticketless
+  epic (exactly a freshly-cut epic's state, the convention the script
+  documents for one-checkout-per-epic), an unfiltered mixed board shows
+  the marker on no epic at all, while `current` answers correctly (Q-15's
+  review, verified live: root `hollow/` with ticketless `epics/hollow/`
+  plus ticketed `epics/peopled/` prints `hollow — no tickets yet` bare;
+  renaming the root to `peopled` restores the marker). Both renderings
+  share the one `ticketlessLine` — the all-empty board (Q-8, where the
+  omission originates) and the mixed board (Q-15) — so the fix lands once
+  and one test covers both branches. Version bump + CHANGELOG. Adjacent
+  if touching that function, not an obligation: the "Nothing left to
+  start." line carries a dead false branch (`data.tickets.length ? … :
+  ''` — the early return above makes the length always truthy there);
+  harmless, may ride this ticket only if the pass already touches it.
+
+**Not in scope.** Any other change to list output; `current`'s own
+detection.
+
+**Acceptance criteria.**
+- New test: a repo whose root directory is named after a ticketless epic
+  → the unfiltered board renders that epic's empty-state line with the
+  `← this folder` marker, on the all-empty and mixed boards alike. Suite
+  green, doctor exit 0.
