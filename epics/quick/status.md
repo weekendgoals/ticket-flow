@@ -1054,3 +1054,120 @@ top CHANGELOG entry. Correction to this entry's **Tokens** line, per the
 Q-11 mechanism (the hirer passes the figure down): the worker's spend
 through step 6 was harness-reported as 82,216 tokens, not `unknown`.
 Reviewer tokens: 63,455.
+
+### Q-14 — preamble values must not scavenge across newlines — 2026-08-09 — DONE
+
+**Built:** Plugin v1.23.0. A value-less preamble label line now reads as
+absent instead of adopting the first word of the next paragraph. The shared
+preamble parse in `tickets.mjs` (`grab`, used by all three labels — Release
+mode, Run mode, Reviewer model) put `\s*` around the label's colon, and `\s`
+matches newlines — so a bare `Run mode:` followed by a paragraph beginning
+"Autonomous is not wanted here." parsed as `runMode: 'autonomous'` (verified
+live by Q-7's review, which found the class pre-existing on the mode lines
+and handed it here whole). The fix is the review's suggested shape:
+`[^\S\n]*` in place of `\s*` on both sides of the colon, anchoring the value
+to the label's own line — one change fixing the class for all three labels,
+since they share the one parse. Doctor's near-miss warning already fired on
+a value-less label line but misdescribed the failure ("will not parse, so it
+silently defaults" — it parsed, into unrelated prose); with the value
+anchored, that sentence is now true, and the hint's parenthetical names the
+piece a bare label is missing: "value on the label's own line", beside the
+existing label-at-line-start and no-formatting requirements. Comments above
+`parseModes` and the doctor scan record the anchor and why. New test: a
+value-less line under each of the three labels, each followed by a paragraph
+opening with a word the old parse would have scavenged into a live value
+(Integration / Autonomous / Opus), must parse as absent (serial default /
+null / null) — and each line is doctor-flagged with the corrected hint.
+Tickets suite 29 → 30. CHANGELOG entry for 1.23.0.
+
+**Mode:** supervisor — worker worker-q14, reviewer hired by the supervisor.
+
+**Tokens:** worker unknown — the harness exposes no usage figure to the
+worker agent; the reviewer's figure follows in the review addendum, per the
+template Q-11 added.
+
+**Files touched:** `plugins/flow/scripts/tickets.mjs`,
+`plugins/flow/scripts/tickets.test.mjs`,
+`plugins/flow/.claude-plugin/plugin.json`, `CHANGELOG.md`, this file.
+Branch `q-14`, cut from `origin/q-13` (1581d0d, Q-13's review-addendum
+commit) — a deliberate stack, user-directed: Q-10's PR #20, Q-11's PR #21,
+Q-12's PR #22 and Q-13's PR #23 were open and the user chose to run the
+remaining tickets back to back, merging the pull requests in sequence,
+rather than waiting on each merge.
+
+**Verified:** Acceptance: the new test — value-less `Run mode:` and
+`Reviewer model:` (and `Release mode:`) each followed by a prose paragraph
+parse as absent, never the paragraph's first word — passes inside the suite:
+`node --test plugins/flow/scripts/tickets.test.mjs` — 30 tests, 30 pass,
+0 fail. Mutation check: reverting `[^\S\n]*` back to `\s*` fails exactly the
+new test (29 pass, 1 fail), so the test pins the anchor. `node
+plugins/flow/scripts/tickets.mjs doctor` — exit 0, all five checks ✓.
+Standing checks: `node --test
+plugins/flow/hooks/ticket-session-guard.test.mjs` — 13 tests, 13 pass,
+0 fail; `node --check plugins/flow/scripts/tickets.mjs` clean. Live smoke:
+unfiltered `list` on this repo still renders the board. `plugin.json`
+1.23.0 equals the top CHANGELOG entry.
+
+**Decisions:** (1) Both `\s*` in `grab` were replaced, not only the one
+after the colon: `label\s*:` could also cross a newline ("Run mode" at a
+line's end, the colon on the next), the same scavenging class through the
+other gap. (2) Doctor's own strict per-line regex (`modeStrict`) keeps its
+`\s*`: it tests one `split('\n')` line at a time, where `\s` cannot cross a
+newline, so it is behaviourally identical — changing it would be churn
+inside a Not-in-scope area (the tolerant parse's other properties stay as
+they are). (3) The doctor wording change is the hint's parenthetical only:
+after the anchor fix, "will not parse, so it silently defaults" is accurate
+for every near-miss shape including the value-less line, so the sentence
+stands; what misdescribed the value-less case going forward was the recovery
+hint, which named only label-at-line-start and no-formatting — requirements
+a bare label already meets. (4) The new test also pins the corrected hint
+text (`value on the label's own line`) so the message cannot silently revert
+— the file's convention of pinning messages verbatim. (5) Label
+case-insensitivity, prose after the value, and preamble-only reading are
+untouched, per Not in scope. (6) Version bumped minor (1.23.0): script
+parse behaviour is installed behaviour. (7) The branch was cut from
+`origin/q-13` on the user's explicit direction (deliberate stack),
+overriding the skill's stop-on-open-PR rule for this run; recorded here so
+the base needs no archaeology. (8) The implementation commit was amended
+pre-review to drop a Claude co-author trailer, per the ticket skill's rule
+and Q-6/Q-8/Q-9/Q-12 precedent; step 8's no-amendment rule binds only after
+a review has run.
+
+**Owed:** Nothing.
+
+**Addendum — review — 2026-08-09 — opus/high:** One nit, no Important
+findings, no pre-existing defects; the nit fixed in the review-fix commit
+(a5fbc79). Nit, confirmed: half the fix was unpinned — the commit anchored
+both sides of the label's colon (this entry's Decision 1), but the new
+test's value-less shapes only exercise the post-colon side; the reviewer
+reverted the pre-colon anchor alone (`^${label}\s*:[^\S\n]*`) and the suite
+stayed green (30 pass, 0 fail), while the post-colon anchor and the doctor
+hint wording were each already pinned (29/1 under either revert). The
+untested behaviour: a label and colon split across lines — the markdown
+definition-list shape, `Run mode` newline `: autonomous` — parsed as
+`autonomous` under the reverted regex; a future "simplify back to `\s*`" on
+that side would restore the scavenge with a green suite. Fixed with one
+fixture paragraph in the existing test carrying exactly that shape, asserted
+absent; the test's doctor warn count grows 3 → 4 because the colon-less
+label line is itself a near-miss the scan flags. Mutation re-run after the
+fix: the pre-colon revert now fails exactly the new test — 29 pass, 1 fail —
+so all three halves (both anchors, the hint wording) are pinned. CHANGELOG
+1.23.0 entry text extended for the grown test shape in the fix commit; no
+second bump — same release, same behaviour-change family. Nothing deferred.
+Also confirmed sound by the reviewer, with depth: the regex probed across
+value shapes including CRLF in both directions (CR-only unreachable — the
+file is split on `\n` upstream); the decision to leave doctor's per-line
+`modeStrict` at `\s*` verified formally and empirically as the right scope
+call; the step-5 checkout incident left no half-reapplied edits — all five
+files mutually consistent, every CHANGELOG claim checked out; old and new
+`grab` agree on all three of this repo's epics, doctor still all five
+checks ✓ with no warnings; the new test is the only one failing under the
+anchor mutation and its fixture paragraphs are load-bearing; no template or
+README needed a same-commit change ("first word after the colon" remains
+true). Re-verified after the fix: tickets suite 30 pass, 0 fail; guard
+suite 13 pass, 0 fail; `node --check plugins/flow/scripts/tickets.mjs`
+clean; doctor exit 0, all five checks ✓; plugin.json 1.23.0 equals the top
+CHANGELOG entry. Correction to this entry's **Tokens** line, per the Q-11
+mechanism (the hirer passes the figure down): the worker's spend through
+step 6 was harness-reported as 99,941 tokens, not `unknown`. Reviewer
+tokens: 67,888.

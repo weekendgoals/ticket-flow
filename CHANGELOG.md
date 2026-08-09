@@ -4,6 +4,34 @@ The plugin is the methodology's distribution mechanism: a change to a skill is
 a behaviour change in every project that installs it. This file is what makes
 those changes deliberate and visible.
 
+## 1.23.0 — 2026-08-09
+
+Q-14: preamble values no longer scavenge across newlines (pre-existing,
+found by Q-7's review).
+
+- **`scripts/tickets.mjs`**: the shared preamble parse (`grab`) put `\s*`
+  around the label's colon, and `\s` matches newlines — so a value-less
+  label line adopted the first word of the next paragraph: a bare
+  `Run mode:` above prose beginning "Autonomous is not wanted here." parsed
+  as `runMode: 'autonomous'` (verified live by Q-7's review). All three
+  labels — Release mode, Run mode, Reviewer model — share the one parse, so
+  the fix lands once for the class: `[^\S\n]*` in place of `\s*` anchors
+  the value to the label's own line, and a value-less line now reads as
+  absent (serial default / null).
+- **doctor**: the near-miss warning already fired on a value-less label
+  line but misdescribed the failure ("will not parse, so it silently
+  defaults" — it parsed, into unrelated prose). With the value anchored
+  that sentence is now true, and the hint names the missing piece: value
+  on the label's own line, beside the existing label-at-line-start and
+  no-formatting requirements.
+- Tests: a value-less line under each of the three labels, each followed
+  by a paragraph opening with a word the old parse scavenged into a live
+  value, must read as absent — and each line is doctor-flagged with the
+  corrected hint. A label split from its colon across lines (the markdown
+  definition-list shape) also reads as absent, pinning the pre-colon side
+  of the anchor, which the value-less shapes cannot reach (review fix).
+  Tickets suite 29 → 30.
+
 ## 1.22.0 — 2026-08-09
 
 Q-13: the status-log preamble is defined where creation is instructed

@@ -80,6 +80,10 @@ const RUN_MODES = new Set(['autonomous'])
 // "Release mode: serial — each ticket ships alone" parses as serial. An
 // absent Release mode line defaults to serial; an absent Run mode is null
 // (attended). Only the preamble is read — text above the first "## " heading.
+// The value is anchored to the label's own line ([^\S\n], never \s, around
+// the colon): a value-less label must read as absent, not adopt the first
+// word of the next paragraph — a bare "Run mode:" above prose beginning
+// "Autonomous is not wanted here." once parsed as autonomous (Q-14).
 //
 // "Reviewer model" rides the same parse: an optional line naming the model
 // the ticket and run skills pass when spawning reviewers. Model identifiers
@@ -89,7 +93,7 @@ const RUN_MODES = new Set(['autonomous'])
 function parseModes(ticketsDoc) {
   const preamble = readFileSync(ticketsDoc, 'utf8').split(/^##\s/m)[0]
   const grab = (label, charset = '[A-Za-z-]+') => {
-    const m = preamble.match(new RegExp(`^${label}\\s*:\\s*(${charset})`, 'im'))
+    const m = preamble.match(new RegExp(`^${label}[^\\S\\n]*:[^\\S\\n]*(${charset})`, 'im'))
     return m ? m[1].toLowerCase() : null
   }
   return {
@@ -422,9 +426,10 @@ function doctor() {
   const epics = discoverEpics()
   if (!epics.length) add('ok', 'no epics yet — /flow:epic creates epics/<name>/')
 
-  // A mode line that ALMOST parses — bolded label, doubled space — reads as
-  // absent and silently defaults. Same failure class as heading near-misses:
-  // flag anything mode-shaped in the preamble that the strict parse rejects.
+  // A mode line that ALMOST parses — bolded label, doubled space, a bare
+  // label with no value on its line — reads as absent and silently defaults.
+  // Same failure class as heading near-misses: flag anything mode-shaped in
+  // the preamble that the strict parse rejects.
   // "Reviewer model" is in the same class: a bolded line reads as absent and
   // the skills silently fall back to their default model.
   const modeNear = /^[^A-Za-z]*\b((release|run)\s+mode|reviewer\s+model)\b/i
@@ -438,7 +443,7 @@ function doctor() {
       add('warn', `${epic.epic}: unrecognised run mode "${epic.runMode}" (known: autonomous) — treated as attended`)
     readFileSync(epic.ticketsDoc, 'utf8').split(/^##\s/m)[0].split('\n').forEach((line, i) => {
       if (modeNear.test(line) && !modeStrict.test(line))
-        add('warn', `${epic.epic}/tickets.md:${i + 1} — looks like a mode line but will not parse, so it silently defaults (needs "Release mode: <value>" / "Run mode: <value>" / "Reviewer model: <value>" at line start, no formatting): ${line.trim()}`)
+        add('warn', `${epic.epic}/tickets.md:${i + 1} — looks like a mode line but will not parse, so it silently defaults (needs "Release mode: <value>" / "Run mode: <value>" / "Reviewer model: <value>" — label at line start, no formatting, value on the label's own line): ${line.trim()}`)
     })
   }
 
