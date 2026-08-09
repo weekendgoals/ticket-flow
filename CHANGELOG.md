@@ -4,6 +4,18 @@ The plugin is the methodology's distribution mechanism: a change to a skill is
 a behaviour change in every project that installs it. This file is what makes
 those changes deliberate and visible.
 
+## 1.17.0 — 2026-08-09
+
+Q-8: the unfiltered board no longer claims "no epics found" when epics exist.
+
+- **`tickets.mjs` `list`**: when epic folders exist but none has a
+  `## <ID> — …` ticket section yet, the unfiltered board named nothing and
+  printed `no epics found under epics/` — existing work reported as
+  nonexistent, the same lie the filtered branch told before BOARD-2. It now
+  names each epic with its empty state ("<epic> — no tickets yet"); a repo
+  with genuinely no epics keeps the old honest answer. Test covers both
+  branches (tickets suite 27 → 28).
+
 ## 1.16.0 — 2026-08-08
 
 Q-7: configurable reviewer model.
