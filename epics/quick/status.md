@@ -794,3 +794,40 @@ direction (deliberate stack), overriding the skill's stop-on-open-PR rule
 for this run; recorded here so the base needs no archaeology.
 
 **Owed:** Nothing.
+
+**Addendum — review — 2026-08-09 — opus/high:** Three Important, one nit;
+all four fixed in the review-fix commit (f9bb5d3). Important (1): the
+retro's epic sum read only the status log's **Tokens** lines while this
+same commit deliberately routed every reviewer's figure off that line into
+the step 8 addendum — a systematic, silent undercount (a reviewer is hired
+for every ticket), with this very entry as the live proof. Fixed: the
+retro sums both places the log carries a figure — the entry's **Tokens**
+line and the addendum's `Reviewer tokens` — and says why the split exists.
+Important (2): in an autonomous epic the run record's **Tokens** line
+restates every ticket's figures plus a total into the same status.md the
+entries live in, so the retro's sum counted each figure twice and the
+total a third time — masking finding 1 in the opposite direction. Fixed
+on both sides of the one rule in one commit: the run record's slot names
+itself a restatement that an epic sum never reads, and the retro's
+instruction skips run-record Tokens lines. Important (3): the hand-back
+rule ("model, effort and token figure") was updated in the ticket skill
+but not in its only other statement, the quick skill's supervisor lane —
+the exact one-rule drift the CLAUDE.md invariant forbids, and the failure
+lands in this repo first, where quick supervisors run daily. Fixed: the
+quick lane's sentence now carries the same three items. Nit (4): the run
+record demanded a reviewer figure the driver has no channel to obtain —
+the worker hires the reviewer in an autonomous run, so only the worker
+observes that spend. Fixed with the ticket lane's own pattern: the step
+4c spawn prompt has the worker report its reviewer's harness-reported
+figure, and the driver records each worker's figure as its hirer —
+figures flow hirer-to-record. The 1.20.0 CHANGELOG entry text was updated
+for the grown shape in the fix commit; no second bump — same release,
+same behaviour-change family. Correction to this entry's **Tokens** line,
+now that the hirer has passed the figure down: the worker's spend through
+step 6 was harness-reported as 77,349 tokens, not `unknown` — the entry
+was written before the supervisor's hand-back existed to carry it, which
+is itself the mechanism this ticket builds. Re-verified after fixes:
+tickets suite 29 pass, 0 fail; guard suite 13 pass, 0 fail; `node --check
+plugins/flow/scripts/tickets.mjs` clean; doctor exit 0, all five checks ✓;
+acceptance `grep -l "Tokens"` still names all three skills. Nothing
+deferred. Reviewer tokens: 62,280.
