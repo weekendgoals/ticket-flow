@@ -1477,3 +1477,61 @@ uncommitted edits cleaning up in-tree mutation checks with
 `git checkout --`.
 
 **Owed:** Nothing.
+
+**Addendum — review — 2026-08-09 — opus/high:** Two nits, no Important
+findings, no pre-existing defects beyond nit 1's own gap; both nits fixed
+in the review-fix commit (bb432b0). Nit (1), confirmed: the *ticketed*
+header's marker was pinned by no test — before this ticket an inline
+expression, after it a call into the shared `hereMarker` — so the helper
+was guarded only through the ticketless branch, and a future edit dropping
+the marker from the ticketed header would ship silently (the reviewer
+mutation-verified it: `const here = ''` left the suite fully green at
+33/33, while gutting `hereMarker` killed only the ticketless test). Fixed
+in-range rather than handed onward, with reason: this ticket's whole
+subject is that the marker was unpinned in one of two branches, and the
+pass replaced the ticketed branch's inline expression with a call into the
+very helper it introduced — shipping a shared helper half-guarded would
+leave the ticket's own refactor as the thing carrying the exposure. The
+new test needs its own repo, as the reviewer noted: the sibling test's
+root is named after its *ticketless* epic, where the ticketed neighbour
+must stay unmarked to be discriminating, so the new one names its root
+after the *ticketed* epic (`peopled/` with `epics/peopled/` plus
+ticketless `epics/hollow/`) and inverts the expectations — the pair
+covers both branches in both directions. Tickets suite 33 → 34. Nit (2),
+confirmed: `hereMarker(current, name)` and `ticketlessLine(name, current)`
+took their arguments in opposite orders, and a transposed call at a future
+third call site would fail silently — `current?.epic === name` with the
+two swapped compares `undefined` to an object, rendering no marker and
+raising nothing. Fixed: `hereMarker` now takes `(name, current)` like its
+sibling, both existing call sites updated, and a comment records why the
+order is deliberately identical. Cheapest to fix while the helpers are
+freshly written and have exactly two call sites. With nit 1's test in
+place the class is no longer silent either: the transposed shape now fails
+both marker tests loudly (mutation-checked, 32 pass, 2 fail). CHANGELOG's
+1.26.0 entry text updated for the grown shape in the fix commit; no second
+bump — same release, same behaviour-change family. Nothing deferred.
+Re-verified after the fixes, mutation checks run on scratchpad copies only
+(never the working tree — the Q-16 checkout hazard): `node --test
+plugins/flow/scripts/tickets.test.mjs` — 34 tests, 34 pass, 0 fail;
+mutation A (ticketed header's marker dropped) fails exactly the new test,
+33 pass 1 fail; mutation B (ticketless line's marker dropped) fails
+exactly the sibling test, 33 pass 1 fail; mutation C (`hereMarker` always
+returns `''`) fails exactly both, 32 pass 2 fail; mutation D (arguments
+transposed at both call sites) fails exactly both, 32 pass 2 fail.
+`node --test plugins/flow/hooks/ticket-session-guard.test.mjs` — 13 tests,
+13 pass, 0 fail; `node --check plugins/flow/scripts/tickets.mjs` clean;
+`node plugins/flow/scripts/tickets.mjs doctor` — exit 0, all five
+checks ✓; executable bit on `tickets.mjs` intact (100755); `plugin.json`
+1.26.0 equals the top CHANGELOG entry. Also confirmed sound by the
+reviewer: `current` semantics identical at all three call sites; rendered
+spacing verified live through `cat -e` (same two-space gap as the ticketed
+header, no colour bleed — the dim run closes before the green marker); the
+adjacent tidy provably output-identical (the removed arm unreachable given
+the early return and no reassignment of `data.tickets`); `← this folder`
+now a literal in exactly one place; `ticketlessLine` has exactly two call
+sites, both updated; `isCurrentFolderEpic` untouched; no document
+describes the line, so no cross-document update was owed; scope clean.
+Correction to this entry's **Tokens** line, per the Q-11 mechanism (the
+hirer passes the figure down): the worker's spend through step 6 was
+harness-reported as 101,120 tokens, not `unknown`. Reviewer tokens:
+57,449.
