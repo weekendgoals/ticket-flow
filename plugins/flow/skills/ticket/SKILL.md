@@ -37,8 +37,8 @@ and implements nothing:
    review** — a worker that picks its own reviewer recreates self-review
    one level down.
 4. Hand back to the **same worker** the findings **and the reviewer's
-   model and effort** — the addendum header needs them and only you know
-   them — to disposition, fix and append the addendum (step 8); it has the
+   model, effort and token figure** — the addendum needs them and only you
+   know them — to disposition, fix and append the addendum (step 8); it has the
    branch context; new commits, never amendments.
 5. Have the worker push and open the pull request (step 9); relay its
    report and finish per step 10 for the epic's mode — attended: print the
@@ -212,6 +212,13 @@ hired by the supervisor`, or `interactive — in-session`, or `autonomous —
 driver-spawned worker <label>`, or `quick — in-session (/flow:quick)`.
 This line is what makes the fresh-context rule auditable after the fact.>
 
+**Tokens:** <what the harness reports for this ticket's work — per agent
+where the agents are separate, e.g. `worker 310k`; the reviewer's figure
+joins the step 8 addendum, since no review has run when this entry is
+committed. `unknown` is tolerated and honest when the harness exposes no
+figure — never estimate one. The number is planning evidence for future
+sizing, never a gate: no step reads it to decide anything.>
+
 **Files touched:** <list>. Branch `<branch>`, cut from `<base>`.
 
 **Verified:** <exact commands and counts; manual checks with evidence>
@@ -289,7 +296,10 @@ pull request's evidence trail:
 ```markdown
 **Addendum — review — <YYYY-MM-DD> — <model>/<effort>:** <findings. What was
 fixed, in which commit, with counts. What was not fixed, each with its reason.
-Say "nothing deferred" explicitly if that is true.>
+Say "nothing deferred" explicitly if that is true. End with the reviewer's
+token figure — `Reviewer tokens: <n>`, or `unknown` when the harness exposed
+none — completing the entry's **Tokens** line on the same terms:
+harness-reported or unknown, never estimated.>
 ```
 
 ## 9. Show the user, then push and open the pull request

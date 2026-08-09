@@ -134,8 +134,8 @@ never adapt. The worker then executes ticket steps 4–6 — implement, verify
 with counts, append and commit the status entry — and stops with a report.
 The rest runs as the ticket skill writes it: the supervisor hires the reviewer (step 7 — never the
 worker; the party under review does not pick its own judge), hands the
-findings and the reviewer's model and effort back to the same worker
-(step 8), the worker pushes and opens the pull request (step 9), and
+findings and the reviewer's model, effort and token figure back to the same
+worker (step 8), the worker pushes and opens the pull request (step 9), and
 everything stops there (step 10, attended).
 
 **`--interactive`** keeps the in-session lane: run ticket steps 4 to the end

@@ -731,3 +731,103 @@ doctor exit 0, all five checks ✓; acceptance greps — "403" 5 hits,
 equals the top CHANGELOG entry (entry text updated for the grown shape; no
 second bump — same release, same behaviour-change family). Nothing
 deferred.
+
+### Q-11 — token accounting: a Tokens line per ticket, a sum per epic — 2026-08-09 — DONE
+
+**Built:** Plugin v1.20.0. The status documents now carry token accounting,
+on honest terms (user request at the autonomous retro, 2026-08-08).
+`skills/ticket` step 6's entry template gains a **Tokens** line — what the
+harness reports for the ticket's work, per agent where the agents are
+separate; `unknown` is tolerated and honest when the harness exposes no
+figure, estimating one is not; the number is planning evidence for future
+sizing, never a gate — no step reads it to decide anything. Because the
+entry is committed before the review runs (step 6's own rule), the
+reviewer's figure cannot ride that line: step 8's addendum template now ends
+with the reviewer's token figure on the same terms, and step 0's hand-back
+passes the reviewer's token figure alongside model and effort — only the
+hirer knows it. `skills/run` step 6's run-record template gains a **Tokens**
+slot: per ticket, worker and reviewer, plus the run's total of the known
+figures. `skills/retro` step 4's report sums the status log's **Tokens**
+lines per epic, naming `unknown` entries rather than counting them as zero.
+CHANGELOG entry for 1.20.0. Nothing is stored or parsed outside the status
+documents — `tickets.mjs` untouched.
+
+**Mode:** supervisor — worker worker-q11, reviewer hired by the supervisor.
+
+**Tokens:** worker unknown — the harness exposes no usage figure to the
+worker agent; the reviewer's figure follows in the review addendum, per the
+template this ticket adds.
+
+**Files touched:** `plugins/flow/skills/ticket/SKILL.md`,
+`plugins/flow/skills/run/SKILL.md`, `plugins/flow/skills/retro/SKILL.md`,
+`plugins/flow/.claude-plugin/plugin.json`, `CHANGELOG.md`, this file.
+Branch `q-11`, cut from `origin/q-10` (462e076, Q-10's review-addendum
+commit) — a deliberate stack, user-directed: Q-10's PR #20 was open and the
+user chose to run the remaining tickets back to back, merging the pull
+requests in sequence, rather than waiting on each merge.
+
+**Verified:** Acceptance: `grep -l "Tokens"` across
+`plugins/flow/skills/{ticket,run,retro}/SKILL.md` — all three files named,
+exit 0. Standing checks: `node --test plugins/flow/scripts/tickets.test.mjs`
+— 29 pass, 0 fail; `node --test
+plugins/flow/hooks/ticket-session-guard.test.mjs` — 13 pass, 0 fail;
+`node --check plugins/flow/scripts/tickets.mjs` clean;
+`node plugins/flow/scripts/tickets.mjs doctor` — exit 0, all five checks ✓.
+`plugin.json` 1.20.0 equals the top CHANGELOG entry.
+
+**Decisions:** (1) The scope names the step 6 template, but that entry is
+committed before any review runs, so a step 6 line demanding the reviewer's
+figure would be unfillable at the only moment it is written — the reviewer's
+figure was routed to the step 8 addendum instead, and step 0's hand-back
+extended (model, effort, token figure), because the supervisor who hired
+the reviewer is the only party that can know it; the gate-at-the-door
+invariant puts each instruction where its actor acts. (2) "Unknown is
+tolerated and honest, never estimate" is spelled out in all three skills —
+an invented number is worse than none as planning evidence. (3) "Never a
+gate" is stated inside each template, not only in the plan, so no future
+session promotes the figure into a threshold. (4) The retro sums only what
+the log carries and names `unknown` entries rather than zero-counting them —
+a total silently absorbing unknowns would present false precision. (5)
+`tickets.mjs` untouched per Not in scope: no parsing, no storage, no cost
+data. (6) The branch was cut from `origin/q-10` on the user's explicit
+direction (deliberate stack), overriding the skill's stop-on-open-PR rule
+for this run; recorded here so the base needs no archaeology.
+
+**Owed:** Nothing.
+
+**Addendum — review — 2026-08-09 — opus/high:** Three Important, one nit;
+all four fixed in the review-fix commit (f9bb5d3). Important (1): the
+retro's epic sum read only the status log's **Tokens** lines while this
+same commit deliberately routed every reviewer's figure off that line into
+the step 8 addendum — a systematic, silent undercount (a reviewer is hired
+for every ticket), with this very entry as the live proof. Fixed: the
+retro sums both places the log carries a figure — the entry's **Tokens**
+line and the addendum's `Reviewer tokens` — and says why the split exists.
+Important (2): in an autonomous epic the run record's **Tokens** line
+restates every ticket's figures plus a total into the same status.md the
+entries live in, so the retro's sum counted each figure twice and the
+total a third time — masking finding 1 in the opposite direction. Fixed
+on both sides of the one rule in one commit: the run record's slot names
+itself a restatement that an epic sum never reads, and the retro's
+instruction skips run-record Tokens lines. Important (3): the hand-back
+rule ("model, effort and token figure") was updated in the ticket skill
+but not in its only other statement, the quick skill's supervisor lane —
+the exact one-rule drift the CLAUDE.md invariant forbids, and the failure
+lands in this repo first, where quick supervisors run daily. Fixed: the
+quick lane's sentence now carries the same three items. Nit (4): the run
+record demanded a reviewer figure the driver has no channel to obtain —
+the worker hires the reviewer in an autonomous run, so only the worker
+observes that spend. Fixed with the ticket lane's own pattern: the step
+4c spawn prompt has the worker report its reviewer's harness-reported
+figure, and the driver records each worker's figure as its hirer —
+figures flow hirer-to-record. The 1.20.0 CHANGELOG entry text was updated
+for the grown shape in the fix commit; no second bump — same release,
+same behaviour-change family. Correction to this entry's **Tokens** line,
+now that the hirer has passed the figure down: the worker's spend through
+step 6 was harness-reported as 77,349 tokens, not `unknown` — the entry
+was written before the supervisor's hand-back existed to carry it, which
+is itself the mechanism this ticket builds. Re-verified after fixes:
+tickets suite 29 pass, 0 fail; guard suite 13 pass, 0 fail; `node --check
+plugins/flow/scripts/tickets.mjs` clean; doctor exit 0, all five checks ✓;
+acceptance `grep -l "Tokens"` still names all three skills. Nothing
+deferred. Reviewer tokens: 62,280.
