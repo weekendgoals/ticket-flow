@@ -608,3 +608,67 @@ new test, and dropping the PATH override (making the `gh` stub unreachable)
 also broke only the new test — the stub is load-bearing. Acceptance
 criteria re-verified independently by the reviewer: tickets suite 29 pass,
 0 fail; doctor exit 0; guard suite 13 pass, 0 fail.
+
+### Q-10 — the run skill's protection gate: document 403, honor a recorded waiver — 2026-08-09 — DONE
+
+**Built:** Plugin v1.19.0. The run skill's branch-protection check (step 3)
+no longer halts an unattended run on an environment shape it never named.
+Previously it documented only success and the 404→rulesets fallthrough, but
+a private repository under an organization on GitHub's free plan returns
+**403 on both endpoints** (hit live by the first unattended run,
+2026-08-08), and step 5's blanket rule — a nonzero exit from any command
+the skill issues is a stop condition, nothing marked tolerated — made the
+probe's own failure a halt with nobody present. Step 3 now: (1) names 403
+from both endpoints as "protection is unavailable on this plan", the same
+fact as unprotected stated by the platform; (2) marks the two `gh api`
+probes as the skill's only tolerated nonzero exits — their failure statuses
+are the data the check reads (404 routes to the rulesets endpoint, 403
+names the plan), never themselves a stop condition; (3) defines where the
+driver finds a pre-recorded human waiver, since an unattended run cannot
+ask: the epic's `tickets.md` — prose on the `Run mode:` line or under the
+ground rules (where the epic skill's plan-time probe records its result),
+or an amended acceptance criterion, which is how AUTO-4's free-plan waiver
+was recorded. Waiver found: proceed and name it in the run record; none:
+report what the probes returned and stop before ticket one. Step 5's
+"in this skill nothing is marked tolerated" became false with the step 3
+change, so the clause now names the probe pair as the one tolerated
+exception — one rule, both statements moved in the same commit. CHANGELOG
+entry for 1.19.0.
+
+**Mode:** supervisor — worker worker-q10, reviewer hired by the supervisor.
+
+**Files touched:** `plugins/flow/skills/run/SKILL.md`,
+`plugins/flow/.claude-plugin/plugin.json`, `CHANGELOG.md`, this file.
+Branch `q-10`, cut from `origin/main` (b0f9b7b, PR #19's merge commit).
+
+**Verified:** Acceptance: `grep -n "403"
+plugins/flow/skills/run/SKILL.md` — 3 hits (steps 3 and 5); `grep -in
+"waiver" plugins/flow/skills/run/SKILL.md` — 3 hits; `node
+plugins/flow/scripts/tickets.mjs doctor` — exit 0, all five checks ✓.
+Standing checks: `node --test plugins/flow/scripts/tickets.test.mjs` — 29
+pass, 0 fail; `node --test
+plugins/flow/hooks/ticket-session-guard.test.mjs` — 13 pass, 0 fail;
+`node --check plugins/flow/scripts/tickets.mjs` clean. `plugin.json`
+1.19.0 equals the top CHANGELOG entry.
+
+**Decisions:** (1) Marking the probes tolerated required touching step 5,
+which the scope did not name: the ticket's own motivation ("the probe's
+nonzero exit is itself a stop condition") cannot be fixed by step 3 text
+alone while step 5 still declares nothing tolerated — leaving it would
+ship the exact two-documents-disagree drift the one-rule invariant exists
+to stop, so both statements moved in one commit. (2) The waiver location
+is stated to cover both shapes of absence — unprotected (empty rule lists)
+and unavailable (403) — because the existing text already made missing
+protection "the human's to waive" without saying where; defining the
+location for only the 403 case would have left the older sentence
+dangling. (3) The run-skill text names both places inside `tickets.md`
+where a waiver legitimately lives — the epic skill's plan-time recording
+spots (Run mode line / ground rules, per Q-5's template obligation) and an
+amended acceptance criterion (AUTO-4's actual precedent, which predates
+that obligation) — rather than inventing a single canonical spot the
+existing record does not match. (4) No doctor check and no script change,
+per Not in scope: protection is environment setup, and the waiver is prose
+the driver reads, not a parsed line. (5) Version bumped minor (1.19.0):
+skill text is installed behaviour.
+
+**Owed:** Nothing.
