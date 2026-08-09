@@ -447,11 +447,15 @@ test('a value-less label line reads as absent, never the next paragraph\'s first
   // newlines, so a bare "Run mode:" adopted the first word of the following
   // paragraph — prose beginning "Autonomous is not wanted here." parsed as
   // runMode: 'autonomous'. Each paragraph below opens with a word the old
-  // parse would have scavenged into a live (and here unwanted) value.
+  // parse would have scavenged into a live (and here unwanted) value. The
+  // last shape — label and colon split across lines, the markdown
+  // definition-list look — pins the PRE-colon anchor, which the value-less
+  // shapes cannot reach (Q-14's review: reverting that side alone left the
+  // suite green).
   mkdirSync(join(repo, 'epics/bare'), { recursive: true })
   writeFileSync(
     join(repo, 'epics/bare/tickets.md'),
-    '# Bare\n\nRelease mode:\n\nIntegration would be the wrong topology here.\n\nRun mode:\n\nAutonomous is not wanted here.\n\nReviewer model:\n\nOpus is not being pinned.\n\n## B-1 — value-less labels\n\n**Scope.** B.\n',
+    '# Bare\n\nRelease mode:\n\nIntegration would be the wrong topology here.\n\nRun mode:\n\nAutonomous is not wanted here.\n\nReviewer model:\n\nOpus is not being pinned.\n\nRun mode\n: autonomous\n\n## B-1 — value-less labels\n\n**Scope.** B.\n',
   )
   try {
     const data = JSON.parse(run(repo, 'list', '--json'))
@@ -464,7 +468,7 @@ test('a value-less label line reads as absent, never the next paragraph\'s first
     // not parse, they silently default, and the hint names what is missing.
     const rows = JSON.parse(run(repo, 'doctor', '--json'))
     const warns = rows.filter((r) => r.level === 'warn' && r.msg.includes('bare/tickets.md'))
-    assert.equal(warns.length, 3, 'all three value-less label lines must be flagged')
+    assert.equal(warns.length, 4, 'the three value-less lines and the colon-less split label must all be flagged')
     for (const w of warns) {
       assert.match(w.msg, /will not parse/)
       assert.match(w.msg, /value on the label's own line/)

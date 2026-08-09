@@ -27,7 +27,10 @@ found by Q-7's review).
 - Tests: a value-less line under each of the three labels, each followed
   by a paragraph opening with a word the old parse scavenged into a live
   value, must read as absent — and each line is doctor-flagged with the
-  corrected hint. Tickets suite 29 → 30.
+  corrected hint. A label split from its colon across lines (the markdown
+  definition-list shape) also reads as absent, pinning the pre-colon side
+  of the anchor, which the value-less shapes cannot reach (review fix).
+  Tickets suite 29 → 30.
 
 ## 1.22.0 — 2026-08-09
 
