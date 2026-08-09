@@ -4,6 +4,34 @@ The plugin is the methodology's distribution mechanism: a change to a skill is
 a behaviour change in every project that installs it. This file is what makes
 those changes deliberate and visible.
 
+## 1.26.0 — 2026-08-09
+
+Q-17: ticketless epics now get the `← this folder` marker (pre-existing,
+found by Q-15's review).
+
+- **`scripts/tickets.mjs`**: the shared `ticketlessLine` rendered a
+  ticketless epic without the `← this folder` marker every ticketed epic
+  gets — in a checkout whose root directory is named after a ticketless
+  epic (exactly a freshly-cut epic's state, the one-checkout-per-epic
+  convention the script reads), the unfiltered board showed the marker on
+  no epic at all, while `current` answered correctly. The marker is now
+  rendered by one `hereMarker(name, current)` helper shared by the
+  ticketed and ticketless lines, so the two renderings cannot drift apart,
+  and both ticketless boards — all-empty (Q-8's branch) and mixed
+  (Q-15's) — carry it through the one shared line. `ticketlessLine` takes
+  its arguments in the same order for the same reason a shared helper
+  exists: a transposed call fails silently (undefined compared to an
+  object renders no marker and raises nothing). Adjacent, sanctioned by
+  Q-17's ticket: the dead false branch on the "Nothing left to start."
+  line (unreachable — the empty board returns earlier) is removed; no
+  output change.
+- Tests: two repos, one named after its ticketless epic and one named
+  after its ticketed epic, pin the marker on both sides of the shared
+  helper — the empty-state line carries it on the all-empty and mixed
+  boards alike, the ticketed header carries it in its own checkout, and
+  each test's neighbouring epic stays unmarked. All pinned as composed
+  lines to end-of-line, so the unmarked assertions prove absence too.
+
 ## 1.25.0 — 2026-08-09
 
 Q-16: doctor's no-status.md hint now names both creation doors
