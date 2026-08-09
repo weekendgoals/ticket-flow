@@ -155,7 +155,9 @@ full toolset, empty context. Its prompt must say, in substance:
 > A driver spawned you for this one ticket. Run the `flow:ticket` skill for
 > `<ID>`, exactly as written — you are working from documents, not from any
 > conversation. Stop after your merge into the epic branch and report; the
-> driver owns the loop.
+> driver owns the loop. Include in your report the reviewer's
+> harness-reported token figure (`unknown` if it exposed none) — you hire
+> the reviewer, so only you observe its spend, and the run record needs it.
 
 "A driver spawned you" is load-bearing: it is the phrase the ticket skill's
 step 10 keys on to stop after the merge instead of continuing to the next
@@ -172,7 +174,9 @@ absent.
 **Record the worker's identity** (the agent name/ID the Agent tool returns)
 against the ticket ID — the run record in step 6 names the agent that ran
 each ticket, and that log line is the observable half of the
-"the driver never implements" rule.
+"the driver never implements" rule. Record the worker's harness-reported
+token spend with it: you hired the worker, so its figure is yours to
+observe, mirroring how the worker observes its reviewer's.
 
 **d. Verify the outcome mechanically.** When the worker returns:
 
@@ -233,9 +237,14 @@ ID), so the board ignores it and `doctor` will not flag it:
 ticket, in order: ID — the worker agent that ran it — integrated | halted>.
 
 **Tokens:** <per ticket, what the harness reports for its worker and its
-reviewer — `unknown` where it exposes nothing, never an estimate — and the
-run's total of the known figures. Planning evidence, never a gate: nothing
-in this skill reads it to decide anything.>
+reviewer — the worker's figure is yours, its hirer's, to observe; the
+reviewer's figure arrives in the worker's report (step 4c), because the
+worker hired it and only the hirer knows it; `unknown` where nothing was
+exposed, never an estimate — and the run's total of the known figures.
+This line **restates** the ticket entries' figures as one audit view for
+the run; anyone summing the epic (the retro) reads the entries and their
+addenda, never this line, or every figure counts twice. Planning evidence,
+never a gate: nothing in this skill reads it to decide anything.>
 
 **Halted on:** <the stop condition, verbatim from step 5, and where it fired
 — or "ran to completion".>

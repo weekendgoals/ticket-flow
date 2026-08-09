@@ -19,11 +19,24 @@ request at the autonomous retro, 2026-08-08).
   the step 8 review addendum on the same terms, and the supervisor's step 0
   hand-back passes the reviewer's token figure alongside model and effort,
   because only the hirer knows it.
-- **`skills/run` step 6**: the run record template gains a **Tokens** slot on
-  the same terms — per ticket (worker and reviewer) and the run's total of
-  the known figures.
-- **`skills/retro` step 4**: the report sums the status log's **Tokens**
-  lines per epic, naming `unknown` entries rather than counting them as zero.
+- **`skills/quick`**: the supervisor lane's hand-back sentence carries the
+  same three items — model, effort, token figure (review fix: the rule was
+  updated in one of its two statements, the drift the one-rule invariant
+  forbids).
+- **`skills/run` steps 4c and 6**: the run record template gains a
+  **Tokens** slot on the same terms — per ticket (worker and reviewer) and
+  the run's total of the known figures. The worker's spawn prompt has it
+  report its reviewer's harness-reported figure, and the driver records
+  each worker's — figures flow from hirer to record, since only the hirer
+  observes them (review fix: the slot originally asked the driver for a
+  figure it had no channel to obtain). The slot names itself a
+  **restatement** of the ticket entries' figures, so an epic sum never
+  counts it (review fix: it double-counted every autonomous ticket).
+- **`skills/retro` step 4**: the report sums the epic's spend from both
+  places the status log carries a figure — each entry's **Tokens** line and
+  its addendum's `Reviewer tokens` (review fix: summing the Tokens lines
+  alone silently dropped every reviewer) — skips run-record restatements,
+  and names `unknown` entries rather than counting them as zero.
 - Nothing is stored or parsed outside the status documents: `tickets.mjs` is
   untouched and reads no cost data.
 

@@ -66,11 +66,16 @@ for the areas the epic touched, as they are **now**.
 
 Show: proposed instruction-file edits as concrete before/after lines, owed work
 as draft ticket sections ready to append, planning lessons with the evidence
-(quote the log), the epic's token spend — the sum of the status log's
-**Tokens** lines, per ticket where recorded, naming any `unknown` entries
-rather than counting them as zero (planning evidence for future sizing, never
-a gate) — and anything transferable beyond this project. **Ask, and
-wait.**
+(quote the log), the epic's token spend — summed per ticket from **both**
+places the log carries a figure: the entry's **Tokens** line (the worker's
+spend) **and** its review addendum's `Reviewer tokens` figure, which rides
+the addendum because the entry is committed before any review runs — a sum
+of the Tokens lines alone silently drops every reviewer. Skip a run
+record's **Tokens** line entirely: it restates the ticket entries' figures
+as one audit view, and counting it doubles the epic. Name any `unknown`
+figures rather than counting them as zero (planning evidence for future
+sizing, never a gate) — and anything transferable beyond this project.
+**Ask, and wait.**
 
 ## 5. After approval, ship the lessons the normal way
 
