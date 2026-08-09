@@ -234,6 +234,11 @@ required even when empty.
 from>
 ```
 
+This template's preamble — the heading through the **Rules** block; the
+Baseline section is planning's own — is also carried by the ticket skill's
+step 6, the door where a missing status log is created mid-ticket. One rule,
+two documents: a change to either copy moves the other in the same commit.
+
 **The status log is a diary, not a dashboard.** It records what happened, in
 order, permanently. It never answers "which tickets are done" — `/flow:tickets`
 derives that from git. Do not add a summary table to it.

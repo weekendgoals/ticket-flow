@@ -325,3 +325,23 @@ stay as they are.
 - New test: a repo with one ticketed epic and one ticketless epic →
   unfiltered `list` names both, the ticketless one with its empty state.
   Suite green, doctor exit 0.
+
+## Q-16 — doctor's no-status.md hint names a command the quick lane never runs
+
+**Scope.**
+- `tickets.mjs` doctor: the warning for a missing status.md says "created
+  at sign-off by /flow:epic" — but the quick epic never runs `/flow:epic`;
+  its log is created by ticket step 6, the door Q-13 documented. Between
+  quick step 3 (plan committed) and the worker reaching step 6, doctor
+  tells the user to run a command that will never produce the file — an
+  advertised recovery unreachable from the state that triggers it, the
+  class CLAUDE.md's gate invariant names. Reword the one message to name
+  both creation doors. Version bump + CHANGELOG. Found pre-existing by
+  Q-13's review (opus/high).
+
+**Not in scope.** Any other doctor message or check; any change to when the
+file is created.
+
+**Acceptance criteria.**
+- The warning names both creation doors (grep the message in `tickets.mjs`
+  and its test if one pins the text). Suite green, doctor exit 0.

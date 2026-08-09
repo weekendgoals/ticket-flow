@@ -63,9 +63,11 @@ git ls-tree origin/epic/<name> "epics/<name>/status.md"
 ```
 
 Both must return output. The epic skill commits the documents to
-`epic/<name>` and pushes it only as part of its post-sign-off step, and
-`status.md` is created only after the human approves — so their presence on
-the remote is the evidence the gate was passed. Either missing: **stop** and
+`epic/<name>` and pushes it only as part of its post-sign-off step — so
+their presence on that remote branch is the evidence the gate was passed.
+(`status.md` has a second creation door — ticket step 6 creates it when
+missing — but that runs on ticket branches after a run has begun, so it
+cannot fake this pre-run trace.) Either missing: **stop** and
 say `/flow:epic <name>` has not completed its sign-off; do not create the
 branch or the documents yourself.
 
