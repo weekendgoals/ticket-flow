@@ -163,6 +163,36 @@ test('find refuses an unknown ID and lists what it knows', () => {
   assert.match(fail.stderr, /A-1/)
 })
 
+test('plain find renders the PR as number, state and URL, never [object Object]', () => {
+  // pr is the one object among find's facts, and raw interpolation printed
+  // "pr [object Object]" (BOARD-3's review, pre-existing; Q-9). pullRequests()
+  // shells out to gh, which always fails against this fixture's local bare
+  // origin — so stub gh on PATH for this one run to put a PR on the board.
+  const bin = join(tmp, 'fake-gh-bin')
+  mkdirSync(bin, { recursive: true })
+  writeFileSync(
+    join(bin, 'gh'),
+    '#!/bin/sh\necho \'[{"number":7,"headRefName":"a-4","baseRefName":"main","state":"OPEN","url":"https://example.invalid/pull/7","isDraft":false}]\'\n',
+    { mode: 0o755 },
+  )
+  try {
+    const out = execFileSync(process.execPath, [SCRIPT, 'find', 'A-4'], {
+      cwd: repo,
+      encoding: 'utf8',
+      env: { ...ENV, PATH: `${bin}:${process.env.PATH}` },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
+    // Pin the composed line (the Q-8 lesson: fragments can't tell branches
+    // apart). "pr".padEnd(22) plus the joining space is 21 spaces after "pr".
+    assert.match(out, /^pr {21}#7 \(OPEN\) https:\/\/example\.invalid\/pull\/7$/m, 'the PR renders as number, state and URL')
+    assert.ok(!out.includes('[object Object]'), 'no raw object stringification anywhere in the output')
+  } finally {
+    rmSync(bin, { recursive: true, force: true })
+  }
+  // Without a PR the line is untouched: null, never a phantom render.
+  assert.match(run(repo, 'find', 'A-2'), /^pr {21}null$/m)
+})
+
 test('next proposes the first unstarted ticket in document order', () => {
   const open = JSON.parse(run(repo, 'next', '--json'))
   assert.deepEqual(open.map((t) => t.id), ['A-4', 'G-1'])

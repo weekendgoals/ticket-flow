@@ -570,7 +570,14 @@ switch (cmd) {
     const t = resolveTicket(data, arg.toUpperCase())
     const out = ticketFacts(data, t)
     if (json) emit(out)
-    else for (const [k, v] of Object.entries(out)) console.log(`${k.padEnd(22)} ${v}`)
+    else
+      for (const [k, v] of Object.entries(out)) {
+        // pr is the one non-scalar fact: raw interpolation printed
+        // "pr [object Object]" (BOARD-3's review, Q-9). Render what a human
+        // acts on — number, state, URL. --json is untouched.
+        const shown = k === 'pr' && v ? `#${v.number} (${v.state}) ${v.url}` : v
+        console.log(`${k.padEnd(22)} ${shown}`)
+      }
     break
   }
 

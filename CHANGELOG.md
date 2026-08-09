@@ -4,6 +4,17 @@ The plugin is the methodology's distribution mechanism: a change to a skill is
 a behaviour change in every project that installs it. This file is what makes
 those changes deliberate and visible.
 
+## 1.18.0 — 2026-08-09
+
+Q-9: plain `find` renders the pull request instead of `[object Object]`.
+
+- **`tickets.mjs` `find <ID>`**: the human-readable output interpolated every
+  fact raw, and pr is an object — a ticket with a pull request printed
+  `pr [object Object]` (BOARD-3's review, pre-existing). The line now renders
+  what a human acts on: `#<number> (<STATE>) <url>`. Without a PR it still
+  prints `null`, and `find --json` is untouched (it was already correct). A
+  test pins the rendered line via a stubbed `gh` (tickets suite 28 → 29).
+
 ## 1.17.0 — 2026-08-09
 
 Q-8: the unfiltered board no longer claims "no epics found" when epics exist.
