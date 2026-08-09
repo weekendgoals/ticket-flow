@@ -523,3 +523,26 @@ Claude co-author trailer, per the ticket skill's rule and Q-6's precedent;
 step 8's no-amendment rule binds only after a review has run.
 
 **Owed:** Nothing.
+
+**Addendum — review — 2026-08-09 — opus/high:** One nit (confirmed), one
+pre-existing; no Important findings. Nit fixed in the review-fix commit
+(3464ab9): the new test matched `/hollow/` and `/no tickets yet/` as two
+independent patterns instead of pinning the composed line — the filtered
+branch's message (`epic "hollow" has no tickets yet`) contains both
+fragments, so a future change emitting that wrong message from the
+unfiltered branch would have passed all three assertions. Now pinned as
+`/^hollow — no tickets yet$/m`, the file's convention (the sibling BOARD-2
+test pins its exact string); the reviewer had verified by mutation that the
+original test did catch the actual regression, so the exposure was narrow.
+Re-run after the fix: tickets suite 28 pass, 0 fail; doctor exit 0.
+Pre-existing, not fixed here, handed to **Q-15** (opened in this epic's
+ticket doc in the same review-fix commit, Q-13/Q-14 precedent): the mixed
+board still omits ticketless epics entirely — when at least one epic has
+tickets, `printBoard`'s per-epic loop `continue`s past an epic with no
+sections, so it never appears on the unfiltered board; same defect class as
+Q-8 at larger blast radius, verified live by the reviewer with a
+one-ticketed-plus-one-ticketless fixture, and out of this ticket's scope
+("any other change to list output" is Not in scope). Also confirmed sound
+by the reviewer: mutation check on the new test passed, both new branches
+exercised live, scope respected, 1.17.0 = CHANGELOG head, suite 28/28,
+doctor exit 0. Nothing deferred beyond Q-15.
