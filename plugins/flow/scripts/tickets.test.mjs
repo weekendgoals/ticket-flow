@@ -442,6 +442,38 @@ test('a mode line that almost parses is a doctor warning, not a silent default',
   }
 })
 
+test('a value-less label line reads as absent, never the next paragraph\'s first word', () => {
+  // The class Q-7's review verified live: \s* around grab's colon matched
+  // newlines, so a bare "Run mode:" adopted the first word of the following
+  // paragraph — prose beginning "Autonomous is not wanted here." parsed as
+  // runMode: 'autonomous'. Each paragraph below opens with a word the old
+  // parse would have scavenged into a live (and here unwanted) value.
+  mkdirSync(join(repo, 'epics/bare'), { recursive: true })
+  writeFileSync(
+    join(repo, 'epics/bare/tickets.md'),
+    '# Bare\n\nRelease mode:\n\nIntegration would be the wrong topology here.\n\nRun mode:\n\nAutonomous is not wanted here.\n\nReviewer model:\n\nOpus is not being pinned.\n\n## B-1 — value-less labels\n\n**Scope.** B.\n',
+  )
+  try {
+    const data = JSON.parse(run(repo, 'list', '--json'))
+    assert.deepEqual(
+      data.modes.bare,
+      { releaseMode: 'serial', runMode: null, reviewerModel: null },
+      'a value-less label must read as absent (serial default / null), never scavenge prose',
+    )
+    // And doctor's near-miss wording is now true of these lines: they will
+    // not parse, they silently default, and the hint names what is missing.
+    const rows = JSON.parse(run(repo, 'doctor', '--json'))
+    const warns = rows.filter((r) => r.level === 'warn' && r.msg.includes('bare/tickets.md'))
+    assert.equal(warns.length, 3, 'all three value-less label lines must be flagged')
+    for (const w of warns) {
+      assert.match(w.msg, /will not parse/)
+      assert.match(w.msg, /value on the label's own line/)
+    }
+  } finally {
+    rmSync(join(repo, 'epics/bare'), { recursive: true, force: true })
+  }
+})
+
 test('well-formed mode and Reviewer model lines are doctor-silent', () => {
   // The ACCEPTING branch of doctor's strict preamble parse. gamma carries all
   // three labels well-formed (two prose-decorated) — none may warn. Mutation
