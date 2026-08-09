@@ -19,7 +19,7 @@ repository).
 | `/flow:tickets [epic]` | The board — shipped, in flight, blocked, todo |
 | `/flow:review [range]` | Review a commit range and report. Used by `/flow:ticket`; runnable on its own |
 | `/flow:doctor` | Is this project ready for the flow? Preconditions, merge settings, instruction-file quality, and headings that would silently misparse |
-| `/flow:retro [epic]` | Close a finished epic: mine the status log and review addenda for owed work and lessons, then ship them into instruction files and tickets |
+| `/flow:retro [epic]` | Close a finished epic: a **fresh-context miner** reads the status log and review addenda and drafts the lessons and owed work — the invoking session often planned or ran the epic, so it mines nothing itself — then the approval gate and the shipping stay in-session, into instruction files and tickets |
 
 You review the pull request and merge it. **There is no command after the
 merge.** In an autonomous epic the pull request you review is the release one —
