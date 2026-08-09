@@ -4,6 +4,28 @@ The plugin is the methodology's distribution mechanism: a change to a skill is
 a behaviour change in every project that installs it. This file is what makes
 those changes deliberate and visible.
 
+## 1.19.0 — 2026-08-09
+
+Q-10: the run skill's protection gate documents 403 and honors a recorded
+waiver.
+
+- **`skills/run` step 3**: the branch-protection check documented success and
+  the 404→rulesets fallthrough, but a private repository under a free-plan
+  org returns **403 on both endpoints** (hit live by the first unattended
+  run), and step 5's blanket nonzero-exit rule made the probe's own failure a
+  stop condition — an unattended run would halt on an environment shape the
+  skill never named. The step now names 403 as "protection unavailable on
+  this plan", marks the two probes as the skill's only tolerated nonzero
+  exits (their statuses are the data the check reads), and defines where the
+  driver finds a pre-recorded human waiver: the epic's `tickets.md` — the
+  Run mode line or ground rules, where the epic skill's plan-time probe
+  records its result, or an amended acceptance criterion, as the first live
+  run did it. Waiver found: proceed and name it in the run record; none:
+  report and stop before ticket one.
+- **`skills/run` step 5**: "nothing is marked tolerated" became false with
+  the change above; the clause now names step 3's probe pair as the one
+  tolerated exception.
+
 ## 1.18.0 — 2026-08-09
 
 Q-9: plain `find` renders the pull request instead of `[object Object]`.

@@ -92,12 +92,27 @@ will die at its first prompt.
   signals classic branch protection; on a 404, check `gh api
   "repos/{owner}/{repo}/rules/branches/<default-branch>"` — rulesets are the
   newer mechanism, invisible to the first endpoint, and an empty rule list
-  from both means unprotected. This is environment setup, not plugin
-  code: every rule in this skill is soft enforcement obeyed by a cooperating
-  agent, and protection is the hard floor that holds even against a
-  misbehaving one. Missing protection is a warning to report before
-  starting, and the human's to waive — waiving it means the run's "main is
-  untouchable" guarantee rests on skill text alone.
+  from both means unprotected. A **403 from both endpoints** means
+  **protection is unavailable on this plan** — a private repository under an
+  organization on GitHub's free plan returns exactly this (the first live
+  run hit it, 2026-08-08) — the same fact as unprotected, stated by the
+  platform instead of by an unset setting. These two probes are this skill's
+  only **tolerated nonzero exits** (step 5 names them): their failure
+  statuses are the data this check reads — 404 routes to the second
+  endpoint, 403 names the plan — so a failing probe is an answer to
+  interpret here, never itself a stop condition. This is environment setup,
+  not plugin code: every rule in this skill is soft enforcement obeyed by a
+  cooperating agent, and protection is the hard floor that holds even
+  against a misbehaving one. Missing or unavailable protection is reported
+  before starting, and only a human can waive it — proceeding means the
+  run's "main is untouchable" guarantee rests on skill text alone. An
+  unattended run cannot ask, so the waiver must already be recorded where
+  the driver can read it: **the epic's `tickets.md`** — prose on the
+  `Run mode:` line or under the ground rules, where the epic skill's
+  plan-time probe records its result, or an amended acceptance criterion,
+  which is how the first live run recorded its free-plan waiver. Waiver
+  found: proceed, and name it in the run record. No recorded waiver: report
+  what the probes returned and stop before ticket one.
 
 ## 4. The loop — one ticket at a time, in document order
 
@@ -180,8 +195,10 @@ advisory. The run halts:
 - on **a permission prompt firing mid-run** — an unattended run that needs to
   ask was not pre-authorized, and waiting blocked is worse than stopping;
 - on **a nonzero exit from any command the skill itself issues as a step,
-  except those the skill explicitly marks tolerated** — in this skill nothing
-  is marked tolerated; every command above is load-bearing.
+  except those the skill explicitly marks tolerated** — in this skill the
+  one tolerated pair is step 3's two protection probes, whose failure
+  statuses (404, 403) are the data that check interprets; every other
+  command above is load-bearing.
 
 **It never improvises past one.** Halting on a stop condition is the
 mechanism working, not a failure — a run that pushes through is a run whose
