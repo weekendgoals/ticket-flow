@@ -228,10 +228,10 @@ carries exactly the opinions the record is supposed to be examined against —
 the same reason a ticket's implementer is a fresh worker rather than the
 session that discussed the work. The retro proposes and stops — the human
 approves what becomes a rule, at a gate held in their own session. And its
-output ships through `/flow:quick`, not
-by committing to the default branch directly: lessons are changes like any
-other, and they go through a reviewed pull request. The status log itself is
-never edited — the retro appends a final dated section and the epic is closed.
+output ships through `/flow:quick`, not by committing to the default branch
+directly: lessons are changes like any other, and they go through a reviewed
+pull request. The status log itself is never edited — the retro appends a
+final dated section and the epic is closed.
 
 ## Why the reviewer is told what *not* to flag
 

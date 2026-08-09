@@ -14,11 +14,18 @@ retro, 2026-08-08).
   exactly the opinions the retro should examine. It now has the supervisor
   shape the ticket lane already has: the invoking session resolves the epic
   (step 1), then spawns a fresh-context **miner** (new step 2) — a general
-  agent, empty context, handed absolute paths — that reads the whole record
-  and drafts the report and proposals (steps 3–5); the approval gate at the
-  end of step 5 and the shipping in step 6 stay with the human's session,
-  which shows the miner's report unedited and asks. The miner edits no
-  files, creates no tickets, and never holds the gate.
+  agent, empty context — that reads the whole record and drafts the report
+  and proposals (steps 3–5); the approval gate at the end of step 5 and the
+  shipping in step 6 stay with the human's session, which shows the miner's
+  report unedited and asks. The miner edits no files, creates no tickets,
+  and never holds the gate. The supervisor fetches the epic's absolute
+  paths from `tickets.mjs epics --json` — step 1's `list` output carries
+  none — and hands the miner `ticketsDoc`, `statusDoc`, `repoRoot` (step
+  3's git commands anchor to it), `contextDir` when present, and the
+  default branch (review fix: the paths had no named source and `repoRoot`
+  was missing from the handed set). Step 2 opens with a reciprocal guard so
+  a spawned miner, reading the skill "exactly as written", never spawns a
+  miner of its own (review fix; the ticket skill's step 0 precedent).
 - **`README.md`** retro row and **METHODOLOGY.md** § "Why an epic ends with
   a retro" state the same rule with its reasoning, in the same commit (one
   rule, every statement moves together).

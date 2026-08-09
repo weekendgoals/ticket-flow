@@ -29,6 +29,11 @@ a mid-epic retro — that is legitimate for a long epic, but it is their call.
 
 ## 2. Spawn the miner — fresh context
 
+**If the prompt that launched you says a retro session spawned you, skip
+this step — you are the miner:** execute steps 3 through 5's drafting
+exactly as written, return the report and proposals, and spawn no miner of
+your own.
+
 The invoking session is rarely neutral about this epic: it is often the same
 session that planned it or ran its tickets, and it carries exactly the
 opinions the record is supposed to be examined against — the reason a
@@ -36,24 +41,37 @@ ticket's implementer is a fresh-context worker (the ticket skill's step 0),
 applied to mining instead of implementing. So the invoking session mines
 nothing itself.
 
+First fetch the epic's paths — step 1's `list` output carries none, and
+constructing `epics/<name>/…` by hand is the relative-path guessing the
+ticket skill forbids:
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/tickets.mjs" epics --json
+```
+
+This epic's entry carries `ticketsDoc`, `statusDoc`, `contextDir` and
+`repoRoot` as absolute paths; `contextDir` is `null` when the epic has no
+`context/` directory.
+
 Spawn a fresh-context **miner** with the Agent tool — a general agent, full
 toolset, empty context — telling it: a retro session spawned it for this one
 epic; execute steps 3 through 5's drafting of the `flow:retro` skill exactly
 as written (give it this skill file's absolute path) and return the finished
 report and proposals as its report; it edits no files, creates no tickets,
 and asks the user nothing — the approval gate at the end of step 5 and the
-shipping in step 6 belong to the invoking session, never to the miner. Give
-it the epic name, the
-absolute paths to the epic's `status.md`, `tickets.md` and `context/`, and
-the default branch name — its cwd may move mid-task, and relative paths
-break there.
+shipping in step 6 belong to the invoking session, never to the miner. Hand
+it the epic name, the absolute `ticketsDoc`, `statusDoc` and `repoRoot`,
+`contextDir` when it is not null, and the default branch name from step 1's
+output — its cwd may move mid-task, and relative paths break there.
 
 ## 3. Read the whole record
 
 The full `status.md` including every addendum, `tickets.md` as it ended up,
 anything in `context/`, and the shipped work itself:
-`git log origin/<default> --oneline | grep <epic's IDs>`. The instruction files
-for the areas the epic touched, as they are **now**.
+`git -C <repoRoot> log origin/<default> --oneline | grep <epic's IDs>` —
+anchor git to `repoRoot`, since your cwd may sit outside the checkout. The
+instruction files for the areas the epic touched, as they are **now**, read
+from under `repoRoot`.
 
 ## 4. Mine it — five questions
 
@@ -88,8 +106,8 @@ for the areas the epic touched, as they are **now**.
 ## 5. Propose — the miner drafts, the invoking session gates
 
 Draft, ready to hand back unchanged: proposed instruction-file edits as
-concrete before/after lines, owed work
-as draft ticket sections ready to append, planning lessons with the evidence
+concrete before/after lines, owed work as draft ticket sections ready to
+append, planning lessons with the evidence
 (quote the log), the epic's token spend — summed per ticket from **both**
 places the log carries a figure: the entry's **Tokens** line (the worker's
 spend) **and** its review addendum's `Reviewer tokens` figure, which rides
