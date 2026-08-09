@@ -4,6 +4,43 @@ The plugin is the methodology's distribution mechanism: a change to a skill is
 a behaviour change in every project that installs it. This file is what makes
 those changes deliberate and visible.
 
+## 1.19.0 — 2026-08-09
+
+Q-10: the run skill's protection gate documents 403 and honors a recorded
+waiver.
+
+- **`skills/run` step 3**: the branch-protection check documented success and
+  the 404→rulesets fallthrough, but a private repository under a free-plan
+  org returns **403 on both endpoints** (hit live by the first unattended
+  run), and step 5's blanket nonzero-exit rule made the probe's own failure a
+  stop condition — an unattended run would halt on an environment shape the
+  skill never named. The step now names 403 as "protection unavailable on
+  this plan", marks the two probes as the skill's only tolerated nonzero
+  exits (their statuses are the data the check reads), and defines where the
+  driver finds a pre-recorded human waiver: the epic's `tickets.md`, on the
+  Run mode line or under the ground rules. A waiver is a recorded
+  **decision** ("waived <date>: <who> chose to run without the hard floor"),
+  never a bare probe finding — a line that only records the 403 is no
+  waiver (review fix: the two were previously indistinguishable). Waiver
+  found: proceed, name it in the run record (new **Protection:** slot in
+  step 6's template) and in the release PR body (step 7); none: report and
+  stop before ticket one.
+- **`skills/run` step 5**: "nothing is marked tolerated" became false with
+  the change above; the clause now tolerates exactly a **404 or 403 from
+  the two probes** — any other probe failure (auth, network, rate limit,
+  5xx, wrong repository) still halts (review fix: the carve-out was
+  originally granted to the commands, not the statuses).
+- **`skills/epic` Run mode template**: the writer's side of the waiver
+  handshake (review fix — the run skill defined a reader for an artifact no
+  skill instructed anyone to write): when the plan-time probe finds
+  protection missing or unavailable, the human decides at sign-off — fix
+  the environment or waive it, the waiver written as a decision in the same
+  tickets.md spots the probe result goes.
+- **README**: the halt list now names the one tolerated exception, and
+  "both must exist" admits the protection waiver — the same rule the run
+  skill states (review fix; the old "both must exist" had never matched the
+  skill's waivable protection).
+
 ## 1.18.0 — 2026-08-09
 
 Q-9: plain `find` renders the pull request instead of `[object Object]`.

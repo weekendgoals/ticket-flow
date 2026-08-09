@@ -120,9 +120,15 @@ commands) and the pre-authorized permission surface (step 3 enumerates what
 must be allowed; check that list against what the environment actually
 pre-authorizes) — and record the result as prose on this Run mode line or
 under the ground rules, never as its own mode-shaped preamble line, which
-doctor's near-miss scan would flag. A prerequisite first probed on run day is
-discovered at the worst moment: the first live run hit an unprobed free-plan
-403, and its waiver landed seconds before run start.>
+doctor's near-miss scan would flag. If the protection probe finds it missing
+or unavailable (a free-plan 403 on both endpoints), the human decides at
+sign-off: fix the environment, or **waive it — and the waiver is written
+here too, as a decision, never a bare finding**: "waived <date>: <who> chose
+to run without the hard floor", because the run skill's step 3 proceeds only
+on recorded human acceptance and treats a probe result alone as no waiver.
+A prerequisite first probed on run day is discovered at the worst moment:
+the first live run hit an unprobed free-plan 403, and its waiver landed
+seconds before run start.>
 
 Status log: `epics/<name>/status.md`. Run a ticket with `/flow:ticket <ID>`.
 

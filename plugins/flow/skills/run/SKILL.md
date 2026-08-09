@@ -89,15 +89,39 @@ will die at its first prompt.
 - **Branch protection on the default branch** — require pull requests, no
   force pushes, human-only merge. Verify it is present: `gh api
   "repos/{owner}/{repo}/branches/<default-branch>/protection"` succeeding
-  signals classic branch protection; on a 404, check `gh api
+  signals classic branch protection; on a 404 **or a 403**, check `gh api
   "repos/{owner}/{repo}/rules/branches/<default-branch>"` — rulesets are the
-  newer mechanism, invisible to the first endpoint, and an empty rule list
-  from both means unprotected. This is environment setup, not plugin
+  newer mechanism, invisible to the first endpoint. An empty rule list from
+  both means unprotected. A **403 from both endpoints** means **protection
+  is unavailable on this plan** — a private repository under an organization
+  on GitHub's free plan returns exactly this (the first live run hit it,
+  2026-08-08) — the same fact as unprotected, stated by the platform instead
+  of by an unset setting. **Only a 404 or 403 from these two probes is a
+  tolerated nonzero exit** (step 5 names the carve-out): those two statuses
+  are the answer this check exists to read. Any other probe failure — an
+  unauthenticated or expired `gh`, no network, rate limiting, a 5xx, a
+  mistyped repository — answers nothing about protection and keeps step 5's
+  rule: stop and report it, because the same broken `gh` would kill the run
+  later at its first `pr create`. This is environment setup, not plugin
   code: every rule in this skill is soft enforcement obeyed by a cooperating
   agent, and protection is the hard floor that holds even against a
-  misbehaving one. Missing protection is a warning to report before
-  starting, and the human's to waive — waiving it means the run's "main is
-  untouchable" guarantee rests on skill text alone.
+  misbehaving one. Missing or unavailable protection is reported before
+  starting, and only a human can waive it — proceeding means the run's
+  "main is untouchable" guarantee rests on skill text alone. An unattended
+  run cannot ask, so the waiver must already exist, and a waiver is a
+  **recorded decision, never a recorded finding**: prose in **the epic's
+  `tickets.md`** — the document sign-off gates and step 2 verifies on the
+  remote, written on the `Run mode:` line or under the ground rules, where
+  the epic skill has the planner record it — saying a human **chose to
+  accept** running without the hard floor, in the shape of the first live
+  run's record: "waived 2026-08-08: … the user chose to run without the
+  hard floor". A line that only records what the probes returned ("403 on
+  both endpoints, protection unavailable") is the probe's finding, not a
+  waiver — detection is the planner's obligation, acceptance is the
+  human's, and text that shows no human decision is **no waiver**. Waiver
+  found: proceed, and carry it into the run record (step 6) and the release
+  pull request body (step 7). No recorded waiver: report what the probes
+  returned and stop before ticket one.
 
 ## 4. The loop — one ticket at a time, in document order
 
@@ -180,8 +204,12 @@ advisory. The run halts:
 - on **a permission prompt firing mid-run** — an unattended run that needs to
   ask was not pre-authorized, and waiting blocked is worse than stopping;
 - on **a nonzero exit from any command the skill itself issues as a step,
-  except those the skill explicitly marks tolerated** — in this skill nothing
-  is marked tolerated; every command above is load-bearing.
+  except those the skill explicitly marks tolerated** — in this skill the
+  one tolerated shape is a **404 or 403 from step 3's two protection
+  probes**, the statuses that check exists to interpret; any other failure
+  from those same probes (auth, network, rate limit, 5xx, wrong repository)
+  halts like every other command's nonzero exit, and every other command
+  above is load-bearing.
 
 **It never improvises past one.** Halting on a stop condition is the
 mechanism working, not a failure — a run that pushes through is a run whose
@@ -206,6 +234,11 @@ ticket, in order: ID — the worker agent that ran it — integrated | halted>.
 
 **Halted on:** <the stop condition, verbatim from step 5, and where it fired
 — or "ran to completion".>
+
+**Protection:** <"present" — or, when step 3 proceeded on a waiver, quote
+the recorded waiver and where it lives in the epic's `tickets.md`. A run
+without the hard floor under main must say so here; it is the single most
+consequential fact about the run.>
 
 **Release PR:** <URL — or "not opened: run halted".>
 ```
@@ -236,9 +269,12 @@ in this mode, so it carries: every ticket with what it built, its
 verification counts, and its review outcome (findings found / fixed / not
 fixed with reasons — lifted from the status log, which travels in this same
 pull request); the run record summary, including which agent ran each ticket;
-and every deploy precondition any ticket's work created (a new environment
+every deploy precondition any ticket's work created (a new environment
 variable, a migration, a script that runs after), collected from the status
-log — a fail-closed guard whose secret is missing takes the system down.
+log — a fail-closed guard whose secret is missing takes the system down;
+and, when step 3 proceeded on a recorded protection waiver, that fact —
+stated right under the never-squash line, because the human is approving a
+run that had no hard floor under main.
 
 Then append the run record (step 6), print the pull request URL, and stop.
 **You do not merge it, approve it, or comment on it. No agent does.** The
