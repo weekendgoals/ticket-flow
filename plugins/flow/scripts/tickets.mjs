@@ -308,11 +308,19 @@ const BADGE = {
   todo: `${C.dim}todo${C.off}`,
 }
 
+// The `← this folder` marker names the checkout's own epic — a root folder
+// named <epic> works epics/<epic>/, the one-checkout-per-epic convention
+// `currentEpic` reads. One helper renders it for ticketed and ticketless
+// epics alike: a ticketless epic is exactly a freshly-cut epic's state, where
+// the checkout most needs the marker (Q-15's review, Q-17).
+const hereMarker = (current, name) => (current?.epic === name ? `${C.green}  ← this folder${C.off}` : '')
+
 // One line for an epic whose ticket doc has no `## <ID> — …` sections yet.
 // Shared by the all-empty board and the mixed board so the two renderings
 // cannot drift apart: an epic that exists is named wherever the board prints,
-// never silently skipped (Q-8, Q-15).
-const ticketlessLine = (name) => `${C.bold}${name}${C.off} ${C.dim}— no tickets yet${C.off}`
+// never silently skipped (Q-8, Q-15) — and marked as this folder when it is,
+// like every ticketed epic (Q-17).
+const ticketlessLine = (name, current) => `${C.bold}${name}${C.off} ${C.dim}— no tickets yet${C.off}${hereMarker(current, name)}`
 
 function printBoard(data, epicFilter) {
   if (!data.tickets.length) {
@@ -324,7 +332,7 @@ function printBoard(data, epicFilter) {
     // empty state instead.
     if (epicFilter) console.log(`epic "${epicFilter}" has no tickets yet`)
     else if (!data.epics.length) console.log('no epics found under epics/')
-    else for (const e of data.epics) console.log(ticketlessLine(e.epic))
+    else for (const e of data.epics) console.log(ticketlessLine(e.epic, data.current))
     return
   }
   if (!data.prsAvailable) {
@@ -348,12 +356,12 @@ function printBoard(data, epicFilter) {
       // work reported as nonexistent, Q-8's defect class at larger blast
       // radius (Q-15). Name it with its empty state, same line as the
       // all-empty board above.
-      console.log(ticketlessLine(epic.epic))
+      console.log(ticketlessLine(epic.epic, data.current))
       console.log()
       continue
     }
     const counts = STATES.map((s) => [s, ts.filter((t) => t.state === s).length]).filter(([, n]) => n)
-    const here = data.current?.epic === epic.epic ? `${C.green}  ← this folder${C.off}` : ''
+    const here = hereMarker(data.current, epic.epic)
     // Serial-attended is the default and stays unlabelled; anything else is
     // worth a glance before starting a ticket in it.
     const modes =
@@ -376,7 +384,10 @@ function printBoard(data, epicFilter) {
   // put the de-risking probe or the live regression first.
   const open = data.tickets.filter((t) => t.state === 'todo')
   if (!open.length) {
-    console.log(data.tickets.length ? 'Nothing left to start.' : '')
+    // Unconditional: the empty board returned at the top of this function, so
+    // there are always tickets here (dead false branch removed — Q-15's
+    // review noted it, Q-17's pass touched this function).
+    console.log('Nothing left to start.')
     return
   }
   console.log(`${C.bold}Next up${C.off}`)

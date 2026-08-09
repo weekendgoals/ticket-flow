@@ -292,6 +292,42 @@ test('mixed board names ticketless epics beside ticketed ones', () => {
   assert.match(out, /^  P-1 /m, 'the ticketed epic still lists its tickets')
 })
 
+test('a ticketless epic carries the ← this folder marker in its own checkout', () => {
+  // A checkout whose root directory is named after an epic IS that epic's
+  // folder — the one-checkout-per-epic convention `currentEpic` reads — and a
+  // ticketless epic is exactly a freshly-cut epic's state. `ticketlessLine`
+  // used to render the empty state without the marker every ticketed epic
+  // gets, so the board showed the marker on no epic at all in the checkout
+  // that most needs it, while `current` answered correctly (Q-15's review,
+  // pre-existing; Q-17). Both renderings share the one line, so one repo
+  // covers both branches: the all-empty board first, then the mixed board
+  // once a ticketed epic appears beside it. Composed lines pinned to the
+  // line's end, per Q-8's review lesson — a `$` after the marker is also
+  // what proves the unmarked assertions below carry no marker.
+  const hollow = join(tmp, 'hollow')
+  git(tmp, 'init', '--initial-branch=main', hollow)
+  mkdirSync(join(hollow, 'epics/hollow'), { recursive: true })
+  writeFileSync(join(hollow, 'epics/hollow/tickets.md'), '# Hollow epic — tickets\n\nNo sections yet.\n')
+
+  // All-empty board (Q-8's branch): the empty-state line carries the marker.
+  assert.match(
+    run(hollow, 'list'),
+    /^hollow — no tickets yet {2}← this folder$/m,
+    "the all-empty board marks the checkout's own ticketless epic",
+  )
+
+  // Mixed board (Q-15's branch): same line, same marker, beside a ticketed
+  // epic that stays unmarked — the marker names exactly one folder.
+  mkdirSync(join(hollow, 'epics/peopled'), { recursive: true })
+  writeFileSync(
+    join(hollow, 'epics/peopled/tickets.md'),
+    '# Peopled epic — tickets\n\n## P-1 — the one ticket\n\n**Scope.** One.\n',
+  )
+  const out = run(hollow, 'list')
+  assert.match(out, /^hollow — no tickets yet {2}← this folder$/m, "the mixed board marks the checkout's own ticketless epic")
+  assert.match(out, /^peopled — 1 tickets · 1 todo$/m, 'the ticketed epic renders unmarked')
+})
+
 test('Next up suggests the installed, namespaced command', () => {
   // Plugin commands are namespaced: the installed command is /flow:ticket.
   // A bare /ticket suggestion is a live regression — a user ran it verbatim
