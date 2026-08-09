@@ -312,15 +312,18 @@ const BADGE = {
 // named <epic> works epics/<epic>/, the one-checkout-per-epic convention
 // `currentEpic` reads. One helper renders it for ticketed and ticketless
 // epics alike: a ticketless epic is exactly a freshly-cut epic's state, where
-// the checkout most needs the marker (Q-15's review, Q-17).
-const hereMarker = (current, name) => (current?.epic === name ? `${C.green}  ← this folder${C.off}` : '')
+// the checkout most needs the marker (Q-15's review, Q-17). Argument order is
+// (name, current) here and in `ticketlessLine` below — deliberately identical,
+// because a swapped call fails silently: `current?.epic === name` with the two
+// transposed compares undefined to an object, yielding no marker and no error.
+const hereMarker = (name, current) => (current?.epic === name ? `${C.green}  ← this folder${C.off}` : '')
 
 // One line for an epic whose ticket doc has no `## <ID> — …` sections yet.
 // Shared by the all-empty board and the mixed board so the two renderings
 // cannot drift apart: an epic that exists is named wherever the board prints,
 // never silently skipped (Q-8, Q-15) — and marked as this folder when it is,
 // like every ticketed epic (Q-17).
-const ticketlessLine = (name, current) => `${C.bold}${name}${C.off} ${C.dim}— no tickets yet${C.off}${hereMarker(current, name)}`
+const ticketlessLine = (name, current) => `${C.bold}${name}${C.off} ${C.dim}— no tickets yet${C.off}${hereMarker(name, current)}`
 
 function printBoard(data, epicFilter) {
   if (!data.tickets.length) {
@@ -361,7 +364,7 @@ function printBoard(data, epicFilter) {
       continue
     }
     const counts = STATES.map((s) => [s, ts.filter((t) => t.state === s).length]).filter(([, n]) => n)
-    const here = hereMarker(data.current, epic.epic)
+    const here = hereMarker(epic.epic, data.current)
     // Serial-attended is the default and stays unlabelled; anything else is
     // worth a glance before starting a ticket in it.
     const modes =
