@@ -1284,3 +1284,106 @@ Nothing deferred beyond Q-17. Correction to this entry's **Tokens** line,
 per the Q-11 mechanism (the hirer passes the figure down): the worker's
 spend through step 6 was harness-reported as 97,709 tokens, not
 `unknown`. Reviewer tokens: 65,184.
+
+### Q-16 — doctor's no-status.md hint names a command the quick lane never runs — 2026-08-09 — DONE
+
+**Built:** Plugin v1.25.0. Doctor's warning for a missing status.md no
+longer advertises a recovery unreachable from the state that triggers it.
+The message said "created at sign-off by /flow:epic" — but the quick epic
+never runs `/flow:epic`; its log is created by ticket step 6, the door
+Q-13 documented, so between quick step 3 (plan committed) and the worker
+reaching step 6 the user was told to run a command that will never produce
+the file (pre-existing, found by Q-13's review). The one message in
+`tickets.mjs` now names both creation doors — "created at sign-off by
+/flow:epic, or by the first ticket's status entry (ticket step 6 — the
+quick lane's only door)" — with a comment above it recording why both are
+named. New test pins the full warning text verbatim on an epic without
+status.md (gamma, the shared fixture's epic that has none), so neither
+door can silently drop from the hint. Tickets suite 31 → 32. CHANGELOG
+entry for 1.25.0.
+
+**Mode:** supervisor — worker worker-q16, reviewer hired by the supervisor.
+
+**Tokens:** worker unknown — the harness exposes no usage figure to the
+worker agent; the reviewer's figure follows in the review addendum, per the
+template Q-11 added.
+
+**Files touched:** `plugins/flow/scripts/tickets.mjs`,
+`plugins/flow/scripts/tickets.test.mjs`,
+`plugins/flow/.claude-plugin/plugin.json`, `CHANGELOG.md`, this file.
+Branch `q-16`, cut from `origin/q-15` (00c5622, Q-15's review-addendum
+commit) — a deliberate stack, user-directed: Q-10 through Q-15's PRs
+#20–#25 were open and the user chose to run the remaining tickets back to
+back, merging the pull requests in sequence, rather than waiting on each
+merge.
+
+**Verified:** Acceptance: `grep -n "no status.md"
+plugins/flow/scripts/tickets.mjs plugins/flow/scripts/tickets.test.mjs` —
+message in the script names both doors, test pins the full text.
+`node --test plugins/flow/scripts/tickets.test.mjs` — 32 tests, 32 pass,
+0 fail (the new test among them). Mutation check: reverting the message to
+the old single-door text fails exactly the new test (31 pass, 1 fail), so
+the test pins the wording. `node plugins/flow/scripts/tickets.mjs doctor` —
+exit 0, all five checks ✓. Standing checks: `node --test
+plugins/flow/hooks/ticket-session-guard.test.mjs` — 13 tests, 13 pass,
+0 fail; `node --check plugins/flow/scripts/tickets.mjs` clean.
+`plugin.json` 1.25.0 equals the top CHANGELOG entry.
+
+**Decisions:** (1) A test was added even though the acceptance criterion
+made it conditional ("its test if one pins the text" — none did): the
+file's convention pins doctor messages verbatim (Q-8's and Q-14's review
+lessons), and a reworded hint with no test pressure could silently revert
+to the single-door text. (2) The second door is named as "the first
+ticket's status entry (ticket step 6)" rather than `/flow:quick`: quick
+routes through the ticket loop, so ticket step 6 is the actual creation
+door for every lane that is not `/flow:epic` — naming the step names the
+door for quick, serial and integration first-tickets alike. (3) One-rule
+sweep before editing: grep for "created at sign-off" and "no status.md"
+across README, METHODOLOGY, CLAUDE.md and the skills found no other
+statement of this message (the run skill's sign-off gate was already
+corrected by Q-13's review), so the change is contained to the script,
+its test, the version and the CHANGELOG. (4) Version bumped minor
+(1.25.0): doctor output is installed behaviour (Q-8/Q-9 precedent).
+(5) During verification, the mutation-check cleanup (`git checkout --` on
+`tickets.mjs`) restored the file to HEAD and silently discarded the
+uncommitted Q-16 edit — caught by the post-restore suite run failing the
+new test, re-applied and re-verified before anything was committed; the
+executable bit confirmed intact (100755), the hazard Q-15's amend note
+records. (6) The branch was cut from `origin/q-15` on the user's explicit
+direction (deliberate stack), overriding the skill's stop-on-open-PR rule
+for this run; recorded here so the base needs no archaeology.
+
+**Owed:** Nothing.
+
+**Addendum — review — 2026-08-09 — opus/high:** One nit, no Important
+findings, no pre-existing defects worth a ticket; the nit fixed in the
+review-fix commit (099105f). Nit, confirmed: the message's two doors were
+named at different altitudes — the first a command the reader can type
+(`/flow:epic`), the second an internal procedure step ("ticket step 6"),
+which a user in exactly the state this ticket was opened for (quick lane,
+plan committed, worker not yet at step 6) still could not act on; doctor's
+own convention elsewhere names the runnable fix. Fixed with the reviewer's
+suggested shape, one parenthetical: the second door now reads "ticket
+step 6, reached with /flow:ticket <ID> — the quick lane's only door". The
+pinning test asserts the full string verbatim, so it changed with the
+message; the 1.25.0 CHANGELOG text was updated for the grown shape in the
+fix commit — no second bump, same release, same behaviour-change family.
+Also noted by the reviewer, recorded here rather than ticketed: the
+"created at sign-off" colloquialism predates this range and is not worth
+a ticket. Confirmed sound by the reviewer, with depth: message accuracy
+traced through all three skills for both lanes ("the quick lane's only
+door" stays correct on a normal epic); the pinning test discriminates
+(mutation-checked: the old text fails exactly the new test, 31 pass,
+1 fail) and is not order-fragile (gamma stays status-less; temp epics are
+removed in finally blocks); the rendered row verified in a scratch repo —
+a single warn row, shorter than the existing mode-line warning; the
+one-rule sweep found the only other two-door statement (run/SKILL.md:68)
+already correct from Q-13; no checkout-incident residue (mode 100755 in
+index and on disk, the 6-line hunk, the 5 expected files); scope
+respected; 1.25.0 equals the CHANGELOG head. Re-verified after the fix:
+tickets suite 32 pass, 0 fail; guard suite 13 pass, 0 fail; `node --check
+plugins/flow/scripts/tickets.mjs` clean; doctor exit 0, all five
+checks ✓. Nothing deferred. Correction to this entry's **Tokens** line,
+per the Q-11 mechanism (the hirer passes the figure down): the worker's
+spend through step 6 was harness-reported as 95,616 tokens, not
+`unknown`. Reviewer tokens: 56,452.
