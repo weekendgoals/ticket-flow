@@ -584,7 +584,7 @@ test("doctor's no-status.md hint names both creation doors", () => {
   assert.ok(warn, 'gamma has no status.md, so the warning must fire')
   assert.equal(
     warn.msg,
-    "gamma: no status.md — created at sign-off by /flow:epic, or by the first ticket's status entry (ticket step 6 — the quick lane's only door); without it DONE/BLOCKED are invisible",
+    "gamma: no status.md — created at sign-off by /flow:epic, or by the first ticket's status entry (ticket step 6, reached with /flow:ticket <ID> — the quick lane's only door); without it DONE/BLOCKED are invisible",
   )
 })
 

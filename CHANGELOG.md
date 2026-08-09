@@ -14,8 +14,9 @@ Q-16: doctor's no-status.md hint now names both creation doors
   `/flow:epic`; its log is created by ticket step 6, so between quick
   step 3 (plan committed) and the worker reaching step 6 the hint
   advertised a recovery unreachable from the state that triggers it. The
-  message now names both doors: sign-off by `/flow:epic`, or the first
-  ticket's status entry (ticket step 6 — the quick lane's only door).
+  message now names both doors, each as a command the reader can run:
+  sign-off by `/flow:epic`, or the first ticket's status entry (ticket
+  step 6, reached with `/flow:ticket <ID>` — the quick lane's only door).
 - Tests: the full warning text is pinned verbatim on an epic without
   status.md, so neither door can silently drop from the hint.
 
