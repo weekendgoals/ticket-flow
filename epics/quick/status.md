@@ -598,3 +598,13 @@ Claude co-author trailer, per the ticket skill's rule and Q-6/Q-8 precedent;
 step 8's no-amendment rule binds only after a review has run.
 
 **Owed:** Nothing.
+
+**Addendum — review — 2026-08-09 — opus/high:** No findings — no Important
+findings, no nits, no pre-existing defects. Nothing fixed, nothing deferred.
+The reviewer confirmed the fix is correctly scoped to the one non-scalar
+fact (`pr`), `find --json` untouched, and no caller reads plain `find`
+output. Both mutation checks passed: reverting the render broke only the
+new test, and dropping the PATH override (making the `gh` stub unreachable)
+also broke only the new test — the stub is load-bearing. Acceptance
+criteria re-verified independently by the reviewer: tickets suite 29 pass,
+0 fail; doctor exit 0; guard suite 13 pass, 0 fail.
