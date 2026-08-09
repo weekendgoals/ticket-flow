@@ -123,9 +123,11 @@ steps **1 and 3 — and only those** — out of its prompt (step 0 lets a spawn
 prompt scope steps; those two are already done here: the ticket is resolved
 and `q-<n>` exists). Tell it: a supervisor spawned it for this one ticket;
 the absolute `ticketsDoc`, `statusDoc` and `repoRoot` from your `find` —
-create the status log with the standard append-only preamble on first use;
-the branch `q-<n>` already exists with the plan committed — work on it, cut
-nothing; the base for review and the pull request is the default branch.
+create the status log on first use with the exact append-only preamble
+ticket step 6 carries (the worker executes that step, so the text is in its
+hands); the branch `q-<n>` already exists with the plan committed — work on
+it, cut nothing; the base for review and the pull request is the default
+branch.
 **Ticket step 2 stays in the worker's prompt**: it reads the documents in
 step 2's order before implementing — an empty context is the point of this
 lane, and an empty context that reads nothing is worse than none — and

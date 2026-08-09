@@ -192,7 +192,23 @@ separate concern.
 ## 6. Log what was done, then commit
 
 Append to `statusDoc`. Append-only — never edit an existing entry. Create the
-file if it does not exist.
+file if it does not exist, opening it with this exact preamble — defined here
+because this step is where creation happens, and a worker holding only this
+skill must not have to invent it:
+
+```markdown
+# <Name> epic — status log
+
+Append-only record of finished tickets. Tickets: `epics/<name>/tickets.md`.
+
+**Rules.** Append only. Corrections are new dated addenda beneath the entry they
+correct, never edits. Report counts, not adjectives. The **Owed** line is
+required even when empty.
+```
+
+The epic skill's status-log template opens with the same preamble (its
+Baseline section belongs to planning and is not part of it) — one rule in two
+documents: a change to either copy moves the other in the same commit.
 
 The heading is parsed, so match it exactly:
 

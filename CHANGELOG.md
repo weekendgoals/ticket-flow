@@ -4,6 +4,22 @@ The plugin is the methodology's distribution mechanism: a change to a skill is
 a behaviour change in every project that installs it. This file is what makes
 those changes deliberate and visible.
 
+## 1.22.0 — 2026-08-09
+
+Q-13: the status-log preamble is defined where creation is instructed
+(pre-existing, found by Q-6's review).
+
+- **`skills/ticket`** step 6 told a worker to create a missing status log
+  but defined none of its content, and **`skills/quick`** step 4's spawn
+  prompt named "the standard append-only preamble" — text that lived only
+  in the epic skill's template, a document a mid-ticket worker never loads,
+  so it would have had to invent one. Skills are self-sufficient: step 6
+  now carries the exact preamble (the heading through the **Rules** block),
+  the quick skill's spawn prompt points at step 6 — the step its worker
+  already executes — and the epic skill's template names the coupling on
+  its side, so the two copies move in the same commit (the risk-list
+  precedent). The preamble's content is unchanged.
+
 ## 1.21.0 — 2026-08-09
 
 Q-12: the retro mines in fresh context (user request at the autonomous
