@@ -1134,3 +1134,40 @@ and Q-6/Q-8/Q-9/Q-12 precedent; step 8's no-amendment rule binds only after
 a review has run.
 
 **Owed:** Nothing.
+
+**Addendum — review — 2026-08-09 — opus/high:** One nit, no Important
+findings, no pre-existing defects; the nit fixed in the review-fix commit
+(a5fbc79). Nit, confirmed: half the fix was unpinned — the commit anchored
+both sides of the label's colon (this entry's Decision 1), but the new
+test's value-less shapes only exercise the post-colon side; the reviewer
+reverted the pre-colon anchor alone (`^${label}\s*:[^\S\n]*`) and the suite
+stayed green (30 pass, 0 fail), while the post-colon anchor and the doctor
+hint wording were each already pinned (29/1 under either revert). The
+untested behaviour: a label and colon split across lines — the markdown
+definition-list shape, `Run mode` newline `: autonomous` — parsed as
+`autonomous` under the reverted regex; a future "simplify back to `\s*`" on
+that side would restore the scavenge with a green suite. Fixed with one
+fixture paragraph in the existing test carrying exactly that shape, asserted
+absent; the test's doctor warn count grows 3 → 4 because the colon-less
+label line is itself a near-miss the scan flags. Mutation re-run after the
+fix: the pre-colon revert now fails exactly the new test — 29 pass, 1 fail —
+so all three halves (both anchors, the hint wording) are pinned. CHANGELOG
+1.23.0 entry text extended for the grown test shape in the fix commit; no
+second bump — same release, same behaviour-change family. Nothing deferred.
+Also confirmed sound by the reviewer, with depth: the regex probed across
+value shapes including CRLF in both directions (CR-only unreachable — the
+file is split on `\n` upstream); the decision to leave doctor's per-line
+`modeStrict` at `\s*` verified formally and empirically as the right scope
+call; the step-5 checkout incident left no half-reapplied edits — all five
+files mutually consistent, every CHANGELOG claim checked out; old and new
+`grab` agree on all three of this repo's epics, doctor still all five
+checks ✓ with no warnings; the new test is the only one failing under the
+anchor mutation and its fixture paragraphs are load-bearing; no template or
+README needed a same-commit change ("first word after the colon" remains
+true). Re-verified after the fix: tickets suite 30 pass, 0 fail; guard
+suite 13 pass, 0 fail; `node --check plugins/flow/scripts/tickets.mjs`
+clean; doctor exit 0, all five checks ✓; plugin.json 1.23.0 equals the top
+CHANGELOG entry. Correction to this entry's **Tokens** line, per the Q-11
+mechanism (the hirer passes the figure down): the worker's spend through
+step 6 was harness-reported as 99,941 tokens, not `unknown`. Reviewer
+tokens: 67,888.
