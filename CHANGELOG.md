@@ -19,6 +19,13 @@ Q-13: the status-log preamble is defined where creation is instructed
   already executes — and the epic skill's template names the coupling on
   its side, so the two copies move in the same commit (the risk-list
   precedent). The preamble's content is unchanged.
+- **`skills/run`** step 2's sign-off gate no longer claims `status.md` is
+  created only after the human approves — with step 6 a documented second
+  door, that was a one-rule drift; the gate's evidence stands as presence
+  on the remote epic branch, which the mid-ticket door (ticket branches,
+  after a run has begun) cannot fake (review fix). The ticket skill also
+  names which heading step 6 parses — the `###` entry heading, not the
+  carried preamble's `#` title (review fix).
 
 ## 1.21.0 — 2026-08-09
 

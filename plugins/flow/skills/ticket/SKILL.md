@@ -210,7 +210,8 @@ The epic skill's status-log template opens with the same preamble (its
 Baseline section belongs to planning and is not part of it) — one rule in two
 documents: a change to either copy moves the other in the same commit.
 
-The heading is parsed, so match it exactly:
+The **entry** heading is parsed — the preamble's `#` title is not — so match
+it exactly:
 
 ```markdown
 ### <ID> — <name> — <YYYY-MM-DD> — DONE
