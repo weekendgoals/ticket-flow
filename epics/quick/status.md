@@ -1013,3 +1013,44 @@ overriding the skill's stop-on-open-PR rule for this run; recorded here so
 the base needs no archaeology.
 
 **Owed:** Nothing.
+
+**Addendum — review — 2026-08-09 — opus/high:** Two nits, one pre-existing;
+no Important findings. Both nits fixed in the review-fix commit (a051610).
+Nit (1), confirmed: the run skill's sign-off gate asserted sole authorship
+of the artifact it checks — "`status.md` is created only after the human
+approves" — which this ticket's own change made false as a general
+statement by documenting ticket step 6 as a second creation door; the
+one-rule invariant required that sentence to move in the same commit, and
+the entry's Decisions record no grep for it. Fixed: the gate's evidence now
+stands on presence on the remote epic branch, with a parenthetical naming
+the second door and why it cannot fake the pre-run trace (it runs on ticket
+branches, after a run has begun). No reachable gate bypass existed —
+tickets.md and status.md reach the remote in the same push — so a nit, not
+Important. Nit (2), plausible: step 6's "The heading is parsed, so match it
+exactly" now sat directly after a block whose first line is itself a
+heading (the carried preamble's `#` title, which nothing parses — parser
+and doctor both match only `###`); reworded to name the **entry** heading
+and say the preamble's title is not parsed. Pre-existing, not fixed here,
+handed to **Q-16** (opened in this epic's ticket doc in the review-fix
+commit, Q-14/Q-15 precedent): doctor's no-status.md warning advertises
+"created at sign-off by /flow:epic" — a command the quick lane routes away
+from; between quick step 3 and the worker reaching step 6, the user is told
+to run a command that will never produce the file (the advertised-recovery
+class). Not introduced by this range; scoped to the one-line message fix
+plus version bump. CHANGELOG 1.22.0 entry text updated for the grown shape
+in the fix commit; no second bump — same release, same behaviour-change
+family. Also confirmed sound by the reviewer: the two preamble copies are
+byte-identical; the embedded preamble is inert to the load-bearing regexes;
+the quick skill's pointer resolves for the worker who reads it; omitting
+Baseline is safe; no third creation door exists; the epic-skill touch is
+not scope creep; and the entry's no-halt call on the imprecise premise was
+judged defensible since the discrepancy was recorded verbatim. Nothing
+deferred beyond Q-16. Re-verified after fixes: tickets suite 29 pass, 0
+fail; guard suite 13 pass, 0 fail; `node --check
+plugins/flow/scripts/tickets.mjs` clean; doctor exit 0, all five checks ✓;
+acceptance grep still 4 hits across the quick and ticket skills; `list`
+parses all 16 quick tickets including Q-16; plugin.json 1.22.0 equals the
+top CHANGELOG entry. Correction to this entry's **Tokens** line, per the
+Q-11 mechanism (the hirer passes the figure down): the worker's spend
+through step 6 was harness-reported as 82,216 tokens, not `unknown`.
+Reviewer tokens: 63,455.
