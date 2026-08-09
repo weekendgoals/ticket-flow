@@ -831,3 +831,73 @@ tickets suite 29 pass, 0 fail; guard suite 13 pass, 0 fail; `node --check
 plugins/flow/scripts/tickets.mjs` clean; doctor exit 0, all five checks ✓;
 acceptance `grep -l "Tokens"` still names all three skills. Nothing
 deferred. Reviewer tokens: 62,280.
+
+### Q-12 — the retro runs in fresh context — 2026-08-09 — DONE
+
+**Built:** Plugin v1.21.0. `/flow:retro` no longer mines the record in the
+invoking session — often the same session that planned or ran the epic,
+carrying exactly the opinions the retro should examine (user request at the
+autonomous retro, 2026-08-08). The retro skill now has the supervisor shape
+the ticket lane already has: the invoking session resolves the epic (step 1),
+then spawns a fresh-context **miner** (new step 2) — a general agent, full
+toolset, empty context, handed the epic name, the absolute paths to
+`status.md`, `tickets.md` and `context/`, and the default branch, because
+its cwd may move — which executes the read/mine/draft steps (3–5) exactly as
+written and returns the finished report and proposals. The miner edits no
+files, creates no tickets, and asks the user nothing. The approval gate at
+the end of step 5 and the shipping in step 6 stay with the human's session,
+which shows the miner's report **unedited** ("disagreeing with a finding is
+a comment to raise at the gate, never an edit to the evidence") and then
+asks and waits, per the ticket's Not in scope (gate and post-approval
+shipping unchanged). README's retro row and METHODOLOGY's "Why an epic ends
+with a retro" section (two constraints → three) state the same rule with
+its reasoning. CHANGELOG entry for 1.21.0.
+
+**Mode:** supervisor — worker worker-q12, reviewer hired by the supervisor.
+
+**Tokens:** worker unknown — the harness exposes no usage figure to the
+worker agent; the reviewer's figure follows in the review addendum, per the
+template Q-11 added.
+
+**Files touched:** `plugins/flow/skills/retro/SKILL.md`, `README.md`,
+`METHODOLOGY.md`, `plugins/flow/.claude-plugin/plugin.json`,
+`CHANGELOG.md`, this file. Branch `q-12`, cut from `origin/q-11` (8a65429,
+Q-11's review-addendum commit) — a deliberate stack, user-directed: Q-10's
+PR #20 and Q-11's PR #21 were open and the user chose to run the remaining
+tickets back to back, merging the pull requests in sequence, rather than
+waiting on each merge.
+
+**Verified:** Acceptance: `grep -n "fresh-context"
+plugins/flow/skills/retro/SKILL.md` — 3 hits (intro, step 2's rationale,
+step 2's spawn instruction); `grep -n "invoking session"` on the same file —
+6 hits including step 5's "the miner drafts, the invoking session gates" and
+"ask, and wait … held in their own session"; `node
+plugins/flow/scripts/tickets.mjs doctor` — exit 0, all five checks ✓.
+Standing checks: `node --test plugins/flow/scripts/tickets.test.mjs` — 29
+pass, 0 fail; `node --test
+plugins/flow/hooks/ticket-session-guard.test.mjs` — 13 pass, 0 fail;
+`node --check plugins/flow/scripts/tickets.mjs` clean. `plugin.json` 1.21.0
+equals the top CHANGELOG entry.
+
+**Decisions:** (1) The skill was renumbered (2→3, 3→4, 4→5, 5→6) with the
+spawn as new step 2, rather than bolting a spawn note onto step 2's reading
+instructions — the miner executes steps 3–5's drafting as written, so the
+steps had to read cleanly as the miner's script with the gate text
+addressed back to the invoking session. (2) Step 5 splits along the
+gate-at-the-door line: drafting belongs to the miner, the "ask, and wait"
+sentence names the invoking session explicitly so the gate's actor is
+unambiguous. (3) README and METHODOLOGY moved in the same commit under the
+one-rule invariant — the README command table states each command's
+fresh-context shape (epic, ticket, run, quick all carry theirs), so leaving
+the retro row silent would have been the drift class four of five
+autonomous-epic reviews found; METHODOLOGY's "two constraints" list became
+three because the fresh-context miner is a constraint on the retro's
+honesty, not a mechanical detail. (4) The miner is handed absolute paths
+and the skill file's absolute path, per Q-6's review lesson — a spawned
+agent's cwd moves and relative paths break. (5) Version bumped minor
+(1.21.0): skill text is installed behaviour. (6) The implementation commit
+was amended pre-review to drop an auto-added Claude co-author trailer, per
+the ticket skill's rule and Q-6/Q-8/Q-9 precedent; step 8's no-amendment
+rule binds only after a review has run.
+
+**Owed:** Nothing.
