@@ -4,6 +4,23 @@ The plugin is the methodology's distribution mechanism: a change to a skill is
 a behaviour change in every project that installs it. This file is what makes
 those changes deliberate and visible.
 
+## 1.24.0 — 2026-08-09
+
+Q-15: the mixed board no longer omits ticketless epics (pre-existing, found
+by Q-8's review).
+
+- **`scripts/tickets.mjs`**: when at least one epic had tickets,
+  `printBoard`'s per-epic loop skipped any epic whose tickets.md has no
+  `## <ID> — …` sections yet — that epic was absent from the unfiltered
+  board entirely, existing work reported as nonexistent at larger blast
+  radius than Q-8's all-empty case. The mixed board now names each
+  ticketless epic with its empty state (`<epic> — no tickets yet`), the
+  same line the all-empty board prints — factored into one place so the
+  two renderings cannot drift apart.
+- Tests: a repo with one ticketed and one ticketless epic → unfiltered
+  `list` names both, the ticketless one as its composed empty-state line;
+  the ticketed epic's header and ticket rows still render.
+
 ## 1.23.0 — 2026-08-09
 
 Q-14: preamble values no longer scavenge across newlines (pre-existing,
