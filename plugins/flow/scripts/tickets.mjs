@@ -80,13 +80,23 @@ const RUN_MODES = new Set(['autonomous'])
 // "Release mode: serial — each ticket ships alone" parses as serial. An
 // absent Release mode line defaults to serial; an absent Run mode is null
 // (attended). Only the preamble is read — text above the first "## " heading.
+//
+// "Reviewer model" rides the same parse: an optional line naming the model
+// the ticket and run skills pass when spawning reviewers. Model identifiers
+// carry digits and dots ("claude-opus-4.5"), so its value charset is wider
+// than the modes'. Absent is null — the skills fall back to their own
+// "strongest available" default; this script never picks a model.
 function parseModes(ticketsDoc) {
   const preamble = readFileSync(ticketsDoc, 'utf8').split(/^##\s/m)[0]
-  const grab = (label) => {
-    const m = preamble.match(new RegExp(`^${label}\\s*:\\s*([A-Za-z-]+)`, 'im'))
+  const grab = (label, charset = '[A-Za-z-]+') => {
+    const m = preamble.match(new RegExp(`^${label}\\s*:\\s*(${charset})`, 'im'))
     return m ? m[1].toLowerCase() : null
   }
-  return { releaseMode: grab('Release mode') ?? 'serial', runMode: grab('Run mode') }
+  return {
+    releaseMode: grab('Release mode') ?? 'serial',
+    runMode: grab('Run mode'),
+    reviewerModel: grab('Reviewer model', '[A-Za-z0-9._-]+'),
+  }
 }
 
 // An autonomous run's merge surface is the epic branch, which only exists as
@@ -410,8 +420,10 @@ function doctor() {
   // A mode line that ALMOST parses — bolded label, doubled space — reads as
   // absent and silently defaults. Same failure class as heading near-misses:
   // flag anything mode-shaped in the preamble that the strict parse rejects.
-  const modeNear = /^[^A-Za-z]*\b(release|run)\s+mode\b/i
-  const modeStrict = /^(Release mode|Run mode)\s*:\s*[A-Za-z-]+/i
+  // "Reviewer model" is in the same class: a bolded line reads as absent and
+  // the skills silently fall back to their default model.
+  const modeNear = /^[^A-Za-z]*\b((release|run)\s+mode|reviewer\s+model)\b/i
+  const modeStrict = /^(Release mode|Run mode)\s*:\s*[A-Za-z-]+|^Reviewer model\s*:\s*[A-Za-z0-9._-]+/i
   for (const epic of epics) {
     if (modeContradiction(epic))
       add('fail', `${epic.epic}: Run mode: autonomous with Release mode: ${epic.releaseMode} — autonomous requires integration topology; unattended merges may only target the epic branch`)
@@ -421,7 +433,7 @@ function doctor() {
       add('warn', `${epic.epic}: unrecognised run mode "${epic.runMode}" (known: autonomous) — treated as attended`)
     readFileSync(epic.ticketsDoc, 'utf8').split(/^##\s/m)[0].split('\n').forEach((line, i) => {
       if (modeNear.test(line) && !modeStrict.test(line))
-        add('warn', `${epic.epic}/tickets.md:${i + 1} — looks like a mode line but will not parse, so it silently defaults (needs "Release mode: <value>" / "Run mode: <value>" at line start, no formatting): ${line.trim()}`)
+        add('warn', `${epic.epic}/tickets.md:${i + 1} — looks like a mode line but will not parse, so it silently defaults (needs "Release mode: <value>" / "Run mode: <value>" / "Reviewer model: <value>" at line start, no formatting): ${line.trim()}`)
     })
   }
 
@@ -515,6 +527,7 @@ function ticketFacts(data, t) {
     branch: t.branch,
     releaseMode: epic.releaseMode,
     runMode: epic.runMode,
+    reviewerModel: epic.reviewerModel,
     repoRoot,
     epicDir: epic.dir,
     ticketsDoc: epic.ticketsDoc,
@@ -611,7 +624,9 @@ switch (cmd) {
         onMainCapped: data.onMainCapped,
         current: data.current?.epic || null,
         epics: data.epics.map((e) => e.epic),
-        modes: Object.fromEntries(data.epics.map((e) => [e.epic, { releaseMode: e.releaseMode, runMode: e.runMode }])),
+        modes: Object.fromEntries(
+          data.epics.map((e) => [e.epic, { releaseMode: e.releaseMode, runMode: e.runMode, reviewerModel: e.reviewerModel }]),
+        ),
         duplicates: data.duplicates,
         tickets: data.tickets.map(({ body, ...t }) => t),
       })

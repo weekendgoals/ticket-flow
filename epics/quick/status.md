@@ -373,3 +373,106 @@ preserved, version/CHANGELOG discipline, no step-0 leakage in the range.
 Re-verified after fixes: guard suite 13 pass 0 fail; tickets suite 24 pass
 0 fail; `node --check` clean on the hook; doctor exit 0; `list` parses all
 13 quick tickets including Q-13. Nothing deferred beyond Q-13.
+
+### Q-7 — configurable reviewer model — 2026-08-08 — DONE
+
+**Built:** Plugin v1.16.0. The reviewer's model is now configuration instead
+of fixed skill text. An epic may carry an optional `Reviewer model: <model>`
+line in its tickets.md preamble; `tickets.mjs` parses it in `parseModes`
+alongside the mode lines — same tolerant parse: label case-insensitive at
+line start, value is the first token after the colon, prose after it ignored
+— and exposes it as `reviewerModel` in `find --json` and `list --json`
+(inside each epic's `modes` entry), null when the line is absent. The value
+charset admits digits, dots, hyphens and underscores so a real model
+identifier (`claude-opus-4.5`) survives whole; the value is lowercased like
+the modes. `doctor`'s preamble near-miss scan now also flags a
+reviewer-model-shaped line the strict parse rejects (e.g. bolded
+`**Reviewer model:**`), which would otherwise silently read as absent and
+fall back to the default model. The ticket skill's step 7 passes the epic's
+`reviewerModel` when spawning the reviewer and keeps the unchanged default
+when null: the strongest model available (`opus` at the time of writing).
+The run skill states the same rule in step 4c, where its workers spawn their
+reviewers. README documents the line under "Why the reviewers are separate
+agents". Tests cover present-with-prose (gamma fixture), absent (alpha ->
+null), plain + case-insensitive label + dotted value (staffed fixture), and
+the near-miss doctor warning (fancy fixture): tickets suite 24 -> 26.
+
+**Mode:** supervisor — worker worker-q7-fresh, reviewer hired by the supervisor.
+
+**Files touched:** `plugins/flow/scripts/tickets.mjs`,
+`plugins/flow/scripts/tickets.test.mjs`,
+`plugins/flow/skills/ticket/SKILL.md`, `plugins/flow/skills/run/SKILL.md`,
+`README.md`, `plugins/flow/.claude-plugin/plugin.json`, `CHANGELOG.md`, this
+file. Branch `q-7`, cut from `origin/main` (a0b0236, PR #16's merge commit).
+
+**Verified:** `node --test plugins/flow/scripts/tickets.test.mjs` — 26 pass,
+0 fail. `node --test plugins/flow/hooks/ticket-session-guard.test.mjs` — 13
+pass, 0 fail. `node --check plugins/flow/scripts/tickets.mjs` clean.
+`node plugins/flow/scripts/tickets.mjs doctor` — exit 0, all five checks ✓.
+Acceptance: parser tests for present / absent / prose-decorated lines pass
+inside the suite (fixtures above); live `find Q-7 --json` returns
+`"reviewerModel": null` (this epic has no line) and `list --json` carries
+`reviewerModel` in every `modes` entry; `grep -n "Reviewer model"
+plugins/flow/skills/ticket/SKILL.md` — hit at step 7 (line 245).
+`plugin.json` 1.16.0 equals the top CHANGELOG entry.
+
+**Decisions:** (1) "Same tolerant parse" was read as the parse's tolerance
+properties — case-insensitive label at line start, first token wins, trailing
+prose ignored, preamble only — not the modes' exact `[A-Za-z-]+` value
+charset, which would truncate `claude-opus-4.5` at the digit; the wider
+charset is scoped to this one label. (2) The value is lowercased like the
+mode values for uniformity; known model identifiers are lowercase. (3)
+doctor's near-miss scan was extended to the new line even though the scope
+did not name doctor: the scan exists precisely so a formatted preamble
+config line cannot silently read as absent, and shipping a third parsed line
+invisible to it would recreate the failure class the scan guards. (4) The
+script exposes null when the line is absent rather than any default — the
+"strongest available" fallback stays in the skills, per Not in scope
+(default unchanged) and the script's stores-nothing/decides-nothing shape.
+(5) The run skill's statement lives in step 4c beside "spawning its own
+reviewer" — the door where a run's reviewers are actually hired is ticket
+step 7 executed by the worker, so the run skill defers to it by name rather
+than restating the mechanics (one rule, two documents kept in agreement in
+one commit). (6) The epic skill's preamble template was left untouched: the
+scope names the parser, the exposure, and the two spawning skills; the line
+is optional configuration documented in README, not planning ceremony the
+template should prompt for.
+
+**Owed:** Nothing.
+
+**Addendum — review — 2026-08-08 — opus/high:** Two Important, two nits, one
+pre-existing; both Importants and one nit fixed in the review-fix commit
+(e1f8823), one nit handed with the pre-existing class to a new ticket.
+Important (1): README's new paragraph sat in a section covering both
+reviewer agents and said an epic "can pin a different one", but the epic
+skill spawns the plan reviewer on the strongest model unconditionally — a
+one-rule violation between README and the skills. Fixed by narrowing the
+claim, the direction Q-7's scope supports (it names the ticket and run
+skills only): the line governs the ticket reviewer; the plan reviewer is
+judging the very draft the line lives in, and configuration binds only
+after sign-off — reason now stated in README and the CHANGELOG entry. No
+skill behaviour changed by the fix, so 1.16.0 stands. Important (2):
+doctor's strict-parse extension had zero test pressure on its accepting
+branch — the reviewer mutation-verified that deleting the Reviewer model
+alternative from modeStrict left the suite green while every well-formed
+line warned. Fixed with a doctor-silence test over gamma's three
+well-formed preamble lines; the mutation was re-applied to confirm the
+test kills it (26 pass 1 fail under the mutant), suite 26 -> 27. Nit
+fixed: ticket skill step 1 now names `reviewerModel` among `find --json`'s
+returns, which step 7 already referenced. Nit not fixed here, with the
+pre-existing finding: the shared preamble parse's `\s*` matches newlines,
+so a value-less label line scavenges the first word of the next paragraph
+(reviewer verified a bare `Run mode:` reading `autonomous` out of prose
+that rejects it), and doctor's warning misdescribes that failure. The mode
+lines predate this ticket; Q-7 added a third label to the one shared
+`grab` rather than forking it into two parse behaviours mid-ticket, so
+the whole class — all three labels, the doctor wording, value-less-line
+tests — is handed to **Q-14**, opened in this epic's ticket doc in the
+same commit (Q-6/Q-13 precedent). Also confirmed sound by the reviewer:
+scope holds (default unchanged, no per-ticket override, effort tiers
+untouched; the doctor extension judged defended, not creep), the widened
+charset genuinely tested, run skill step 4c accurate, 1.16.0 = CHANGELOG
+head, and quick has no third reviewer door. Re-verified after fixes:
+tickets suite 27 pass 0 fail; guard suite 13 pass 0 fail; `node --check`
+clean; doctor exit 0; `list` parses all 14 quick tickets including Q-14.
+Nothing deferred beyond Q-14.

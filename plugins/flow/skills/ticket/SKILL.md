@@ -79,10 +79,10 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/tickets.mjs" find $ARGUMENTS --json
 
 This returns the epic's `ticketsDoc`, `statusDoc`, `contextDir`, `repoRoot`,
 the `branch` to create — as **absolute paths**; never hardcode a path or turn
-them back into relative ones — and the epic's `releaseMode` and `runMode`.
-The modes decide step 3, step 9 and step 10. `runMode: "autonomous"` only
-ever appears with integration topology; the contradiction is refused by the
-script before you see it.
+them back into relative ones — and the epic's `releaseMode`, `runMode` and
+`reviewerModel`. The modes decide step 3, step 9 and step 10; `reviewerModel`
+is read by step 7. `runMode: "autonomous"` only ever appears with integration
+topology; the contradiction is refused by the script before you see it.
 
 Both this command and every `git` command below work from anywhere in the tree —
 but your shell's cwd persists between calls, and verification moves it into a
@@ -241,10 +241,15 @@ mode's own rules (step 10).
 
 Spawn the reviewer with the **Agent** tool:
 
-- `subagent_type: "flow:ticket-reviewer"`, and `model`: the **strongest model
-  available**, regardless of what this session is running — review is where
-  capability pays. Pass it explicitly (`opus` at the time of writing; if that is
-  not available, the strongest that is).
+- `subagent_type: "flow:ticket-reviewer"`, and `model`: the epic's **Reviewer
+  model** when it declares one — an optional `Reviewer model: <model>` line in
+  the tickets.md preamble, exposed by step 1's `find --json` as
+  `reviewerModel`. It is configuration so that redirecting the reviewer is an
+  edit to the epic's documents, never a mid-run conversational directive.
+  Absent (`reviewerModel: null`), the default is unchanged: the **strongest
+  model available**, regardless of what this session is running — review is
+  where capability pays. Pass it explicitly (`opus` at the time of writing; if
+  that is not available, the strongest that is).
 - `effort`: scale it to the diff. `medium` for docs or config with no behavioural
   change; `high` for any normal implementation ticket; `xhigh` for authentication
   or authorization boundaries, secrets, crypto, network exposure, migrations,

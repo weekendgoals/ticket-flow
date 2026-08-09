@@ -91,7 +91,9 @@ Malformed on purpose: no date, so this heading must not parse.
 )
 
 // gamma: integration + autonomous, with a prose-decorated Release mode line —
-// the tolerant-parse case, and the fixture for run-mode exposure.
+// the tolerant-parse case, and the fixture for run-mode exposure. Its
+// Reviewer model line is prose-decorated too: the value is the first word
+// after the colon, the rest is commentary.
 mkdirSync(join(repo, 'epics/gamma'), { recursive: true })
 writeFileSync(
   join(repo, 'epics/gamma/tickets.md'),
@@ -100,6 +102,8 @@ writeFileSync(
 Release mode: integration — these tickets share a schema change and cannot ship alone.
 
 Run mode: autonomous
+
+Reviewer model: opus — review is where capability pays.
 
 ## G-1 — expand the schema
 
@@ -283,8 +287,36 @@ test('mode lines parse tolerantly and expose in find and list', () => {
   assert.equal(a.runMode, null)
 
   const data = JSON.parse(run(repo, 'list', '--json'))
-  assert.deepEqual(data.modes.gamma, { releaseMode: 'integration', runMode: 'autonomous' })
-  assert.deepEqual(data.modes.alpha, { releaseMode: 'serial', runMode: null })
+  assert.deepEqual(data.modes.gamma, { releaseMode: 'integration', runMode: 'autonomous', reviewerModel: 'opus' })
+  assert.deepEqual(data.modes.alpha, { releaseMode: 'serial', runMode: null, reviewerModel: null })
+})
+
+test('a Reviewer model preamble line is optional and parses tolerantly', () => {
+  // Present and prose-decorated (gamma): the value is the first word after
+  // the colon, the prose is ignored — same tolerant parse as the mode lines.
+  const g = JSON.parse(run(repo, 'find', 'G-1', '--json'))
+  assert.equal(g.reviewerModel, 'opus', 'prose after the value must not break the parse')
+
+  // Absent (alpha): null, never a silent default — the skills own the
+  // "strongest available" fallback, not this script.
+  const a = JSON.parse(run(repo, 'find', 'A-2', '--json'))
+  assert.equal(a.reviewerModel, null)
+})
+
+test('a plain Reviewer model line parses case-insensitively, dotted model ids intact', () => {
+  // No prose after the value, label in the wrong case, a value with digits
+  // and a dot — a real model identifier must survive the parse whole.
+  mkdirSync(join(repo, 'epics/staffed'), { recursive: true })
+  writeFileSync(
+    join(repo, 'epics/staffed/tickets.md'),
+    '# Staffed\n\nreviewer MODEL: Claude-Opus-4.5\n\n## ST-1 — staffed epic\n\n**Scope.** S.\n',
+  )
+  try {
+    assert.equal(JSON.parse(run(repo, 'find', 'ST-1', '--json')).reviewerModel, 'claude-opus-4.5')
+    assert.equal(JSON.parse(run(repo, 'list', '--json')).modes.staffed.reviewerModel, 'claude-opus-4.5')
+  } finally {
+    rmSync(join(repo, 'epics/staffed'), { recursive: true, force: true })
+  }
 })
 
 test('an epic with no mode lines defaults to serial, attended', () => {
@@ -292,7 +324,7 @@ test('an epic with no mode lines defaults to serial, attended', () => {
   writeFileSync(join(repo, 'epics/delta/tickets.md'), '# Delta\n\n## D-1 — bare epic\n\n**Scope.** Bare.\n')
   try {
     const data = JSON.parse(run(repo, 'list', '--json'))
-    assert.deepEqual(data.modes.delta, { releaseMode: 'serial', runMode: null })
+    assert.deepEqual(data.modes.delta, { releaseMode: 'serial', runMode: null, reviewerModel: null })
   } finally {
     rmSync(join(repo, 'epics/delta'), { recursive: true, force: true })
   }
@@ -328,7 +360,7 @@ test('mode lines parse case-insensitively', () => {
   )
   try {
     const data = JSON.parse(run(repo, 'list', '--json'))
-    assert.deepEqual(data.modes.shout, { releaseMode: 'integration', runMode: 'autonomous' })
+    assert.deepEqual(data.modes.shout, { releaseMode: 'integration', runMode: 'autonomous', reviewerModel: null })
   } finally {
     rmSync(join(repo, 'epics/shout'), { recursive: true, force: true })
   }
@@ -338,18 +370,32 @@ test('a mode line that almost parses is a doctor warning, not a silent default',
   mkdirSync(join(repo, 'epics/fancy'), { recursive: true })
   writeFileSync(
     join(repo, 'epics/fancy/tickets.md'),
-    '# Fancy\n\n**Release mode:** integration\n\nRun  mode: autonomous\n\n## F-1 — formatted modes\n\n**Scope.** F.\n',
+    '# Fancy\n\n**Release mode:** integration\n\nRun  mode: autonomous\n\n**Reviewer model:** haiku\n\n## F-1 — formatted modes\n\n**Scope.** F.\n',
   )
   try {
     const data = JSON.parse(run(repo, 'list', '--json'))
-    assert.deepEqual(data.modes.fancy, { releaseMode: 'serial', runMode: null }, 'both lines must read as absent')
+    assert.deepEqual(
+      data.modes.fancy,
+      { releaseMode: 'serial', runMode: null, reviewerModel: null },
+      'all three lines must read as absent',
+    )
     const rows = JSON.parse(run(repo, 'doctor', '--json'))
     const warns = rows.filter((r) => r.level === 'warn' && r.msg.includes('fancy/tickets.md'))
-    assert.equal(warns.length, 2, 'both near-miss lines must be flagged')
+    assert.equal(warns.length, 3, 'all three near-miss lines must be flagged')
     for (const w of warns) assert.match(w.msg, /will not parse/)
   } finally {
     rmSync(join(repo, 'epics/fancy'), { recursive: true, force: true })
   }
+})
+
+test('well-formed mode and Reviewer model lines are doctor-silent', () => {
+  // The ACCEPTING branch of doctor's strict preamble parse. gamma carries all
+  // three labels well-formed (two prose-decorated) — none may warn. Mutation
+  // found by Q-7's review: with the Reviewer model alternative deleted from
+  // modeStrict, every correctly configured epic warned and no test noticed.
+  const rows = JSON.parse(run(repo, 'doctor', '--json'))
+  const gamma = rows.filter((r) => r.msg.includes('gamma/tickets.md'))
+  assert.deepEqual(gamma, [], 'no doctor row may point at gamma/tickets.md')
 })
 
 test('an unrecognised mode value is a doctor warning, never a silent default', () => {

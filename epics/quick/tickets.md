@@ -279,3 +279,30 @@ cannot provide.
 - Each skill that instructs status-log creation carries or points to the
   exact preamble text (grep "append-only" across quick and ticket skills).
   Doctor exit 0.
+
+## Q-14 — preamble values must not scavenge across newlines
+
+**Scope.**
+- `tickets.mjs` `parseModes`: the `\s*` around the colon matches newlines,
+  so a value-less label line adopts the first word of the next paragraph —
+  a bare `Run mode:` followed by a paragraph starting "Autonomous is not
+  wanted here." parses as `runMode: 'autonomous'` (verified live by Q-7's
+  review), and doctor's near-miss warning misdescribes the failure ("will
+  not parse, so it silently defaults" — it parses, into unrelated prose).
+  All three labels — Release mode, Run mode, Reviewer model — share the one
+  `grab` parse, so the class lands together: anchor the value to the
+  label's own line (the review's suggested shape: `[^\S\n]*` in place of
+  `\s*`), correct the doctor wording where it still misdescribes, and add
+  tests for a value-less line under each label. Found pre-existing on the
+  mode lines by Q-7's review (opus/high); Q-7 added the third label to the
+  shared parse rather than forking it, and handed the whole class here.
+  Version bump + CHANGELOG.
+
+**Not in scope.** Any other change to the tolerant parse — label
+case-insensitivity, prose after the value, and preamble-only reading all
+stay as they are.
+
+**Acceptance criteria.**
+- New tests: a value-less `Run mode:` (and `Reviewer model:`) followed by a
+  prose paragraph parses as absent (null / serial default), never as the
+  paragraph's first word. Suite green, doctor exit 0.
