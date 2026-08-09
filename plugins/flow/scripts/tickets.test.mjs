@@ -268,6 +268,30 @@ test('unfiltered list names ticketless epics instead of claiming no epics exist'
   assert.match(run(empty, 'list'), /no epics found under epics\//)
 })
 
+test('mixed board names ticketless epics beside ticketed ones', () => {
+  // When at least one epic has tickets, printBoard's per-epic loop used to
+  // `continue` past an epic with no `## <ID> — …` sections — that epic was
+  // absent from the unfiltered board entirely: existing work reported as
+  // nonexistent, Q-8's defect class at larger blast radius (Q-8's review,
+  // pre-existing; Q-15). Needs its own repo: the shared fixture's epics all
+  // have tickets, and the barren repo above has none.
+  const mixed = join(tmp, 'mixed')
+  git(tmp, 'init', '--initial-branch=main', mixed)
+  mkdirSync(join(mixed, 'epics/peopled'), { recursive: true })
+  writeFileSync(
+    join(mixed, 'epics/peopled/tickets.md'),
+    '# Peopled epic — tickets\n\n## P-1 — the one ticket\n\n**Scope.** One.\n',
+  )
+  mkdirSync(join(mixed, 'epics/hollow'), { recursive: true })
+  writeFileSync(join(mixed, 'epics/hollow/tickets.md'), '# Hollow epic — tickets\n\nNo sections yet.\n')
+  const out = run(mixed, 'list')
+  // Pin composed lines, not fragments (the Q-8 lesson: the filtered branch's
+  // message contains the same fragments, so pieces can't tell branches apart).
+  assert.match(out, /^hollow — no tickets yet$/m, 'the ticketless epic is named with its empty state')
+  assert.match(out, /^peopled — 1 tickets/m, 'the ticketed epic still renders its header')
+  assert.match(out, /^  P-1 /m, 'the ticketed epic still lists its tickets')
+})
+
 test('Next up suggests the installed, namespaced command', () => {
   // Plugin commands are namespaced: the installed command is /flow:ticket.
   // A bare /ticket suggestion is a live regression — a user ran it verbatim

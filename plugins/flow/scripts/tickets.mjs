@@ -308,6 +308,12 @@ const BADGE = {
   todo: `${C.dim}todo${C.off}`,
 }
 
+// One line for an epic whose ticket doc has no `## <ID> — …` sections yet.
+// Shared by the all-empty board and the mixed board so the two renderings
+// cannot drift apart: an epic that exists is named wherever the board prints,
+// never silently skipped (Q-8, Q-15).
+const ticketlessLine = (name) => `${C.bold}${name}${C.off} ${C.dim}— no tickets yet${C.off}`
+
 function printBoard(data, epicFilter) {
   if (!data.tickets.length) {
     // An unknown filter never reaches here — the entry point rejects it with
@@ -318,7 +324,7 @@ function printBoard(data, epicFilter) {
     // empty state instead.
     if (epicFilter) console.log(`epic "${epicFilter}" has no tickets yet`)
     else if (!data.epics.length) console.log('no epics found under epics/')
-    else for (const e of data.epics) console.log(`${C.bold}${e.epic}${C.off} ${C.dim}— no tickets yet${C.off}`)
+    else for (const e of data.epics) console.log(ticketlessLine(e.epic))
     return
   }
   if (!data.prsAvailable) {
@@ -336,7 +342,16 @@ function printBoard(data, epicFilter) {
 
   for (const epic of data.epics) {
     const ts = data.tickets.filter((t) => t.epic === epic.epic)
-    if (!ts.length) continue
+    if (!ts.length) {
+      // At least one epic has tickets, but this one has no sections yet.
+      // Skipping it omitted the epic from the mixed board entirely — existing
+      // work reported as nonexistent, Q-8's defect class at larger blast
+      // radius (Q-15). Name it with its empty state, same line as the
+      // all-empty board above.
+      console.log(ticketlessLine(epic.epic))
+      console.log()
+      continue
+    }
     const counts = STATES.map((s) => [s, ts.filter((t) => t.state === s).length]).filter(([, n]) => n)
     const here = data.current?.epic === epic.epic ? `${C.green}  ← this folder${C.off}` : ''
     // Serial-attended is the default and stays unlabelled; anything else is
