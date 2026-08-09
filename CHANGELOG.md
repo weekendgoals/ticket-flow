@@ -17,14 +17,29 @@ waiver.
   skill never named. The step now names 403 as "protection unavailable on
   this plan", marks the two probes as the skill's only tolerated nonzero
   exits (their statuses are the data the check reads), and defines where the
-  driver finds a pre-recorded human waiver: the epic's `tickets.md` — the
-  Run mode line or ground rules, where the epic skill's plan-time probe
-  records its result, or an amended acceptance criterion, as the first live
-  run did it. Waiver found: proceed and name it in the run record; none:
-  report and stop before ticket one.
+  driver finds a pre-recorded human waiver: the epic's `tickets.md`, on the
+  Run mode line or under the ground rules. A waiver is a recorded
+  **decision** ("waived <date>: <who> chose to run without the hard floor"),
+  never a bare probe finding — a line that only records the 403 is no
+  waiver (review fix: the two were previously indistinguishable). Waiver
+  found: proceed, name it in the run record (new **Protection:** slot in
+  step 6's template) and in the release PR body (step 7); none: report and
+  stop before ticket one.
 - **`skills/run` step 5**: "nothing is marked tolerated" became false with
-  the change above; the clause now names step 3's probe pair as the one
-  tolerated exception.
+  the change above; the clause now tolerates exactly a **404 or 403 from
+  the two probes** — any other probe failure (auth, network, rate limit,
+  5xx, wrong repository) still halts (review fix: the carve-out was
+  originally granted to the commands, not the statuses).
+- **`skills/epic` Run mode template**: the writer's side of the waiver
+  handshake (review fix — the run skill defined a reader for an artifact no
+  skill instructed anyone to write): when the plan-time probe finds
+  protection missing or unavailable, the human decides at sign-off — fix
+  the environment or waive it, the waiver written as a decision in the same
+  tickets.md spots the probe result goes.
+- **README**: the halt list now names the one tolerated exception, and
+  "both must exist" admits the protection waiver — the same rule the run
+  skill states (review fix; the old "both must exist" had never matched the
+  skill's waivable protection).
 
 ## 1.18.0 — 2026-08-09
 

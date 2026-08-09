@@ -109,12 +109,16 @@ because unattended merges may only ever target an epic branch.
 A run **halts** rather than improvises: on a blocked ticket, an Important
 review finding it cannot fix, a document/code contradiction, a merge
 conflict, reviewer-spawn failure after its fallback, a permission prompt
-firing mid-run, or any failing command. Halting is the mechanism working —
+firing mid-run, or any failing command — with one tolerated exception: a
+404 or 403 from the two branch-protection probes is the answer that check
+exists to read, not a failure. Halting is the mechanism working —
 a run that pushes through is a run whose release pull request can no longer
 be trusted.
 
 Two things are **environment setup, not plugin code**. Both must exist
-before the first unattended run — and both are probed while the epic is
+before the first unattended run — protection alone may instead be waived by
+the human at sign-off, the waiver recorded as a decision in the epic's
+`tickets.md` — and both are probed while the epic is
 planned, not discovered on run day: declaring `Run mode: autonomous`
 obligates the plan to run the probes and record the result (the first live
 run hit an unprobed free-plan 403, and its waiver landed seconds before
