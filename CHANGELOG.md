@@ -26,9 +26,10 @@ rather than shimmed — hence the major version.
   only: the session that writes the `Q-<n>` ticket implements it, verifies
   with counts, writes a short entry, and opens the PR. A fresh-context
   reviewer is spawned **only when behaviour changes**, on a cost-efficient
-  model at `effort: medium`; docs/display diffs get none — the pull request
-  is the review. The size + risk gate is unchanged and still routes
-  consequential work to `/flow:epic` at any size.
+  model at `effort: medium`; prose-only diffs — documentation and comments,
+  nothing a machine reads — get none, the pull request being the review.
+  The size + risk gate is unchanged and still routes consequential work to
+  `/flow:epic` at any size.
 - **Session guard reshaped to match** (`hooks/ticket-session-guard.mjs`):
   every `/flow:quick` invocation marks the session as carrying
   implementation context (it is in-session by design, and is itself never
@@ -36,11 +37,13 @@ rather than shimmed — hence the major version.
   concern — refused in a marked session, toward supervisor mode or /clear.
   Refusal message updated; guard suite 13 → 14.
 - **Ticket review is tiered by consequence, model and effort together**
-  (ticket skill step 7): docs/config/display → fast mid-tier model at
-  `low`; ordinary implementation → capable mid-tier model at `high`; the
-  consequence list (unchanged, still coupled to quick's entry gate) →
-  strongest model at `xhigh`. The epic's `Reviewer model:` line overrides
-  the tiers. The flat "strongest model always" default is gone.
+  (ticket skill step 7): prose only (documentation and comments — nothing
+  any runtime, parser, test, or agent reads) → fast mid-tier model at
+  `low`; everything else below the risk list, config and strings and CLI
+  output included → capable mid-tier model at `high`; the consequence list
+  (unchanged, still coupled to quick's entry gate) → strongest model at
+  `xhigh`. The epic's `Reviewer model:` line overrides the tiers. The flat
+  "strongest model always" default is gone.
 - **Workers read a compiled brief, not the whole status log** (ticket skill
   step 2): `tickets.mjs brief` now also carries the epic preamble (ground
   rules) and the log's owed items — every non-Nothing `**Owed:**`

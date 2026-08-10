@@ -309,7 +309,7 @@ mode's own rules (step 10).
 
 Independent review is always worth its price here; **maximum-capability
 review is not** — the strongest model at the highest effort spends 50–80k
-tokens per pass, which a docs diff cannot repay. Model and effort scale
+tokens per pass, which a prose diff cannot repay. Model and effort scale
 together, by what the diff can break:
 
 | Tier | When | Model | Effort |
