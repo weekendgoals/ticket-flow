@@ -1,15 +1,22 @@
 ---
 name: quick
-description: Run one small, low-risk piece of work — a bugfix, a tweak, a chore — through the full ticket loop without planning an epic. Size- and risk-gated; auth, migrations, secrets and other consequential work is routed to /flow:epic at any size. Use when the user runs /flow:quick <description>, or asks for a small change that still deserves review and a record.
+description: Run one small, low-risk piece of work in-session — a bugfix, a tweak, a chore — with a durable ticket record and a pull request, at a fraction of the epic lane's cost. Size- and risk-gated; auth, migrations, secrets and other consequential work is routed to /flow:epic at any size. Use only when the user explicitly runs /flow:quick <description> or asks for the Flow quick lane by name — an ordinary small request, without that, is implemented directly with no Flow ceremony.
 ---
 
 # Quick ticket: $ARGUMENTS
 
-Small work skips the epic ceremony — the planning session, the sign-off gate,
-the epic branch. It does **not** skip the loop: a written scope, verification,
-fresh-eyes review, a status entry, a pull request. Work that bypasses the flow
-entirely gets none of those, and "bypass entirely" is what people choose when
-the only alternative is ceremony. This command is the third option.
+The cheap lane. Small work skips the epic ceremony — the planning session, the
+sign-off gate, the epic branch — **and** the execution ceremony: no supervisor,
+no fresh-context worker, no reviewer by default. What it keeps is exactly what
+pays for itself at this size: a written scope with a binding "Not in scope",
+verification with counts, a short append-only record, and a pull request a
+human reviews. The expensive guarantees live in `/flow:ticket` and
+`/flow:epic`; sending a warning-string fix through them spends ~150k tokens
+buying confidence the pull request already provides.
+
+Flow is opt-in: this skill runs because the user invoked it. A request that
+did not invoke it is ordinary direct work — implement, verify, report, no
+ticket document.
 
 `$ARGUMENTS` is the request in prose. The conversation so far is also input.
 
@@ -56,9 +63,11 @@ else's. If it does not exist, create it:
 
 Source: standing epic for small work; each ticket carries its own context.
 
-Release mode: serial
+Delivery: incremental
 
-Status log: `epics/quick/status.md`. Run a ticket with `/flow:ticket <ID>`.
+Status log: `epics/quick/status.md`. Run a ticket with `/flow:quick` (the
+in-session lane) or `/flow:ticket <ID>` (the supervised lane, for a quick
+ticket someone wrote down to run later).
 
 ## Ground rules for every ticket in this epic
 
@@ -105,49 +114,101 @@ code in the same pull request. Commit the ticket-doc addition first:
 If the previous quick ticket still has an open pull request, that is fine —
 quick tickets are independent by ground rule and do not stack.
 
-## 4. Become the supervisor — the ticket loop's lane fork
+## 4. Implement — in this session
 
-What quick skips is planning ceremony; execution hygiene it never skips. The
-session that wrote the ticket has already argued for its own scoping — and
-often carries earlier work besides — so it does not implement. Follow the
-**`/flow:ticket`** skill's **step 0**, with quick's steps 1–3 standing in for
-the parts already done: the ticket is written, and `q-<n>` exists with the
-plan committed.
+This lane implements in the session that wrote the ticket. That is a
+deliberate trade: the fresh-context worker's independence is worth its cost
+on epic tickets and not on a bounded low-risk diff — here the epistemic
+boundary is the pull request, plus the reviewer of step 6 when behaviour
+changes. (The session guard marks the session at invocation for the same
+reason it marks an interactive ticket: this session now carries
+implementation context, and a later `/flow:ticket --interactive` in it is
+refused. Supervisor-mode tickets, and further quick tickets, stay open.)
 
-**Default — supervisor.** From this point the session makes no file edits.
-Run ticket step 1's `find Q-<n> --json` yourself — it returns `ticketsDoc`,
-`statusDoc` and `repoRoot` as **absolute paths**, which is what the worker
-must receive: its cwd moves during verification, and relative paths break
-there. Then spawn the fresh-context worker as step 0 directs, scoping ticket
-steps **1 and 3 — and only those** — out of its prompt (step 0 lets a spawn
-prompt scope steps; those two are already done here: the ticket is resolved
-and `q-<n>` exists). Tell it: a supervisor spawned it for this one ticket;
-the absolute `ticketsDoc`, `statusDoc` and `repoRoot` from your `find` —
-create the status log on first use with the exact append-only preamble
-ticket step 6 carries (the worker executes that step, so the text is in its
-hands); the branch `q-<n>` already exists with the plan committed — work on
-it, cut nothing; the base for review and the pull request is the default
-branch.
-**Ticket step 2 stays in the worker's prompt**: it reads the documents in
-step 2's order before implementing — an empty context is the point of this
-lane, and an empty context that reads nothing is worse than none — and
-step 2's halt rule binds it: where documents disagree, stop and report,
-never adapt. The worker then executes ticket steps 4–6 — implement, verify
-with counts, append and commit the status entry — and stops with a report.
-The rest runs as the ticket skill writes it: the supervisor hires the reviewer (step 7 — never the
-worker; the party under review does not pick its own judge), hands the
-findings and the reviewer's model, effort and token figure back to the same
-worker (step 8), the worker pushes and opens the pull request (step 9), and
-everything stops there (step 10, attended).
+The execution rules of the ticket skill still bind:
 
-**`--interactive`** keeps the in-session lane: run ticket steps 4 to the end
-yourself. It costs what any interactive ticket costs: the session guard
-marks the session at invocation — same marker, same once-per-session rule —
-and a marked session is refused every later `--interactive` run, quick or
-ticket alike; what stays open is supervisor mode (rerun the command without
-the flag) and `/clear`. The guard watches both doors because a gate is
-verified at the door its actor walks through.
+- **Stay inside the ticket's scope.** "Not in scope" is binding.
+- **Prefix every commit subject with the ticket ID** — `Q-7: fix the warning
+  text`. This is load-bearing: `tickets.mjs` reads subjects off the default
+  branch to decide what has shipped.
+- **Stage only your own hunks.** Never `git add -A` or `git add .`.
+- Update the agent instruction files in the same commit as any change they
+  describe.
 
-Everything in the ticket skill binds as usual: ID-prefixed commits, counts
-not adjectives, every finding dispositioned in writing, and a full stop at
-the open pull request.
+## 5. Verify, then log — briefly
+
+Run the ticket's acceptance criteria plus the standing checks for what you
+touched, reading the commands from the project's instruction files. Report
+**counts** — "api 217/217 passed", never "tests pass". A check that cannot
+run here is said so and recorded as owed; never imply it passed.
+
+Append the status entry to `epics/quick/status.md`. If the file does not
+exist, open it with this exact preamble — the same block the epic skill's
+template and the ticket skill's step 6 carry; **one rule, three documents: a
+change to any copy moves the others in the same commit**:
+
+```markdown
+# Quick epic — status log
+
+Append-only record of finished tickets. Tickets: `epics/quick/tickets.md`.
+
+**Rules.** Append only. Corrections are new dated addenda beneath the entry they
+correct, never edits. Report counts, not adjectives. The **Owed** line is
+required even when empty.
+```
+
+The **entry** heading is parsed — match it exactly, then keep the body to a
+few lines: **Built / Mode / Tokens / Verified / Decisions / Owed**, per the
+ticket skill's step 6 template. `Mode:` is `quick — in-session
+(/flow:quick)`; Decisions records only deviations and judgment calls, not
+narration — git already records the files and commits.
+
+```markdown
+### Q-<n> — <name> — <YYYY-MM-DD> — DONE
+```
+
+If this ticket discharges an owed item an earlier entry recorded, add
+`**Resolves owed:** <ID> — <how>` on its own line — that marker is what
+removes the item from every future brief (ticket skill step 6 defines it).
+
+Commit the entry with the work.
+
+## 6. Review — only when behaviour changed, and cheaply
+
+- **No behaviour change** means one thing: the diff touches **nothing any
+  runtime, parser, test, or agent reads** — documentation prose and code
+  comments, and only those. Then **skip the reviewer**: the pull request is
+  the review; say so in the PR body ("prose-only; no separate review").
+- **Everything else is a behaviour change**, including the shapes that look
+  harmless: a user-facing string (code and tests match on strings),
+  configuration (config *is* behaviour), CLI output (someone's script
+  parses it), and skill or agent Markdown (in a plugin, the Markdown is the
+  program). For these, spawn `flow:ticket-reviewer` with the Agent tool on
+  a **cost-efficient model** (a mid-tier model, not the strongest;
+  `effort: medium`), following the `/flow:review` skill, on the commit range
+  `origin/<default-branch>..HEAD`. Give it the ticket section and the
+  instruction files for the touched area. It reports; it does not fix.
+- When unsure which side a diff falls on, it is a behaviour change — the
+  cheap reviewer costs little; a skipped review of live behaviour can cost
+  the ticket.
+- Risk-trigger work cannot reach this step — step 1 already routed it to
+  `/flow:epic`, where the full-price review tier lives.
+
+Fix Important findings as new commits (`Q-<n>: … (review fix)`), re-run the
+affected checks, and add one dated addendum line to the entry with the
+outcome and the reviewer's token figure. **A nit does not become a ticket by
+default** — fix it here if it is trivial and in scope, otherwise note it in
+the addendum for the retro; a nit earns a ticket only when it affects users,
+creates real maintenance risk, or keeps recurring.
+
+## 7. Push, open the pull request, stop
+
+```bash
+git push -u origin q-<n>
+gh pr create --base <default-branch> --title "Q-<n>: <title>" --body "<body>"
+```
+
+The body carries: what changed and why, the acceptance criteria with counts,
+the review outcome (or "prose-only; no separate review"), and any deploy
+precondition. Print the URL and stop — a human merges, and nothing runs
+after the merge.

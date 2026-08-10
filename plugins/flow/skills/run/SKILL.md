@@ -1,6 +1,6 @@
 ---
 name: run
-description: Run an autonomous epic end to end with no human present — verify sign-off, loop its tickets in document order through fresh-context agents, halt on any stop condition, and end by opening the release pull request. Never merges toward the default branch. Use when the user runs /flow:run <epic>.
+description: Run a release epic (Delivery: release) end to end with no human present — verify sign-off, loop its tickets in document order through fresh-context agents, halt on any stop condition, and end by opening the release pull request. Never merges toward the default branch. Use when the user runs /flow:run <epic>.
 ---
 
 # Run epic $ARGUMENTS unattended
@@ -25,14 +25,11 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/tickets.mjs" list <epic> --json
 ```
 
 Read `defaultBranch`, and the epic's entry in `modes`. **Stop and report
-unless `runMode` is `"autonomous"` and `releaseMode` is `"integration"`** —
-both, checked here. An attended epic is run one ticket at a time by
-`/flow:ticket`, and driving it unattended would exceed what its sign-off
-approved. And the script's serial+autonomous refusal lives in `find` and
-`doctor`, **not** in the `list` command this step runs — without your own
-`releaseMode` check, a contradictory epic would pass this door and mutate
-`origin/epic/<name>` (step 4a merges and pushes) before a worker's `find`
-finally refused it.
+unless the epic's `delivery` is `"release"`** — checked here, before
+anything mutates `origin/epic/<name>` (step 4a merges and pushes). An
+incremental epic is run one ticket at a time by `/flow:ticket`, and driving
+it unattended would exceed what its sign-off approved; an unrecognised
+delivery value (doctor flags those) is equally not a release declaration.
 
 Stop and report too if:
 
@@ -113,7 +110,7 @@ will die at its first prompt.
   run cannot ask, so the waiver must already exist, and a waiver is a
   **recorded decision, never a recorded finding**: prose in **the epic's
   `tickets.md`** — the document sign-off gates and step 2 verifies on the
-  remote, written on the `Run mode:` line or under the ground rules, where
+  remote, written on the `Delivery:` line or under the ground rules, where
   the epic skill has the planner record it — saying a human **chose to
   accept** running without the hard floor, in the shape of the first live
   run's record: "waived 2026-08-08: … the user chose to run without the
@@ -152,7 +149,10 @@ branches have diverged, which no step of this skill can cause.
 document order is the plan's de-risking order.
 
 **c. Spawn the worker** with the Agent tool: a fresh general-purpose agent,
-full toolset, empty context. Its prompt must say, in substance:
+full toolset, empty context. Pass `model:` when the epic's `modes` entry
+from step 1 carries a `workerModel` (the optional `Worker model:` preamble
+line); absent, pass no model and the worker inherits yours. Its prompt must
+say, in substance:
 
 > A driver spawned you for this one ticket. Run the `flow:ticket` skill for
 > `<ID>`, exactly as written — you are working from documents, not from any
@@ -167,11 +167,11 @@ ticket — without it, the worker and this loop would both start the next
 ticket. The worker does everything else itself, including spawning its own
 reviewer and fixing findings; you do not review its diff, because a driver
 that re-reviews every ticket becomes the context-laden judge the fresh
-reviewer exists to replace. The reviewer's model follows the ticket skill's
-step 7: the epic's optional `Reviewer model:` preamble line when present —
-step 1's `list --json` carries it in `modes` as `reviewerModel`, and the
-worker's own `find --json` re-reads it — the strongest model available when
-absent.
+reviewer exists to replace. The reviewer's model and effort follow the
+ticket skill's step 7: the epic's optional `Reviewer model:` preamble line
+when present — step 1's `list --json` carries it in `modes` as
+`reviewerModel`, and the worker's own `find --json` re-reads it — the step 7
+consequence-tier table when absent.
 
 **Record the worker's identity** (the agent name/ID the Agent tool returns)
 against the ticket ID — the run record in step 6 names the agent that ran
@@ -284,7 +284,10 @@ The body is the human's entire evidence base for the only decision they make
 in this mode, so it carries: every ticket with what it built, its
 verification counts, and its review outcome (findings found / fixed / not
 fixed with reasons — lifted from the status log, which travels in this same
-pull request); the run record summary, including which agent ran each ticket;
+pull request); the release's size, stated up front — `git diff --stat
+origin/<default-branch>...epic/<name>` — because a release too large to
+review is a fact the human must see before approving, not discover
+mid-review; the run record summary, including which agent ran each ticket;
 every deploy precondition any ticket's work created (a new environment
 variable, a migration, a script that runs after), collected from the status
 log — a fail-closed guard whose secret is missing takes the system down;

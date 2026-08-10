@@ -2,7 +2,113 @@
 
 The plugin is the methodology's distribution mechanism: a change to a skill is
 a behaviour change in every project that installs it. This file is what makes
-those changes deliberate and visible.
+those changes deliberate and visible. Entries land in the same commit as the
+change, under `## Unreleased` between releases; a release stamps the batch
+with one version and date.
+
+## 2.0.0 — 2026-08-11
+
+The cost release: the flow's guarantees become adaptive and cheaper, per an
+external token-economics review (the repo's own record showed ~155k tokens
+per quick ticket, ~450k of reviewer spend across Q-11–Q-17, much of it on
+one-line changes). The epic declaration syntax is replaced outright — the
+plugin is new, so the old `Release mode:` / `Run mode:` lines are removed
+rather than shimmed — hence the major version.
+
+- **Flow is opt-in.** The skills' trigger descriptions no longer invite
+  auto-engagement on ordinary requests ("or asks for a small change" is
+  gone): plain request = direct development, `/flow:*` = managed
+  development. README documents the three lanes (direct / quick / epic) and
+  ships a `CLAUDE.md` policy snippet for installing projects. There is
+  deliberately no `/flow:direct` command.
+- **`/flow:quick` is now the cheap lane: in-session by default.** The
+  supervisor/fresh-worker execution loop (1.15.0) is reversed for quick
+  only: the session that writes the `Q-<n>` ticket implements it, verifies
+  with counts, writes a short entry, and opens the PR. A fresh-context
+  reviewer is spawned **only when behaviour changes**, on a cost-efficient
+  model at `effort: medium`; prose-only diffs — documentation and comments,
+  nothing a machine reads — get none, the pull request being the review.
+  The size + risk gate is unchanged and still routes consequential work to
+  `/flow:epic` at any size.
+- **Session guard reshaped to match** (`hooks/ticket-session-guard.mjs`):
+  every `/flow:quick` invocation marks the session as carrying
+  implementation context (it is in-session by design, and is itself never
+  refused, at any count); `--interactive` remains a `/flow:ticket`-only
+  concern — refused in a marked session, toward supervisor mode or /clear.
+  Refusal message updated; guard suite 13 → 14.
+- **Ticket review is tiered by consequence, model and effort together**
+  (ticket skill step 7): prose only (documentation and comments — nothing
+  any runtime, parser, test, or agent reads) → fast mid-tier model at
+  `low`; everything else below the risk list, config and strings and CLI
+  output included → capable mid-tier model at `high`; the consequence list
+  (unchanged, still coupled to quick's entry gate) → strongest model at
+  `xhigh`. The epic's `Reviewer model:` line overrides the tiers. The flat
+  "strongest model always" default is gone.
+- **Workers read a compiled brief, not the whole status log** (ticket skill
+  step 2): `tickets.mjs brief` now also carries the epic preamble (ground
+  rules) and the log's owed items — every non-Nothing `**Owed:**`
+  paragraph, attributed to its entry — as `preamble` and `owed` in `--json`
+  and as sections in the plain rendering. Required reading becomes O(epic),
+  not O(history); the full log is read only when something in the brief
+  sends you there. The owed ledger has explicit repayment syntax: a
+  `**Resolves owed:** <ID> …` line (entry or dated addendum) closes the
+  item entry `<ID>` recorded, and only unclosed items appear in the brief —
+  whose heading says honestly what the list is ("recorded, not marked
+  resolved"), since an unmarked discharge is invisible to a parser; the
+  ticket skill instructs writing the marker, and appending it when a stale
+  item is found.
+- **The prose/behaviour review boundary is drawn at what a machine reads,
+  not what looks harmless**: only documentation and code comments qualify
+  for the cheap lane (quick's no-reviewer case, the ticket skill's lowest
+  tier). Configuration, user-facing strings, CLI output and skill/agent
+  Markdown all execute somewhere and price as behaviour; when unsure, it is
+  behaviour.
+- **Status entries are short** (ticket skill step 6): Built (1–3
+  sentences), Mode, Tokens, Verified, Decisions (deviations only, "none"
+  allowed), Owed. The **Files touched** line is dropped — git records it.
+- **`Delivery: release | incremental`** — one preamble line replaces the
+  two-line `Release mode:` / `Run mode:` declaration, which is removed
+  outright (no compatibility parse; this repo's own three epic docs are
+  migrated in this commit). `release` — tickets integrate into
+  `epic/<name>` unattended, one human-gated release pull request;
+  `incremental` (the default when absent) — every ticket its own
+  human-gated pull request to the default branch. One line, one decision:
+  the serial+autonomous contradiction is no longer declarable, so its
+  refusal machinery (`modeContradiction`, the `find` error, the doctor
+  fail) is deleted. Exposed as `delivery` in `find --json` and
+  `list --json` (`releaseMode`/`runMode` are gone from both payloads);
+  doctor warns on unrecognised values and near-miss shapes, and flags the
+  retired labels by name so a preamble written in the old syntax is never
+  silently ignored. Tickets suite lands at 36.
+- **Release delivery is the recommended default for multi-ticket epics**
+  (epic skill): the human's two decisions are plan sign-off and the release
+  pull request — a human approving every intermediate PR is a scheduler,
+  not a judge (the Q-10–Q-17 stacking record is the evidence). Bounded:
+  ~3–6 tickets, days not weeks, a reviewable release diff — else split or
+  go incremental. Interactive per-ticket execution is demoted to an escape
+  hatch. The environment probes, waiver handshake, stop conditions and
+  every merge rule are unchanged; the release PR body now states the
+  release's diff stat up front.
+- **`Worker model: <model>`** — an optional preamble line, parsed like
+  `Reviewer model:`, pinning the model the implementing workers run on.
+  Absent, the skills pass no model and every worker inherits the session
+  that spawns it (supervisor or run driver) — so the default is unchanged,
+  and the line is how a plan written on one model is implemented by another
+  (e.g. plan on a stronger model, implement on a cheaper one). Exposed as
+  `workerModel` in `find --json` and `list --json`; passed at both worker
+  spawn sites (ticket step 0, run step 4c); covered by doctor's near-miss
+  scan. Deliberately not a settings file: model choice lives in the
+  versioned epic document, visible at sign-off.
+- **A nit is not automatically a ticket** (ticket skill step 8): fixed in
+  place when trivial and in scope, otherwise recorded in the addendum for
+  the retro; it earns a ticket only by affecting users, real maintenance
+  risk, recurrence, or riding an already-planned change.
+- **Releases are batched** (this repo's own rule): every behaviour change
+  still gets its changelog entry in the same commit, but version bumps now
+  stamp deliberate batches instead of one number per change.
+- METHODOLOGY.md records the reasoning and both reversals (quick's
+  execution model, the serial default) with the token evidence; README and
+  CLAUDE.md restate the changed doctrine in the same commit.
 
 ## 1.26.0 — 2026-08-09
 

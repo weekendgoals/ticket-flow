@@ -21,8 +21,9 @@ default branch:
 - If the branch already has a pull request, `gh pr view --json baseRefName`
   is the answer.
 - Else, if this is ticket work and the epic's ticket doc says
-  `Release mode: integration`, the base is `epic/<name>` — diffing against the
-  default branch would drag every previously integrated ticket into this review.
+  `Delivery: release`, the base is `epic/<name>` — diffing against the
+  default branch would drag every previously integrated ticket into this
+  review.
 - Otherwise it is the default branch (`origin/HEAD`).
 
 ```bash
