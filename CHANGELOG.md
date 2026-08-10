@@ -20,6 +20,45 @@ with one version and date.
   Checks are presence and equality only; contradictions in meaning remain
   review's job. Dev-side only: no skill invokes it, and installed projects
   are unaffected.
+- **`/flow:run`'s ticket loop is now a workflow script, not prose**
+  (`plugins/flow/workflows/run-epic.mjs`, new; `skills/run` steps 4–7
+  rewritten). The skill still owns the decisions: resolving the epic and
+  refusing anything but `Delivery: release` (step 1), verifying the sign-off
+  traces on `origin/epic/<name>` (step 2), the permission surface and the
+  branch-protection probes with their 404/403 carve-out (step 3), and the
+  ending — the run record and the release pull request, opened and never
+  merged (steps 6–7). Step 4 now launches the script with the **Workflow
+  tool**, passing the epic, default branch, repository root, plugin root and
+  the date (a workflow script has no clock, no shell and no filesystem, so
+  every mechanical fact rides in `args` or arrives through an agent it
+  spawns). **The halt conditions are structural now**: each stop condition in
+  step 5 is a code path that returns `{outcome: "halted", haltedOn}` and
+  there is no code path that resumes past one, which is the whole point of
+  the conversion — a prose loop can be re-read and reasoned past, a `return`
+  cannot. The script refreshes `epic/<name>` between every ticket, spawns one
+  fresh general-purpose worker per ticket with the load-bearing "A driver
+  spawned you" prompt unchanged, and confirms `state === "integrated"` from
+  `tickets.mjs find --json` rather than from the worker's report. It never
+  spawns a reviewer, never reviews a diff, never opens or merges the release
+  pull request, and never touches the default branch.
+- **The driver's token figure now comes from the worker.** A script observes
+  no harness counter, so the worker reports its own figure alongside its
+  reviewer's; `unknown` still means unknown and is never estimated. The run
+  record's Tokens line says where each figure came from.
+- **The ending no longer refreshes the epic branch a second time.** The loop
+  refreshes before it asks what is left, so the pass that finds nothing left
+  has already refreshed a branch carrying every ticket's merge; the result's
+  `finalRefresh` reports it.
+- **Known limitation, recorded in step 5**: on Claude Code builds that
+  withhold the Agent tool from workflow-spawned agents (2.1.227 does), the
+  worker cannot hire its reviewer and the run halts on the first ticket with
+  "reviewer-spawn failure after the sanctioned fallback also fails" — the
+  gate working, since an unreviewed ticket is never merged, anywhere.
+- **`/flow:run` now requires the Workflow tool.** If it is unavailable the
+  skill stops and reports; there is deliberately no prose fallback loop,
+  because a fallback would restore the improvisation surface the conversion
+  removed. One ticket at a time by hand with `/flow:ticket` remains the
+  escape hatch.
 
 ## 2.0.0 — 2026-08-11
 

@@ -13,6 +13,12 @@ documents are sufficient, which is the property the whole methodology bets on.
 If a ticket cannot be done from the documents, that is a finding, not a reason
 for you to fill the gap from your own context.
 
+You do not hold the loop. Steps 1–3 and 6–7 are yours — deciding whether the
+run may start, and recording and reporting how it ended — but the ticket loop
+itself is a script this plugin ships, `workflows/run-epic.mjs`, which you
+launch in step 4. The reason is step 5: an agent following a written loop can
+improvise past a stop condition, and a script has no code path that does.
+
 The human approved this run at sign-off. Their next decision point is the
 release pull request this skill ends by opening. **Nothing here ever merges,
 pushes, or retargets toward the default branch** — the run's entire merge
@@ -26,8 +32,8 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/tickets.mjs" list <epic> --json
 
 Read `defaultBranch`, and the epic's entry in `modes`. **Stop and report
 unless the epic's `delivery` is `"release"`** — checked here, before
-anything mutates `origin/epic/<name>` (step 4a merges and pushes). An
-incremental epic is run one ticket at a time by `/flow:ticket`, and driving
+anything mutates `origin/epic/<name>` (the loop's refresh merges and pushes).
+An incremental epic is run one ticket at a time by `/flow:ticket`, and driving
 it unattended would exceed what its sign-off approved; an unrecognised
 delivery value (doctor flags those) is equally not a release declaration.
 
@@ -80,7 +86,10 @@ will die at its first prompt.
   create`, `pr view`, `pr list`, `pr merge` — the merge only ever aimed at
   `epic/<name>`), `node` (this plugin's script, and the project's own test
   and build commands as named in its instruction files), file edits inside
-  the repository, and spawning agents. **A permission prompt firing mid-run
+  the repository, spawning agents, and **launching the workflow in step 4**
+  — the loop is a workflow script, and a session that would stop to ask
+  whether the workflow may run is a session that will sit there unanswered.
+  **A permission prompt firing mid-run
   is a stop condition** (an unattended run that needs to ask was not
   pre-authorized, and waiting blocked is worse than stopping — sign-off
   decision, 2026-08-08): the prompt will not be answered, and a run wedged on
@@ -122,134 +131,171 @@ will die at its first prompt.
   pull request body (step 7). No recorded waiver: report what the probes
   returned and stop before ticket one.
 
-## 4. The loop — one ticket at a time, in document order
+## 4. Hand the loop to the driver script
 
-Repeat until `node "${CLAUDE_PLUGIN_ROOT}/scripts/tickets.mjs" next <epic>`
-returns nothing:
+Steps 1–3 ran here because they decide whether the run may start at all. The
+loop does not: launch it with the **Workflow tool**, which runs the shipped
+script in its own runtime while this session stays free.
 
-**a. Refresh `epic/<name>` from the default branch.** Do this between every
-ticket, or the release merge becomes its own big-bang:
-
-```bash
-git fetch origin --prune
-git checkout epic/<name>
-git pull --ff-only
-git merge --no-edit origin/<default-branch>
-git push origin epic/<name>
+```
+Workflow({
+  scriptPath: "${CLAUDE_PLUGIN_ROOT}/workflows/run-epic.mjs",
+  args: {
+    epic: "<name>",
+    defaultBranch: "<step 1's defaultBranch>",
+    repoRoot: "<the repository's absolute path>",
+    pluginRoot: "${CLAUDE_PLUGIN_ROOT}",
+    today: "<YYYY-MM-DD, from your own clock>",
+    workerModel: "<modes[<name>].workerModel — omit the key when absent>",
+    reviewerModel: "<modes[<name>].reviewerModel — omit the key when absent>"
+  }
+})
 ```
 
-A conflict from that merge is a **stop condition, unconditionally** (sign-off
-decision, 2026-08-08): run `git merge --abort`, then halt as in step 5.
-Someone changed the default branch under the epic in a way the epic
-contradicts, and reconciling them is judgment the human did not delegate. A
-failed `--ff-only` pull is equally a halt — the local and remote epic
-branches have diverged, which no step of this skill can cause.
+Everything mechanical rides in `args` because a workflow script has **no
+filesystem, no shell and no clock** — `new Date()` throws inside it, and every
+fact it uses is fetched by an agent it spawns. Pass the date and the two
+absolute paths, or the script refuses to start.
 
-**b. Take the first ticket** from `next <epic>` — that is document order, and
-document order is the plan's de-risking order.
+**What the script does**, per ticket, one at a time, in document order —
+looping until `tickets.mjs next <epic> --json` comes back empty:
 
-**c. Spawn the worker** with the Agent tool: a fresh general-purpose agent,
-full toolset, empty context. Pass `model:` when the epic's `modes` entry
-from step 1 carries a `workerModel` (the optional `Worker model:` preamble
-line); absent, pass no model and the worker inherits yours. Its prompt must
-say, in substance:
+- **refreshes `epic/<name>` from the default branch** (`fetch`, `checkout`,
+  `pull --ff-only`, `merge origin/<default-branch>`, `push`) before every
+  ticket, or the release merge becomes its own big-bang. A conflict aborts
+  the merge and halts, unconditionally (sign-off decision, 2026-08-08):
+  someone changed the default branch under the epic in a way the epic
+  contradicts, and reconciling them is judgment the human did not delegate.
+  A failed `--ff-only` pull halts too — the local and remote epic branches
+  have diverged, which no step of this skill can cause.
+- **takes the first ticket** `next` hands out — that is document order, and
+  document order is the plan's de-risking order.
+- **spawns one worker for it**: a fresh general-purpose agent, full toolset,
+  empty context, on `workerModel` when the epic set one and on the session's
+  model otherwise. Its prompt says:
 
-> A driver spawned you for this one ticket. Run the `flow:ticket` skill for
-> `<ID>`, exactly as written — you are working from documents, not from any
-> conversation. Stop after your merge into the epic branch and report; the
-> driver owns the loop. Include in your report the reviewer's
-> harness-reported token figure (`unknown` if it exposed none) — you hire
-> the reviewer, so only you observe its spend, and the run record needs it.
+  > A driver spawned you for this one ticket. Run the `flow:ticket` skill for
+  > `<ID>`, exactly as written — you are working from documents, not from any
+  > conversation. Stop after your merge into the epic branch and report; the
+  > driver owns the loop. Include in your report the reviewer's
+  > harness-reported token figure (`unknown` if it exposed none) — you hire
+  > the reviewer, so only you observe its spend, and the run record needs it.
 
-"A driver spawned you" is load-bearing: it is the phrase the ticket skill's
-step 10 keys on to stop after the merge instead of continuing to the next
-ticket — without it, the worker and this loop would both start the next
-ticket. The worker does everything else itself, including spawning its own
-reviewer and fixing findings; you do not review its diff, because a driver
-that re-reviews every ticket becomes the context-laden judge the fresh
-reviewer exists to replace. The reviewer's model and effort follow the
-ticket skill's step 7: the epic's optional `Reviewer model:` preamble line
-when present — step 1's `list --json` carries it in `modes` as
-`reviewerModel`, and the worker's own `find --json` re-reads it — the step 7
-consequence-tier table when absent.
+  "A driver spawned you" is load-bearing: it is the phrase the ticket skill's
+  step 10 keys on to stop after the merge instead of continuing to the next
+  ticket — without it, the worker and the loop would both start the next
+  ticket. The worker does everything else itself, including spawning its own
+  reviewer and fixing findings. Neither the script nor you review its diff,
+  because a driver that re-reviews every ticket becomes the context-laden
+  judge the fresh reviewer exists to replace. The reviewer's model and effort
+  follow the ticket skill's step 7: the epic's optional `Reviewer model:`
+  preamble line when present — step 1's `list --json` carries it in `modes`
+  as `reviewerModel`, and the worker's own `find --json` re-reads it — the
+  step 7 consequence-tier table when absent. The worker is told the label the
+  script gave it (`worker:<ID>`) and writes it into its status entry's
+  **Mode** line; `ticketRecords[].workerAgent` carries the same label into
+  the run record, and those two lines together are the observable half of the
+  "the driver never implements" rule.
+- **verifies the outcome mechanically**, with
+  `tickets.mjs find <ID> --json`: `state` must read `integrated` — the merged
+  pull request into the epic branch is the only evidence that counts, not the
+  worker's own report. Anything else halts. The script never re-runs a
+  ticket and never finishes one itself.
 
-**Record the worker's identity** (the agent name/ID the Agent tool returns)
-against the ticket ID — the run record in step 6 names the agent that ran
-each ticket, and that log line is the observable half of the
-"the driver never implements" rule. Record the worker's harness-reported
-token spend with it: you hired the worker, so its figure is yours to
-observe, mirroring how the worker observes its reviewer's.
+**What it returns** is the run record's raw material, and the only thing that
+enters your context from the whole loop:
 
-**d. Verify the outcome mechanically.** When the worker returns:
-
-```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/tickets.mjs" find <ID> --json
+```
+{ outcome: "completed" | "halted",
+  haltedOn: null | { stopCondition, ticket, where, detail },
+  ticketRecords: [ { id, workerAgent, workerTokens, reviewerTokens,
+                     built, verification, reviewOutcome,
+                     deployPreconditions, prUrl, result } ],
+  totals, deployPreconditions, finalRefresh, date }
 ```
 
-`state` must now be `integrated` — the merged pull request into the epic
-branch is the only evidence that counts, not the worker's own report. Any
-other state, or a worker report of BLOCKED or ABANDONED, or a worker that
-died without reporting: halt as in step 5. Never re-run the ticket, never
-finish it yourself.
+Surface its `log()` lines as they arrive — they are the only progress an
+unattended run emits. **If the Workflow tool is unavailable in this session,
+stop and report that**: the loop is the script, and there is deliberately no
+prose fallback, because a loop an agent re-reads and interprets is exactly
+the improvisation surface step 5 exists to remove. Run one ticket by hand
+with `/flow:ticket` if the work cannot wait.
 
-## 5. The stop conditions — halt, log, and do not improvise
+## 5. The stop conditions — the script halts, you record it
 
 These are the autonomous epic's ground rules, and they are operational, not
-advisory. The run halts:
+advisory. Each is a code path in `workflows/run-epic.mjs` that returns
+`{outcome: "halted", haltedOn}` instead of taking another ticket; there is no
+code path that resumes past one. The run halts:
 
 - on **BLOCKED** — a worker wrote a BLOCKED (or ABANDONED) status entry, or
-  ended in any state but `integrated`;
+  ended in any state but `integrated`; the script reads that state from
+  `find --json`, so a worker that dies without reporting, or reports success
+  the board does not show, halts here too;
 - on **an Important review finding it cannot fix** — the worker's merge gate
   already refuses this; a worker stopped by it stops the run;
-- on **a document/code contradiction** — reported by a worker, or met by this
-  skill's own checks;
+- on **a document/code contradiction** — reported by a worker, or met by the
+  script's own checks: a ticket ID that does not match the plugin's ID shape,
+  or a board that hands out the same ticket twice and so is not advancing;
 - on **a merge conflict** — refreshing the epic branch, or anywhere else;
 - on **reviewer-spawn failure after the sanctioned fallback also fails** —
   the fallback being a general agent instructed by the reviewer definition
-  plus the review skill;
+  plus the review skill. As of 2026-08-11, a Claude Code build that withholds
+  the Agent tool from workflow-spawned agents makes this fire on the first
+  ticket: the worker cannot hire a judge, and an unreviewed ticket is never
+  merged, anywhere. That is the halt working — not a reason to let a worker
+  review itself;
 - on **a permission prompt firing mid-run** — an unattended run that needs to
-  ask was not pre-authorized, and waiting blocked is worse than stopping;
-- on **a nonzero exit from any command the skill itself issues as a step,
-  except those the skill explicitly marks tolerated** — in this skill the
-  one tolerated shape is a **404 or 403 from step 3's two protection
-  probes**, the statuses that check exists to interpret; any other failure
-  from those same probes (auth, network, rate limit, 5xx, wrong repository)
-  halts like every other command's nonzero exit, and every other command
-  above is load-bearing.
+  ask was not pre-authorized, and waiting blocked is worse than stopping; the
+  script's agents are told to report the prompt rather than wait on it;
+- on **a nonzero exit from any command the run issues as a step, except those
+  this skill explicitly marks tolerated** — the one tolerated shape is a
+  **404 or 403 from step 3's two protection probes**, the statuses that check
+  exists to interpret, and it lives in step 3 because that probe runs here,
+  in session, before the script starts; any other failure from those same
+  probes (auth, network, rate limit, 5xx, wrong repository) halts like every
+  other command's nonzero exit, and every command the script issues is
+  load-bearing.
 
-**It never improvises past one.** Halting on a stop condition is the
-mechanism working, not a failure — a run that pushes through is a run whose
-release pull request can no longer be trusted, which defeats the only human
-gate left. On halt: append the run record (step 6) with the stop condition
-named verbatim and the ticket it fired on, commit and push it on
-`epic/<name>`, report to whatever invoked you, and stop. Merge nothing more.
-If the halt came from a worker's BLOCKED entry, that entry already says why;
-your record points at it rather than restating it.
+**Nothing improvises past one.** Halting on a stop condition is the mechanism
+working, not a failure — a run that pushes through is a run whose release
+pull request can no longer be trusted, which defeats the only human gate
+left. On a `halted` result: append the run record (step 6) with
+`haltedOn.stopCondition` quoted verbatim and the ticket it fired on, commit
+and push it on `epic/<name>`, report to whatever invoked you, and stop.
+Merge nothing more, and open no release pull request. If the halt came from a
+worker's BLOCKED entry, that entry already says why; your record points at it
+rather than restating it.
 
 ## 6. The run record
 
-Append to the epic's `status.md` — append-only, like every entry there. The
-heading deliberately matches neither parsed heading shape (it names no ticket
-ID), so the board ignores it and `doctor` will not flag it:
+Append to the epic's `status.md` — append-only, like every entry there. Every
+field below is filled from the step 4 result; you write it, in session, on
+`epic/<name>`. The heading deliberately matches neither parsed heading shape
+(it names no ticket ID), so the board ignores it and `doctor` will not flag
+it:
 
 ```markdown
 ### Run — <YYYY-MM-DD> — <completed | halted>
 
-**Driver:** /flow:run, unattended. **Tickets this run:** <one line per
-ticket, in order: ID — the worker agent that ran it — integrated | halted>.
+**Driver:** /flow:run, unattended, loop by `workflows/run-epic.mjs`.
+**Tickets this run:** <one line per ticket, in order, from `ticketRecords`:
+ID — the worker agent that ran it — integrated | halted>.
 
-**Tokens:** <per ticket, what the harness reports for its worker and its
-reviewer — the worker's figure is yours, its hirer's, to observe; the
-reviewer's figure arrives in the worker's report (step 4c), because the
-worker hired it and only the hirer knows it; `unknown` where nothing was
-exposed, never an estimate — and the run's total of the known figures.
+**Tokens:** <per ticket, what the harness reported for its worker and its
+reviewer, both from that ticket's `ticketRecords` entry — the script that
+hires the worker observes no harness counter, so the worker reports its own
+figure alongside its reviewer's, which only it, the reviewer's hirer, knows;
+`unknown` where nothing was exposed, never an estimate — and the run's total
+of the known figures.
 This line **restates** the ticket entries' figures as one audit view for
 the run; anyone summing the epic (the retro) reads the entries and their
 addenda, never this line, or every figure counts twice. Planning evidence,
 never a gate: nothing in this skill reads it to decide anything.>
 
-**Halted on:** <the stop condition, verbatim from step 5, and where it fired
-— or "ran to completion".>
+**Halted on:** <`haltedOn.stopCondition` verbatim — the script names it in
+the same words step 5 uses — with `haltedOn.ticket` and `haltedOn.where` —
+or "ran to completion".>
 
 **Protection:** <"present" — or, when step 3 proceeded on a waiver, quote
 the recorded waiver and where it lives in the epic's `tickets.md`. A run
@@ -265,8 +311,11 @@ unpushed record is invisible to exactly the human the run is reporting to.
 
 ## 7. End: open the release pull request — never merge it
 
-When `next <epic>` is empty, refresh the epic branch from the default branch
-once more (step 4a — its conflict rule still applies), then:
+Only on `outcome: "completed"`. The epic branch is already refreshed: the
+loop refreshes before it asks what is left, so the pass that found nothing
+left refreshed a branch that already carries every ticket's merge — that is
+what `finalRefresh` reports, and refreshing again here would only add a
+second chance to hit the conflict the script already cleared. Then:
 
 ```bash
 gh pr create --base <default-branch> --head epic/<name> \
@@ -294,6 +343,13 @@ log — a fail-closed guard whose secret is missing takes the system down;
 and, when step 3 proceeded on a recorded protection waiver, that fact —
 stated right under the never-squash line, because the human is approving a
 run that had no hard floor under main.
+
+Each ticket's `ticketRecords` entry carries its worker's own account of those
+facts — `built`, `verification`, `reviewOutcome`, `deployPreconditions` —
+which is an index into the log, not a replacement for it: the status log
+is what travels in this pull request and what the retro reads, so where the
+two differ, the committed log wins and the difference is worth a line in the
+body.
 
 Then append the run record (step 6), print the pull request URL, and stop.
 **You do not merge it, approve it, or comment on it. No agent does.** The
