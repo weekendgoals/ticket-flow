@@ -36,3 +36,8 @@ drift. Accepted asymmetry, documented in the script header: a trigger added
 only to the ticket skill's prose list is not caught; the quick-bullet side is.
 
 **Owed:** Nothing.
+
+**Addendum — review — 2026-08-11 — sonnet/medium:** No findings. The reviewer
+independently re-derived every check's match outside the script and confirmed
+none are vacuous; scope, counts and the Not-in-scope lines verified. Nothing
+fixed, nothing deferred. Reviewer tokens: 65729
