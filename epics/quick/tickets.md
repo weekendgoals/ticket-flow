@@ -2,7 +2,7 @@
 
 Source: standing epic for small work; each ticket carries its own context.
 
-Release mode: serial
+Delivery: incremental
 
 Status log: `epics/quick/status.md`. Run a ticket with `/flow:ticket <ID>`.
 

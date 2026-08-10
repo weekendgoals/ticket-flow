@@ -23,7 +23,7 @@ METHODOLOGY.md.
 Areas in scope: `plugins/flow` — skills, agents, script (bound by the root
 `CLAUDE.md`).
 
-Release mode: serial
+Delivery: incremental
 
 Status log: `epics/autonomous/status.md`. Run a ticket with `/flow:ticket <ID>`.
 

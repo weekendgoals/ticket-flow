@@ -535,3 +535,21 @@ dangerously resolves to an unrelated ticket: AUTO-1's owed wording fix was
 in fact inherited and landed by AUTO-2 (its Built paragraph records the
 step 9 fix), and the "Q-6" it proposed was never created — today's Q-6 in
 epics/quick reuses the number by coincidence. Closed here.
+
+**Addendum — 2026-08-11 — owed ledger markers:** Two of this epic's owed
+items were discharged in the record but never marked closed, so every
+brief kept advertising them as outstanding (flagged by an external review
+of the brief's owed list; the `**Resolves owed:**` syntax ships in flow
+2.0.0). Marked here, each against the evidence already in this log:
+
+**Resolves owed:** AUTO-1 — the step 9 wording fix was inherited and landed
+by the second ticket (its Built paragraph records it), closed by the
+retro's 2026-08-08 addendum above.
+
+**Resolves owed:** AUTO-4 — all three post-run quick tickets shipped:
+reviewer model (1.16.0), the honest empty board (1.17.0), the find PR
+rendering (1.18.0).
+
+AUTO-5's owed item stays open deliberately: its criterion-2 live check
+rides a recorded human action and remains unperformed per the retro's
+addendum.

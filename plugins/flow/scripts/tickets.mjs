@@ -16,8 +16,11 @@
 //
 //   tickets.mjs list [epic] [--json]     status board, all epics or one
 //   tickets.mjs find <ID> [--json]       resolve an ID to its epic's doc paths
-//   tickets.mjs brief [ID] [--json]      a ticket's full section + derived state;
-//                                        no ID briefs the first startable ticket
+//   tickets.mjs brief [ID] [--json]      a ticket's full section + the epic
+//                                        preamble (ground rules) + owed items
+//                                        not yet marked resolved + derived
+//                                        state; no ID briefs the first
+//                                        startable ticket
 //   tickets.mjs next [epic] [--json]     what to start next
 //   tickets.mjs epics [--json]           list known epics
 //   tickets.mjs current [--json]         the epic this folder belongs to
@@ -70,43 +73,48 @@ const defaultBranch =
 
 // ── epic discovery ───────────────────────────────────────────────────────────
 
-// Recognised mode values. Anything else still parses (and is exposed as-is)
-// but doctor flags it — an unrecognised value must never silently default.
-const RELEASE_MODES = new Set(['serial', 'integration'])
-const RUN_MODES = new Set(['autonomous'])
+// Recognised delivery values. Anything else still parses (and is exposed
+// as-is) but doctor flags it — an unrecognised value must never silently
+// default.
+const DELIVERIES = new Set(['release', 'incremental'])
 
-// Tolerant parse of the epic preamble's mode lines: the value is the first
-// word after the colon, case-insensitive; anything after it is prose, so
-// "Release mode: serial — each ticket ships alone" parses as serial. An
-// absent Release mode line defaults to serial; an absent Run mode is null
-// (attended). Only the preamble is read — text above the first "## " heading.
+// Tolerant parse of the epic preamble's declaration lines: the value is the
+// first word after the colon, case-insensitive; anything after it is prose,
+// so "Delivery: release — one human gate, at the release PR" parses as
+// release. Only the preamble is read — text above the first "## " heading.
 // The value is anchored to the label's own line ([^\S\n], never \s, around
 // the colon): a value-less label must read as absent, not adopt the first
-// word of the next paragraph — a bare "Run mode:" above prose beginning
-// "Autonomous is not wanted here." once parsed as autonomous (Q-14).
+// word of the next paragraph — a bare label above prose once scavenged the
+// prose's first word into a live value (Q-14).
 //
-// "Reviewer model" rides the same parse: an optional line naming the model
-// the ticket and run skills pass when spawning reviewers. Model identifiers
-// carry digits and dots ("claude-opus-4.5"), so its value charset is wider
-// than the modes'. Absent is null — the skills fall back to their own
-// "strongest available" default; this script never picks a model.
-function parseModes(ticketsDoc) {
+// "Delivery" is the epic's one execution declaration. `release` — tickets
+// integrate into epic/<name> unattended and one human-gated release pull
+// request goes to the default branch; `incremental` (the default when the
+// line is absent) — every ticket is its own human-gated pull request to the
+// default branch, merged before the next starts. One line, one decision:
+// there are no separate topology and run-mode declarations, so the
+// unattended-merges-to-main contradiction cannot be declared at all.
+//
+// "Reviewer model" and "Worker model" ride the same parse: optional lines
+// naming the model the skills pass when spawning the reviewer and the
+// implementing workers respectively. Model identifiers carry digits and
+// dots ("claude-opus-4.5"), so their value charset is wider than
+// delivery's. Absent is null — for the reviewer the skills fall back to
+// their consequence-tier default, for workers they pass no model at all
+// and the worker inherits the invoking session's; this script never picks
+// a model.
+function parsePreamble(ticketsDoc) {
   const preamble = readFileSync(ticketsDoc, 'utf8').split(/^##\s/m)[0]
   const grab = (label, charset = '[A-Za-z-]+') => {
     const m = preamble.match(new RegExp(`^${label}[^\\S\\n]*:[^\\S\\n]*(${charset})`, 'im'))
     return m ? m[1].toLowerCase() : null
   }
   return {
-    releaseMode: grab('Release mode') ?? 'serial',
-    runMode: grab('Run mode'),
+    delivery: grab('Delivery') ?? 'incremental',
     reviewerModel: grab('Reviewer model', '[A-Za-z0-9._-]+'),
+    workerModel: grab('Worker model', '[A-Za-z0-9._-]+'),
   }
 }
-
-// An autonomous run's merge surface is the epic branch, which only exists as
-// a target in integration topology. Serial + autonomous would mean unattended
-// merges to the default branch — refused mechanically, everywhere.
-const modeContradiction = (e) => e.runMode === 'autonomous' && e.releaseMode !== 'integration'
 
 // An epic is a directory under epics/ containing tickets.md. Its status log and
 // context live beside it, so there is no index file to keep honest.
@@ -128,7 +136,7 @@ function discoverEpics() {
         ticketsDoc,
         statusDoc: optional('status.md'),
         contextDir: optional('context'),
-        ...parseModes(ticketsDoc),
+        ...parsePreamble(ticketsDoc),
       }
     })
     .sort((a, b) => a.epic.localeCompare(b.epic))
@@ -180,6 +188,59 @@ function parseStatus(epic) {
     if (m) byId[m[1]] = { id: m[1], date: m[3], outcome: m[4] }
   }
   return byId
+}
+
+// The **Owed:** paragraphs of a status log, attributed to the parsed entry
+// they sit under, minus the ones a later line has explicitly resolved. This
+// is what lets `brief` hand a fresh worker the epic's outstanding
+// obligations without the worker rereading the whole log — the log grows
+// without bound, and "preserve everything" must not mean "reread everything
+// before every edit".
+//
+// Resolution is explicit, never inferred: a `**Resolves owed:** <ID> …`
+// line (in the discharging ticket's entry or a dated addendum) closes the
+// owed item recorded by entry <ID> — one Owed paragraph per entry, so the
+// entry ID is the item's identity. Entries owing "Nothing" are dropped.
+// What survives is labelled honestly: recorded and not marked resolved. A
+// ticket may have discharged an item without writing the marker — this
+// script derives, it does not investigate — so the reader checks the named
+// carrier before re-doing work, and writes the marker the log was owed.
+function parseOwed(epic) {
+  if (!epic.statusDoc) return []
+  const owed = []
+  const resolved = new Set()
+  let entry = null // the last parsed "### <ID> — … — <date> — <outcome>" heading
+  let collecting = null
+  for (const line of readFileSync(epic.statusDoc, 'utf8').split('\n')) {
+    const h = line.match(STATUS_HEADING)
+    if (h) {
+      entry = { id: h[1], date: h[3] }
+      collecting = null
+      continue
+    }
+    const r = line.match(/^\*\*Resolves owed:\*\*\s*(.*)$/)
+    if (r) {
+      // Only the leading ID list resolves — "**Resolves owed:** A-1, A-2 —
+      // note". An ID mentioned later, inside the note's prose ("landed by
+      // A-3"), is a citation, not a target.
+      const lead = r[1].toUpperCase().match(new RegExp(`^${TICKET_ID}(\\s*,\\s*${TICKET_ID})*`))
+      if (lead) for (const id of lead[0].match(new RegExp(TICKET_ID, 'g'))) resolved.add(id)
+      collecting = null
+      continue
+    }
+    const m = line.match(/^\*\*Owed:\*\*\s*(.*)$/)
+    if (m && entry) {
+      collecting = { ...entry, text: m[1].trim() }
+      owed.push(collecting)
+      continue
+    }
+    if (collecting) {
+      // An Owed paragraph runs to the first blank line, like any paragraph.
+      if (line.trim() === '') collecting = null
+      else collecting.text = `${collecting.text} ${line.trim()}`.trim()
+    }
+  }
+  return owed.filter((o) => o.text && !/^nothing\b/i.test(o.text) && !resolved.has(o.id))
 }
 
 // ── git and GitHub state ─────────────────────────────────────────────────────
@@ -365,11 +426,10 @@ function printBoard(data, epicFilter) {
     }
     const counts = STATES.map((s) => [s, ts.filter((t) => t.state === s).length]).filter(([, n]) => n)
     const here = hereMarker(epic.epic, data.current)
-    // Serial-attended is the default and stays unlabelled; anything else is
-    // worth a glance before starting a ticket in it.
-    const modes =
-      (epic.releaseMode !== 'serial' ? ` · ${epic.releaseMode}` : '') +
-      (epic.runMode ? ` · ${C.off}${C.cyan}${epic.runMode}${C.off}${C.dim}` : '')
+    // Incremental is the default and stays unlabelled; anything else —
+    // release, or an unrecognised value doctor will flag — is worth a glance
+    // before starting a ticket in it.
+    const modes = epic.delivery !== 'incremental' ? ` · ${C.off}${C.cyan}${epic.delivery}${C.off}${C.dim}` : ''
     console.log(
       `${C.bold}${epic.epic}${C.off} ${C.dim}— ${ts.length} tickets${modes} · ` +
         counts.map(([s, n]) => `${n} ${s}`).join(' · ') + `${C.off}${here}`,
@@ -406,7 +466,7 @@ function printBoard(data, epicFilter) {
   // Named as a subcommand of this script, not as a pasteable command line —
   // /flow:brief does not exist and tickets.mjs is not on any PATH, and the
   // board never suggests a command that does not survive being run (BOARD-1).
-  console.log(`  ${C.dim}(this script's \`brief [ID]\` subcommand prints a ticket's full scope, criteria and derived state)${C.off}`)
+  console.log(`  ${C.dim}(this script's \`brief [ID]\` subcommand prints a ticket's full scope, criteria, epic ground rules, outstanding owed items and derived state)${C.off}`)
 }
 
 // ── doctor ───────────────────────────────────────────────────────────────────
@@ -455,24 +515,21 @@ function doctor() {
   const epics = discoverEpics()
   if (!epics.length) add('ok', 'no epics yet — /flow:epic creates epics/<name>/')
 
-  // A mode line that ALMOST parses — bolded label, doubled space, a bare
-  // label with no value on its line — reads as absent and silently defaults.
-  // Same failure class as heading near-misses: flag anything mode-shaped in
-  // the preamble that the strict parse rejects.
-  // "Reviewer model" is in the same class: a bolded line reads as absent and
-  // the skills silently fall back to their default model.
-  const modeNear = /^[^A-Za-z]*\b((release|run)\s+mode|reviewer\s+model)\b/i
-  const modeStrict = /^(Release mode|Run mode)\s*:\s*[A-Za-z-]+|^Reviewer model\s*:\s*[A-Za-z0-9._-]+/i
+  // A declaration line that ALMOST parses — bolded label, doubled space, a
+  // bare label with no value on its line — reads as absent and silently
+  // defaults. Same failure class as heading near-misses: flag anything
+  // declaration-shaped in the preamble that the strict parse rejects. The
+  // old two-line syntax ("Release mode:" / "Run mode:") is in the near set
+  // deliberately: those labels parse as nothing at all now, and a preamble
+  // written in them would silently run incremental.
+  const declNear = /^[^A-Za-z]*\b(delivery|(reviewer|worker)\s+model|(release|run)\s+mode)\b/i
+  const declStrict = /^Delivery\s*:\s*[A-Za-z-]+|^(Reviewer|Worker) model\s*:\s*[A-Za-z0-9._-]+/i
   for (const epic of epics) {
-    if (modeContradiction(epic))
-      add('fail', `${epic.epic}: Run mode: autonomous with Release mode: ${epic.releaseMode} — autonomous requires integration topology; unattended merges may only target the epic branch`)
-    if (!RELEASE_MODES.has(epic.releaseMode))
-      add('warn', `${epic.epic}: unrecognised release mode "${epic.releaseMode}" (known: serial, integration) — skills reading this line will not know which branch topology to use`)
-    if (epic.runMode && !RUN_MODES.has(epic.runMode))
-      add('warn', `${epic.epic}: unrecognised run mode "${epic.runMode}" (known: autonomous) — treated as attended`)
+    if (!DELIVERIES.has(epic.delivery))
+      add('warn', `${epic.epic}: unrecognised delivery "${epic.delivery}" (known: release, incremental) — skills reading it will not know how this epic ships`)
     readFileSync(epic.ticketsDoc, 'utf8').split(/^##\s/m)[0].split('\n').forEach((line, i) => {
-      if (modeNear.test(line) && !modeStrict.test(line))
-        add('warn', `${epic.epic}/tickets.md:${i + 1} — looks like a mode line but will not parse, so it silently defaults (needs "Release mode: <value>" / "Run mode: <value>" / "Reviewer model: <value>" — label at line start, no formatting, value on the label's own line): ${line.trim()}`)
+      if (declNear.test(line) && !declStrict.test(line))
+        add('warn', `${epic.epic}/tickets.md:${i + 1} — looks like a declaration line but will not parse, so it silently defaults (needs "Delivery: release|incremental" / "Reviewer model: <value>" / "Worker model: <value>" — label at line start, no formatting, value on the label's own line; "Release mode:"/"Run mode:" are not read at all): ${line.trim()}`)
     })
   }
 
@@ -484,12 +541,12 @@ function doctor() {
         add('warn', `${epic.epic}/tickets.md:${i + 1} — heading will not parse as a ticket (needs "## <ID> — <name>", ID uppercase): ${line.trim()}`)
     })
     if (!epic.statusDoc) {
-      // Two doors create this file — /flow:epic at sign-off, or ticket step 6
-      // when the first ticket logs (the quick lane's only door, since quick
-      // never runs /flow:epic). Name both, and name each as a command the
-      // reader can run — or the hint advertises a recovery unreachable from
-      // the state that triggers it (Q-16).
-      add('warn', `${epic.epic}: no status.md — created at sign-off by /flow:epic, or by the first ticket's status entry (ticket step 6, reached with /flow:ticket <ID> — the quick lane's only door); without it DONE/BLOCKED are invisible`)
+      // Two doors create this file — /flow:epic at sign-off, or the first
+      // ticket's status entry (ticket step 6 via /flow:ticket, or in-session
+      // by /flow:quick, which never runs /flow:epic). Name both, and name
+      // each as a command the reader can run — or the hint advertises a
+      // recovery unreachable from the state that triggers it (Q-16).
+      add('warn', `${epic.epic}: no status.md — created at sign-off by /flow:epic, or by the first ticket's status entry (/flow:ticket <ID>, or in-session by /flow:quick); without it DONE/BLOCKED are invisible`)
       continue
     }
     readFileSync(epic.statusDoc, 'utf8').split('\n').forEach((line, i) => {
@@ -550,16 +607,9 @@ function resolveTicket(data, id) {
 
 // The derived facts for one resolved ticket — the exact payload `find --json`
 // emits (the unattended driver reads it between tickets; its shape is
-// contract). Refuses the serial+autonomous contradiction at the source.
+// contract).
 function ticketFacts(data, t) {
   const epic = data.epics.find((e) => e.epic === t.epic)
-  if (modeContradiction(epic)) {
-    console.error(
-      `tickets: epic "${epic.epic}" declares Run mode: autonomous with Release mode: ${epic.releaseMode}. ` +
-        'Autonomous requires integration topology — unattended merges may only target the epic branch, never the default branch. Fix the epic preamble first.',
-    )
-    process.exit(1)
-  }
   // Absolute paths, always. The caller may be anywhere in the tree — a skill
   // that has just run `cd api-gateway` still has to open these, and the Read
   // tool takes absolute paths anyway.
@@ -569,9 +619,9 @@ function ticketFacts(data, t) {
     epic: t.epic,
     state: t.state,
     branch: t.branch,
-    releaseMode: epic.releaseMode,
-    runMode: epic.runMode,
+    delivery: epic.delivery,
     reviewerModel: epic.reviewerModel,
+    workerModel: epic.workerModel,
     repoRoot,
     epicDir: epic.dir,
     ticketsDoc: epic.ticketsDoc,
@@ -623,9 +673,12 @@ switch (cmd) {
   case 'brief': {
     // The next-ticket brief: everything a session needs to start a ticket —
     // the full section from the epic's tickets.md (Scope, Not in scope,
-    // Acceptance criteria) plus the derived facts `find` reports — without
-    // opening the ticket doc. With no ID, brief the first startable ticket in
-    // document order: the same one Next up proposes.
+    // Acceptance criteria), the epic preamble (ground rules, ordering, the
+    // delivery), the log's owed items not yet marked resolved, and the
+    // derived facts `find` reports — without opening the ticket doc or
+    // rereading the whole status log. The brief exists to make a worker's
+    // required reading O(epic), not O(history). With no ID, brief the first
+    // startable ticket in document order: the same one Next up proposes.
     const data = board(null)
     let t
     if (arg) {
@@ -638,17 +691,30 @@ switch (cmd) {
         break
       }
     }
-    const out = { ...ticketFacts(data, t), body: t.body }
+    const epic = data.epics.find((e) => e.epic === t.epic)
+    const out = {
+      ...ticketFacts(data, t),
+      preamble: readFileSync(epic.ticketsDoc, 'utf8').split(/^##\s/m)[0].trim(),
+      owed: parseOwed(epic),
+      body: t.body,
+    }
     if (json) emit(out)
     else {
       console.log(`${C.bold}${out.id} — ${out.title}${C.off}`)
       console.log(
-        `${C.dim}epic ${out.epic} · state ${out.state} · branch ${out.branch} · release ${out.releaseMode}` +
-          (out.runMode ? ` · run ${out.runMode}` : '') +
+        `${C.dim}epic ${out.epic} · state ${out.state} · branch ${out.branch} · delivery ${out.delivery}` +
           (out.pr ? ` · PR #${out.pr.number} (${out.pr.state})` : '') +
           C.off,
       )
       console.log()
+      console.log(`${C.bold}Epic preamble${C.off}`)
+      console.log(out.preamble)
+      console.log()
+      console.log(`${C.bold}Owed items — recorded, not marked resolved${C.off}`)
+      if (!out.owed.length) console.log(`${C.dim}none outstanding${C.off}`)
+      else for (const o of out.owed) console.log(`  ${o.id} (${o.date}): ${o.text}`)
+      console.log()
+      console.log(`${C.bold}Ticket${C.off}`)
       console.log(out.body)
     }
     break
@@ -676,7 +742,10 @@ switch (cmd) {
         current: data.current?.epic || null,
         epics: data.epics.map((e) => e.epic),
         modes: Object.fromEntries(
-          data.epics.map((e) => [e.epic, { releaseMode: e.releaseMode, runMode: e.runMode, reviewerModel: e.reviewerModel }]),
+          data.epics.map((e) => [
+            e.epic,
+            { delivery: e.delivery, reviewerModel: e.reviewerModel, workerModel: e.workerModel },
+          ]),
         ),
         duplicates: data.duplicates,
         tickets: data.tickets.map(({ body, ...t }) => t),

@@ -3,21 +3,29 @@
 A Claude Code plugin marketplace with one plugin, `flow` (`plugins/flow/`):
 skills and agents that run work as epics and tickets, plus `tickets.mjs`, the
 script that derives the board from git, and one session hook (the
-interactive-ticket guard, whose only state is a per-session marker in the OS
+in-session-work guard, whose only state is a per-session marker in the OS
 temp dir). `README.md` is the user-facing manual;
 `METHODOLOGY.md` is reasoning only and contains no rules — if it contradicts a
 skill, the skill wins.
 
-This repository runs its own flow: one-off work goes through `/flow:quick`
-into `epics/quick/`, and commit subjects carry the ticket ID (`Q-1: …`).
+## Ticket Flow policy
+
+Use Ticket Flow only when the user explicitly invokes `/flow:*` or asks to
+use the Flow methodology. Ordinary implementation requests run directly:
+implement, verify, and report without creating epic or ticket documents.
+"Direct" or "without Flow" always overrides the methodology. When work does
+go through the flow, one-off work goes through `/flow:quick` into
+`epics/quick/`, and commit subjects carry the ticket ID (`Q-1: …`).
 
 ## Commands
 
 - **Tests:** `node --test plugins/flow/scripts/tickets.test.mjs` — expect
-  every test passing (`# pass 9`, `# fail 0` as of Q-1; the count grows, the
-  fail line does not). The suite builds a throwaway git repo in a temp dir; it
-  needs `git` on PATH and nothing else. The session-guard hook has its own
-  suite: `node --test plugins/flow/hooks/ticket-session-guard.test.mjs`.
+  every test passing (`# pass 36`, `# fail 0` as of 2026-08-11; the count
+  grows, the fail line does not). The suite builds a throwaway git repo in a
+  temp dir; it needs `git` on PATH and nothing else. The session-guard hook
+  has its own suite:
+  `node --test plugins/flow/hooks/ticket-session-guard.test.mjs` (`# pass 14`
+  on the same terms).
 - **Smoke:** `node plugins/flow/scripts/tickets.mjs doctor` — must exit 0 on
   this repo. `… list` shows the board.
 - **Syntax check:** `node --check plugins/flow/scripts/tickets.mjs`.
@@ -45,21 +53,26 @@ path explicitly.
 - **Skills are self-sufficient.** An agent executing a skill never needs
   METHODOLOGY.md. New rules go in the skill that executes them; new reasoning
   goes in METHODOLOGY.md; both in the same commit when a constraint changes.
-- **A behaviour change to any skill, agent or the script bumps
-  `plugins/flow/.claude-plugin/plugin.json` and gets a CHANGELOG.md entry** in
-  the same commit — installed projects update live, so an unversioned change
-  is a silent one.
+- **A behaviour change to any skill, agent or the script gets a CHANGELOG.md
+  entry in the same commit** — installed projects update live, so an
+  unrecorded change is a silent one. Version bumps in
+  `plugins/flow/.claude-plugin/plugin.json` are **batched**: compatible
+  refinements accumulate under an `## Unreleased` changelog heading, and a
+  release stamps the batch with one version and date — one deliberate
+  release beats a version number per sentence changed. What is never batched
+  away is the entry itself.
 - **Reviewers report and never fix.** Do not give `ticket-reviewer` or
   `plan-reviewer` write instructions.
 - **A human merges into main; nothing runs after that merge.** Absolute in
   every mode: no agent merges or pushes toward the default branch, and no
   skill gains a post-merge step. The one sanctioned agent merge **of a pull
-  request** is into the epic branch inside a `Run mode: autonomous` epic
-  (ticket skill step 10) — there, the human gate moves to the release pull
-  request, and branch protection on main is the hard floor under the rule.
-  Refreshing an epic branch **from** the default branch (ticket skill step 3,
-  run skill step 4a) is the safe direction — main is the source, never the
-  target — and is not a merge toward main.
+  request** is into the epic branch inside a release epic — declared
+  `Delivery: release` (ticket skill step 10) — there, the human gate moves
+  to the release pull request, and
+  branch protection on main is the hard floor under the rule. Refreshing an
+  epic branch **from** the default branch (ticket skill step 3, run skill
+  step 4a) is the safe direction — main is the source, never the target —
+  and is not a merge toward main.
 - **The two risk lists are one list.** The quick skill's entry triggers and
   the ticket skill's `xhigh` review tier measure the same consequences at two
   doors — a trigger added to either is added to the other in the same commit.

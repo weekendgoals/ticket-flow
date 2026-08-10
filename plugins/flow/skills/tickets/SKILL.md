@@ -21,7 +21,7 @@ exactly the drift it exists to remove.
 | State | Means |
 |---|---|
 | `shipped` | Commits with this ID are on the default branch, or its pull request merged into it |
-| `integrated` | Pull request merged into the epic branch (integration mode) — not shipped until the release pull request lands |
+| `integrated` | Pull request merged into the epic branch (release delivery) — not shipped until the release pull request lands |
 | `in review` | Pull request open |
 | `done, unpushed` | Status log says DONE but nothing reached the default branch — **the loop stalled here**, `/flow:ticket` should have pushed |
 | `in progress` | A local branch exists with commits, no pull request yet |

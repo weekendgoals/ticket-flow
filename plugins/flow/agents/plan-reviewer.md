@@ -50,16 +50,18 @@ quoted.
   five's output, or two tickets own the same file and will collide.
 - **Work the request implies that no ticket owns**, and tickets for problems
   the code shows do not exist.
-- **The wrong release mode.** Integration without a one-line reason, or serial
-  tickets that cannot actually ship alone. Treat "cannot ship alone" itself
-  with suspicion: an expand/contract migration or a feature flag usually makes
-  a ticket independently shippable, and integration mode chosen to avoid that
-  design work is a finding. One reason needs no challenge: `Run mode:
-  autonomous` requires integration topology, so unattended merges never touch
-  the default branch — but then the draft's Run mode block must itself state
-  the unattended consequence (what runs without a human after sign-off), and
-  its absence is a finding. The sign-off message you never see; the draft you
-  do, and the sign-off is written from it.
+- **The wrong delivery.** A `Delivery: release` epic that violates its own
+  bounds — far more than ~6 tickets, weeks of work, a release diff no human
+  can review, or tickets whose independent production feedback the plan
+  itself says it wants — should be incremental or split; a
+  `Delivery: incremental` epic whose tickets cannot actually ship alone
+  should be release. Treat "cannot ship alone" with suspicion in both
+  directions: an expand/contract migration or a feature flag usually makes a
+  ticket independently shippable. A release draft must state the unattended
+  consequence (what runs without a human after sign-off) and record the
+  plan-time environment probes (branch protection, permission surface) —
+  the absence of either is a finding. The sign-off message you never see;
+  the draft you do, and the sign-off is written from it.
 - **Project facts posing as ground rules.** A ground rule that describes what
   the project *is* belongs in the instruction file, where it is maintained;
   epic ground rules are for what *this work* must respect.

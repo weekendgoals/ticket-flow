@@ -25,6 +25,30 @@ disposable context**: durable knowledge lives in versioned documents, progress
 is derived from evidence rather than reported, and no context window is ever
 load-bearing.
 
+The bet has a price, and the price is tokens: fresh contexts reread, separate
+reviewers re-derive, documents grow. The methodology's own record made that
+price visible — seven consecutive quick tickets averaged ~155k tokens each,
+about 450k of it reviewer spend, for changes as small as a warning string —
+and taught the second principle the first one now answers to: **the cost of a
+guarantee must scale with the risk it retires.** Spend inference only where
+judgment is needed; spend maximum inference only where consequence lives.
+Several rules below exist in their current shape because their first shape
+failed that test.
+
+## Why Flow is opt-in
+
+A methodology that auto-engages on every request becomes the tax on every
+request. The skills' own trigger descriptions once invited that — "or asks
+for a small change" — which meant an ordinary bugfix request could summon a
+ticket document, a worker, and a reviewer nobody asked for. The contract is
+now explicit: **plain request = direct development; `/flow:*` = managed
+development.** Direct work is not a hole in the methodology — it is the
+correctly-priced lane for work whose record is the pull request itself, and
+the user can always say "directly, without Flow" and be obeyed. There is
+deliberately no `/flow:direct` command: direct development is the agent's
+natural behaviour, and a command implying otherwise would make the
+methodology look load-bearing where it is not.
+
 ## Why an epic is a folder
 
 Making the directory name **be** the epic name removes a whole class of problem.
@@ -81,10 +105,12 @@ never about the merge click — it was about unverified work not reaching the
 branch that deploys. In an integration epic the branch that deploys is only
 ever touched by the release pull request, so a human reviewing *that* pull
 request guards exactly what the per-ticket gate guarded, once, with the full
-evidence trail in front of them. That is why autonomous mode **requires**
-integration topology and the script refuses the serial combination
-mechanically: in serial mode every ticket merge is a deploy-branch merge,
-and there is no downstream gate left to move to.
+evidence trail in front of them. That is why unattended execution and
+integration topology are one declaration, `Delivery: release`, rather than
+two: in incremental delivery every ticket merge is a deploy-branch merge
+with no downstream gate left to move to, and a single line that bundles the
+two facts makes the unattended-merges-to-main contradiction impossible to
+declare, not merely refused.
 
 What the mode buys is the elimination of the human as a between-tickets
 scheduler while keeping them as the judge. What it costs is that every
@@ -129,6 +155,82 @@ reviews, a default branch that never moved.
 The mode's own reversal condition is written in its epic: if unattended runs
 routinely stall, or produce release pull requests the human rejects, the mode
 is removed and this section becomes the record of what it cost to learn.
+
+## Why release delivery became the default
+
+The gate-relocation argument above was proven live, and then usage decided
+the rest. In practice the human's between-ticket interaction in attended
+epics was mechanical — approve, merge, type `next` — while the record shows
+serial discipline being overridden anyway (Q-10 through Q-17 shipped as
+deliberately stacked branches, exceptions recorded in prose). A rule that
+disciplined users repeatedly route around is not protecting anything; it is
+measuring where the real gates are. The real gates are two: **approve the
+plan** and **approve the release.** Everything between them — implement,
+verify, review, fix, integrate — is what the flow already automates, per
+ticket, with a fresh context and an independent reviewer.
+
+So the epic template now asks one question, `Delivery: release |
+incremental`, and recommends release for multi-ticket epics: unattended
+execution into `epic/<name>`, one human release decision. Incremental
+remains first-class for the cases where an epic branch is genuinely worse —
+per-ticket production feedback, fast-moving main, staged migrations — and
+release epics are bounded (roughly 3–6 tickets, days not weeks, a reviewable
+release diff) because a long-lived epic branch accumulates integration risk
+and delays feedback. Interactive per-ticket execution did not disappear; it
+was demoted from a planned mode to what it always really was — the escape
+hatch for resolving a halt or watching one consequential ticket closely.
+
+## Why review cost is tiered
+
+Review is the flow's single most expensive habit, and for a while it was
+flat-priced at the maximum: every diff, the strongest model, whatever the
+change. The record showed 56–77k reviewer tokens spent on tiny display and
+docs changes, mostly returning nits — capability paying for consequence that
+was not there. Independent review earns its keep everywhere; **maximum**
+review earns its keep only where the failure would be expensive. So the
+ticket lane prices review by what the diff can break — a fast model at low
+effort for prose, a mid-tier model at high effort for ordinary behaviour, the
+strongest at `xhigh` for the consequence list — and the quick lane goes one
+step further: no separate reviewer at all for prose-only diffs, because a
+pull request a human reads is already a review of prose. The line between
+the cheap tiers is drawn at what is *read by a machine*, not what looks
+harmless: configuration, user-facing strings, CLI output and skill Markdown
+all execute somewhere, so they price as behaviour — only documentation and
+comments qualify as prose. The consequence list stays coupled to quick's
+entry gate (one list, two doors), so the cheap tiers structurally cannot
+leak consequential work.
+
+## Why a worker reads a brief, not the whole log
+
+The ticket skill originally required each worker to read the entire status
+log. Correct on day one; a compounding tax by ticket twenty — the standing
+quick epic's log alone passed 1,500 lines, so every one-line fix began by
+paying to reread the history of every previous one-line fix. Append-only is
+for **preserving** knowledge, and preserving must not mean rereading:
+`tickets.mjs brief` now compiles the worker's required reading — the epic
+preamble with its ground rules, the owed items no `**Resolves owed:**` line
+has closed (the debt ledger has explicit repayment syntax precisely so the
+compiled list can shrink; an unmarked discharge is repaid by appending the
+marker, not by rereading), the ticket's own section, the derived facts —
+making required reading O(epic) while the log stays O(history) for the
+retro and the archaeologist, the readers it was always really for. The same pressure shortened the status
+entry itself: Built, Mode, Tokens, Verified, Decisions-that-deviate, Owed —
+git already records the files and commits, and narration a future reader
+must wade through is a cost, not a record.
+
+## Why a nit is not automatically a ticket
+
+Reviews reliably produce nits; for a stretch each nit became a ticket, and
+each ticket bought the full loop, whose review produced nits. Q-11 through
+Q-17 are the record of that feedback loop: a system spending ~150k tokens a
+cycle polishing its own consistency — immaculate records, rising lead time,
+little user value. The rule now: a nit is fixed in place when trivial and in
+scope, otherwise recorded in the review addendum, where the retro — which
+exists precisely to detect repetition — decides whether it recurs enough to
+become work. A nit earns a ticket only by affecting users, carrying real
+maintenance risk, recurring, or riding an already-planned change. The same
+logic batches releases: version bumps group compatible refinements
+deliberately instead of shipping one number per sentence changed.
 
 ## Why the reviewer is a separate agent
 
@@ -267,14 +369,19 @@ required hand-carving a smaller branch — and to make that small enough, the
 epic's own ticket document, status log and context were **deleted**, twenty-five
 hundred lines of the project's memory, surviving only on an abandoned branch.
 
-Two constraints came out of that. Serial-to-main is the default, because merging
-is usually fast and the latency saved by stacking is close to zero. And **the
-epic's documents are never deleted to make a diff smaller** — if a pull request
-is too big to review, the epic was too big to plan that way.
+Two constraints came out of that. Tickets never stack ad hoc — work
+integrates one reviewed pull request at a time, whether those pull requests
+target the default branch (incremental) or the epic branch (release). And
+**the epic's documents are never deleted to make a diff smaller** — if a pull
+request is too big to review, the epic was too big to plan that way.
 
-Integration mode exists for the real exception: tickets that cannot ship alone.
-Even then each ticket keeps its own small pull request; only the release is
-batched.
+The stacking temptation itself was later answered structurally rather than
+prohibitively: a release epic gives "nothing waits" legitimately — tickets
+integrate into `epic/<name>` without a human between them — while keeping
+per-ticket pull requests, per-ticket review, and one human release gate.
+That is why serial-to-main stopped being the universal default: the record
+showed disciplined users stacking anyway (Q-10–Q-17), which was the rule
+mismeasuring their throughput needs, not the users misbehaving.
 
 ## The admission test
 
@@ -362,20 +469,25 @@ instruction is to stop and plan an epic, not to proceed quickly anyway. Without
 that gate, "quick" becomes the path around the methodology instead of a path
 through it.
 
-Execution moved out of the invoking session at the autonomous epic's retro
-(2026-08-08): quick now routes through the ticket skill's lane fork — the
-session keeps the parts that need the conversation (the gate, writing the
-ticket, cutting the branch) and then supervises, while a fresh-context worker
-implements from the ticket text and the supervisor hires the reviewer. The
-alternative on the table, a documented opt-out, was rejected because it
-misreads what quick saves: quick's savings are planning ceremony — the
-planning conversation, the sign-off gate, the epic branch — never execution
-hygiene. Until then quick was the hole in the fresh-context doctrine twice
-over: a session marked by an earlier interactive ticket could still implement
-on contaminated context by phrasing the work as quick, and quick's implementer
-hired its own reviewer. `--interactive` survives at the same price as any
-interactive ticket — the session guard watches both doors with one marker,
-because a gate is verified at the door its actor walks through.
+Quick's execution model reversed once, in each direction, and both reversals
+are worth keeping on record. At the autonomous epic's retro (2026-08-08)
+execution moved **out** of the invoking session — the fresh-context worker
+and supervisor-hired reviewer, on the reasoning that quick's savings were
+planning ceremony, never execution hygiene. The record then priced that
+reasoning: the full execution loop cost ~150k tokens per ticket, on work
+whose median instance was a one-line change, and the reviews mostly returned
+nits. So quick moved back **in-session** (2026-08-11), this time deliberately
+rather than by omission: the trade is named — the session that scoped the
+work also implements it — and what holds the line instead is the pull
+request, plus a fresh-context reviewer on a cost-efficient model whenever
+behaviour changes, plus the risk gate that routes every consequential change
+to an epic before this question can arise. The expensive guarantees did not
+disappear; they live in `/flow:ticket` and `/flow:epic`, where the work is
+large enough to repay them. The session guard's shape followed: every quick
+run marks the session as carrying implementation context (so a later
+`--interactive` ticket in it is refused — supervisor tickets, whose workers
+start empty, stay open), and quick itself is never refused, because
+in-session is now its design, not its leak.
 
 ## The failure modes this is designed against
 

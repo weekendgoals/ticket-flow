@@ -57,7 +57,7 @@ writeFileSync(
   join(repo, 'epics/alpha/tickets.md'),
   `# Alpha epic — tickets
 
-Release mode: serial
+Delivery: incremental
 
 ## A-1 — ship the walking skeleton
 
@@ -80,9 +80,18 @@ writeFileSync(
   join(repo, 'epics/alpha/status.md'),
   `# Alpha epic — status log
 
+### A-1 — ship the walking skeleton — 2026-07-30 — DONE
+
+**Built:** the skeleton.
+
+**Owed:** Nothing.
+
 ### A-2 — persist the results — 2026-08-01 — DONE
 
 **Built:** persistence.
+
+**Owed:** the flaky persistence test is quarantined —
+A-3 inherits re-enabling it.
 
 ### A-3 — handle the error path — DONE
 
@@ -90,20 +99,20 @@ Malformed on purpose: no date, so this heading must not parse.
 `,
 )
 
-// gamma: integration + autonomous, with a prose-decorated Release mode line —
-// the tolerant-parse case, and the fixture for run-mode exposure. Its
-// Reviewer model line is prose-decorated too: the value is the first word
-// after the colon, the rest is commentary.
+// gamma: a release epic with a prose-decorated Delivery line — the
+// tolerant-parse case. Its Reviewer model and Worker model lines are
+// prose-decorated too: the value is the first word after the colon, the
+// rest is commentary.
 mkdirSync(join(repo, 'epics/gamma'), { recursive: true })
 writeFileSync(
   join(repo, 'epics/gamma/tickets.md'),
   `# Gamma epic — tickets
 
-Release mode: integration — these tickets share a schema change and cannot ship alone.
+Delivery: release — one human gate, at the release pull request.
 
-Run mode: autonomous
+Reviewer model: opus — for the consequence tier.
 
-Reviewer model: opus — review is where capability pays.
+Worker model: sonnet — implementation runs cheaper than planning.
 
 ## G-1 — expand the schema
 
@@ -363,16 +372,85 @@ test('Next up suggests the installed, namespaced command', () => {
 test('brief prints a ticket\'s full section plus the derived facts find reports', () => {
   // The brief exists so a session can read the next ticket's scope and
   // acceptance criteria from one command instead of opening the ticket doc
-  // (BOARD-3). --json is the find payload plus a body field.
+  // (BOARD-3). --json is the find payload plus preamble, owed and body —
+  // the whole required reading for a fresh worker, O(epic) not O(history).
   const briefed = JSON.parse(run(repo, 'brief', 'a-2', '--json'))
   const found = JSON.parse(run(repo, 'find', 'a-2', '--json'))
-  assert.deepEqual(briefed, { ...found, body: briefed.body }, 'the brief payload is the find payload plus body')
+  assert.deepEqual(
+    briefed,
+    { ...found, preamble: briefed.preamble, owed: briefed.owed, body: briefed.body },
+    'the brief payload is the find payload plus preamble, owed and body',
+  )
   assert.match(briefed.body, /\*\*Scope\.\*\* Persistence\./, 'the body carries the section content')
 
   const out = run(repo, 'brief', 'A-2')
   assert.match(out, /A-2 — persist the results/)
   assert.match(out, /state done/, 'the derived state is reported')
   assert.match(out, /\*\*Scope\.\*\* Persistence\./)
+})
+
+test('brief carries the epic preamble and the recorded owed items, Nothing filtered out', () => {
+  const briefed = JSON.parse(run(repo, 'brief', 'a-4', '--json'))
+  assert.match(briefed.preamble, /Delivery: incremental/, 'the preamble is the text above the first ticket heading')
+  assert.ok(!briefed.preamble.includes('## A-1'), 'the preamble stops at the first ticket section')
+  // A-1 owed "Nothing." and must not appear; A-2's owed paragraph spans two
+  // source lines and must arrive joined, attributed to its entry.
+  assert.deepEqual(briefed.owed, [
+    { id: 'A-2', date: '2026-08-01', text: 'the flaky persistence test is quarantined — A-3 inherits re-enabling it.' },
+  ])
+
+  const out = run(repo, 'brief', 'A-4')
+  // The heading is honest about what the list is: recorded state, not
+  // verified truth — an item may be discharged without its marker.
+  assert.match(out, /Owed items — recorded, not marked resolved/)
+  assert.match(out, /A-2 \(2026-08-01\): the flaky persistence test is quarantined/)
+  assert.ok(!/Nothing\./.test(out.split('Owed items')[1].split('Ticket')[0]), 'a Nothing entry never renders as owed')
+
+  // An epic with no status log yet has nothing owed — never an error.
+  assert.deepEqual(JSON.parse(run(repo, 'brief', 'G-1', '--json')).owed, [])
+})
+
+test('a Resolves owed line closes a recorded owed item; unresolved ones survive', () => {
+  // Resolution is explicit, never inferred: the entry ID that recorded the
+  // debt is the item's identity (one Owed paragraph per entry), and a
+  // later "**Resolves owed:** <ID> …" line — in the discharging ticket's
+  // entry or a dated addendum — removes it from every future brief.
+  const ledger = join(tmp, 'ledger')
+  git(tmp, 'init', '--initial-branch=main', ledger)
+  mkdirSync(join(ledger, 'epics/omega'), { recursive: true })
+  writeFileSync(
+    join(ledger, 'epics/omega/tickets.md'),
+    '# Omega\n\n## O-1 — first\n\n**Scope.** One.\n\n## O-2 — second\n\n**Scope.** Two.\n\n## O-3 — third\n\n**Scope.** Three.\n\n## O-4 — next up\n\n**Scope.** Four.\n',
+  )
+  writeFileSync(
+    join(ledger, 'epics/omega/status.md'),
+    `# Omega epic — status log
+
+### O-1 — first — 2026-08-01 — DONE
+
+**Owed:** the migration backfill — O-2 inherits it.
+
+### O-2 — second — 2026-08-02 — DONE
+
+**Owed:** Nothing.
+
+**Resolves owed:** O-1 — backfill ran, 312/312 rows verified; O-3's region
+work is unrelated and unaffected.
+
+### O-3 — third — 2026-08-03 — DONE
+
+**Owed:** the load test still needs a second region.
+`,
+  )
+  const briefed = JSON.parse(run(ledger, 'brief', 'O-4', '--json'))
+  assert.deepEqual(
+    briefed.owed,
+    [{ id: 'O-3', date: '2026-08-03', text: 'the load test still needs a second region.' }],
+    "O-1 is resolved and gone; O-3 survives — the note's mention of O-3 is a citation, not a target",
+  )
+  const out = run(ledger, 'brief', 'O-4')
+  assert.ok(!out.includes('backfill'), 'a resolved item never renders')
+  assert.match(out, /O-3 \(2026-08-03\): the load test still needs a second region\./)
 })
 
 test('brief with no argument briefs the first startable ticket and names its epic', () => {
@@ -414,18 +492,81 @@ test('brief with nothing startable says so instead of erroring', () => {
   assert.equal(run(allDone, 'brief', '--json').trim(), 'null')
 })
 
-test('mode lines parse tolerantly and expose in find and list', () => {
+test('the Delivery line parses tolerantly and exposes in find and list', () => {
   const g = JSON.parse(run(repo, 'find', 'G-1', '--json'))
-  assert.equal(g.releaseMode, 'integration', 'prose after the value must not break the parse')
-  assert.equal(g.runMode, 'autonomous')
+  assert.equal(g.delivery, 'release', 'prose after the value must not break the parse')
 
   const a = JSON.parse(run(repo, 'find', 'A-2', '--json'))
-  assert.equal(a.releaseMode, 'serial')
-  assert.equal(a.runMode, null)
+  assert.equal(a.delivery, 'incremental')
 
   const data = JSON.parse(run(repo, 'list', '--json'))
-  assert.deepEqual(data.modes.gamma, { releaseMode: 'integration', runMode: 'autonomous', reviewerModel: 'opus' })
-  assert.deepEqual(data.modes.alpha, { releaseMode: 'serial', runMode: null, reviewerModel: null })
+  assert.deepEqual(data.modes.gamma, { delivery: 'release', reviewerModel: 'opus', workerModel: 'sonnet' })
+  assert.deepEqual(data.modes.alpha, { delivery: 'incremental', reviewerModel: null, workerModel: null })
+})
+
+test('a Worker model line pins the implementer; absent, workers inherit the session', () => {
+  // The line exists so a plan written on one model can be implemented by
+  // another — configuration in the versioned epic doc, like Reviewer model.
+  const g = JSON.parse(run(repo, 'find', 'G-1', '--json'))
+  assert.equal(g.workerModel, 'sonnet', 'prose after the value must not break the parse')
+  // Absent is null, never a default — the skills pass no model at all and
+  // the worker inherits the spawning session's.
+  assert.equal(JSON.parse(run(repo, 'find', 'A-2', '--json')).workerModel, null)
+})
+
+test('an unrecognised or near-miss Delivery line warns instead of silently defaulting', () => {
+  mkdirSync(join(repo, 'epics/misdeclared'), { recursive: true })
+  writeFileSync(
+    join(repo, 'epics/misdeclared/tickets.md'),
+    '# Misdeclared\n\nDelivery: continuous\n\n## MD-1 — typo delivery\n\n**Scope.** M.\n',
+  )
+  mkdirSync(join(repo, 'epics/fancy-delivery'), { recursive: true })
+  writeFileSync(
+    join(repo, 'epics/fancy-delivery/tickets.md'),
+    '# Fancy delivery\n\n**Delivery:** release\n\n## FD-1 — formatted delivery\n\n**Scope.** F.\n',
+  )
+  try {
+    const data = JSON.parse(run(repo, 'list', '--json'))
+    assert.equal(data.modes.misdeclared.delivery, 'continuous', 'the raw value is exposed, not coerced')
+    assert.deepEqual(
+      data.modes['fancy-delivery'],
+      { delivery: 'incremental', reviewerModel: null, workerModel: null },
+      'a formatted Delivery line reads as absent, so the default applies',
+    )
+    const rows = JSON.parse(run(repo, 'doctor', '--json'))
+    assert.ok(rows.some((r) => r.level === 'warn' && /unrecognised delivery "continuous"/.test(r.msg)))
+    assert.ok(
+      rows.some((r) => r.level === 'warn' && r.msg.includes('fancy-delivery/tickets.md') && /will not parse/.test(r.msg)),
+      'the near-miss scan covers the Delivery label',
+    )
+  } finally {
+    for (const e of ['misdeclared', 'fancy-delivery']) rmSync(join(repo, `epics/${e}`), { recursive: true, force: true })
+  }
+})
+
+test('the retired two-line syntax is flagged, not silently ignored', () => {
+  // "Release mode:" / "Run mode:" are not read at all — an epic written in
+  // them would silently run incremental. The near-miss scan names them so
+  // the author learns the Delivery syntax instead of trusting a dead line.
+  mkdirSync(join(repo, 'epics/oldstyle'), { recursive: true })
+  writeFileSync(
+    join(repo, 'epics/oldstyle/tickets.md'),
+    '# Oldstyle\n\nRelease mode: integration\n\nRun mode: autonomous\n\n## OS-1 — pre-2.0 preamble\n\n**Scope.** O.\n',
+  )
+  try {
+    const data = JSON.parse(run(repo, 'list', '--json'))
+    assert.deepEqual(
+      data.modes.oldstyle,
+      { delivery: 'incremental', reviewerModel: null, workerModel: null },
+      'the dead labels parse as nothing; the delivery default applies',
+    )
+    const rows = JSON.parse(run(repo, 'doctor', '--json'))
+    const warns = rows.filter((r) => r.level === 'warn' && r.msg.includes('oldstyle/tickets.md'))
+    assert.equal(warns.length, 2, 'both dead lines must be flagged')
+    for (const w of warns) assert.match(w.msg, /"Release mode:"\/"Run mode:" are not read at all/)
+  } finally {
+    rmSync(join(repo, 'epics/oldstyle'), { recursive: true, force: true })
+  }
 })
 
 test('a Reviewer model preamble line is optional and parses tolerantly', () => {
@@ -456,80 +597,36 @@ test('a plain Reviewer model line parses case-insensitively, dotted model ids in
   }
 })
 
-test('an epic with no mode lines defaults to serial, attended', () => {
+test('an epic with no declaration lines defaults to incremental delivery', () => {
   mkdirSync(join(repo, 'epics/delta'), { recursive: true })
   writeFileSync(join(repo, 'epics/delta/tickets.md'), '# Delta\n\n## D-1 — bare epic\n\n**Scope.** Bare.\n')
   try {
     const data = JSON.parse(run(repo, 'list', '--json'))
-    assert.deepEqual(data.modes.delta, { releaseMode: 'serial', runMode: null, reviewerModel: null })
+    assert.deepEqual(data.modes.delta, { delivery: 'incremental', reviewerModel: null, workerModel: null })
   } finally {
     rmSync(join(repo, 'epics/delta'), { recursive: true, force: true })
   }
 })
 
-test('autonomous + serial is refused by find and failed by doctor', () => {
-  mkdirSync(join(repo, 'epics/rogue'), { recursive: true })
-  writeFileSync(
-    join(repo, 'epics/rogue/tickets.md'),
-    '# Rogue\n\nRelease mode: serial\n\nRun mode: autonomous\n\n## R-1 — unattended to main\n\n**Scope.** No.\n',
-  )
-  try {
-    const find = runFail(repo, 'find', 'R-1')
-    assert.equal(find.status, 1)
-    assert.match(find.stderr, /autonomous/)
-    assert.match(find.stderr, /integration topology/)
-
-    const doc = runFail(repo, 'doctor', '--json')
-    assert.equal(doc.status, 1, 'a mode contradiction is a doctor fail')
-    const row = JSON.parse(doc.stdout).find((r) => r.level === 'fail' && /autonomous/.test(r.msg))
-    assert.ok(row, 'the exit code must come from the contradiction row specifically')
-    assert.match(row.msg, /rogue/)
-  } finally {
-    rmSync(join(repo, 'epics/rogue'), { recursive: true, force: true })
-  }
-})
-
-test('mode lines parse case-insensitively', () => {
+test('the Delivery line parses case-insensitively', () => {
   mkdirSync(join(repo, 'epics/shout'), { recursive: true })
   writeFileSync(
     join(repo, 'epics/shout/tickets.md'),
-    '# Shout\n\nRELEASE MODE: Integration\n\nrun mode: AUTONOMOUS\n\n## S-1 — loud modes\n\n**Scope.** S.\n',
+    '# Shout\n\nDELIVERY: Release\n\n## S-1 — loud delivery\n\n**Scope.** S.\n',
   )
   try {
     const data = JSON.parse(run(repo, 'list', '--json'))
-    assert.deepEqual(data.modes.shout, { releaseMode: 'integration', runMode: 'autonomous', reviewerModel: null })
+    assert.deepEqual(data.modes.shout, { delivery: 'release', reviewerModel: null, workerModel: null })
   } finally {
     rmSync(join(repo, 'epics/shout'), { recursive: true, force: true })
   }
 })
 
-test('a mode line that almost parses is a doctor warning, not a silent default', () => {
-  mkdirSync(join(repo, 'epics/fancy'), { recursive: true })
-  writeFileSync(
-    join(repo, 'epics/fancy/tickets.md'),
-    '# Fancy\n\n**Release mode:** integration\n\nRun  mode: autonomous\n\n**Reviewer model:** haiku\n\n## F-1 — formatted modes\n\n**Scope.** F.\n',
-  )
-  try {
-    const data = JSON.parse(run(repo, 'list', '--json'))
-    assert.deepEqual(
-      data.modes.fancy,
-      { releaseMode: 'serial', runMode: null, reviewerModel: null },
-      'all three lines must read as absent',
-    )
-    const rows = JSON.parse(run(repo, 'doctor', '--json'))
-    const warns = rows.filter((r) => r.level === 'warn' && r.msg.includes('fancy/tickets.md'))
-    assert.equal(warns.length, 3, 'all three near-miss lines must be flagged')
-    for (const w of warns) assert.match(w.msg, /will not parse/)
-  } finally {
-    rmSync(join(repo, 'epics/fancy'), { recursive: true, force: true })
-  }
-})
-
 test('a value-less label line reads as absent, never the next paragraph\'s first word', () => {
   // The class Q-7's review verified live: \s* around grab's colon matched
-  // newlines, so a bare "Run mode:" adopted the first word of the following
-  // paragraph — prose beginning "Autonomous is not wanted here." parsed as
-  // runMode: 'autonomous'. Each paragraph below opens with a word the old
+  // newlines, so a bare label adopted the first word of the following
+  // paragraph — prose beginning "Release …" would parse as
+  // delivery: 'release'. Each paragraph below opens with a word the old
   // parse would have scavenged into a live (and here unwanted) value. The
   // last shape — label and colon split across lines, the markdown
   // definition-list look — pins the PRE-colon anchor, which the value-less
@@ -538,17 +635,17 @@ test('a value-less label line reads as absent, never the next paragraph\'s first
   mkdirSync(join(repo, 'epics/bare'), { recursive: true })
   writeFileSync(
     join(repo, 'epics/bare/tickets.md'),
-    '# Bare\n\nRelease mode:\n\nIntegration would be the wrong topology here.\n\nRun mode:\n\nAutonomous is not wanted here.\n\nReviewer model:\n\nOpus is not being pinned.\n\nRun mode\n: autonomous\n\n## B-1 — value-less labels\n\n**Scope.** B.\n',
+    '# Bare\n\nDelivery:\n\nRelease is not wanted here.\n\nReviewer model:\n\nOpus is not being pinned.\n\nWorker model:\n\nSonnet is not being pinned either.\n\nDelivery\n: release\n\n## B-1 — value-less labels\n\n**Scope.** B.\n',
   )
   try {
     const data = JSON.parse(run(repo, 'list', '--json'))
     assert.deepEqual(
       data.modes.bare,
-      { releaseMode: 'serial', runMode: null, reviewerModel: null },
-      'a value-less label must read as absent (serial default / null), never scavenge prose',
+      { delivery: 'incremental', reviewerModel: null, workerModel: null },
+      'a value-less label must read as absent (incremental default / null), never scavenge prose',
     )
-    // And doctor's near-miss wording is now true of these lines: they will
-    // not parse, they silently default, and the hint names what is missing.
+    // And doctor's near-miss wording is true of these lines: they will not
+    // parse, they silently default, and the hint names what is missing.
     const rows = JSON.parse(run(repo, 'doctor', '--json'))
     const warns = rows.filter((r) => r.level === 'warn' && r.msg.includes('bare/tickets.md'))
     assert.equal(warns.length, 4, 'the three value-less lines and the colon-less split label must all be flagged')
@@ -561,29 +658,15 @@ test('a value-less label line reads as absent, never the next paragraph\'s first
   }
 })
 
-test('well-formed mode and Reviewer model lines are doctor-silent', () => {
-  // The ACCEPTING branch of doctor's strict preamble parse. gamma carries all
-  // three labels well-formed (two prose-decorated) — none may warn. Mutation
+test('well-formed Delivery and Reviewer model lines are doctor-silent', () => {
+  // The ACCEPTING branch of doctor's strict preamble parse. gamma carries
+  // both labels well-formed and prose-decorated — none may warn. Mutation
   // found by Q-7's review: with the Reviewer model alternative deleted from
-  // modeStrict, every correctly configured epic warned and no test noticed.
+  // the strict regex, every correctly configured epic warned and no test
+  // noticed.
   const rows = JSON.parse(run(repo, 'doctor', '--json'))
   const gamma = rows.filter((r) => r.msg.includes('gamma/tickets.md'))
   assert.deepEqual(gamma, [], 'no doctor row may point at gamma/tickets.md')
-})
-
-test('an unrecognised mode value is a doctor warning, never a silent default', () => {
-  mkdirSync(join(repo, 'epics/typo'), { recursive: true })
-  writeFileSync(join(repo, 'epics/typo/tickets.md'), '# Typo\n\nRelease mode: sequential\n\n## T-1 — typo mode\n\n**Scope.** T.\n')
-  try {
-    const rows = JSON.parse(run(repo, 'doctor', '--json'))
-    const warn = rows.find((r) => r.msg.includes('sequential'))
-    assert.ok(warn, 'doctor must flag the unrecognised value')
-    assert.equal(warn.level, 'warn')
-    const data = JSON.parse(run(repo, 'list', '--json'))
-    assert.equal(data.modes.typo.releaseMode, 'sequential', 'the raw value is exposed, not coerced')
-  } finally {
-    rmSync(join(repo, 'epics/typo'), { recursive: true, force: true })
-  }
 })
 
 test('a ticket ID defined in two epics is flagged on the board and refused by find', () => {
@@ -633,17 +716,18 @@ test('doctor flags the near-miss status heading that the board silently ignores'
 })
 
 test("doctor's no-status.md hint names both creation doors", () => {
-  // The quick lane never runs /flow:epic — its log is created by ticket
-  // step 6 — so a hint naming only "/flow:epic" advertised a recovery
-  // unreachable from the state that triggers it (Q-16, found by Q-13's
-  // review). gamma has no status.md, so the warning fires on the shared
-  // fixture; the full message is pinned so neither door can silently drop.
+  // The quick lane never runs /flow:epic — its log is created by the first
+  // ticket's status entry (in-session for quick) — so a hint naming only
+  // "/flow:epic" advertised a recovery unreachable from the state that
+  // triggers it (Q-16, found by Q-13's review). gamma has no status.md, so
+  // the warning fires on the shared fixture; the full message is pinned so
+  // neither door can silently drop.
   const rows = JSON.parse(run(repo, 'doctor', '--json'))
   const warn = rows.find((r) => r.level === 'warn' && r.msg.startsWith('gamma: no status.md'))
   assert.ok(warn, 'gamma has no status.md, so the warning must fire')
   assert.equal(
     warn.msg,
-    "gamma: no status.md — created at sign-off by /flow:epic, or by the first ticket's status entry (ticket step 6, reached with /flow:ticket <ID> — the quick lane's only door); without it DONE/BLOCKED are invisible",
+    "gamma: no status.md — created at sign-off by /flow:epic, or by the first ticket's status entry (/flow:ticket <ID>, or in-session by /flow:quick); without it DONE/BLOCKED are invisible",
   )
 })
 

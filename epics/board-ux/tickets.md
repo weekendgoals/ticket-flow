@@ -19,16 +19,13 @@ command and its Next up hint are removed.
 Areas in scope: `plugins/flow` — the board script and its tests (bound by the
 root `CLAUDE.md`).
 
-Release mode: integration
-Each of these tickets could ship alone; the topology is required by the run
-mode — an autonomous run's unattended merges may only ever target the epic
-branch, never the default branch. That is the legitimate reason the epic
-template names.
-
-Run mode: autonomous
+Delivery: release
 After sign-off, each ticket implements, reviews, fixes and merges its own
-pull request into `epic/board-ux` unattended; the human's next decision point
-is the release pull request.
+pull request into `epic/board-ux` unattended — unattended merges may only
+ever target the epic branch, never the default branch — and the human's next
+decision point is the release pull request. (Migrated 2026-08-11 from the
+original two-line `Release mode: integration` + `Run mode: autonomous`
+declaration, which said the same thing in the pre-2.0 syntax.)
 
 Status log: `epics/board-ux/status.md`. Run a ticket with `/flow:ticket <ID>`
 — or the whole epic, unattended, with `/flow:run board-ux`.

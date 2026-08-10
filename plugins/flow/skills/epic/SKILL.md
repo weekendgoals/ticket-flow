@@ -1,6 +1,6 @@
 ---
 name: epic
-description: Turn a feature request, investigation or conversation into an epic — a folder under epics/ with a ticket doc and its source context. Stops for sign-off before anything is built. Use when the user runs /flow:epic <name> or asks to plan new work.
+description: Turn a feature request, investigation or conversation into an epic — a folder under epics/ with a ticket doc and its source context. Stops for sign-off before anything is built. Use only when the user explicitly runs /flow:epic <name> or asks to plan the work with the Flow methodology — an ordinary implementation request, without that, runs directly with no epic documents.
 ---
 
 # Plan epic $ARGUMENTS
@@ -95,40 +95,53 @@ the instruction file that binds each — e.g. `api-gateway` (api-gateway/CLAUDE.
 A ticket reads these before it starts; naming them here is what stops each
 session rediscovering them.>
 
-Release mode: serial | integration
-<serial — each ticket opens a pull request against the default branch and is
-merged before the next starts. This is the default; choose it unless a ticket
-genuinely cannot ship alone.
-integration — the epic's tickets are not independently deployable, so each
-ticket's pull request targets `epic/<name>` and one release pull request goes to
-the default branch. Say in one line WHY they cannot ship alone — and treat
-"cannot ship alone" as a design choice to challenge first, not a fact:
-expand/contract migrations and feature flags usually make a ticket shippable
-on its own. An autonomous run mode is the other legitimate reason: it
-requires integration topology, so unattended merges never target the default
-branch.>
+Delivery: release | incremental
+<one line, one decision: how this epic's work reaches the default branch.
 
-Run mode: autonomous
-<OPTIONAL — omit the line entirely for attended epics, which is the default.
-Only valid with integration topology; `tickets.mjs` refuses the combination
-with serial. Declaring it means: after sign-off, each ticket implements,
-reviews, fixes and merges its own pull request into `epic/<name>` unattended,
-and the human's next decision point is the release pull request. Declaring it
-also obligates the plan to probe the environment prerequisites NOW — branch
-protection on the default branch (the run skill's step 3 has the probe
-commands) and the pre-authorized permission surface (step 3 enumerates what
-must be allowed; check that list against what the environment actually
-pre-authorizes) — and record the result as prose on this Run mode line or
-under the ground rules, never as its own mode-shaped preamble line, which
-doctor's near-miss scan would flag. If the protection probe finds it missing
-or unavailable (a free-plan 403 on both endpoints), the human decides at
-sign-off: fix the environment, or **waive it — and the waiver is written
-here too, as a decision, never a bare finding**: "waived <date>: <who> chose
-to run without the hard floor", because the run skill's step 3 proceeds only
-on recorded human acceptance and treats a probe result alone as no waiver.
-A prerequisite first probed on run day is discovered at the worst moment:
-the first live run hit an unprobed free-plan 403, and its waiver landed
-seconds before run start.>
+release — THE DEFAULT for a multi-ticket epic. After sign-off, each ticket
+implements, is reviewed, fixes findings and merges its own pull request into
+`epic/<name>` unattended (`/flow:run`); the human's two decisions are this
+sign-off and the release pull request at the end. Choose it because the
+valuable human gates are the plan and the release — a human approving every
+intermediate pull request is acting as a scheduler, not a judge. Bound it:
+roughly 3–6 tickets, days not weeks, and a release diff a human can
+actually review — a release epic that would exceed that is either split or
+made incremental.
+
+incremental — each ticket opens its own pull request against the default
+branch, human-gated, merged before the next starts. Choose it when early
+delivery or production feedback per ticket matters, when main moves fast in
+the same area, when a migration needs staged deployment — or when the epic
+would outgrow the release bounds above. Attended by definition: the human
+merge between tickets is the point of choosing it.
+
+Declaring `release` obligates the plan to probe the environment
+prerequisites NOW — branch protection on the default branch (the run
+skill's step 3 has the probe commands) and the pre-authorized permission
+surface (step 3 enumerates what must be allowed; check that list against
+what the environment actually pre-authorizes) — and record the result as
+prose on this Delivery line or under the ground rules, never as its own
+mode-shaped preamble line, which doctor's near-miss scan would flag. If the
+protection probe finds it missing or unavailable (a free-plan 403 on both
+endpoints), the human decides at sign-off: fix the environment, or **waive
+it — and the waiver is written here too, as a decision, never a bare
+finding**: "waived <date>: <who> chose to run without the hard floor",
+because the run skill's step 3 proceeds only on recorded human acceptance
+and treats a probe result alone as no waiver. A prerequisite first probed
+on run day is discovered at the worst moment: the first live run hit an
+unprobed free-plan 403, and its waiver landed seconds before run start.
+
+A ticket of a release epic can still be run one-at-a-time with
+`/flow:ticket` — that is the escape hatch for resolving a halt or watching
+one consequential ticket closely, not a planned mode.>
+
+<OPTIONAL, parsed like Delivery — omit both lines unless pinning a model:
+`Reviewer model: <model>` fixes the ticket reviewer's model (otherwise the
+ticket skill's consequence tiers choose it); `Worker model: <model>` fixes
+the implementing workers' model (otherwise each worker inherits the session
+that spawns it) — the latter is how a plan written on one model is
+implemented by another, e.g. plan on a stronger model, implement on a
+cheaper one.>
 
 Status log: `epics/<name>/status.md`. Run a ticket with `/flow:ticket <ID>`.
 
@@ -201,15 +214,15 @@ Then, before showing the user:
 ## 5. Get sign-off — hard gate
 
 Show the user: the ticket list with one line each, the order, what ticket one
-proves, the release mode and why, anything you found while grounding that
+proves, the delivery choice and why, anything you found while grounding that
 changes the shape of the work — and the plan review's outcome: what it flagged,
 what you changed, what you rejected and why, and its open questions.
 
-**If the epic declares `Run mode: autonomous`, the sign-off must say so in
-plain terms**: "after your approval, tickets will implement, review and merge
-into `epic/<name>` unattended; your next decision point is the release pull
-request." Approval of an autonomous epic is approval of that, and the user
-must be able to see it.
+**If the epic declares `Delivery: release`, the sign-off must say so in
+plain terms**: "after
+your approval, tickets will implement, review and merge into `epic/<name>`
+unattended; your next decision point is the release pull request." Approval
+of a release epic is approval of that, and the user must be able to see it.
 
 **Ask explicitly, and wait.** Do not write the status doc, do not touch the root
 instruction file, do not start ticket one. Re-planning is cheap now and expensive
@@ -236,8 +249,9 @@ from>
 
 This template's preamble — the heading through the **Rules** block; the
 Baseline section is planning's own — is also carried by the ticket skill's
-step 6, the door where a missing status log is created mid-ticket. One rule,
-two documents: a change to either copy moves the other in the same commit.
+step 6, the door where a missing status log is created mid-ticket, and by
+the quick skill's step 5 for its in-session lane. One rule, three documents:
+a change to any copy moves the others in the same commit.
 
 **The status log is a diary, not a dashboard.** It records what happened, in
 order, permanently. It never answers "which tickets are done" — `/flow:tickets`
@@ -265,16 +279,16 @@ into every ticket.
 Anchor the paths to `$REPO`. `git add epics/…` is interpreted relative to the
 shell's cwd, which is not necessarily the repo root.
 
-**Push the epic branch now**, not when someone first needs it: in integration
-mode every ticket's pull request uses `epic/<name>` as its base, and a base
-that exists only locally makes `gh pr create` fail — in an autonomous run,
+**Push the epic branch now**, not when someone first needs it: in a release
+epic every ticket's pull request uses `epic/<name>` as its base, and a base
+that exists only locally makes `gh pr create` fail — in an unattended run,
 with nobody there to answer. The push is also what lets `/flow:run` verify
 sign-off happened before starting an unattended run.
 
-**Do not open a pull request for the plan.** In serial mode the docs reach the
-default branch for free: ticket one branches from here, so they land in that
-ticket's pull request along with the code they describe. In integration mode
-they land with the release pull request.
+**Do not open a pull request for the plan.** In an incremental epic the docs
+reach the default branch for free: ticket one branches from here, so they
+land in that ticket's pull request along with the code they describe. In a
+release epic they land with the release pull request.
 
 **The epic's documents are never deleted to make a diff smaller.** If a pull
 request is too large to review, the epic was too large — split the work, not the
@@ -285,10 +299,10 @@ default branch leaves it diverged from the remote once ticket one merges.
 
 ## 8. Hand over
 
-Say which ticket is first and that `/flow:ticket <first-ID>` runs next, from this
-same working copy. If the epic declares `Run mode: autonomous`, say instead
-that `/flow:run <name>` starts the unattended run — that is what the sign-off
-approved.
+If the epic declares `Delivery: release`, say that `/flow:run <name>`
+starts the unattended run — that is what the sign-off approved. For an incremental epic, say which
+ticket is first and that `/flow:ticket <first-ID>` runs next, from this same
+working copy.
 
 If the project uses one checkout per epic and you were **not** run from this
 epic's own checkout, say so — a fresh checkout resets to the remote default
