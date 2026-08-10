@@ -6,6 +6,21 @@ those changes deliberate and visible. Entries land in the same commit as the
 change, under `## Unreleased` between releases; a release stamps the batch
 with one version and date.
 
+## Unreleased
+
+- **New verification tool: `scripts/check-invariants.mjs`**, with its own
+  suite (`check-invariants.test.mjs`, 7 tests — including proofs that each
+  class of drift actually fails). The cross-document couplings the doctrine
+  states but nothing enforced mechanically — the status-log preamble's three
+  copies, the quick-gate/`xhigh` risk lists, the skills' heading templates
+  against `tickets.mjs`'s parser regexes, the session guard's refusal message
+  as the ticket skill quotes it, and a short list of load-bearing doctrine
+  phrases — now have a script that exits 1 on any drift, re-deriving the
+  parser regexes from `tickets.mjs` source so the two cannot diverge silently.
+  Checks are presence and equality only; contradictions in meaning remain
+  review's job. Dev-side only: no skill invokes it, and installed projects
+  are unaffected.
+
 ## 2.0.0 — 2026-08-11
 
 The cost release: the flow's guarantees become adaptive and cheaper, per an
