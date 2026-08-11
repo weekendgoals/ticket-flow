@@ -80,15 +80,15 @@ const line = s => String(s == null ? '' : s).replace(/[\r\n\t]+/g, ' ').slice(0,
 const STOP = {
   blocked: 'BLOCKED — a worker wrote a BLOCKED (or ABANDONED) status entry, or ended in any state but `integrated`',
   importantFinding: 'an Important review finding it cannot fix',
-  contradiction: 'a document/code contradiction — reported by a worker, or met by this skill\'s own checks',
+  contradiction: 'a document/code contradiction — reported by a worker, or met by the script\'s own checks',
   mergeConflict: 'a merge conflict — refreshing the epic branch, or anywhere else',
   reviewerSpawn: 'reviewer-spawn failure after the sanctioned fallback also fails',
   permissionPrompt: 'a permission prompt firing mid-run',
-  nonzeroExit: 'a nonzero exit from any command the skill itself issues as a step, except those the skill explicitly marks tolerated',
+  nonzeroExit: 'a nonzero exit from any command the run issues as a step, except those this skill explicitly marks tolerated',
 }
 
 // ---- agent contracts --------------------------------------------------------
-const NO_MAIN = `HARD RULE: nothing you do merges, pushes, or retargets toward ${defaultBranch}. Your entire write surface is ${epicBranch} (and, for a worker, its own ticket branch). Never push to ${defaultBranch}, never open or merge a pull request against it.`
+const NO_MAIN = `HARD RULE: nothing you do merges, pushes, or retargets toward the default branch (${defaultBranch}). Your entire write surface is ${epicBranch} (and, for a worker, its own ticket branch). Never push to ${defaultBranch}, never open or merge a pull request against it.`
 
 const PROMPT_RULE = `If any command you run would raise a permission prompt, do NOT wait on it: return immediately with outcome "permission-prompt" and name the command. An unattended run that needs to ask was not pre-authorized, and a run wedged on a prompt looks exactly like a run making progress.`
 
@@ -140,6 +140,20 @@ const FIND_SCHEMA = {
   },
 }
 
+// The worker's stopCondition values and the STOP entries they resolve to, in
+// one map: the schema's enum is derived from its keys, so a value renamed in
+// either place breaks loudly instead of silently degrading every halt of that
+// kind to the BLOCKED wording.
+const WORKER_STOP = {
+  'blocked-entry': STOP.blocked,
+  'important-finding-unfixed': STOP.importantFinding,
+  'document-contradiction': STOP.contradiction,
+  'merge-conflict': STOP.mergeConflict,
+  'reviewer-spawn-failed': STOP.reviewerSpawn,
+  'permission-prompt': STOP.permissionPrompt,
+  other: STOP.blocked,
+}
+
 const WORKER_SCHEMA = {
   type: 'object',
   required: ['ticket', 'result'],
@@ -153,7 +167,7 @@ const WORKER_SCHEMA = {
     },
     stopCondition: {
       type: 'string',
-      enum: ['none', 'blocked-entry', 'important-finding-unfixed', 'document-contradiction', 'merge-conflict', 'reviewer-spawn-failed', 'permission-prompt', 'other'],
+      enum: ['none', ...Object.keys(WORKER_STOP)],
       description: 'what stopped you, when result is not "integrated"; "none" when it is',
     },
     built: { type: 'string', description: 'one to three sentences: what exists now that did not' },
@@ -339,20 +353,12 @@ Report honestly: \`integrated\` ONLY if you merged your own pull request into ${
   ticketRecords.push(record)
 
   if (!worker || worker.result !== 'integrated') {
-    const reason = worker ? worker.stopCondition : 'other'
-    const stopCondition =
-      reason === 'important-finding-unfixed' ? STOP.importantFinding
-        : reason === 'document-contradiction' ? STOP.contradiction
-        : reason === 'merge-conflict' ? STOP.mergeConflict
-        : reason === 'reviewer-spawn-failed' ? STOP.reviewerSpawn
-        : reason === 'permission-prompt' ? STOP.permissionPrompt
-        : STOP.blocked
     halted = {
       ticket: id,
-      stopCondition,
+      stopCondition: WORKER_STOP[worker ? worker.stopCondition : 'other'] || STOP.blocked,
       where: `the worker for ${id}`,
       detail: worker
-        ? `worker reported ${worker.result}: ${line(worker.detail || worker.built || '(no detail)')}`
+        ? `worker reported ${worker.result}: ${fence(line(worker.detail || worker.built || '(no detail)'))}`
         : 'the worker returned no report — it died, was skipped, or ran out of room; the ticket is NOT integrated',
     }
     break

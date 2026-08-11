@@ -383,6 +383,31 @@ That is why serial-to-main stopped being the universal default: the record
 showed disciplined users stacking anyway (Q-10–Q-17), which was the rule
 mismeasuring their throughput needs, not the users misbehaving.
 
+## Why the run loop is code, not prose
+
+The unattended lane's guarantees were originally sentences a driver session
+read and obeyed: loop in document order, verify each merge from the board,
+halt on any stop condition, improvise past none of them. Sentences hold only
+as well as the reader — the same failure class as every other soft rule in
+this repository, but here with nobody watching and merges happening. Every
+review of the autonomous epic found some document drift, and a drifting
+driver is a driver whose release pull request cannot be trusted.
+
+So the loop moved into a workflow script (`workflows/run-epic.mjs`), where
+"never resume past a halt" is not an instruction but an absence: there is no
+code path that continues after a stop condition, the way there is no square
+root of a negative number. The skill keeps the judgment ends — whether the
+run may start, and recording how it ended — because those are decisions, and
+scripts do not make decisions. There is deliberately no prose fallback when
+the Workflow tool is missing: a fallback loop would quietly restore the
+improvisation surface the script exists to remove, and the attended lane
+(`/flow:ticket`, one ticket at a time) already covers the emergency.
+
+The trade is honest: the script cannot touch a file or run a command itself,
+so every mechanical fact still arrives through an agent it spawns — control
+flow became deterministic, the facts did not. The halt conditions are code;
+the eyes are still models.
+
 ## The admission test
 
 Every artifact and gate in this workflow must do at least one of four things:

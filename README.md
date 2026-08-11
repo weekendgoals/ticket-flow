@@ -4,7 +4,8 @@ A Claude Code plugin that runs work as **epics** and **tickets**, from a request
 through to a reviewed pull request — and derives the board from git instead of
 asking anyone to maintain one.
 
-Eight skills, two reviewer agents, one script, one session hook. No database,
+Eight skills, two reviewer agents, one board script, one workflow script
+(`/flow:run`'s ticket loop), one session hook. No database,
 no config file, no state stored anywhere — except one per-session marker in
 the OS temp dir (the in-session-work guard's memory of the current
 conversation; it dies with the session's context and never touches the
@@ -163,9 +164,11 @@ run hit an unprobed free-plan 403, and its waiver landed seconds before
 start):
 
 - **A pre-authorized permission surface.** The session must already be
-  allowed to run git, `gh`, the project's test commands, file edits and agent
-  spawns without prompting — a prompt mid-run stops the run, because nobody
-  is there to answer it.
+  allowed to run git, `gh`, the project's test commands, file edits, agent
+  spawns, and the Workflow launch that runs the ticket loop, all without
+  prompting — a prompt mid-run stops the run, because nobody is there to
+  answer it, and the workflow-launch prompt would fire before any loop code
+  exists to catch it.
 - **Branch protection on the default branch** — require pull requests, block
   force pushes, human-only merge. The skills are soft enforcement obeyed by a
   cooperating agent; protection is the hard floor that holds even against a

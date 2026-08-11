@@ -120,3 +120,19 @@ test('a dropped doctrine phrase fails', () => {
   assert.equal(r.status, 1, r.out)
   assert.match(r.out, /doctrine phrase missing/)
 })
+
+test('the workflow script losing the driver handshake fails', () => {
+  const root = copyRepo()
+  mutate(root, 'plugins/flow/workflows/run-epic.mjs', 'A driver spawned you', 'You were spawned')
+  const r = run(root)
+  assert.equal(r.status, 1, r.out)
+  assert.match(r.out, /run-epic\.mjs.*driver handshake/s)
+})
+
+test('the workflow script losing the merge-direction rule fails', () => {
+  const root = copyRepo()
+  mutate(root, 'plugins/flow/workflows/run-epic.mjs', 'toward the default branch', 'toward main')
+  const r = run(root)
+  assert.equal(r.status, 1, r.out)
+  assert.match(r.out, /run-epic\.mjs.*merge-direction/s)
+})

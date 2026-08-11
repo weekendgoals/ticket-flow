@@ -63,7 +63,24 @@ with one version and date.
   "A driver spawned you" handshake (ticket step 10 keys on it) is checked in
   `workflows/run-epic.mjs` alongside the two skills, and the script must
   carry the merge-direction phrase — load-bearing prose moved into code, so
-  the drift checker follows it there.
+  the drift checker follows it there. Both new invariants have negative
+  tests (suite 7 → 9).
+- **Review fixes** (fresh-context review, opus/high, 2026-08-11; one
+  Important, five nits, all fixed): an **errored Workflow call is a recorded
+  halt** — run skill step 4 now defines the third branch (no prose
+  continuation, facts recovered from the board, error quoted as the stop
+  condition), and the `/flow:ticket` escape hatch is scoped to
+  nothing-launched only; worker-authored result fields (`built`,
+  `verification`, `reviewOutcome`, a halt's `detail`) are **fenced as
+  untrusted data on both paths** and the skill now says what the fences are
+  and how to erase them deliberately; the script's `STOP` strings re-synced
+  to the rewritten skill's step 5 wording; the worker `stopCondition` enum is
+  derived from the `WORKER_STOP` map so the two cannot drift; the checker's
+  workflow merge-direction guard anchors on the `NO_MAIN` prompt rule, not
+  the meta description; README's permission surface names the Workflow
+  launch and its inventory names the workflow script; METHODOLOGY gains
+  "Why the run loop is code, not prose"; step 5 tells the session to clear
+  an unaborted merge before committing a halt record.
 
 ## 2.0.0 — 2026-08-11
 
