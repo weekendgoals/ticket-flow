@@ -15,7 +15,7 @@ repository).
 |---|---|
 | `/flow:epic <name> [source...]` | Turn a request, report or conversation into `epics/<name>/`. Sources are files, globs or URLs, saved into `context/`; with none, the conversation is the brief. A fresh-context **plan reviewer** challenges the decomposition, then it **stops for sign-off** and commits — no pull request |
 | `/flow:ticket <ID>` | One ticket end to end: branch, implement, verify, log, commit, review, fix, push, pull request. Runs **supervisor-mode by default** — a fresh-context worker implements from the documents and the supervisor hires the reviewer; `--interactive` runs in-session, once per session (a hook refuses a second interactive run; supervisor runs stay open) |
-| `/flow:run <epic>` | Run a `Delivery: release` epic end to end with nobody present: verifies sign-off happened, then hands the loop to a shipped **workflow script** that takes the tickets in document order — each in a **fresh-context agent** that implements, reviews, fixes and merges into `epic/<name>` — and halts on any stop condition, because each one is a code path rather than a judgment call. The session ends by **opening** the release pull request. Requires the Workflow tool; never merges toward the default branch |
+| `/flow:run <epic>` | Run a `Delivery: release` epic end to end with nobody present: verifies sign-off happened, then hands the loop to a shipped **workflow script** that takes the tickets in document order — a **fresh-context worker** implements each one and stops at its pull request, then the **driver hires the reviewer**, gates in code on its structured findings, and merges into `epic/<name>` — and halts on any stop condition, because each one is a code path rather than a judgment call. The session ends by **opening** the release pull request. Requires the Workflow tool; never merges toward the default branch |
 | `/flow:quick <description>` | The **cheap lane**: one small, low-risk piece of work, implemented **in-session** with a written scope, verification with counts, a short log entry and a pull request — and a fresh-context reviewer **only when behaviour changes** (prose-only diffs — documentation and comments, nothing a machine reads — get none; the PR is the review). Size- **and risk-gated**: auth, secrets, migrations and other consequential work is routed to `/flow:epic` at any size |
 | `/flow:tickets [epic]` | The board — shipped, in flight, blocked, todo |
 | `/flow:review [range]` | Review a commit range and report. Used by `/flow:ticket`; runnable on its own |
@@ -185,6 +185,13 @@ amendments, so the review stays auditable against exactly what was reviewed.
 `flow:plan-reviewer` does the same to a draft epic before sign-off, reading the
 decomposition against the actual code — a wrong split caught there costs one
 edit instead of every ticket built on it.
+
+**The hirer is never the party under review.** In `/flow:ticket`'s default
+lane the supervisor hires the reviewer, not the worker that wrote the code;
+in `/flow:run` the driver script does the same one level up — the worker
+stops at its opened pull request, the script hires the reviewer, and a code
+gate on the reviewer's structured findings decides whether anything merges.
+A worker that picked its own judge would recreate self-review one level down.
 
 They ship under their own names rather than generic ones, because project and
 user `.claude/agents/` definitions override same-named plugin agents. If you

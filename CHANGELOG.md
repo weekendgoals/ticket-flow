@@ -38,22 +38,59 @@ with one version and date.
   cannot. The script refreshes `epic/<name>` between every ticket, spawns one
   fresh general-purpose worker per ticket with the load-bearing "A driver
   spawned you" prompt unchanged, and confirms `state === "integrated"` from
-  `tickets.mjs find --json` rather than from the worker's report. It never
-  spawns a reviewer, never reviews a diff, never opens or merges the release
-  pull request, and never touches the default branch.
-- **The driver's token figure now comes from the worker.** A script observes
-  no harness counter, so the worker reports its own figure alongside its
-  reviewer's; `unknown` still means unknown and is never estimated. The run
-  record's Tokens line says where each figure came from.
+  `tickets.mjs find --json` rather than from any agent's report. It never
+  reviews a diff itself, never opens or merges the release pull request, and
+  never touches the default branch.
+- **The driver hires the judge, and the merge gate is code.** The per-ticket
+  sequence is refresh → next → worker → reviewer → disposition → merge →
+  verify. The **worker** now runs a scoped slice of `flow:ticket` — steps 1–6
+  plus step 9's push and pull-request open — and stops there; it never
+  reviews or merges its own work, and it spawns nothing. The **script** hires
+  `flow:ticket-reviewer` with a packet it assembles deterministically (the
+  commit range computed from the ticket ID, since branches are the lowercased
+  ID; the epic's `tickets.md` and `status.md`; the repository's instruction
+  files) — never from the worker's narrative — and takes findings back as
+  **structured data**: `important[]` with `file:line`, a confirmed/plausible
+  label and the concrete failure, capped nits with an overflow count,
+  pre-existing findings, and what was checked and found sound. Review price
+  comes from the tier the worker reports for its own diff under the step 7
+  table (`prose` → a fast model at `low`, `normal` → the session's class at
+  `high`, `consequence` → the strongest at `xhigh`), with the epic's
+  `Reviewer model:` line overriding the model; **a missing or unrecognised
+  tier is priced as `consequence` — doubt goes up.** A separate cheap
+  **disposition** agent fixes Important findings as new commits, re-runs the
+  affected checks, and writes and commits the dated review addendum — it runs
+  even on zero findings, because the committed addendum is a merge
+  precondition. Then a cheap **merge** agent checks `baseRefName` is
+  `epic/<name>` and merges with a merge commit, never a squash. **The gate is
+  four code paths**: an unfixed Important finding halts, a failed disposition
+  halts, an uncommitted addendum halts, and a wrong base halts as a
+  contradiction — none of them reachable past.
+- **This also dissolves the Agent-tool limitation** recorded earlier in this
+  batch: nothing the script spawns needs to spawn anything, so the lane works
+  on current Claude Code builds, which withhold the Agent tool from
+  workflow-spawned agents. Reviewer-spawn failure now means the *script's*
+  hiring failed — the `flow:ticket-reviewer` agent and then the sanctioned
+  general-agent fallback both returned nothing — and the ticket's pull
+  request stays open and unmerged.
+- **Token figures are self-reported through schemas.** The script hires both
+  the worker and the reviewer but observes no harness counter, so each
+  reports its own figure; the driver passes the reviewer's model, effort and
+  figure into the disposition prompt, which is the only way the addendum can
+  state them. `unknown` still means unknown and is never estimated.
 - **The ending no longer refreshes the epic branch a second time.** The loop
   refreshes before it asks what is left, so the pass that finds nothing left
   has already refreshed a branch carrying every ticket's merge; the result's
   `finalRefresh` reports it.
-- **Known limitation, recorded in step 5**: on Claude Code builds that
-  withhold the Agent tool from workflow-spawned agents (2.1.227 does), the
-  worker cannot hire its reviewer and the run halts on the first ticket with
-  "reviewer-spawn failure after the sanctioned fallback also fails" — the
-  gate working, since an unreviewed ticket is never merged, anywhere.
+- **Doctrine follows the restructure**, in the same commit: ticket skill step
+  0 (a driver-spawned worker stops at its opened pull request; a
+  human-invoked ticket of a release epic still ends per step 10 unchanged),
+  step 7 (the driver hires the reviewer in an unattended run), step 9 (the
+  sanctioned merge's surface is the epic branch — step 10, or the run
+  driver's merge step), step 10 (a driver-spawned worker never reaches the
+  merge); CLAUDE.md's merge invariant; README's `/flow:run` row and the
+  reviewer section's new "the hirer is never the party under review"
+  paragraph; METHODOLOGY's "Why the run loop is code, not prose".
 - **`/flow:run` now requires the Workflow tool.** If it is unavailable the
   skill stops and reports; there is deliberately no prose fallback loop,
   because a fallback would restore the improvisation surface the conversion

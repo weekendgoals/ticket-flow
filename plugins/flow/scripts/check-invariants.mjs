@@ -257,7 +257,7 @@ const PHRASES = [
     files: ['run', 'ticket', 'readme', 'claudemd', 'workflow'],
   },
   {
-    why: 'the driver handshake phrase ticket step 10 keys on to stop after the merge',
+    why: 'the driver handshake phrase ticket step 0 keys on to let the spawn prompt scope the skill, and step 10 keys on to stop the worker short of the merge',
     re: /a driver spawned you/i,
     files: ['run', 'ticket', 'workflow'],
   },

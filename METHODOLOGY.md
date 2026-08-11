@@ -403,6 +403,16 @@ the Workflow tool is missing: a fallback loop would quietly restore the
 improvisation surface the script exists to remove, and the attended lane
 (`/flow:ticket`, one ticket at a time) already covers the emergency.
 
+Moving the loop into code also moved the judge. The driver hires each
+ticket's reviewer — the supervisor pattern one level up — and the worker
+stops at its opened pull request without reviewing or merging anything it
+wrote. That closes the last place where the party under review still picked
+its own judge, and it makes the merge gate mechanical: the reviewer returns
+findings as structured data, and code, not prose, decides that an Important
+finding left unfixed or a review addendum left uncommitted stops the run. A
+gate written as a sentence is obeyed by a reader; a gate written as a branch
+is obeyed by the machine.
+
 The trade is honest: the script cannot touch a file or run a command itself,
 so every mechanical fact still arrives through an agent it spawns — control
 flow became deterministic, the facts did not. The halt conditions are code;

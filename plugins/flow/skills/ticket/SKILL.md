@@ -71,12 +71,17 @@ never set the marker; the marker is wiped when the session's context is
 wiped (/clear, new session) and survives resume/compact.
 
 **Autonomous epics keep their own ending**: `/flow:run`'s driver plays the
-supervisor's role, and its workers self-review and self-merge per step 10.
-When a human invokes one autonomous-epic ticket directly, step 0's lanes
-still apply, but the ticket ends per step 10's autonomous gate — in
-supervisor mode the worker performs that gate and the epic-branch merge,
-then stops (it was spawned for one ticket; the carve-out in step 10
-applies).
+supervisor's role one level up — **it** hires the reviewer, gates on the
+findings in code, and merges — so a driver-spawned worker runs a scoped
+slice of this skill and **stops at its opened pull request** (steps 1–6 and
+step 9; no step 7, no step 8, no step 10). It never reviews or merges its
+own work, for the same reason a supervisor's worker does not: the party
+under review does not pick its judge. When a **human** invokes one
+autonomous-epic ticket directly — the escape hatch for resolving a halt —
+step 0's lanes still apply and the ticket ends per step 10's autonomous gate
+unchanged: in supervisor mode the worker performs that gate and the
+epic-branch merge, then stops (it was spawned for one ticket; the carve-out
+in step 10 applies).
 
 ## 1. Resolve it
 
@@ -304,8 +309,10 @@ was reviewed.
 
 The session that wrote the code cannot review it. It will agree with itself.
 In supervisor mode this step belongs to the **supervisor**, never the
-worker (step 0); in an autonomous run the worker spawns it per this epic
-mode's own rules (step 10).
+worker (step 0); in an unattended run it belongs to the **driver script**,
+which hires the reviewer once the worker's pull request is open, and gates
+on its findings before merging (step 0). Either way the hirer is never the
+party under review.
 
 Independent review is always worth its price here; **maximum-capability
 review is not** — the strongest model at the highest effort spends 50–80k
@@ -418,7 +425,8 @@ tickets, and squashing collapses their subjects into one, making every ticket
 but one read as unshipped.
 
 The **one sanctioned agent merge** exists only in a release epic, and its
-surface is the epic branch only — step 10.
+surface is the epic branch only — step 10 when you own the ending, or the run
+driver's merge step, after its coded gate, in an unattended run.
 
 ## 10. Stop — or, in a release epic, integrate and continue
 
@@ -444,11 +452,12 @@ stop. Do not start the next ticket. There is nothing to run after the merge.
   `gh pr merge <number> --merge`. Never squash — the release pull request
   needs the per-ticket subjects.
 - **If a driver spawned you for this one ticket** (the prompt that launched
-  you says so), report as in step 9 and **stop after the merge** — the driver
-  owns the loop, the between-ticket refresh of the epic branch, and the fresh
-  context of the next ticket's agent. Continue to the next ticket in document
-  order yourself **only when you are the whole run** and no driver exists.
-  Either way, the epic's ground-rule stop conditions bind everything; halting
-  on one is the mechanism working, not a failure.
+  you says so), you never reach this step: your ticket ends at step 9's
+  opened pull request, and the driver owns the review, the gate, the merge,
+  the between-ticket refresh of the epic branch, and the fresh context of the
+  next ticket's agent. Report as in step 9 and stop. Continue to the next
+  ticket in document order yourself **only when you are the whole run** and
+  no driver exists. Either way, the epic's ground-rule stop conditions bind
+  everything; halting on one is the mechanism working, not a failure.
 - The default branch remains untouchable. The release pull request at the end
   of the run is opened by the driver and merged by a human — never by you.

@@ -83,7 +83,8 @@ path explicitly.
   every mode: no agent merges or pushes toward the default branch, and no
   skill gains a post-merge step. The one sanctioned agent merge **of a pull
   request** is into the epic branch inside a release epic — declared
-  `Delivery: release` (ticket skill step 10) — there, the human gate moves
+  `Delivery: release` (ticket skill step 10; in an unattended run, the run
+  workflow's merge step after its coded gate) — there, the human gate moves
   to the release pull request, and
   branch protection on main is the hard floor under the rule. Refreshing an
   epic branch **from** the default branch (ticket skill step 3, and the run
