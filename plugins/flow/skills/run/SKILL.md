@@ -250,27 +250,29 @@ looping until `tickets.mjs next <epic> --json` comes back empty:
   halts. There is deliberately **no second round**: iterating a reviewer and
   a fixer toward agreement is the improvisation this lane forbids. A clean
   review skips this step entirely, so it costs nothing on the common path.
-- **merges, after two mechanical checks.** First the review must be on the
-  record *in the pushed branch*: `git show origin/<id lowercased>:epics/<epic>/status.md`,
-  narrowed by `awk` to **this ticket's own entries**, must contain the day's
-  `Addendum — review —` line. The narrowing is the check — the branch was cut
-  from `epic/<name>` and the log is append-only, so it already carries every
-  earlier ticket's addenda, and an unscoped grep for today's date would be
-  satisfied by one of those. Then the pull request is **resolved from the
-  branch**, not from the number the worker reported:
-  `gh pr list --head <id lowercased> --state open` (deliberately not filtered
-  by base, so a pull request aimed at the wrong branch comes back to be
-  reported instead of vanishing into a zero count) must return **exactly
-  one**, its `headRefName` and `baseRefName` are verified from the response,
-  and the worker's number is only a cross-check — zero, several, a mismatch,
-  or any base but `epic/<name>` halts, and nothing is ever retargeted. Then
-  `gh pr merge <n> --merge`: a merge commit, never a squash, because the
-  release pull request carries every ticket's subjects and squashing
-  collapses them so every ticket but one reads as unshipped. This is the one
-  sanctioned agent merge, and its surface is the epic branch only. Both
-  checks are re-read in code after the merge reports success — a "merged"
-  that names another pull request, or that carries no count for this ticket's
-  addendum, halts like a refusal would.
+- **resolves what the merge will need — read-only — and the code judges it
+  before anything can merge.** One agent runs two commands and reports what
+  they printed, deciding nothing: `git show origin/<id lowercased>:epics/<epic>/status.md`
+  narrowed by `awk` to **this ticket's own entries** and grepped for the day's
+  `Addendum — review —` line (the narrowing *is* the check — the branch was
+  cut from `epic/<name>` and the log is append-only, so it already carries
+  every earlier ticket's addenda, and an unscoped grep for today's date would
+  be satisfied by one of those), and `gh pr list --head <id lowercased> --state open`
+  (deliberately not filtered by base, so a pull request aimed at the wrong
+  branch comes back to be reported instead of vanishing into a zero count).
+  Then **the script** checks: exactly one pull request, `headRefName` equal to
+  the ticket branch and `baseRefName` equal to `epic/<name>`, an addendum
+  count of at least one, and a number equal to the one the worker reported.
+  Any of those failing halts **before an agent that could merge exists** —
+  which is the point of splitting the step: a check that runs inside the
+  merging agent can only be re-checked after the merge, and nothing un-merges
+  a pull request that pointed at the default branch.
+- **merges** — `gh pr merge <n> --merge` and nothing else, by an agent handed
+  the code-verified number and forbidden every other command. A merge commit,
+  never a squash, because the release pull request carries every ticket's
+  subjects and squashing collapses them so every ticket but one reads as
+  unshipped. This is the one sanctioned agent merge, and its surface is the
+  epic branch only.
 - **verifies the outcome mechanically**, with
   `tickets.mjs find <ID> --json`: `state` must read `integrated` — the merged
   pull request into the epic branch is the only evidence that counts, not any
@@ -291,7 +293,8 @@ enters your context from the whole loop:
                      findings, checkedAndSound,
                      fixedCommits, notFixed, disposition,
                      reReviewRan, reReviewImportantCount, reReviewTokens,
-                     reReviewFindings, mergeOutcome, addendumMatches,
+                     reReviewFindings, resolveOutcome, mergeOutcome,
+                     addendumMatches, matchCount,
                      built, verification, workerReported,
                      dispositionCounts, dispositionDetail,
                      deployPreconditions,
@@ -363,10 +366,9 @@ code path that resumes past one. The run halts:
   usable pull request number (nothing downstream may guess which pull request
   a ticket owns), and a review that is not on the record — the disposition
   never committed the addendum, or **this ticket's** entries in the pushed
-  status log do not carry the day's `Addendum — review —` line, or the merge
-  came back "merged" without a count for it at all. An
-  unreviewed-**on-the-record** ticket is never merged, whatever an agent says
-  it did;
+  status log do not carry the day's `Addendum — review —` line when the
+  resolve step counts them. An unreviewed-**on-the-record** ticket is never
+  merged, whatever an agent says it did;
 - on **an Important review finding it cannot fix** — the script's own gate
   refuses it: legitimate not-fixed reasons exist, but in an unattended run
   accepting one is not an agent's to decide, so the disposition reports it
@@ -381,8 +383,11 @@ code path that resumes past one. The run halts:
   review that raised Important findings, or "fixed" while naming no fix
   commits — the driver holds the finding count and checks rather than reads),
   or the ticket's pull request not resolving cleanly from its branch — none
-  open, several open, a number the worker did not report, or a base that is
-  not `epic/<name>` (never retargeted, never merged);
+  open, several open, a number the worker did not report, a head that is not
+  the ticket branch, or a base that is not `epic/<name>`. Those resolution
+  facts are code-checked **before the merge command exists**, so a halt here
+  means nothing was retargeted, nothing was merged, and no agent that could
+  merge was ever spawned;
 - on **a merge conflict** — refreshing the epic branch, or anywhere else,
   including a ticket's pull request that will not merge into the epic branch;
 - on **reviewer-spawn failure after the sanctioned fallback also fails** —
@@ -434,13 +439,17 @@ it:
 **Driver:** /flow:run, unattended, loop by `workflows/run-epic.mjs`.
 **Tickets this run:** <one line per ticket, in order, from `ticketRecords`:
 ID — the worker agent that ran it — its review tier and what the review
-found (`importantCount` Important, `nitCount` nits, fixed or not) —
-integrated | halted>.
+found (`importantCount` Important, `nitCount` nits, fixed or not) — and,
+when `reReviewRan`, "re-reviewed after fixes: `<reReviewImportantCount>`
+Important" — integrated | halted. The re-review is the only evidence that
+the *fixed* diff was reviewed too; a record that omits it reads as though
+the fixes were never looked at.>
 
 **Tokens:** <per ticket, `workerTokens` and `reviewerTokens` from that
-ticket's `ticketRecords` entry, with the reviewer's tier, model and effort
-(`tier`, `reviewerModelUsed`, `reviewerEffort`) beside them — the script
-hires both agents but observes no harness counter, so each reports its own
+ticket's `ticketRecords` entry — plus `reReviewTokens` when `reReviewRan`,
+on exactly the same terms — with the reviewer's tier, model and effort
+(`tier`, `reviewerModelUsed`, `reviewerEffort`) beside them. The script
+hires all of them but observes no harness counter, so each reports its own
 figure through its schema; `unknown` where nothing was exposed, never an
 estimate — and the run's total of the known figures.
 This line **restates** the ticket entries' figures as one audit view for
@@ -488,7 +497,10 @@ The body is the human's entire evidence base for the only decision they make
 in this mode, so it carries: every ticket with what it built, its
 verification counts, and its review outcome (findings found / fixed / not
 fixed with reasons — lifted from the status log, which travels in this same
-pull request); the release's size, stated up front — `git diff --stat
+pull request) **including its re-review when one ran** (`reReviewRan`,
+`reReviewImportantCount`, `reReviewFindings`): the fix commits were reviewed
+by a second pass, and a body that never says so leaves the human assuming
+the fixes went in unreviewed; the release's size, stated up front — `git diff --stat
 origin/<default-branch>...epic/<name>` — because a release too large to
 review is a fact the human must see before approving, not discover
 mid-review; the run record summary, including which agent ran each ticket;
@@ -507,7 +519,8 @@ run that had no hard floor under main.
 Each ticket's `ticketRecords` entry indexes those facts — `built` and
 `verification` from its worker, and the review outcome from the driver's own
 agents: `importantCount`, `nitCount` (+`nitOverflowCount`), `fixedCommits`,
-`notFixed` and `checkedAndSound`. It is an index into the log, not a
+`notFixed`, `checkedAndSound`, and the re-review's `reReviewRan` /
+`reReviewImportantCount` / `reReviewFindings`. It is an index into the log, not a
 replacement for it: the status log and its review addenda are what travel in
 this pull request and what the retro reads, so where the two differ, the
 committed log wins and the difference is worth a line in the body.

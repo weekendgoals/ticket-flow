@@ -135,8 +135,30 @@ with one version and date.
   pointing at while step 10 said only the first half. METHODOLOGY no longer
   claims the attended lane goes "one step further" on hiring the reviewer:
   both lanes share the shape now.
+- **Third review pass: resolution is now checked before anything can merge.**
+  The merge step resolved the pull request, checked the addendum and merged in
+  one agent, so the code's cross-checks on its reported facts could only run
+  *after* an irreversible merge — and two of them (the head and base refs)
+  were never re-checked at all, which left a malformed report claiming
+  `baseRefName: "main"` able to pass the coded gate. A merge toward the
+  default branch is the plugin's one absolute prohibition and nothing
+  un-merges it, so the step is split: a **read-only resolve agent** reports
+  the addendum count and the pull-request listing, **the script judges every
+  fact** — exactly one match, head equal to the ticket branch, base equal to
+  `epic/<name>`, an addendum count of at least one, a number equal to the
+  worker's — and only then is a **merge agent** spawned, with one command and
+  a number it did not choose. A halt at resolution now means no agent capable
+  of merging was ever created. The per-ticket spawn count goes 6 → 7 on a
+  clean ticket (8 with a re-review); the post-merge belt-and-braces re-checks
+  are gone, because pre-merge verification is strictly stronger.
+- **Re-review evidence survives the session.** The run record's Tickets line
+  notes "re-reviewed after fixes: `<n>` Important" when one ran, its Tokens
+  line carries `reReviewTokens` on the same harness-or-unknown terms, and the
+  release pull request body states each ticket's re-review outcome — without
+  which a human reads fix commits as unreviewed, which is exactly what the
+  re-review exists to prevent.
 - **A committed behavioural suite for the driver**
-  (`workflows/run-epic.test.mjs`, 62 tests): it loads `run-epic.mjs`, strips
+  (`workflows/run-epic.test.mjs`, 65 tests): it loads `run-epic.mjs`, strips
   the `export`, evaluates the module body the way the workflow runtime does,
   and drives it with stubbed agents — asserting the sequence, every gate
   branch and halt mapping, the review pricing, the fences, and the prompt

@@ -10,7 +10,8 @@ export const meta = {
     { title: 'Review', detail: 'the driver hires the judge, priced by the tier the worker reported' },
     { title: 'Disposition', detail: 'fix Important findings, record pre-existing ones, commit the addendum — a merge precondition' },
     { title: 'Re-review', detail: 'one bounded pass over the fix commits, only when there were fixes' },
-    { title: 'Merge', detail: 'resolve the pull request from the branch name, cross-check the addendum on the remote, merge commit, never a squash' },
+    { title: 'Resolve', detail: 'read-only: the addendum on the pushed branch and the pull request the branch resolves to, checked in code before anything can merge' },
+    { title: 'Merge', detail: 'one command on a code-verified number: a merge commit into epic/<name>, never a squash' },
     { title: 'Verify', detail: 'confirm state === integrated from the board, never from an agent' },
   ],
 }
@@ -323,27 +324,44 @@ const DISPOSITION_SCHEMA = {
   },
 }
 
-// The merge step resolves the pull request itself, from the branch name the
-// plugin's ID invariant fixes — the worker's number is a cross-check, not the
-// source of truth. It also reads the addendum off the PUSHED branch, because a
-// self-reported flag is the weakest evidence in the gate.
+// Resolution comes first and on its own, because a check that runs in the same
+// agent as the merge can only be re-checked after the merge — and nothing
+// un-merges a pull request that pointed at the default branch. This agent reads
+// and reports; every decision on what it found is made below, in code, before
+// any agent capable of merging exists.
+const RESOLVE_SCHEMA = {
+  type: 'object',
+  required: ['outcome'],
+  properties: {
+    outcome: {
+      type: 'string',
+      enum: ['resolved', 'command-failed', 'permission-prompt'],
+      description:
+        '"resolved" when both commands ran and you are reporting what they printed — even if what they printed looks wrong to you; judging it is not your job. "command-failed" if a command exited nonzero for any other reason than the grep counting zero.',
+    },
+    addendumMatches: {
+      type: 'integer',
+      description: 'the number `grep -c` printed for the addendum line — 0 is a real answer, not a failure. Report -1 only if the status log could not be read from the branch at all.',
+    },
+    matchCount: { type: 'integer', description: 'how many open pull requests the listing returned for this head branch' },
+    number: { type: ['integer', 'string'], description: 'the pull request number from the listing, when it returned exactly one; omit otherwise' },
+    headRefName: { type: 'string', description: 'the headRefName from the listing, verbatim, when it returned exactly one' },
+    baseRefName: { type: 'string', description: 'the baseRefName from the listing, verbatim, when it returned exactly one' },
+    detail: { type: 'string', description: 'first lines of any error output, verbatim, credentials masked' },
+  },
+}
+
+// And then the merge: one command, with the number supplied by the code that
+// verified it. Nothing to resolve, nothing to decide.
 const MERGE_SCHEMA = {
   type: 'object',
   required: ['outcome'],
   properties: {
     outcome: {
       type: 'string',
-      enum: ['merged', 'addendum-missing', 'no-pull-request', 'multiple-pull-requests', 'wrong-base', 'number-mismatch', 'failed', 'permission-prompt'],
-      description:
-        '"merged" ONLY if `gh pr merge --merge` succeeded and you saw it. "addendum-missing" if the review addendum is not in the pushed branch\'s status log. "no-pull-request"/"multiple-pull-requests" if the listing returned other than exactly one. "wrong-base" if the one it returned does not target the epic branch (or does not come from the ticket branch). "number-mismatch" if the resolved number is not the one the driver expected. "failed" for any other nonzero exit. Merge NOTHING in any of those cases.',
+      enum: ['merged', 'failed', 'permission-prompt'],
+      description: '"merged" ONLY if the command succeeded and you saw it. "failed" for any nonzero exit — say plainly in detail whether it was a conflict.',
     },
-    addendumMatches: { type: 'integer', description: 'the number `grep -c` printed for the addendum line (0 means the addendum is not on the branch)' },
-    addendumMissing: { type: 'boolean', description: 'true when the addendum count was 0, or the status log could not be read from the branch at all' },
-    resolvedNumber: { type: ['integer', 'string'], description: 'the pull request number the listing returned, when it returned exactly one' },
-    matchCount: { type: 'integer', description: 'how many open pull requests the listing returned for this head and base' },
-    headRefName: { type: 'string', description: 'the headRefName from the listing, verbatim' },
-    baseRefName: { type: 'string', description: 'the baseRefName from the listing, verbatim' },
-    workerNumberMatched: { type: 'boolean', description: 'true if the resolved number equals the number the driver told you to expect' },
     detail: { type: 'string', description: 'first lines of the error output when it failed, verbatim' },
   },
 }
@@ -638,8 +656,10 @@ Report honestly: \`pr-opened\` ONLY if you pushed \`${branch}\` and saw \`gh pr 
     reReviewImportantCount: 0,
     reReviewTokens: 'not run',
     reReviewFindings: [],
+    resolveOutcome: 'not reached',
     mergeOutcome: 'not reached',
     addendumMatches: null,
+    matchCount: null,
     resolvedPrNumber: '',
     built: worker && worker.built ? fence(worker.built) : '',
     verification: worker && worker.verification ? fence(worker.verification) : '',
@@ -943,17 +963,16 @@ Read them in the context of the whole range, but judge them: does each fix do wh
     }
   }
 
-  // g. Merge — the one sanctioned agent merge, and its surface is the epic
-  //    branch only. Two checks stand in front of it, and both read repository
-  //    state instead of trusting a self-report: the addendum must exist on the
-  //    PUSHED branch, and the pull request is resolved from the branch name
-  //    (the plugin's ID invariant) rather than from the number the worker
-  //    reported — that number is only a cross-check.
-  phase('Merge')
-  const merged = await agent(
-    `Merge one ticket's pull request into the epic branch, in the repository at ${repoRoot}. Three steps, in this order, and nothing else. Stop at the first one that does not come out right — merging is the LAST thing you do, and only when both checks passed.
+  // g. Resolve — read-only. What the merge needs to be true is established
+  //    here, and judged below in code, BEFORE any agent that can merge is
+  //    spawned. Doing this inside the merge agent would leave the code
+  //    checking a merge that had already happened, and nothing un-merges a
+  //    pull request that pointed at the default branch.
+  phase('Resolve')
+  const resolved = await agent(
+    `In the repository at ${repoRoot}, report two facts about one ticket's pull request. **You change nothing**: no merge, no push, no edit, no \`gh pr\` command but the listing below. You do not judge what you find — report what the commands printed and let the driver decide.
 
-STEP 1 — **this ticket's** review must be on the record, in the branch as pushed:
+FACT 1 — how many of **${id}'s own** review addenda dated ${today} are in the branch as pushed:
 
 \`\`\`bash
 git fetch origin ${branch}
@@ -962,92 +981,109 @@ git show origin/${branch}:epics/${epic}/status.md | awk '/^### /{f=/^### ${id} /
 
 The status log is append-only and this branch was cut from ${epicBranch}, so it also carries every EARLIER ticket's entries and their addenda. The \`awk\` narrows the file to \`${id}\`'s own entries — \`f\` turns on at a \`### ${id} \` heading and off at the next entry heading — so only an addendum written under this ticket counts. Do not simplify it away: without it, yesterday's ticket satisfies today's check.
 
-\`grep -c\` prints the count; it exits 1 when the count is 0, which is an answer, not a failure (that is what \`|| true\` is for). Report the number as \`addendumMatches\`. **If it is 0** — or if \`git show\` cannot read that file at all — report \`addendumMissing: true\`, outcome "addendum-missing", and STOP. Merge nothing: a ticket whose review is not in the pushed log is not reviewed on the record.
+\`grep -c\` prints the count; it exits 1 when the count is 0, which is an answer, not a failure (that is what \`|| true\` is for). Report the number as \`addendumMatches\` — including 0. Report \`-1\` only if \`git show\` could not read that file at all.
 
-STEP 2 — resolve the pull request from the BRANCH, not from a number anyone told you:
+FACT 2 — which open pull requests come from this ticket's branch:
 
 \`\`\`bash
 gh pr list --head ${branch} --state open --json number,headRefName,baseRefName
 \`\`\`
 
-- The listing is deliberately NOT filtered by base: a pull request aimed at the wrong branch has to come back so it can be reported, not vanish into a zero count.
-- Exactly one result is required. Zero → outcome "no-pull-request". More than one → outcome "multiple-pull-requests", with \`matchCount\`. Either way, STOP and merge nothing.
-- Verify from the RESPONSE that \`headRefName\` is \`${branch}\` and \`baseRefName\` is \`${epicBranch}\`; report both verbatim. Anything else → outcome "wrong-base", STOP. Never retarget a pull request, never merge one that points somewhere else.
-- Report its number as \`resolvedNumber\`. The driver expects **#${prNumber}** (the number the ticket's worker reported). If \`resolvedNumber\` is not ${prNumber}, set \`workerNumberMatched: false\`, report outcome "number-mismatch", and STOP — the worker and the repository disagree about which pull request this ticket owns, and guessing between them is not yours to do.
+Deliberately NOT filtered by base: a pull request aimed at the wrong branch has to come back so it can be reported, not vanish into a zero count. Report \`matchCount\` (how many the listing returned) and, when it returned exactly one, its \`number\`, \`headRefName\` and \`baseRefName\` **verbatim from the response** — not from what you expected them to be.
 
-STEP 3 — only when step 1 counted at least one addendum and step 2 resolved exactly one matching pull request numbered ${prNumber}:
+Report outcome "resolved" once both commands have run, whatever they printed. "command-failed" is for a command that failed for some other reason (the fetch could not reach the remote, \`gh\` is not authenticated) — never for a count of 0 or an empty listing, which are answers.
+
+${PROMPT_RULE}
+
+${NO_MAIN} You are read-only here in any case: nothing in this task writes anything.`,
+    { label: `resolve:${id}`, phase: 'Resolve', schema: RESOLVE_SCHEMA, effort: 'low', model: 'haiku' },
+  )
+
+  // The gate, in code, on facts nothing has acted on yet. Every branch below
+  // ends the ticket without a merge agent ever existing.
+  record.resolveOutcome = resolved ? line(resolved.outcome) : 'no report'
+  record.addendumMatches = resolved && Number.isInteger(resolved.addendumMatches) ? resolved.addendumMatches : null
+  record.matchCount = resolved && Number.isInteger(resolved.matchCount) ? resolved.matchCount : null
+  record.resolvedPrNumber = resolved && resolved.number != null ? String(resolved.number).trim() : ''
+  {
+    const errorText = resolved ? line(resolved.detail || '') : ''
+    const quoted = errorText ? ` ${fence(errorText)}` : ''
+    const where = `resolving ${id}'s pull request before the merge`
+    const stop = (stopCondition, detail) => {
+      halted = { ticket: id, stopCondition, where, detail }
+    }
+    if (!resolved) {
+      stop(STOP.nonzeroExit, `the resolve agent returned no report — nothing is known about ${id}'s pull request, and nothing is merged on a guess`)
+    } else if (resolved.outcome === 'permission-prompt') {
+      stop(STOP.permissionPrompt, quoted.trim() || '(no command named)')
+    } else if (resolved.outcome !== 'resolved') {
+      stop(STOP.nonzeroExit, `the resolve step could not read the branch or the pull request listing:${quoted}`)
+    } else if (record.matchCount === 0) {
+      stop(STOP.contradiction, `no open pull request from \`${branch}\` — the worker reported #${prNumber}, the repository has none. Nothing merged.${quoted}`)
+    } else if (record.matchCount === null || record.matchCount > 1) {
+      stop(
+        STOP.contradiction,
+        `${record.matchCount === null ? 'an unreported number of' : record.matchCount} open pull requests from \`${branch}\` — a ticket owns exactly one, and picking between them is not the run's decision. Nothing merged.${quoted}`,
+      )
+    } else if (line(resolved.headRefName) !== branch || line(resolved.baseRefName) !== epicBranch) {
+      stop(
+        STOP.contradiction,
+        `the pull request from \`${line(resolved.headRefName) || '(none reported)'}\` targets "${line(resolved.baseRefName) || '(none reported)'}", not ${epicBranch} — the ticket was branched or based against something the epic does not own. Not retargeted, not merged, and no agent that could merge it was ever spawned.${quoted}`,
+      )
+    } else if (!(Number.isInteger(record.addendumMatches) && record.addendumMatches >= 1)) {
+      stop(
+        STOP.blocked,
+        `no \`Addendum — review — ${today}\` line under ${id}'s own entries in \`epics/${epic}/status.md\` on \`origin/${branch}\` (count ${
+          record.addendumMatches === null ? 'unreported' : record.addendumMatches === -1 ? 'unreadable' : record.addendumMatches
+        }) — the disposition said it committed the addendum, the branch says otherwise, and the branch is the evidence. An unreviewed-on-the-record ticket is never merged.${quoted}`,
+      )
+    } else if (record.resolvedPrNumber !== prNumber) {
+      stop(
+        STOP.contradiction,
+        `the repository resolves \`${branch}\` → pull request #${record.resolvedPrNumber || '(none reported)'}, but the worker reported #${prNumber} — the worker and the board disagree about which pull request this ticket owns. Nothing merged, nothing retargeted.${quoted}`,
+      )
+    }
+  }
+  if (halted) break
+
+  // h. Merge — the one sanctioned agent merge, and its surface is the epic
+  //    branch only. One command, on a number this code verified, by an agent
+  //    with nothing to decide. The old belt-and-braces re-checks of the
+  //    resolution facts lived here; they are gone because the facts are now
+  //    checked before anything can act on them, which is the stronger place.
+  phase('Merge')
+  const merged = await agent(
+    `In the repository at ${repoRoot}, run exactly this command and report what it did:
 
 \`\`\`bash
-gh pr merge <resolvedNumber> --merge
+gh pr merge ${record.resolvedPrNumber} --merge
 \`\`\`
 
-\`--merge\` and never \`--squash\`: the release pull request carries every ticket's commits, and squashing collapses their subjects into one, making every ticket but one read as unshipped. If the merge fails, report outcome "failed" with the error verbatim — say plainly whether it was a conflict.
+That is the whole task. The number is not yours to look up or second-guess — the driver resolved it from the branch \`${branch}\` and verified it before spawning you. Run no other command: no listing, no view, no checkout, no push.
+
+\`--merge\` and never \`--squash\`: the release pull request carries every ticket's commits, and squashing collapses their subjects into one, making every ticket but one read as unshipped — squashing is how a shipped ticket becomes invisible. If it fails, report outcome "failed" with the error verbatim, and say plainly whether it was a conflict.
 
 ${PROMPT_RULE}
 
 ${NO_MAIN} This merge into ${epicBranch} is the only merge you perform.`,
-    // Pinned to a fast model with the rest of the shell proxies: this agent
-    // runs three fixed commands and reports what they printed. Every decision
-    // it could get wrong is re-checked below, in code.
+    // The last of the shell proxies, pinned to a fast model: one fixed command
+    // whose arguments came from code.
     { label: `merge:${id}`, phase: 'Merge', schema: MERGE_SCHEMA, effort: 'low', model: 'haiku' },
   )
   record.mergeOutcome = merged ? line(merged.outcome) : 'no report'
-  record.addendumMatches = merged && Number.isInteger(merged.addendumMatches) ? merged.addendumMatches : null
-  record.resolvedPrNumber = merged && merged.resolvedNumber != null ? String(merged.resolvedNumber).trim() : ''
-  if (!merged || merged.outcome !== 'merged' || merged.addendumMissing === true) {
-    const outcome = merged ? (merged.addendumMissing === true ? 'addendum-missing' : merged.outcome) : 'no report'
-    // The agent's own words go in fenced; everything the script says about
-    // them, and every shape-constrained field (ids, refs, counts), stays plain.
+  if (!merged || merged.outcome !== 'merged') {
     const errorText = merged ? line(merged.detail || '') : ''
     const quoted = errorText ? ` ${fence(errorText)}` : ''
-    const contradiction = d => ({ stopCondition: STOP.contradiction, detail: d })
     halted = {
       ticket: id,
-      where: `merging ${id}'s pull request into ${epicBranch}`,
+      where: `merging ${id}'s pull request #${record.resolvedPrNumber} into ${epicBranch}`,
       ...(!merged
         ? { stopCondition: STOP.nonzeroExit, detail: 'the merge agent returned no report — the merge cannot be assumed to have happened' }
-        : outcome === 'addendum-missing'
-          ? {
-              stopCondition: STOP.blocked,
-              detail: `no \`Addendum — review — ${today}\` line under ${id}'s own entries in \`epics/${epic}/status.md\` on \`origin/${branch}\` (count ${record.addendumMatches === null ? 'unreadable' : record.addendumMatches}) — the disposition said it committed the addendum, the branch says otherwise, and the branch is the evidence. An unreviewed-on-the-record ticket is never merged.${quoted}`,
-            }
-          : outcome === 'no-pull-request'
-            ? contradiction(`no open pull request from \`${branch}\` — the worker reported #${prNumber}, the repository has none. Nothing merged.${quoted}`)
-            : outcome === 'multiple-pull-requests'
-              ? contradiction(`${merged.matchCount ?? 'several'} open pull requests from \`${branch}\` — a ticket owns exactly one, and picking between them is not the run's decision. Nothing merged.${quoted}`)
-              : outcome === 'number-mismatch'
-                ? contradiction(`the repository resolves \`${branch}\` → pull request #${record.resolvedPrNumber || '(none reported)'}, but the worker reported #${prNumber} — the worker and the board disagree about which pull request this ticket owns. Nothing merged, nothing retargeted.${quoted}`)
-                : outcome === 'wrong-base'
-                  ? contradiction(`the pull request from \`${line(merged.headRefName)}\` targets "${line(merged.baseRefName)}", not ${epicBranch} — the ticket was branched or based against something the epic does not own. Not retargeted, not merged.${quoted}`)
-                  : outcome === 'permission-prompt'
-                    ? { stopCondition: STOP.permissionPrompt, detail: quoted.trim() || '(no command named)' }
-                    : /conflict/i.test(errorText)
-                      ? { stopCondition: STOP.mergeConflict, detail: `merging ${branch} into ${epicBranch} conflicted:${quoted}` }
-                      : { stopCondition: STOP.nonzeroExit, detail: `\`gh pr merge\` did not merge ${id} (${line(outcome)}):${quoted}` }),
-    }
-    break
-  }
-  // Belt and braces on both mechanical checks, because "merged" is still a
-  // self-report. First the addendum: a merge that landed without evidence that
-  // THIS ticket's review is on the branch is the gate not having run at all.
-  if (!(Number.isInteger(merged.addendumMatches) && merged.addendumMatches >= 1)) {
-    halted = {
-      ticket: id,
-      stopCondition: STOP.blocked,
-      where: `merging ${id}'s pull request into ${epicBranch}`,
-      detail: `the merge step reported success but no count of ${id}'s own \`Addendum — review — ${today}\` lines on \`origin/${branch}\` (reported: ${record.addendumMatches === null ? 'nothing' : record.addendumMatches}) — the one check that proves the review is on the record left no evidence it ran. Stop and check what landed on ${epicBranch}.`,
-    }
-    break
-  }
-  // Then the number the agent says it merged: a merge that landed on some
-  // other pull request is a contradiction the human must see, not something
-  // the run can carry forward.
-  if (record.resolvedPrNumber !== prNumber || merged.workerNumberMatched === false) {
-    halted = {
-      ticket: id,
-      stopCondition: STOP.contradiction,
-      where: `merging ${id}'s pull request into ${epicBranch}`,
-      detail: `the merge step resolved \`${branch}\` to pull request #${record.resolvedPrNumber || '(none reported)'} while the worker reported #${prNumber}, and reported merging anyway. The board and the worker disagree about which pull request this ticket owns; stop and check what landed on ${epicBranch}.`,
+        : merged.outcome === 'permission-prompt'
+          ? { stopCondition: STOP.permissionPrompt, detail: quoted.trim() || '(no command named)' }
+          : /conflict/i.test(errorText)
+            ? { stopCondition: STOP.mergeConflict, detail: `merging ${branch} into ${epicBranch} conflicted:${quoted}` }
+            : { stopCondition: STOP.nonzeroExit, detail: `\`gh pr merge ${record.resolvedPrNumber} --merge\` did not merge ${id} (${line(merged.outcome)}):${quoted}` }),
     }
     break
   }
