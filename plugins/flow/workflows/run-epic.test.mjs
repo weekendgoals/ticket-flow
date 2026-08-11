@@ -17,6 +17,7 @@
 
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
+import { execFileSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -210,6 +211,21 @@ test('a missing or unrecognised tier is priced as consequence — doubt goes up'
   assert.ok(r.logs.some(l => /no usable review tier/.test(l) && /doubt goes up/.test(l)))
 })
 
+test('a tier that names a prototype member is priced as consequence, not as undefined', async () => {
+  for (const tier of ['toString', 'constructor', '__proto__']) {
+    const r = await drive(oneTicket({ 'worker:PAY-1': workerOk('PAY-1', { tier }) }))
+    assert.equal(call(r, 'review:PAY-1').model, 'opus', tier)
+    assert.equal(call(r, 'review:PAY-1').effort, 'xhigh', tier)
+    assert.equal(r.out.ticketRecords[0].tier, 'consequence', tier)
+    assert.ok(r.logs.some(l => /doubt goes up/.test(l)), tier)
+  }
+})
+
+test('a worker stop condition that names a prototype member is read as BLOCKED', async () => {
+  const r = await drive(oneTicket({ 'worker:PAY-1': { ticket: 'PAY-1', result: 'halted', stopCondition: 'toString', detail: 'odd' } }))
+  assert.match(r.out.haltedOn.stopCondition, /^BLOCKED/)
+})
+
 test("the epic's Reviewer model overrides the tier's model but not its effort", async () => {
   const r = await drive(oneTicket({ 'worker:PAY-1': workerOk('PAY-1', { tier: 'prose' }) }), { ...ARGS, reviewerModel: 'claude-sonnet-4-5' })
   assert.equal(call(r, 'review:PAY-1').model, 'claude-sonnet-4-5')
@@ -225,6 +241,25 @@ test('a reviewer that returns nothing is retried once with the sanctioned fallba
   assert.match(fb.prompt, /You REPORT\. You NEVER fix/)
   assert.match(fb.prompt, /`confirmed` \(you traced it\) or `plausible`/)
   assert.equal(r.out.outcome, 'completed')
+})
+
+test('a reviewer that returns something which is not a review is a failed hire, not an approval', async () => {
+  const r = await drive(oneTicket({ 'review:PAY-1': {}, 'review:PAY-1:fallback': reviewClean }))
+  assert.equal(call(r, 'review:PAY-1:fallback').agentType, 'general-purpose')
+  assert.ok(r.logs.some(l => /not a review \(no findings array\)/.test(l)))
+  assert.equal(r.out.outcome, 'completed')
+})
+
+test('a malformed review from both hires halts rather than merging on an empty findings list', async () => {
+  const r = await drive(oneTicket({ 'review:PAY-1': { important: 'none, looks good' }, 'review:PAY-1:fallback': { checkedAndSound: 'everything' } }))
+  assert.equal(r.out.haltedOn.stopCondition, 'reviewer-spawn failure after the sanctioned fallback also fails')
+  assert.ok(!r.labels.some(l => l.startsWith('merge:')))
+})
+
+test('a malformed re-review is a failed hire too', async () => {
+  const r = await drive(oneTicket({ 'review:PAY-1': reviewImportant, 'disposition:PAY-1': dispFixed, 're-review:PAY-1': {}, 're-review:PAY-1:fallback': { important: [], reviewerTokens: '2k' } }))
+  assert.equal(r.out.outcome, 'completed')
+  assert.equal(call(r, 're-review:PAY-1:fallback').agentType, 'general-purpose')
 })
 
 test('a reviewer that fails twice halts the run with nothing merged', async () => {
@@ -261,6 +296,21 @@ test('a permission prompt during disposition halts the run', async () => {
   assert.ok(!r.labels.some(l => l.startsWith('merge:')))
 })
 
+test('a disposition that calls a review with Important findings "clean" halts as a contradiction', async () => {
+  const r = await drive(oneTicket({ 'review:PAY-1': reviewImportant, 'disposition:PAY-1': dispClean }))
+  assert.match(r.out.haltedOn.stopCondition, /^a document\/code contradiction/)
+  assert.match(r.out.haltedOn.detail, /reported "clean" against a review that raised 1 Important/)
+  assert.ok(!r.labels.some(l => l.startsWith('merge:') || l.startsWith('re-review:')))
+})
+
+test('a disposition that reports "fixed" while naming no fix commits halts as a contradiction', async () => {
+  const r = await drive(oneTicket({ 'review:PAY-1': reviewImportant, 'disposition:PAY-1': { ...dispFixed, fixedCommits: [] } }))
+  assert.match(r.out.haltedOn.stopCondition, /^a document\/code contradiction/)
+  assert.match(r.out.haltedOn.detail, /named no fix commits/)
+  // Nothing to re-review and nothing to merge: both steps stay unspawned.
+  assert.ok(!r.labels.some(l => l.startsWith('re-review:') || l.startsWith('merge:')))
+})
+
 test('an uncommitted addendum halts before the merge (the self-reported flag)', async () => {
   const r = await drive(oneTicket({ 'disposition:PAY-1': { ...dispClean, addendumCommitted: false } }))
   assert.match(r.out.haltedOn.stopCondition, /^BLOCKED/)
@@ -271,11 +321,57 @@ test('an uncommitted addendum halts before the merge (the self-reported flag)', 
 test('an addendum missing from the pushed branch halts, whatever the disposition claimed', async () => {
   const r = await drive(oneTicket({ 'merge:PAY-1': { outcome: 'addendum-missing', addendumMatches: 0, addendumMissing: true, detail: '' } }))
   assert.match(r.out.haltedOn.stopCondition, /^BLOCKED/)
-  assert.match(r.out.haltedOn.detail, /Addendum — review — 2026-08-11.*origin\/pay-1/)
+  assert.match(r.out.haltedOn.detail, /Addendum — review — 2026-08-11/)
+  assert.match(r.out.haltedOn.detail, /origin\/pay-1/)
   assert.ok(!r.labels.some(l => l.startsWith('verify:')))
   const p = call(r, 'merge:PAY-1').prompt
   assert.match(p, /git fetch origin pay-1/)
-  assert.match(p, /git show origin\/pay-1:epics\/payments\/status\.md \| grep -c "Addendum — review — 2026-08-11"/)
+  // Scoped to THIS ticket's entries: the branch was cut from the epic branch,
+  // so the log already carries every earlier ticket's addenda, and an unscoped
+  // grep for today's date would be satisfied by one of those.
+  assert.match(p, /git show origin\/pay-1:epics\/payments\/status\.md \| awk '.+' \| grep -c "Addendum — review — 2026-08-11"/)
+  assert.doesNotMatch(p, /status\.md \| grep -c/)
+})
+
+test("the addendum check counts only addenda under this ticket's own entries", async t => {
+  // The subtle half of that command is the awk program, so this runs the real
+  // awk — extracted from the prompt the merge agent receives — over a status
+  // log that already carries an earlier ticket's same-day addendum. No shell,
+  // no git, no files: awk reads stdin. (The grep stage is a literal line count,
+  // simulated here; awk is what decides which lines it ever sees.)
+  let awkAvailable = true
+  try {
+    execFileSync('awk', ['{print}'], { input: 'probe\n', encoding: 'utf8' })
+  } catch {
+    awkAvailable = false
+  }
+  if (!awkAvailable) return t.skip('awk is not available on this machine')
+
+  const r = await drive(oneTicket())
+  const program = call(r, 'merge:PAY-1').prompt.match(/awk '([^']+)'/)[1]
+  const countFor = log =>
+    execFileSync('awk', [program], { input: log, encoding: 'utf8' })
+      .split('\n')
+      .filter(l => l.includes('Addendum — review — 2026-08-11')).length
+
+  const earlierTicketOnly = [
+    '# Payments — status log',
+    '',
+    '### PAY-0 — first — 2026-08-11 — DONE',
+    '**Addendum — review — 2026-08-11 — opus/xhigh:** clean.',
+    '',
+    '### PAY-1 — second — 2026-08-11 — DONE',
+    '**Built:** the thing.',
+    '',
+  ].join('\n')
+  assert.equal(countFor(earlierTicketOnly), 0, "an earlier ticket's same-day addendum must not satisfy this ticket's check")
+
+  const withOwnAddendum = `${earlierTicketOnly}**Addendum — review — 2026-08-11 — opus/xhigh:** one Important, fixed.\n`
+  assert.equal(countFor(withOwnAddendum), 1)
+
+  // And a later ticket's entry must not leak into this ticket's window either.
+  const laterTicketAfter = `${withOwnAddendum}\n### PAY-2 — third — 2026-08-11 — DONE\n**Addendum — review — 2026-08-11 — haiku/low:** clean.\n`
+  assert.equal(countFor(laterTicketAfter), 1)
 })
 
 // ---- mechanical pull-request resolution -------------------------------------
@@ -283,7 +379,11 @@ test('an addendum missing from the pushed branch halts, whatever the disposition
 test('the merge step resolves the pull request from the branch, with the worker number as a cross-check', async () => {
   const r = await drive(oneTicket())
   const p = call(r, 'merge:PAY-1').prompt
-  assert.match(p, /gh pr list --head pay-1 --base epic\/payments --state open --json number,headRefName,baseRefName/)
+  // Unfiltered by base on purpose: a pull request aimed at the wrong branch
+  // must come back so it can be reported, not vanish into a zero count that
+  // would be reported as "no pull request".
+  assert.match(p, /gh pr list --head pay-1 --state open --json number,headRefName,baseRefName/)
+  assert.doesNotMatch(p, /gh pr list [^\n]*--base/)
   assert.match(p, /Exactly one result is required/)
   assert.match(p, /The driver expects \*\*#42\*\*/)
   assert.match(p, /gh pr merge <resolvedNumber> --merge/)
@@ -317,6 +417,16 @@ test('a merge reported against another number halts even when the agent claims s
   assert.match(r.out.haltedOn.stopCondition, /^a document\/code contradiction/)
   assert.match(r.out.haltedOn.detail, /reported merging anyway/)
   assert.ok(!r.labels.some(l => l.startsWith('verify:')))
+})
+
+test('a merge claimed without evidence that this ticket\'s addendum is on the branch halts', async () => {
+  const missing = await drive(oneTicket({ 'merge:PAY-1': { ...mergedOk, addendumMatches: 0 } }))
+  assert.match(missing.out.haltedOn.stopCondition, /^BLOCKED/)
+  assert.match(missing.out.haltedOn.detail, /no count of PAY-1's own/)
+  assert.ok(!missing.labels.some(l => l.startsWith('verify:')))
+  const unreported = await drive(oneTicket({ 'merge:PAY-1': { outcome: 'merged', resolvedNumber: 42, workerNumberMatched: true } }))
+  assert.match(unreported.out.haltedOn.stopCondition, /^BLOCKED/)
+  assert.match(unreported.out.haltedOn.detail, /reported: nothing/)
 })
 
 test('a pull request based anywhere but the epic branch halts and is never retargeted', async () => {
@@ -491,6 +601,26 @@ test('a board that hands out the same ticket twice halts as not advancing', asyn
   assert.match(r.out.haltedOn.detail, /handed out again/)
 })
 
+test('a board that never runs out of tickets is stopped by the run cap', async () => {
+  let n = 0
+  const r = await drive(label => {
+    if (label.startsWith('refresh+select:')) {
+      n += 1
+      return { refresh: { outcome: 'refreshed', headSha: 'a' }, next: { commandSucceeded: true, tickets: [{ id: `PAY-${n}`, title: 'endless' }] } }
+    }
+    if (label.startsWith('worker:')) return workerOk(label.split(':')[1])
+    if (label.startsWith('review:')) return reviewClean
+    if (label.startsWith('disposition:')) return dispClean
+    if (label.startsWith('merge:')) return mergedOk
+    if (label.startsWith('verify:')) return integratedOk
+  })
+  assert.equal(r.out.outcome, 'halted')
+  assert.match(r.out.haltedOn.stopCondition, /^a document\/code contradiction/)
+  assert.match(r.out.haltedOn.detail, /40 tickets ran in one epic/)
+  assert.equal(r.out.totals.ticketsAttempted, 40)
+  assert.equal(r.out.totals.ticketsIntegrated, 40)
+})
+
 // ---- refresh halts ----------------------------------------------------------
 
 test('a conflicted refresh halts immediately, aborted or not', async () => {
@@ -549,6 +679,27 @@ test('narrative fields are fenced and identifiers are not', async () => {
   assert.equal(rec.branch, 'pay-1')
   assert.equal(rec.prNumber, '42')
   assert.equal(rec.nitOverflowCount, 2)
+})
+
+test('every halt quotes the agent words it carries inside a fence', async () => {
+  const cases = [
+    ['refresh error', oneTicket({ 'refresh+select:1': { refresh: { outcome: 'command-failed', failedCommand: 'git push', detail: 'rejected: behind' }, next: null } }), /rejected: behind/],
+    ['refresh conflict', oneTicket({ 'refresh+select:1': { refresh: { outcome: 'merge-conflict', mergeAborted: true, detail: 'CONFLICT in a.ts' }, next: null } }), /CONFLICT in a\.ts/],
+    ['board failure', oneTicket({ 'refresh+select:1': { refresh: { outcome: 'refreshed' }, next: { commandSucceeded: false, tickets: [], failure: 'exit 1: boom' } } }), /exit 1: boom/],
+    ['unusable ticket id', oneTicket({ 'refresh+select:1': { refresh: { outcome: 'refreshed' }, next: { commandSucceeded: true, tickets: [{ id: 'pay 1' }] } } }), /pay 1/],
+    ['worker without a number', oneTicket({ 'worker:PAY-1': workerOk('PAY-1', { prNumber: 'the one I opened' }) }), /the one I opened/],
+    ['merge failure', oneTicket({ 'merge:PAY-1': { outcome: 'failed', addendumMatches: 1, detail: 'GraphQL: not mergeable' } }), /GraphQL: not mergeable/],
+    ['verify failure', oneTicket({ 'verify:PAY-1': { commandSucceeded: false, state: '', failure: 'exit 2: no such ticket' } }), /exit 2: no such ticket/],
+  ]
+  for (const [name, script, quoted] of cases) {
+    const r = await drive(script)
+    const detail = r.out.haltedOn.detail
+    assert.match(detail, quoted, name)
+    assert.match(detail, /<<<UNTRUSTED[\s\S]*UNTRUSTED>>>/, name)
+    // The quoted text sits inside the fence, not outside it.
+    const inside = detail.slice(detail.indexOf('<<<UNTRUSTED'), detail.lastIndexOf('UNTRUSTED>>>'))
+    assert.match(inside, quoted, `${name}: quoted text must be inside the fence`)
+  }
 })
 
 test('a fence marker inside agent prose cannot escape its fence', async () => {

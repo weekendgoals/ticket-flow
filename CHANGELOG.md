@@ -106,8 +106,37 @@ with one version and date.
   (an existing ticket, or `retro` — the retro skill mines addenda), into
   `ticketRecords[].preExisting` and the result's top-level `preExisting`, and
   into the release pull request body the run skill's step 7 describes.
+- **Second review pass, and what it caught** (fresh-context opus review of the
+  branch; four Important findings, all confirmed, plus seven nits — all
+  fixed). Two were behaviour, and both were gates that looked closed and were
+  not: **the addendum check was vacuous for every ticket but the first** —
+  release tickets branch from `epic/<name>`, whose append-only log already
+  carries the previous ticket's addendum, so a date-only grep matched it and
+  the check collapsed back to the disposition's self-report; it is now scoped
+  by `awk` to *this ticket's own entries*, and re-checked in code after the
+  merge reports success. And **the disposition's outcome is now cross-checked
+  against the review it dispositioned**: "clean" against a review that raised
+  Important findings, or "fixed" with no fix commits named (which would also
+  skip the re-review), halt as contradictions — the driver holds the finding
+  count, so it checks rather than reads. The rest: `gh pr list` no longer
+  filters by base, so a pull request aimed at the wrong branch is *reported*
+  instead of vanishing into a "no pull request" count; a reviewer return
+  without a findings array is a failed hire rather than an approval (it was
+  the one malformed-return path in the script that failed open); tier and
+  stop-condition lookups use `Object.hasOwn`, so a reported tier of
+  `toString` prices as `consequence` instead of `undefined`; every halt now
+  quotes agent words inside the untrusted fence its contract already
+  promised, with ids, refs, counts and enum values staying plain, and the run
+  skill states that boundary exactly; the merge-conflict stop string is
+  re-synced with the skill's bullet; and the ticket skill's step 10 now
+  splits by spawn shape in so many words — a **driver**-spawned worker never
+  reaches the merge, a **supervisor**-spawned one (the human escape hatch)
+  performs the gate and the epic-branch merge — which step 0 had been
+  pointing at while step 10 said only the first half. METHODOLOGY no longer
+  claims the attended lane goes "one step further" on hiring the reviewer:
+  both lanes share the shape now.
 - **A committed behavioural suite for the driver**
-  (`workflows/run-epic.test.mjs`, 51 tests): it loads `run-epic.mjs`, strips
+  (`workflows/run-epic.test.mjs`, 62 tests): it loads `run-epic.mjs`, strips
   the `export`, evaluates the module body the way the workflow runtime does,
   and drives it with stubbed agents — asserting the sequence, every gate
   branch and halt mapping, the review pricing, the fences, and the prompt

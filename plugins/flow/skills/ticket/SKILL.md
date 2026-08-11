@@ -79,9 +79,10 @@ own work, for the same reason a supervisor's worker does not: the party
 under review does not pick its judge. When a **human** invokes one
 autonomous-epic ticket directly — the escape hatch for resolving a halt —
 step 0's lanes still apply and the ticket ends per step 10's autonomous gate
-unchanged: in supervisor mode the worker performs that gate and the
-epic-branch merge, then stops (it was spawned for one ticket; the carve-out
-in step 10 applies).
+unchanged: a **supervisor-spawned** worker performs that gate and the
+epic-branch merge, then stops (it was spawned for one ticket). Step 10 states
+the same split by spawn shape: driver-spawned workers stop at the opened pull
+request, supervisor-spawned ones perform the gate and the merge.
 
 ## 1. Resolve it
 
@@ -451,13 +452,21 @@ stop. Do not start the next ticket. There is nothing to run after the merge.
 - Merge your own pull request into the epic branch with a merge commit:
   `gh pr merge <number> --merge`. Never squash — the release pull request
   needs the per-ticket subjects.
-- **If a driver spawned you for this one ticket** (the prompt that launched
-  you says so), you never reach this step: your ticket ends at step 9's
-  opened pull request, and the driver owns the review, the gate, the merge,
-  the between-ticket refresh of the epic branch, and the fresh context of the
-  next ticket's agent. Report as in step 9 and stop. Continue to the next
-  ticket in document order yourself **only when you are the whole run** and
-  no driver exists. Either way, the epic's ground-rule stop conditions bind
-  everything; halting on one is the mechanism working, not a failure.
+- **Which spawn shape you are decides whether this step is yours at all.**
+  Read the prompt that launched you:
+  - **A driver spawned you** (`/flow:run`'s workflow — the prompt says "a
+    driver spawned you"): **you never reach this step.** Your ticket ends at
+    step 9's opened pull request; the driver owns the review, the gate, the
+    merge, the between-ticket refresh of the epic branch, and the fresh
+    context of the next ticket's agent. Report as in step 9 and stop.
+  - **A supervisor spawned you**, or you are the whole run (a human typed
+    `/flow:ticket` — step 0's escape hatch for one ticket of a release epic):
+    **this step is yours.** Perform the gate and the epic-branch merge above,
+    then stop — you were spawned for one ticket. Continue to the next ticket
+    in document order **only when you are the whole run** and no driver and
+    no supervisor exist.
+
+  Either way, the epic's ground-rule stop conditions bind everything; halting
+  on one is the mechanism working, not a failure.
 - The default branch remains untouchable. The release pull request at the end
   of the run is opened by the driver and merged by a human — never by you.

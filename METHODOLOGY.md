@@ -282,10 +282,13 @@ session has argued for its own decomposition, carries opinions about the
 code, and — when it runs several tickets — carries the previous ticket too.
 
 So the attended default became the same shape the driver already proved:
-the session supervises, a fresh worker implements from the documents, and —
-one step further than the autonomous lane — **the supervisor hires the
-reviewer**, because a worker that picks its own judge recreates self-review
-one level down. Interactive mode survives behind a flag for the real case
+the session supervises, a fresh worker implements from the documents, and
+**the supervisor hires the reviewer**, because a worker that picks its own
+judge recreates self-review one level down. The attended lane reached that
+last part first; the unattended one adopted it when its loop became a script
+whose driver could hire the judge itself. Both lanes now share the shape, and
+the rule underneath it is one rule: the party under review never picks its
+judge, in any lane. Interactive mode survives behind a flag for the real case
 it serves (conversing with the implementing agent mid-ticket), but the
 choice is once-per-session and enforced by a hook, not by memory: an
 interactive run marks the session, and every later `--interactive` run in
