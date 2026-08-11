@@ -9,7 +9,7 @@ with one version and date.
 ## Unreleased
 
 - **New verification tool: `scripts/check-invariants.mjs`**, with its own
-  suite (`check-invariants.test.mjs`, 7 tests — including proofs that each
+  suite (`check-invariants.test.mjs`, 9 tests — including proofs that each
   class of drift actually fails). The cross-document couplings the doctrine
   states but nothing enforced mechanically — the status-log preamble's three
   copies, the quick-gate/`xhigh` risk lists, the skills' heading templates
@@ -82,6 +82,46 @@ with one version and date.
   refreshes before it asks what is left, so the pass that finds nothing left
   has already refreshed a branch carrying every ticket's merge; the result's
   `finalRefresh` reports it.
+- **External-review hardening: the gate now reads repository state, not
+  self-reports.** The lane's honest name is **code-controlled,
+  agent-executed** — code decides, agents execute and report — so the checks
+  that matter no longer take an agent's word for the thing being checked.
+  (1) **The pull request is resolved mechanically**: the merge step runs
+  `gh pr list --head <id lowercased> --base epic/<name> --state open`,
+  requires exactly one match, verifies both refs from the response, and
+  merges that number; zero, several, or a number the worker did not report
+  halts as a contradiction — the worker's `prNumber` is now only a
+  cross-check, and the script re-checks it after the fact too. (2) **Fix
+  commits get one bounded re-review** before the merge, in the reviewer's
+  re-review mode (no new nits, only Important findings and anything still
+  unaddressed): the fixes are written after the review that approved
+  everything else, so a merge without it merges an unreviewed diff. Any
+  Important finding halts, and there is deliberately no second round.
+  A clean review skips the step, so it costs nothing on the common path.
+  (3) **The addendum is verified on the pushed branch** —
+  `git show origin/<branch>:epics/<epic>/status.md | grep -c "Addendum — review — <date>"`
+  — with the disposition's own flag kept as well, belt and braces.
+  (4) **Pre-existing findings can no longer vanish**: they ride into the
+  disposition prompt with the instruction to record each with a named owner
+  (an existing ticket, or `retro` — the retro skill mines addenda), into
+  `ticketRecords[].preExisting` and the result's top-level `preExisting`, and
+  into the release pull request body the run skill's step 7 describes.
+- **A committed behavioural suite for the driver**
+  (`workflows/run-epic.test.mjs`, 51 tests): it loads `run-epic.mjs`, strips
+  the `export`, evaluates the module body the way the workflow runtime does,
+  and drives it with stubbed agents — asserting the sequence, every gate
+  branch and halt mapping, the review pricing, the fences, and the prompt
+  text the gates depend on. No git, no network, no filesystem beyond reading
+  the script. The harness that verified the two previous rewrites lived in a
+  scratch directory; verification that is not in the repository is not
+  verification.
+- **Cheaper mechanics.** The refresh and the board read are one agent instead
+  of two (the board is only worth reading on a just-refreshed branch), and
+  the three shell-proxy agents — refresh+select, merge, verify — are pinned
+  to a fast model: their whole job is running a fixed command sequence and
+  echoing structured output, and every decision they could get wrong is
+  re-checked in code. The worker, the reviewers and the disposition are not
+  pinned: they reason, and they keep the tier table and the inherit rules.
 - **Doctrine follows the restructure**, in the same commit: ticket skill step
   0 (a driver-spawned worker stops at its opened pull request; a
   human-invoked ticket of a release epic still ends per step 10 unchanged),

@@ -26,7 +26,13 @@ go through the flow, one-off work goes through `/flow:quick` into
   temp dir; it needs `git` on PATH and nothing else. The session-guard hook
   has its own suite:
   `node --test plugins/flow/hooks/ticket-session-guard.test.mjs` (`# pass 14`
-  on the same terms).
+  on the same terms). The invariant checker has
+  `node --test plugins/flow/scripts/check-invariants.test.mjs` (`# pass 9`),
+  and the run driver has
+  `node --test plugins/flow/workflows/run-epic.test.mjs` (`# pass 51`) —
+  which evaluates `run-epic.mjs`'s module body with stubbed agents and
+  asserts the sequence, the gate branches and the halt mapping. It needs
+  nothing but Node: no git, no network, no filesystem beyond the script.
 - **Doctrine invariants:** `node plugins/flow/scripts/check-invariants.mjs` —
   must exit 0 on this repo; mechanically verifies the string-checkable
   cross-document couplings (the status-log preamble's three copies, the two
