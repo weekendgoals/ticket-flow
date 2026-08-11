@@ -26,6 +26,15 @@ go through the flow, one-off work goes through `/flow:quick` into
   has its own suite:
   `node --test plugins/flow/hooks/ticket-session-guard.test.mjs` (`# pass 14`
   on the same terms).
+- **Doctrine invariants:** `node plugins/flow/scripts/check-invariants.mjs` —
+  must exit 0 on this repo; mechanically verifies the string-checkable
+  cross-document couplings (the status-log preamble's three copies, the two
+  risk lists, skill heading templates against the parser regexes, the session
+  guard's refusal message as the ticket skill quotes it, load-bearing doctrine
+  phrases). Run it whenever a skill, agent, hook or doctrine document changes —
+  it is presence and equality only, so contradictions in meaning still need
+  review. Its suite: `node --test plugins/flow/scripts/check-invariants.test.mjs`
+  (`# pass 7` on the same terms).
 - **Smoke:** `node plugins/flow/scripts/tickets.mjs doctor` — must exit 0 on
   this repo. `… list` shows the board.
 - **Syntax check:** `node --check plugins/flow/scripts/tickets.mjs`.

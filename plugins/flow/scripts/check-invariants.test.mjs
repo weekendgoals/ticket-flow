@@ -1,0 +1,121 @@
+// check-invariants.test.mjs — the checker must pass on the intact repo and,
+// just as important, actually fail on drift: a checker that cannot fail is
+// ceremony. Each failure test copies the checked files into a temp dir,
+// mutates exactly one invariant, and asserts exit 1 with a message naming
+// the broken check.
+
+import { test } from 'node:test'
+import assert from 'node:assert/strict'
+import { execFileSync } from 'node:child_process'
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+const here = dirname(fileURLToPath(import.meta.url))
+const script = join(here, 'check-invariants.mjs')
+const repoRoot = join(here, '..', '..', '..')
+
+const FILES = [
+  'plugins/flow/skills/epic/SKILL.md',
+  'plugins/flow/skills/ticket/SKILL.md',
+  'plugins/flow/skills/quick/SKILL.md',
+  'plugins/flow/skills/run/SKILL.md',
+  'plugins/flow/agents/ticket-reviewer.md',
+  'plugins/flow/scripts/tickets.mjs',
+  'plugins/flow/hooks/ticket-session-guard.mjs',
+  'README.md',
+  'CLAUDE.md',
+]
+
+function copyRepo() {
+  const root = mkdtempSync(join(tmpdir(), 'flow-invariants-'))
+  for (const f of FILES) {
+    mkdirSync(join(root, dirname(f)), { recursive: true })
+    cpSync(join(repoRoot, f), join(root, f))
+  }
+  return root
+}
+
+function run(root) {
+  try {
+    return { status: 0, out: execFileSync('node', [script, root], { encoding: 'utf8' }) }
+  } catch (e) {
+    return { status: e.status, out: `${e.stdout ?? ''}${e.stderr ?? ''}` }
+  }
+}
+
+function mutate(root, rel, replace, replacement) {
+  const path = join(root, rel)
+  const text = readFileSync(path, 'utf8')
+  assert.ok(text.includes(replace), `mutation target not found in ${rel}: "${replace}"`)
+  writeFileSync(path, text.replaceAll(replace, replacement))
+}
+
+test('the intact repo passes every check', () => {
+  const r = run(copyRepo())
+  assert.equal(r.status, 0, r.out)
+})
+
+test('a drifted status-log preamble copy fails', () => {
+  const root = copyRepo()
+  mutate(root, 'plugins/flow/skills/quick/SKILL.md', 'Report counts, not adjectives', 'Report vibes, not adjectives')
+  const r = run(root)
+  assert.equal(r.status, 1, r.out)
+  assert.match(r.out, /preamble drifted/)
+})
+
+test('a risk trigger removed from one door fails', () => {
+  const root = copyRepo()
+  mutate(root, 'plugins/flow/skills/quick/SKILL.md', '- anything that can fail open\n', '')
+  const r = run(root)
+  assert.equal(r.status, 1, r.out)
+  assert.match(r.out, /fail open/)
+})
+
+test('a new quick-lane risk bullet unknown to the canonical set fails', () => {
+  const root = copyRepo()
+  mutate(
+    root,
+    'plugins/flow/skills/quick/SKILL.md',
+    '- anything that can fail open',
+    '- anything that can fail open\n- telemetry sampling changes',
+  )
+  const r = run(root)
+  assert.equal(r.status, 1, r.out)
+  assert.match(r.out, /matches no known trigger/)
+})
+
+test('a reshaped status-entry template fails against the parser regex', () => {
+  const root = copyRepo()
+  mutate(
+    root,
+    'plugins/flow/skills/ticket/SKILL.md',
+    '### <ID> — <name> — <YYYY-MM-DD> — DONE',
+    '### <ID>: <name> (<YYYY-MM-DD>) DONE',
+  )
+  const r = run(root)
+  assert.equal(r.status, 1, r.out)
+  assert.match(r.out, /template/)
+})
+
+test('a changed hook refusal message fails', () => {
+  const root = copyRepo()
+  mutate(
+    root,
+    'plugins/flow/hooks/ticket-session-guard.mjs',
+    '(an interactive ticket or a quick ticket ran here)',
+    '(mutated)',
+  )
+  const r = run(root)
+  assert.equal(r.status, 1, r.out)
+  assert.match(r.out, /refusal/)
+})
+
+test('a dropped doctrine phrase fails', () => {
+  const root = copyRepo()
+  mutate(root, 'plugins/flow/skills/run/SKILL.md', 'A driver spawned you', 'You were spawned')
+  const r = run(root)
+  assert.equal(r.status, 1, r.out)
+  assert.match(r.out, /doctrine phrase missing/)
+})
