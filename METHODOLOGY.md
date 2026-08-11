@@ -413,10 +413,19 @@ finding left unfixed or a review addendum left uncommitted stops the run. A
 gate written as a sentence is obeyed by a reader; a gate written as a branch
 is obeyed by the machine.
 
-The trade is honest: the script cannot touch a file or run a command itself,
-so every mechanical fact still arrives through an agent it spawns — control
-flow became deterministic, the facts did not. The halt conditions are code;
-the eyes are still models.
+The trade is honest, and its name is **code-controlled, agent-executed**: the
+script cannot touch a file or run a command itself, so every mechanical fact
+still arrives through an agent it spawns. Control flow became deterministic;
+the facts did not. The halt conditions are code; the eyes are still models.
+
+Which is why the gates that matter read repository state rather than an
+agent's account of it. The board decides that a ticket is integrated. The
+pushed branch decides whether its review addendum exists. The pull request to
+merge is resolved from the branch name — an invariant of the plugin — with
+the number the worker reported kept only as a cross-check, because "which
+pull request does this ticket own" is exactly the kind of question a
+confident wrong answer ends badly. Self-reports still fill the record; they
+just no longer open the gate.
 
 ## The admission test
 
