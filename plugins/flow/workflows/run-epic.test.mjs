@@ -808,13 +808,24 @@ test('a halted run tells the session to record the halt and open nothing', async
   const r = await drive(oneTicket({ 'disposition:PAY-1': { ...dispClean, addendumCommitted: false } }))
   assert.equal(r.out.outcome, 'halted')
   assert.match(r.out.next, /open no release pull request/)
+  // Record-first is right here: nothing was opened, so the record's Release PR
+  // field has no URL to wait for.
+  assert.match(r.out.next, /not opened: run halted/)
+  assert.ok(r.out.next.indexOf('run record') < r.out.next.indexOf('open no release pull request'))
   assert.equal(r.out.finalRefresh, 'not reached: the run halted')
   assert.equal(r.out.date, '2026-08-11')
 })
 
-test('a completed run tells the session to open the release pull request, never merge it', async () => {
+test('a completed run tells the session to open the pull request BEFORE writing the record', async () => {
   const r = await drive(oneTicket())
   assert.match(r.out.next, /OPEN the release pull request/)
   assert.match(r.out.next, /never merge it, never squash it/)
+  // The ordering is the fix the first live run earned: the record quotes the
+  // pull request's URL, so writing it first can only predict one.
+  assert.ok(
+    r.out.next.indexOf('OPEN the release pull request') < r.out.next.indexOf('run record'),
+    'the completed-path instruction must open the pull request before the run record is appended',
+  )
+  assert.match(r.out.next, /quoting the pull request's real URL/)
   assert.deepEqual(r.out.deployPreconditions, ['PAY-1_ENV'])
 })

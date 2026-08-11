@@ -151,6 +151,16 @@ with one version and date.
   of merging was ever created. The per-ticket spawn count goes 6 → 7 on a
   clean ticket (8 with a re-review); the post-merge belt-and-braces re-checks
   are gone, because pre-merge verification is strictly stronger.
+- **The first live run caught an ordering contradiction the reviews did not**
+  (flow-demo, five tickets, completed, 2026-08-11). The script's completed-run
+  instruction told the session to write the run record *then* open the release
+  pull request, while the run skill's step 7 and the record's own
+  `Release PR:` field require the opposite — the field quotes the URL. The
+  driver followed the string, wrote a **predicted** URL, and verified it
+  afterwards; it guessed right, which is worse than guessing wrong, because
+  nothing would have caught it. The string now says: open the pull request,
+  then write the record quoting its real URL. On a halt, record-first stays
+  correct — nothing was opened, and the field says so.
 - **Re-review evidence survives the session.** The run record's Tickets line
   notes "re-reviewed after fixes: `<n>` Important" when one ran, its Tokens
   line carries `reReviewTokens` on the same harness-or-unknown terms, and the

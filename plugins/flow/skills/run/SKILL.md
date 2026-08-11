@@ -466,7 +466,10 @@ the recorded waiver and where it lives in the epic's `tickets.md`. A run
 without the hard floor under main must say so here; it is the single most
 consequential fact about the run.>
 
-**Release PR:** <URL — or "not opened: run halted".>
+**Release PR:** <the URL `gh pr create` printed — which is why, on a
+completed run, step 7 opens the pull request before this record is written:
+a URL quoted before the pull request exists is a prediction, and this line
+is evidence. Or "not opened: run halted", which needs no URL.>
 ```
 
 Commit it on `epic/<name>` (subject: `<epic> run record — <YYYY-MM-DD>`; no

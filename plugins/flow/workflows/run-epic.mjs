@@ -1183,7 +1183,12 @@ return {
   finalRefresh,
   deployPreconditions: [...new Set(ticketRecords.flatMap(r => r.deployPreconditions))],
   // What the session must do next, so a result read on its own still says it.
+  // The completed path opens the pull request FIRST: the run record's
+  // "Release PR" field quotes its URL, and a record written before the pull
+  // request exists can only predict one. The first live run (flow-demo,
+  // 2026-08-11) did exactly that when this string said otherwise — it guessed
+  // the number right, which is worse, not better.
   next: halted
-    ? 'Append the run record to the epic\'s status.md with this stop condition quoted verbatim and the ticket it fired on, commit and push it on the epic branch, report, and stop. Merge nothing more; open no release pull request; never re-run the ticket.'
-    : 'Append the run record to the epic\'s status.md, commit and push it on the epic branch, then OPEN the release pull request against the default branch — never merge it, never squash it. The epic branch has already been refreshed.',
+    ? "Append the run record to the epic's status.md with this stop condition quoted verbatim and the ticket it fired on — its Release PR field reads \"not opened: run halted\", which needs no URL because nothing was opened — then commit and push it on the epic branch, report, and stop. Merge nothing more; open no release pull request; never re-run the ticket."
+    : "OPEN the release pull request against the default branch — never merge it, never squash it. The epic branch has already been refreshed. THEN append the run record to the epic's status.md, quoting the pull request's real URL in its Release PR field, commit and push the record on the epic branch, print the URL, and stop. The record is written after the pull request exists so it can quote it: a URL written before it exists is a prediction, and this run records evidence.",
 }
