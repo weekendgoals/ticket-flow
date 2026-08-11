@@ -40,6 +40,7 @@ const FILES = {
   reviewer: 'plugins/flow/agents/ticket-reviewer.md',
   script: 'plugins/flow/scripts/tickets.mjs',
   hook: 'plugins/flow/hooks/ticket-session-guard.mjs',
+  workflow: 'plugins/flow/workflows/run-epic.mjs',
   readme: 'README.md',
   claudemd: 'CLAUDE.md',
 }
@@ -258,7 +259,12 @@ const PHRASES = [
   {
     why: 'the driver handshake phrase ticket step 10 keys on to stop after the merge',
     re: /a driver spawned you/i,
-    files: ['run', 'ticket'],
+    files: ['run', 'ticket', 'workflow'],
+  },
+  {
+    why: 'the workflow driver never merges toward the default branch either',
+    re: /toward the default branch/,
+    files: ['workflow'],
   },
   {
     why: 'never-squash for multi-ticket pull requests — subjects are how shipped is detected',

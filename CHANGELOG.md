@@ -59,6 +59,11 @@ with one version and date.
   because a fallback would restore the improvisation surface the conversion
   removed. One ticket at a time by hand with `/flow:ticket` remains the
   escape hatch.
+- **`check-invariants.mjs` now watches the workflow script too**: the
+  "A driver spawned you" handshake (ticket step 10 keys on it) is checked in
+  `workflows/run-epic.mjs` alongside the two skills, and the script must
+  carry the merge-direction phrase — load-bearing prose moved into code, so
+  the drift checker follows it there.
 
 ## 2.0.0 — 2026-08-11
 

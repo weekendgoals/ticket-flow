@@ -24,6 +24,7 @@ const FILES = [
   'plugins/flow/agents/ticket-reviewer.md',
   'plugins/flow/scripts/tickets.mjs',
   'plugins/flow/hooks/ticket-session-guard.mjs',
+  'plugins/flow/workflows/run-epic.mjs',
   'README.md',
   'CLAUDE.md',
 ]
