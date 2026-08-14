@@ -282,10 +282,13 @@ session has argued for its own decomposition, carries opinions about the
 code, and — when it runs several tickets — carries the previous ticket too.
 
 So the attended default became the same shape the driver already proved:
-the session supervises, a fresh worker implements from the documents, and —
-one step further than the autonomous lane — **the supervisor hires the
-reviewer**, because a worker that picks its own judge recreates self-review
-one level down. Interactive mode survives behind a flag for the real case
+the session supervises, a fresh worker implements from the documents, and
+**the supervisor hires the reviewer**, because a worker that picks its own
+judge recreates self-review one level down. The attended lane reached that
+last part first; the unattended one adopted it when its loop became a script
+whose driver could hire the judge itself. Both lanes now share the shape, and
+the rule underneath it is one rule: the party under review never picks its
+judge, in any lane. Interactive mode survives behind a flag for the real case
 it serves (conversing with the implementing agent mid-ticket), but the
 choice is once-per-session and enforced by a hook, not by memory: an
 interactive run marks the session, and every later `--interactive` run in
@@ -382,6 +385,50 @@ per-ticket pull requests, per-ticket review, and one human release gate.
 That is why serial-to-main stopped being the universal default: the record
 showed disciplined users stacking anyway (Q-10–Q-17), which was the rule
 mismeasuring their throughput needs, not the users misbehaving.
+
+## Why the run loop is code, not prose
+
+The unattended lane's guarantees were originally sentences a driver session
+read and obeyed: loop in document order, verify each merge from the board,
+halt on any stop condition, improvise past none of them. Sentences hold only
+as well as the reader — the same failure class as every other soft rule in
+this repository, but here with nobody watching and merges happening. Every
+review of the autonomous epic found some document drift, and a drifting
+driver is a driver whose release pull request cannot be trusted.
+
+So the loop moved into a workflow script (`workflows/run-epic.mjs`), where
+"never resume past a halt" is not an instruction but an absence: there is no
+code path that continues after a stop condition, the way there is no square
+root of a negative number. The skill keeps the judgment ends — whether the
+run may start, and recording how it ended — because those are decisions, and
+scripts do not make decisions. There is deliberately no prose fallback when
+the Workflow tool is missing: a fallback loop would quietly restore the
+improvisation surface the script exists to remove, and the attended lane
+(`/flow:ticket`, one ticket at a time) already covers the emergency.
+
+Moving the loop into code also moved the judge. The driver hires each
+ticket's reviewer — the supervisor pattern one level up — and the worker
+stops at its opened pull request without reviewing or merging anything it
+wrote. That closes the last place where the party under review still picked
+its own judge, and it makes the merge gate mechanical: the reviewer returns
+findings as structured data, and code, not prose, decides that an Important
+finding left unfixed or a review addendum left uncommitted stops the run. A
+gate written as a sentence is obeyed by a reader; a gate written as a branch
+is obeyed by the machine.
+
+The trade is honest, and its name is **code-controlled, agent-executed**: the
+script cannot touch a file or run a command itself, so every mechanical fact
+still arrives through an agent it spawns. Control flow became deterministic;
+the facts did not. The halt conditions are code; the eyes are still models.
+
+Which is why the gates that matter read repository state rather than an
+agent's account of it. The board decides that a ticket is integrated. The
+pushed branch decides whether its review addendum exists. The pull request to
+merge is resolved from the branch name — an invariant of the plugin — with
+the number the worker reported kept only as a cross-check, because "which
+pull request does this ticket own" is exactly the kind of question a
+confident wrong answer ends badly. Self-reports still fill the record; they
+just no longer open the gate.
 
 ## The admission test
 

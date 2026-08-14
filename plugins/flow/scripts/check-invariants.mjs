@@ -40,6 +40,7 @@ const FILES = {
   reviewer: 'plugins/flow/agents/ticket-reviewer.md',
   script: 'plugins/flow/scripts/tickets.mjs',
   hook: 'plugins/flow/hooks/ticket-session-guard.mjs',
+  workflow: 'plugins/flow/workflows/run-epic.mjs',
   readme: 'README.md',
   claudemd: 'CLAUDE.md',
 }
@@ -251,14 +252,14 @@ function checkRefusalMessage() {
 
 const PHRASES = [
   {
-    why: 'merge-direction doctrine — no agent merges toward the default branch',
+    why: 'merge-direction doctrine — no agent merges toward the default branch; in the workflow script the NO_MAIN prompt rule must carry it, not just the meta description',
     re: /toward the default branch/,
-    files: ['run', 'ticket', 'readme', 'claudemd'],
+    files: ['run', 'ticket', 'readme', 'claudemd', 'workflow'],
   },
   {
-    why: 'the driver handshake phrase ticket step 10 keys on to stop after the merge',
+    why: 'the driver handshake phrase ticket step 0 keys on to let the spawn prompt scope the skill, and step 10 keys on to stop the worker short of the merge',
     re: /a driver spawned you/i,
-    files: ['run', 'ticket'],
+    files: ['run', 'ticket', 'workflow'],
   },
   {
     why: 'never-squash for multi-ticket pull requests — subjects are how shipped is detected',

@@ -9,7 +9,7 @@ with one version and date.
 ## Unreleased
 
 - **New verification tool: `scripts/check-invariants.mjs`**, with its own
-  suite (`check-invariants.test.mjs`, 7 tests — including proofs that each
+  suite (`check-invariants.test.mjs`, 9 tests — including proofs that each
   class of drift actually fails). The cross-document couplings the doctrine
   states but nothing enforced mechanically — the status-log preamble's three
   copies, the quick-gate/`xhigh` risk lists, the skills' heading templates
@@ -20,6 +20,205 @@ with one version and date.
   Checks are presence and equality only; contradictions in meaning remain
   review's job. Dev-side only: no skill invokes it, and installed projects
   are unaffected.
+- **`/flow:run`'s ticket loop is now a workflow script, not prose**
+  (`plugins/flow/workflows/run-epic.mjs`, new; `skills/run` steps 4–7
+  rewritten). The skill still owns the decisions: resolving the epic and
+  refusing anything but `Delivery: release` (step 1), verifying the sign-off
+  traces on `origin/epic/<name>` (step 2), the permission surface and the
+  branch-protection probes with their 404/403 carve-out (step 3), and the
+  ending — the run record and the release pull request, opened and never
+  merged (steps 6–7). Step 4 now launches the script with the **Workflow
+  tool**, passing the epic, default branch, repository root, plugin root and
+  the date (a workflow script has no clock, no shell and no filesystem, so
+  every mechanical fact rides in `args` or arrives through an agent it
+  spawns). **The halt conditions are structural now**: each stop condition in
+  step 5 is a code path that returns `{outcome: "halted", haltedOn}` and
+  there is no code path that resumes past one, which is the whole point of
+  the conversion — a prose loop can be re-read and reasoned past, a `return`
+  cannot. The script refreshes `epic/<name>` between every ticket, spawns one
+  fresh general-purpose worker per ticket with the load-bearing "A driver
+  spawned you" prompt unchanged, and confirms `state === "integrated"` from
+  `tickets.mjs find --json` rather than from any agent's report. It never
+  reviews a diff itself, never opens or merges the release pull request, and
+  never touches the default branch.
+- **The driver hires the judge, and the merge gate is code.** The per-ticket
+  sequence is refresh → next → worker → reviewer → disposition → merge →
+  verify. The **worker** now runs a scoped slice of `flow:ticket` — steps 1–6
+  plus step 9's push and pull-request open — and stops there; it never
+  reviews or merges its own work, and it spawns nothing. The **script** hires
+  `flow:ticket-reviewer` with a packet it assembles deterministically (the
+  commit range computed from the ticket ID, since branches are the lowercased
+  ID; the epic's `tickets.md` and `status.md`; the repository's instruction
+  files) — never from the worker's narrative — and takes findings back as
+  **structured data**: `important[]` with `file:line`, a confirmed/plausible
+  label and the concrete failure, capped nits with an overflow count,
+  pre-existing findings, and what was checked and found sound. Review price
+  comes from the tier the worker reports for its own diff under the step 7
+  table (`prose` → a fast model at `low`, `normal` → the session's class at
+  `high`, `consequence` → the strongest at `xhigh`), with the epic's
+  `Reviewer model:` line overriding the model; **a missing or unrecognised
+  tier is priced as `consequence` — doubt goes up.** A separate cheap
+  **disposition** agent fixes Important findings as new commits, re-runs the
+  affected checks, and writes and commits the dated review addendum — it runs
+  even on zero findings, because the committed addendum is a merge
+  precondition. Then a cheap **merge** agent checks `baseRefName` is
+  `epic/<name>` and merges with a merge commit, never a squash. **The gate is
+  four code paths**: an unfixed Important finding halts, a failed disposition
+  halts, an uncommitted addendum halts, and a wrong base halts as a
+  contradiction — none of them reachable past.
+- **This also dissolves the Agent-tool limitation** recorded earlier in this
+  batch: nothing the script spawns needs to spawn anything, so the lane works
+  on current Claude Code builds, which withhold the Agent tool from
+  workflow-spawned agents. Reviewer-spawn failure now means the *script's*
+  hiring failed — the `flow:ticket-reviewer` agent and then the sanctioned
+  general-agent fallback both returned nothing — and the ticket's pull
+  request stays open and unmerged.
+- **Token figures are self-reported through schemas.** The script hires both
+  the worker and the reviewer but observes no harness counter, so each
+  reports its own figure; the driver passes the reviewer's model, effort and
+  figure into the disposition prompt, which is the only way the addendum can
+  state them. `unknown` still means unknown and is never estimated.
+- **The ending no longer refreshes the epic branch a second time.** The loop
+  refreshes before it asks what is left, so the pass that finds nothing left
+  has already refreshed a branch carrying every ticket's merge; the result's
+  `finalRefresh` reports it.
+- **External-review hardening: the gate now reads repository state, not
+  self-reports.** The lane's honest name is **code-controlled,
+  agent-executed** — code decides, agents execute and report — so the checks
+  that matter no longer take an agent's word for the thing being checked.
+  (1) **The pull request is resolved mechanically**: the merge step runs
+  `gh pr list --head <id lowercased> --base epic/<name> --state open`,
+  requires exactly one match, verifies both refs from the response, and
+  merges that number; zero, several, or a number the worker did not report
+  halts as a contradiction — the worker's `prNumber` is now only a
+  cross-check, and the script re-checks it after the fact too. (2) **Fix
+  commits get one bounded re-review** before the merge, in the reviewer's
+  re-review mode (no new nits, only Important findings and anything still
+  unaddressed): the fixes are written after the review that approved
+  everything else, so a merge without it merges an unreviewed diff. Any
+  Important finding halts, and there is deliberately no second round.
+  A clean review skips the step, so it costs nothing on the common path.
+  (3) **The addendum is verified on the pushed branch** —
+  `git show origin/<branch>:epics/<epic>/status.md | grep -c "Addendum — review — <date>"`
+  — with the disposition's own flag kept as well, belt and braces.
+  (4) **Pre-existing findings can no longer vanish**: they ride into the
+  disposition prompt with the instruction to record each with a named owner
+  (an existing ticket, or `retro` — the retro skill mines addenda), into
+  `ticketRecords[].preExisting` and the result's top-level `preExisting`, and
+  into the release pull request body the run skill's step 7 describes.
+- **Second review pass, and what it caught** (fresh-context opus review of the
+  branch; four Important findings, all confirmed, plus seven nits — all
+  fixed). Two were behaviour, and both were gates that looked closed and were
+  not: **the addendum check was vacuous for every ticket but the first** —
+  release tickets branch from `epic/<name>`, whose append-only log already
+  carries the previous ticket's addendum, so a date-only grep matched it and
+  the check collapsed back to the disposition's self-report; it is now scoped
+  by `awk` to *this ticket's own entries*, and re-checked in code after the
+  merge reports success. And **the disposition's outcome is now cross-checked
+  against the review it dispositioned**: "clean" against a review that raised
+  Important findings, or "fixed" with no fix commits named (which would also
+  skip the re-review), halt as contradictions — the driver holds the finding
+  count, so it checks rather than reads. The rest: `gh pr list` no longer
+  filters by base, so a pull request aimed at the wrong branch is *reported*
+  instead of vanishing into a "no pull request" count; a reviewer return
+  without a findings array is a failed hire rather than an approval (it was
+  the one malformed-return path in the script that failed open); tier and
+  stop-condition lookups use `Object.hasOwn`, so a reported tier of
+  `toString` prices as `consequence` instead of `undefined`; every halt now
+  quotes agent words inside the untrusted fence its contract already
+  promised, with ids, refs, counts and enum values staying plain, and the run
+  skill states that boundary exactly; the merge-conflict stop string is
+  re-synced with the skill's bullet; and the ticket skill's step 10 now
+  splits by spawn shape in so many words — a **driver**-spawned worker never
+  reaches the merge, a **supervisor**-spawned one (the human escape hatch)
+  performs the gate and the epic-branch merge — which step 0 had been
+  pointing at while step 10 said only the first half. METHODOLOGY no longer
+  claims the attended lane goes "one step further" on hiring the reviewer:
+  both lanes share the shape now.
+- **Third review pass: resolution is now checked before anything can merge.**
+  The merge step resolved the pull request, checked the addendum and merged in
+  one agent, so the code's cross-checks on its reported facts could only run
+  *after* an irreversible merge — and two of them (the head and base refs)
+  were never re-checked at all, which left a malformed report claiming
+  `baseRefName: "main"` able to pass the coded gate. A merge toward the
+  default branch is the plugin's one absolute prohibition and nothing
+  un-merges it, so the step is split: a **read-only resolve agent** reports
+  the addendum count and the pull-request listing, **the script judges every
+  fact** — exactly one match, head equal to the ticket branch, base equal to
+  `epic/<name>`, an addendum count of at least one, a number equal to the
+  worker's — and only then is a **merge agent** spawned, with one command and
+  a number it did not choose. A halt at resolution now means no agent capable
+  of merging was ever created. The per-ticket spawn count goes 6 → 7 on a
+  clean ticket (8 with a re-review); the post-merge belt-and-braces re-checks
+  are gone, because pre-merge verification is strictly stronger.
+- **The first live run caught an ordering contradiction the reviews did not**
+  (flow-demo, five tickets, completed, 2026-08-11). The script's completed-run
+  instruction told the session to write the run record *then* open the release
+  pull request, while the run skill's step 7 and the record's own
+  `Release PR:` field require the opposite — the field quotes the URL. The
+  driver followed the string, wrote a **predicted** URL, and verified it
+  afterwards; it guessed right, which is worse than guessing wrong, because
+  nothing would have caught it. The string now says: open the pull request,
+  then write the record quoting its real URL. On a halt, record-first stays
+  correct — nothing was opened, and the field says so.
+- **Re-review evidence survives the session.** The run record's Tickets line
+  notes "re-reviewed after fixes: `<n>` Important" when one ran, its Tokens
+  line carries `reReviewTokens` on the same harness-or-unknown terms, and the
+  release pull request body states each ticket's re-review outcome — without
+  which a human reads fix commits as unreviewed, which is exactly what the
+  re-review exists to prevent.
+- **A committed behavioural suite for the driver**
+  (`workflows/run-epic.test.mjs`, 65 tests): it loads `run-epic.mjs`, strips
+  the `export`, evaluates the module body the way the workflow runtime does,
+  and drives it with stubbed agents — asserting the sequence, every gate
+  branch and halt mapping, the review pricing, the fences, and the prompt
+  text the gates depend on. No git, no network, no filesystem beyond reading
+  the script. The harness that verified the two previous rewrites lived in a
+  scratch directory; verification that is not in the repository is not
+  verification.
+- **Cheaper mechanics.** The refresh and the board read are one agent instead
+  of two (the board is only worth reading on a just-refreshed branch), and
+  the three shell-proxy agents — refresh+select, merge, verify — are pinned
+  to a fast model: their whole job is running a fixed command sequence and
+  echoing structured output, and every decision they could get wrong is
+  re-checked in code. The worker, the reviewers and the disposition are not
+  pinned: they reason, and they keep the tier table and the inherit rules.
+- **Doctrine follows the restructure**, in the same commit: ticket skill step
+  0 (a driver-spawned worker stops at its opened pull request; a
+  human-invoked ticket of a release epic still ends per step 10 unchanged),
+  step 7 (the driver hires the reviewer in an unattended run), step 9 (the
+  sanctioned merge's surface is the epic branch — step 10, or the run
+  driver's merge step), step 10 (a driver-spawned worker never reaches the
+  merge); CLAUDE.md's merge invariant; README's `/flow:run` row and the
+  reviewer section's new "the hirer is never the party under review"
+  paragraph; METHODOLOGY's "Why the run loop is code, not prose".
+- **`/flow:run` now requires the Workflow tool.** If it is unavailable the
+  skill stops and reports; there is deliberately no prose fallback loop,
+  because a fallback would restore the improvisation surface the conversion
+  removed. One ticket at a time by hand with `/flow:ticket` remains the
+  escape hatch.
+- **`check-invariants.mjs` now watches the workflow script too**: the
+  "A driver spawned you" handshake (ticket step 10 keys on it) is checked in
+  `workflows/run-epic.mjs` alongside the two skills, and the script must
+  carry the merge-direction phrase — load-bearing prose moved into code, so
+  the drift checker follows it there. Both new invariants have negative
+  tests (suite 7 → 9).
+- **Review fixes** (fresh-context review, opus/high, 2026-08-11; one
+  Important, five nits, all fixed): an **errored Workflow call is a recorded
+  halt** — run skill step 4 now defines the third branch (no prose
+  continuation, facts recovered from the board, error quoted as the stop
+  condition), and the `/flow:ticket` escape hatch is scoped to
+  nothing-launched only; worker-authored result fields (`built`,
+  `verification`, `reviewOutcome`, a halt's `detail`) are **fenced as
+  untrusted data on both paths** and the skill now says what the fences are
+  and how to erase them deliberately; the script's `STOP` strings re-synced
+  to the rewritten skill's step 5 wording; the worker `stopCondition` enum is
+  derived from the `WORKER_STOP` map so the two cannot drift; the checker's
+  workflow merge-direction guard anchors on the `NO_MAIN` prompt rule, not
+  the meta description; README's permission surface names the Workflow
+  launch and its inventory names the workflow script; METHODOLOGY gains
+  "Why the run loop is code, not prose"; step 5 tells the session to clear
+  an unaborted merge before committing a halt record.
 
 ## 2.0.0 — 2026-08-11
 

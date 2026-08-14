@@ -4,7 +4,8 @@ A Claude Code plugin that runs work as **epics** and **tickets**, from a request
 through to a reviewed pull request — and derives the board from git instead of
 asking anyone to maintain one.
 
-Eight skills, two reviewer agents, one script, one session hook. No database,
+Eight skills, two reviewer agents, one board script, one workflow script
+(`/flow:run`'s ticket loop), one session hook. No database,
 no config file, no state stored anywhere — except one per-session marker in
 the OS temp dir (the in-session-work guard's memory of the current
 conversation; it dies with the session's context and never touches the
@@ -14,7 +15,7 @@ repository).
 |---|---|
 | `/flow:epic <name> [source...]` | Turn a request, report or conversation into `epics/<name>/`. Sources are files, globs or URLs, saved into `context/`; with none, the conversation is the brief. A fresh-context **plan reviewer** challenges the decomposition, then it **stops for sign-off** and commits — no pull request |
 | `/flow:ticket <ID>` | One ticket end to end: branch, implement, verify, log, commit, review, fix, push, pull request. Runs **supervisor-mode by default** — a fresh-context worker implements from the documents and the supervisor hires the reviewer; `--interactive` runs in-session, once per session (a hook refuses a second interactive run; supervisor runs stay open) |
-| `/flow:run <epic>` | Run a `Delivery: release` epic end to end with nobody present: verifies sign-off happened, loops the tickets in document order — each in a **fresh-context agent** that implements, reviews, fixes and merges into `epic/<name>` — halts on any stop condition, and ends by **opening** the release pull request. Never merges toward the default branch |
+| `/flow:run <epic>` | Run a `Delivery: release` epic end to end with nobody present: verifies sign-off happened, then hands the loop to a shipped **workflow script** — **code-controlled, agent-executed** — that takes the tickets in document order. Per ticket: refresh the epic branch and read the board, a **fresh-context worker** implements and stops at its opened pull request, the **driver hires the reviewer**, a disposition agent fixes and records, fixes get one bounded re-review, then the pull request is resolved from its branch and every fact about it — one match, the right head, the right base, the review addendum present, the number the worker reported — is checked **in code before any agent that could merge exists**; only then does a merge agent run one command, and the board — not an agent — confirms the result. It halts on any stop condition, because each one is a code path rather than a judgment call. The session ends by **opening** the release pull request. Requires the Workflow tool; never merges toward the default branch |
 | `/flow:quick <description>` | The **cheap lane**: one small, low-risk piece of work, implemented **in-session** with a written scope, verification with counts, a short log entry and a pull request — and a fresh-context reviewer **only when behaviour changes** (prose-only diffs — documentation and comments, nothing a machine reads — get none; the PR is the review). Size- **and risk-gated**: auth, secrets, migrations and other consequential work is routed to `/flow:epic` at any size |
 | `/flow:tickets [epic]` | The board — shipped, in flight, blocked, todo |
 | `/flow:review [range]` | Review a commit range and report. Used by `/flow:ticket`; runnable on its own |
@@ -105,7 +106,9 @@ hold its documents.
 `/flow:run <epic>` executes the tickets unattended: each in a fresh-context
 agent that implements, is reviewed, fixes findings and merges its own pull
 request into `epic/<name>`; the run ends by **opening** the release pull
-request. The human makes two decisions — approve the plan, approve the
+request. The loop itself is a workflow script the plugin ships
+(`workflows/run-epic.mjs`), so every stop condition is code that returns
+rather than prose an agent could reason past. The human makes two decisions — approve the plan, approve the
 release — instead of clicking merge between every ticket. **The human gate
 moves to the release pull request; it does not disappear.** Main never sees
 an agent merge in any mode — an unreviewed ticket is never merged anywhere.
@@ -161,9 +164,11 @@ run hit an unprobed free-plan 403, and its waiver landed seconds before
 start):
 
 - **A pre-authorized permission surface.** The session must already be
-  allowed to run git, `gh`, the project's test commands, file edits and agent
-  spawns without prompting — a prompt mid-run stops the run, because nobody
-  is there to answer it.
+  allowed to run git, `gh`, the project's test commands, file edits, agent
+  spawns, and the Workflow launch that runs the ticket loop, all without
+  prompting — a prompt mid-run stops the run, because nobody is there to
+  answer it, and the workflow-launch prompt would fire before any loop code
+  exists to catch it.
 - **Branch protection on the default branch** — require pull requests, block
   force pushes, human-only merge. The skills are soft enforcement obeyed by a
   cooperating agent; protection is the hard floor that holds even against a
@@ -180,6 +185,13 @@ amendments, so the review stays auditable against exactly what was reviewed.
 `flow:plan-reviewer` does the same to a draft epic before sign-off, reading the
 decomposition against the actual code — a wrong split caught there costs one
 edit instead of every ticket built on it.
+
+**The hirer is never the party under review.** In `/flow:ticket`'s default
+lane the supervisor hires the reviewer, not the worker that wrote the code;
+in `/flow:run` the driver script does the same one level up — the worker
+stops at its opened pull request, the script hires the reviewer, and a code
+gate on the reviewer's structured findings decides whether anything merges.
+A worker that picked its own judge would recreate self-review one level down.
 
 They ship under their own names rather than generic ones, because project and
 user `.claude/agents/` definitions override same-named plugin agents. If you

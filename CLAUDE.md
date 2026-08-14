@@ -2,9 +2,10 @@
 
 A Claude Code plugin marketplace with one plugin, `flow` (`plugins/flow/`):
 skills and agents that run work as epics and tickets, plus `tickets.mjs`, the
-script that derives the board from git, and one session hook (the
-in-session-work guard, whose only state is a per-session marker in the OS
-temp dir). `README.md` is the user-facing manual;
+script that derives the board from git, `workflows/run-epic.mjs`, the
+workflow script that holds `/flow:run`'s ticket loop, and one session hook
+(the in-session-work guard, whose only state is a per-session marker in the
+OS temp dir). `README.md` is the user-facing manual;
 `METHODOLOGY.md` is reasoning only and contains no rules — if it contradicts a
 skill, the skill wins.
 
@@ -25,7 +26,13 @@ go through the flow, one-off work goes through `/flow:quick` into
   temp dir; it needs `git` on PATH and nothing else. The session-guard hook
   has its own suite:
   `node --test plugins/flow/hooks/ticket-session-guard.test.mjs` (`# pass 14`
-  on the same terms).
+  on the same terms). The invariant checker has
+  `node --test plugins/flow/scripts/check-invariants.test.mjs` (`# pass 9`),
+  and the run driver has
+  `node --test plugins/flow/workflows/run-epic.test.mjs` (`# pass 65`) —
+  which evaluates `run-epic.mjs`'s module body with stubbed agents and
+  asserts the sequence, the gate branches and the halt mapping. It needs
+  nothing but Node: no git, no network, no filesystem beyond the script.
 - **Doctrine invariants:** `node plugins/flow/scripts/check-invariants.mjs` —
   must exit 0 on this repo; mechanically verifies the string-checkable
   cross-document couplings (the status-log preamble's three copies, the two
@@ -34,10 +41,16 @@ go through the flow, one-off work goes through `/flow:quick` into
   phrases). Run it whenever a skill, agent, hook or doctrine document changes —
   it is presence and equality only, so contradictions in meaning still need
   review. Its suite: `node --test plugins/flow/scripts/check-invariants.test.mjs`
-  (`# pass 7` on the same terms).
+  (`# pass 9` on the same terms).
 - **Smoke:** `node plugins/flow/scripts/tickets.mjs doctor` — must exit 0 on
   this repo. `… list` shows the board.
-- **Syntax check:** `node --check plugins/flow/scripts/tickets.mjs`.
+- **Syntax check:** `node --check plugins/flow/scripts/tickets.mjs`. This does
+  **not** work on `plugins/flow/workflows/run-epic.mjs`: a workflow script is
+  a module body with a top-level `return`, which the workflow runtime allows
+  (`allowReturnOutsideFunction`) and `node --check` rejects. Parse it the way
+  the runtime does instead:
+  `node -e 'const s=require("fs").readFileSync("plugins/flow/workflows/run-epic.mjs","utf8").replace(/^export const meta/m,"const meta");new (Object.getPrototypeOf(async function(){}).constructor)("agent","parallel","pipeline","log","phase","args","budget",s)'`
+  — it exits 0 on a parseable script and prints a SyntaxError otherwise.
 - **Live plugin dev:** `/plugin marketplace add ~/projects/ticket-flow`, then
   `/reload-plugins` to pick up skill edits mid-session.
 
@@ -76,11 +89,13 @@ path explicitly.
   every mode: no agent merges or pushes toward the default branch, and no
   skill gains a post-merge step. The one sanctioned agent merge **of a pull
   request** is into the epic branch inside a release epic — declared
-  `Delivery: release` (ticket skill step 10) — there, the human gate moves
+  `Delivery: release` (ticket skill step 10; in an unattended run, the run
+  workflow's merge step after its coded gate) — there, the human gate moves
   to the release pull request, and
   branch protection on main is the hard floor under the rule. Refreshing an
-  epic branch **from** the default branch (ticket skill step 3, run skill
-  step 4a) is the safe direction — main is the source, never the target —
+  epic branch **from** the default branch (ticket skill step 3, and the run
+  loop's refresh in `workflows/run-epic.mjs`) is the safe direction — main is
+  the source, never the target —
   and is not a merge toward main.
 - **The two risk lists are one list.** The quick skill's entry triggers and
   the ticket skill's `xhigh` review tier measure the same consequences at two
