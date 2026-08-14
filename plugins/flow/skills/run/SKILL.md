@@ -237,8 +237,11 @@ looping until `tickets.mjs next <epic> --json` comes back empty:
   when none fits, because a defect that is neither fixed nor recorded is one
   the project has forgotten — appends the dated review addendum to the status
   entry per the ticket skill's step 8 (the script passes it the reviewer's
-  model, effort and token figure, because the driver hired the reviewer and
-  only the driver observes them), commits the addendum and pushes. **This
+  model and effort, because the driver hired the reviewer; token figures are
+  deliberately not passed — no agent can see its own counter, so the addendum
+  ends with `Tokens: recorded in the run record` and the session sums the
+  run's own transcripts into that record afterwards), commits the addendum
+  and pushes. **This
   runs even when the reviewer found nothing**: the committed addendum is what
   makes the ticket reviewed *on the record*, and it is a merge precondition,
   not a formality.
@@ -286,13 +289,13 @@ enters your context from the whole loop:
 { outcome: "completed" | "halted",
   haltedOn: null | { stopCondition, ticket, where, detail },
   ticketRecords: [ { id, title, branch, workerAgent, workerModel,
-                     workerTokens, tier, tierReported, tierWhy,
-                     reviewerModelUsed, reviewerEffort, reviewerTokens,
+                     tier, tierReported, tierWhy,
+                     reviewerModelUsed, reviewerEffort,
                      importantCount, nitCount, nitOverflowCount,
                      preExistingCount, preExisting, preExistingRecorded,
                      findings, checkedAndSound,
                      fixedCommits, notFixed, disposition,
-                     reReviewRan, reReviewImportantCount, reReviewTokens,
+                     reReviewRan, reReviewImportantCount,
                      reReviewFindings, resolveOutcome, mergeOutcome,
                      addendumMatches, matchCount,
                      built, verification, workerReported,
@@ -339,7 +342,9 @@ continuation, no running the remaining tickets yourself. Nothing survives a
 throw, so recover what the result would have carried from the board —
 `tickets.mjs list <epic> --json`, whose `integrated` states are the tickets
 that landed before the error — and write the step 6 record as halted,
-quoting the error verbatim as the stop condition, with tokens `unknown`.
+quoting the error verbatim as the stop condition, with tokens summed the
+same way step 6 sums them from whatever transcripts the run left behind
+(`unknown` where none exist).
 Work may already have merged into `epic/<name>`; the record and your halt
 report are how the human learns that.
 
@@ -445,17 +450,24 @@ Important" — integrated | halted. The re-review is the only evidence that
 the *fixed* diff was reviewed too; a record that omits it reads as though
 the fixes were never looked at.>
 
-**Tokens:** <per ticket, `workerTokens` and `reviewerTokens` from that
-ticket's `ticketRecords` entry — plus `reReviewTokens` when `reReviewRan`,
-on exactly the same terms — with the reviewer's tier, model and effort
-(`tier`, `reviewerModelUsed`, `reviewerEffort`) beside them. The script
-hires all of them but observes no harness counter, so each reports its own
-figure through its schema; `unknown` where nothing was exposed, never an
-estimate — and the run's total of the known figures.
-This line **restates** the ticket entries' figures as one audit view for
-the run; anyone summing the epic (the retro) reads the entries and their
-addenda, never this line, or every figure counts twice. Planning evidence,
-never a gate: nothing in this skill reads it to decide anything.>
+**Tokens:** <harness-observed, from the run's own transcripts — never from
+any agent's report: no agent can see its own counter, and the one live
+figure an agent ever offered was invented and corrected by addendum
+(flow-demo, NOTE-1, 2026-08-12). The Workflow run persists each `agent()`
+call's transcript under this session's directory — `journal.jsonl` maps
+the run's labels (`worker:<ID>`, `review:<ID>`, `disposition:<ID>`,
+`re-review:<ID>`, and the shell proxies) to their `agent-<id>.jsonl`
+files — so sum each agent's `usage` figures from its transcript and state,
+per ticket: worker, reviewer (with its tier, model and effort from `tier`,
+`reviewerModelUsed`, `reviewerEffort`), re-review when `reReviewRan`, and
+disposition — plus the run's total. Where the build's transcript layout
+exposes no usage, write `unknown` — observed or unknown, never asked of an
+agent, never estimated. This line is the run lane's **only** token record:
+the ticket entries and addenda deliberately read `recorded in the run
+record` and point here, so the retro sums driver-run tickets from this
+line and attended tickets from their entries — each ticket counted once.
+Planning evidence, never a gate: nothing in this skill reads it to decide
+anything.>
 
 **Halted on:** <`haltedOn.stopCondition` verbatim — the script names it in
 the same words step 5 uses — with `haltedOn.ticket` and `haltedOn.where` —

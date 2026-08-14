@@ -206,7 +206,6 @@ const WORKER_SCHEMA = {
       items: { type: 'string' },
       description: 'anything this ticket created that must exist before the release runs: a new environment variable, a migration, a script that runs after. [] if none.',
     },
-    workerTokens: { type: 'string', description: 'your own harness-reported token figure, e.g. "310k" — "unknown" if the harness exposed none. Never estimate.' },
     detail: { type: 'string', description: 'when you stopped: what stopped you, in one or two lines, pointing at the status entry that says why' },
   },
 }
@@ -251,7 +250,6 @@ const REVIEW_SCHEMA = {
       },
     },
     checkedAndSound: { type: 'string', description: 'one or two lines on what you verified and found correct, so the next reviewer does not re-tread it' },
-    reviewerTokens: { type: 'string', description: 'your harness-reported token figure — "unknown" if the harness exposed none. Never estimate.' },
   },
 }
 
@@ -287,7 +285,6 @@ const RE_REVIEW_SCHEMA = {
         properties: { cite: { type: 'string' }, summary: { type: 'string' }, owner: { type: 'string' } },
       },
     },
-    reviewerTokens: { type: 'string', description: 'your harness-reported token figure — "unknown" if the harness exposed none. Never estimate.' },
   },
 }
 
@@ -607,7 +604,7 @@ DO NOT run step 7 (review), step 8 (fix and addendum) or step 10 (the gate and t
 
 REPORT THE REVIEW TIER for your own diff, from the ticket skill's step 7 table: \`prose\` (documentation and code comments only — nothing any runtime, parser, test or agent reads), \`consequence\` (the risk list: authentication or authorization boundaries, secrets, crypto, network exposure, migrations, anything that deletes or rewrites data, payments or billing, anything that can fail open), or \`normal\` (everything else, including configuration, user-facing strings, CLI output and agent/skill instructions). Give one line of why. **When in doubt, the higher tier** — the driver prices the reviewer from this field, and an unrecognised or missing tier is priced as \`consequence\`.
 
-Your worker label for this run is \`${workerLabel}\` — record it in the status entry's Mode line (\`autonomous — driver-spawned worker ${workerLabel}\`), because the run record names the same label and those two lines together are what makes "the driver never implements" auditable after the fact. Report your own harness-reported token figure too (\`unknown\` if the harness exposed none, never an estimate).
+Your worker label for this run is \`${workerLabel}\` — record it in the status entry's Mode line (\`autonomous — driver-spawned worker ${workerLabel}\`), because the run record names the same label and those two lines together are what makes "the driver never implements" auditable after the fact. Report no token figure anywhere: you cannot see your own counter, and the session observes every agent's spend from the run's own transcripts after the run — your status entry's Tokens line reads \`recorded in the run record\`.
 
 The repository is at ${repoRoot}; the epic is \`${epic}\` and its branch is \`${epicBranch}\`. Everything else you need is in the epic's documents — start at \`${TICKETS} find ${id} --json\`, as the skill's step 1 says. Do NOT start another ticket, do not refresh the epic branch, and do not report on any ticket but this one.
 
@@ -634,13 +631,11 @@ Report honestly: \`pr-opened\` ONLY if you pushed \`${branch}\` and saw \`gh pr 
     branch,
     workerAgent: workerLabel,
     workerModel: workerModel || 'inherited',
-    workerTokens: worker && worker.workerTokens ? line(worker.workerTokens) : 'unknown',
     tier: priced.tier,
     tierReported: worker && worker.tier ? line(worker.tier) : 'none',
     tierWhy: worker && worker.tierWhy ? fence(worker.tierWhy) : '',
     reviewerModelUsed: priced.modelUsed,
     reviewerEffort: priced.effort,
-    reviewerTokens: 'unknown',
     importantCount: 0,
     nitCount: 0,
     nitOverflowCount: 0,
@@ -654,7 +649,6 @@ Report honestly: \`pr-opened\` ONLY if you pushed \`${branch}\` and saw \`gh pr 
     disposition: 'not reached',
     reReviewRan: false,
     reReviewImportantCount: 0,
-    reReviewTokens: 'not run',
     reReviewFindings: [],
     resolveOutcome: 'not reached',
     mergeOutcome: 'not reached',
@@ -724,7 +718,7 @@ Every Important finding needs a \`file:line\` you actually opened, the concrete 
 
 You REPORT; you never fix. No edits, no commits, no pushes — an agent that can edit its own finding edits it into agreement. Someone else dispositions your findings.
 
-Report your harness-reported token figure (\`unknown\` if the harness exposed none, never an estimate): the driver hired you, so only you observe your spend, and the run record needs it.`
+Report no token figure: you cannot see your own counter, and the session observes every agent's spend from the run's own transcripts after the run.`
 
   const review = await hireReviewer({
     label: `review:${id}`,
@@ -756,7 +750,6 @@ Report your harness-reported token figure (\`unknown\` if the harness exposed no
   // silently dropped (ticket skill step 8) — so they ride into the disposition
   // prompt, into this record, and from there into the release pull request.
   record.preExisting = preExisting.map(f => ({ cite: line(f.cite), owner: line(f.owner || ''), summary: fence(f.summary), from: 'review' }))
-  record.reviewerTokens = review.reviewerTokens ? line(review.reviewerTokens) : 'unknown'
   record.findings = important.map(f => ({
     cite: line(f.cite || f.file || ''),
     confirmedOrPlausible: line(f.confirmedOrPlausible || ''),
@@ -794,9 +787,9 @@ Do, in order:
 1. **Fix every Important finding** as NEW commits — never amend, the review has to stay auditable against exactly what was reviewed. Subject each one \`${id}: <what changed> (review fix)\`. Re-run the checks each fix affects and record the exact commands and their counts.
 2. **Append the dated review addendum** to this ticket's entry in ${repoRoot}/epics/${epic}/status.md, per the ticket skill's step 8 — append, never edit the original entry:
 
-   \`**Addendum — review — ${today} — ${priced.modelUsed}/${priced.effort}:** <findings; what was fixed, in which commit, with counts; what was not fixed, each with its reason; "nothing deferred" explicitly when that is true. End with \`Reviewer tokens: ${record.reviewerTokens}\`.>\`
+   \`**Addendum — review — ${today} — ${priced.modelUsed}/${priced.effort}:** <findings; what was fixed, in which commit, with counts; what was not fixed, each with its reason; "nothing deferred" explicitly when that is true. End with \`Tokens: recorded in the run record\`.>\`
 
-   Those three facts — the reviewer's model, its effort, its token figure — come from this prompt because the DRIVER hired the reviewer and only the driver observes them. Use them verbatim; never estimate them.
+   The reviewer's model and effort come from this prompt because the DRIVER hired the reviewer; use them verbatim. Token figures are deliberately absent: no agent can see its own counter, so the session sums the run's own transcripts into the run record after the run ends — the addendum points there instead of quoting a number nobody observed.
 3. **Commit the addendum** (with the fix commits, or on its own when nothing needed fixing) and \`git push\`. An uncommitted addendum never reaches the remote or the pull request's evidence trail, and the driver refuses to merge a ticket whose review is not on the record.
 
 Nits: fix one only if it is trivial and in scope; otherwise record it in the addendum and let the retro decide. A nit never blocks.
@@ -935,7 +928,6 @@ Read them in the context of the whole range, but judge them: does each fix do wh
     const rePreExisting = Array.isArray(reReview.preExisting) ? reReview.preExisting : []
     record.reReviewRan = true
     record.reReviewImportantCount = reImportant.length
-    record.reReviewTokens = reReview.reviewerTokens ? line(reReview.reviewerTokens) : 'unknown'
     record.reReviewFindings = reImportant.map(f => ({
       cite: line(f.cite || f.file || ''),
       confirmedOrPlausible: line(f.confirmedOrPlausible || ''),

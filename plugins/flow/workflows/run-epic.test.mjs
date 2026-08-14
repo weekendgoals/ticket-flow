@@ -69,7 +69,6 @@ const workerOk = (id = 'PAY-1', over = {}) => ({
   built: 'a thing',
   verification: '12 pass',
   deployPreconditions: [`${id}_ENV`],
-  workerTokens: '310k',
   ...over,
 })
 const reviewClean = {
@@ -78,7 +77,6 @@ const reviewClean = {
   nitOverflowCount: 2,
   preExisting: [],
   checkedAndSound: 'the parser paths',
-  reviewerTokens: '40k',
 }
 const reviewImportant = {
   important: [{ file: 'a.ts', cite: 'a.ts:12', summary: 'guard fails open', confirmedOrPlausible: 'confirmed', failure: 'empty token passes' }],
@@ -86,7 +84,6 @@ const reviewImportant = {
   nitOverflowCount: 0,
   preExisting: [],
   checkedAndSound: 'the rest',
-  reviewerTokens: '80k',
 }
 const dispClean = { outcome: 'clean', fixedCommits: [], notFixed: [], addendumCommitted: true, preExistingRecorded: false, counts: '12 pass', detail: '' }
 const dispFixed = {
@@ -275,7 +272,7 @@ test('a malformed review from both hires halts rather than merging on an empty f
 })
 
 test('a malformed re-review is a failed hire too', async () => {
-  const r = await drive(oneTicket({ 'review:PAY-1': reviewImportant, 'disposition:PAY-1': dispFixed, 're-review:PAY-1': {}, 're-review:PAY-1:fallback': { important: [], reviewerTokens: '2k' } }))
+  const r = await drive(oneTicket({ 'review:PAY-1': reviewImportant, 'disposition:PAY-1': dispFixed, 're-review:PAY-1': {}, 're-review:PAY-1:fallback': { important: [] } }))
   assert.equal(r.out.outcome, 'completed')
   assert.equal(call(r, 're-review:PAY-1:fallback').agentType, 'general-purpose')
 })
@@ -495,7 +492,7 @@ test('a failed merge halts on nonzero exit, and a conflicting one on merge confl
 // ---- the bounded re-review --------------------------------------------------
 
 test('fix commits earn exactly one re-review, and a clean one lets the merge proceed', async () => {
-  const r = await drive(oneTicket({ 'review:PAY-1': reviewImportant, 'disposition:PAY-1': dispFixed, 're-review:PAY-1': { important: [], reviewerTokens: '25k' } }))
+  const r = await drive(oneTicket({ 'review:PAY-1': reviewImportant, 'disposition:PAY-1': dispFixed, 're-review:PAY-1': { important: [] } }))
   assert.deepEqual(r.labels, [
     'refresh+select:1', 'worker:PAY-1', 'review:PAY-1', 'disposition:PAY-1', 're-review:PAY-1', 'resolve:PAY-1', 'merge:PAY-1', 'verify:PAY-1',
     'refresh+select:2',
@@ -504,7 +501,9 @@ test('fix commits earn exactly one re-review, and a clean one lets the merge pro
   const rec = r.out.ticketRecords[0]
   assert.equal(rec.reReviewRan, true)
   assert.equal(rec.reReviewImportantCount, 0)
-  assert.equal(rec.reReviewTokens, '25k')
+  // Token figures are harness-observed by the session after the run, never
+  // self-reported through schemas — the record carries none at all.
+  assert.ok(!('workerTokens' in rec) && !('reviewerTokens' in rec) && !('reReviewTokens' in rec))
   assert.equal(r.out.totals.reReviews, 1)
   const p = call(r, 're-review:PAY-1').prompt
   assert.match(p, /suppress new nits entirely/)
@@ -519,7 +518,7 @@ test('a re-review that finds an Important halts, with no second fix round', asyn
     oneTicket({
       'review:PAY-1': reviewImportant,
       'disposition:PAY-1': dispFixed,
-      're-review:PAY-1': { important: [{ file: 'a.ts', cite: 'a.ts:20', summary: 'the fix reintroduces the bypass', confirmedOrPlausible: 'confirmed', failure: 'null token still passes' }], reviewerTokens: '30k' },
+      're-review:PAY-1': { important: [{ file: 'a.ts', cite: 'a.ts:20', summary: 'the fix reintroduces the bypass', confirmedOrPlausible: 'confirmed', failure: 'null token still passes' }] },
     }),
   )
   assert.equal(r.out.haltedOn.stopCondition, 'an Important review finding it cannot fix')
@@ -585,7 +584,7 @@ test("a re-review's pre-existing findings travel in the record", async () => {
     oneTicket({
       'review:PAY-1': reviewImportant,
       'disposition:PAY-1': dispFixed,
-      're-review:PAY-1': { important: [], preExisting: [{ cite: 'legacy.ts:4', summary: 'swallowed error' }], reviewerTokens: '20k' },
+      're-review:PAY-1': { important: [], preExisting: [{ cite: 'legacy.ts:4', summary: 'swallowed error' }] },
     }),
   )
   assert.equal(r.out.outcome, 'completed')
@@ -596,7 +595,7 @@ test("a re-review's pre-existing findings travel in the record", async () => {
 // ---- worker and board halts -------------------------------------------------
 
 test('a worker that stopped short of a pull request halts, and hires no reviewer', async () => {
-  const r = await drive(oneTicket({ 'worker:PAY-1': { ticket: 'PAY-1', result: 'blocked', stopCondition: 'blocked-entry', detail: 'documents contradict the code', workerTokens: '90k' } }))
+  const r = await drive(oneTicket({ 'worker:PAY-1': { ticket: 'PAY-1', result: 'blocked', stopCondition: 'blocked-entry', detail: 'documents contradict the code' } }))
   assert.match(r.out.haltedOn.stopCondition, /^BLOCKED/)
   assert.ok(!r.labels.some(l => l.startsWith('review:')))
   assert.match(r.out.haltedOn.detail, /<<<UNTRUSTED/)
@@ -706,7 +705,7 @@ test('the shell-proxy agents are pinned to a fast model; the judging ones are pr
       'worker:PAY-1': workerOk('PAY-1', { tier: 'consequence' }),
       'review:PAY-1': reviewImportant,
       'disposition:PAY-1': dispFixed,
-      're-review:PAY-1': { important: [], reviewerTokens: '25k' },
+      're-review:PAY-1': { important: [] },
     }),
   )
   for (const label of ['refresh+select:1', 'resolve:PAY-1', 'merge:PAY-1', 'verify:PAY-1']) assert.equal(call(r, label).model, 'haiku', label)
@@ -720,8 +719,20 @@ test('the shell-proxy agents are pinned to a fast model; the judging ones are pr
 test('the disposition works harder when there are findings to fix', async () => {
   const clean = await drive(oneTicket())
   assert.equal(call(clean, 'disposition:PAY-1').effort, 'low')
-  const dirty = await drive(oneTicket({ 'review:PAY-1': reviewImportant, 'disposition:PAY-1': dispFixed, 're-review:PAY-1': { important: [], reviewerTokens: '1k' } }))
+  const dirty = await drive(oneTicket({ 'review:PAY-1': reviewImportant, 'disposition:PAY-1': dispFixed, 're-review:PAY-1': { important: [] } }))
   assert.equal(call(dirty, 'disposition:PAY-1').effort, 'high')
+})
+
+test('no agent is asked for a token figure, and the addendum points at the run record instead', async () => {
+  // Figures are harness-observed by the session from the run's transcripts
+  // after the run — a figure an agent offers about itself is a guess by
+  // construction (one live run recorded an invented one).
+  const r = await drive(oneTicket({ 'review:PAY-1': reviewImportant, 'disposition:PAY-1': dispFixed, 're-review:PAY-1': { important: [] } }))
+  for (const c of r.calls) assert.doesNotMatch(c.prompt, /harness-reported token/, c.label)
+  assert.match(call(r, 'worker:PAY-1').prompt, /Report no token figure/)
+  assert.match(call(r, 'review:PAY-1').prompt, /Report no token figure/)
+  assert.match(call(r, 're-review:PAY-1').prompt, /Report no token figure/)
+  assert.match(call(r, 'disposition:PAY-1').prompt, /Tokens: recorded in the run record/)
 })
 
 test('narrative fields are fenced and identifiers are not', async () => {
@@ -763,7 +774,7 @@ test('a fence marker inside agent prose cannot escape its fence', async () => {
 })
 
 test('every agent that can write is told the default branch is never a target', async () => {
-  const r = await drive(oneTicket({ 'review:PAY-1': reviewImportant, 'disposition:PAY-1': dispFixed, 're-review:PAY-1': { important: [], reviewerTokens: '1k' } }))
+  const r = await drive(oneTicket({ 'review:PAY-1': reviewImportant, 'disposition:PAY-1': dispFixed, 're-review:PAY-1': { important: [] } }))
   for (const label of ['refresh+select:1', 'worker:PAY-1', 'disposition:PAY-1', 'resolve:PAY-1', 'merge:PAY-1']) {
     assert.match(call(r, label).prompt, /toward the default branch \(main\)/, label)
   }

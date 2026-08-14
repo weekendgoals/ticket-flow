@@ -8,6 +8,24 @@ with one version and date.
 
 ## Unreleased
 
+- **Token figures are harness-observed, never self-reported**
+  (`workflows/run-epic.mjs`; the ticket, quick, run and retro skills; new
+  METHODOLOGY section "Why token figures are observed, never asked"). The
+  schemas' `workerTokens`/`reviewerTokens` fields are gone, and no prompt
+  asks any agent for a figure — an agent cannot see its own counter, so
+  self-report produced `unknown` everywhere and, once, an invented number
+  (flow-demo NOTE-1, corrected by addendum). Now: in supervisor mode the
+  supervisor records the spend the harness reports when its worker and
+  reviewer stop and hands both figures to the step 8 addendum; the quick
+  lane reads the reviewer's figure the same way. In an unattended run,
+  ticket entries and addenda read `Tokens: recorded in the run record`, and
+  the session sums the run's own per-agent transcripts (`journal.jsonl` →
+  `agent-<id>.jsonl`) into the run record's Tokens line — now the run
+  lane's **only** token record, so the retro counts each ticket once, from
+  wherever its lane recorded the figure, instead of skipping the run
+  record as a restated view. `ticketRecords` entries lost `workerTokens`,
+  `reviewerTokens` and `reReviewTokens`. The standing rule is unchanged
+  and finally enforceable: harness-observed or `unknown`, never estimated.
 - **New verification tool: `scripts/check-invariants.mjs`**, with its own
   suite (`check-invariants.test.mjs`, 9 tests — including proofs that each
   class of drift actually fails). The cross-document couplings the doctrine
@@ -73,11 +91,10 @@ with one version and date.
   hiring failed — the `flow:ticket-reviewer` agent and then the sanctioned
   general-agent fallback both returned nothing — and the ticket's pull
   request stays open and unmerged.
-- **Token figures are self-reported through schemas.** The script hires both
-  the worker and the reviewer but observes no harness counter, so each
-  reports its own figure; the driver passes the reviewer's model, effort and
-  figure into the disposition prompt, which is the only way the addendum can
-  state them. `unknown` still means unknown and is never estimated.
+- ~~Token figures are self-reported through schemas.~~ Superseded within
+  this batch before any release carried it: the live campaign showed
+  self-report produces only `unknown`s and guesses, so the fields are gone
+  and figures are harness-observed — see the batch's first entry.
 - **The ending no longer refreshes the epic branch a second time.** The loop
   refreshes before it asks what is left, so the pass that finds nothing left
   has already refreshed a branch carrying every ticket's merge; the result's
