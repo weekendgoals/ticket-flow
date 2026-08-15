@@ -108,15 +108,18 @@ from under `repoRoot`.
 Draft, ready to hand back unchanged: proposed instruction-file edits as
 concrete before/after lines, owed work as draft ticket sections ready to
 append, planning lessons with the evidence
-(quote the log), the epic's token spend — summed per ticket from **both**
-places the log carries a figure: the entry's **Tokens** line (the worker's
-spend) **and** its review addendum's `Reviewer tokens` figure, which rides
-the addendum because the entry is committed before any review runs — a sum
-of the Tokens lines alone silently drops every reviewer. Skip a run
-record's **Tokens** line entirely: it restates the ticket entries' figures
-as one audit view, and counting it doubles the epic. Name any `unknown`
-figures rather than counting them as zero (planning evidence for future
-sizing, never a gate) — and anything transferable beyond this project.
+(quote the log), the epic's token spend — each ticket counted **once**,
+from wherever its lane recorded the figure. An attended ticket carries it
+in its entry's **Tokens** line and its review addendum (the addendum rides
+after the entry because the entry is committed before any review runs — a
+sum of the Tokens lines alone silently drops every reviewer). A driver-run
+ticket's entry and addendum deliberately read `recorded in the run
+record`: the **run record's Tokens line** is that ticket's figure — the
+run lane's only token record, summed by the session from the run's own
+transcripts, because no agent can see its own counter. Never sum a ticket
+from both places. Name any `unknown` figures rather than counting them as
+zero (planning evidence for future sizing, never a gate) — and anything
+transferable beyond this project.
 
 Back in the invoking session: show the miner's report to the user
 **unedited** — disagreeing with a finding is a comment to raise at the gate,

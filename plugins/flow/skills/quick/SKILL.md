@@ -196,7 +196,10 @@ Commit the entry with the work.
 
 Fix Important findings as new commits (`Q-<n>: … (review fix)`), re-run the
 affected checks, and add one dated addendum line to the entry with the
-outcome and the reviewer's token figure. **A nit does not become a ticket by
+outcome and the reviewer's token figure **as the harness reported it when
+the reviewer stopped** — the session that spawned the reviewer observes its
+spend; the reviewer itself is never asked, because an agent cannot see its
+own counter (`unknown` when the harness exposed nothing). **A nit does not become a ticket by
 default** — fix it here if it is trivial and in scope, otherwise note it in
 the addendum for the retro; a nit earns a ticket only when it affects users,
 creates real maintenance risk, or keeps recurring.

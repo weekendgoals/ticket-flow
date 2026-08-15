@@ -42,9 +42,14 @@ and implements nothing:
    review** — a worker that picks its own reviewer recreates self-review
    one level down.
 4. Hand back to the **same worker** the findings **and the reviewer's
-   model, effort and token figure** — the addendum needs them and only you
-   know them — to disposition, fix and append the addendum (step 8); it has the
-   branch context; new commits, never amendments.
+   model, effort and harness-observed token figure** — the addendum needs
+   them and only you observe them: the harness reports each subagent's
+   spend when it stops, and no agent can see its own counter, so a figure
+   an agent offers about itself is a guess by construction. Hand over the
+   worker's own implementation-leg figure — what the harness reported at
+   the worker's first stop, item 2 above — the same way, labelled as
+   such — to disposition, fix and append the addendum
+   (step 8); it has the branch context; new commits, never amendments.
 5. Have the worker push and open the pull request (step 9); relay its
    report and finish per step 10 for the epic's mode — attended: print the
    URL and `next`, stop; autonomous (invoked directly by a human): the
@@ -264,10 +269,14 @@ hired by the supervisor`, or `interactive — in-session`, or `autonomous —
 driver-spawned worker <label>`, or `quick — in-session (/flow:quick)`.
 This line is what makes the fresh-context rule auditable after the fact.>
 
-**Tokens:** <the harness-reported figure, per agent where the agents are
-separate, e.g. `worker 310k`; the reviewer's figure joins the step 8
-addendum. `unknown` when the harness exposes none — never estimate.
-Planning evidence, never a gate.>
+**Tokens:** <harness-observed or `unknown` — never self-reported, never
+estimated: an agent cannot see its own counter, so a figure is written
+only by whoever watched the harness report it when an agent stopped.
+Supervisor mode: write `observed by the supervisor — see the review
+addendum`, where the figures land in step 8. Driver-spawned (unattended
+run): write `recorded in the run record` — the session sums the run's
+transcripts there. In-session lanes (interactive, quick): `unknown` — the
+session cannot observe itself. Planning evidence, never a gate.>
 
 **Verified:** <exact commands and counts; manual checks with evidence>
 
@@ -383,10 +392,14 @@ pull request's evidence trail:
 ```markdown
 **Addendum — review — <YYYY-MM-DD> — <model>/<effort>:** <findings. What was
 fixed, in which commit, with counts. What was not fixed, each with its reason.
-Say "nothing deferred" explicitly if that is true. End with the reviewer's
-token figure — `Reviewer tokens: <n>`, or `unknown` when the harness exposed
-none — completing the entry's **Tokens** line on the same terms:
-harness-reported or unknown, never estimated.>
+Say "nothing deferred" explicitly if that is true. End with the token
+figures the supervisor observed and handed over — `Worker tokens
+(implementation leg): <n>; Reviewer tokens: <n>`, `unknown` where the
+harness exposed nothing — completing the entry's **Tokens** line on the
+same terms: harness-observed or unknown, never asked of an agent, never
+estimated. In an unattended run the driver's disposition prompt replaces
+this ending with `Tokens: recorded in the run record`, because there the
+figures exist only after the run, summed from its transcripts.>
 ```
 
 ## 9. Show the user, then push and open the pull request

@@ -200,6 +200,29 @@ comments qualify as prose. The consequence list stays coupled to quick's
 entry gate (one list, two doors), so the cheap tiers structurally cannot
 leak consequential work.
 
+## Why token figures are observed, never asked
+
+The Tokens lines exist as planning evidence — they are what priced the
+review tiers and moved quick back in-session. For a while the figures were
+self-reported: each agent's schema demanded "your harness-reported token
+figure, never an estimate". The first live campaign showed what that was
+worth: an agent cannot see its own counter, so nearly every figure came
+back `unknown` — and the one that did not was invented and had to be
+corrected by addendum (flow-demo, NOTE-1). A mandatory field an agent can
+only fill with `unknown` or a guess is ceremony at best; at worst it
+teaches the record to carry numbers nobody measured.
+
+So the figures now come from the one place they exist: the harness, read
+by whoever watched an agent stop. The supervisor records the spend the
+harness reports when its worker and reviewer finish and hands the figures
+to the addendum; the unattended lane's session sums the run's own
+per-agent transcripts into the run record after the run, because the
+driver script observes no counter either — inside the run, entries and
+addenda just point there. In-session work stays `unknown`: a session
+cannot observe itself, and `unknown` is an honest answer where a guess is
+not. The old rule survives, finally enforceable because no field invites
+an estimate: harness-observed or unknown, never estimated.
+
 ## Why a worker reads a brief, not the whole log
 
 The ticket skill originally required each worker to read the entire status
