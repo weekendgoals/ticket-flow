@@ -331,9 +331,9 @@ together, by what the diff can break:
 
 | Tier | When | Model | Effort |
 |---|---|---|---|
-| prose | documentation and code comments only — nothing any runtime, parser, test, or agent reads | a fast mid-tier model | `low` |
-| normal | everything below the risk list — code, and the shapes that look like prose but are not: configuration, user-facing strings, CLI output, agent/skill instructions | a capable mid-tier model (the class this session runs on) | `high` |
-| consequence | the risk list below | the **strongest available** | `xhigh` |
+| prose | documentation and code comments only — nothing any runtime, parser, test, or agent reads | a fast mid-tier model (`haiku`) | `low` |
+| normal | everything below the risk list — code, and the shapes that look like prose but are not: configuration, user-facing strings, CLI output, agent/skill instructions | a named cost-efficient model (`sonnet`) — never the session's own model, which prices routine review by whoever happened to launch the session | `high` |
+| consequence | the risk list below | the strongest reviewer-sanctioned model (`opus`) | `xhigh` |
 
 The consequence list: authentication or authorization boundaries, secrets,
 crypto, network exposure, migrations, anything that deletes or rewrites
@@ -358,9 +358,13 @@ Tell it to follow **the `/flow:review` skill** and give it:
 
 - the commit range — `git merge-base origin/<base-branch> HEAD`..`HEAD`, using
   the base branch you noted in step 3,
-- `ticketsDoc` (the epic ground rules **and** this ticket's Acceptance criteria
-  and Not in scope — straying outside scope is a finding),
-- `statusDoc`,
+- the ticket's required reading, scoped —
+  `node "${CLAUDE_PLUGIN_ROOT}/scripts/tickets.mjs" brief <ID>` (the epic
+  ground rules, this ticket's Acceptance criteria and Not in scope — straying
+  outside scope is a finding — and the open owed items) rather than the whole
+  `ticketsDoc`,
+- this ticket's own entry from `statusDoc` — not the whole log, which grows
+  with every ticket and is cost, not context, for a reviewer,
 - the instruction files for every area in scope.
 
 **It reports; it does not fix.**
@@ -392,7 +396,11 @@ pull request's evidence trail:
 ```markdown
 **Addendum — review — <YYYY-MM-DD> — <model>/<effort>:** <findings. What was
 fixed, in which commit, with counts. What was not fixed, each with its reason.
-Say "nothing deferred" explicitly if that is true. End with the token
+Say "nothing deferred" explicitly if that is true. Keep it to the findings
+and their dispositions — do not reproduce verification transcripts or
+re-walk acceptance criteria the entry's Verified line already carries: the
+log is read by every later reviewer and the retro, and narration there is a
+cost every future ticket pays. End with the token
 figures the supervisor observed and handed over — `Worker tokens
 (implementation leg): <n>; Reviewer tokens: <n>`, `unknown` where the
 harness exposed nothing — completing the entry's **Tokens** line on the

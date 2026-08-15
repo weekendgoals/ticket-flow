@@ -216,13 +216,17 @@ looping until `tickets.mjs next <epic> --json` comes back empty:
   `/flow:review` skill, with a packet the *script* assembles: the commit
   range `origin/epic/<name>..origin/<id lowercased>` (branches are the
   lowercased ID, a plugin invariant, so the range is computed and never taken
-  from the worker's narrative), the epic's `tickets.md` and `status.md`, and
-  the repository's instruction files. Model and effort come from the ticket
-  skill's step 7 table applied to the worker's tier — `prose` → a fast model
-  at `low`, `normal` → the class this session runs on at `high`,
-  `consequence` → the strongest available at `xhigh` — with the epic's
-  optional `Reviewer model:` line (step 1's `modes[<name>].reviewerModel`)
-  overriding the model wherever it is set. It **reports; it never fixes**,
+  from the worker's narrative), the ticket's **scoped** reading — the
+  `tickets.mjs brief` for the ground rules and this ticket's criteria, and
+  this ticket's own status entry sliced from the log, never the whole
+  documents, which grow with every ticket — and the repository's instruction
+  files. The reviewer also reports the head commit it reviewed
+  (`reviewedHead`), which anchors the fix-bounds gate below. Model and effort
+  come from the ticket skill's step 7 table applied to the worker's tier —
+  `prose` → `haiku` at `low`, `normal` → `sonnet` at `high` (a named
+  cost-efficient model, never the session's own), `consequence` → `opus` at
+  `xhigh` — with the epic's optional `Reviewer model:` line (step 1's
+  `modes[<name>].reviewerModel`) overriding the model wherever it is set. It **reports; it never fixes**,
   and its findings come back structured, not as prose to be re-read: an
   `important` list where each entry carries `file:line`, a confirmed/plausible
   label and the concrete failure, up to five nits with an overflow count,
@@ -245,17 +249,28 @@ looping until `tickets.mjs next <epic> --json` comes back empty:
   runs even when the reviewer found nothing**: the committed addendum is what
   makes the ticket reviewed *on the record*, and it is a merge precondition,
   not a formality.
-- **re-reviews the fixes, once, when there were any.** Fix commits are
-  written *after* the review that approved everything before them, so a merge
-  without this step merges an unreviewed diff. Same hiring path, same
-  tier-derived price, the reviewer's re-review mode — **no new nits, only
-  Important findings and anything still unaddressed**. Any Important finding
-  halts. There is deliberately **no second round**: iterating a reviewer and
-  a fixer toward agreement is the improvisation this lane forbids. A clean
-  review skips this step entirely, so it costs nothing on the common path.
+- **re-reviews the fixes, once, at the consequence tier only.** Fix commits
+  are written *after* the review that approved everything before them, so
+  merging them unexamined would merge an unreviewed diff — but a second
+  model pass earns its price only where the failure is expensive: five live
+  re-reviews at the normal tier all returned zero Important findings. So at
+  `consequence` the fixes get the bounded re-review — same hiring path, same
+  tier-derived price, the reviewer's re-review mode, **no new nits, only
+  Important findings and anything still unaddressed**, any Important halts,
+  and deliberately **no second round**: iterating a reviewer and a fixer
+  toward agreement is the improvisation this lane forbids. Below
+  `consequence` the fixes are gated **mechanically** instead: the resolve
+  step reads the fix diff anchored on the reviewed head, and the script
+  halts unless every fixed file was in the diff the review saw and the fix
+  stays under a small line budget — a fix that grows the surface is new
+  work, and granting it a review is a human's call, not the run's. A review
+  that reported no usable `reviewedHead` sends its fixes to the re-review
+  anyway: doubt raises scrutiny, never lowers it. A clean review skips all
+  of this, so it costs nothing on the common path.
 - **resolves what the merge will need — read-only — and the code judges it
-  before anything can merge.** One agent runs two commands and reports what
-  they printed, deciding nothing: `git show origin/<id lowercased>:epics/<epic>/status.md`
+  before anything can merge.** One agent runs two commands (three when the
+  fix-bounds gate is armed) and reports what they printed, deciding nothing:
+  `git show origin/<id lowercased>:epics/<epic>/status.md`
   narrowed by `awk` to **this ticket's own entries** and grepped for the day's
   `Addendum — review —` line (the narrowing *is* the check — the branch was
   cut from `epic/<name>` and the log is append-only, so it already carries
@@ -263,9 +278,15 @@ looping until `tickets.mjs next <epic> --json` comes back empty:
   be satisfied by one of those), and `gh pr list --head <id lowercased> --state open`
   (deliberately not filtered by base, so a pull request aimed at the wrong
   branch comes back to be reported instead of vanishing into a zero count).
+  When the ticket carries fix commits below the consequence tier, the same
+  agent also reads the fix diff anchored on the review's `reviewedHead` —
+  the files the review saw, and what the fixes changed since, `epics/`
+  excluded so the addendum commit never counts.
   Then **the script** checks: exactly one pull request, `headRefName` equal to
   the ticket branch and `baseRefName` equal to `epic/<name>`, an addendum
-  count of at least one, and a number equal to the one the worker reported.
+  count of at least one, a number equal to the one the worker reported — and,
+  when the fix-bounds gate is armed, every fixed file inside the reviewed
+  diff and the fix under the line budget.
   Any of those failing halts **before an agent that could merge exists** —
   which is the point of splitting the step: a check that runs inside the
   merging agent can only be re-checked after the merge, and nothing un-merges
@@ -296,7 +317,8 @@ enters your context from the whole loop:
                      findings, checkedAndSound,
                      fixedCommits, notFixed, disposition,
                      reReviewRan, reReviewImportantCount,
-                     reReviewFindings, resolveOutcome, mergeOutcome,
+                     reReviewFindings, reviewedHead, fixBoundsGated,
+                     fixLines, resolveOutcome, mergeOutcome,
                      addendumMatches, matchCount,
                      built, verification, workerReported,
                      dispositionCounts, dispositionDetail,
@@ -378,8 +400,15 @@ code path that resumes past one. The run halts:
   refuses it: legitimate not-fixed reasons exist, but in an unattended run
   accepting one is not an agent's to decide, so the disposition reports it
   and the run stops for a human. The same halt fires when the **re-review**
-  finds an Important finding in the fix commits, and there is no second fix
-  round;
+  (consequence tier) finds an Important finding in the fix commits, and
+  there is no second fix round;
+- on **a review-fix diff outside its bounds** — touching files the review
+  never saw, or exceeding the fix line budget. Below the consequence tier
+  the fix commits merge without a second model pass, and this mechanical
+  check is what replaced it: the resolve step reads the fix diff anchored on
+  the review's `reviewedHead`, and the script refuses anything the review's
+  eyes never covered — including a resolve step that could not report the
+  fix-diff facts at all, because an unbounded fix is never merged;
 - on **a document/code contradiction** — reported by a worker, or met by the
   script's own checks: a ticket ID that does not match the plugin's ID shape,
   a board that hands out the same ticket twice and so is not advancing, a
@@ -446,9 +475,11 @@ it:
 ID — the worker agent that ran it — its review tier and what the review
 found (`importantCount` Important, `nitCount` nits, fixed or not) — and,
 when `reReviewRan`, "re-reviewed after fixes: `<reReviewImportantCount>`
-Important" — integrated | halted. The re-review is the only evidence that
-the *fixed* diff was reviewed too; a record that omits it reads as though
-the fixes were never looked at.>
+Important", or when `fixBoundsGated`, "fixes bounds-checked in code:
+`<fixLines>` lines inside the reviewed diff" — integrated | halted. One of
+those two is the only evidence of what stood between the *fixed* diff and
+the merge; a record that omits it reads as though the fixes were never
+looked at.>
 
 **Tokens:** <harness-observed, from the run's own transcripts — never from
 any agent's report: no agent can see its own counter, and the one live
@@ -460,7 +491,11 @@ the run's labels (`worker:<ID>`, `review:<ID>`, `disposition:<ID>`,
 files — so sum each agent's `usage` figures from its transcript and state,
 per ticket: worker, reviewer (with its tier, model and effort from `tier`,
 `reviewerModelUsed`, `reviewerEffort`), re-review when `reReviewRan`, and
-disposition — plus the run's total. Where the build's transcript layout
+disposition — plus the run's total **and the phase subtotals: workers,
+reviewers (re-reviews included), dispositions, and the shell proxies
+(refresh+select, resolve, merge, verify)** — the phase split is what every
+pricing decision about this lane reads, and a total alone cannot say where
+the spend went. Where the build's transcript layout
 exposes no usage, write `unknown` — observed or unknown, never asked of an
 agent, never estimated. This line is the run lane's **only** token record:
 the ticket entries and addenda deliberately read `recorded in the run
@@ -512,10 +547,12 @@ The body is the human's entire evidence base for the only decision they make
 in this mode, so it carries: every ticket with what it built, its
 verification counts, and its review outcome (findings found / fixed / not
 fixed with reasons — lifted from the status log, which travels in this same
-pull request) **including its re-review when one ran** (`reReviewRan`,
-`reReviewImportantCount`, `reReviewFindings`): the fix commits were reviewed
-by a second pass, and a body that never says so leaves the human assuming
-the fixes went in unreviewed; the release's size, stated up front — `git diff --stat
+pull request) **including what stood between its fix commits and the merge**
+— the re-review when one ran (`reReviewRan`, `reReviewImportantCount`,
+`reReviewFindings`), or the code bounds check below the consequence tier
+(`fixBoundsGated`, `fixLines`: the fixes stayed inside the reviewed files
+and under the line budget) — because a body that says neither leaves the
+human assuming the fixes went in unexamined; the release's size, stated up front — `git diff --stat
 origin/<default-branch>...epic/<name>` — because a release too large to
 review is a fact the human must see before approving, not discover
 mid-review; the run record summary, including which agent ran each ticket;
@@ -534,8 +571,9 @@ run that had no hard floor under main.
 Each ticket's `ticketRecords` entry indexes those facts — `built` and
 `verification` from its worker, and the review outcome from the driver's own
 agents: `importantCount`, `nitCount` (+`nitOverflowCount`), `fixedCommits`,
-`notFixed`, `checkedAndSound`, and the re-review's `reReviewRan` /
-`reReviewImportantCount` / `reReviewFindings`. It is an index into the log, not a
+`notFixed`, `checkedAndSound`, the re-review's `reReviewRan` /
+`reReviewImportantCount` / `reReviewFindings`, and the bounds check's
+`fixBoundsGated` / `fixLines`. It is an index into the log, not a
 replacement for it: the status log and its review addenda are what travel in
 this pull request and what the retro reads, so where the two differ, the
 committed log wins and the difference is worth a line in the body.

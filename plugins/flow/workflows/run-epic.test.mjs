@@ -84,7 +84,11 @@ const reviewImportant = {
   nitOverflowCount: 0,
   preExisting: [],
   checkedAndSound: 'the rest',
+  reviewedHead: 'abc1234def0',
 }
+// Fix-diff facts the resolve step reports when the fix-bounds gate is armed —
+// in bounds: fixes inside the reviewed files, under the line budget.
+const resolvedOkBounds = { reviewedFiles: ['a.ts', 'b.ts'], fixFiles: ['a.ts'], fixLines: 12 }
 const dispClean = { outcome: 'clean', fixedCommits: [], notFixed: [], addendumCommitted: true, preExistingRecorded: false, counts: '12 pass', detail: '' }
 const dispFixed = {
   outcome: 'fixed',
@@ -187,23 +191,28 @@ test('the worker prompt keeps the driver handshake verbatim and scopes the skill
   assert.equal(call(r, 'worker:PAY-1').agentType, 'general-purpose')
 })
 
-test('the reviewer packet is computed from the ticket ID, never from the worker', async () => {
+test('the reviewer packet is computed from the ticket ID, never from the worker — and its reads are scoped', async () => {
   const r = await drive(oneTicket())
   const c = call(r, 'review:PAY-1')
   assert.equal(c.agentType, 'flow:ticket-reviewer')
   assert.match(c.prompt, /Commit range: origin\/epic\/payments\.\.origin\/pay-1/)
-  assert.match(c.prompt, /\/repo\/epics\/payments\/tickets\.md/)
-  assert.match(c.prompt, /\/repo\/epics\/payments\/status\.md/)
+  // The epic's documents grow with every ticket, so the packet hands the
+  // reviewer scoped reads — the brief and this ticket's own status entry —
+  // never the whole documents.
+  assert.match(c.prompt, /tickets\.mjs" brief PAY-1/)
+  assert.match(c.prompt, /git show origin\/pay-1:epics\/payments\/status\.md \| awk '\/\^### \/\{f=\/\^### PAY-1 \/\} f'/)
+  assert.doesNotMatch(c.prompt, /- \/repo\/epics\/payments\/tickets\.md/)
+  assert.match(c.prompt, /Report `reviewedHead`/)
   assert.match(c.prompt, /You REPORT; you never fix/)
 })
 
 // ---- review pricing ---------------------------------------------------------
 
-test('the normal tier inherits the session model at high effort', async () => {
+test('the normal tier prices a named cost-efficient model at high effort, never the session model', async () => {
   const r = await drive(oneTicket())
-  assert.equal(call(r, 'review:PAY-1').model, undefined)
+  assert.equal(call(r, 'review:PAY-1').model, 'sonnet')
   assert.equal(call(r, 'review:PAY-1').effort, 'high')
-  assert.equal(r.out.ticketRecords[0].reviewerModelUsed, 'inherited (the class this session runs on)')
+  assert.equal(r.out.ticketRecords[0].reviewerModelUsed, 'sonnet')
 })
 
 test('the prose tier prices a fast model at low effort', async () => {
@@ -272,7 +281,7 @@ test('a malformed review from both hires halts rather than merging on an empty f
 })
 
 test('a malformed re-review is a failed hire too', async () => {
-  const r = await drive(oneTicket({ 'review:PAY-1': reviewImportant, 'disposition:PAY-1': dispFixed, 're-review:PAY-1': {}, 're-review:PAY-1:fallback': { important: [] } }))
+  const r = await drive(oneTicket({ 'worker:PAY-1': workerOk('PAY-1', { tier: 'consequence' }), 'review:PAY-1': reviewImportant, 'disposition:PAY-1': dispFixed, 're-review:PAY-1': {}, 're-review:PAY-1:fallback': { important: [] } }))
   assert.equal(r.out.outcome, 'completed')
   assert.equal(call(r, 're-review:PAY-1:fallback').agentType, 'general-purpose')
 })
@@ -491,8 +500,15 @@ test('a failed merge halts on nonzero exit, and a conflicting one on merge confl
 
 // ---- the bounded re-review --------------------------------------------------
 
-test('fix commits earn exactly one re-review, and a clean one lets the merge proceed', async () => {
-  const r = await drive(oneTicket({ 'review:PAY-1': reviewImportant, 'disposition:PAY-1': dispFixed, 're-review:PAY-1': { important: [] } }))
+test('at the consequence tier, fix commits earn exactly one re-review, and a clean one lets the merge proceed', async () => {
+  const r = await drive(
+    oneTicket({
+      'worker:PAY-1': workerOk('PAY-1', { tier: 'consequence' }),
+      'review:PAY-1': reviewImportant,
+      'disposition:PAY-1': dispFixed,
+      're-review:PAY-1': { important: [] },
+    }),
+  )
   assert.deepEqual(r.labels, [
     'refresh+select:1', 'worker:PAY-1', 'review:PAY-1', 'disposition:PAY-1', 're-review:PAY-1', 'resolve:PAY-1', 'merge:PAY-1', 'verify:PAY-1',
     'refresh+select:2',
@@ -501,6 +517,7 @@ test('fix commits earn exactly one re-review, and a clean one lets the merge pro
   const rec = r.out.ticketRecords[0]
   assert.equal(rec.reReviewRan, true)
   assert.equal(rec.reReviewImportantCount, 0)
+  assert.equal(rec.fixBoundsGated, false)
   // Token figures are harness-observed by the session after the run, never
   // self-reported through schemas — the record carries none at all.
   assert.ok(!('workerTokens' in rec) && !('reviewerTokens' in rec) && !('reReviewTokens' in rec))
@@ -510,12 +527,92 @@ test('fix commits earn exactly one re-review, and a clean one lets the merge pro
   assert.match(p, /PAY-1: reject empty token \(review fix\)/)
   assert.match(p, /<<<UNTRUSTED/)
   assert.equal(call(r, 're-review:PAY-1').agentType, 'flow:ticket-reviewer')
-  assert.equal(call(r, 're-review:PAY-1').effort, 'high')
+  assert.equal(call(r, 're-review:PAY-1').effort, 'xhigh')
+  // With the re-review standing guard, the resolve step carries no FACT 3.
+  assert.doesNotMatch(call(r, 'resolve:PAY-1').prompt, /FACT 3/)
+})
+
+test('below the consequence tier, fixes skip the re-review and are bounds-checked in code at the resolve step', async () => {
+  const r = await drive(
+    oneTicket({
+      'review:PAY-1': reviewImportant,
+      'disposition:PAY-1': dispFixed,
+      'resolve:PAY-1': { ...resolvedOk, ...resolvedOkBounds },
+    }),
+  )
+  assert.equal(r.out.outcome, 'completed')
+  assert.ok(!r.labels.some(l => l.startsWith('re-review:')))
+  const rec = r.out.ticketRecords[0]
+  assert.equal(rec.reReviewRan, false)
+  assert.equal(rec.fixBoundsGated, true)
+  assert.equal(rec.fixLines, 12)
+  assert.equal(rec.reviewedHead, 'abc1234def0')
+  assert.equal(r.out.totals.reReviews, 0)
+  const p = call(r, 'resolve:PAY-1').prompt
+  // The bounds commands are anchored on the code-verified reviewed head and
+  // exclude the epics/ addendum commit; the resolve agent judges nothing.
+  assert.match(p, /FACT 3/)
+  assert.match(p, /git diff --name-only origin\/epic\/payments abc1234def0 -- ':\(exclude\)epics'/)
+  assert.match(p, /git diff --numstat abc1234def0 origin\/pay-1 -- ':\(exclude\)epics'/)
+  assert.match(p, /the driver checks the bounds in code/i)
+})
+
+test('a fix touching files outside the reviewed diff halts with nothing merged', async () => {
+  const r = await drive(
+    oneTicket({
+      'review:PAY-1': reviewImportant,
+      'disposition:PAY-1': dispFixed,
+      'resolve:PAY-1': { ...resolvedOk, ...resolvedOkBounds, fixFiles: ['a.ts', 'sneaky/new.ts'] },
+    }),
+  )
+  assert.match(r.out.haltedOn.stopCondition, /^a review-fix diff outside its bounds/)
+  assert.match(r.out.haltedOn.detail, /<<<UNTRUSTED[\s\S]*sneaky\/new\.ts/)
+  assert.ok(!r.labels.some(l => l.startsWith('merge:')))
+})
+
+test('a fix exceeding the line budget halts, and an unmeasurable one halts too', async () => {
+  const over = await drive(
+    oneTicket({ 'review:PAY-1': reviewImportant, 'disposition:PAY-1': dispFixed, 'resolve:PAY-1': { ...resolvedOk, ...resolvedOkBounds, fixLines: 61 } }),
+  )
+  assert.match(over.out.haltedOn.stopCondition, /^a review-fix diff outside its bounds/)
+  assert.match(over.out.haltedOn.detail, /61 lines against a budget of 60/)
+  assert.ok(!over.labels.some(l => l.startsWith('merge:')))
+  const binary = await drive(
+    oneTicket({ 'review:PAY-1': reviewImportant, 'disposition:PAY-1': dispFixed, 'resolve:PAY-1': { ...resolvedOk, ...resolvedOkBounds, fixLines: -1 } }),
+  )
+  assert.match(binary.out.haltedOn.detail, /unmeasurable/)
+  assert.ok(!binary.labels.some(l => l.startsWith('merge:')))
+})
+
+test('missing fix-diff facts halt rather than merging fixes unchecked', async () => {
+  const r = await drive(oneTicket({ 'review:PAY-1': reviewImportant, 'disposition:PAY-1': dispFixed }))
+  // The default resolve stub reports no reviewedFiles/fixFiles/fixLines.
+  assert.match(r.out.haltedOn.stopCondition, /^a review-fix diff outside its bounds/)
+  assert.match(r.out.haltedOn.detail, /no usable fix-diff facts/)
+  assert.ok(!r.labels.some(l => l.startsWith('merge:')))
+})
+
+test('a review with no usable reviewedHead sends fixes to the bounded re-review instead — doubt goes up', async () => {
+  const r = await drive(
+    oneTicket({
+      'review:PAY-1': { ...reviewImportant, reviewedHead: 'HEAD~1; rm -rf /' },
+      'disposition:PAY-1': dispFixed,
+      're-review:PAY-1': { important: [] },
+    }),
+  )
+  assert.equal(r.out.outcome, 'completed')
+  assert.equal(r.out.ticketRecords[0].reReviewRan, true)
+  assert.equal(r.out.ticketRecords[0].fixBoundsGated, false)
+  assert.equal(r.out.ticketRecords[0].reviewedHead, '')
+  assert.ok(r.logs.some(l => /no usable reviewedHead/.test(l)))
+  // The unusable value never reaches a prompt.
+  assert.doesNotMatch(call(r, 'resolve:PAY-1').prompt, /rm -rf/)
 })
 
 test('a re-review that finds an Important halts, with no second fix round', async () => {
   const r = await drive(
     oneTicket({
+      'worker:PAY-1': workerOk('PAY-1', { tier: 'consequence' }),
       'review:PAY-1': reviewImportant,
       'disposition:PAY-1': dispFixed,
       're-review:PAY-1': { important: [{ file: 'a.ts', cite: 'a.ts:20', summary: 'the fix reintroduces the bypass', confirmedOrPlausible: 'confirmed', failure: 'null token still passes' }] },
@@ -538,7 +635,7 @@ test('a clean review spawns no re-review at all', async () => {
 
 test('a re-reviewer that cannot be hired halts before the merge', async () => {
   const r = await drive(
-    oneTicket({ 'review:PAY-1': reviewImportant, 'disposition:PAY-1': dispFixed, 're-review:PAY-1': null, 're-review:PAY-1:fallback': null }),
+    oneTicket({ 'worker:PAY-1': workerOk('PAY-1', { tier: 'consequence' }), 'review:PAY-1': reviewImportant, 'disposition:PAY-1': dispFixed, 're-review:PAY-1': null, 're-review:PAY-1:fallback': null }),
   )
   assert.equal(r.out.haltedOn.stopCondition, 'reviewer-spawn failure after the sanctioned fallback also fails')
   assert.ok(!r.labels.some(l => l.startsWith('merge:')))
@@ -582,6 +679,7 @@ test("a disposition that did not record pre-existing findings is logged, not mer
 test("a re-review's pre-existing findings travel in the record", async () => {
   const r = await drive(
     oneTicket({
+      'worker:PAY-1': workerOk('PAY-1', { tier: 'consequence' }),
       'review:PAY-1': reviewImportant,
       'disposition:PAY-1': dispFixed,
       're-review:PAY-1': { important: [], preExisting: [{ cite: 'legacy.ts:4', summary: 'swallowed error' }] },
@@ -716,18 +814,26 @@ test('the shell-proxy agents are pinned to a fast model; the judging ones are pr
   assert.equal(call(r, 're-review:PAY-1').model, 'opus')
 })
 
-test('the disposition works harder when there are findings to fix', async () => {
+test('the disposition works harder when there are findings to fix, and is priced clerical when there are none', async () => {
   const clean = await drive(oneTicket())
   assert.equal(call(clean, 'disposition:PAY-1').effort, 'low')
-  const dirty = await drive(oneTicket({ 'review:PAY-1': reviewImportant, 'disposition:PAY-1': dispFixed, 're-review:PAY-1': { important: [] } }))
+  // Nothing to fix means the disposition is clerical — addendum, commit,
+  // push — so it is pinned to the fast model like the shell proxies.
+  assert.equal(call(clean, 'disposition:PAY-1').model, 'haiku')
+  const dirty = await drive(
+    oneTicket({ 'review:PAY-1': reviewImportant, 'disposition:PAY-1': dispFixed, 'resolve:PAY-1': { ...resolvedOk, ...resolvedOkBounds } }),
+  )
   assert.equal(call(dirty, 'disposition:PAY-1').effort, 'high')
+  assert.equal(call(dirty, 'disposition:PAY-1').model, undefined)
 })
 
 test('no agent is asked for a token figure, and the addendum points at the run record instead', async () => {
   // Figures are harness-observed by the session from the run's transcripts
   // after the run — a figure an agent offers about itself is a guess by
   // construction (one live run recorded an invented one).
-  const r = await drive(oneTicket({ 'review:PAY-1': reviewImportant, 'disposition:PAY-1': dispFixed, 're-review:PAY-1': { important: [] } }))
+  const r = await drive(
+    oneTicket({ 'worker:PAY-1': workerOk('PAY-1', { tier: 'consequence' }), 'review:PAY-1': reviewImportant, 'disposition:PAY-1': dispFixed, 're-review:PAY-1': { important: [] } }),
+  )
   for (const c of r.calls) assert.doesNotMatch(c.prompt, /harness-reported token/, c.label)
   assert.match(call(r, 'worker:PAY-1').prompt, /Report no token figure/)
   assert.match(call(r, 'review:PAY-1').prompt, /Report no token figure/)
@@ -774,7 +880,9 @@ test('a fence marker inside agent prose cannot escape its fence', async () => {
 })
 
 test('every agent that can write is told the default branch is never a target', async () => {
-  const r = await drive(oneTicket({ 'review:PAY-1': reviewImportant, 'disposition:PAY-1': dispFixed, 're-review:PAY-1': { important: [] } }))
+  const r = await drive(
+    oneTicket({ 'worker:PAY-1': workerOk('PAY-1', { tier: 'consequence' }), 'review:PAY-1': reviewImportant, 'disposition:PAY-1': dispFixed, 're-review:PAY-1': { important: [] } }),
+  )
   for (const label of ['refresh+select:1', 'worker:PAY-1', 'disposition:PAY-1', 'resolve:PAY-1', 'merge:PAY-1']) {
     assert.match(call(r, label).prompt, /toward the default branch \(main\)/, label)
   }

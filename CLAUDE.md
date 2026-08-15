@@ -29,7 +29,7 @@ go through the flow, one-off work goes through `/flow:quick` into
   on the same terms). The invariant checker has
   `node --test plugins/flow/scripts/check-invariants.test.mjs` (`# pass 9`),
   and the run driver has
-  `node --test plugins/flow/workflows/run-epic.test.mjs` (`# pass 65`) —
+  `node --test plugins/flow/workflows/run-epic.test.mjs` (`# pass 71`) —
   which evaluates `run-epic.mjs`'s module body with stubbed agents and
   asserts the sequence, the gate branches and the halt mapping. It needs
   nothing but Node: no git, no network, no filesystem beyond the script.

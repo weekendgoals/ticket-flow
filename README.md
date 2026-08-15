@@ -15,7 +15,7 @@ repository).
 |---|---|
 | `/flow:epic <name> [source...]` | Turn a request, report or conversation into `epics/<name>/`. Sources are files, globs or URLs, saved into `context/`; with none, the conversation is the brief. A fresh-context **plan reviewer** challenges the decomposition, then it **stops for sign-off** and commits — no pull request |
 | `/flow:ticket <ID>` | One ticket end to end: branch, implement, verify, log, commit, review, fix, push, pull request. Runs **supervisor-mode by default** — a fresh-context worker implements from the documents and the supervisor hires the reviewer; `--interactive` runs in-session, once per session (a hook refuses a second interactive run; supervisor runs stay open) |
-| `/flow:run <epic>` | Run a `Delivery: release` epic end to end with nobody present: verifies sign-off happened, then hands the loop to a shipped **workflow script** — **code-controlled, agent-executed** — that takes the tickets in document order. Per ticket: refresh the epic branch and read the board, a **fresh-context worker** implements and stops at its opened pull request, the **driver hires the reviewer**, a disposition agent fixes and records, fixes get one bounded re-review, then the pull request is resolved from its branch and every fact about it — one match, the right head, the right base, the review addendum present, the number the worker reported — is checked **in code before any agent that could merge exists**; only then does a merge agent run one command, and the board — not an agent — confirms the result. It halts on any stop condition, because each one is a code path rather than a judgment call. The session ends by **opening** the release pull request. Requires the Workflow tool; never merges toward the default branch |
+| `/flow:run <epic>` | Run a `Delivery: release` epic end to end with nobody present: verifies sign-off happened, then hands the loop to a shipped **workflow script** — **code-controlled, agent-executed** — that takes the tickets in document order. Per ticket: refresh the epic branch and read the board, a **fresh-context worker** implements and stops at its opened pull request, the **driver hires the reviewer**, a disposition agent fixes and records, fixes get one bounded re-review at the consequence tier — below it a code gate checks the fix diff stayed inside the reviewed files and under a line budget — then the pull request is resolved from its branch and every fact about it — one match, the right head, the right base, the review addendum present, the number the worker reported — is checked **in code before any agent that could merge exists**; only then does a merge agent run one command, and the board — not an agent — confirms the result. It halts on any stop condition, because each one is a code path rather than a judgment call. The session ends by **opening** the release pull request. Requires the Workflow tool; never merges toward the default branch |
 | `/flow:quick <description>` | The **cheap lane**: one small, low-risk piece of work, implemented **in-session** with a written scope, verification with counts, a short log entry and a pull request — and a fresh-context reviewer **only when behaviour changes** (prose-only diffs — documentation and comments, nothing a machine reads — get none; the PR is the review). Size- **and risk-gated**: auth, secrets, migrations and other consequential work is routed to `/flow:epic` at any size |
 | `/flow:tickets [epic]` | The board — shipped, in flight, blocked, todo |
 | `/flow:review [range]` | Review a commit range and report. Used by `/flow:ticket`; runnable on its own |
@@ -199,14 +199,17 @@ already have a `code-review-expert`, they do not collide.
 
 Review effort is **tiered by consequence, not fixed at maximum** —
 independent review always runs, maximum-capability review only where it can
-pay. The plan reviewer runs once per epic on the strongest model available:
-a wrong decomposition is the most expensive defect in the system. The ticket
+pay. The plan reviewer runs once per epic and is pinned to the strongest
+model available: a wrong decomposition is the most expensive defect in the
+system. The ticket
 reviewer scales — a fast model at low effort for prose-only diffs
-(documentation and comments), a capable mid-tier model at high effort for
-everything else below the risk list (including the shapes that look like
-prose but are not: configuration, user-facing strings, CLI output,
-skill/agent Markdown), and the strongest model at `xhigh` for the
-consequence list (auth, secrets, migrations, data rewrites, network
+(documentation and comments), a named cost-efficient model at high effort
+for everything else below the risk list (including the shapes that look
+like prose but are not: configuration, user-facing strings, CLI output,
+skill/agent Markdown — named deliberately, never inherited: the session
+launching a run is often the most expensive class available, and routine
+review must not be priced by that accident), and a strong model at `xhigh`
+for the consequence list (auth, secrets, migrations, data rewrites, network
 exposure, payments, fail-open) — and the quick lane skips the reviewer
 entirely for prose-only diffs, because there the pull request is the
 review. An epic can pin the **ticket
@@ -218,14 +221,15 @@ directive. The line does not govern the plan reviewer: it lives in the very
 draft the plan reviewer is judging, and configuration binds only after
 sign-off approves it.
 
-The **implementing workers'** model is configurable the same way: absent
-any declaration, every worker inherits the model of the session that spawns
-it (so planning and implementation run on whatever your session runs), and
-an optional `Worker model: <model>` preamble line pins the workers instead —
-which is how you plan an epic on a stronger model and implement it on a
-cheaper one. Neither line is a settings file: model choice lives in the
-versioned epic document, visible at sign-off, like every other
-configuration this plugin has.
+The **implementing workers'** model is configurable the same way: a
+`Worker model: <model>` preamble line pins the workers, and the epic
+template now carries `Worker model: opus` by default — plan on the
+strongest model, implement on a capable one at a fraction of the price.
+Absent the line, every worker inherits the model of the session that
+spawns it, which is a decision worth making deliberately rather than
+inheriting by accident. Neither line is a settings file: model choice
+lives in the versioned epic document, visible at sign-off, like every
+other configuration this plugin has.
 
 ## Reading the board
 

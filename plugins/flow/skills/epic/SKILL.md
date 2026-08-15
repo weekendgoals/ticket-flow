@@ -135,13 +135,17 @@ A ticket of a release epic can still be run one-at-a-time with
 `/flow:ticket` — that is the escape hatch for resolving a halt or watching
 one consequential ticket closely, not a planned mode.>
 
-<OPTIONAL, parsed like Delivery — omit both lines unless pinning a model:
-`Reviewer model: <model>` fixes the ticket reviewer's model (otherwise the
-ticket skill's consequence tiers choose it); `Worker model: <model>` fixes
-the implementing workers' model (otherwise each worker inherits the session
-that spawns it) — the latter is how a plan written on one model is
-implemented by another, e.g. plan on a stronger model, implement on a
-cheaper one.>
+Worker model: opus
+<OPTIONAL, parsed like Delivery. `Worker model: <model>` fixes the
+implementing workers' model; without the line each worker inherits the
+session that spawns it — and planning sessions often run the most expensive
+class available, which makes every worker inherit a price nobody decided
+on. `opus` is the recommended default: capable enough to implement and
+write the tests a reviewer must distrust, at a fraction of a top-tier
+session's price — plan on the stronger model, implement on this one. Drop
+the line only when inheriting the session model is a decision, not an
+accident. `Reviewer model: <model>` (a second optional line) fixes the
+ticket reviewer's model; otherwise the ticket skill's tiers choose it.>
 
 Status log: `epics/<name>/status.md`. Run a ticket with `/flow:ticket <ID>`.
 
