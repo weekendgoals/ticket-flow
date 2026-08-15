@@ -200,6 +200,42 @@ comments qualify as prose. The consequence list stays coupled to quick's
 entry gate (one list, two doors), so the cheap tiers structurally cannot
 leak consequential work.
 
+The tiers' models are **named, never inherited** — a later lesson from the
+same ledger. The normal tier originally read "the class this session runs
+on", which sounded neutral and priced review by accident: sessions that
+launch runs tend to run the most expensive class available, so every routine
+review silently billed at the ceiling. The same reasoning fixed the other
+two roles in opposite directions. Workers now default to a pinned capable
+model (`Worker model: opus` in the epic template) rather than inheriting the
+planning session's — implementation is the largest line item per ticket, and
+plan-on-strong, implement-on-capable is where most of the lane's cost lives.
+The plan reviewer is pinned to the strongest model outright: a wrong
+decomposition is the one defect that costs every ticket built on it, so that
+is the single place capability spend has no cheaper substitute.
+
+## Why the re-review became a code gate below the consequence tier
+
+The re-review existed so a merged diff is always a reviewed diff: fix
+commits land after the review that approved everything before them. The
+principle held; the price did not. Across the first two live runs, all five
+re-reviews at the normal tier returned zero Important findings —
+reviewer-scale spend, per fixed ticket, buying nothing — while an
+independent audit later showed a normal-tier re-review approving a fix
+commit whose new regression assertion was tautological. A pass that costs
+like a review and demonstrably catches neither category is ceremony under
+the admission test.
+
+What replaced it constrains blast radius instead of re-judging: the reviewer
+reports the head it reviewed, the read-only resolve step diffs the fix
+commits against it, and code — not a model — refuses fixes that touch any
+file the review never saw or exceed a small line budget. Inside those
+bounds a fix is re-verified by the disposition's re-run counts and re-read
+by the human on the release pull request; outside them it is new work, and
+granting new work a review is a human's decision, so the run halts. The
+consequence tier keeps the full re-review — capability spend belongs where
+failure is expensive — and a review that cannot name the head it reviewed
+sends its fixes there too: doubt raises scrutiny, never lowers it.
+
 ## Why token figures are observed, never asked
 
 The Tokens lines exist as planning evidence — they are what priced the

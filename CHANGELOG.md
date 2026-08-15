@@ -8,6 +8,59 @@ with one version and date.
 
 ## Unreleased
 
+- **Reviewer models are named, never inherited** (`workflows/run-epic.mjs`
+  `REVIEW_TIERS`; the ticket skill's step 7 table; the run skill's step 4;
+  README). The `normal` tier now prices a named cost-efficient model
+  (`sonnet`) at `high` instead of inheriting the session's model, and the
+  `consequence` tier's prose names `opus` instead of "the strongest
+  available" — a session launching a run is often the most expensive class
+  there is, and routine review priced by that accident was the single
+  largest avoidable cost in the lane. The epic's `Reviewer model:` line
+  still overrides every tier. The plan reviewer moves the other way: its
+  agent definition now pins the strongest model (`model: fable` in
+  `agents/plan-reviewer.md`) — a wrong decomposition costs every downstream
+  ticket, so that is where capability is spent.
+- **The epic template defaults to `Worker model: opus`**
+  (`skills/epic/SKILL.md`, README). Workers previously inherited the
+  planning session's model; the template now pins a capable implementation
+  model by default, so "plan on the strongest model, implement on a cheaper
+  one" is the shipped shape rather than an option nobody declares. Deleting
+  the line restores inheritance — as a decision, visible at sign-off.
+- **The re-review runs only at the consequence tier; below it, fix commits
+  are gated by code** (`workflows/run-epic.mjs`; the run skill's steps 4-7;
+  README). Five live re-reviews at the normal tier all returned zero
+  Important findings — reviewer-scale spend buying nothing — so the second
+  model pass now runs only where failure is expensive. Below `consequence`,
+  the reviewer reports the head it reviewed (`reviewedHead`, shape-verified
+  in code), the read-only resolve step reads the fix diff anchored on it
+  (`epics/` excluded, so the addendum commit never counts), and the script
+  refuses to merge fixes that touch any file the review never saw or exceed
+  a 60-line budget — a new stop condition, "a review-fix diff outside its
+  bounds". A review that reports no usable head sends its fixes to the
+  bounded re-review instead: doubt raises scrutiny, never lowers it.
+  `ticketRecords` gained `reviewedHead`, `fixBoundsGated` and `fixLines`;
+  the run record and release pull request body now state which of the two
+  guards stood behind each ticket's fixes.
+- **Fresh-context readers get scoped reads, not whole documents**
+  (`workflows/run-epic.mjs` review packet and disposition prompt; the
+  ticket skill's step 7). The reviewer is handed `tickets.mjs brief <ID>`
+  and this ticket's own status entry sliced from the log (`git show … |
+  awk`), never `tickets.md` and `status.md` whole; the disposition agent is
+  told the entries above its ticket are not its reading. The status log
+  grows without bound, so whole-document reads were the one per-ticket cost
+  that compounded with epic length — the same O(epic)-not-O(history) fix
+  the worker's brief already made, extended to the other two readers.
+- **A clean disposition is priced clerical** (`workflows/run-epic.mjs`).
+  When the review found no Important finding, the disposition agent — whose
+  whole job is then writing the addendum, committing and pushing — is
+  pinned to the fast model alongside the shell proxies, instead of
+  inheriting the session's. Dispositions with findings to fix keep the
+  inherited model at `high` effort.
+- **The run record's Tokens line states phase subtotals**
+  (`skills/run/SKILL.md` step 6). Alongside the per-ticket figures and the
+  run total: workers, reviewers (re-reviews included), dispositions, and
+  the shell proxies — the split every pricing decision about this lane
+  actually reads, and the figure a bare total cannot provide.
 - **Token figures are harness-observed, never self-reported**
   (`workflows/run-epic.mjs`; the ticket, quick, run and retro skills; new
   METHODOLOGY section "Why token figures are observed, never asked"). The
