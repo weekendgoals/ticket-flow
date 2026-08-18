@@ -8,6 +8,20 @@ with one version and date.
 
 ## Unreleased
 
+- **The ticket reviewer is now blind and cannot edit; the plan reviewer
+  cannot edit** (`agents/ticket-reviewer.md`, `agents/plan-reviewer.md`,
+  METHODOLOGY "Why the reviewer is a separate agent"). From an external
+  review of the workflow: `memory: user` is removed from the ticket
+  reviewer — a cross-session casebook of defect patterns is a set of
+  priors, and this judge's verdict opens a merge gate, so it now starts
+  from nothing but its packet every time (the plan reviewer keeps its
+  casebook: advisory input to a human gate, not a gate). Both reviewers'
+  toolsets are restricted to `Read, Grep, Glob, Bash` — "you report, you
+  never fix" was instruction alone while the agents held Edit and Write;
+  now they structurally cannot edit a finding into agreement. Bash stays
+  for `git show`/`git diff`, so this is narrower, not perfectly
+  read-only, and the run lane's general-agent fallback reviewer is
+  unaffected — one more reason the fallback is a fallback.
 - **The plan's two human gates render as a styled page**
   (`scripts/plan-page.mjs` + `plan-page.test.mjs`, `skills/epic/SKILL.md`
   steps 3 and 5, README). The shape checkpoint and the sign-off previously

@@ -332,6 +332,22 @@ fix riskier than the bug, the premise verified wrong. Each is a disposition
 **with a written reason in the status log**. The written reason is the point: it
 stops the same finding being re-argued three tickets later.
 
+Two hardenings arrived from an external review of this workflow (2026-08-18),
+both closing gaps between what the reviewer's prose promised and what its
+harness enforced. The ticket reviewer's **persistent memory was removed**: it
+carried a cross-session casebook of defect patterns — genuinely useful, and
+disciplined by prose to never store project state — but a judge with a
+casebook is a judge with priors, and this judge's verdict opens a merge gate.
+The plan reviewer keeps its casebook, because its output is advisory input
+to a human gate, not a gate itself — the same consequence-scaling rule that
+prices review tiers. And both reviewers' **toolsets dropped Edit and Write**:
+"you report, you never fix" had been instruction alone, and an agent that
+can edit its own finding edits it into agreement — now it structurally
+cannot. The shell stays (a reviewer needs `git show` and `git diff`), so
+this is narrower, not perfectly read-only; the run lane's sanctioned
+fallback reviewer is a general agent and keeps its full toolset, which is
+one more reason the fallback is a fallback.
+
 ## Why the plan is reviewed before sign-off
 
 Every defence in this workflow used to start after the plan was signed off —
