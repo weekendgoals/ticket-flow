@@ -8,6 +8,19 @@ with one version and date.
 
 ## Unreleased
 
+- **The epic documents can stay out of the diff's way** (`.gitattributes`,
+  README "The three documents", `skills/retro/SKILL.md` step 6). Two
+  optional practices for keeping the default branch tidy without breaking
+  what the documents are for: `epics/** linguist-generated=true` collapses
+  them in pull-request diffs and language stats (collapsed is not hidden —
+  the evidence trail still travels in the same pull request), and the retro
+  gains an optional final step archiving a closed epic to
+  `epics/_archive/<name>` — safe only after the retro has converted owed
+  items to tickets and lessons to instruction files, because the board only
+  discovers epics directly under `epics/` and archiving earlier would
+  silently delete the debt ledger. Moving is not deleting: shipped
+  detection reads commit subjects, never folders, and the standing quick
+  epic is never archived.
 - **The quick lane's reviewer gets a fixed, scoped packet — never the
   session's narrative** (`skills/quick/SKILL.md` step 6). The reviewer
   spawn previously said "give it the ticket section and the instruction

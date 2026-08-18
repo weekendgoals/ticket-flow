@@ -96,6 +96,29 @@ headings, git branches, commit subjects on the default branch, and `gh pr list`.
 Never add a status column anywhere — a hand-maintained mirror of a derivable fact
 drifts within days.
 
+**Keeping the default branch tidy.** The documents ride the same branches and
+pull requests as the code — that is what makes the record travel — but they
+need not dominate the diff or the language stats. Two practices, both optional:
+
+- Add to `.gitattributes`:
+
+  ```
+  epics/** linguist-generated=true
+  ```
+
+  GitHub then collapses the epic documents in pull-request diffs and keeps
+  them out of language statistics. Collapsed is not hidden — a reviewer
+  expands them with a click, and the release pull request's evidence trail is
+  intact; the review effort just lands on the change instead of the record.
+- **After a retro**, a closed epic's folder may move to `epics/_archive/<name>`
+  (a plain `git mv`, in a reviewed pull request like any change). The board
+  only discovers epics directly under `epics/`, so an archived epic drops off
+  it — which is safe **only after** the retro has converted its owed items
+  into live tickets and its lessons into instruction files; archiving first
+  silently deletes the debt ledger. Moving is not deleting: the log stays in
+  git, fully readable, and shipped detection never depended on the folder —
+  it reads commit subjects. The standing `epics/quick/` is never archived.
+
 ## Release or incremental
 
 Every epic declares one **Delivery** line in its ticket document. Either way

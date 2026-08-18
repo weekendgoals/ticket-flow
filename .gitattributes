@@ -1,0 +1,6 @@
+# The epic documents are the project's memory, not its code: collapse them in
+# pull-request diffs and keep them out of language stats, so a release pull
+# request's review effort lands on the change, not on the record that rides
+# with it. GitHub reads this attribute; the files stay fully versioned and
+# fully readable — collapsed is not hidden.
+epics/** linguist-generated=true

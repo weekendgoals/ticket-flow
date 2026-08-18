@@ -137,6 +137,15 @@ human's, held in their own session; the miner never holds it.
 - Leftover owed work becomes tickets: appended to a live epic's `tickets.md`
   where one owns the area, or a new `/flow:epic` where none does. Never leave
   it as a memory of this conversation.
+- **Optionally, archive the closed epic**: `git mv epics/<name>
+  epics/_archive/<name>`, shipped through the same reviewed pull request as
+  the retro entry. The board only discovers epics directly under `epics/`, so
+  the archived epic drops off it — safe **only now**, because the two bullets
+  above have just moved its owed items into live tickets and its lessons into
+  instruction files; archiving before that silently deletes the debt ledger.
+  Moving is not deleting (the log stays in git, and shipped detection reads
+  commit subjects, not folders), and the standing `epics/quick/` is never
+  archived.
 
 Then stop. An epic is closed when its lessons are in documents that travel —
 not when someone remembers them.
