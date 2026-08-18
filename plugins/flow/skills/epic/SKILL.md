@@ -88,11 +88,32 @@ the bodies are written. Present, compactly:
 - the **ticket list as one line each** — `ID — name — what it proves or
   builds` — in the intended order, with a word on why the first is first.
 
+**Render the shape as a page** — the reading experience is the point of
+stopping here, and a wall of chat text is where a shape gets skimmed. The
+skeleton ships with the plugin, so no session builds it by hand:
+
+1. Write the shape as JSON into your session's **scratchpad** — never into
+   the repository: it is steering material, not record, and `tickets.md`
+   is the record. The schema is documented at the top of
+   `scripts/plan-page.mjs` (`stage: "shape"`, the outcome, areas, delivery
+   with its why, the ticket list with one line each, `firstWhy`).
+2. Render it:
+
+   ```bash
+   node "${CLAUDE_PLUGIN_ROOT}/scripts/plan-page.mjs" <scratchpad>/plan-<name>.json --out <scratchpad>/plan-<name>.html
+   ```
+
+3. Publish the page as an artifact and print the URL (where no artifact
+   surface exists, send the file to the user instead). Keep the ticket
+   list in chat too, one line each — the page is the reading view; the
+   chat lines are what the user's reply quotes.
+
 Invite edits and answer questions; **wait for the user to say the shape is
 right** before writing the full sections. This is a steering stop, not the
 sign-off gate — step 5 still gates on the finished document with the plan
-review in hand. If the user redirects the shape, redraw this list, not the
-finished document.
+review in hand. If the user redirects the shape, update the JSON, re-render,
+and **republish the same file path** — the page keeps its URL and evolves
+with the plan instead of scattering across stale copies.
 
 Then write the document:
 
@@ -257,6 +278,13 @@ order, a different first ticket — one line each side), so sign-off is a
 choice between shapes rather than a ratification of the only shape shown —
 and the plan review's outcome: what it flagged, what you changed, what you
 rejected and why, and its open questions.
+
+**Bring the plan page to this gate too**: update step 3's JSON — `stage:
+"sign-off"`, the `alternative` with its rejection reason, the `planReview`
+outcome, any `openQuestions` — re-render with `plan-page.mjs`, and
+republish the **same file path**, so the URL the user already has now shows
+the finished plan with the review in hand. The chat still carries the ask;
+the page is where the plan is actually read.
 
 **If the epic declares `Delivery: release`, the sign-off must say so in
 plain terms**: "after

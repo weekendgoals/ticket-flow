@@ -8,6 +8,21 @@ with one version and date.
 
 ## Unreleased
 
+- **The plan's two human gates render as a styled page**
+  (`scripts/plan-page.mjs` + `plan-page.test.mjs`, `skills/epic/SKILL.md`
+  steps 3 and 5, README). The shape checkpoint and the sign-off previously
+  arrived as chat text — the exact format in which a shape gets skimmed.
+  The planning session now composes a JSON plan (schema documented in the
+  script), renders it with a shipped, tested skeleton, and publishes the
+  page as an artifact: outcome grid, delivery and areas, the ordered
+  ticket list, the rejected alternative, the plan review's findings, open
+  questions, and stage-appropriate steering guidance (shape: "bend it
+  now", with examples quoting the plan's own tickets; sign-off: the
+  release-mode warning that approval means unattended execution). One
+  file path republished at both gates keeps one URL that evolves with the
+  plan. Steering material, not record: the JSON and the page live in the
+  session scratchpad and are never committed — `tickets.md` remains the
+  record.
 - **`/flow:board` renders the board as a published HTML page**
   (`skills/board/SKILL.md`, `scripts/board.mjs` + `board.test.mjs`,
   README). A zero-dependency renderer over `tickets.mjs list --json`:
