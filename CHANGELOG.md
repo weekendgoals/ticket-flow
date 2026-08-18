@@ -8,6 +8,20 @@ with one version and date.
 
 ## Unreleased
 
+- **The quick lane's reviewer gets a fixed, scoped packet — never the
+  session's narrative** (`skills/quick/SKILL.md` step 6). The reviewer
+  spawn previously said "give it the ticket section and the instruction
+  files", which left the implementing session free to add its own summary
+  of the work — and the session that implemented is exactly the biased
+  narrator the fresh context exists to exclude. The packet is now fixed
+  and mirrors the run driver's: the commit range, `tickets.mjs brief
+  Q-<n>` (ground rules, scope, criteria, owed items), this ticket's own
+  status entry sliced from the log by `awk` (never the whole quick log,
+  which is long by design), and the touched areas' instruction files —
+  with an explicit rule that no summary, reasoning or conversation content
+  rides along: what the session believes about the diff travels only
+  through what it committed, where the reviewer weighs it as the record,
+  not as a voice.
 - **The run driver floors the review tier in code — the reviewed party can
   no longer price its own judge down** (`workflows/run-epic.mjs`; the run
   skill's step 4; the ticket skill's step 7; `scripts/tickets.mjs`;
