@@ -95,9 +95,10 @@ const DELIVERIES = new Set(['release', 'incremental'])
 // there are no separate topology and run-mode declarations, so the
 // unattended-merges-to-main contradiction cannot be declared at all.
 //
-// "Reviewer model" and "Worker model" ride the same parse: optional lines
-// naming the model the skills pass when spawning the reviewer and the
-// implementing workers respectively. Model identifiers carry digits and
+// "Reviewer model", "Worker model" and "Planner model" ride the same
+// parse: optional lines naming the model the skills pass when spawning the
+// ticket reviewer, the implementing workers, and the plan reviewer
+// respectively. Model identifiers carry digits and
 // dots ("claude-opus-4.5"), so their value charset is wider than
 // delivery's. Absent is null — for the reviewer the skills fall back to
 // their consequence-tier default, for workers they pass no model at all
@@ -142,6 +143,7 @@ function parsePreamble(ticketsDoc) {
     delivery: grab('Delivery') ?? 'incremental',
     reviewerModel: grab('Reviewer model', '[A-Za-z0-9._-]+'),
     workerModel: grab('Worker model', '[A-Za-z0-9._-]+'),
+    plannerModel: grab('Planner model', '[A-Za-z0-9._-]+'),
     consequencePaths: grabPathList('Consequence paths'),
     ticketBudget: budget,
   }
@@ -570,14 +572,14 @@ function doctor() {
   // old two-line syntax ("Release mode:" / "Run mode:") is in the near set
   // deliberately: those labels parse as nothing at all now, and a preamble
   // written in them would silently run incremental.
-  const declNear = /^[^A-Za-z]*\b(delivery|(reviewer|worker)\s+model|consequence\s+paths|ticket\s+budget|(release|run)\s+mode)\b/i
-  const declStrict = /^Delivery\s*:\s*[A-Za-z-]+|^(Reviewer|Worker) model\s*:\s*[A-Za-z0-9._-]+|^Consequence paths\s*:\s*\S+|^Ticket budget\s*:\s*\d+[km]?(\s|$)/i
+  const declNear = /^[^A-Za-z]*\b(delivery|(reviewer|worker|planner)\s+model|consequence\s+paths|ticket\s+budget|(release|run)\s+mode)\b/i
+  const declStrict = /^Delivery\s*:\s*[A-Za-z-]+|^(Reviewer|Worker|Planner) model\s*:\s*[A-Za-z0-9._-]+|^Consequence paths\s*:\s*\S+|^Ticket budget\s*:\s*\d+[km]?(\s|$)/i
   for (const epic of epics) {
     if (!DELIVERIES.has(epic.delivery))
       add('warn', `${epic.epic}: unrecognised delivery "${epic.delivery}" (known: release, incremental) — skills reading it will not know how this epic ships`)
     readFileSync(epic.ticketsDoc, 'utf8').split(/^##\s/m)[0].split('\n').forEach((line, i) => {
       if (declNear.test(line) && !declStrict.test(line))
-        add('warn', `${epic.epic}/tickets.md:${i + 1} — looks like a declaration line but will not parse, so it silently defaults (needs "Delivery: release|incremental" / "Reviewer model: <value>" / "Worker model: <value>" / "Consequence paths: <glob>[, <glob>]" / "Ticket budget: <digits, optional k or m suffix>" — label at line start, no formatting, value on the label's own line; "Release mode:"/"Run mode:" are not read at all): ${line.trim()}`)
+        add('warn', `${epic.epic}/tickets.md:${i + 1} — looks like a declaration line but will not parse, so it silently defaults (needs "Delivery: release|incremental" / "Reviewer model: <value>" / "Worker model: <value>" / "Planner model: <value>" / "Consequence paths: <glob>[, <glob>]" / "Ticket budget: <digits, optional k or m suffix>" — label at line start, no formatting, value on the label's own line; "Release mode:"/"Run mode:" are not read at all): ${line.trim()}`)
     })
   }
 
@@ -670,6 +672,7 @@ function ticketFacts(data, t) {
     delivery: epic.delivery,
     reviewerModel: epic.reviewerModel,
     workerModel: epic.workerModel,
+    plannerModel: epic.plannerModel,
     consequencePaths: epic.consequencePaths,
     ticketBudget: epic.ticketBudget,
     repoRoot,
@@ -794,7 +797,7 @@ switch (cmd) {
         modes: Object.fromEntries(
           data.epics.map((e) => [
             e.epic,
-            { delivery: e.delivery, reviewerModel: e.reviewerModel, workerModel: e.workerModel, consequencePaths: e.consequencePaths, ticketBudget: e.ticketBudget },
+            { delivery: e.delivery, reviewerModel: e.reviewerModel, workerModel: e.workerModel, plannerModel: e.plannerModel, consequencePaths: e.consequencePaths, ticketBudget: e.ticketBudget },
           ]),
         ),
         duplicates: data.duplicates,

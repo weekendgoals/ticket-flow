@@ -266,6 +266,20 @@ inheriting by accident. None of these lines is a settings file: model
 choice lives in the versioned epic document, visible at sign-off, like
 every other configuration this plugin has.
 
+**The whole configuration surface is six optional preamble lines** in the
+epic's `tickets.md` — one place, one syntax (label at line start, value
+first after the colon, prose after it ignored), every near-miss flagged by
+`/flow:doctor`:
+
+| Line | Example | Controls | Absent |
+|---|---|---|---|
+| `Delivery:` | `release` | how work reaches main: unattended into `epic/<name>` with one release PR, or one human-gated PR per ticket | `incremental` |
+| `Worker model:` | `opus` | the implementing workers | workers inherit the spawning session's model |
+| `Reviewer model:` | `opus` | the ticket reviewer, overriding the tier table | the consequence tiers pick (haiku/sonnet/opus) |
+| `Planner model:` | `fable` | the plan reviewer for this epic | the agent definition's pinned strongest |
+| `Consequence paths:` | `src/auth/**, migrations/**` | globs that force the consequence review tier in a run — the code floor under the worker's self-reported tier | tier floor still applies (docs-only vs code), globs add nothing |
+| `Ticket budget:` | `250k` | per-ticket output-token ceiling in a run; an over-budget ticket stays merged and the run halts before the next | no ceiling; per-ticket spend still recorded when the runtime meters it |
+
 ## Reading the board
 
 | State | Means |

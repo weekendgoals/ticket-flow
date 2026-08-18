@@ -8,6 +8,18 @@ with one version and date.
 
 ## Unreleased
 
+- **All three roles' models configure in one place, and the configuration
+  surface is documented as one table** (`scripts/tickets.mjs`,
+  `skills/epic/SKILL.md` steps 3-4 and template, README). A new optional
+  `Planner model:` preamble line pins the plan reviewer per epic (absent,
+  the agent definition's pinned strongest model applies — the epic skill's
+  step 4 now reads the line from the draft it just wrote, because
+  configuration binds where it is read); it parses, is exposed in
+  `find`/`list --json`, and is near-miss-scanned by doctor exactly like
+  `Worker model:` and `Reviewer model:`. The epic template's configuration
+  block now presents all six optional lines together — Delivery, the three
+  model lines, Consequence paths, Ticket budget — and README carries the
+  same six as a table: one place, one syntax, every near-miss flagged.
 - **Release tickets no longer open pull requests — the merge is a verified
   SHA, and the release pull request is the epic's only one**
   (`workflows/run-epic.mjs`, `scripts/tickets.mjs`, the ticket skill's
