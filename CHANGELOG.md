@@ -8,6 +8,23 @@ with one version and date.
 
 ## Unreleased
 
+- **The standing quick epic rolls over by era** (`skills/quick/SKILL.md`
+  steps 2 and 5, `skills/retro/SKILL.md` steps 1 and 6, README,
+  METHODOLOGY). Adapted from beads' compaction after a comparative read,
+  reshaped to fit append-only: the quick epic never closes, so its log and
+  ticket doc grow without bound and ride every quick branch and
+  pull-request diff — `brief` fixed the read side, nothing fixed the carry
+  side. The quick skill now signals when the log passes roughly 25 entries;
+  `/flow:retro quick` performs the rollover behind the owed-conversion gate
+  (an unconverted owed item would vanish from every future brief): the era
+  is archived verbatim to `epics/_archive/quick-<date>` — nothing
+  summarized, nothing rewritten — and a fresh quick epic continues the ID
+  sequence with a `Q-IDs continue at Q-<n+1>` ground rule, because archived
+  headings are no longer read and a reused number would read as already
+  shipped off main's commit subjects. The rest of beads was read and not
+  adopted; METHODOLOGY records the standing verdicts (stored-and-reported
+  state vs derived; `bd prime` vs `brief`; the dependency graph stays
+  removed, with the strict-parse shape noted for a future parallel lane).
 - **Three Spec Kit-inspired planning refinements** (`skills/epic/SKILL.md`
   step 3 and template, `agents/plan-reviewer.md`, `skills/retro/SKILL.md`
   step 4, `scripts/plan-page.mjs` + test, METHODOLOGY). Adapted from

@@ -26,6 +26,10 @@ epic with nothing left to start, use that one — otherwise ask.
 
 If tickets are still open, say which and stop, unless the user explicitly wants
 a mid-epic retro — that is legitimate for a long epic, but it is their call.
+The standing quick epic is the permanent exception: it never finishes, so
+`/flow:retro quick` is always a mid-epic retro, and it is also the **era
+rollover** door (step 6) — the only sanctioned way the quick epic's
+documents get shorter.
 
 ## 2. Spawn the miner — fresh context
 
@@ -154,8 +158,30 @@ human's, held in their own session; the miner never holds it.
   above have just moved its owed items into live tickets and its lessons into
   instruction files; archiving before that silently deletes the debt ledger.
   Moving is not deleting (the log stays in git, and shipped detection reads
-  commit subjects, not folders), and the standing `epics/quick/` is never
-  archived.
+  commit subjects, not folders). The standing `epics/quick/` is never
+  archived whole — it takes the era rollover below instead.
+- **For the standing quick epic, the archive step is an era rollover.** The
+  quick epic never finishes, so its log and ticket doc grow without bound,
+  and both ride every quick branch and pull-request diff — `brief` fixed
+  what a worker must *read*; nothing fixed what every branch must *carry*.
+  After the bullets above have converted its open owed items into tickets
+  and its lessons into instruction files — the gate, because the archive
+  drops off the board and an unconverted owed item would vanish from every
+  future brief:
+
+  ```bash
+  git mv epics/quick epics/_archive/quick-<YYYY-MM-DD>
+  ```
+
+  Then recreate `epics/quick/` from the quick skill's step 2 template, with
+  one extra ground rule naming the ID floor — `Q-IDs continue at Q-<n+1>`,
+  where `Q-<n>` is the archived era's highest number — because the archived
+  headings are no longer read and a reused number would read as already
+  shipped the moment the board checks main's commit subjects (the same rule
+  Q-18's entry recorded when the folder was once recreated by hand). Ship
+  the rollover through the same reviewed pull request as the retro entry.
+  Nothing is summarized and nothing rewritten: the era stays verbatim in
+  the archive; the working copy just stops paying for it.
 
 Then stop. An epic is closed when its lessons are in documents that travel —
 not when someone remembers them.

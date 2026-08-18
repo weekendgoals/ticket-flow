@@ -77,7 +77,12 @@ ticket someone wrote down to run later).
 
 Read the root agent instructions and the instruction file of the area you are
 about to touch — quick does not mean unread. Then append a section, using the
-next free `Q-<n>` (read the existing headings for the highest `n`):
+next free `Q-<n>` — the highest of the existing headings **and** the
+preamble's `Q-IDs continue at Q-<n>` ground rule when one exists: after an
+era rollover (step 5's signal; the retro performs it) the archived and
+shipped numbers are absent from this document, and a reused number would
+read as already shipped the moment the board checks main's commit
+subjects:
 
 ```markdown
 ## Q-<n> — <short name>
@@ -172,6 +177,15 @@ If this ticket discharges an owed item an earlier entry recorded, add
 removes the item from every future brief (ticket skill step 6 defines it).
 
 Commit the entry with the work.
+
+**If the log now runs past roughly 25 entries (or ~1,000 lines), say so to
+the user**: the quick epic is due an **era rollover** — `/flow:retro quick`
+performs it (owed items become tickets, the era is archived whole, a fresh
+quick epic continues the ID sequence). The log and ticket doc ride every
+quick branch and pull-request diff, so their growth is a tax every future
+ticket pays; the signal costs one line now. Never roll over here yourself —
+the rollover is safe only after the retro has converted the open owed
+items, and that gate is the retro's.
 
 ## 6. Review — only when behaviour changed, and cheaply
 
