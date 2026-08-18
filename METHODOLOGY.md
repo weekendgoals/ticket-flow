@@ -697,6 +697,21 @@ run marks the session as carrying implementation context (so a later
 start empty, stay open), and quick itself is never refused, because
 in-session is now its design, not its leak.
 
+The standing epic's one structural cost is that it never closes: the log
+and ticket doc grow without bound, and both ride every quick branch and
+pull-request diff. `brief` fixed the read side — O(epic), not O(history) —
+but nothing fixed the carry side. The fix is an **era rollover** (adapted
+from beads' compaction, 2026-08-19, reshaped to fit this flow's doctrine):
+where beads semantically summarizes old closed issues, append-only forbids
+rewriting history, so the retro moves the era aside whole — archived
+verbatim, nothing summarized — and a fresh quick epic continues the ID
+sequence, with the floor recorded as a ground rule because the archived
+headings are no longer read and a reused number would read as already
+shipped. The record survives untouched; the working copy stops paying for
+it. The rollover lives behind the retro's owed-conversion gate for the
+same reason the general archive step does: the archive drops off the
+board, and an unconverted owed item would vanish from every future brief.
+
 ## The failure modes this is designed against
 
 - **Scope creep in a fresh session.** An agent doesn't know what it doesn't know,
@@ -739,4 +754,10 @@ time.
 - **A dependency graph with parsed `Depends on:` fields and automatic stacking.**
   It computed something the branch already knew, and its failure mode was silent:
   a dependency written in prose rather than as a bare ID read as a hard blocker
-  and stalled the ticket.
+  and stalled the ticket. Revisited against beads' ready-computation
+  (2026-08-19): still fails the admission test while the lanes are serial —
+  document order is the dependency mechanism, and owed items carry the
+  cross-epic cases. The shape to reach for if a parallel lane ever lands:
+  bare-ID `Blocked by:` lines parsed strictly, doctor near-miss coverage,
+  and a `waiting` board state — the strict parse being exactly what the
+  first version lacked.
