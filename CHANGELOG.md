@@ -8,6 +8,16 @@ with one version and date.
 
 ## Unreleased
 
+- **`/flow:board` renders the board as a published HTML page**
+  (`skills/board/SKILL.md`, `scripts/board.mjs` + `board.test.mjs`,
+  README). A zero-dependency renderer over `tickets.mjs list --json`:
+  per-epic tables with state badges, delivery and this-folder tags,
+  degraded-fact notes (gh unavailable, capped scan, duplicate IDs), and a
+  Next-up list — published as an artifact and regenerated on every run.
+  Deliberately a rendering of derived state, never a second store: the
+  skill writes the page to the session scratchpad and forbids committing
+  it, because a stored board is the hand-maintained mirror the plugin
+  exists to avoid.
 - **Epic planning stops at the shape before writing the document, and
   sign-off shows a rejected alternative** (`skills/epic/SKILL.md` steps 3
   and 5; METHODOLOGY "Why the plan is reviewed before sign-off"). The
