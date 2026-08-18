@@ -114,6 +114,8 @@ Reviewer model: opus — for the consequence tier.
 
 Worker model: sonnet — implementation runs cheaper than planning.
 
+Consequence paths: src/auth/**, migrations/** — the risk list as globs.
+
 ## G-1 — expand the schema
 
 **Scope.** Expansion.
@@ -500,8 +502,8 @@ test('the Delivery line parses tolerantly and exposes in find and list', () => {
   assert.equal(a.delivery, 'incremental')
 
   const data = JSON.parse(run(repo, 'list', '--json'))
-  assert.deepEqual(data.modes.gamma, { delivery: 'release', reviewerModel: 'opus', workerModel: 'sonnet' })
-  assert.deepEqual(data.modes.alpha, { delivery: 'incremental', reviewerModel: null, workerModel: null })
+  assert.deepEqual(data.modes.gamma, { delivery: 'release', reviewerModel: 'opus', workerModel: 'sonnet', consequencePaths: ['src/auth/**', 'migrations/**'] })
+  assert.deepEqual(data.modes.alpha, { delivery: 'incremental', reviewerModel: null, workerModel: null, consequencePaths: null })
 })
 
 test('a Worker model line pins the implementer; absent, workers inherit the session', () => {
@@ -530,7 +532,7 @@ test('an unrecognised or near-miss Delivery line warns instead of silently defau
     assert.equal(data.modes.misdeclared.delivery, 'continuous', 'the raw value is exposed, not coerced')
     assert.deepEqual(
       data.modes['fancy-delivery'],
-      { delivery: 'incremental', reviewerModel: null, workerModel: null },
+      { delivery: 'incremental', reviewerModel: null, workerModel: null, consequencePaths: null },
       'a formatted Delivery line reads as absent, so the default applies',
     )
     const rows = JSON.parse(run(repo, 'doctor', '--json'))
@@ -557,7 +559,7 @@ test('the retired two-line syntax is flagged, not silently ignored', () => {
     const data = JSON.parse(run(repo, 'list', '--json'))
     assert.deepEqual(
       data.modes.oldstyle,
-      { delivery: 'incremental', reviewerModel: null, workerModel: null },
+      { delivery: 'incremental', reviewerModel: null, workerModel: null, consequencePaths: null },
       'the dead labels parse as nothing; the delivery default applies',
     )
     const rows = JSON.parse(run(repo, 'doctor', '--json'))
@@ -597,12 +599,45 @@ test('a plain Reviewer model line parses case-insensitively, dotted model ids in
   }
 })
 
+test('a Consequence paths line parses as a glob list, case preserved, prose ignored', () => {
+  // Comma-separated segments, first word of each is the glob — the tolerant
+  // parse extended to a list. Case is preserved: paths are case-sensitive,
+  // unlike models and delivery. The run driver applies these as the review
+  // tier's floor; this script only parses and exposes them.
+  const g = JSON.parse(run(repo, 'find', 'G-1', '--json'))
+  assert.deepEqual(g.consequencePaths, ['src/auth/**', 'migrations/**'], 'prose after the last glob must not break the parse')
+  assert.equal(JSON.parse(run(repo, 'find', 'A-2', '--json')).consequencePaths, null, 'absent is null, never a default')
+
+  mkdirSync(join(repo, 'epics/cased'), { recursive: true })
+  writeFileSync(
+    join(repo, 'epics/cased/tickets.md'),
+    '# Cased\n\nConsequence paths: Src/Auth/**.ts\n\n**Consequence paths:** billing/**\n\n## C-1 — cased paths\n\n**Scope.** C.\n',
+  )
+  try {
+    assert.deepEqual(
+      JSON.parse(run(repo, 'list', '--json')).modes.cased.consequencePaths,
+      ['Src/Auth/**.ts'],
+      'case survives, and the bolded line is not parsed',
+    )
+    // The formatted line is declaration-shaped but will not parse — silently
+    // losing a consequence glob lowers scrutiny, so doctor's near-miss scan
+    // must name it.
+    const rows = JSON.parse(run(repo, 'doctor', '--json'))
+    assert.ok(
+      rows.some((r) => r.level === 'warn' && r.msg.includes('cased/tickets.md') && /will not parse/.test(r.msg)),
+      'the near-miss scan covers the Consequence paths label',
+    )
+  } finally {
+    rmSync(join(repo, 'epics/cased'), { recursive: true, force: true })
+  }
+})
+
 test('an epic with no declaration lines defaults to incremental delivery', () => {
   mkdirSync(join(repo, 'epics/delta'), { recursive: true })
   writeFileSync(join(repo, 'epics/delta/tickets.md'), '# Delta\n\n## D-1 — bare epic\n\n**Scope.** Bare.\n')
   try {
     const data = JSON.parse(run(repo, 'list', '--json'))
-    assert.deepEqual(data.modes.delta, { delivery: 'incremental', reviewerModel: null, workerModel: null })
+    assert.deepEqual(data.modes.delta, { delivery: 'incremental', reviewerModel: null, workerModel: null, consequencePaths: null })
   } finally {
     rmSync(join(repo, 'epics/delta'), { recursive: true, force: true })
   }
@@ -616,7 +651,7 @@ test('the Delivery line parses case-insensitively', () => {
   )
   try {
     const data = JSON.parse(run(repo, 'list', '--json'))
-    assert.deepEqual(data.modes.shout, { delivery: 'release', reviewerModel: null, workerModel: null })
+    assert.deepEqual(data.modes.shout, { delivery: 'release', reviewerModel: null, workerModel: null, consequencePaths: null })
   } finally {
     rmSync(join(repo, 'epics/shout'), { recursive: true, force: true })
   }
@@ -641,7 +676,7 @@ test('a value-less label line reads as absent, never the next paragraph\'s first
     const data = JSON.parse(run(repo, 'list', '--json'))
     assert.deepEqual(
       data.modes.bare,
-      { delivery: 'incremental', reviewerModel: null, workerModel: null },
+      { delivery: 'incremental', reviewerModel: null, workerModel: null, consequencePaths: null },
       'a value-less label must read as absent (incremental default / null), never scavenge prose',
     )
     // And doctor's near-miss wording is true of these lines: they will not

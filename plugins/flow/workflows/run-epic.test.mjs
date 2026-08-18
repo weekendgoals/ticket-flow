@@ -71,6 +71,11 @@ const workerOk = (id = 'PAY-1', over = {}) => ({
   deployPreconditions: [`${id}_ENV`],
   ...over,
 })
+// The changed-file facts behind the tier floor. The default names a code file,
+// so the floor is `normal`; docs-only variants price `prose` in the tests that
+// need it.
+const tierFactsCode = { outcome: 'listed', files: ['src/a.ts'], detail: '' }
+const tierFactsDocs = { outcome: 'listed', files: ['README.md', 'docs/guide.md'], detail: '' }
 const reviewClean = {
   important: [],
   nits: [{ cite: 'a.ts:3', summary: 'naming' }],
@@ -118,6 +123,7 @@ const oneTicket = (over = {}) => (label, prompt) => {
   if (label === 'refresh+select:2') return over['refresh+select:2'] !== undefined ? over['refresh+select:2'] : refreshed([])
   if (over[label] !== undefined) return over[label]
   if (label === 'worker:PAY-1') return workerOk()
+  if (label === 'tier-facts:PAY-1') return tierFactsCode
   if (label === 'review:PAY-1') return reviewClean
   if (label === 'disposition:PAY-1') return dispClean
   if (label === 'resolve:PAY-1') return resolvedOk
@@ -134,6 +140,7 @@ test('the happy path runs refresh+select -> worker -> review -> disposition -> r
     if (label === 'refresh+select:2') return refreshed(['PAY-2'])
     if (label === 'refresh+select:3') return refreshed([])
     if (label.startsWith('worker:')) return workerOk(label.split(':')[1])
+    if (label.startsWith('tier-facts:')) return tierFactsCode
     if (label.startsWith('review:')) return reviewClean
     if (label.startsWith('disposition:')) return dispClean
     if (label.startsWith('resolve:')) return { ...resolvedOk, headRefName: label.split(':')[1].toLowerCase() }
@@ -141,8 +148,8 @@ test('the happy path runs refresh+select -> worker -> review -> disposition -> r
     if (label.startsWith('verify:')) return integratedOk
   })
   assert.deepEqual(r.labels, [
-    'refresh+select:1', 'worker:PAY-1', 'review:PAY-1', 'disposition:PAY-1', 'resolve:PAY-1', 'merge:PAY-1', 'verify:PAY-1',
-    'refresh+select:2', 'worker:PAY-2', 'review:PAY-2', 'disposition:PAY-2', 'resolve:PAY-2', 'merge:PAY-2', 'verify:PAY-2',
+    'refresh+select:1', 'worker:PAY-1', 'tier-facts:PAY-1', 'review:PAY-1', 'disposition:PAY-1', 'resolve:PAY-1', 'merge:PAY-1', 'verify:PAY-1',
+    'refresh+select:2', 'worker:PAY-2', 'tier-facts:PAY-2', 'review:PAY-2', 'disposition:PAY-2', 'resolve:PAY-2', 'merge:PAY-2', 'verify:PAY-2',
     'refresh+select:3',
   ])
   assert.equal(r.out.outcome, 'completed')
@@ -188,6 +195,8 @@ test('the worker prompt keeps the driver handshake verbatim and scopes the skill
   assert.match(p, /gh pr create --base epic\/payments/)
   assert.match(p, /REPORT THE REVIEW TIER/)
   assert.match(p, /When in doubt, the higher tier/)
+  assert.match(p, /raise the review's price but never lower it/)
+  assert.match(p, /the reviewed party does not price its own judge/)
   assert.equal(call(r, 'worker:PAY-1').agentType, 'general-purpose')
 })
 
@@ -215,10 +224,74 @@ test('the normal tier prices a named cost-efficient model at high effort, never 
   assert.equal(r.out.ticketRecords[0].reviewerModelUsed, 'sonnet')
 })
 
-test('the prose tier prices a fast model at low effort', async () => {
-  const r = await drive(oneTicket({ 'worker:PAY-1': workerOk('PAY-1', { tier: 'prose' }) }))
+test('the prose tier prices a fast model at low effort — but only on a docs-only diff', async () => {
+  const r = await drive(oneTicket({ 'worker:PAY-1': workerOk('PAY-1', { tier: 'prose' }), 'tier-facts:PAY-1': tierFactsDocs }))
   assert.equal(call(r, 'review:PAY-1').model, 'haiku')
   assert.equal(call(r, 'review:PAY-1').effort, 'low')
+  assert.equal(r.out.ticketRecords[0].tierFloor, 'prose')
+})
+
+// ---- the tier floor: the reviewed party cannot price its own judge down -----
+
+test('a prose claim on a diff with code files is floored to normal', async () => {
+  const r = await drive(oneTicket({ 'worker:PAY-1': workerOk('PAY-1', { tier: 'prose' }) }))
+  assert.equal(call(r, 'review:PAY-1').model, 'sonnet')
+  assert.equal(call(r, 'review:PAY-1').effort, 'high')
+  assert.equal(r.out.ticketRecords[0].tier, 'normal')
+  assert.equal(r.out.ticketRecords[0].tierFloor, 'normal')
+  assert.equal(r.out.ticketRecords[0].tierReported, 'prose')
+  assert.ok(r.logs.some(l => /floors it at normal/.test(l) && /never lower it/.test(l)))
+})
+
+test("a file matching the epic's consequence globs floors any reported tier to consequence", async () => {
+  const r = await drive(
+    oneTicket({ 'tier-facts:PAY-1': { outcome: 'listed', files: ['src/auth/token.ts'], detail: '' } }),
+    { ...ARGS, consequencePaths: ['src/auth/**'] },
+  )
+  assert.equal(call(r, 'review:PAY-1').model, 'opus')
+  assert.equal(call(r, 'review:PAY-1').effort, 'xhigh')
+  assert.equal(r.out.ticketRecords[0].tier, 'consequence')
+  assert.equal(r.out.ticketRecords[0].tierFloor, 'consequence')
+})
+
+test('a reported tier can raise the price above the floor', async () => {
+  // Docs-only diff, but the worker judged it consequence — machine-read
+  // markdown is the worker's call, and the report raises, never lowers.
+  const r = await drive(oneTicket({ 'worker:PAY-1': workerOk('PAY-1', { tier: 'consequence' }), 'tier-facts:PAY-1': tierFactsDocs }))
+  assert.equal(call(r, 'review:PAY-1').model, 'opus')
+  assert.equal(r.out.ticketRecords[0].tier, 'consequence')
+  assert.equal(r.out.ticketRecords[0].tierFloor, 'prose')
+})
+
+test('a dead or unusable tier-facts agent floors at consequence — doubt goes up', async () => {
+  const dead = await drive(oneTicket({ 'tier-facts:PAY-1': null }))
+  assert.equal(dead.out.outcome, 'completed')
+  assert.equal(call(dead, 'review:PAY-1').model, 'opus')
+  assert.equal(dead.out.ticketRecords[0].tierFloor, 'consequence')
+  assert.ok(dead.logs.some(l => /no usable changed-file facts/.test(l) && /doubt goes up/.test(l)))
+  const shapeless = await drive(oneTicket({ 'tier-facts:PAY-1': { outcome: 'listed', detail: '' } }))
+  assert.equal(shapeless.out.ticketRecords[0].tierFloor, 'consequence')
+  assert.equal(call(shapeless, 'review:PAY-1').model, 'opus')
+})
+
+test('a tier-facts command failure or permission prompt halts before any reviewer is hired', async () => {
+  const failed = await drive(oneTicket({ 'tier-facts:PAY-1': { outcome: 'command-failed', detail: 'fatal: could not fetch' } }))
+  assert.match(failed.out.haltedOn.stopCondition, /^a nonzero exit from any command/)
+  assert.match(failed.out.haltedOn.detail, /<<<UNTRUSTED[\s\S]*could not fetch/)
+  assert.ok(!failed.labels.some(l => l.startsWith('review:') || l.startsWith('merge:')))
+  const prompted = await drive(oneTicket({ 'tier-facts:PAY-1': { outcome: 'permission-prompt', detail: 'git fetch would prompt' } }))
+  assert.equal(prompted.out.haltedOn.stopCondition, 'a permission prompt firing mid-run')
+  assert.ok(!prompted.labels.some(l => l.startsWith('review:')))
+})
+
+test('the tier-facts agent is a read-only fast-model step whose diff is merge-base anchored', async () => {
+  const r = await drive(oneTicket())
+  const c = call(r, 'tier-facts:PAY-1')
+  assert.equal(c.model, 'haiku')
+  assert.equal(c.effort, 'low')
+  assert.match(c.prompt, /git diff --name-only origin\/epic\/payments\.\.\.origin\/pay-1 -- ':\(exclude\)epics'/)
+  assert.match(c.prompt, /You judge nothing; the driver prices the review from this list in code/)
+  assert.match(c.prompt, /toward the default branch \(main\)/)
 })
 
 test('the consequence tier prices the strongest model at xhigh', async () => {
@@ -251,7 +324,10 @@ test('a worker stop condition that names a prototype member is read as BLOCKED',
 })
 
 test("the epic's Reviewer model overrides the tier's model but not its effort", async () => {
-  const r = await drive(oneTicket({ 'worker:PAY-1': workerOk('PAY-1', { tier: 'prose' }) }), { ...ARGS, reviewerModel: 'claude-sonnet-4-5' })
+  const r = await drive(
+    oneTicket({ 'worker:PAY-1': workerOk('PAY-1', { tier: 'prose' }), 'tier-facts:PAY-1': tierFactsDocs }),
+    { ...ARGS, reviewerModel: 'claude-sonnet-4-5' },
+  )
   assert.equal(call(r, 'review:PAY-1').model, 'claude-sonnet-4-5')
   assert.equal(call(r, 'review:PAY-1').effort, 'low')
 })
@@ -510,7 +586,7 @@ test('at the consequence tier, fix commits earn exactly one re-review, and a cle
     }),
   )
   assert.deepEqual(r.labels, [
-    'refresh+select:1', 'worker:PAY-1', 'review:PAY-1', 'disposition:PAY-1', 're-review:PAY-1', 'resolve:PAY-1', 'merge:PAY-1', 'verify:PAY-1',
+    'refresh+select:1', 'worker:PAY-1', 'tier-facts:PAY-1', 'review:PAY-1', 'disposition:PAY-1', 're-review:PAY-1', 'resolve:PAY-1', 'merge:PAY-1', 'verify:PAY-1',
     'refresh+select:2',
   ])
   assert.equal(r.out.outcome, 'completed')
@@ -742,6 +818,7 @@ test('a board that hands out the same ticket twice halts as not advancing', asyn
   const r = await drive((label, prompt) => {
     if (label === 'refresh+select:1' || label === 'refresh+select:2') return refreshed(['PAY-1'])
     if (label === 'worker:PAY-1') return workerOk()
+    if (label === 'tier-facts:PAY-1') return tierFactsCode
     if (label === 'review:PAY-1') return reviewClean
     if (label === 'disposition:PAY-1') return dispClean
     if (label === 'resolve:PAY-1') return resolvedOk
@@ -760,6 +837,7 @@ test('a board that never runs out of tickets is stopped by the run cap', async (
       return { refresh: { outcome: 'refreshed', headSha: 'a' }, next: { commandSucceeded: true, tickets: [{ id: `PAY-${n}`, title: 'endless' }] } }
     }
     if (label.startsWith('worker:')) return workerOk(label.split(':')[1])
+    if (label.startsWith('tier-facts:')) return tierFactsCode
     if (label.startsWith('review:')) return reviewClean
     if (label.startsWith('disposition:')) return dispClean
     if (label.startsWith('resolve:')) return { ...resolvedOk, headRefName: label.split(':')[1].toLowerCase() }
@@ -806,7 +884,7 @@ test('the shell-proxy agents are pinned to a fast model; the judging ones are pr
       're-review:PAY-1': { important: [] },
     }),
   )
-  for (const label of ['refresh+select:1', 'resolve:PAY-1', 'merge:PAY-1', 'verify:PAY-1']) assert.equal(call(r, label).model, 'haiku', label)
+  for (const label of ['refresh+select:1', 'tier-facts:PAY-1', 'resolve:PAY-1', 'merge:PAY-1', 'verify:PAY-1']) assert.equal(call(r, label).model, 'haiku', label)
   assert.equal(call(r, 'worker:PAY-1').model, undefined)
   assert.equal(call(r, 'disposition:PAY-1').model, undefined)
   // Priced by the tier the worker reported — the pins never reach the judges.
@@ -883,7 +961,7 @@ test('every agent that can write is told the default branch is never a target', 
   const r = await drive(
     oneTicket({ 'worker:PAY-1': workerOk('PAY-1', { tier: 'consequence' }), 'review:PAY-1': reviewImportant, 'disposition:PAY-1': dispFixed, 're-review:PAY-1': { important: [] } }),
   )
-  for (const label of ['refresh+select:1', 'worker:PAY-1', 'disposition:PAY-1', 'resolve:PAY-1', 'merge:PAY-1']) {
+  for (const label of ['refresh+select:1', 'worker:PAY-1', 'tier-facts:PAY-1', 'disposition:PAY-1', 'resolve:PAY-1', 'merge:PAY-1']) {
     assert.match(call(r, label).prompt, /toward the default branch \(main\)/, label)
   }
   // The reviewers are read-only instead: the rule they carry is the stronger one.
@@ -901,6 +979,9 @@ test('the script refuses unusable arguments before spending an agent', async () 
     [{ ...ARGS, repoRoot: 'relative/path' }, /Unsafe repoRoot/],
     [{ ...ARGS, today: undefined }, /requires args/],
     [{ ...ARGS, today: 'yesterday' }, /must be an ISO date/],
+    [{ ...ARGS, consequencePaths: ['src/**; rm -rf /'] }, /Unsafe consequencePaths entry/],
+    [{ ...ARGS, consequencePaths: ['../secrets/**'] }, /Unsafe consequencePaths entry/],
+    [{ ...ARGS, consequencePaths: 'src/**' }, /must be an array/],
   ]) {
     const r = await drive(() => undefined, args)
     assert.match(r.out.threw, re)

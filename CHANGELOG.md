@@ -8,6 +8,30 @@ with one version and date.
 
 ## Unreleased
 
+- **The run driver floors the review tier in code — the reviewed party can
+  no longer price its own judge down** (`workflows/run-epic.mjs`; the run
+  skill's step 4; the ticket skill's step 7; `scripts/tickets.mjs`;
+  `skills/epic/SKILL.md`; METHODOLOGY). The reviewer's model and effort
+  were priced solely from the worker's self-reported tier: the driver
+  guarded the malformed case (missing/unrecognised → consequence) but a
+  well-formed wrong report — a code change called `prose` — bought the
+  weakest review unchecked. The driver now runs a read-only fast-model
+  step per ticket (`tier-facts:<ID>`, pinned like the other shell proxies)
+  that lists the branch's changed files (merge-base diff against the epic
+  branch, `epics/` excluded), and code computes a floor: docs-only files
+  may keep `prose`, any other file floors at `normal`, and files matching
+  the epic's new optional `Consequence paths: <glob>[, <glob>]` preamble
+  line (parsed by `tickets.mjs` like the model lines, exposed in `find`/
+  `list --json`, near-miss-scanned by doctor) floor at `consequence`. The
+  review is priced at the higher of the worker's report and the floor —
+  the report can raise the price, never lower it; whether machine-read
+  markdown earns `normal` stays the worker's judgment, which only pushes
+  up. An unusable file listing floors at `consequence` (missing facts
+  raise scrutiny); a failed listing command halts like any other nonzero
+  exit; an unsafe glob refuses the run at argument validation, because
+  dropping it would silently lower scrutiny. `ticketRecords` gained
+  `tierFloor`. Attended lanes are unchanged: there the tier is picked by
+  the supervisor or session, which is not the party under review.
 - **Reviewer models are named, never inherited** (`workflows/run-epic.mjs`
   `REVIEW_TIERS`; the ticket skill's step 7 table; the run skill's step 4;
   README). The `normal` tier now prices a named cost-efficient model

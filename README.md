@@ -221,15 +221,24 @@ directive. The line does not govern the plan reviewer: it lives in the very
 draft the plan reviewer is judging, and configuration binds only after
 sign-off approves it.
 
+In an unattended run the tier is not taken on the worker's word: the worker
+reports the tier its diff earns, but the driver lists the branch's changed
+files itself (a read-only fast-model step) and **floors the tier in code**
+— docs-only files may price `prose`, anything else at least `normal`, and
+files matching the epic's optional `Consequence paths: <glob>[, <glob>]`
+preamble line price `consequence`. The report can raise the price, never
+lower it: the worker is the party under review, and the reviewed party does
+not price its own judge.
+
 The **implementing workers'** model is configurable the same way: a
 `Worker model: <model>` preamble line pins the workers, and the epic
 template now carries `Worker model: opus` by default — plan on the
 strongest model, implement on a capable one at a fraction of the price.
 Absent the line, every worker inherits the model of the session that
 spawns it, which is a decision worth making deliberately rather than
-inheriting by accident. Neither line is a settings file: model choice
-lives in the versioned epic document, visible at sign-off, like every
-other configuration this plugin has.
+inheriting by accident. None of these lines is a settings file: model
+choice lives in the versioned epic document, visible at sign-off, like
+every other configuration this plugin has.
 
 ## Reading the board
 

@@ -344,6 +344,16 @@ which; do not ask. When in doubt between tiers, take the higher one — the
 tiering exists to stop routine maximum spend, not to argue small diffs
 downward.
 
+In an unattended run the driver does not take the tier on the worker's word
+alone: it reads the branch's changed file list itself and floors the tier in
+code — a diff touching the epic's optional `Consequence paths:` globs prices
+`consequence`, any non-documentation file prices at least `normal`, and only
+a docs-only diff may price `prose` — because the worker is the party under
+review, and the reviewed party must not price its own judge down. A reported
+tier can raise the price, never lower it. (Here the hirer — supervisor or
+session — picks the tier and is not the reviewed party, so no floor is
+needed.)
+
 Spawn the reviewer with the **Agent** tool:
 
 - `subagent_type: "flow:ticket-reviewer"`, and `model`: the epic's **Reviewer
