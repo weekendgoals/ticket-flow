@@ -142,9 +142,10 @@ Delivery: release | incremental
 <one line, one decision: how this epic's work reaches the default branch.
 
 release — THE DEFAULT for a multi-ticket epic. After sign-off, each ticket
-implements, is reviewed, fixes findings and merges its own pull request into
-`epic/<name>` unattended (`/flow:run`); the human's two decisions are this
-sign-off and the release pull request at the end. Choose it because the
+implements, is reviewed, fixes findings and merges its branch into
+`epic/<name>` unattended (`/flow:run`) — no per-ticket pull request; the
+human's two decisions are this sign-off and the release pull request at the
+end, the epic's only one. Choose it because the
 valuable human gates are the plan and the release — a human approving every
 intermediate pull request is acting as a scheduler, not a judge. Bound it:
 roughly 3–6 tickets, days not weeks, and a release diff a human can

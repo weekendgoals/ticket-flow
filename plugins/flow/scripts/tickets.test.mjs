@@ -496,6 +496,48 @@ test('brief with nothing startable says so instead of erroring', () => {
   assert.equal(run(allDone, 'brief', '--json').trim(), 'null')
 })
 
+test('a release ticket merged into its remote epic branch reads integrated, with no pull request anywhere', () => {
+  // Release tickets open no pull request of their own — the merge into
+  // epic/<name> leaves exactly one trace, the ID-prefixed subjects reaching
+  // the REMOTE epic branch, and that is what the board reads. gh always
+  // fails against this fixture, proving the state needs no PR. The remote is
+  // the authority: a merge that exists only locally proves nothing, because
+  // integration is the driver's push.
+  const rel = join(tmp, 'release-int')
+  const relRemote = join(tmp, 'release-int-remote.git')
+  git(tmp, 'init', '--bare', '--initial-branch=main', relRemote)
+  git(tmp, 'init', '--initial-branch=main', rel)
+  git(rel, 'config', 'user.email', 'test@example.com')
+  git(rel, 'config', 'user.name', 'Test')
+  git(rel, 'config', 'commit.gpgsign', 'false')
+  mkdirSync(join(rel, 'epics/rel'), { recursive: true })
+  writeFileSync(
+    join(rel, 'epics/rel/tickets.md'),
+    '# Rel\n\nDelivery: release\n\n## R-1 — first slice\n\n**Scope.** R1.\n\n## R-2 — second slice\n\n**Scope.** R2.\n',
+  )
+  git(rel, 'add', '.')
+  git(rel, 'commit', '-m', 'plan: rel epic')
+  git(rel, 'remote', 'add', 'origin', relRemote)
+  git(rel, 'push', '-u', 'origin', 'main')
+  git(rel, 'remote', 'set-head', 'origin', 'main')
+  git(rel, 'checkout', '-b', 'epic/rel')
+  git(rel, 'push', '-u', 'origin', 'epic/rel')
+  git(rel, 'checkout', '-b', 'r-1')
+  writeFileSync(join(rel, 'r1.txt'), 'work\n')
+  git(rel, 'add', 'r1.txt')
+  git(rel, 'commit', '-m', 'R-1: do the first slice')
+  git(rel, 'checkout', 'epic/rel')
+  git(rel, 'merge', '--no-ff', 'r-1', '-m', 'Merge r-1 into epic/rel')
+
+  const before = Object.fromEntries(JSON.parse(run(rel, 'list', '--json')).tickets.map((t) => [t.id, t.state]))
+  assert.equal(before['R-1'], 'in-progress', 'a merge not yet pushed must not read as integrated')
+
+  git(rel, 'push', 'origin', 'epic/rel')
+  const after = Object.fromEntries(JSON.parse(run(rel, 'list', '--json')).tickets.map((t) => [t.id, t.state]))
+  assert.equal(after['R-1'], 'integrated', 'ID-prefixed subjects on origin/epic/<name> are the trace')
+  assert.equal(after['R-2'], 'todo', 'the sibling ticket is untouched')
+})
+
 test('the Delivery line parses tolerantly and exposes in find and list', () => {
   const g = JSON.parse(run(repo, 'find', 'G-1', '--json'))
   assert.equal(g.delivery, 'release', 'prose after the value must not break the parse')

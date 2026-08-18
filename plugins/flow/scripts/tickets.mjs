@@ -300,15 +300,19 @@ function pullRequests() {
   }
 }
 
-// Ticket IDs that already have commits on the default branch. This is the
-// authority on "shipped", rather than the PR head branch, because a branch name
-// only matches when the author followed the convention — work merged under any
-// other branch name would read as unshipped forever. One log call, matched
-// against every commit subject, which is why CLAUDE.md requires the ID prefix.
+// Ticket IDs that already have commits on a ref. On the default branch this
+// is the authority on "shipped", rather than the PR head branch, because a
+// branch name only matches when the author followed the convention — work
+// merged under any other branch name would read as unshipped forever. On a
+// release epic's branch the same scan is the authority on "integrated": a
+// release ticket has no pull request of its own (the release pull request is
+// the epic's only one), so its merge leaves exactly one trace — its
+// ID-prefixed commit subjects reaching epic/<name>. One log call per ref,
+// which is why CLAUDE.md requires the ID prefix.
 const MAIN_SCAN_LIMIT = 4000
 
-function idsOnMain() {
-  const out = git(['log', `origin/${defaultBranch}`, '--format=%s', '-n', String(MAIN_SCAN_LIMIT)], { allowFail: true })
+function idsOnRef(ref) {
+  const out = git(['log', ref, '--format=%s', '-n', String(MAIN_SCAN_LIMIT)], { allowFail: true })
   const ids = new Set()
   if (!out) return { ids, capped: false }
   const subjects = out.split('\n')
@@ -321,6 +325,8 @@ function idsOnMain() {
   return { ids, capped: subjects.length >= MAIN_SCAN_LIMIT }
 }
 
+const idsOnMain = () => idsOnRef(`origin/${defaultBranch}`)
+
 function commitsAhead(branch) {
   const n = git(['rev-list', '--count', `origin/${defaultBranch}..${branch}`], { allowFail: true })
   return n === null ? 0 : Number(n)
@@ -330,7 +336,7 @@ function commitsAhead(branch) {
 
 const STATES = ['shipped', 'integrated', 'in-review', 'done', 'in-progress', 'blocked', 'todo']
 
-function resolveState(ticket, status, branches, prs, onMain) {
+function resolveState(ticket, status, branches, prs, onMain, onEpicBranch) {
   const branch = branchNameFor(ticket.id)
   const pr = prs.byBranch[branch]
   const entry = status[ticket.id]
@@ -339,16 +345,23 @@ function resolveState(ticket, status, branches, prs, onMain) {
   if (pr && pr.state === 'MERGED') {
     // A PR merged into an epic branch (integration mode) has not shipped — it is
     // waiting on the epic's release PR. Only a merge into the default branch is
-    // "shipped".
+    // "shipped". Kept alongside the subject scan below: epics run before
+    // release tickets stopped opening per-ticket pull requests still derive.
     const state = !pr.baseRefName || pr.baseRefName === defaultBranch ? 'shipped' : 'integrated'
     return { state, branch, pr }
   }
+  // A release ticket's merge into epic/<name> — its only integration trace,
+  // since release tickets open no pull request of their own. Checked before
+  // the OPEN branch so a stale pull request never outranks a landed merge.
+  if (onEpicBranch.has(ticket.id)) return { state: 'integrated', branch, pr }
   if (pr && pr.state === 'OPEN') return { state: 'in-review', branch, pr }
   if (entry?.outcome === 'BLOCKED' || entry?.outcome === 'ABANDONED') return { state: 'blocked', branch, pr }
   if (entry?.outcome === 'DONE') return { state: 'done', branch, pr }
   if (branches.has(branch) && commitsAhead(branch) > 0) return { state: 'in-progress', branch, pr }
   return { state: 'todo', branch, pr }
 }
+
+const NO_IDS = new Set()
 
 function board(epicFilter) {
   const allEpics = discoverEpics()
@@ -360,8 +373,12 @@ function board(epicFilter) {
   const tickets = []
   for (const epic of epics) {
     const status = parseStatus(epic)
+    // Only release epics pay the extra log call, and only when their epic
+    // branch exists on the remote — the remote, because integration is the
+    // driver's push, and a local-only epic branch proves nothing.
+    const onEpicBranch = epic.delivery === 'release' ? idsOnRef(`origin/epic/${epic.epic}`).ids : NO_IDS
     for (const t of parseTickets(epic)) {
-      tickets.push({ ...t, ...resolveState(t, status, branches, prs, onMain.ids) })
+      tickets.push({ ...t, ...resolveState(t, status, branches, prs, onMain.ids, onEpicBranch) })
     }
   }
 

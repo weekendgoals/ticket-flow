@@ -485,7 +485,8 @@ request is too big to review, the epic was too big to plan that way.
 The stacking temptation itself was later answered structurally rather than
 prohibitively: a release epic gives "nothing waits" legitimately — tickets
 integrate into `epic/<name>` without a human between them — while keeping
-per-ticket pull requests, per-ticket review, and one human release gate.
+per-ticket branches, per-ticket review, and one human release gate on the
+epic's only pull request.
 That is why serial-to-main stopped being the universal default: the record
 showed disciplined users stacking anyway (Q-10–Q-17), which was the rule
 mismeasuring their throughput needs, not the users misbehaving.
@@ -512,7 +513,7 @@ improvisation surface the script exists to remove, and the attended lane
 
 Moving the loop into code also moved the judge. The driver hires each
 ticket's reviewer — the supervisor pattern one level up — and the worker
-stops at its opened pull request without reviewing or merging anything it
+stops at its pushed branch without reviewing or merging anything it
 wrote. That closes the last place where the party under review still picked
 its own judge, and it makes the merge gate mechanical: the reviewer returns
 findings as structured data, and code, not prose, decides that an Important
@@ -533,6 +534,37 @@ the number the worker reported kept only as a cross-check, because "which
 pull request does this ticket own" is exactly the kind of question a
 confident wrong answer ends badly. Self-reports still fill the record; they
 just no longer open the gate.
+
+## Why release tickets stopped opening pull requests
+
+Through 2026-08-18 every release ticket opened a pull request against the
+epic branch, and the run merged it by number. The user's own read of the
+flow named what that bought: nothing. No human reads a per-ticket pull
+request in an unattended run — the human's gate is the release pull request
+— and the reviewer never read one either: review reads the pushed branch's
+commit range. What the pull request did add was ceremony (create, resolve,
+merge — three agent steps around an object with no reader) and a mutable
+indirection: a pull request's head and base can move between the moment the
+driver verifies them and the moment an agent merges by number, which an
+external review flagged as the run's one time-of-check gap.
+
+Removing it made the merge boundary stronger, not weaker. The driver now
+reads the pushed branch's head SHA in its read-only resolve step and merges
+**exactly that commit** — `git merge --no-ff <sha>` — so the merged diff is
+provably the one the review addendum and the fix-bounds check measured; a
+SHA, unlike a branch name or a pull-request number, cannot be retargeted.
+The board's `integrated` state, which had read "pull request merged with the
+epic branch as base", now derives from the same source `shipped` always
+used: ID-prefixed commit subjects, reaching `origin/epic/<name>` instead of
+the default branch — one detection mechanism at two refs, and one less
+dependency on `gh` in the unattended path.
+
+The trade is named. A per-ticket pull request was a place PR-triggered CI
+ran before integration, and a per-ticket discussion surface; both remain
+exactly what incremental delivery offers, and a release epic's CI runs on
+the release pull request where the human decides. Attended release tickets
+(the `/flow:ticket` escape hatch) merge the same way: by the verified SHA,
+never a name.
 
 ## The admission test
 

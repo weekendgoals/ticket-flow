@@ -33,7 +33,7 @@ go through the flow, one-off work goes through `/flow:quick` into
   plan-page renderer `node --test plugins/flow/scripts/plan-page.test.mjs`
   (`# pass 7`) — both pure rendering tests over fixture JSON, no git
   needed. And the run driver has
-  `node --test plugins/flow/workflows/run-epic.test.mjs` (`# pass 83`) —
+  `node --test plugins/flow/workflows/run-epic.test.mjs` (`# pass 78`) —
   which evaluates `run-epic.mjs`'s module body with stubbed agents and
   asserts the sequence, the gate branches and the halt mapping. It needs
   nothing but Node: no git, no network, no filesystem beyond the script.
@@ -94,11 +94,13 @@ test file path explicitly.
   `plan-reviewer` write instructions.
 - **A human merges into main; nothing runs after that merge.** Absolute in
   every mode: no agent merges or pushes toward the default branch, and no
-  skill gains a post-merge step. The one sanctioned agent merge **of a pull
-  request** is into the epic branch inside a release epic — declared
+  skill gains a post-merge step. The one sanctioned agent merge is **a
+  ticket branch into its epic branch** inside a release epic — declared
   `Delivery: release` (ticket skill step 10; in an unattended run, the run
-  workflow's merge step after its coded gate) — there, the human gate moves
-  to the release pull request, and
+  workflow's merge step after its coded gate), always by the branch's
+  verified head SHA, never a name that could move. Release tickets open no
+  pull request of their own — the release pull request is the epic's only
+  one, the human gate moves there, and
   branch protection on main is the hard floor under the rule. Refreshing an
   epic branch **from** the default branch (ticket skill step 3, and the run
   loop's refresh in `workflows/run-epic.mjs`) is the safe direction — main is

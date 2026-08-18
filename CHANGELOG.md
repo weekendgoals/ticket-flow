@@ -8,6 +8,29 @@ with one version and date.
 
 ## Unreleased
 
+- **Release tickets no longer open pull requests — the merge is a verified
+  SHA, and the release pull request is the epic's only one**
+  (`workflows/run-epic.mjs`, `scripts/tickets.mjs`, the ticket skill's
+  steps 0/9/10, the run skill, the epic skill's Delivery text, README,
+  METHODOLOGY "Why release tickets stopped opening pull requests"). A
+  per-ticket pull request in a release epic had no reader — the human's
+  gate is the release pull request, and review reads the pushed branch —
+  while adding three agent steps and a mutable indirection: a pull
+  request's head and base can move between the driver's check and a merge
+  by number (the external review's time-of-check finding). Now the worker
+  stops at its pushed branch (`branch-pushed` replaces `pr-opened`), the
+  resolve step reports `git rev-parse origin/<branch>` alongside the
+  addendum count, and the merge agent runs a fixed sequence merging
+  **exactly that SHA** into `epic/<name>` — a SHA cannot be retargeted, so
+  the merged diff is provably the one the review and the fix-bounds check
+  measured. The board's `integrated` state now derives from ID-prefixed
+  commit subjects reaching `origin/epic/<name>` — the same mechanism as
+  `shipped`, at the epic ref — with the old PR-merged detection kept for
+  epics run before this change; the unattended path no longer needs `gh`
+  for anything but the release pull request. Attended release tickets
+  (ticket skill step 10) merge the same way, by the verified SHA. The
+  trade is named in METHODOLOGY: per-ticket PR-triggered CI and a
+  per-ticket discussion surface remain what incremental delivery offers.
 - **CI runs the whole verification surface, and the run skill recommends a
   separate automation identity** (`.github/workflows/tests.yml`, CLAUDE.md
   Commands, `skills/run/SKILL.md` step 3). GitHub Actions now runs every

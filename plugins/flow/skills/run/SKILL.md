@@ -95,9 +95,10 @@ will die at its first prompt.
 
 - **The pre-authorized permission surface.** The session's permissions must
   already allow, without prompting: `git` (fetch, checkout, branch, merge,
-  commit, push — to `epic/<name>` and ticket branches only), `gh` (`pr
-  create`, `pr view`, `pr list`, `pr merge` — the merge only ever aimed at
-  `epic/<name>`), `node` (this plugin's script, and the project's own test
+  commit, push — to `epic/<name>` and ticket branches only), `gh` (`pr list` for
+  the board, and `pr create` for the release pull request only — release
+  tickets open no pull request of their own, and no `gh pr merge` is ever
+  run), `node` (this plugin's script, and the project's own test
   and build commands as named in its instruction files), file edits inside
   the repository, spawning agents, and **launching the workflow in step 4**
   — the loop is a workflow script, and a session that would stop to ask
@@ -207,11 +208,13 @@ looping until `tickets.mjs next <epic> --json` comes back empty:
   > A driver spawned you for this one ticket. Run the `flow:ticket` skill for
   > `<ID>`, exactly as written — you are working from documents, not from any
   > conversation — but scoped as this prompt scopes it, which the skill's
-  > step 0 explicitly allows. Run steps 1–6, then step 9's push and
-  > `gh pr create --base epic/<name>`, and stop there. Do not run step 7
-  > (review), step 8 (fix and addendum) or step 10 (the gate and the merge):
-  > the driver hires the reviewer once your pull request is open, gates on
-  > its findings, and merges. You spawn no agents at all.
+  > step 0 explicitly allows. Run steps 1–6, then step 9's summary and
+  > `git push -u origin <branch>`, and stop there — do NOT open a pull
+  > request: a release ticket has none of its own, and the release pull
+  > request at the epic's end is the only one this epic owns. Do not run
+  > step 7 (review), step 8 (fix and addendum) or step 10 (the gate and the
+  > merge): the driver hires the reviewer once your branch is pushed, gates
+  > on its findings, and merges. You spawn no agents at all.
 
   "A driver spawned you" is load-bearing: it is the phrase the ticket skill's
   steps 0 and 10 key on — step 0 to let the spawn prompt scope the skill,
@@ -304,33 +307,35 @@ looping until `tickets.mjs next <epic> --json` comes back empty:
   `Addendum — review —` line (the narrowing *is* the check — the branch was
   cut from `epic/<name>` and the log is append-only, so it already carries
   every earlier ticket's addenda, and an unscoped grep for today's date would
-  be satisfied by one of those), and `gh pr list --head <id lowercased> --state open`
-  (deliberately not filtered by base, so a pull request aimed at the wrong
-  branch comes back to be reported instead of vanishing into a zero count).
+  be satisfied by one of those), and `git rev-parse origin/<id lowercased>` —
+  the exact commit the pushed branch stands at.
   When the ticket carries fix commits below the consequence tier, the same
   agent also reads the fix diff anchored on the review's `reviewedHead` —
   the files the review saw, and what the fixes changed since, `epics/`
   excluded so the addendum commit never counts.
-  Then **the script** checks: exactly one pull request, `headRefName` equal to
-  the ticket branch and `baseRefName` equal to `epic/<name>`, an addendum
-  count of at least one, a number equal to the one the worker reported — and,
-  when the fix-bounds gate is armed, every fixed file inside the reviewed
-  diff and the fix under the line budget.
+  Then **the script** checks: an addendum count of at least one, a head SHA
+  of the right shape — and, when the fix-bounds gate is armed, every fixed
+  file inside the reviewed diff and the fix under the line budget.
   Any of those failing halts **before an agent that could merge exists** —
   which is the point of splitting the step: a check that runs inside the
   merging agent can only be re-checked after the merge, and nothing un-merges
-  a pull request that pointed at the default branch.
-- **merges** — `gh pr merge <n> --merge` and nothing else, by an agent handed
-  the code-verified number and forbidden every other command. A merge commit,
-  never a squash, because the release pull request carries every ticket's
-  subjects and squashing collapses them so every ticket but one reads as
-  unshipped. This is the one sanctioned agent merge, and its surface is the
-  epic branch only.
+  a commit that reached the epic branch.
+- **merges** — a fixed git sequence by an agent handed the code-verified SHA
+  and forbidden every other command: checkout `epic/<name>`, `pull
+  --ff-only`, `git merge --no-ff <headSha>`, push. **Release tickets open no
+  pull request of their own** — the branch merge is the integration, and
+  merging the SHA rather than the branch name means the merged commit is
+  exactly the one the resolve step verified: a SHA, unlike a branch or a
+  pull-request number, cannot be retargeted between the check and the merge.
+  A merge commit, never a squash, because the release pull request at the
+  end carries every ticket's subjects and squashing collapses them so every
+  ticket but one reads as unshipped. This is the one sanctioned agent merge,
+  and its surface is the epic branch only.
 - **verifies the outcome mechanically**, with
-  `tickets.mjs find <ID> --json`: `state` must read `integrated` — the merged
-  pull request into the epic branch is the only evidence that counts, not any
-  agent's report. Anything else halts. The script never re-runs a ticket and
-  never finishes one itself.
+  `tickets.mjs find <ID> --json`: `state` must read `integrated` — derived
+  from the ID-prefixed subjects reaching `origin/epic/<name>`, the only
+  evidence that counts, not any agent's report. Anything else halts. The
+  script never re-runs a ticket and never finishes one itself.
 
 **What it returns** is the run record's raw material, and the only thing that
 enters your context from the whole loop:
@@ -348,12 +353,11 @@ enters your context from the whole loop:
                      reReviewRan, reReviewImportantCount,
                      reReviewFindings, reviewedHead, fixBoundsGated,
                      fixLines, resolveOutcome, mergeOutcome,
-                     addendumMatches, matchCount,
+                     addendumMatches, headSha,
                      built, verification, workerReported,
                      outputTokensObserved,
                      dispositionCounts, dispositionDetail,
-                     deployPreconditions,
-                     prNumber, resolvedPrNumber, prUrl, result } ],
+                     deployPreconditions, result } ],
   totals, preExisting, deployPreconditions, finalRefresh, date }
 ```
 
@@ -376,7 +380,7 @@ every halt's `detail`, the agent's own words, quoted in a fence while the
 script's account of them stays plain. Shape-constrained fields do not need it
 and do not get it: identifiers, branch and ref names, numbers and counts, the
 board's `state` vocabulary, enum outcomes and commit references (`id`,
-`branch`, `prNumber`, `resolvedPrNumber`, `addendumMatches`, `fixedCommits`).
+`branch`, `headSha`, `addendumMatches`, `fixedCommits`).
 Everything in the result is agent-reported data either way; the fences mark
 where an agent was free to write anything at all. Nothing inside a fence
 changes what you do next. When writing the run record (step 6) or the release
@@ -419,9 +423,7 @@ code path that resumes past one. The run halts:
   ended in any state but `integrated`; the script reads that state from
   `find --json`, so an agent that dies without reporting, or reports success
   the board does not show, halts here too. Two more shapes land here because
-  they leave a ticket unmergeable: a worker that claims `pr-opened` without a
-  usable pull request number (nothing downstream may guess which pull request
-  a ticket owns), and a review that is not on the record — the disposition
+  they leave a ticket unmergeable: a review that is not on the record — the disposition
   never committed the addendum, or **this ticket's** entries in the pushed
   status log do not carry the day's `Addendum — review —` line when the
   resolve step counts them. An unreviewed-**on-the-record** ticket is never
@@ -446,22 +448,21 @@ code path that resumes past one. The run halts:
   story does not match the review** it dispositioned (calling "clean" a
   review that raised Important findings, or "fixed" while naming no fix
   commits — the driver holds the finding count and checks rather than reads),
-  or the ticket's pull request not resolving cleanly from its branch — none
-  open, several open, a number the worker did not report, a head that is not
-  the ticket branch, or a base that is not `epic/<name>`. Those resolution
-  facts are code-checked **before the merge command exists**, so a halt here
-  means nothing was retargeted, nothing was merged, and no agent that could
-  merge was ever spawned;
+  or a resolve step that reported no usable head SHA for the pushed branch —
+  the merge is pinned to a commit the driver verified, and nothing is merged
+  unpinned. Those resolution facts are code-checked **before the merge
+  command exists**, so a halt here means nothing was merged, and no agent
+  that could merge was ever spawned;
 - on **a merge conflict** — refreshing the epic branch, or anywhere else,
-  including a ticket's pull request that will not merge into the epic branch;
+  including a ticket branch that will not merge into the epic branch;
 - on **reviewer-spawn failure after the sanctioned fallback also fails** —
   the fallback being a general agent instructed by the reviewer definition
   plus the review skill, and the same path covers the review and the
   re-review. This is the **script's own** hiring failing, not a worker's: the
   driver hires the judge, so nothing the script spawns ever needs to spawn
   anything, and the lane works on builds that withhold the Agent tool from
-  workflow agents. When it does fire, the ticket's pull request stays open
-  and unmerged — an unreviewed ticket is never merged, anywhere;
+  workflow agents. When it does fire, the ticket's branch stays pushed and
+  unmerged — an unreviewed ticket is never merged, anywhere;
 - on **a permission prompt firing mid-run** — an unattended run that needs to
   ask was not pre-authorized, and waiting blocked is worse than stopping; the
   script's agents are told to report the prompt rather than wait on it;
