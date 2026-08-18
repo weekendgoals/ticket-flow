@@ -36,6 +36,13 @@ quoted.
   reversal condition. If nothing observable could prove the epic pointless,
   sign-off is being asked to approve unfalsifiable work — and the retro will
   have nothing to check.
+- **A requirement no ticket reaches, or a ticket no requirement needs.**
+  When the draft carries a numbered `Requirements:` block, walk it both
+  ways: every requirement must be reachable through some ticket's
+  acceptance criteria, and a ticket serving no requirement is scope nobody
+  asked for. Requirements that read as if reworded to fit the slicing —
+  the WHAT bent toward the HOW — are a finding of their own: the tickets
+  implement the requirements, never the reverse.
 - **A ticket too big to review.** Acceptance criteria that will not fit a
   handful of bullets, or a scope that plainly implies a diff far past ~400
   changed lines. Name the seam to split it on if you see one.

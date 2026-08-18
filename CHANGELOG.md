@@ -8,6 +8,26 @@ with one version and date.
 
 ## Unreleased
 
+- **Three Spec Kit-inspired planning refinements** (`skills/epic/SKILL.md`
+  step 3 and template, `agents/plan-reviewer.md`, `skills/retro/SKILL.md`
+  step 4, `scripts/plan-page.mjs` + test, METHODOLOGY). Adapted from
+  GitHub's Spec Kit after a comparative read; each passed the admission
+  test, and the rest of Spec Kit (constitution, analyze, in-session
+  implement) was deliberately not adopted. One: a **clarify pass** before
+  the shape checkpoint — the planner sweeps the brief for underspecified
+  points by category and asks the user the questions whose answers change
+  the shape, batched and bounded, recording every answer in the documents;
+  questions that do not change the shape ride to sign-off as open
+  questions. Two: an optional numbered **`Requirements:` preamble block**
+  — the WHAT held apart from the HOW, written before slicing and never
+  bent to it; the plan reviewer now walks it both ways (a requirement no
+  ticket reaches, a ticket no requirement needs, requirements reworded
+  toward the implementation), and the plan page renders it as its own
+  numbered section. Deliberately part of the preamble, so `brief` hands
+  every worker the WHAT its ticket serves. Three: a sixth retro mining
+  question adapted from converge — the delta between the documents'
+  promises and what git shipped, both ways, because a gap only the diff
+  knows about is debt with no ledger entry.
 - **All three roles' models configure in one place, and the configuration
   surface is documented as one table** (`scripts/tickets.mjs`,
   `skills/epic/SKILL.md` steps 3-4 and template, README). A new optional
