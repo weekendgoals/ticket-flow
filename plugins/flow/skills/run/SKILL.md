@@ -161,7 +161,8 @@ Workflow({
     today: "<YYYY-MM-DD, from your own clock>",
     workerModel: "<modes[<name>].workerModel — omit the key when absent>",
     reviewerModel: "<modes[<name>].reviewerModel — omit the key when absent>",
-    consequencePaths: <modes[<name>].consequencePaths — omit the key when null>
+    consequencePaths: <modes[<name>].consequencePaths — omit the key when null>,
+    ticketBudget: <modes[<name>].ticketBudget — omit the key when null>
   }
 })
 ```
@@ -337,6 +338,7 @@ enters your context from the whole loop:
                      fixLines, resolveOutcome, mergeOutcome,
                      addendumMatches, matchCount,
                      built, verification, workerReported,
+                     outputTokensObserved,
                      dispositionCounts, dispositionDetail,
                      deployPreconditions,
                      prNumber, resolvedPrNumber, prUrl, result } ],
@@ -451,6 +453,17 @@ code path that resumes past one. The run halts:
 - on **a permission prompt firing mid-run** — an unattended run that needs to
   ask was not pre-authorized, and waiting blocked is worse than stopping; the
   script's agents are told to report the prompt rather than wait on it;
+- on **a ticket's pass exceeding the epic's per-ticket token budget** — only
+  when the epic's preamble declares `Ticket budget: <n>` (output tokens; the
+  script refuses to start if the runtime exposes no meter to enforce it, and
+  refuses a non-integer value). The check runs **after** the merge is
+  confirmed, because nothing un-merges: the overspending ticket stays
+  integrated, and the run stops before the next ticket — a ticket whose
+  spend leaves its class is a planning signal a human reads, not a cost the
+  run absorbs silently. Each integrated ticket's meter delta also lands in
+  `ticketRecords[].outputTokensObserved` (output tokens only, meter-observed,
+  never any agent's report) either way — planning evidence for pricing the
+  next epic, distinct from the run record's transcript-summed Tokens line;
 - on **a nonzero exit from any command the run issues as a step, except those
   this skill explicitly marks tolerated** — the one tolerated shape is a
   **404 or 403 from step 3's two protection probes**, the statuses that check

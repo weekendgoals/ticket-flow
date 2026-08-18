@@ -33,7 +33,7 @@ const ARGS = { epic: 'payments', defaultBranch: 'main', repoRoot: '/repo', plugi
 // returns what that agent produces; returning null models an agent that died
 // (which agent() does for real), and returning undefined fails the test loudly
 // rather than letting an unplanned spawn pass unnoticed.
-async function drive(reply, args = ARGS) {
+async function drive(reply, args = ARGS, budget = null) {
   const calls = []
   const logs = []
   const agent = async (prompt, opts) => {
@@ -43,11 +43,18 @@ async function drive(reply, args = ARGS) {
     return r
   }
   try {
-    const out = await body(agent, null, null, m => logs.push(String(m)), () => {}, args, null)
+    const out = await body(agent, null, null, m => logs.push(String(m)), () => {}, args, budget)
     return { out, calls, logs, labels: calls.map(c => c.label) }
   } catch (e) {
     return { out: { threw: e.message }, calls, logs, labels: calls.map(c => c.label) }
   }
+}
+
+// A budget meter whose spent() grows by `step` output tokens per reading —
+// two readings bracket each ticket, so a ticket's observed delta is `step`.
+const meter = step => {
+  let s = 0
+  return { total: null, spent: () => (s += step), remaining: () => Infinity }
 }
 
 const call = (r, label) => r.calls.find(c => c.label === label)
@@ -967,6 +974,54 @@ test('every agent that can write is told the default branch is never a target', 
   // The reviewers are read-only instead: the rule they carry is the stronger one.
   for (const label of ['review:PAY-1', 're-review:PAY-1']) {
     assert.match(call(r, label).prompt, /you never fix|You NEVER fix/, label)
+  }
+})
+
+// ---- the per-ticket token budget --------------------------------------------
+
+test('a ticket over the epic budget stays merged, and the run halts before the next ticket', async () => {
+  // spent() is read twice per pass (start, after verify), so each ticket's
+  // observed delta equals the meter step: 60k against a 50k budget.
+  const r = await drive(oneTicket(), { ...ARGS, ticketBudget: 50000 }, meter(60000))
+  assert.equal(r.out.outcome, 'halted')
+  assert.equal(r.out.haltedOn.stopCondition, "a ticket's pass exceeding the epic's per-ticket token budget")
+  assert.match(r.out.haltedOn.detail, /spent 60000 output tokens against the epic's budget of 50000/)
+  assert.match(r.out.haltedOn.detail, /stays merged/)
+  // The overspending ticket integrated first — the ceiling stops the run,
+  // never un-merges the work.
+  assert.equal(r.out.ticketRecords[0].result, 'integrated')
+  assert.equal(r.out.ticketRecords[0].outputTokensObserved, 60000)
+  assert.equal(r.out.totals.ticketsIntegrated, 1)
+})
+
+test('a ticket under the budget completes, and its meter delta lands in the record', async () => {
+  const r = await drive(oneTicket(), { ...ARGS, ticketBudget: 80000 }, meter(60000))
+  assert.equal(r.out.outcome, 'completed')
+  assert.equal(r.out.ticketRecords[0].outputTokensObserved, 60000)
+})
+
+test('the meter records per-ticket spend even with no budget declared', async () => {
+  const r = await drive(oneTicket(), ARGS, meter(42000))
+  assert.equal(r.out.outcome, 'completed')
+  assert.equal(r.out.ticketRecords[0].outputTokensObserved, 42000)
+})
+
+test('without a meter the record carries null, never a guess', async () => {
+  const r = await drive(oneTicket())
+  assert.equal(r.out.ticketRecords[0].outputTokensObserved, null)
+})
+
+test('a budget the runtime cannot meter refuses the run before spending an agent', async () => {
+  const r = await drive(() => undefined, { ...ARGS, ticketBudget: 50000 }, null)
+  assert.match(r.out.threw, /no budget meter/)
+  assert.equal(r.calls.length, 0)
+})
+
+test('an unusable budget value refuses the run', async () => {
+  for (const bad of [0, -5, 1.5, 'lots']) {
+    const r = await drive(() => undefined, { ...ARGS, ticketBudget: bad }, meter(1))
+    assert.match(r.out.threw, /ticketBudget must be a positive integer/, String(bad))
+    assert.equal(r.calls.length, 0)
   }
 })
 

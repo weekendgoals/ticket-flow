@@ -124,11 +124,26 @@ function parsePreamble(ticketsDoc) {
     const globs = m[1].split(',').map(s => s.trim().split(/\s+/)[0]).filter(Boolean)
     return globs.length ? globs : null
   }
+  // "Ticket budget" is the fifth optional line: a per-ticket output-token
+  // ceiling for unattended runs — digits with an optional k/m suffix
+  // (`250000`, `250k`, `1m`), because a budget is a number humans write. The
+  // value must end at a word boundary: a bare `\d+` grab would read `250k`
+  // as 250 and set a ceiling a thousand times too low, silently — the
+  // lookahead makes an unrecognised suffix parse as absent, which the
+  // doctor near-miss scan then flags. The run driver halts after any ticket
+  // whose pass exceeds the ceiling; this script only parses it, so the
+  // configuration lives in the versioned epic document like every other.
+  const budget = (() => {
+    const v = grab('Ticket budget', '\\d+[km]?(?=\\s|$)')
+    if (!v) return null
+    return parseInt(v, 10) * (v.endsWith('k') ? 1e3 : v.endsWith('m') ? 1e6 : 1)
+  })()
   return {
     delivery: grab('Delivery') ?? 'incremental',
     reviewerModel: grab('Reviewer model', '[A-Za-z0-9._-]+'),
     workerModel: grab('Worker model', '[A-Za-z0-9._-]+'),
     consequencePaths: grabPathList('Consequence paths'),
+    ticketBudget: budget,
   }
 }
 
@@ -538,14 +553,14 @@ function doctor() {
   // old two-line syntax ("Release mode:" / "Run mode:") is in the near set
   // deliberately: those labels parse as nothing at all now, and a preamble
   // written in them would silently run incremental.
-  const declNear = /^[^A-Za-z]*\b(delivery|(reviewer|worker)\s+model|consequence\s+paths|(release|run)\s+mode)\b/i
-  const declStrict = /^Delivery\s*:\s*[A-Za-z-]+|^(Reviewer|Worker) model\s*:\s*[A-Za-z0-9._-]+|^Consequence paths\s*:\s*\S+/i
+  const declNear = /^[^A-Za-z]*\b(delivery|(reviewer|worker)\s+model|consequence\s+paths|ticket\s+budget|(release|run)\s+mode)\b/i
+  const declStrict = /^Delivery\s*:\s*[A-Za-z-]+|^(Reviewer|Worker) model\s*:\s*[A-Za-z0-9._-]+|^Consequence paths\s*:\s*\S+|^Ticket budget\s*:\s*\d+[km]?(\s|$)/i
   for (const epic of epics) {
     if (!DELIVERIES.has(epic.delivery))
       add('warn', `${epic.epic}: unrecognised delivery "${epic.delivery}" (known: release, incremental) — skills reading it will not know how this epic ships`)
     readFileSync(epic.ticketsDoc, 'utf8').split(/^##\s/m)[0].split('\n').forEach((line, i) => {
       if (declNear.test(line) && !declStrict.test(line))
-        add('warn', `${epic.epic}/tickets.md:${i + 1} — looks like a declaration line but will not parse, so it silently defaults (needs "Delivery: release|incremental" / "Reviewer model: <value>" / "Worker model: <value>" / "Consequence paths: <glob>[, <glob>]" — label at line start, no formatting, value on the label's own line; "Release mode:"/"Run mode:" are not read at all): ${line.trim()}`)
+        add('warn', `${epic.epic}/tickets.md:${i + 1} — looks like a declaration line but will not parse, so it silently defaults (needs "Delivery: release|incremental" / "Reviewer model: <value>" / "Worker model: <value>" / "Consequence paths: <glob>[, <glob>]" / "Ticket budget: <digits, optional k or m suffix>" — label at line start, no formatting, value on the label's own line; "Release mode:"/"Run mode:" are not read at all): ${line.trim()}`)
     })
   }
 
@@ -639,6 +654,7 @@ function ticketFacts(data, t) {
     reviewerModel: epic.reviewerModel,
     workerModel: epic.workerModel,
     consequencePaths: epic.consequencePaths,
+    ticketBudget: epic.ticketBudget,
     repoRoot,
     epicDir: epic.dir,
     ticketsDoc: epic.ticketsDoc,
@@ -761,7 +777,7 @@ switch (cmd) {
         modes: Object.fromEntries(
           data.epics.map((e) => [
             e.epic,
-            { delivery: e.delivery, reviewerModel: e.reviewerModel, workerModel: e.workerModel, consequencePaths: e.consequencePaths },
+            { delivery: e.delivery, reviewerModel: e.reviewerModel, workerModel: e.workerModel, consequencePaths: e.consequencePaths, ticketBudget: e.ticketBudget },
           ]),
         ),
         duplicates: data.duplicates,

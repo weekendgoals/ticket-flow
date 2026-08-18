@@ -8,6 +8,23 @@ with one version and date.
 
 ## Unreleased
 
+- **A per-ticket token budget, enforced by the meter**
+  (`workflows/run-epic.mjs`, `scripts/tickets.mjs`, the run skill's steps
+  4-5). A new optional epic preamble line — `Ticket budget: 250000` (or
+  `250k` / `1m`; an unrecognised suffix parses as absent and doctor flags
+  it, because a bare digit grab would have read `250k` as a ceiling a
+  thousand times too low) — rides `find`/`list --json` like the other
+  configuration lines and reaches the driver as `args.ticketBudget`. The
+  driver measures each ticket's pass against the workflow runtime's own
+  `budget.spent()` meter — the one observer of spend no agent can
+  misreport — records the delta in `ticketRecords[].outputTokensObserved`
+  (with or without a ceiling: automatic per-ticket economics), and halts
+  on a new stop condition, "a ticket's pass exceeding the epic's
+  per-ticket token budget", **after** the merge is confirmed: nothing
+  un-merges, so the overspending ticket stays integrated and the run
+  stops before the next one. A budget the runtime cannot meter refuses
+  the run at argument validation — a ceiling that silently cannot fire
+  is worse than none.
 - **The ticket reviewer is now blind and cannot edit; the plan reviewer
   cannot edit** (`agents/ticket-reviewer.md`, `agents/plan-reviewer.md`,
   METHODOLOGY "Why the reviewer is a separate agent"). From an external

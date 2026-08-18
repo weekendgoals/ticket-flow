@@ -116,6 +116,8 @@ Worker model: sonnet — implementation runs cheaper than planning.
 
 Consequence paths: src/auth/**, migrations/** — the risk list as globs.
 
+Ticket budget: 250000 — the run halts after any ticket spending past this.
+
 ## G-1 — expand the schema
 
 **Scope.** Expansion.
@@ -502,8 +504,8 @@ test('the Delivery line parses tolerantly and exposes in find and list', () => {
   assert.equal(a.delivery, 'incremental')
 
   const data = JSON.parse(run(repo, 'list', '--json'))
-  assert.deepEqual(data.modes.gamma, { delivery: 'release', reviewerModel: 'opus', workerModel: 'sonnet', consequencePaths: ['src/auth/**', 'migrations/**'] })
-  assert.deepEqual(data.modes.alpha, { delivery: 'incremental', reviewerModel: null, workerModel: null, consequencePaths: null })
+  assert.deepEqual(data.modes.gamma, { delivery: 'release', reviewerModel: 'opus', workerModel: 'sonnet', consequencePaths: ['src/auth/**', 'migrations/**'], ticketBudget: 250000 })
+  assert.deepEqual(data.modes.alpha, { delivery: 'incremental', reviewerModel: null, workerModel: null, consequencePaths: null, ticketBudget: null })
 })
 
 test('a Worker model line pins the implementer; absent, workers inherit the session', () => {
@@ -532,7 +534,7 @@ test('an unrecognised or near-miss Delivery line warns instead of silently defau
     assert.equal(data.modes.misdeclared.delivery, 'continuous', 'the raw value is exposed, not coerced')
     assert.deepEqual(
       data.modes['fancy-delivery'],
-      { delivery: 'incremental', reviewerModel: null, workerModel: null, consequencePaths: null },
+      { delivery: 'incremental', reviewerModel: null, workerModel: null, consequencePaths: null, ticketBudget: null },
       'a formatted Delivery line reads as absent, so the default applies',
     )
     const rows = JSON.parse(run(repo, 'doctor', '--json'))
@@ -559,7 +561,7 @@ test('the retired two-line syntax is flagged, not silently ignored', () => {
     const data = JSON.parse(run(repo, 'list', '--json'))
     assert.deepEqual(
       data.modes.oldstyle,
-      { delivery: 'incremental', reviewerModel: null, workerModel: null, consequencePaths: null },
+      { delivery: 'incremental', reviewerModel: null, workerModel: null, consequencePaths: null, ticketBudget: null },
       'the dead labels parse as nothing; the delivery default applies',
     )
     const rows = JSON.parse(run(repo, 'doctor', '--json'))
@@ -632,12 +634,53 @@ test('a Consequence paths line parses as a glob list, case preserved, prose igno
   }
 })
 
+test('a Ticket budget line parses digits with k/m suffixes; an unrecognised suffix reads as absent and is flagged', () => {
+  // The run driver enforces this as a per-ticket output-token ceiling; this
+  // script only parses and exposes it. The suffix boundary is load-bearing:
+  // a bare digit grab would read "250k" as 250 — a ceiling a thousand times
+  // too low, silently — so the value must end at whitespace, and anything
+  // else parses as absent for the doctor near-miss scan to flag.
+  const g = JSON.parse(run(repo, 'find', 'G-1', '--json'))
+  assert.equal(g.ticketBudget, 250000, 'prose after the number must not break the parse')
+  assert.equal(JSON.parse(run(repo, 'find', 'A-2', '--json')).ticketBudget, null, 'absent is null, never a default')
+
+  mkdirSync(join(repo, 'epics/kbudget'), { recursive: true })
+  writeFileSync(
+    join(repo, 'epics/kbudget/tickets.md'),
+    '# Kbudget\n\nTicket budget: 250k\n\n## KB-1 — suffixed budget\n\n**Scope.** K.\n',
+  )
+  mkdirSync(join(repo, 'epics/xbudget'), { recursive: true })
+  writeFileSync(
+    join(repo, 'epics/xbudget/tickets.md'),
+    '# Xbudget\n\nTicket budget: 250 tokens\n\nTicket budget as prose is fine.\n\n## XB-1 — spelled-out budget\n\n**Scope.** X.\n',
+  )
+  mkdirSync(join(repo, 'epics/badbudget'), { recursive: true })
+  writeFileSync(
+    join(repo, 'epics/badbudget/tickets.md'),
+    '# Badbudget\n\nTicket budget: 250x\n\n## BB-1 — mistyped suffix\n\n**Scope.** B.\n',
+  )
+  try {
+    const data = JSON.parse(run(repo, 'list', '--json'))
+    assert.equal(data.modes.kbudget.ticketBudget, 250000, 'the k suffix multiplies')
+    assert.equal(data.modes.xbudget.ticketBudget, 250, 'a bare number followed by prose parses as the number')
+    assert.equal(data.modes.badbudget.ticketBudget, null, 'an unrecognised suffix must not parse as its digit prefix')
+    const rows = JSON.parse(run(repo, 'doctor', '--json'))
+    assert.ok(
+      rows.some((r) => r.level === 'warn' && r.msg.includes('badbudget/tickets.md') && /will not parse/.test(r.msg)),
+      'the near-miss scan flags the unparseable budget',
+    )
+    assert.ok(rows.every((r) => !(r.msg || '').includes('kbudget/tickets.md')), 'a suffixed budget is well-formed and doctor-silent')
+  } finally {
+    for (const e of ['kbudget', 'xbudget', 'badbudget']) rmSync(join(repo, `epics/${e}`), { recursive: true, force: true })
+  }
+})
+
 test('an epic with no declaration lines defaults to incremental delivery', () => {
   mkdirSync(join(repo, 'epics/delta'), { recursive: true })
   writeFileSync(join(repo, 'epics/delta/tickets.md'), '# Delta\n\n## D-1 — bare epic\n\n**Scope.** Bare.\n')
   try {
     const data = JSON.parse(run(repo, 'list', '--json'))
-    assert.deepEqual(data.modes.delta, { delivery: 'incremental', reviewerModel: null, workerModel: null, consequencePaths: null })
+    assert.deepEqual(data.modes.delta, { delivery: 'incremental', reviewerModel: null, workerModel: null, consequencePaths: null, ticketBudget: null })
   } finally {
     rmSync(join(repo, 'epics/delta'), { recursive: true, force: true })
   }
@@ -651,7 +694,7 @@ test('the Delivery line parses case-insensitively', () => {
   )
   try {
     const data = JSON.parse(run(repo, 'list', '--json'))
-    assert.deepEqual(data.modes.shout, { delivery: 'release', reviewerModel: null, workerModel: null, consequencePaths: null })
+    assert.deepEqual(data.modes.shout, { delivery: 'release', reviewerModel: null, workerModel: null, consequencePaths: null, ticketBudget: null })
   } finally {
     rmSync(join(repo, 'epics/shout'), { recursive: true, force: true })
   }
@@ -676,7 +719,7 @@ test('a value-less label line reads as absent, never the next paragraph\'s first
     const data = JSON.parse(run(repo, 'list', '--json'))
     assert.deepEqual(
       data.modes.bare,
-      { delivery: 'incremental', reviewerModel: null, workerModel: null, consequencePaths: null },
+      { delivery: 'incremental', reviewerModel: null, workerModel: null, consequencePaths: null, ticketBudget: null },
       'a value-less label must read as absent (incremental default / null), never scavenge prose',
     )
     // And doctor's near-miss wording is true of these lines: they will not

@@ -3,7 +3,7 @@ export const meta = {
   description:
     "The /flow:run driver loop as code — code-controlled, agent-executed: refresh epic/<name> and take the next ticket in document order, spawn a worker that stops at its opened pull request, read the diff's file list and floor the review tier in code, hire the reviewer, gate on its findings, re-review any fix commits, resolve and merge the ticket's pull request from the branch name, confirm the merge landed — and halt on any stop condition instead of improvising past it",
   whenToUse:
-    'Invoked by the flow:run skill AFTER it has resolved the epic, refused anything but Delivery: release, verified the sign-off traces on origin/epic/<name>, and checked the permission surface and branch protection (or its recorded waiver). Requires args {epic, defaultBranch, repoRoot, pluginRoot, today, workerModel?, reviewerModel?, consequencePaths?}. Returns {outcome: "completed"|"halted", haltedOn, ticketRecords, ...}; the calling session writes the run record and opens the release pull request. The driver hires the reviewer — the party under review never picks its judge — and the merge gate is a code check on the reviewer\'s structured findings. The script never merges, pushes, or retargets toward the default branch, and never opens or merges the release pull request.',
+    'Invoked by the flow:run skill AFTER it has resolved the epic, refused anything but Delivery: release, verified the sign-off traces on origin/epic/<name>, and checked the permission surface and branch protection (or its recorded waiver). Requires args {epic, defaultBranch, repoRoot, pluginRoot, today, workerModel?, reviewerModel?, consequencePaths?, ticketBudget?}. Returns {outcome: "completed"|"halted", haltedOn, ticketRecords, ...}; the calling session writes the run record and opens the release pull request. The driver hires the reviewer — the party under review never picks its judge — and the merge gate is a code check on the reviewer\'s structured findings. The script never merges, pushes, or retargets toward the default branch, and never opens or merges the release pull request.',
   phases: [
     { title: 'Refresh + select', detail: 'merge the default branch into epic/<name>, then read the next startable ticket — one agent, one command sequence' },
     { title: 'Ticket', detail: 'one fresh-context worker per ticket, stopping at its opened pull request' },
@@ -92,6 +92,24 @@ const globRe = g =>
   )
 const CONSEQUENCE_RES = consequencePaths.map(globRe)
 
+// The epic's optional per-ticket token budget (`Ticket budget:` preamble
+// line). Enforced against the workflow runtime's own meter — the one
+// observer of spend no agent can misreport — so a ceiling that cannot be
+// metered refuses the run rather than riding along unenforced.
+const METER = typeof budget !== 'undefined' && budget && typeof budget.spent === 'function' ? budget : null
+let ticketBudget = null
+if (ARGS.ticketBudget != null) {
+  if (!Number.isInteger(ARGS.ticketBudget) || ARGS.ticketBudget <= 0) {
+    throw new Error(`args.ticketBudget must be a positive integer of output tokens — got ${JSON.stringify(ARGS.ticketBudget)}. Fix the epic's \`Ticket budget:\` line.`)
+  }
+  if (!METER) {
+    throw new Error(
+      'args.ticketBudget was set, but this workflow runtime exposes no budget meter to enforce it — remove the Ticket budget line, or run on a build whose workflow runtime provides `budget`. A ceiling that silently cannot fire is worse than none.',
+    )
+  }
+  ticketBudget = ARGS.ticketBudget
+}
+
 const epicBranch = `epic/${epic}`
 const TICKETS = `node "${pluginRoot}/scripts/tickets.mjs"`
 // Ticket IDs are the plugin's load-bearing shape: [A-Z][A-Z0-9]*-\d+, branches
@@ -127,6 +145,7 @@ const STOP = {
   permissionPrompt: 'a permission prompt firing mid-run',
   nonzeroExit: 'a nonzero exit from any command the run issues as a step, except those this skill explicitly marks tolerated',
   fixBounds: 'a review-fix diff outside its bounds — touching files the review never saw, or exceeding the fix line budget',
+  ticketBudget: "a ticket's pass exceeding the epic's per-ticket token budget",
 }
 
 // ---- agent contracts --------------------------------------------------------
@@ -626,6 +645,11 @@ const refreshHalt = (r, where) => {
 }
 
 for (let i = 0; i < MAX_TICKETS && !halted; i++) {
+  // The meter snapshot for this pass: refresh through verify. Between agent
+  // calls the session is awaiting this workflow, so the delta is, to a close
+  // approximation, this ticket's own output-token spend.
+  const spentAtStart = METER ? METER.spent() : null
+
   // a. Refresh epic/<name> from the default branch — between every ticket, or
   //    the release merge becomes its own big-bang — and then take the first
   //    ticket `next` hands out: that is document order, and document order is
@@ -770,6 +794,7 @@ Report honestly: \`pr-opened\` ONLY if you pushed \`${branch}\` and saw \`gh pr 
     prNumber: '',
     prUrl: worker && worker.prUrl ? line(worker.prUrl) : '',
     workerReported: worker ? worker.result : 'no report',
+    outputTokensObserved: null,
     result: 'halted',
   }
   ticketRecords.push(record)
@@ -1355,6 +1380,25 @@ ${PROMPT_RULE}`,
   record.result = 'integrated'
   record.prUrl = record.prUrl || line(found.prUrl || '')
   log(`${id}: integrated (confirmed from the board, not from any agent's report).`)
+
+  // The per-ticket budget, checked AFTER integration: nothing un-merges, so
+  // the ticket that overspent stays merged — the ceiling stops the run from
+  // starting the NEXT ticket, because a ticket whose spend leaves its class
+  // is a planning signal a human reads, not a cost the run absorbs silently.
+  // The delta is meter-observed, never any agent's report.
+  if (METER) {
+    const spent = METER.spent() - spentAtStart
+    record.outputTokensObserved = spent
+    if (ticketBudget && spent > ticketBudget) {
+      halted = {
+        ticket: id,
+        stopCondition: STOP.ticketBudget,
+        where: 'the per-ticket token budget, after the merge was confirmed',
+        detail: `${id} integrated, but its pass spent ${spent} output tokens against the epic's budget of ${ticketBudget}. The work is merged and stays merged; the run stops before the next ticket so a human can decide whether this class of spend is expected — raise the epic's Ticket budget line, or look at why the ticket outgrew its plan.`,
+      }
+      break
+    }
+  }
 }
 
 if (!halted && ticketRecords.length >= MAX_TICKETS) {
