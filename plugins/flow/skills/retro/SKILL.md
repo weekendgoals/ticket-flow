@@ -96,6 +96,16 @@ from under `repoRoot`.
   line in the instruction file (or the epic ground-rule template) that would
   have prevented the class — that is how the reviewer's "project's own
   standards" clause accumulates substance.
+- **What does the codebase owe the documents — and the documents the
+  codebase?** The questions around this one mine the record; this one mines
+  the delta the record never wrote down. Compare what actually shipped (the
+  epic's ID-prefixed commits, read from git) against `tickets.md`'s
+  promises, both ways: scope that quietly did not ship with no Owed line
+  recording the debt, behaviour that shipped beyond any ticket's scope, and
+  instruction files the shipped work made stale. Each gap becomes a draft
+  ticket or an instruction-file edit in the proposals — a gap only the diff
+  knows about is debt with no ledger entry, and this question is the only
+  door it enters through.
 - **What did planning get wrong?** Tickets that blew past their size, criteria
   that turned out uncheckable, an order that backfired, scope lines that failed
   to stop a wander — compare `tickets.md`'s promises against the log's

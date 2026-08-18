@@ -67,6 +67,17 @@ test('an incremental sign-off does not carry the release warning', () => {
   assert.match(html, /its own pull request/)
 })
 
+test('a requirements list renders numbered, and only when present', () => {
+  const html = renderPlan({
+    ...shape,
+    requirements: ['when a refund is requested the system shall complete it without support', 'when the error rate passes 1% the system shall gate the flow off'],
+  })
+  assert.match(html, /Requirements — the WHAT, apart from the HOW/)
+  assert.match(html, /<ol class="reqs">/)
+  assert.match(html, /gate the flow off/)
+  assert.ok(!renderPlan(shape).includes('Requirements —'), 'no section without the data')
+})
+
 test('optional sections are absent when their data is', () => {
   const html = renderPlan({ epic: 'bare', tickets: [{ id: 'B-1', name: 'only ticket', line: 'does the thing' }] })
   assert.ok(!html.includes('Considered and rejected'))
