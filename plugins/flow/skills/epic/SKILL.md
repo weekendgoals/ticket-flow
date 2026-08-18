@@ -142,9 +142,10 @@ Delivery: release | incremental
 <one line, one decision: how this epic's work reaches the default branch.
 
 release — THE DEFAULT for a multi-ticket epic. After sign-off, each ticket
-implements, is reviewed, fixes findings and merges its own pull request into
-`epic/<name>` unattended (`/flow:run`); the human's two decisions are this
-sign-off and the release pull request at the end. Choose it because the
+implements, is reviewed, fixes findings and merges its branch into
+`epic/<name>` unattended (`/flow:run`) — no per-ticket pull request; the
+human's two decisions are this sign-off and the release pull request at the
+end, the epic's only one. Choose it because the
 valuable human gates are the plan and the release — a human approving every
 intermediate pull request is acting as a scheduler, not a judge. Bound it:
 roughly 3–6 tickets, days not weeks, and a release diff a human can
@@ -179,26 +180,44 @@ A ticket of a release epic can still be run one-at-a-time with
 one consequential ticket closely, not a planned mode.>
 
 Worker model: opus
-<OPTIONAL, parsed like Delivery. `Worker model: <model>` fixes the
-implementing workers' model; without the line each worker inherits the
-session that spawns it — and planning sessions often run the most expensive
-class available, which makes every worker inherit a price nobody decided
-on. `opus` is the recommended default: capable enough to implement and
-write the tests a reviewer must distrust, at a fraction of a top-tier
-session's price — plan on the stronger model, implement on this one. Drop
-the line only when inheriting the session model is a decision, not an
-accident. `Reviewer model: <model>` (a second optional line) fixes the
-ticket reviewer's model; otherwise the ticket skill's tiers choose it.
-`Consequence paths: <glob>[, <glob>]` (a third optional line, e.g.
-`src/auth/**, migrations/**`) names the paths whose changes always price
-review at the consequence tier in an unattended run — the risk list
-projected onto this repository's layout, applied by the run driver as a
-code floor under the worker's self-reported tier, so the reviewed party
-cannot price its own judge down. Globs only on this line (prose after a
-comma would parse as a glob); `**` crosses directory separators, `*` stays
-within one. The globs supplement the worker's judgment, never replace it —
-the semantic risk list still binds, and a reported `consequence` tier is
-honored with or without a matching glob.>
+
+<EVERY OTHER CONFIGURATION LINE IS OPTIONAL, and they all live here — one
+place, one syntax, all validated by `/flow:doctor`'s near-miss scan. Label
+at line start, value the first word after the colon, prose after the value
+welcome. The full set:
+
+`Worker model: <model>` — the implementing workers' model. Without it each
+worker inherits the session that spawns it, and planning sessions often run
+the most expensive class available — a price nobody decided on. `opus` is
+the recommended default: plan on the stronger model, implement on this one.
+Drop the line only when inheriting is a decision, not an accident.
+
+`Reviewer model: <model>` — pins the ticket reviewer's model; otherwise the
+ticket skill's consequence tiers choose it (haiku / sonnet / opus). Set it
+to redirect review permanently; the tiers are the better default.
+
+`Planner model: <model>` — pins the plan reviewer for THIS epic's step 4
+review; otherwise the plan-reviewer agent's own pinned strongest model is
+used. A wrong decomposition costs every downstream ticket, so lower this
+only for genuinely low-stakes epics.
+
+`Consequence paths: <glob>[, <glob>]` — e.g. `src/auth/**, migrations/**`:
+paths whose changes always price review at the consequence tier in an
+unattended run — the risk list projected onto this repository's layout,
+applied by the run driver as a code floor under the worker's self-reported
+tier, so the reviewed party cannot price its own judge down. Globs only on
+this line (prose after a comma would parse as a glob); `**` crosses
+directory separators, `*` stays within one. The globs supplement the
+worker's judgment, never replace it — the semantic risk list still binds,
+and a reported `consequence` tier is honored with or without a matching
+glob.
+
+`Ticket budget: <n>` — e.g. `250k` or `1m`: a per-ticket output-token
+ceiling for unattended runs. The run driver measures every ticket's pass
+against the runtime's own meter and halts after any ticket that exceeds
+this — the ticket stays merged; the run stops before the next one. Set it
+from the epic's expected ticket class so a runaway ticket becomes a signal
+instead of a bill.>
 
 Status log: `epics/<name>/status.md`. Run a ticket with `/flow:ticket <ID>`.
 
@@ -253,8 +272,11 @@ The session that wrote the decomposition cannot review it. It will agree with
 itself — and a wrong decomposition caught after sign-off costs every ticket
 built on it.
 
-Spawn `flow:plan-reviewer` with the **Agent** tool — `model`: the strongest
-available, `effort: high`. Give it: the draft `epics/<name>/tickets.md`, the
+Spawn `flow:plan-reviewer` with the **Agent** tool — `model`: the draft's
+own `Planner model:` line when it declares one (configuration binds where
+it is read, and you just wrote it with the user), otherwise omit the
+parameter and the agent definition's pinned strongest model applies;
+`effort: high`. Give it: the draft `epics/<name>/tickets.md`, the
 `context/` directory, the root instruction file and each in-scope area's, and
 one line on what was requested. It reads the plan against the actual code and
 reports; it does not rewrite anything.

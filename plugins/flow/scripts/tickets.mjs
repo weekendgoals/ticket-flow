@@ -95,9 +95,10 @@ const DELIVERIES = new Set(['release', 'incremental'])
 // there are no separate topology and run-mode declarations, so the
 // unattended-merges-to-main contradiction cannot be declared at all.
 //
-// "Reviewer model" and "Worker model" ride the same parse: optional lines
-// naming the model the skills pass when spawning the reviewer and the
-// implementing workers respectively. Model identifiers carry digits and
+// "Reviewer model", "Worker model" and "Planner model" ride the same
+// parse: optional lines naming the model the skills pass when spawning the
+// ticket reviewer, the implementing workers, and the plan reviewer
+// respectively. Model identifiers carry digits and
 // dots ("claude-opus-4.5"), so their value charset is wider than
 // delivery's. Absent is null — for the reviewer the skills fall back to
 // their consequence-tier default, for workers they pass no model at all
@@ -124,11 +125,27 @@ function parsePreamble(ticketsDoc) {
     const globs = m[1].split(',').map(s => s.trim().split(/\s+/)[0]).filter(Boolean)
     return globs.length ? globs : null
   }
+  // "Ticket budget" is the fifth optional line: a per-ticket output-token
+  // ceiling for unattended runs — digits with an optional k/m suffix
+  // (`250000`, `250k`, `1m`), because a budget is a number humans write. The
+  // value must end at a word boundary: a bare `\d+` grab would read `250k`
+  // as 250 and set a ceiling a thousand times too low, silently — the
+  // lookahead makes an unrecognised suffix parse as absent, which the
+  // doctor near-miss scan then flags. The run driver halts after any ticket
+  // whose pass exceeds the ceiling; this script only parses it, so the
+  // configuration lives in the versioned epic document like every other.
+  const budget = (() => {
+    const v = grab('Ticket budget', '\\d+[km]?(?=\\s|$)')
+    if (!v) return null
+    return parseInt(v, 10) * (v.endsWith('k') ? 1e3 : v.endsWith('m') ? 1e6 : 1)
+  })()
   return {
     delivery: grab('Delivery') ?? 'incremental',
     reviewerModel: grab('Reviewer model', '[A-Za-z0-9._-]+'),
     workerModel: grab('Worker model', '[A-Za-z0-9._-]+'),
+    plannerModel: grab('Planner model', '[A-Za-z0-9._-]+'),
     consequencePaths: grabPathList('Consequence paths'),
+    ticketBudget: budget,
   }
 }
 
@@ -285,15 +302,19 @@ function pullRequests() {
   }
 }
 
-// Ticket IDs that already have commits on the default branch. This is the
-// authority on "shipped", rather than the PR head branch, because a branch name
-// only matches when the author followed the convention — work merged under any
-// other branch name would read as unshipped forever. One log call, matched
-// against every commit subject, which is why CLAUDE.md requires the ID prefix.
+// Ticket IDs that already have commits on a ref. On the default branch this
+// is the authority on "shipped", rather than the PR head branch, because a
+// branch name only matches when the author followed the convention — work
+// merged under any other branch name would read as unshipped forever. On a
+// release epic's branch the same scan is the authority on "integrated": a
+// release ticket has no pull request of its own (the release pull request is
+// the epic's only one), so its merge leaves exactly one trace — its
+// ID-prefixed commit subjects reaching epic/<name>. One log call per ref,
+// which is why CLAUDE.md requires the ID prefix.
 const MAIN_SCAN_LIMIT = 4000
 
-function idsOnMain() {
-  const out = git(['log', `origin/${defaultBranch}`, '--format=%s', '-n', String(MAIN_SCAN_LIMIT)], { allowFail: true })
+function idsOnRef(ref) {
+  const out = git(['log', ref, '--format=%s', '-n', String(MAIN_SCAN_LIMIT)], { allowFail: true })
   const ids = new Set()
   if (!out) return { ids, capped: false }
   const subjects = out.split('\n')
@@ -306,6 +327,8 @@ function idsOnMain() {
   return { ids, capped: subjects.length >= MAIN_SCAN_LIMIT }
 }
 
+const idsOnMain = () => idsOnRef(`origin/${defaultBranch}`)
+
 function commitsAhead(branch) {
   const n = git(['rev-list', '--count', `origin/${defaultBranch}..${branch}`], { allowFail: true })
   return n === null ? 0 : Number(n)
@@ -315,7 +338,7 @@ function commitsAhead(branch) {
 
 const STATES = ['shipped', 'integrated', 'in-review', 'done', 'in-progress', 'blocked', 'todo']
 
-function resolveState(ticket, status, branches, prs, onMain) {
+function resolveState(ticket, status, branches, prs, onMain, onEpicBranch) {
   const branch = branchNameFor(ticket.id)
   const pr = prs.byBranch[branch]
   const entry = status[ticket.id]
@@ -324,16 +347,23 @@ function resolveState(ticket, status, branches, prs, onMain) {
   if (pr && pr.state === 'MERGED') {
     // A PR merged into an epic branch (integration mode) has not shipped — it is
     // waiting on the epic's release PR. Only a merge into the default branch is
-    // "shipped".
+    // "shipped". Kept alongside the subject scan below: epics run before
+    // release tickets stopped opening per-ticket pull requests still derive.
     const state = !pr.baseRefName || pr.baseRefName === defaultBranch ? 'shipped' : 'integrated'
     return { state, branch, pr }
   }
+  // A release ticket's merge into epic/<name> — its only integration trace,
+  // since release tickets open no pull request of their own. Checked before
+  // the OPEN branch so a stale pull request never outranks a landed merge.
+  if (onEpicBranch.has(ticket.id)) return { state: 'integrated', branch, pr }
   if (pr && pr.state === 'OPEN') return { state: 'in-review', branch, pr }
   if (entry?.outcome === 'BLOCKED' || entry?.outcome === 'ABANDONED') return { state: 'blocked', branch, pr }
   if (entry?.outcome === 'DONE') return { state: 'done', branch, pr }
   if (branches.has(branch) && commitsAhead(branch) > 0) return { state: 'in-progress', branch, pr }
   return { state: 'todo', branch, pr }
 }
+
+const NO_IDS = new Set()
 
 function board(epicFilter) {
   const allEpics = discoverEpics()
@@ -345,8 +375,12 @@ function board(epicFilter) {
   const tickets = []
   for (const epic of epics) {
     const status = parseStatus(epic)
+    // Only release epics pay the extra log call, and only when their epic
+    // branch exists on the remote — the remote, because integration is the
+    // driver's push, and a local-only epic branch proves nothing.
+    const onEpicBranch = epic.delivery === 'release' ? idsOnRef(`origin/epic/${epic.epic}`).ids : NO_IDS
     for (const t of parseTickets(epic)) {
-      tickets.push({ ...t, ...resolveState(t, status, branches, prs, onMain.ids) })
+      tickets.push({ ...t, ...resolveState(t, status, branches, prs, onMain.ids, onEpicBranch) })
     }
   }
 
@@ -538,14 +572,14 @@ function doctor() {
   // old two-line syntax ("Release mode:" / "Run mode:") is in the near set
   // deliberately: those labels parse as nothing at all now, and a preamble
   // written in them would silently run incremental.
-  const declNear = /^[^A-Za-z]*\b(delivery|(reviewer|worker)\s+model|consequence\s+paths|(release|run)\s+mode)\b/i
-  const declStrict = /^Delivery\s*:\s*[A-Za-z-]+|^(Reviewer|Worker) model\s*:\s*[A-Za-z0-9._-]+|^Consequence paths\s*:\s*\S+/i
+  const declNear = /^[^A-Za-z]*\b(delivery|(reviewer|worker|planner)\s+model|consequence\s+paths|ticket\s+budget|(release|run)\s+mode)\b/i
+  const declStrict = /^Delivery\s*:\s*[A-Za-z-]+|^(Reviewer|Worker|Planner) model\s*:\s*[A-Za-z0-9._-]+|^Consequence paths\s*:\s*\S+|^Ticket budget\s*:\s*\d+[km]?(\s|$)/i
   for (const epic of epics) {
     if (!DELIVERIES.has(epic.delivery))
       add('warn', `${epic.epic}: unrecognised delivery "${epic.delivery}" (known: release, incremental) — skills reading it will not know how this epic ships`)
     readFileSync(epic.ticketsDoc, 'utf8').split(/^##\s/m)[0].split('\n').forEach((line, i) => {
       if (declNear.test(line) && !declStrict.test(line))
-        add('warn', `${epic.epic}/tickets.md:${i + 1} — looks like a declaration line but will not parse, so it silently defaults (needs "Delivery: release|incremental" / "Reviewer model: <value>" / "Worker model: <value>" / "Consequence paths: <glob>[, <glob>]" — label at line start, no formatting, value on the label's own line; "Release mode:"/"Run mode:" are not read at all): ${line.trim()}`)
+        add('warn', `${epic.epic}/tickets.md:${i + 1} — looks like a declaration line but will not parse, so it silently defaults (needs "Delivery: release|incremental" / "Reviewer model: <value>" / "Worker model: <value>" / "Planner model: <value>" / "Consequence paths: <glob>[, <glob>]" / "Ticket budget: <digits, optional k or m suffix>" — label at line start, no formatting, value on the label's own line; "Release mode:"/"Run mode:" are not read at all): ${line.trim()}`)
     })
   }
 
@@ -638,7 +672,9 @@ function ticketFacts(data, t) {
     delivery: epic.delivery,
     reviewerModel: epic.reviewerModel,
     workerModel: epic.workerModel,
+    plannerModel: epic.plannerModel,
     consequencePaths: epic.consequencePaths,
+    ticketBudget: epic.ticketBudget,
     repoRoot,
     epicDir: epic.dir,
     ticketsDoc: epic.ticketsDoc,
@@ -761,7 +797,7 @@ switch (cmd) {
         modes: Object.fromEntries(
           data.epics.map((e) => [
             e.epic,
-            { delivery: e.delivery, reviewerModel: e.reviewerModel, workerModel: e.workerModel, consequencePaths: e.consequencePaths },
+            { delivery: e.delivery, reviewerModel: e.reviewerModel, workerModel: e.workerModel, plannerModel: e.plannerModel, consequencePaths: e.consequencePaths, ticketBudget: e.ticketBudget },
           ]),
         ),
         duplicates: data.duplicates,

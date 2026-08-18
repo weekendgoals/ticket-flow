@@ -8,6 +8,84 @@ with one version and date.
 
 ## Unreleased
 
+- **All three roles' models configure in one place, and the configuration
+  surface is documented as one table** (`scripts/tickets.mjs`,
+  `skills/epic/SKILL.md` steps 3-4 and template, README). A new optional
+  `Planner model:` preamble line pins the plan reviewer per epic (absent,
+  the agent definition's pinned strongest model applies — the epic skill's
+  step 4 now reads the line from the draft it just wrote, because
+  configuration binds where it is read); it parses, is exposed in
+  `find`/`list --json`, and is near-miss-scanned by doctor exactly like
+  `Worker model:` and `Reviewer model:`. The epic template's configuration
+  block now presents all six optional lines together — Delivery, the three
+  model lines, Consequence paths, Ticket budget — and README carries the
+  same six as a table: one place, one syntax, every near-miss flagged.
+- **Release tickets no longer open pull requests — the merge is a verified
+  SHA, and the release pull request is the epic's only one**
+  (`workflows/run-epic.mjs`, `scripts/tickets.mjs`, the ticket skill's
+  steps 0/9/10, the run skill, the epic skill's Delivery text, README,
+  METHODOLOGY "Why release tickets stopped opening pull requests"). A
+  per-ticket pull request in a release epic had no reader — the human's
+  gate is the release pull request, and review reads the pushed branch —
+  while adding three agent steps and a mutable indirection: a pull
+  request's head and base can move between the driver's check and a merge
+  by number (the external review's time-of-check finding). Now the worker
+  stops at its pushed branch (`branch-pushed` replaces `pr-opened`), the
+  resolve step reports `git rev-parse origin/<branch>` alongside the
+  addendum count, and the merge agent runs a fixed sequence merging
+  **exactly that SHA** into `epic/<name>` — a SHA cannot be retargeted, so
+  the merged diff is provably the one the review and the fix-bounds check
+  measured. The board's `integrated` state now derives from ID-prefixed
+  commit subjects reaching `origin/epic/<name>` — the same mechanism as
+  `shipped`, at the epic ref — with the old PR-merged detection kept for
+  epics run before this change; the unattended path no longer needs `gh`
+  for anything but the release pull request. Attended release tickets
+  (ticket skill step 10) merge the same way, by the verified SHA. The
+  trade is named in METHODOLOGY: per-ticket PR-triggered CI and a
+  per-ticket discussion surface remain what incremental delivery offers.
+- **CI runs the whole verification surface, and the run skill recommends a
+  separate automation identity** (`.github/workflows/tests.yml`, CLAUDE.md
+  Commands, `skills/run/SKILL.md` step 3). GitHub Actions now runs every
+  suite, the invariant checker, doctor, and the syntax/parse checks — the
+  same commands CLAUDE.md names, so local runs and the pull-request gate
+  cannot drift apart. The run skill's environment checklist gains the
+  shared-identity point an external review raised: when agents and humans
+  authenticate as the same account, "human-only merge" binds accounts, not
+  intentions — high-consequence repositories should run unattended epics
+  under a machine identity with no permission to merge or push to the
+  default branch. Environment setup like branch protection itself:
+  recorded at sign-off, never enforced by the plugin.
+- **A per-ticket token budget, enforced by the meter**
+  (`workflows/run-epic.mjs`, `scripts/tickets.mjs`, the run skill's steps
+  4-5). A new optional epic preamble line — `Ticket budget: 250000` (or
+  `250k` / `1m`; an unrecognised suffix parses as absent and doctor flags
+  it, because a bare digit grab would have read `250k` as a ceiling a
+  thousand times too low) — rides `find`/`list --json` like the other
+  configuration lines and reaches the driver as `args.ticketBudget`. The
+  driver measures each ticket's pass against the workflow runtime's own
+  `budget.spent()` meter — the one observer of spend no agent can
+  misreport — records the delta in `ticketRecords[].outputTokensObserved`
+  (with or without a ceiling: automatic per-ticket economics), and halts
+  on a new stop condition, "a ticket's pass exceeding the epic's
+  per-ticket token budget", **after** the merge is confirmed: nothing
+  un-merges, so the overspending ticket stays integrated and the run
+  stops before the next one. A budget the runtime cannot meter refuses
+  the run at argument validation — a ceiling that silently cannot fire
+  is worse than none.
+- **The ticket reviewer is now blind and cannot edit; the plan reviewer
+  cannot edit** (`agents/ticket-reviewer.md`, `agents/plan-reviewer.md`,
+  METHODOLOGY "Why the reviewer is a separate agent"). From an external
+  review of the workflow: `memory: user` is removed from the ticket
+  reviewer — a cross-session casebook of defect patterns is a set of
+  priors, and this judge's verdict opens a merge gate, so it now starts
+  from nothing but its packet every time (the plan reviewer keeps its
+  casebook: advisory input to a human gate, not a gate). Both reviewers'
+  toolsets are restricted to `Read, Grep, Glob, Bash` — "you report, you
+  never fix" was instruction alone while the agents held Edit and Write;
+  now they structurally cannot edit a finding into agreement. Bash stays
+  for `git show`/`git diff`, so this is narrower, not perfectly
+  read-only, and the run lane's general-agent fallback reviewer is
+  unaffected — one more reason the fallback is a fallback.
 - **The plan's two human gates render as a styled page**
   (`scripts/plan-page.mjs` + `plan-page.test.mjs`, `skills/epic/SKILL.md`
   steps 3 and 5, README). The shape checkpoint and the sign-off previously

@@ -15,7 +15,7 @@ repository).
 |---|---|
 | `/flow:epic <name> [source...]` | Turn a request, report or conversation into `epics/<name>/`. Sources are files, globs or URLs, saved into `context/`; with none, the conversation is the brief. The shape is agreed **before** the document is written, a fresh-context **plan reviewer** challenges the decomposition, then it **stops for sign-off** and commits — no pull request. Both human gates render the plan as a **styled page** (`plan-page.mjs`, published as an artifact): one URL that evolves from shape checkpoint to sign-off, never committed |
 | `/flow:ticket <ID>` | One ticket end to end: branch, implement, verify, log, commit, review, fix, push, pull request. Runs **supervisor-mode by default** — a fresh-context worker implements from the documents and the supervisor hires the reviewer; `--interactive` runs in-session, once per session (a hook refuses a second interactive run; supervisor runs stay open) |
-| `/flow:run <epic>` | Run a `Delivery: release` epic end to end with nobody present: verifies sign-off happened, then hands the loop to a shipped **workflow script** — **code-controlled, agent-executed** — that takes the tickets in document order. Per ticket: refresh the epic branch and read the board, a **fresh-context worker** implements and stops at its opened pull request, the **driver hires the reviewer**, a disposition agent fixes and records, fixes get one bounded re-review at the consequence tier — below it a code gate checks the fix diff stayed inside the reviewed files and under a line budget — then the pull request is resolved from its branch and every fact about it — one match, the right head, the right base, the review addendum present, the number the worker reported — is checked **in code before any agent that could merge exists**; only then does a merge agent run one command, and the board — not an agent — confirms the result. It halts on any stop condition, because each one is a code path rather than a judgment call. The session ends by **opening** the release pull request. Requires the Workflow tool; never merges toward the default branch |
+| `/flow:run <epic>` | Run a `Delivery: release` epic end to end with nobody present: verifies sign-off happened, then hands the loop to a shipped **workflow script** — **code-controlled, agent-executed** — that takes the tickets in document order. Per ticket: refresh the epic branch and read the board, a **fresh-context worker** implements and stops at its pushed branch (**release tickets open no pull request of their own** — the release pull request at the end is the epic's only one), the **driver hires the reviewer** priced by a code-floored tier, a disposition agent fixes and records, fixes get one bounded re-review at the consequence tier — below it a code gate checks the fix diff stayed inside the reviewed files and under a line budget — then the branch's review addendum and its exact head SHA are checked **in code before any agent that could merge exists**; only then does a merge agent merge that verified SHA — which cannot be retargeted — into the epic branch, and the board — not an agent — confirms the result. It halts on any stop condition, because each one is a code path rather than a judgment call. The session ends by **opening** the release pull request. Requires the Workflow tool; never merges toward the default branch |
 | `/flow:quick <description>` | The **cheap lane**: one small, low-risk piece of work, implemented **in-session** with a written scope, verification with counts, a short log entry and a pull request — and a fresh-context reviewer **only when behaviour changes** (prose-only diffs — documentation and comments, nothing a machine reads — get none; the PR is the review). Size- **and risk-gated**: auth, secrets, migrations and other consequential work is routed to `/flow:epic` at any size |
 | `/flow:tickets [epic]` | The board — shipped, in flight, blocked, todo |
 | `/flow:board [epic]` | The same board as a **styled HTML page**, published as an artifact you can open and share. A rendering of derived state, rebuilt from git on every run — never committed, never a second store |
@@ -128,9 +128,11 @@ hold its documents.
 
 **release** (the default for a multi-ticket epic) — after sign-off,
 `/flow:run <epic>` executes the tickets unattended: each in a fresh-context
-agent that implements, is reviewed, fixes findings and merges its own pull
-request into `epic/<name>`; the run ends by **opening** the release pull
-request. The loop itself is a workflow script the plugin ships
+agent that implements, is reviewed on its pushed branch, fixes findings,
+and has its verified head merged into `epic/<name>` — no per-ticket pull
+request exists; the release pull request the run ends by **opening** is the
+epic's only one, and it is where the whole evidence trail reaches the
+human. The loop itself is a workflow script the plugin ships
 (`workflows/run-epic.mjs`), so every stop condition is code that returns
 rather than prose an agent could reason past. The human makes two decisions — approve the plan, approve the
 release — instead of clicking merge between every ticket. **The human gate
@@ -213,7 +215,7 @@ edit instead of every ticket built on it.
 **The hirer is never the party under review.** In `/flow:ticket`'s default
 lane the supervisor hires the reviewer, not the worker that wrote the code;
 in `/flow:run` the driver script does the same one level up — the worker
-stops at its opened pull request, the script hires the reviewer, and a code
+stops at its pushed branch, the script hires the reviewer, and a code
 gate on the reviewer's structured findings decides whether anything merges.
 A worker that picked its own judge would recreate self-review one level down.
 
@@ -263,6 +265,20 @@ spawns it, which is a decision worth making deliberately rather than
 inheriting by accident. None of these lines is a settings file: model
 choice lives in the versioned epic document, visible at sign-off, like
 every other configuration this plugin has.
+
+**The whole configuration surface is six optional preamble lines** in the
+epic's `tickets.md` — one place, one syntax (label at line start, value
+first after the colon, prose after it ignored), every near-miss flagged by
+`/flow:doctor`:
+
+| Line | Example | Controls | Absent |
+|---|---|---|---|
+| `Delivery:` | `release` | how work reaches main: unattended into `epic/<name>` with one release PR, or one human-gated PR per ticket | `incremental` |
+| `Worker model:` | `opus` | the implementing workers | workers inherit the spawning session's model |
+| `Reviewer model:` | `opus` | the ticket reviewer, overriding the tier table | the consequence tiers pick (haiku/sonnet/opus) |
+| `Planner model:` | `fable` | the plan reviewer for this epic | the agent definition's pinned strongest |
+| `Consequence paths:` | `src/auth/**, migrations/**` | globs that force the consequence review tier in a run — the code floor under the worker's self-reported tier | tier floor still applies (docs-only vs code), globs add nothing |
+| `Ticket budget:` | `250k` | per-ticket output-token ceiling in a run; an over-budget ticket stays merged and the run halts before the next | no ceiling; per-ticket spend still recorded when the runtime meters it |
 
 ## Reading the board
 

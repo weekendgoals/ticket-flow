@@ -33,7 +33,7 @@ const ARGS = { epic: 'payments', defaultBranch: 'main', repoRoot: '/repo', plugi
 // returns what that agent produces; returning null models an agent that died
 // (which agent() does for real), and returning undefined fails the test loudly
 // rather than letting an unplanned spawn pass unnoticed.
-async function drive(reply, args = ARGS) {
+async function drive(reply, args = ARGS, budget = null) {
   const calls = []
   const logs = []
   const agent = async (prompt, opts) => {
@@ -43,11 +43,18 @@ async function drive(reply, args = ARGS) {
     return r
   }
   try {
-    const out = await body(agent, null, null, m => logs.push(String(m)), () => {}, args, null)
+    const out = await body(agent, null, null, m => logs.push(String(m)), () => {}, args, budget)
     return { out, calls, logs, labels: calls.map(c => c.label) }
   } catch (e) {
     return { out: { threw: e.message }, calls, logs, labels: calls.map(c => c.label) }
   }
+}
+
+// A budget meter whose spent() grows by `step` output tokens per reading —
+// two readings bracket each ticket, so a ticket's observed delta is `step`.
+const meter = step => {
+  let s = 0
+  return { total: null, spent: () => (s += step), remaining: () => Infinity }
 }
 
 const call = (r, label) => r.calls.find(c => c.label === label)
@@ -59,12 +66,10 @@ const refreshed = tickets => ({
 })
 const workerOk = (id = 'PAY-1', over = {}) => ({
   ticket: id,
-  result: 'pr-opened',
+  result: 'branch-pushed',
   stopCondition: 'none',
   tier: 'normal',
   tierWhy: 'touches the parser',
-  prNumber: 42,
-  prUrl: 'http://pr/42',
   branch: id.toLowerCase(),
   built: 'a thing',
   verification: '12 pass',
@@ -107,14 +112,11 @@ const dispFixed = {
 const resolvedOk = {
   outcome: 'resolved',
   addendumMatches: 1,
-  matchCount: 1,
-  number: 42,
-  headRefName: 'pay-1',
-  baseRefName: 'epic/payments',
+  headSha: 'beefc0ffee42',
   detail: '',
 }
 const mergedOk = { outcome: 'merged', detail: '' }
-const integratedOk = { commandSucceeded: true, state: 'integrated', prUrl: 'http://pr/42' }
+const integratedOk = { commandSucceeded: true, state: 'integrated', prUrl: '' }
 
 // A one-ticket run whose stages can each be overridden; anything not overridden
 // takes the clean path, so each test states only what it is about.
@@ -143,7 +145,7 @@ test('the happy path runs refresh+select -> worker -> review -> disposition -> r
     if (label.startsWith('tier-facts:')) return tierFactsCode
     if (label.startsWith('review:')) return reviewClean
     if (label.startsWith('disposition:')) return dispClean
-    if (label.startsWith('resolve:')) return { ...resolvedOk, headRefName: label.split(':')[1].toLowerCase() }
+    if (label.startsWith('resolve:')) return resolvedOk
     if (label.startsWith('merge:')) return mergedOk
     if (label.startsWith('verify:')) return integratedOk
   })
@@ -158,21 +160,25 @@ test('the happy path runs refresh+select -> worker -> review -> disposition -> r
   assert.match(r.out.finalRefresh, /^done:/)
 })
 
-test('the merge agent gets one command with a code-resolved number, and resolves nothing itself', async () => {
+test('the merge agent gets a fixed sequence pinned to the code-verified SHA, and resolves nothing itself', async () => {
   const r = await drive(oneTicket())
   const p = call(r, 'merge:PAY-1').prompt
-  assert.match(p, /gh pr merge 42 --merge/)
-  assert.match(p, /never `--squash`/)
-  assert.match(p, /the driver resolved it from the branch `pay-1` and verified it before spawning you/)
-  assert.doesNotMatch(p, /gh pr list/)
+  // The SHA, not the branch name: a branch can move between the resolve
+  // step's check and this merge; the verified commit cannot.
+  assert.match(p, /git merge --no-ff beefc0ffee42 -m "Merge pay-1 into epic\/payments"/)
+  assert.match(p, /git push origin epic\/payments/)
+  assert.match(p, /never a squash/)
+  assert.match(p, /the driver read it from `origin\/pay-1` and verified it before spawning you/)
+  assert.doesNotMatch(p, /gh pr/)
   assert.doesNotMatch(p, /git show/)
   assert.equal(call(r, 'merge:PAY-1').model, 'haiku')
   const resolve = call(r, 'resolve:PAY-1')
   assert.match(resolve.prompt, /\*\*You change nothing\*\*/)
-  assert.doesNotMatch(resolve.prompt, /gh pr merge/)
+  assert.doesNotMatch(resolve.prompt, /git merge /)
   assert.equal(resolve.model, 'haiku')
   assert.equal(r.out.ticketRecords[0].resolveOutcome, 'resolved')
   assert.equal(r.out.ticketRecords[0].mergeOutcome, 'merged')
+  assert.equal(r.out.ticketRecords[0].headSha, 'beefc0ffee42')
 })
 
 test('refresh and select are one agent: a failed refresh reports no board read', async () => {
@@ -192,7 +198,9 @@ test('the worker prompt keeps the driver handshake verbatim and scopes the skill
   assert.ok(p.startsWith('A driver spawned you for this one ticket.'))
   assert.match(p, /DO NOT run step 7 \(review\), step 8 \(fix and addendum\) or step 10/)
   assert.match(p, /you spawn no agents at all/)
-  assert.match(p, /gh pr create --base epic\/payments/)
+  assert.match(p, /git push -u origin pay-1/)
+  assert.match(p, /Do NOT open a pull request/)
+  assert.doesNotMatch(p, /gh pr create/)
   assert.match(p, /REPORT THE REVIEW TIER/)
   assert.match(p, /When in doubt, the higher tier/)
   assert.match(p, /raise the review's price but never lower it/)
@@ -442,7 +450,7 @@ test('an unreadable status log on the branch halts as unreviewed-on-the-record',
 })
 
 test('an unreported addendum count halts rather than being read as "probably fine"', async () => {
-  const r = await drive(oneTicket({ 'resolve:PAY-1': { outcome: 'resolved', matchCount: 1, number: 42, headRefName: 'pay-1', baseRefName: 'epic/payments' } }))
+  const r = await drive(oneTicket({ 'resolve:PAY-1': { outcome: 'resolved', headSha: 'beefc0ffee42' } }))
   assert.match(r.out.haltedOn.stopCondition, /^BLOCKED/)
   assert.match(r.out.haltedOn.detail, /count unreported/)
   assert.ok(!r.labels.some(l => l.startsWith('merge:')))
@@ -491,59 +499,26 @@ test("the addendum check counts only addenda under this ticket's own entries", a
 
 // ---- mechanical pull-request resolution -------------------------------------
 
-test('the resolve step lists pull requests by head branch only, so a wrong base comes back', async () => {
+test('the resolve step reads the pushed head SHA verbatim, and the record carries it', async () => {
   const r = await drive(oneTicket())
   const p = call(r, 'resolve:PAY-1').prompt
-  // Unfiltered by base on purpose: a pull request aimed at the wrong branch
-  // must come back so it can be reported, not vanish into a zero count that
-  // would be reported as "no pull request".
-  assert.match(p, /gh pr list --head pay-1 --state open --json number,headRefName,baseRefName/)
-  assert.doesNotMatch(p, /gh pr list [^\n]*--base/)
-  assert.match(p, /verbatim from the response/)
-  assert.equal(r.out.ticketRecords[0].resolvedPrNumber, '42')
-  assert.equal(r.out.ticketRecords[0].matchCount, 1)
+  assert.match(p, /git rev-parse origin\/pay-1/)
+  assert.match(p, /cannot be retargeted between the check and the merge/)
+  assert.doesNotMatch(p, /gh pr/)
+  assert.equal(r.out.ticketRecords[0].headSha, 'beefc0ffee42')
 })
 
-test('a pull request based anywhere but the epic branch halts with no merge agent ever spawned', async () => {
-  const r = await drive(oneTicket({ 'resolve:PAY-1': { ...resolvedOk, baseRefName: 'main' } }))
-  assert.match(r.out.haltedOn.stopCondition, /^a document\/code contradiction/)
-  assert.match(r.out.haltedOn.detail, /targets "main", not epic\/payments/)
-  assert.match(r.out.haltedOn.detail, /no agent that could merge it was ever spawned/)
-  // The finding this split exists for: nothing that could merge toward the
-  // default branch is created at all.
-  assert.ok(!r.labels.some(l => l.startsWith('merge:')))
-  assert.ok(!r.labels.some(l => l.startsWith('verify:')))
-})
-
-test('a pull request from another head branch halts too', async () => {
-  const r = await drive(oneTicket({ 'resolve:PAY-1': { ...resolvedOk, headRefName: 'pay-9' } }))
-  assert.match(r.out.haltedOn.stopCondition, /^a document\/code contradiction/)
-  assert.ok(!r.labels.some(l => l.startsWith('merge:')))
-})
-
-test('no open pull request for the ticket branch halts as a contradiction, before the merge', async () => {
-  const r = await drive(oneTicket({ 'resolve:PAY-1': { ...resolvedOk, matchCount: 0, number: undefined } }))
-  assert.match(r.out.haltedOn.stopCondition, /^a document\/code contradiction/)
-  assert.match(r.out.haltedOn.detail, /no open pull request from `pay-1`/)
-  assert.ok(!r.labels.some(l => l.startsWith('merge:')))
-})
-
-test('several open pull requests for the ticket branch halt as a contradiction, before the merge', async () => {
-  const many = await drive(oneTicket({ 'resolve:PAY-1': { ...resolvedOk, matchCount: 2 } }))
-  assert.match(many.out.haltedOn.stopCondition, /^a document\/code contradiction/)
-  assert.match(many.out.haltedOn.detail, /2 open pull requests/)
-  assert.ok(!many.labels.some(l => l.startsWith('merge:')))
-  const unreported = await drive(oneTicket({ 'resolve:PAY-1': { ...resolvedOk, matchCount: undefined } }))
-  assert.match(unreported.out.haltedOn.detail, /an unreported number of open pull requests/)
-  assert.ok(!unreported.labels.some(l => l.startsWith('merge:')))
-})
-
-test('a resolved number the worker did not report halts as a contradiction, before the merge', async () => {
-  const r = await drive(oneTicket({ 'resolve:PAY-1': { ...resolvedOk, number: 77 } }))
-  assert.match(r.out.haltedOn.stopCondition, /^a document\/code contradiction/)
-  assert.match(r.out.haltedOn.detail, /#77/)
-  assert.match(r.out.haltedOn.detail, /worker reported #42/)
-  assert.ok(!r.labels.some(l => l.startsWith('merge:')))
+test('an unusable head SHA halts with no merge agent ever spawned, and never reaches a prompt', async () => {
+  for (const headSha of [undefined, '', 'HEAD~1; rm -rf /', 'not-a-sha']) {
+    const r = await drive(oneTicket({ 'resolve:PAY-1': { ...resolvedOk, headSha } }))
+    assert.match(r.out.haltedOn.stopCondition, /^a document\/code contradiction/, String(headSha))
+    assert.match(r.out.haltedOn.detail, /no usable head SHA/, String(headSha))
+    // The finding this split exists for: nothing that could merge toward the
+    // default branch is created at all — and the unusable value is fenced.
+    assert.ok(!r.labels.some(l => l.startsWith('merge:')), String(headSha))
+    assert.ok(!r.labels.some(l => l.startsWith('verify:')), String(headSha))
+    for (const c of r.calls) assert.ok(!c.prompt.includes('rm -rf'), c.label)
+  }
 })
 
 test('a resolve step that cannot read the repository halts without merging', async () => {
@@ -561,9 +536,9 @@ test('a resolve step that cannot read the repository halts without merging', asy
 })
 
 test('a failed merge halts on nonzero exit, and a conflicting one on merge conflict', async () => {
-  const failed = await drive(oneTicket({ 'merge:PAY-1': { outcome: 'failed', detail: 'GraphQL: Pull request is not mergeable' } }))
+  const failed = await drive(oneTicket({ 'merge:PAY-1': { outcome: 'failed', detail: 'push rejected: remote ahead' } }))
   assert.match(failed.out.haltedOn.stopCondition, /^a nonzero exit from any command/)
-  assert.match(failed.out.haltedOn.detail, /gh pr merge 42 --merge/)
+  assert.match(failed.out.haltedOn.detail, /verified head beefc0ffee42/)
   const conflict = await drive(oneTicket({ 'merge:PAY-1': { outcome: 'failed', detail: 'merge conflict with epic/payments' } }))
   assert.match(conflict.out.haltedOn.stopCondition, /^a merge conflict/)
   const prompted = await drive(oneTicket({ 'merge:PAY-1': { outcome: 'permission-prompt', detail: 'gh would prompt' } }))
@@ -780,12 +755,6 @@ test('a worker stop condition maps to its own stop string, not to BLOCKED', asyn
   assert.match(r.out.haltedOn.stopCondition, /^a document\/code contradiction/)
 })
 
-test('a worker that reports pr-opened without a usable number halts', async () => {
-  const r = await drive(oneTicket({ 'worker:PAY-1': workerOk('PAY-1', { prNumber: 'the one I opened' }) }))
-  assert.match(r.out.haltedOn.detail, /no usable pull request number/)
-  assert.ok(!r.labels.some(l => l.startsWith('review:')))
-})
-
 test('the board, not the merge agent, decides that a ticket is integrated', async () => {
   const r = await drive(oneTicket({ 'verify:PAY-1': { commandSucceeded: true, state: 'in-review', prUrl: '' } }))
   assert.match(r.out.haltedOn.stopCondition, /^BLOCKED/)
@@ -927,7 +896,7 @@ test('narrative fields are fenced and identifiers are not', async () => {
   assert.match(rec.checkedAndSound, /^<<<UNTRUSTED/)
   assert.equal(rec.id, 'PAY-1')
   assert.equal(rec.branch, 'pay-1')
-  assert.equal(rec.prNumber, '42')
+  assert.equal(rec.headSha, 'beefc0ffee42')
   assert.equal(rec.nitOverflowCount, 2)
 })
 
@@ -937,8 +906,7 @@ test('every halt quotes the agent words it carries inside a fence', async () => 
     ['refresh conflict', oneTicket({ 'refresh+select:1': { refresh: { outcome: 'merge-conflict', mergeAborted: true, detail: 'CONFLICT in a.ts' }, next: null } }), /CONFLICT in a\.ts/],
     ['board failure', oneTicket({ 'refresh+select:1': { refresh: { outcome: 'refreshed' }, next: { commandSucceeded: false, tickets: [], failure: 'exit 1: boom' } } }), /exit 1: boom/],
     ['unusable ticket id', oneTicket({ 'refresh+select:1': { refresh: { outcome: 'refreshed' }, next: { commandSucceeded: true, tickets: [{ id: 'pay 1' }] } } }), /pay 1/],
-    ['worker without a number', oneTicket({ 'worker:PAY-1': workerOk('PAY-1', { prNumber: 'the one I opened' }) }), /the one I opened/],
-    ['merge failure', oneTicket({ 'merge:PAY-1': { outcome: 'failed', addendumMatches: 1, detail: 'GraphQL: not mergeable' } }), /GraphQL: not mergeable/],
+    ['merge failure', oneTicket({ 'merge:PAY-1': { outcome: 'failed', detail: 'CONFLICT: content conflict in a.ts' } }), /content conflict in a\.ts/],
     ['verify failure', oneTicket({ 'verify:PAY-1': { commandSucceeded: false, state: '', failure: 'exit 2: no such ticket' } }), /exit 2: no such ticket/],
   ]
   for (const [name, script, quoted] of cases) {
@@ -967,6 +935,54 @@ test('every agent that can write is told the default branch is never a target', 
   // The reviewers are read-only instead: the rule they carry is the stronger one.
   for (const label of ['review:PAY-1', 're-review:PAY-1']) {
     assert.match(call(r, label).prompt, /you never fix|You NEVER fix/, label)
+  }
+})
+
+// ---- the per-ticket token budget --------------------------------------------
+
+test('a ticket over the epic budget stays merged, and the run halts before the next ticket', async () => {
+  // spent() is read twice per pass (start, after verify), so each ticket's
+  // observed delta equals the meter step: 60k against a 50k budget.
+  const r = await drive(oneTicket(), { ...ARGS, ticketBudget: 50000 }, meter(60000))
+  assert.equal(r.out.outcome, 'halted')
+  assert.equal(r.out.haltedOn.stopCondition, "a ticket's pass exceeding the epic's per-ticket token budget")
+  assert.match(r.out.haltedOn.detail, /spent 60000 output tokens against the epic's budget of 50000/)
+  assert.match(r.out.haltedOn.detail, /stays merged/)
+  // The overspending ticket integrated first — the ceiling stops the run,
+  // never un-merges the work.
+  assert.equal(r.out.ticketRecords[0].result, 'integrated')
+  assert.equal(r.out.ticketRecords[0].outputTokensObserved, 60000)
+  assert.equal(r.out.totals.ticketsIntegrated, 1)
+})
+
+test('a ticket under the budget completes, and its meter delta lands in the record', async () => {
+  const r = await drive(oneTicket(), { ...ARGS, ticketBudget: 80000 }, meter(60000))
+  assert.equal(r.out.outcome, 'completed')
+  assert.equal(r.out.ticketRecords[0].outputTokensObserved, 60000)
+})
+
+test('the meter records per-ticket spend even with no budget declared', async () => {
+  const r = await drive(oneTicket(), ARGS, meter(42000))
+  assert.equal(r.out.outcome, 'completed')
+  assert.equal(r.out.ticketRecords[0].outputTokensObserved, 42000)
+})
+
+test('without a meter the record carries null, never a guess', async () => {
+  const r = await drive(oneTicket())
+  assert.equal(r.out.ticketRecords[0].outputTokensObserved, null)
+})
+
+test('a budget the runtime cannot meter refuses the run before spending an agent', async () => {
+  const r = await drive(() => undefined, { ...ARGS, ticketBudget: 50000 }, null)
+  assert.match(r.out.threw, /no budget meter/)
+  assert.equal(r.calls.length, 0)
+})
+
+test('an unusable budget value refuses the run', async () => {
+  for (const bad of [0, -5, 1.5, 'lots']) {
+    const r = await drive(() => undefined, { ...ARGS, ticketBudget: bad }, meter(1))
+    assert.match(r.out.threw, /ticketBudget must be a positive integer/, String(bad))
+    assert.equal(r.calls.length, 0)
   }
 })
 

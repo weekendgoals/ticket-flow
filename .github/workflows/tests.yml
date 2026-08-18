@@ -1,0 +1,49 @@
+# Every suite, the invariant checker, doctor, and the syntax/parse checks —
+# the same commands CLAUDE.md names, so what a session runs locally and what
+# gates a pull request cannot drift apart. Node 20 for the built-in test
+# runner; fetch-depth 0 because doctor and shipped detection read
+# origin/<default-branch>.
+name: tests
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: point origin/HEAD at the default branch (doctor reads it)
+        run: git remote set-head origin -a
+      - name: syntax checks
+        run: |
+          node --check plugins/flow/scripts/tickets.mjs
+          node --check plugins/flow/scripts/board.mjs
+          node --check plugins/flow/scripts/plan-page.mjs
+          node --check plugins/flow/scripts/check-invariants.mjs
+          node --check plugins/flow/hooks/ticket-session-guard.mjs
+      - name: parse run-epic.mjs the way the workflow runtime does
+        run: |
+          node -e 'const s=require("fs").readFileSync("plugins/flow/workflows/run-epic.mjs","utf8").replace(/^export const meta/m,"const meta");new (Object.getPrototypeOf(async function(){}).constructor)("agent","parallel","pipeline","log","phase","args","budget",s)'
+      - name: test suites
+        run: |
+          node --test plugins/flow/scripts/tickets.test.mjs
+          node --test plugins/flow/scripts/board.test.mjs
+          node --test plugins/flow/scripts/plan-page.test.mjs
+          node --test plugins/flow/hooks/ticket-session-guard.test.mjs
+          node --test plugins/flow/scripts/check-invariants.test.mjs
+          node --test plugins/flow/workflows/run-epic.test.mjs
+      - name: doctrine invariants
+        run: node plugins/flow/scripts/check-invariants.mjs
+      - name: doctor
+        # gh is unauthenticated here, which doctor reports as a warning and
+        # degrades to git-only facts — exactly the honest-degradation path
+        # the board promises. Only a hard failure (no origin, duplicate IDs)
+        # exits nonzero.
+        run: node plugins/flow/scripts/tickets.mjs doctor

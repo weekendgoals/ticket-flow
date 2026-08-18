@@ -1,17 +1,17 @@
 export const meta = {
   name: 'flow-run-epic',
   description:
-    "The /flow:run driver loop as code — code-controlled, agent-executed: refresh epic/<name> and take the next ticket in document order, spawn a worker that stops at its opened pull request, read the diff's file list and floor the review tier in code, hire the reviewer, gate on its findings, re-review any fix commits, resolve and merge the ticket's pull request from the branch name, confirm the merge landed — and halt on any stop condition instead of improvising past it",
+    "The /flow:run driver loop as code — code-controlled, agent-executed: refresh epic/<name> and take the next ticket in document order, spawn a worker that stops at its pushed branch, read the diff's file list and floor the review tier in code, hire the reviewer, gate on its findings, re-review any fix commits, resolve the pushed branch's verified head and merge exactly that commit into epic/<name> — release tickets open no pull request of their own — confirm the merge landed — and halt on any stop condition instead of improvising past it",
   whenToUse:
-    'Invoked by the flow:run skill AFTER it has resolved the epic, refused anything but Delivery: release, verified the sign-off traces on origin/epic/<name>, and checked the permission surface and branch protection (or its recorded waiver). Requires args {epic, defaultBranch, repoRoot, pluginRoot, today, workerModel?, reviewerModel?, consequencePaths?}. Returns {outcome: "completed"|"halted", haltedOn, ticketRecords, ...}; the calling session writes the run record and opens the release pull request. The driver hires the reviewer — the party under review never picks its judge — and the merge gate is a code check on the reviewer\'s structured findings. The script never merges, pushes, or retargets toward the default branch, and never opens or merges the release pull request.',
+    'Invoked by the flow:run skill AFTER it has resolved the epic, refused anything but Delivery: release, verified the sign-off traces on origin/epic/<name>, and checked the permission surface and branch protection (or its recorded waiver). Requires args {epic, defaultBranch, repoRoot, pluginRoot, today, workerModel?, reviewerModel?, consequencePaths?, ticketBudget?}. Returns {outcome: "completed"|"halted", haltedOn, ticketRecords, ...}; the calling session writes the run record and opens the release pull request. The driver hires the reviewer — the party under review never picks its judge — and the merge gate is a code check on the reviewer\'s structured findings. The script never merges, pushes, or retargets toward the default branch, and never opens or merges the release pull request.',
   phases: [
     { title: 'Refresh + select', detail: 'merge the default branch into epic/<name>, then read the next startable ticket — one agent, one command sequence' },
-    { title: 'Ticket', detail: 'one fresh-context worker per ticket, stopping at its opened pull request' },
+    { title: 'Ticket', detail: 'one fresh-context worker per ticket, stopping at its pushed branch — release tickets open no pull request of their own' },
     { title: 'Review', detail: "the driver hires the judge, priced by the worker's reported tier floored in code by the diff's own file list" },
     { title: 'Disposition', detail: 'fix Important findings, record pre-existing ones, commit the addendum — a merge precondition' },
     { title: 'Re-review', detail: 'one bounded pass over the fix commits — only at the consequence tier, or when the fix-bounds gate has no anchor; below that the fixes are bounds-checked in code at the resolve step' },
-    { title: 'Resolve', detail: 'read-only: the addendum on the pushed branch and the pull request the branch resolves to, checked in code before anything can merge' },
-    { title: 'Merge', detail: 'one command on a code-verified number: a merge commit into epic/<name>, never a squash' },
+    { title: 'Resolve', detail: 'read-only: the addendum on the pushed branch and the exact head commit it stands at, checked in code before anything can merge' },
+    { title: 'Merge', detail: 'one fixed git sequence merging the code-verified head SHA into epic/<name> — a merge commit, never a squash, and a SHA cannot be retargeted' },
     { title: 'Verify', detail: 'confirm state === integrated from the board, never from an agent' },
   ],
 }
@@ -92,6 +92,24 @@ const globRe = g =>
   )
 const CONSEQUENCE_RES = consequencePaths.map(globRe)
 
+// The epic's optional per-ticket token budget (`Ticket budget:` preamble
+// line). Enforced against the workflow runtime's own meter — the one
+// observer of spend no agent can misreport — so a ceiling that cannot be
+// metered refuses the run rather than riding along unenforced.
+const METER = typeof budget !== 'undefined' && budget && typeof budget.spent === 'function' ? budget : null
+let ticketBudget = null
+if (ARGS.ticketBudget != null) {
+  if (!Number.isInteger(ARGS.ticketBudget) || ARGS.ticketBudget <= 0) {
+    throw new Error(`args.ticketBudget must be a positive integer of output tokens — got ${JSON.stringify(ARGS.ticketBudget)}. Fix the epic's \`Ticket budget:\` line.`)
+  }
+  if (!METER) {
+    throw new Error(
+      'args.ticketBudget was set, but this workflow runtime exposes no budget meter to enforce it — remove the Ticket budget line, or run on a build whose workflow runtime provides `budget`. A ceiling that silently cannot fire is worse than none.',
+    )
+  }
+  ticketBudget = ARGS.ticketBudget
+}
+
 const epicBranch = `epic/${epic}`
 const TICKETS = `node "${pluginRoot}/scripts/tickets.mjs"`
 // Ticket IDs are the plugin's load-bearing shape: [A-Z][A-Z0-9]*-\d+, branches
@@ -122,11 +140,12 @@ const STOP = {
   blocked: 'BLOCKED — a worker wrote a BLOCKED (or ABANDONED) status entry, or ended in any state but `integrated`',
   importantFinding: 'an Important review finding it cannot fix',
   contradiction: 'a document/code contradiction — reported by a worker, or met by the script\'s own checks',
-  mergeConflict: "a merge conflict — refreshing the epic branch, or anywhere else, including a ticket's pull request that will not merge into the epic branch",
+  mergeConflict: "a merge conflict — refreshing the epic branch, or anywhere else, including a ticket branch that will not merge into the epic branch",
   reviewerSpawn: 'reviewer-spawn failure after the sanctioned fallback also fails',
   permissionPrompt: 'a permission prompt firing mid-run',
   nonzeroExit: 'a nonzero exit from any command the run issues as a step, except those this skill explicitly marks tolerated',
   fixBounds: 'a review-fix diff outside its bounds — touching files the review never saw, or exceeding the fix line budget',
+  ticketBudget: "a ticket's pass exceeding the epic's per-ticket token budget",
 }
 
 // ---- agent contracts --------------------------------------------------------
@@ -233,14 +252,14 @@ const WORKER_SCHEMA = {
     ticket: { type: 'string', description: 'the ticket ID you were given' },
     result: {
       type: 'string',
-      enum: ['pr-opened', 'blocked', 'abandoned', 'halted'],
+      enum: ['branch-pushed', 'blocked', 'abandoned', 'halted'],
       description:
-        '"pr-opened" ONLY if you pushed the branch and saw `gh pr create` return a pull request URL — never inferred. "blocked"/"abandoned" if you wrote that status entry. "halted" for anything else that stopped you.',
+        '"branch-pushed" ONLY if you saw `git push -u origin <branch>` succeed — never inferred. "blocked"/"abandoned" if you wrote that status entry. "halted" for anything else that stopped you.',
     },
     stopCondition: {
       type: 'string',
       enum: ['none', ...Object.keys(WORKER_STOP)],
-      description: 'what stopped you, when result is not "pr-opened"; "none" when it is',
+      description: 'what stopped you, when result is not "branch-pushed"; "none" when it is',
     },
     tier: {
       type: 'string',
@@ -249,11 +268,6 @@ const WORKER_SCHEMA = {
         'the review tier YOUR diff earns under the ticket skill step 7 table: "prose" = documentation and code comments only, nothing any runtime, parser, test or agent reads; "consequence" = the risk list (auth boundaries, secrets, crypto, network exposure, migrations, anything that deletes or rewrites data, payments or billing, anything that can fail open); "normal" = everything else, including configuration, user-facing strings, CLI output and agent/skill instructions. When in doubt, the HIGHER tier.',
     },
     tierWhy: { type: 'string', description: 'one line: why that tier, naming what the diff can break' },
-    prNumber: {
-      type: ['integer', 'string'],
-      description: 'the pull request number `gh pr create` returned (digits, e.g. 42 or "42") — required when result is "pr-opened"',
-    },
-    prUrl: { type: 'string' },
     branch: { type: 'string', description: 'the branch you pushed — the lowercased ticket ID' },
     built: { type: 'string', description: 'one to three sentences: what exists now that did not' },
     verification: { type: 'string', description: 'the exact commands you ran and their counts' },
@@ -407,10 +421,11 @@ const RESOLVE_SCHEMA = {
       type: 'integer',
       description: 'the number `grep -c` printed for the addendum line — 0 is a real answer, not a failure. Report -1 only if the status log could not be read from the branch at all.',
     },
-    matchCount: { type: 'integer', description: 'how many open pull requests the listing returned for this head branch' },
-    number: { type: ['integer', 'string'], description: 'the pull request number from the listing, when it returned exactly one; omit otherwise' },
-    headRefName: { type: 'string', description: 'the headRefName from the listing, verbatim, when it returned exactly one' },
-    baseRefName: { type: 'string', description: 'the baseRefName from the listing, verbatim, when it returned exactly one' },
+    headSha: {
+      type: 'string',
+      description:
+        'what `git rev-parse origin/<the ticket branch>` printed, 7-40 hex characters, verbatim — never reconstructed. The driver merges exactly this commit and nothing else.',
+    },
     reviewedFiles: {
       type: 'array',
       items: { type: 'string' },
@@ -438,7 +453,7 @@ const MERGE_SCHEMA = {
     outcome: {
       type: 'string',
       enum: ['merged', 'failed', 'permission-prompt'],
-      description: '"merged" ONLY if the command succeeded and you saw it. "failed" for any nonzero exit — say plainly in detail whether it was a conflict.',
+      description: '"merged" ONLY if every command in the sequence succeeded and you saw the push land. "failed" for any nonzero exit — say plainly in detail whether it was a conflict, and whether the merge was aborted.',
     },
     detail: { type: 'string', description: 'first lines of the error output when it failed, verbatim' },
   },
@@ -626,6 +641,11 @@ const refreshHalt = (r, where) => {
 }
 
 for (let i = 0; i < MAX_TICKETS && !halted; i++) {
+  // The meter snapshot for this pass: refresh through verify. Between agent
+  // calls the session is awaiting this workflow, so the delta is, to a close
+  // approximation, this ticket's own output-token spend.
+  const spentAtStart = METER ? METER.spent() : null
+
   // a. Refresh epic/<name> from the default branch — between every ticket, or
   //    the release merge becomes its own big-bang — and then take the first
   //    ticket `next` hands out: that is document order, and document order is
@@ -702,7 +722,7 @@ for (let i = 0; i < MAX_TICKETS && !halted; i++) {
   const worker = await agent(
     `A driver spawned you for this one ticket. Run the \`flow:ticket\` skill for \`${id}\`, exactly as written — you are working from documents, not from any conversation — but scoped as this prompt scopes it, which the skill's step 0 explicitly allows ("honoring whatever your spawn prompt scopes or forbids").
 
-RUN: steps 1–6 (resolve, read, branch from ${epicBranch}, implement, verify with counts, write and commit the status entry), then step 9 — print your summary, \`git push -u origin ${branch}\`, and \`gh pr create --base ${epicBranch} --title "${id}: <title>"\` with the body step 9 describes. STOP there and report.
+RUN: steps 1–6 (resolve, read, branch from ${epicBranch}, implement, verify with counts, write and commit the status entry), then step 9's summary and push — print your summary and \`git push -u origin ${branch}\`. Do NOT open a pull request: a release ticket has none of its own, and the release pull request at the epic's end is the only pull request this epic owns. STOP at the successful push and report.
 
 DO NOT run step 7 (review), step 8 (fix and addendum) or step 10 (the gate and the merge). The driver hires the reviewer once your pull request is open, gates on its findings, and merges. You do not review your own work, you do not merge, and you spawn no agents at all — the party under review never picks its judge, and everything after your pull request opens belongs to the driver.
 
@@ -714,7 +734,7 @@ The repository is at ${repoRoot}; the epic is \`${epic}\` and its branch is \`${
 
 ${NO_MAIN}
 
-Report honestly: \`pr-opened\` ONLY if you pushed \`${branch}\` and saw \`gh pr create\` return a URL. If a stop condition fired — a document/code contradiction, a merge conflict, a permission prompt, anything that made the ticket undoable from its documents — write the status entry the skill requires and report it with the matching stopCondition. A halt is the mechanism working, not a failure; inventing progress past one is the only real failure.`,
+Report honestly: \`branch-pushed\` ONLY if you saw the push of \`${branch}\` succeed. If a stop condition fired — a document/code contradiction, a merge conflict, a permission prompt, anything that made the ticket undoable from its documents — write the status entry the skill requires and report it with the matching stopCondition. A halt is the mechanism working, not a failure; inventing progress past one is the only real failure.`,
     {
       label: workerLabel,
       phase: 'Ticket',
@@ -762,19 +782,17 @@ Report honestly: \`pr-opened\` ONLY if you pushed \`${branch}\` and saw \`gh pr 
     resolveOutcome: 'not reached',
     mergeOutcome: 'not reached',
     addendumMatches: null,
-    matchCount: null,
-    resolvedPrNumber: '',
+    headSha: '',
     built: worker && worker.built ? fence(worker.built) : '',
     verification: worker && worker.verification ? fence(worker.verification) : '',
     deployPreconditions: worker && Array.isArray(worker.deployPreconditions) ? worker.deployPreconditions.map(line) : [],
-    prNumber: '',
-    prUrl: worker && worker.prUrl ? line(worker.prUrl) : '',
     workerReported: worker ? worker.result : 'no report',
+    outputTokensObserved: null,
     result: 'halted',
   }
   ticketRecords.push(record)
 
-  if (!worker || worker.result !== 'pr-opened') {
+  if (!worker || worker.result !== 'branch-pushed') {
     // Own keys only: "toString" is a member of every object, and a worker that
     // reported it would otherwise resolve to a function rather than a stop
     // condition. Anything unrecognised is BLOCKED, the strictest reading.
@@ -789,21 +807,6 @@ Report honestly: \`pr-opened\` ONLY if you pushed \`${branch}\` and saw \`gh pr 
     }
     break
   }
-
-  // The merge step needs a pull request number, and it is the worker's only
-  // fact the script cannot recompute. Missing or unusable is a halt: nothing
-  // downstream may guess which pull request this ticket owns.
-  const prNumber = String(worker.prNumber == null ? '' : worker.prNumber).trim()
-  if (!/^\d+$/.test(prNumber)) {
-    halted = {
-      ticket: id,
-      stopCondition: STOP.blocked,
-      where: `the worker for ${id}`,
-      detail: `the worker reported pr-opened but no usable pull request number — the ticket cannot be reviewed and merged against a pull request nobody can name. What it reported: ${fence(line(prNumber))}`,
-    }
-    break
-  }
-  record.prNumber = prNumber
 
   // d. Read the changed files and floor the tier — in code, before pricing.
   //    The worker's tier is the reviewed party's word about how strong its
@@ -861,7 +864,7 @@ ${NO_MAIN} You are read-only here in any case: nothing in this task writes anyth
   } else if (priced.floored) {
     log(`${id}: the worker reported tier ${worker.tier}, but the diff's own file list floors it at ${floor} — priced at ${priced.tier}; a reported tier can raise the price, never lower it.`)
   }
-  log(`${id}: pull request #${prNumber} open; hiring the reviewer at tier ${priced.tier} (${priced.modelUsed}, effort ${priced.effort}).`)
+  log(`${id}: branch ${branch} pushed; hiring the reviewer at tier ${priced.tier} (${priced.modelUsed}, effort ${priced.effort}).`)
 
   // e. Hire the reviewer. The DRIVER hires the judge — the supervisor pattern
   //    one level up — and the packet is assembled here, from the ID and the
@@ -898,7 +901,7 @@ Report no token figure: you cannot see your own counter, and the session observe
       ticket: id,
       stopCondition: STOP.reviewerSpawn,
       where: `hiring the reviewer for ${id}`,
-      detail: `both the \`flow:ticket-reviewer\` agent and the sanctioned general-agent fallback returned no review. The pull request #${prNumber} stays open and unmerged: an unreviewed ticket is never merged, anywhere.`,
+      detail: `both the \`flow:ticket-reviewer\` agent and the sanctioned general-agent fallback returned no review. The branch ${branch} stays pushed and unmerged: an unreviewed ticket is never merged, anywhere.`,
     }
     break
   }
@@ -944,7 +947,7 @@ Report no token figure: you cannot see your own counter, and the session observe
     : '(none)'
 
   const disposition = await agent(
-    `Disposition a completed review for ticket \`${id}\` in the repository at ${repoRoot}, then leave the record straight. Its branch \`${branch}\` is pushed and its pull request #${prNumber} is open against ${epicBranch}; a driver reviewed it and now needs the findings dispositioned before it may merge.
+    `Disposition a completed review for ticket \`${id}\` in the repository at ${repoRoot}, then leave the record straight. Its branch \`${branch}\` is pushed; a driver reviewed it and now needs the findings dispositioned before it may merge into ${epicBranch}. A release ticket has no pull request of its own — the branch and the log are the whole record.
 
 Start with \`git checkout ${branch}\`. You append to the END of this ticket's entry in the status log — the entries above it belong to earlier tickets and are not your reading; do not spend context on them.
 
@@ -962,7 +965,7 @@ Do, in order:
    The reviewer's model and effort come from this prompt because the DRIVER hired the reviewer; use them verbatim. Token figures are deliberately absent: no agent can see its own counter, so the session sums the run's own transcripts into the run record after the run ends — the addendum points there instead of quoting a number nobody observed.
 
    Keep the addendum to the findings and their dispositions: each fix with its commit and the re-run counts, each not-fixed with its reason, each pre-existing with its owner. Do NOT reproduce verification transcripts, re-walk acceptance criteria, or narrate commands the entry's own Verified line already carries — the log is read by every later reviewer and the retro, and narration there is a cost every future ticket pays.
-3. **Commit the addendum** (with the fix commits, or on its own when nothing needed fixing) and \`git push\`. An uncommitted addendum never reaches the remote or the pull request's evidence trail, and the driver refuses to merge a ticket whose review is not on the record.
+3. **Commit the addendum** (with the fix commits, or on its own when nothing needed fixing) and \`git push\`. An uncommitted addendum never reaches the remote or the pull request's evidence trail, and the driver refuses to merge a branch whose review is not on the record.
 
 Nits: fix one only if it is trivial and in scope; otherwise record it in the addendum and let the retro decide. A nit never blocks.
 
@@ -972,7 +975,7 @@ Nits: fix one only if it is trivial and in scope; otherwise record it in the add
 
 ${PROMPT_RULE}
 
-${NO_MAIN} You do not merge this pull request; the driver does, after its own gate.`,
+${NO_MAIN} You do not merge this branch; the driver does, after its own gate.`,
     {
       label: `disposition:${id}`,
       phase: 'Disposition',
@@ -1168,7 +1171,7 @@ git diff --numstat ${reviewedHead} origin/${branch} -- ':(exclude)epics'
 The first command lists the files the review saw — report its paths, verbatim, as \`reviewedFiles\`. The second lists what the fix commits changed after the review (the status-log addendum is excluded by the pathspec) — report its paths as \`fixFiles\` and the sum of every added and deleted count it printed as \`fixLines\`: 0 when it prints nothing, and -1 if any count prints "-" (a binary file) — both are answers, not failures. You judge none of it; the driver checks the bounds in code.`
     : ''
   const resolved = await agent(
-    `In the repository at ${repoRoot}, report ${boundsGated ? 'three' : 'two'} facts about one ticket's pull request. **You change nothing**: no merge, no push, no edit, no \`gh pr\` command but the listing below. You do not judge what you find — report what the commands printed and let the driver decide.
+    `In the repository at ${repoRoot}, report ${boundsGated ? 'three' : 'two'} facts about one ticket's pushed branch. **You change nothing**: no merge, no push, no edit. You do not judge what you find — report what the commands printed and let the driver decide.
 
 FACT 1 — how many of **${id}'s own** review addenda dated ${today} are in the branch as pushed:
 
@@ -1181,13 +1184,13 @@ The status log is append-only and this branch was cut from ${epicBranch}, so it 
 
 \`grep -c\` prints the count; it exits 1 when the count is 0, which is an answer, not a failure (that is what \`|| true\` is for). Report the number as \`addendumMatches\` — including 0. Report \`-1\` only if \`git show\` could not read that file at all.
 
-FACT 2 — which open pull requests come from this ticket's branch:
+FACT 2 — the exact commit the pushed branch stands at:
 
 \`\`\`bash
-gh pr list --head ${branch} --state open --json number,headRefName,baseRefName
+git rev-parse origin/${branch}
 \`\`\`
 
-Deliberately NOT filtered by base: a pull request aimed at the wrong branch has to come back so it can be reported, not vanish into a zero count. Report \`matchCount\` (how many the listing returned) and, when it returned exactly one, its \`number\`, \`headRefName\` and \`baseRefName\` **verbatim from the response** — not from what you expected them to be.${fixBoundsFacts}
+Report what it printed as \`headSha\`, **verbatim** — never reconstructed from memory, never from a local branch. The driver merges exactly this commit into ${epicBranch}; a SHA, unlike a branch name or a pull-request number, cannot be retargeted between the check and the merge.${fixBoundsFacts}
 
 Report outcome "resolved" once every command above has run, whatever it printed. "command-failed" is for a command that failed for some other reason (the fetch could not reach the remote, \`gh\` is not authenticated) — never for a count of 0 or an empty listing, which are answers.
 
@@ -1201,12 +1204,13 @@ ${NO_MAIN} You are read-only here in any case: nothing in this task writes anyth
   // ends the ticket without a merge agent ever existing.
   record.resolveOutcome = resolved ? line(resolved.outcome) : 'no report'
   record.addendumMatches = resolved && Number.isInteger(resolved.addendumMatches) ? resolved.addendumMatches : null
-  record.matchCount = resolved && Number.isInteger(resolved.matchCount) ? resolved.matchCount : null
-  record.resolvedPrNumber = resolved && resolved.number != null ? String(resolved.number).trim() : ''
+  const resolvedHead =
+    resolved && typeof resolved.headSha === 'string' && /^[0-9a-f]{7,40}$/.test(resolved.headSha.trim()) ? resolved.headSha.trim() : null
+  record.headSha = resolvedHead || ''
   {
     const errorText = resolved ? line(resolved.detail || '') : ''
     const quoted = errorText ? ` ${fence(errorText)}` : ''
-    const where = `resolving ${id}'s pull request before the merge`
+    const where = `resolving ${id}'s pushed branch before the merge`
     const stop = (stopCondition, detail) => {
       halted = { ticket: id, stopCondition, where, detail }
     }
@@ -1216,17 +1220,10 @@ ${NO_MAIN} You are read-only here in any case: nothing in this task writes anyth
       stop(STOP.permissionPrompt, quoted.trim() || '(no command named)')
     } else if (resolved.outcome !== 'resolved') {
       stop(STOP.nonzeroExit, `the resolve step could not read the branch or the pull request listing:${quoted}`)
-    } else if (record.matchCount === 0) {
-      stop(STOP.contradiction, `no open pull request from \`${branch}\` — the worker reported #${prNumber}, the repository has none. Nothing merged.${quoted}`)
-    } else if (record.matchCount === null || record.matchCount > 1) {
+    } else if (!resolvedHead) {
       stop(
         STOP.contradiction,
-        `${record.matchCount === null ? 'an unreported number of' : record.matchCount} open pull requests from \`${branch}\` — a ticket owns exactly one, and picking between them is not the run's decision. Nothing merged.${quoted}`,
-      )
-    } else if (line(resolved.headRefName) !== branch || line(resolved.baseRefName) !== epicBranch) {
-      stop(
-        STOP.contradiction,
-        `the pull request from \`${line(resolved.headRefName) || '(none reported)'}\` targets "${line(resolved.baseRefName) || '(none reported)'}", not ${epicBranch} — the ticket was branched or based against something the epic does not own. Not retargeted, not merged, and no agent that could merge it was ever spawned.${quoted}`,
+        `the resolve step reported no usable head SHA for \`origin/${branch}\` — the merge is pinned to a commit the driver verified, and nothing is merged unpinned. What it reported: ${fence(line(resolved.headSha || '(nothing)'))}${quoted}`,
       )
     } else if (!(Number.isInteger(record.addendumMatches) && record.addendumMatches >= 1)) {
       stop(
@@ -1234,11 +1231,6 @@ ${NO_MAIN} You are read-only here in any case: nothing in this task writes anyth
         `no \`Addendum — review — ${today}\` line under ${id}'s own entries in \`epics/${epic}/status.md\` on \`origin/${branch}\` (count ${
           record.addendumMatches === null ? 'unreported' : record.addendumMatches === -1 ? 'unreadable' : record.addendumMatches
         }) — the disposition said it committed the addendum, the branch says otherwise, and the branch is the evidence. An unreviewed-on-the-record ticket is never merged.${quoted}`,
-      )
-    } else if (record.resolvedPrNumber !== prNumber) {
-      stop(
-        STOP.contradiction,
-        `the repository resolves \`${branch}\` → pull request #${record.resolvedPrNumber || '(none reported)'}, but the worker reported #${prNumber} — the worker and the board disagree about which pull request this ticket owns. Nothing merged, nothing retargeted.${quoted}`,
       )
     } else if (boundsGated) {
       // The fix-bounds gate — what replaced the re-review below the
@@ -1271,21 +1263,24 @@ ${NO_MAIN} You are read-only here in any case: nothing in this task writes anyth
   if (halted) break
 
   // h. Merge — the one sanctioned agent merge, and its surface is the epic
-  //    branch only. One command, on a number this code verified, by an agent
-  //    with nothing to decide. The old belt-and-braces re-checks of the
-  //    resolution facts lived here; they are gone because the facts are now
-  //    checked before anything can act on them, which is the stronger place.
+  //    branch only. A fixed git sequence on a SHA this code verified, by an
+  //    agent with nothing to decide: release tickets have no pull request,
+  //    and a SHA — unlike a branch name or a pull-request number — cannot be
+  //    retargeted between the resolve step's check and this merge.
   phase('Merge')
   const merged = await agent(
-    `In the repository at ${repoRoot}, run exactly this command and report what it did:
+    `In the repository at ${repoRoot}, run exactly this sequence and report what it did:
 
 \`\`\`bash
-gh pr merge ${record.resolvedPrNumber} --merge
+git checkout ${epicBranch}
+git pull --ff-only
+git merge --no-ff ${resolvedHead} -m "Merge ${branch} into ${epicBranch}"
+git push origin ${epicBranch}
 \`\`\`
 
-That is the whole task. The number is not yours to look up or second-guess — the driver resolved it from the branch \`${branch}\` and verified it before spawning you. Run no other command: no listing, no view, no checkout, no push.
+That is the whole task. The SHA is not yours to look up or second-guess — the driver read it from \`origin/${branch}\` and verified it before spawning you; merging the SHA, not the branch name, is what makes the merged commit exactly the reviewed one. Stop at the FIRST command that exits nonzero and report it; do not retry, do not work around it.
 
-\`--merge\` and never \`--squash\`: the release pull request carries every ticket's commits, and squashing collapses their subjects into one, making every ticket but one read as unshipped — squashing is how a shipped ticket becomes invisible. If it fails, report outcome "failed" with the error verbatim, and say plainly whether it was a conflict.
+\`--no-ff\` and never a squash: the release pull request carries every ticket's commits, and squashing collapses their subjects into one, making every ticket but one read as unshipped — the ID-prefixed subjects reaching ${epicBranch} are also how the board derives that this ticket integrated. If \`git merge\` reports a conflict: run \`git merge --abort\`, then report outcome "failed" with the error verbatim, saying plainly it was a conflict.
 
 ${PROMPT_RULE}
 
@@ -1300,14 +1295,14 @@ ${NO_MAIN} This merge into ${epicBranch} is the only merge you perform.`,
     const quoted = errorText ? ` ${fence(errorText)}` : ''
     halted = {
       ticket: id,
-      where: `merging ${id}'s pull request #${record.resolvedPrNumber} into ${epicBranch}`,
+      where: `merging ${id}'s verified head ${resolvedHead} into ${epicBranch}`,
       ...(!merged
         ? { stopCondition: STOP.nonzeroExit, detail: 'the merge agent returned no report — the merge cannot be assumed to have happened' }
         : merged.outcome === 'permission-prompt'
           ? { stopCondition: STOP.permissionPrompt, detail: quoted.trim() || '(no command named)' }
           : /conflict/i.test(errorText)
             ? { stopCondition: STOP.mergeConflict, detail: `merging ${branch} into ${epicBranch} conflicted:${quoted}` }
-            : { stopCondition: STOP.nonzeroExit, detail: `\`gh pr merge ${record.resolvedPrNumber} --merge\` did not merge ${id} (${line(merged.outcome)}):${quoted}` }),
+            : { stopCondition: STOP.nonzeroExit, detail: `the merge sequence did not merge ${id}'s verified head ${resolvedHead} (${line(merged.outcome)}):${quoted}` }),
     }
     break
   }
@@ -1353,8 +1348,26 @@ ${PROMPT_RULE}`,
     break
   }
   record.result = 'integrated'
-  record.prUrl = record.prUrl || line(found.prUrl || '')
   log(`${id}: integrated (confirmed from the board, not from any agent's report).`)
+
+  // The per-ticket budget, checked AFTER integration: nothing un-merges, so
+  // the ticket that overspent stays merged — the ceiling stops the run from
+  // starting the NEXT ticket, because a ticket whose spend leaves its class
+  // is a planning signal a human reads, not a cost the run absorbs silently.
+  // The delta is meter-observed, never any agent's report.
+  if (METER) {
+    const spent = METER.spent() - spentAtStart
+    record.outputTokensObserved = spent
+    if (ticketBudget && spent > ticketBudget) {
+      halted = {
+        ticket: id,
+        stopCondition: STOP.ticketBudget,
+        where: 'the per-ticket token budget, after the merge was confirmed',
+        detail: `${id} integrated, but its pass spent ${spent} output tokens against the epic's budget of ${ticketBudget}. The work is merged and stays merged; the run stops before the next ticket so a human can decide whether this class of spend is expected — raise the epic's Ticket budget line, or look at why the ticket outgrew its plan.`,
+      }
+      break
+    }
+  }
 }
 
 if (!halted && ticketRecords.length >= MAX_TICKETS) {

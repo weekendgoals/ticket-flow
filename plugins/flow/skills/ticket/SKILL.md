@@ -78,16 +78,17 @@ wiped (/clear, new session) and survives resume/compact.
 **Autonomous epics keep their own ending**: `/flow:run`'s driver plays the
 supervisor's role one level up — **it** hires the reviewer, gates on the
 findings in code, and merges — so a driver-spawned worker runs a scoped
-slice of this skill and **stops at its opened pull request** (steps 1–6 and
-step 9; no step 7, no step 8, no step 10). It never reviews or merges its
+slice of this skill and **stops at its pushed branch** (steps 1–6 and step
+9's summary and push; no pull request — a release ticket has none of its
+own — no step 7, no step 8, no step 10). It never reviews or merges its
 own work, for the same reason a supervisor's worker does not: the party
 under review does not pick its judge. When a **human** invokes one
 autonomous-epic ticket directly — the escape hatch for resolving a halt —
 step 0's lanes still apply and the ticket ends per step 10's autonomous gate
 unchanged: a **supervisor-spawned** worker performs that gate and the
 epic-branch merge, then stops (it was spawned for one ticket). Step 10 states
-the same split by spawn shape: driver-spawned workers stop at the opened pull
-request, supervisor-spawned ones perform the gate and the merge.
+the same split by spawn shape: driver-spawned workers stop at the pushed
+branch, supervisor-spawned ones perform the gate and the merge.
 
 ## 1. Resolve it
 
@@ -428,24 +429,37 @@ Print, concisely:
 2. **Verified** — commands and counts, and anything that could not run here.
 3. **Review** — effort used, findings found, fixed, and not fixed with reasons.
 
-Then:
+Then push:
 
 ```bash
 git push -u origin <branch>
-gh pr create --base <base-branch> --title "<ID>: <title>" --body "<body>"
 ```
 
-`<base-branch>` is the base you noted in step 3 — the default branch in
-incremental delivery, or `epic/<epic-name>` in release delivery. The first
-ticket of an incremental epic **branches from** `epic/<epic-name>` (step 3)
-but its pull request still targets the default branch — that pull request is
-how the epic's documents ship; basing it on the epic branch would strand
-them there, since an incremental epic has no release pull request.
+**What happens next depends on the delivery.**
 
-The pull request body is the only thing read before this ships, so it carries:
-what changed and why, the acceptance criteria with evidence and counts, the
-review summary, and any precondition that must exist before deploy (a new
-environment variable, a migration, a script that runs after).
+**Incremental delivery** — open the pull request; it is the human gate:
+
+```bash
+gh pr create --base <default-branch> --title "<ID>: <title>" --body "<body>"
+```
+
+The first ticket of an incremental epic **branches from** `epic/<epic-name>`
+(step 3) but its pull request still targets the default branch — that pull
+request is how the epic's documents ship; basing it on the epic branch would
+strand them there, since an incremental epic has no release pull request.
+The pull request body is the only thing read before this ships, so it
+carries: what changed and why, the acceptance criteria with evidence and
+counts, the review summary, and any precondition that must exist before
+deploy (a new environment variable, a migration, a script that runs after).
+
+**Release delivery — no pull request.** A release ticket has no pull request
+of its own: the human's gate is the release pull request at the epic's end,
+per-ticket review already happened on the pushed branch, and a per-ticket
+pull request would add a retargetable surface with no reader. The pushed
+branch and the committed status log ARE the ticket's record, and they travel
+to the human inside the release pull request. Everything the incremental
+body carries lives in the status entry and its review addendum instead —
+which is why step 6 requires them committed.
 
 Do not add Claude as a co-author. **No agent ever merges toward the default
 branch, in any mode** — no `gh pr merge` on a pull request based on main, no
@@ -477,17 +491,27 @@ stop. Do not start the next ticket. There is nothing to run after the merge.
   sanctioned fallback is a general agent instructed by the reviewer
   definition plus the review skill; if that also fails, stop — BLOCKED entry,
   no merge.
-- Verify the pull request's base equals `epic/` + the `epic` field from step
-  1's `find --json` output — `gh pr view --json baseRefName`. Anything else:
-  stop. Do not retarget, do not merge.
-- Merge your own pull request into the epic branch with a merge commit:
-  `gh pr merge <number> --merge`. Never squash — the release pull request
-  needs the per-ticket subjects.
+- Merge your own branch into the epic branch — **by its verified SHA, with
+  a merge commit**:
+
+  ```bash
+  git rev-parse origin/<branch>        # the exact commit that was reviewed and fixed
+  git checkout epic/<epic-name>
+  git pull --ff-only
+  git merge --no-ff <that SHA>
+  git push origin epic/<epic-name>
+  ```
+
+  The SHA, not the branch name: merging the commit you verified is what
+  makes the merged diff exactly the reviewed one. Never squash — the release
+  pull request needs the per-ticket subjects, and those ID-prefixed subjects
+  reaching `epic/<epic-name>` are also how the board derives that this
+  ticket integrated.
 - **Which spawn shape you are decides whether this step is yours at all.**
   Read the prompt that launched you:
   - **A driver spawned you** (`/flow:run`'s workflow — the prompt says "a
     driver spawned you"): **you never reach this step.** Your ticket ends at
-    step 9's opened pull request; the driver owns the review, the gate, the
+    step 9's pushed branch; the driver owns the review, the gate, the
     merge, the between-ticket refresh of the epic branch, and the fresh
     context of the next ticket's agent. Report as in step 9 and stop.
   - **A supervisor spawned you**, or you are the whole run (a human typed
