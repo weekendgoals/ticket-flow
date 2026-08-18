@@ -58,9 +58,12 @@ go through the flow, one-off work goes through `/flow:quick` into
 - **Live plugin dev:** `/plugin marketplace add ~/projects/ticket-flow`, then
   `/reload-plugins` to pick up skill edits mid-session.
 
-There is no package.json, linter, or CI. Node ≥ 20 (built-in test runner);
-`node --test <directory>` does not discover files here — pass the test file
-path explicitly.
+There is no package.json or linter. CI (`.github/workflows/tests.yml`) runs
+every suite above, the invariant checker, doctor, and the syntax/parse
+checks on pushes to main and on pull requests — the same commands as here,
+so local runs and the PR gate cannot drift apart. Node ≥ 20 (built-in test
+runner); `node --test <directory>` does not discover files here — pass the
+test file path explicitly.
 
 ## Invariants
 

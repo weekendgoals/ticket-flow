@@ -144,6 +144,18 @@ will die at its first prompt.
   pull request body (step 7). No recorded waiver: report what the probes
   returned and stop before ticket one.
 
+- **The automation's identity — recommended, not required.** The run acts
+  as whoever `git` and `gh` are authenticated as; when that is the human's
+  own account, branch protection cannot tell agent from human, and
+  "human-only merge" binds accounts, not intentions (METHODOLOGY records
+  the shared-identity lesson: an epic once promised evidence "showing zero
+  human interventions" that no shared-identity record could show). For
+  high-consequence repositories, authenticate unattended runs as a separate
+  machine identity with **no permission to merge or push to the default
+  branch** — then protection distinguishes the agent from the human by
+  construction, not by trust. Environment setup like protection itself:
+  decided by a human, recorded at sign-off, never enforced by the plugin.
+
 ## 4. Hand the loop to the driver script
 
 Steps 1–3 ran here because they decide whether the run may start at all. The

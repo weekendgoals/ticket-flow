@@ -8,6 +8,18 @@ with one version and date.
 
 ## Unreleased
 
+- **CI runs the whole verification surface, and the run skill recommends a
+  separate automation identity** (`.github/workflows/tests.yml`, CLAUDE.md
+  Commands, `skills/run/SKILL.md` step 3). GitHub Actions now runs every
+  suite, the invariant checker, doctor, and the syntax/parse checks — the
+  same commands CLAUDE.md names, so local runs and the pull-request gate
+  cannot drift apart. The run skill's environment checklist gains the
+  shared-identity point an external review raised: when agents and humans
+  authenticate as the same account, "human-only merge" binds accounts, not
+  intentions — high-consequence repositories should run unattended epics
+  under a machine identity with no permission to merge or push to the
+  default branch. Environment setup like branch protection itself:
+  recorded at sign-off, never enforced by the plugin.
 - **A per-ticket token budget, enforced by the meter**
   (`workflows/run-epic.mjs`, `scripts/tickets.mjs`, the run skill's steps
   4-5). A new optional epic preamble line — `Ticket budget: 250000` (or
