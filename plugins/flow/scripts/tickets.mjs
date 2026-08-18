@@ -103,16 +103,32 @@ const DELIVERIES = new Set(['release', 'incremental'])
 // their consequence-tier default, for workers they pass no model at all
 // and the worker inherits the invoking session's; this script never picks
 // a model.
+//
+// "Consequence paths" is the fourth optional line: comma-separated path
+// globs whose changes always price review at the consequence tier in an
+// unattended run — the epic's mechanical projection of the risk list onto
+// the repository's layout. Parsed as a list of the same tolerant shape:
+// each comma-separated segment's first word is the glob, anything after it
+// is prose. Case is preserved — paths are case-sensitive, unlike models
+// and delivery. Absent is null; this script never judges the globs, the
+// run driver validates and applies them.
 function parsePreamble(ticketsDoc) {
   const preamble = readFileSync(ticketsDoc, 'utf8').split(/^##\s/m)[0]
   const grab = (label, charset = '[A-Za-z-]+') => {
     const m = preamble.match(new RegExp(`^${label}[^\\S\\n]*:[^\\S\\n]*(${charset})`, 'im'))
     return m ? m[1].toLowerCase() : null
   }
+  const grabPathList = label => {
+    const m = preamble.match(new RegExp(`^${label}[^\\S\\n]*:[^\\S\\n]*(\\S[^\\n]*)`, 'im'))
+    if (!m) return null
+    const globs = m[1].split(',').map(s => s.trim().split(/\s+/)[0]).filter(Boolean)
+    return globs.length ? globs : null
+  }
   return {
     delivery: grab('Delivery') ?? 'incremental',
     reviewerModel: grab('Reviewer model', '[A-Za-z0-9._-]+'),
     workerModel: grab('Worker model', '[A-Za-z0-9._-]+'),
+    consequencePaths: grabPathList('Consequence paths'),
   }
 }
 
@@ -522,14 +538,14 @@ function doctor() {
   // old two-line syntax ("Release mode:" / "Run mode:") is in the near set
   // deliberately: those labels parse as nothing at all now, and a preamble
   // written in them would silently run incremental.
-  const declNear = /^[^A-Za-z]*\b(delivery|(reviewer|worker)\s+model|(release|run)\s+mode)\b/i
-  const declStrict = /^Delivery\s*:\s*[A-Za-z-]+|^(Reviewer|Worker) model\s*:\s*[A-Za-z0-9._-]+/i
+  const declNear = /^[^A-Za-z]*\b(delivery|(reviewer|worker)\s+model|consequence\s+paths|(release|run)\s+mode)\b/i
+  const declStrict = /^Delivery\s*:\s*[A-Za-z-]+|^(Reviewer|Worker) model\s*:\s*[A-Za-z0-9._-]+|^Consequence paths\s*:\s*\S+/i
   for (const epic of epics) {
     if (!DELIVERIES.has(epic.delivery))
       add('warn', `${epic.epic}: unrecognised delivery "${epic.delivery}" (known: release, incremental) — skills reading it will not know how this epic ships`)
     readFileSync(epic.ticketsDoc, 'utf8').split(/^##\s/m)[0].split('\n').forEach((line, i) => {
       if (declNear.test(line) && !declStrict.test(line))
-        add('warn', `${epic.epic}/tickets.md:${i + 1} — looks like a declaration line but will not parse, so it silently defaults (needs "Delivery: release|incremental" / "Reviewer model: <value>" / "Worker model: <value>" — label at line start, no formatting, value on the label's own line; "Release mode:"/"Run mode:" are not read at all): ${line.trim()}`)
+        add('warn', `${epic.epic}/tickets.md:${i + 1} — looks like a declaration line but will not parse, so it silently defaults (needs "Delivery: release|incremental" / "Reviewer model: <value>" / "Worker model: <value>" / "Consequence paths: <glob>[, <glob>]" — label at line start, no formatting, value on the label's own line; "Release mode:"/"Run mode:" are not read at all): ${line.trim()}`)
     })
   }
 
@@ -622,6 +638,7 @@ function ticketFacts(data, t) {
     delivery: epic.delivery,
     reviewerModel: epic.reviewerModel,
     workerModel: epic.workerModel,
+    consequencePaths: epic.consequencePaths,
     repoRoot,
     epicDir: epic.dir,
     ticketsDoc: epic.ticketsDoc,
@@ -744,7 +761,7 @@ switch (cmd) {
         modes: Object.fromEntries(
           data.epics.map((e) => [
             e.epic,
-            { delivery: e.delivery, reviewerModel: e.reviewerModel, workerModel: e.workerModel },
+            { delivery: e.delivery, reviewerModel: e.reviewerModel, workerModel: e.workerModel, consequencePaths: e.consequencePaths },
           ]),
         ),
         duplicates: data.duplicates,

@@ -200,6 +200,26 @@ comments qualify as prose. The consequence list stays coupled to quick's
 entry gate (one list, two doors), so the cheap tiers structurally cannot
 leak consequential work.
 
+The tier is **floored by code in the unattended lane** — a gap closed after
+an external read of the workflow named it: the worker reported its own
+diff's tier, and the driver priced the reviewer from that report alone,
+which meant the party under review priced its own judge. The driver guarded
+the malformed case (a missing or unrecognised tier prices as consequence)
+but not the wrong-but-well-formed one — a worker calling a code change
+`prose` bought itself the weakest review, and nothing checked. So the
+driver now reads the branch's changed file list through a read-only
+fast-model step and computes a floor in code: docs-only files may keep the
+prose price, anything else floors at normal, and the epic's optional
+`Consequence paths:` globs — the risk list projected onto the repository's
+layout — floor at consequence. The report can raise the price, never lower
+it. The split respects what code can actually know: "which files changed"
+is mechanical, "is this markdown read by a machine" is not, so the
+prose-vs-normal judgment on a docs-only diff stays with the worker — able
+only to push the tier up. This is the same rule as "a gate is verified at
+the door its actor walks through": the attended lanes need no floor,
+because there the tier is picked by the supervisor or session, which is
+not the party under review.
+
 The tiers' models are **named, never inherited** — a later lesson from the
 same ledger. The normal tier originally read "the class this session runs
 on", which sounded neutral and priced review by accident: sessions that
@@ -321,6 +341,15 @@ approves a correct implementation of the wrong thing, and the cost is every
 ticket stacked on it. The sign-off gate existed for exactly this, yet it left
 the human to catch decomposition faults alone, reading a document written by a
 session with every incentive to find its own plan convincing.
+
+The human's own leverage was moved earlier for the same reason. The epic
+skill originally produced a complete document and then asked — which turns
+sign-off into yes/no on the only shape in the room, because a finished
+decomposition anchors both parties and a re-split now costs a rewrite. The
+skill now stops at the shape first — outcome, areas, delivery, the ticket
+list as one line each — where a re-split costs a sentence, and the sign-off
+itself presents one considered-and-rejected alternative so approval is a
+choice between shapes rather than a ratification of the one shown.
 
 So the same trick used on code is used on the plan: a fresh-context agent with
 no stake in the decomposition, reading it against the actual code, reporting

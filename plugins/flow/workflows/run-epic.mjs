@@ -1,13 +1,13 @@
 export const meta = {
   name: 'flow-run-epic',
   description:
-    "The /flow:run driver loop as code — code-controlled, agent-executed: refresh epic/<name> and take the next ticket in document order, spawn a worker that stops at its opened pull request, hire the reviewer, gate on its findings, re-review any fix commits, resolve and merge the ticket's pull request from the branch name, confirm the merge landed — and halt on any stop condition instead of improvising past it",
+    "The /flow:run driver loop as code — code-controlled, agent-executed: refresh epic/<name> and take the next ticket in document order, spawn a worker that stops at its opened pull request, read the diff's file list and floor the review tier in code, hire the reviewer, gate on its findings, re-review any fix commits, resolve and merge the ticket's pull request from the branch name, confirm the merge landed — and halt on any stop condition instead of improvising past it",
   whenToUse:
-    'Invoked by the flow:run skill AFTER it has resolved the epic, refused anything but Delivery: release, verified the sign-off traces on origin/epic/<name>, and checked the permission surface and branch protection (or its recorded waiver). Requires args {epic, defaultBranch, repoRoot, pluginRoot, today, workerModel?, reviewerModel?}. Returns {outcome: "completed"|"halted", haltedOn, ticketRecords, ...}; the calling session writes the run record and opens the release pull request. The driver hires the reviewer — the party under review never picks its judge — and the merge gate is a code check on the reviewer\'s structured findings. The script never merges, pushes, or retargets toward the default branch, and never opens or merges the release pull request.',
+    'Invoked by the flow:run skill AFTER it has resolved the epic, refused anything but Delivery: release, verified the sign-off traces on origin/epic/<name>, and checked the permission surface and branch protection (or its recorded waiver). Requires args {epic, defaultBranch, repoRoot, pluginRoot, today, workerModel?, reviewerModel?, consequencePaths?}. Returns {outcome: "completed"|"halted", haltedOn, ticketRecords, ...}; the calling session writes the run record and opens the release pull request. The driver hires the reviewer — the party under review never picks its judge — and the merge gate is a code check on the reviewer\'s structured findings. The script never merges, pushes, or retargets toward the default branch, and never opens or merges the release pull request.',
   phases: [
     { title: 'Refresh + select', detail: 'merge the default branch into epic/<name>, then read the next startable ticket — one agent, one command sequence' },
     { title: 'Ticket', detail: 'one fresh-context worker per ticket, stopping at its opened pull request' },
-    { title: 'Review', detail: 'the driver hires the judge, priced by the tier the worker reported' },
+    { title: 'Review', detail: "the driver hires the judge, priced by the worker's reported tier floored in code by the diff's own file list" },
     { title: 'Disposition', detail: 'fix Important findings, record pre-existing ones, commit the addendum — a merge precondition' },
     { title: 'Re-review', detail: 'one bounded pass over the fix commits — only at the consequence tier, or when the fix-bounds gate has no anchor; below that the fixes are bounds-checked in code at the resolve step' },
     { title: 'Resolve', detail: 'read-only: the addendum on the pushed branch and the pull request the branch resolves to, checked in code before anything can merge' },
@@ -33,7 +33,7 @@ const today = ARGS && ARGS.today
 
 if (!epic || !defaultBranch || !repoRoot || !pluginRoot || !today) {
   throw new Error(
-    'flow-run-epic requires args: {epic, defaultBranch, repoRoot, pluginRoot, today, workerModel?, reviewerModel?} — e.g. {epic:"payments", defaultBranch:"main", repoRoot:"/Users/x/proj", pluginRoot:"/Users/x/.claude/plugins/.../flow", today:"2026-08-11"}. The flow:run skill supplies all of them from its steps 1-3; run it only after those steps have passed.',
+    'flow-run-epic requires args: {epic, defaultBranch, repoRoot, pluginRoot, today, workerModel?, reviewerModel?, consequencePaths?} — e.g. {epic:"payments", defaultBranch:"main", repoRoot:"/Users/x/proj", pluginRoot:"/Users/x/.claude/plugins/.../flow", today:"2026-08-11"}. The flow:run skill supplies all of them from its steps 1-3; run it only after those steps have passed.',
   )
 }
 
@@ -60,6 +60,37 @@ const workerModel = ARGS.workerModel && MODEL.test(ARGS.workerModel) ? ARGS.work
 const reviewerModel = ARGS.reviewerModel && MODEL.test(ARGS.reviewerModel) ? ARGS.reviewerModel : null
 if (ARGS.workerModel && !workerModel) log(`ignoring unusable workerModel ${JSON.stringify(ARGS.workerModel)} — the worker inherits the driver's model`)
 if (ARGS.reviewerModel && !reviewerModel) log(`ignoring unusable reviewerModel ${JSON.stringify(ARGS.reviewerModel)} — the tier table prices the reviewer instead`)
+
+// The epic's optional `Consequence paths:` globs — file paths whose changes
+// always price review at the consequence tier. Unlike an unusable model (which
+// is safely ignored), an unusable glob silently LOWERS scrutiny if dropped, so
+// it refuses the run instead: this is configuration, and the epic's document
+// is where it gets fixed.
+const GLOB = /^[A-Za-z0-9._*\/-]+$/
+const consequencePaths = []
+if (ARGS.consequencePaths != null) {
+  if (!Array.isArray(ARGS.consequencePaths)) throw new Error('args.consequencePaths must be an array of path globs when present')
+  for (const g of ARGS.consequencePaths) {
+    if (typeof g !== 'string' || !GLOB.test(g) || g.includes('..')) {
+      throw new Error(
+        `Unsafe consequencePaths entry ${JSON.stringify(g)} — a glob is [A-Za-z0-9._*/-] with no ".."; fix the epic's \`Consequence paths:\` line, because dropping it would silently lower review scrutiny`,
+      )
+    }
+    consequencePaths.push(g)
+  }
+}
+// Globs support `**` (across segments), `*` (within a segment) and literals,
+// matched against the full repository-relative path.
+const globRe = g =>
+  new RegExp(
+    '^' +
+      g
+        .split(/(\*\*\/|\*\*|\*)/)
+        .map(p => (p === '**/' ? '(?:[^/]+/)*' : p === '**' ? '.*' : p === '*' ? '[^/]*' : p.replace(/[.^$+?()[\]{}|\\]/g, '\\$&')))
+        .join('') +
+      '$',
+  )
+const CONSEQUENCE_RES = consequencePaths.map(globRe)
 
 const epicBranch = `epic/${epic}`
 const TICKETS = `node "${pluginRoot}/scripts/tickets.mjs"`
@@ -146,6 +177,25 @@ const REFRESH_NEXT_SCHEMA = {
         permissionPrompt: { type: 'boolean', description: 'true if running the command would have required answering a permission prompt' },
       },
     },
+  },
+}
+
+// The changed-file list behind the tier floor: one read-only fast-model step,
+// so the party under review never prices its own judge. The worker still
+// reports a tier — its judgment of what the diff can break — but the driver
+// reads the diff's file list itself and prices at the higher of the two.
+const TIER_FACTS_SCHEMA = {
+  type: 'object',
+  required: ['outcome'],
+  properties: {
+    outcome: {
+      type: 'string',
+      enum: ['listed', 'command-failed', 'permission-prompt'],
+      description:
+        '"listed" once both commands ran and you are reporting what the diff printed — an empty list is an answer, not a failure. "command-failed" for any nonzero exit.',
+    },
+    files: { type: 'array', items: { type: 'string' }, description: 'the paths the diff printed, verbatim, one entry per line — [] when it printed nothing' },
+    detail: { type: 'string', description: 'first lines of any error output, verbatim, credentials masked' },
   },
 }
 
@@ -409,17 +459,37 @@ const REVIEW_TIERS = {
   consequence: { model: 'opus', effort: 'xhigh' },
 }
 
-const priceReview = reported => {
+// The floor half of the pricing: computed by code from the diff's own file
+// list, because the tier decides how strong the reviewer is and the party
+// under review must not price its own judge down. Only "which files changed"
+// is mechanical; "is this markdown read by a machine" is not — so a docs-only
+// diff merely BECOMES ELIGIBLE for the prose price (the worker must still
+// claim it), any other file floors at normal, and a file matching the epic's
+// `Consequence paths:` globs floors at consequence.
+const TIER_RANK = { prose: 0, normal: 1, consequence: 2 }
+const DOC_FILE = /\.(md|markdown|mdx|txt|rst|adoc)$/i
+const tierFloor = files => {
+  if (files.some(f => CONSEQUENCE_RES.some(re => re.test(f)))) return 'consequence'
+  if (files.every(f => DOC_FILE.test(f))) return 'prose'
+  return 'normal'
+}
+
+const priceReview = (reported, floor) => {
   // `Object.hasOwn`, not truthiness: a reported tier of "toString" or
   // "constructor" finds a prototype member, and the run would then price the
   // review with an undefined model and effort — and skip the log line that
   // says doubt went up. Only own keys are tiers.
-  const tier = typeof reported === 'string' && Object.hasOwn(REVIEW_TIERS, reported) ? reported : 'consequence'
+  const reportedUsable = typeof reported === 'string' && Object.hasOwn(REVIEW_TIERS, reported)
+  const rep = reportedUsable ? reported : 'consequence'
+  const f = typeof floor === 'string' && Object.hasOwn(REVIEW_TIERS, floor) ? floor : 'consequence'
+  // max(reported, floor): the report can raise the price, never lower it.
+  const tier = TIER_RANK[f] > TIER_RANK[rep] ? f : rep
   const t = REVIEW_TIERS[tier]
   const model = reviewerModel || t.model
   return {
     tier,
-    tierTrusted: tier === reported,
+    reportedUsable,
+    floored: reportedUsable && TIER_RANK[f] > TIER_RANK[rep],
     effort: t.effort,
     model,
     modelUsed: model || 'inherited (the class this session runs on)',
@@ -636,7 +706,7 @@ RUN: steps 1–6 (resolve, read, branch from ${epicBranch}, implement, verify wi
 
 DO NOT run step 7 (review), step 8 (fix and addendum) or step 10 (the gate and the merge). The driver hires the reviewer once your pull request is open, gates on its findings, and merges. You do not review your own work, you do not merge, and you spawn no agents at all — the party under review never picks its judge, and everything after your pull request opens belongs to the driver.
 
-REPORT THE REVIEW TIER for your own diff, from the ticket skill's step 7 table: \`prose\` (documentation and code comments only — nothing any runtime, parser, test or agent reads), \`consequence\` (the risk list: authentication or authorization boundaries, secrets, crypto, network exposure, migrations, anything that deletes or rewrites data, payments or billing, anything that can fail open), or \`normal\` (everything else, including configuration, user-facing strings, CLI output and agent/skill instructions). Give one line of why. **When in doubt, the higher tier** — the driver prices the reviewer from this field, and an unrecognised or missing tier is priced as \`consequence\`.
+REPORT THE REVIEW TIER for your own diff, from the ticket skill's step 7 table: \`prose\` (documentation and code comments only — nothing any runtime, parser, test or agent reads), \`consequence\` (the risk list: authentication or authorization boundaries, secrets, crypto, network exposure, migrations, anything that deletes or rewrites data, payments or billing, anything that can fail open), or \`normal\` (everything else, including configuration, user-facing strings, CLI output and agent/skill instructions). Give one line of why. **When in doubt, the higher tier** — an unrecognised or missing tier is priced as \`consequence\`. The driver also reads your branch's changed file list itself and floors the tier in code, so your report can raise the review's price but never lower it — you are under review, and the reviewed party does not price its own judge.
 
 Your worker label for this run is \`${workerLabel}\` — record it in the status entry's Mode line (\`autonomous — driver-spawned worker ${workerLabel}\`), because the run record names the same label and those two lines together are what makes "the driver never implements" auditable after the fact. Report no token figure anywhere: you cannot see your own counter, and the session observes every agent's spend from the run's own transcripts after the run — your status entry's Tokens line reads \`recorded in the run record\`.
 
@@ -658,18 +728,20 @@ Report honestly: \`pr-opened\` ONLY if you pushed \`${branch}\` and saw \`gh pr 
     },
   )
 
-  const priced = priceReview(worker && worker.tier)
   const record = {
     id,
     title: line(ticket.title || ''),
     branch,
     workerAgent: workerLabel,
     workerModel: workerModel || 'inherited',
-    tier: priced.tier,
+    // Priced after the tier-facts step below — a ticket that halts before its
+    // pull request opens never reaches pricing, and says so.
+    tier: 'not priced',
     tierReported: worker && worker.tier ? line(worker.tier) : 'none',
+    tierFloor: 'not read',
     tierWhy: worker && worker.tierWhy ? fence(worker.tierWhy) : '',
-    reviewerModelUsed: priced.modelUsed,
-    reviewerEffort: priced.effort,
+    reviewerModelUsed: 'not priced',
+    reviewerEffort: 'not priced',
     importantCount: 0,
     nitCount: 0,
     nitOverflowCount: 0,
@@ -732,15 +804,68 @@ Report honestly: \`pr-opened\` ONLY if you pushed \`${branch}\` and saw \`gh pr 
     break
   }
   record.prNumber = prNumber
-  if (!priced.tierTrusted) {
+
+  // d. Read the changed files and floor the tier — in code, before pricing.
+  //    The worker's tier is the reviewed party's word about how strong its
+  //    own judge should be; the floor is what keeps that word able to raise
+  //    the price but never lower it. One read-only fast-model step, like
+  //    resolve: the agent reports what the diff printed and judges nothing.
+  phase('Review')
+  const tierFacts = await agent(
+    `In the repository at ${repoRoot}, report one fact about ticket ${id}'s pushed branch: which files it changed. Run exactly:
+
+\`\`\`bash
+git fetch origin ${branch}
+git diff --name-only origin/${epicBranch}...origin/${branch} -- ':(exclude)epics'
+\`\`\`
+
+Three dots, not two: the merge-base diff is the ticket's own changes, not the epic branch's drift. The \`epics/\` exclusion keeps the flow's own bookkeeping (status log, ticket doc) out of the pricing facts.
+
+Report the printed paths verbatim under \`files\`, one entry per line — \`[]\` when it prints nothing, which is an answer, not a failure. You judge nothing; the driver prices the review from this list in code.
+
+${PROMPT_RULE}
+
+${NO_MAIN} You are read-only here in any case: nothing in this task writes anything.`,
+    { label: `tier-facts:${id}`, phase: 'Review', schema: TIER_FACTS_SCHEMA, effort: 'low', model: 'haiku' },
+  )
+  if (tierFacts && tierFacts.outcome === 'permission-prompt') {
+    halted = { ticket: id, stopCondition: STOP.permissionPrompt, where: `reading ${id}'s changed files to price its review`, detail: fence(line(tierFacts.detail || '(no command named)')) }
+    break
+  }
+  if (tierFacts && tierFacts.outcome === 'command-failed') {
+    halted = {
+      ticket: id,
+      stopCondition: STOP.nonzeroExit,
+      where: `reading ${id}'s changed files to price its review`,
+      detail: `the changed-file listing failed:${line(tierFacts.detail) ? ` ${fence(line(tierFacts.detail))}` : ' (no detail quoted)'}`,
+    }
+    break
+  }
+  // A dead agent or an unusable list is priced, not halted: the floor goes to
+  // consequence — the strongest review — because missing facts must raise
+  // scrutiny, never lower it, and a maximally-reviewed ticket is safe to
+  // continue with.
+  const files = tierFacts && tierFacts.outcome === 'listed' && Array.isArray(tierFacts.files) ? tierFacts.files.map(line).filter(Boolean) : null
+  const floor = files ? tierFloor(files) : 'consequence'
+  record.tierFloor = floor
+  if (!files) {
+    log(`${id}: no usable changed-file facts (${tierFacts ? 'the listing returned no file array' : 'the tier-facts agent returned no report'}) — the tier floor is consequence; doubt goes up.`)
+  }
+
+  const priced = priceReview(worker.tier, floor)
+  record.tier = priced.tier
+  record.reviewerModelUsed = priced.modelUsed
+  record.reviewerEffort = priced.effort
+  if (!priced.reportedUsable) {
     log(`${id}: the worker reported no usable review tier (${JSON.stringify(record.tierReported)}) — pricing the review as consequence, because doubt goes up.`)
+  } else if (priced.floored) {
+    log(`${id}: the worker reported tier ${worker.tier}, but the diff's own file list floors it at ${floor} — priced at ${priced.tier}; a reported tier can raise the price, never lower it.`)
   }
   log(`${id}: pull request #${prNumber} open; hiring the reviewer at tier ${priced.tier} (${priced.modelUsed}, effort ${priced.effort}).`)
 
-  // d. Hire the reviewer. The DRIVER hires the judge — the supervisor pattern
+  // e. Hire the reviewer. The DRIVER hires the judge — the supervisor pattern
   //    one level up — and the packet is assembled here, from the ID and the
   //    branch-naming invariant, never from the worker's narrative.
-  phase('Review')
   const reviewPacket = `Repository: ${repoRoot}
 Ticket: ${id}
 Commit range: ${range}

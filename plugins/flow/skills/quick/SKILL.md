@@ -185,9 +185,31 @@ Commit the entry with the work.
   parses it), and skill or agent Markdown (in a plugin, the Markdown is the
   program). For these, spawn `flow:ticket-reviewer` with the Agent tool on
   a **cost-efficient model** (a mid-tier model, not the strongest;
-  `effort: medium`), following the `/flow:review` skill, on the commit range
-  `origin/<default-branch>..HEAD`. Give it the ticket section and the
-  instruction files for the touched area. It reports; it does not fix.
+  `effort: medium`), telling it to follow the `/flow:review` skill.
+
+  **The packet is fixed, and it is all the reviewer gets** — the same
+  scoped-packet shape the run driver assembles, because the reason is the
+  same: this session implemented the diff, which makes it exactly the
+  biased narrator the fresh context exists to exclude. Hand the reviewer:
+
+  - the commit range: `origin/<default-branch>..HEAD`;
+  - the scoped reading command, not the documents:
+    `node "${CLAUDE_PLUGIN_ROOT}/scripts/tickets.mjs" brief Q-<n>` — the
+    standing epic's ground rules, this ticket's Scope, **Not in scope**
+    (binding: work outside it is a finding) and Acceptance criteria, and
+    the open owed items;
+  - this ticket's **own** status entry, sliced from the log:
+    `awk '/^### /{f=/^### Q-<n> /} f' epics/quick/status.md` — the entry
+    step 5 committed, and only it; earlier entries are other tickets'
+    history, and the quick log is long by design;
+  - the instruction files for the touched areas (the root file and each
+    area's own).
+
+  **Nothing else rides along**: no summary of what you built, no reasoning,
+  no "what to look at", no conversation content. What you believe about
+  this diff travels only through what steps 2 and 5 committed — the ticket
+  section and the status entry — where the reviewer weighs it as the
+  record, not as your voice. It reports; it does not fix.
 - When unsure which side a diff falls on, it is a behaviour change — the
   cheap reviewer costs little; a skipped review of live behaviour can cost
   the ticket.

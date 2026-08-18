@@ -160,7 +160,8 @@ Workflow({
     pluginRoot: "${CLAUDE_PLUGIN_ROOT}",
     today: "<YYYY-MM-DD, from your own clock>",
     workerModel: "<modes[<name>].workerModel — omit the key when absent>",
-    reviewerModel: "<modes[<name>].reviewerModel — omit the key when absent>"
+    reviewerModel: "<modes[<name>].reviewerModel — omit the key when absent>",
+    consequencePaths: <modes[<name>].consequencePaths — omit the key when null>
   }
 })
 ```
@@ -206,8 +207,22 @@ looping until `tickets.mjs next <epic> --json` comes back empty:
   supervisor pattern one level up: the party under review does not pick its
   judge. The worker also reports the **review tier** its own diff earns from
   the step 7 table (`prose` / `normal` / `consequence`, one line of why,
-  the higher tier when in doubt); the script prices the reviewer from it, and
-  a missing or unrecognised tier is priced as `consequence` — doubt goes up.
+  the higher tier when in doubt); a missing or unrecognised tier is priced
+  as `consequence` — doubt goes up.
+- **floors that tier in code before pricing the reviewer.** The tier decides
+  how strong the judge is, and the worker is the party under review — so its
+  word must be able to raise the price, never lower it. A read-only
+  fast-model step lists the branch's changed files (the merge-base diff
+  against the epic branch, `epics/` excluded so the flow's own bookkeeping
+  never counts), and code computes the floor: any file matching the epic's
+  optional `Consequence paths:` globs floors at `consequence`, any
+  non-documentation file floors at `normal`, and only a docs-only diff may
+  keep the `prose` price — whether machine-read markdown earns `normal`
+  anyway stays the worker's judgment, which can only push the tier up. The
+  review is priced at the higher of the report and the floor. A listing
+  that returns no usable facts floors at `consequence` (missing facts raise
+  scrutiny); a listing whose commands fail halts like any other nonzero
+  exit.
   The worker is told the label the script gave it (`worker:<ID>`) and writes
   it into its status entry's **Mode** line; `ticketRecords[].workerAgent`
   carries the same label into the run record, and those two lines together
@@ -222,7 +237,8 @@ looping until `tickets.mjs next <epic> --json` comes back empty:
   documents, which grow with every ticket — and the repository's instruction
   files. The reviewer also reports the head commit it reviewed
   (`reviewedHead`), which anchors the fix-bounds gate below. Model and effort
-  come from the ticket skill's step 7 table applied to the worker's tier —
+  come from the ticket skill's step 7 table applied to the priced tier — the
+  worker's report floored by the diff's own file list —
   `prose` → `haiku` at `low`, `normal` → `sonnet` at `high` (a named
   cost-efficient model, never the session's own), `consequence` → `opus` at
   `xhigh` — with the epic's optional `Reviewer model:` line (step 1's
@@ -310,7 +326,7 @@ enters your context from the whole loop:
 { outcome: "completed" | "halted",
   haltedOn: null | { stopCondition, ticket, where, detail },
   ticketRecords: [ { id, title, branch, workerAgent, workerModel,
-                     tier, tierReported, tierWhy,
+                     tier, tierReported, tierFloor, tierWhy,
                      reviewerModelUsed, reviewerEffort,
                      importantCount, nitCount, nitOverflowCount,
                      preExistingCount, preExisting, preExistingRecorded,
@@ -493,7 +509,7 @@ per ticket: worker, reviewer (with its tier, model and effort from `tier`,
 `reviewerModelUsed`, `reviewerEffort`), re-review when `reReviewRan`, and
 disposition — plus the run's total **and the phase subtotals: workers,
 reviewers (re-reviews included), dispositions, and the shell proxies
-(refresh+select, resolve, merge, verify)** — the phase split is what every
+(refresh+select, tier-facts, resolve, merge, verify)** — the phase split is what every
 pricing decision about this lane reads, and a total alone cannot say where
 the spend went. Where the build's transcript layout
 exposes no usage, write `unknown` — observed or unknown, never asked of an

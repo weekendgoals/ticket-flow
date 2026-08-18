@@ -28,8 +28,12 @@ go through the flow, one-off work goes through `/flow:quick` into
   `node --test plugins/flow/hooks/ticket-session-guard.test.mjs` (`# pass 14`
   on the same terms). The invariant checker has
   `node --test plugins/flow/scripts/check-invariants.test.mjs` (`# pass 9`),
-  and the run driver has
-  `node --test plugins/flow/workflows/run-epic.test.mjs` (`# pass 71`) —
+  The board renderer has
+  `node --test plugins/flow/scripts/board.test.mjs` (`# pass 7`) and the
+  plan-page renderer `node --test plugins/flow/scripts/plan-page.test.mjs`
+  (`# pass 7`) — both pure rendering tests over fixture JSON, no git
+  needed. And the run driver has
+  `node --test plugins/flow/workflows/run-epic.test.mjs` (`# pass 77`) —
   which evaluates `run-epic.mjs`'s module body with stubbed agents and
   asserts the sequence, the gate branches and the halt mapping. It needs
   nothing but Node: no git, no network, no filesystem beyond the script.

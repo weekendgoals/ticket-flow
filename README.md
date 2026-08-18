@@ -13,11 +13,12 @@ repository).
 
 | | |
 |---|---|
-| `/flow:epic <name> [source...]` | Turn a request, report or conversation into `epics/<name>/`. Sources are files, globs or URLs, saved into `context/`; with none, the conversation is the brief. A fresh-context **plan reviewer** challenges the decomposition, then it **stops for sign-off** and commits — no pull request |
+| `/flow:epic <name> [source...]` | Turn a request, report or conversation into `epics/<name>/`. Sources are files, globs or URLs, saved into `context/`; with none, the conversation is the brief. The shape is agreed **before** the document is written, a fresh-context **plan reviewer** challenges the decomposition, then it **stops for sign-off** and commits — no pull request. Both human gates render the plan as a **styled page** (`plan-page.mjs`, published as an artifact): one URL that evolves from shape checkpoint to sign-off, never committed |
 | `/flow:ticket <ID>` | One ticket end to end: branch, implement, verify, log, commit, review, fix, push, pull request. Runs **supervisor-mode by default** — a fresh-context worker implements from the documents and the supervisor hires the reviewer; `--interactive` runs in-session, once per session (a hook refuses a second interactive run; supervisor runs stay open) |
 | `/flow:run <epic>` | Run a `Delivery: release` epic end to end with nobody present: verifies sign-off happened, then hands the loop to a shipped **workflow script** — **code-controlled, agent-executed** — that takes the tickets in document order. Per ticket: refresh the epic branch and read the board, a **fresh-context worker** implements and stops at its opened pull request, the **driver hires the reviewer**, a disposition agent fixes and records, fixes get one bounded re-review at the consequence tier — below it a code gate checks the fix diff stayed inside the reviewed files and under a line budget — then the pull request is resolved from its branch and every fact about it — one match, the right head, the right base, the review addendum present, the number the worker reported — is checked **in code before any agent that could merge exists**; only then does a merge agent run one command, and the board — not an agent — confirms the result. It halts on any stop condition, because each one is a code path rather than a judgment call. The session ends by **opening** the release pull request. Requires the Workflow tool; never merges toward the default branch |
 | `/flow:quick <description>` | The **cheap lane**: one small, low-risk piece of work, implemented **in-session** with a written scope, verification with counts, a short log entry and a pull request — and a fresh-context reviewer **only when behaviour changes** (prose-only diffs — documentation and comments, nothing a machine reads — get none; the PR is the review). Size- **and risk-gated**: auth, secrets, migrations and other consequential work is routed to `/flow:epic` at any size |
 | `/flow:tickets [epic]` | The board — shipped, in flight, blocked, todo |
+| `/flow:board [epic]` | The same board as a **styled HTML page**, published as an artifact you can open and share. A rendering of derived state, rebuilt from git on every run — never committed, never a second store |
 | `/flow:review [range]` | Review a commit range and report. Used by `/flow:ticket`; runnable on its own |
 | `/flow:doctor` | Is this project ready for the flow? Preconditions, merge settings, instruction-file quality, and headings that would silently misparse |
 | `/flow:retro [epic]` | Close a finished epic: a **fresh-context miner** reads the status log and review addenda and drafts the lessons and owed work — the invoking session often planned or ran the epic, so it mines nothing itself — then the approval gate and the shipping stay in-session, into instruction files and tickets |
@@ -95,6 +96,29 @@ answered by `/flow:tickets`, computed fresh from ticket headings, status-log
 headings, git branches, commit subjects on the default branch, and `gh pr list`.
 Never add a status column anywhere — a hand-maintained mirror of a derivable fact
 drifts within days.
+
+**Keeping the default branch tidy.** The documents ride the same branches and
+pull requests as the code — that is what makes the record travel — but they
+need not dominate the diff or the language stats. Two practices, both optional:
+
+- Add to `.gitattributes`:
+
+  ```
+  epics/** linguist-generated=true
+  ```
+
+  GitHub then collapses the epic documents in pull-request diffs and keeps
+  them out of language statistics. Collapsed is not hidden — a reviewer
+  expands them with a click, and the release pull request's evidence trail is
+  intact; the review effort just lands on the change instead of the record.
+- **After a retro**, a closed epic's folder may move to `epics/_archive/<name>`
+  (a plain `git mv`, in a reviewed pull request like any change). The board
+  only discovers epics directly under `epics/`, so an archived epic drops off
+  it — which is safe **only after** the retro has converted its owed items
+  into live tickets and its lessons into instruction files; archiving first
+  silently deletes the debt ledger. Moving is not deleting: the log stays in
+  git, fully readable, and shipped detection never depended on the folder —
+  it reads commit subjects. The standing `epics/quick/` is never archived.
 
 ## Release or incremental
 
@@ -221,15 +245,24 @@ directive. The line does not govern the plan reviewer: it lives in the very
 draft the plan reviewer is judging, and configuration binds only after
 sign-off approves it.
 
+In an unattended run the tier is not taken on the worker's word: the worker
+reports the tier its diff earns, but the driver lists the branch's changed
+files itself (a read-only fast-model step) and **floors the tier in code**
+— docs-only files may price `prose`, anything else at least `normal`, and
+files matching the epic's optional `Consequence paths: <glob>[, <glob>]`
+preamble line price `consequence`. The report can raise the price, never
+lower it: the worker is the party under review, and the reviewed party does
+not price its own judge.
+
 The **implementing workers'** model is configurable the same way: a
 `Worker model: <model>` preamble line pins the workers, and the epic
 template now carries `Worker model: opus` by default — plan on the
 strongest model, implement on a capable one at a fraction of the price.
 Absent the line, every worker inherits the model of the session that
 spawns it, which is a decision worth making deliberately rather than
-inheriting by accident. Neither line is a settings file: model choice
-lives in the versioned epic document, visible at sign-off, like every
-other configuration this plugin has.
+inheriting by accident. None of these lines is a settings file: model
+choice lives in the versioned epic document, visible at sign-off, like
+every other configuration this plugin has.
 
 ## Reading the board
 

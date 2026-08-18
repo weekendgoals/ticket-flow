@@ -72,7 +72,50 @@ thrown away.
 - `node "${CLAUDE_PLUGIN_ROOT}/scripts/tickets.mjs" list` — what other epics are
   open, and where they overlap this one.
 
-## 3. Write `epics/<name>/tickets.md`
+## 3. Agree the shape, then write `epics/<name>/tickets.md`
+
+**Before writing the full document, show the user the shape and let them
+bend it.** A finished decomposition anchors: presented whole, it turns
+sign-off into yes/no on the only shape in the room, when the cheap moment
+to re-split is now — a re-split costs a sentence here and a rewrite after
+the bodies are written. Present, compactly:
+
+- the draft **Outcome** line — the problem, the observable change, the
+  evidence, the reversal condition;
+- the **areas in scope** and anything grounding turned up that changes the
+  work's shape;
+- the **delivery choice** and its why, in one line;
+- the **ticket list as one line each** — `ID — name — what it proves or
+  builds` — in the intended order, with a word on why the first is first.
+
+**Render the shape as a page** — the reading experience is the point of
+stopping here, and a wall of chat text is where a shape gets skimmed. The
+skeleton ships with the plugin, so no session builds it by hand:
+
+1. Write the shape as JSON into your session's **scratchpad** — never into
+   the repository: it is steering material, not record, and `tickets.md`
+   is the record. The schema is documented at the top of
+   `scripts/plan-page.mjs` (`stage: "shape"`, the outcome, areas, delivery
+   with its why, the ticket list with one line each, `firstWhy`).
+2. Render it:
+
+   ```bash
+   node "${CLAUDE_PLUGIN_ROOT}/scripts/plan-page.mjs" <scratchpad>/plan-<name>.json --out <scratchpad>/plan-<name>.html
+   ```
+
+3. Publish the page as an artifact and print the URL (where no artifact
+   surface exists, send the file to the user instead). Keep the ticket
+   list in chat too, one line each — the page is the reading view; the
+   chat lines are what the user's reply quotes.
+
+Invite edits and answer questions; **wait for the user to say the shape is
+right** before writing the full sections. This is a steering stop, not the
+sign-off gate — step 5 still gates on the finished document with the plan
+review in hand. If the user redirects the shape, update the JSON, re-render,
+and **republish the same file path** — the page keeps its URL and evolves
+with the plan instead of scattering across stale copies.
+
+Then write the document:
 
 ```markdown
 # <Name> epic — tickets
@@ -145,7 +188,17 @@ write the tests a reviewer must distrust, at a fraction of a top-tier
 session's price — plan on the stronger model, implement on this one. Drop
 the line only when inheriting the session model is a decision, not an
 accident. `Reviewer model: <model>` (a second optional line) fixes the
-ticket reviewer's model; otherwise the ticket skill's tiers choose it.>
+ticket reviewer's model; otherwise the ticket skill's tiers choose it.
+`Consequence paths: <glob>[, <glob>]` (a third optional line, e.g.
+`src/auth/**, migrations/**`) names the paths whose changes always price
+review at the consequence tier in an unattended run — the risk list
+projected onto this repository's layout, applied by the run driver as a
+code floor under the worker's self-reported tier, so the reviewed party
+cannot price its own judge down. Globs only on this line (prose after a
+comma would parse as a glob); `**` crosses directory separators, `*` stays
+within one. The globs supplement the worker's judgment, never replace it —
+the semantic risk list still binds, and a reported `consequence` tier is
+honored with or without a matching glob.>
 
 Status log: `epics/<name>/status.md`. Run a ticket with `/flow:ticket <ID>`.
 
@@ -219,8 +272,19 @@ Then, before showing the user:
 
 Show the user: the ticket list with one line each, the order, what ticket one
 proves, the delivery choice and why, anything you found while grounding that
-changes the shape of the work — and the plan review's outcome: what it flagged,
-what you changed, what you rejected and why, and its open questions.
+changes the shape of the work — plus **one alternative decomposition you
+considered and rejected, with the reason** (a different split, a different
+order, a different first ticket — one line each side), so sign-off is a
+choice between shapes rather than a ratification of the only shape shown —
+and the plan review's outcome: what it flagged, what you changed, what you
+rejected and why, and its open questions.
+
+**Bring the plan page to this gate too**: update step 3's JSON — `stage:
+"sign-off"`, the `alternative` with its rejection reason, the `planReview`
+outcome, any `openQuestions` — re-render with `plan-page.mjs`, and
+republish the **same file path**, so the URL the user already has now shows
+the finished plan with the review in hand. The chat still carries the ask;
+the page is where the plan is actually read.
 
 **If the epic declares `Delivery: release`, the sign-off must say so in
 plain terms**: "after

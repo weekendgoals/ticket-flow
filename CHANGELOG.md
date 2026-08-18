@@ -8,6 +8,93 @@ with one version and date.
 
 ## Unreleased
 
+- **The plan's two human gates render as a styled page**
+  (`scripts/plan-page.mjs` + `plan-page.test.mjs`, `skills/epic/SKILL.md`
+  steps 3 and 5, README). The shape checkpoint and the sign-off previously
+  arrived as chat text — the exact format in which a shape gets skimmed.
+  The planning session now composes a JSON plan (schema documented in the
+  script), renders it with a shipped, tested skeleton, and publishes the
+  page as an artifact: outcome grid, delivery and areas, the ordered
+  ticket list, the rejected alternative, the plan review's findings, open
+  questions, and stage-appropriate steering guidance (shape: "bend it
+  now", with examples quoting the plan's own tickets; sign-off: the
+  release-mode warning that approval means unattended execution). One
+  file path republished at both gates keeps one URL that evolves with the
+  plan. Steering material, not record: the JSON and the page live in the
+  session scratchpad and are never committed — `tickets.md` remains the
+  record.
+- **`/flow:board` renders the board as a published HTML page**
+  (`skills/board/SKILL.md`, `scripts/board.mjs` + `board.test.mjs`,
+  README). A zero-dependency renderer over `tickets.mjs list --json`:
+  per-epic tables with state badges, delivery and this-folder tags,
+  degraded-fact notes (gh unavailable, capped scan, duplicate IDs), and a
+  Next-up list — published as an artifact and regenerated on every run.
+  Deliberately a rendering of derived state, never a second store: the
+  skill writes the page to the session scratchpad and forbids committing
+  it, because a stored board is the hand-maintained mirror the plugin
+  exists to avoid.
+- **Epic planning stops at the shape before writing the document, and
+  sign-off shows a rejected alternative** (`skills/epic/SKILL.md` steps 3
+  and 5; METHODOLOGY "Why the plan is reviewed before sign-off"). The
+  skill previously wrote the complete ticket document and then asked,
+  which anchors: sign-off becomes yes/no on the only shape in the room,
+  at the moment a re-split costs a rewrite. Step 3 now presents the shape
+  first — the Outcome line, areas, delivery choice, and the ticket list as
+  one line each — and waits for the user to bend it while a re-split still
+  costs a sentence; step 5's sign-off additionally presents one
+  considered-and-rejected decomposition with its reason, so approval is a
+  choice between shapes rather than a ratification of the one shown.
+- **The epic documents can stay out of the diff's way** (`.gitattributes`,
+  README "The three documents", `skills/retro/SKILL.md` step 6). Two
+  optional practices for keeping the default branch tidy without breaking
+  what the documents are for: `epics/** linguist-generated=true` collapses
+  them in pull-request diffs and language stats (collapsed is not hidden —
+  the evidence trail still travels in the same pull request), and the retro
+  gains an optional final step archiving a closed epic to
+  `epics/_archive/<name>` — safe only after the retro has converted owed
+  items to tickets and lessons to instruction files, because the board only
+  discovers epics directly under `epics/` and archiving earlier would
+  silently delete the debt ledger. Moving is not deleting: shipped
+  detection reads commit subjects, never folders, and the standing quick
+  epic is never archived.
+- **The quick lane's reviewer gets a fixed, scoped packet — never the
+  session's narrative** (`skills/quick/SKILL.md` step 6). The reviewer
+  spawn previously said "give it the ticket section and the instruction
+  files", which left the implementing session free to add its own summary
+  of the work — and the session that implemented is exactly the biased
+  narrator the fresh context exists to exclude. The packet is now fixed
+  and mirrors the run driver's: the commit range, `tickets.mjs brief
+  Q-<n>` (ground rules, scope, criteria, owed items), this ticket's own
+  status entry sliced from the log by `awk` (never the whole quick log,
+  which is long by design), and the touched areas' instruction files —
+  with an explicit rule that no summary, reasoning or conversation content
+  rides along: what the session believes about the diff travels only
+  through what it committed, where the reviewer weighs it as the record,
+  not as a voice.
+- **The run driver floors the review tier in code — the reviewed party can
+  no longer price its own judge down** (`workflows/run-epic.mjs`; the run
+  skill's step 4; the ticket skill's step 7; `scripts/tickets.mjs`;
+  `skills/epic/SKILL.md`; METHODOLOGY). The reviewer's model and effort
+  were priced solely from the worker's self-reported tier: the driver
+  guarded the malformed case (missing/unrecognised → consequence) but a
+  well-formed wrong report — a code change called `prose` — bought the
+  weakest review unchecked. The driver now runs a read-only fast-model
+  step per ticket (`tier-facts:<ID>`, pinned like the other shell proxies)
+  that lists the branch's changed files (merge-base diff against the epic
+  branch, `epics/` excluded), and code computes a floor: docs-only files
+  may keep `prose`, any other file floors at `normal`, and files matching
+  the epic's new optional `Consequence paths: <glob>[, <glob>]` preamble
+  line (parsed by `tickets.mjs` like the model lines, exposed in `find`/
+  `list --json`, near-miss-scanned by doctor) floor at `consequence`. The
+  review is priced at the higher of the worker's report and the floor —
+  the report can raise the price, never lower it; whether machine-read
+  markdown earns `normal` stays the worker's judgment, which only pushes
+  up. An unusable file listing floors at `consequence` (missing facts
+  raise scrutiny); a failed listing command halts like any other nonzero
+  exit; an unsafe glob refuses the run at argument validation, because
+  dropping it would silently lower scrutiny. `ticketRecords` gained
+  `tierFloor`. Attended lanes are unchanged: there the tier is picked by
+  the supervisor or session, which is not the party under review.
 - **Reviewer models are named, never inherited** (`workflows/run-epic.mjs`
   `REVIEW_TIERS`; the ticket skill's step 7 table; the run skill's step 4;
   README). The `normal` tier now prices a named cost-efficient model
