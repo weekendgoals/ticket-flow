@@ -342,6 +342,15 @@ ticket stacked on it. The sign-off gate existed for exactly this, yet it left
 the human to catch decomposition faults alone, reading a document written by a
 session with every incentive to find its own plan convincing.
 
+The human's own leverage was moved earlier for the same reason. The epic
+skill originally produced a complete document and then asked — which turns
+sign-off into yes/no on the only shape in the room, because a finished
+decomposition anchors both parties and a re-split now costs a rewrite. The
+skill now stops at the shape first — outcome, areas, delivery, the ticket
+list as one line each — where a re-split costs a sentence, and the sign-off
+itself presents one considered-and-rejected alternative so approval is a
+choice between shapes rather than a ratification of the one shown.
+
 So the same trick used on code is used on the plan: a fresh-context agent with
 no stake in the decomposition, reading it against the actual code, reporting
 without rewriting. External evidence points the same way — Cloudflare reports

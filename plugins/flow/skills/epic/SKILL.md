@@ -72,7 +72,29 @@ thrown away.
 - `node "${CLAUDE_PLUGIN_ROOT}/scripts/tickets.mjs" list` — what other epics are
   open, and where they overlap this one.
 
-## 3. Write `epics/<name>/tickets.md`
+## 3. Agree the shape, then write `epics/<name>/tickets.md`
+
+**Before writing the full document, show the user the shape and let them
+bend it.** A finished decomposition anchors: presented whole, it turns
+sign-off into yes/no on the only shape in the room, when the cheap moment
+to re-split is now — a re-split costs a sentence here and a rewrite after
+the bodies are written. Present, compactly:
+
+- the draft **Outcome** line — the problem, the observable change, the
+  evidence, the reversal condition;
+- the **areas in scope** and anything grounding turned up that changes the
+  work's shape;
+- the **delivery choice** and its why, in one line;
+- the **ticket list as one line each** — `ID — name — what it proves or
+  builds` — in the intended order, with a word on why the first is first.
+
+Invite edits and answer questions; **wait for the user to say the shape is
+right** before writing the full sections. This is a steering stop, not the
+sign-off gate — step 5 still gates on the finished document with the plan
+review in hand. If the user redirects the shape, redraw this list, not the
+finished document.
+
+Then write the document:
 
 ```markdown
 # <Name> epic — tickets
@@ -229,8 +251,12 @@ Then, before showing the user:
 
 Show the user: the ticket list with one line each, the order, what ticket one
 proves, the delivery choice and why, anything you found while grounding that
-changes the shape of the work — and the plan review's outcome: what it flagged,
-what you changed, what you rejected and why, and its open questions.
+changes the shape of the work — plus **one alternative decomposition you
+considered and rejected, with the reason** (a different split, a different
+order, a different first ticket — one line each side), so sign-off is a
+choice between shapes rather than a ratification of the only shape shown —
+and the plan review's outcome: what it flagged, what you changed, what you
+rejected and why, and its open questions.
 
 **If the epic declares `Delivery: release`, the sign-off must say so in
 plain terms**: "after

@@ -8,6 +8,17 @@ with one version and date.
 
 ## Unreleased
 
+- **Epic planning stops at the shape before writing the document, and
+  sign-off shows a rejected alternative** (`skills/epic/SKILL.md` steps 3
+  and 5; METHODOLOGY "Why the plan is reviewed before sign-off"). The
+  skill previously wrote the complete ticket document and then asked,
+  which anchors: sign-off becomes yes/no on the only shape in the room,
+  at the moment a re-split costs a rewrite. Step 3 now presents the shape
+  first — the Outcome line, areas, delivery choice, and the ticket list as
+  one line each — and waits for the user to bend it while a re-split still
+  costs a sentence; step 5's sign-off additionally presents one
+  considered-and-rejected decomposition with its reason, so approval is a
+  choice between shapes rather than a ratification of the one shown.
 - **The epic documents can stay out of the diff's way** (`.gitattributes`,
   README "The three documents", `skills/retro/SKILL.md` step 6). Two
   optional practices for keeping the default branch tidy without breaking
