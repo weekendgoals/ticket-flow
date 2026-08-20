@@ -8,7 +8,7 @@
 import { test, after } from 'node:test'
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, realpathSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, realpathSync, readFileSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
@@ -858,4 +858,157 @@ test('doctor fails hard when there is no origin remote', () => {
   git(tmp, 'init', '--initial-branch=main', bare)
   const fail = runFail(bare, 'doctor')
   assert.equal(fail.status, 1)
+})
+
+// ── acceptance checks: the check subcommand ──────────────────────────────────
+// Its own throwaway repository, so the shared fixture's board and doctor
+// expectations stay untouched by check-specific epics. CHECK commands run
+// through a shell with the repo root as cwd; `node -e` keeps them portable.
+
+const ctmp = realpathSync(mkdtempSync(join(tmpdir(), 'tickets-check-')))
+after(() => rmSync(ctmp, { recursive: true, force: true }))
+const crepo = join(ctmp, 'repo')
+git(ctmp, 'init', '--initial-branch=main', crepo)
+git(crepo, 'config', 'user.email', 'test@example.com')
+git(crepo, 'config', 'user.name', 'Test')
+git(crepo, 'config', 'commit.gpgsign', 'false')
+mkdirSync(join(crepo, 'epics/checks'), { recursive: true })
+const checksDoc = join(crepo, 'epics/checks/tickets.md')
+writeFileSync(
+  checksDoc,
+  `# Checks epic — tickets
+
+Delivery: incremental
+
+## K-1 — passing checks
+
+**Scope.**
+- the thing
+
+**Acceptance criteria.**
+- prints the count
+  CHECK: node -e "console.log('ok 3/3 pass')"
+  EXPECT: ok 3/3
+- exits clean, no EXPECT needed
+  CHECK: node -e "process.exit(0)"
+
+## K-2 — a failing EXPECT
+
+**Acceptance criteria.**
+- claims yes but prints no
+  CHECK: node -e "console.log('no')"
+  EXPECT: yes
+
+## K-3 — a nonzero exit
+
+**Acceptance criteria.**
+- exits 1
+  CHECK: node -e "console.error('boom'); process.exit(1)"
+
+## K-4 — no checks at all
+
+**Acceptance criteria.**
+- prose criterion, verified by hand
+
+## K-5 — malformed lines
+
+**Acceptance criteria.**
+- lowercase label
+  check: node -e "console.log('never runs')"
+- orphan expect
+  EXPECT: nothing above me
+- CHECK: node -e "console.log('bullet form')"
+`,
+)
+git(crepo, 'add', '.')
+git(crepo, 'commit', '-m', 'checks epic')
+
+test('check runs CHECK commands and passes on exit 0 plus EXPECT match', () => {
+  const out = JSON.parse(run(crepo, 'check', 'K-1', '--json'))
+  assert.equal(out.total, 2)
+  assert.equal(out.passed, 2)
+  assert.equal(out.allPassed, true)
+  assert.equal(out.from, null)
+  assert.equal(out.checks[0].criterion, 'prints the count')
+  // The evidence is the deciding output line, not a feeling of completion.
+  assert.match(out.checks[0].evidence, /ok 3\/3/)
+  assert.equal(out.checks[1].expect, null)
+  assert.equal(out.checks[1].evidence, 'exit 0')
+  const text = run(crepo, 'check', 'K-1')
+  assert.match(text, /2\/2 checks passed/)
+})
+
+test('an EXPECT the output does not contain fails the gate', () => {
+  const fail = runFail(crepo, 'check', 'K-2', '--json')
+  assert.equal(fail.status, 1)
+  const out = JSON.parse(fail.stdout)
+  assert.equal(out.allPassed, false)
+  assert.equal(out.passed, 0)
+  assert.match(out.checks[0].evidence, /does not contain "yes"/)
+})
+
+test('a nonzero exit fails the gate with the exit code and output as evidence', () => {
+  const fail = runFail(crepo, 'check', 'K-3', '--json')
+  assert.equal(fail.status, 1)
+  const out = JSON.parse(fail.stdout)
+  assert.match(out.checks[0].evidence, /exit 1/)
+  assert.match(out.checks[0].evidence, /boom/)
+})
+
+test('a ticket with no CHECK criteria exits 0 with an empty ledger — an answer, not a failure', () => {
+  const text = run(crepo, 'check', 'K-4')
+  assert.match(text, /no CHECK criteria in K-4/)
+  const out = JSON.parse(run(crepo, 'check', 'K-4', '--json'))
+  assert.equal(out.total, 0)
+  assert.equal(out.allPassed, true)
+})
+
+test('malformed CHECK/EXPECT lines fail the gate rather than silently skipping', () => {
+  const fail = runFail(crepo, 'check', 'K-5', '--json')
+  assert.equal(fail.status, 1)
+  const out = JSON.parse(fail.stdout)
+  assert.equal(out.total, 0)
+  assert.equal(out.allPassed, false)
+  assert.equal(out.problems.length, 3)
+  const whys = out.problems.map((p) => p.why).join('\n')
+  assert.match(whys, /will not parse/)
+  assert.match(whys, /no CHECK line above it/)
+  assert.match(whys, /its own bullet/)
+})
+
+test('--from reads the criteria from the ref, never the working tree', () => {
+  const original = readFileSync(checksDoc, 'utf8')
+  try {
+    // Soften the working-tree copy the way a worker branch could; the
+    // committed document must still be the judge.
+    writeFileSync(checksDoc, original.replace('EXPECT: ok 3/3', 'EXPECT: text the output never prints'))
+    const tree = runFail(crepo, 'check', 'K-1', '--json')
+    assert.equal(tree.status, 1, 'the working-tree copy fails')
+    const out = JSON.parse(run(crepo, 'check', 'K-1', '--json', '--from', 'HEAD'))
+    assert.equal(out.allPassed, true, 'the committed copy passes')
+    assert.equal(out.from, 'HEAD')
+  } finally {
+    writeFileSync(checksDoc, original)
+  }
+})
+
+test('--from a ref that cannot be read refuses instead of falling back to the working tree', () => {
+  const fail = runFail(crepo, 'check', 'K-1', '--json', '--from', 'refs/no/such/ref')
+  assert.equal(fail.status, 1)
+  assert.match(fail.stderr, /cannot read epics\/checks\/tickets\.md from ref/)
+  const bare = runFail(crepo, 'check', 'K-1', '--from')
+  assert.equal(bare.status, 2)
+  assert.match(bare.stderr, /--from needs a git ref/)
+})
+
+test('doctor flags CHECK/EXPECT near-misses as silently-never-runs', () => {
+  // No origin remote in this fixture, so doctor exits 1 on that hard
+  // precondition — the near-miss rows still print and are what this asserts.
+  const fail = runFail(crepo, 'doctor', '--json')
+  const rows = JSON.parse(fail.stdout)
+  const k5 = rows.filter((r) => r.level === 'warn' && r.msg.includes('(K-5)'))
+  assert.equal(k5.length, 3, rows.map((r) => r.msg).join('\n'))
+  assert.ok(k5.some((r) => /will not parse, so it silently never runs/.test(r.msg)))
+  assert.ok(k5.some((r) => /no CHECK line above it/.test(r.msg)))
+  assert.ok(k5.some((r) => /its own bullet/.test(r.msg)))
 })

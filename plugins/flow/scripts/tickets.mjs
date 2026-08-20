@@ -22,6 +22,12 @@
 //                                        state; no ID briefs the first
 //                                        startable ticket
 //   tickets.mjs next [epic] [--json]     what to start next
+//   tickets.mjs check <ID> [--json] [--from <ref>]
+//                                        run the ticket's CHECK/EXPECT
+//                                        acceptance criteria and report the
+//                                        ledger; --from reads the criteria
+//                                        from a git ref (the signed-off
+//                                        document) instead of the working tree
 //   tickets.mjs epics [--json]           list known epics
 //   tickets.mjs current [--json]         the epic this folder belongs to
 //   tickets.mjs doctor [--json]          check the flow's preconditions and
@@ -32,7 +38,7 @@
 //
 // Zero dependencies, no configuration, stores nothing.
 
-import { execFileSync } from 'node:child_process'
+import { execFileSync, spawnSync } from 'node:child_process'
 import { readFileSync, readdirSync, existsSync, statSync } from 'node:fs'
 import { join, basename } from 'node:path'
 
@@ -188,9 +194,9 @@ function currentEpic(epics) {
 
 // Split a ticket doc into "## <ID> — <title>" sections. Anything above the first
 // such heading is epic preamble (ground rules, ordering) and is not a ticket.
-function parseTickets(epic) {
-  const text = readFileSync(epic.ticketsDoc, 'utf8')
-
+// The text form exists because `check --from` parses the document as a git ref
+// shows it — same sections, no file on disk.
+function parseTicketSections(text, epicName) {
   const tickets = []
   let current = null
   for (const line of text.split('\n')) {
@@ -199,7 +205,7 @@ function parseTickets(epic) {
       // Strip any status glyph a human hand-added to the heading — the state
       // comes from git, and a stale ✅ in a title is exactly the drift this
       // script exists to stop mattering.
-      current = { id: m[1], title: m[2].replace(/[\s✅✓☑️❌⛔️🚧]+$/u, '').trim(), epic: epic.epic, body: [] }
+      current = { id: m[1], title: m[2].replace(/[\s✅✓☑️❌⛔️🚧]+$/u, '').trim(), epic: epicName, body: [] }
       tickets.push(current)
     } else if (current) {
       current.body.push(line)
@@ -207,6 +213,78 @@ function parseTickets(epic) {
   }
   for (const t of tickets) t.body = t.body.join('\n').trim()
   return tickets
+}
+
+function parseTickets(epic) {
+  return parseTicketSections(readFileSync(epic.ticketsDoc, 'utf8'), epic.epic)
+}
+
+// ── acceptance checks ────────────────────────────────────────────────────────
+
+// A criterion bullet may carry a machine-runnable form (adapted from unlazy's
+// gate files, 2026-08-20): an indented `CHECK: <command>` line under the
+// bullet, optionally followed by `EXPECT: <text>`. The criterion passes when
+// the command exits 0 AND its output contains the EXPECT text (exit 0 alone
+// decides when EXPECT is absent). These regexes are load-bearing the same way
+// the heading regexes are: doctor's near-miss scan is built against them, and
+// the skills' templates must match them — a CHECK that almost parses silently
+// never runs, which is the one way a machine-checked criterion can lie.
+const CHECK_LINE = /^\s*CHECK:\s*(\S.*)$/
+const EXPECT_LINE = /^\s*EXPECT:\s*(\S.*)$/
+// Near-miss shapes doctor flags: a lowercase or spaced label, or the label
+// written as a bullet of its own instead of indented under its criterion.
+const CHECK_NEAR = /^\s*(check|expect)\s*:/i
+const CHECK_BULLET_NEAR = /^\s*[-*]\s+(CHECK|EXPECT)\s*:/i
+
+function parseChecks(body) {
+  const checks = []
+  const problems = []
+  let bullet = null
+  body.split('\n').forEach((line, i) => {
+    const c = line.match(CHECK_LINE)
+    const e = line.match(EXPECT_LINE)
+    const b = line.match(/^\s*[-*]\s+(.*)$/)
+    if (c) {
+      checks.push({ criterion: bullet, check: c[1].trim(), expect: null })
+    } else if (e) {
+      const last = checks[checks.length - 1]
+      if (!last || last.expect !== null)
+        problems.push({ line: i + 1, text: line.trim(), why: 'EXPECT with no CHECK line above it to attach to' })
+      else last.expect = e[1].trim()
+    } else if (CHECK_BULLET_NEAR.test(line)) {
+      problems.push({ line: i + 1, text: line.trim(), why: 'CHECK/EXPECT written as its own bullet — indent it under the criterion bullet instead, or it never runs' })
+    } else if (b) {
+      bullet = b[1].trim()
+    } else if (CHECK_NEAR.test(line)) {
+      problems.push({ line: i + 1, text: line.trim(), why: 'looks like a CHECK/EXPECT line but will not parse, so it silently never runs (needs the uppercase label at line start after indentation, a colon, and a value)' })
+    }
+  })
+  return { checks, problems }
+}
+
+// One command may hang forever, and in an unattended run a hung gate is
+// indistinguishable from a run making progress — the exact failure the stop
+// conditions exist to prevent. Generous, fixed, and named: a check that needs
+// longer than ten minutes is not an acceptance check any more.
+const CHECK_TIMEOUT_MS = 600_000
+
+function runChecks(checks) {
+  return checks.map((c, idx) => {
+    const r = spawnSync(c.check, { cwd: repoRoot, shell: true, encoding: 'utf8', timeout: CHECK_TIMEOUT_MS })
+    const output = `${r.stdout || ''}${r.stderr || ''}`
+    const exitCode = r.status === null ? -1 : r.status
+    const okExit = exitCode === 0 && !r.error
+    const okExpect = c.expect === null || output.includes(c.expect)
+    const passed = okExit && okExpect
+    // The evidence line is what the ledger records — the deciding output,
+    // never a feeling of completion.
+    let evidence
+    if (r.error) evidence = `command could not run: ${r.error.code === 'ETIMEDOUT' ? `timed out after ${CHECK_TIMEOUT_MS / 1000}s` : r.error.message}`
+    else if (passed) evidence = c.expect ? (output.split('\n').find((l) => l.includes(c.expect)) || c.expect).trim().slice(0, 300) : 'exit 0'
+    else if (!okExit) evidence = `exit ${exitCode}${output.trim() ? ` — ${output.trim().split('\n').slice(-3).join(' / ').slice(0, 300)}` : ''}`
+    else evidence = `exit 0, but the output does not contain ${JSON.stringify(c.expect)}`
+    return { n: idx + 1, criterion: c.criterion, check: c.check, expect: c.expect, exitCode, passed, evidence }
+  })
 }
 
 // ── status-log parsing ───────────────────────────────────────────────────────
@@ -590,6 +668,12 @@ function doctor() {
       if (nearTicket.test(line) && !TICKET_HEADING.test(line))
         add('warn', `${epic.epic}/tickets.md:${i + 1} — heading will not parse as a ticket (needs "## <ID> — <name>", ID uppercase): ${line.trim()}`)
     })
+    // A CHECK that almost parses never runs, and the ticket then passes its
+    // acceptance gate on silence — the same failure class as a heading
+    // near-miss, flagged the same way.
+    for (const t of parseTickets(epic))
+      for (const p of parseChecks(t.body).problems)
+        add('warn', `${epic.epic}/tickets.md (${t.id}) — ${p.why}: ${p.text}`)
     if (!epic.statusDoc) {
       // Two doors create this file — /flow:epic at sign-off, or the first
       // ticket's status entry (ticket step 6 via /flow:ticket, or in-session
@@ -620,6 +704,12 @@ function doctor() {
 // ── entry point ──────────────────────────────────────────────────────────────
 
 const argv = process.argv.slice(2)
+// `--from <ref>` takes a value, so its pair is extracted before the positional
+// filter — otherwise the ref (which does not start with "--") would be read as
+// the command's positional argument.
+const fromIdx = argv.indexOf('--from')
+const fromRef = fromIdx !== -1 ? argv[fromIdx + 1] ?? null : null
+if (fromIdx !== -1) argv.splice(fromIdx, 2)
 const json = argv.includes('--json')
 const [cmd, arg] = argv.filter((a) => !a.startsWith('--'))
 const emit = (o) => console.log(JSON.stringify(o, null, 2))
@@ -773,6 +863,62 @@ switch (cmd) {
     break
   }
 
+  case 'check': {
+    // Run a ticket's machine-runnable acceptance criteria — the CHECK/EXPECT
+    // lines — and report the ledger. Exit 0 only when every check passed and
+    // the criteria parsed cleanly; a malformed CHECK is a failing gate, not a
+    // skipped one, because a gate that silently skips is how a criterion gets
+    // satisfied by narration. `--from <ref>` reads the criteria from that git
+    // ref instead of the working tree: the unattended driver passes
+    // `--from origin/epic/<name>` so the gate judges against the signed-off
+    // document — the party under review cannot soften its own EXPECT by
+    // editing the copy riding its branch.
+    if (!arg) {
+      console.error('usage: tickets.mjs check <ID> [--json] [--from <ref>]')
+      process.exit(2)
+    }
+    if (fromIdx !== -1 && !fromRef) {
+      console.error('tickets: --from needs a git ref (e.g. --from origin/epic/<name>)')
+      process.exit(2)
+    }
+    const data = board(null)
+    const t = resolveTicket(data, arg.toUpperCase())
+    let body = t.body
+    if (fromRef) {
+      const rel = `epics/${t.epic}/tickets.md`
+      const shown = git(['show', `${fromRef}:${rel}`], { allowFail: true })
+      if (shown === null) {
+        console.error(`tickets: cannot read ${rel} from ref "${fromRef}" — fetch the ref, or check its name`)
+        process.exit(1)
+      }
+      const section = parseTicketSections(shown, t.epic).find((s) => s.id === t.id)
+      if (!section) {
+        console.error(`tickets: ticket ${t.id} has no section in ${rel} at "${fromRef}" — the document at that ref does not know this ticket`)
+        process.exit(1)
+      }
+      body = section.body
+    }
+    const { checks, problems } = parseChecks(body)
+    const results = runChecks(checks)
+    const passed = results.filter((r) => r.passed).length
+    const allPassed = passed === results.length && !problems.length
+    if (json) {
+      emit({ id: t.id, epic: t.epic, from: fromRef, total: results.length, passed, allPassed, checks: results, problems })
+    } else {
+      if (fromRef) console.log(`${C.dim}criteria read from ${fromRef}${C.off}`)
+      if (!results.length && !problems.length) console.log(`no CHECK criteria in ${t.id} — nothing to run`)
+      for (const r of results) {
+        console.log(`${r.passed ? `${C.green}✓${C.off}` : `${C.red}✗${C.off}`} ${r.n}/${results.length} ${r.criterion || '(no criterion bullet above the CHECK line)'}`)
+        console.log(`    $ ${r.check}`)
+        console.log(`    ${r.evidence}`)
+      }
+      for (const p of problems) console.log(`${C.red}!${C.off} line ${p.line}: ${p.why}: ${p.text}`)
+      if (results.length || problems.length)
+        console.log(`${passed}/${results.length} checks passed${problems.length ? ` — ${problems.length} malformed line(s), which fail the gate` : ''}`)
+    }
+    process.exit(allPassed ? 0 : 1)
+  }
+
   case 'next': {
     const data = board(arg || null)
     requireKnownEpic(data, arg)
@@ -819,6 +965,6 @@ switch (cmd) {
   }
 
   default:
-    console.error(`tickets: unknown command "${cmd}" (try: list, find, brief, next, epics, current, doctor)`)
+    console.error(`tickets: unknown command "${cmd}" (try: list, find, brief, next, check, epics, current, doctor)`)
     process.exit(2)
 }

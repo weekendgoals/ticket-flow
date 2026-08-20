@@ -299,6 +299,20 @@ looping until `tickets.mjs next <epic> --json` comes back empty:
   that reported no usable `reviewedHead` sends its fixes to the re-review
   anyway: doubt raises scrutiny, never lowers it. A clean review skips all
   of this, so it costs nothing on the common path.
+- **re-runs the ticket's machine-runnable acceptance criteria, when it has
+  any — and code, not an agent, reads the result.** A fast-model step brings
+  the local branch to its pushed state and runs
+  `tickets.mjs check <ID> --from origin/epic/<name> --json`. The `--from`
+  ref is the point: the CHECK/EXPECT criteria are read from the **signed-off
+  document on the epic branch**, never from the ticket branch's own copy, so
+  the party under review cannot soften its own gate. The command runs every
+  criterion's CHECK command and compares output against EXPECT; the script
+  gates on the printed counts — any failed or malformed check halts, and a
+  ticket with no CHECK criteria passes through untouched (prose and
+  *demonstrate:* criteria stay the worker's step 5 obligations, held by the
+  review). It runs after the disposition so fix commits are judged too —
+  the worker's own run of the criteria is its claim; this is the claim
+  re-established from repository state.
 - **resolves what the merge will need — read-only — and the code judges it
   before anything can merge.** One agent runs two commands (three when the
   fix-bounds gate is armed) and reports what they printed, deciding nothing:
@@ -352,7 +366,8 @@ enters your context from the whole loop:
                      fixedCommits, notFixed, disposition,
                      reReviewRan, reReviewImportantCount,
                      reReviewFindings, reviewedHead, fixBoundsGated,
-                     fixLines, resolveOutcome, mergeOutcome,
+                     fixLines, acceptanceOutcome, acceptanceChecks,
+                     acceptanceChecksPassed, resolveOutcome, mergeOutcome,
                      addendumMatches, headSha,
                      built, verification, workerReported,
                      outputTokensObserved,
@@ -441,6 +456,14 @@ code path that resumes past one. The run halts:
   the review's `reviewedHead`, and the script refuses anything the review's
   eyes never covered — including a resolve step that could not report the
   fix-diff facts at all, because an unbounded fix is never merged;
+- on **a failed acceptance CHECK — a machine-runnable criterion whose
+  command did not produce its expected result on the pushed branch** — the
+  driver re-runs the signed-off CHECK/EXPECT lines from the epic branch's
+  document against the final pushed state, after any fix commits, and code
+  compares the counts; a malformed CHECK fails the gate too, because a
+  criterion that silently never runs is one satisfied by narration. The same
+  halt fires when the check step reports counts the code cannot read —
+  doubt goes up, never down;
 - on **a document/code contradiction** — reported by a worker, or met by the
   script's own checks: a ticket ID that does not match the plugin's ID shape,
   a board that hands out the same ticket twice and so is not advancing, a
@@ -518,7 +541,9 @@ ID — the worker agent that ran it — its review tier and what the review
 found (`importantCount` Important, `nitCount` nits, fixed or not) — and,
 when `reReviewRan`, "re-reviewed after fixes: `<reReviewImportantCount>`
 Important", or when `fixBoundsGated`, "fixes bounds-checked in code:
-`<fixLines>` lines inside the reviewed diff" — integrated | halted. One of
+`<fixLines>` lines inside the reviewed diff" — and, when `acceptanceChecks`
+is above zero, "acceptance: `<acceptanceChecksPassed>/<acceptanceChecks>`
+CHECKs against the signed-off criteria" — integrated | halted. One of
 those two is the only evidence of what stood between the *fixed* diff and
 the merge; a record that omits it reads as though the fixes were never
 looked at.>
@@ -535,7 +560,7 @@ per ticket: worker, reviewer (with its tier, model and effort from `tier`,
 `reviewerModelUsed`, `reviewerEffort`), re-review when `reReviewRan`, and
 disposition — plus the run's total **and the phase subtotals: workers,
 reviewers (re-reviews included), dispositions, and the shell proxies
-(refresh+select, tier-facts, resolve, merge, verify)** — the phase split is what every
+(refresh+select, tier-facts, accept, resolve, merge, verify)** — the phase split is what every
 pricing decision about this lane reads, and a total alone cannot say where
 the spend went. Where the build's transcript layout
 exposes no usage, write `unknown` — observed or unknown, never asked of an

@@ -147,7 +147,10 @@ touched, reading the commands from the project's instruction files. Report
 **counts** — "api 217/217 passed", never "tests pass". A criterion written
 as a *demonstrate:* runtime check is driven for real, on the ticket skill's
 step 5 terms — the observed screen or output recorded as evidence, never
-"looks fine". A check that cannot
+"looks fine". A criterion carrying `CHECK:` / `EXPECT:` lines is run with
+`node "${CLAUDE_PLUGIN_ROOT}/scripts/tickets.mjs" check Q-<n>` and its
+ledger pasted as the counts — the tool decides, not your reading of the
+output. A check that cannot
 run here is said so and recorded as owed; never imply it passed.
 
 Append the status entry to `epics/quick/status.md`. If the file does not

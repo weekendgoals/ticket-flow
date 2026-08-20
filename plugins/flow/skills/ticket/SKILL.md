@@ -232,6 +232,21 @@ and agent-built UI is exactly where the two diverge. A demonstration this
 environment cannot perform — no browser, no device — is owed, like any
 other check.
 
+**A criterion carrying `CHECK:` / `EXPECT:` lines is run through the board
+script, not by hand:**
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/tickets.mjs" check $ARGUMENTS
+```
+
+It runs every criterion's CHECK command from the repository root and compares
+the output against its EXPECT text; paste its ledger into the Verified line —
+the counts come from the tool, not from your reading of the output. A check
+that fails here is a ticket that is not done, not a note for the log. In an
+unattended run the driver re-runs the same command against the pushed branch
+with `--from origin/epic/<name>` — the criteria as signed off, which no
+ticket branch can edit — and gates the merge on the counts in code.
+
 Report **counts** — "api-gateway 217/217 passed", never "tests pass". If a check
 cannot run here, say so and record it as owed. Never imply it passed.
 

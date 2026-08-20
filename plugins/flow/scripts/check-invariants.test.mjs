@@ -136,3 +136,21 @@ test('the workflow script losing the merge-direction rule fails', () => {
   assert.equal(r.status, 1, r.out)
   assert.match(r.out, /run-epic\.mjs.*merge-direction/s)
 })
+
+test('the workflow script losing the acceptance-check stop condition fails', () => {
+  const root = copyRepo()
+  mutate(root, 'plugins/flow/workflows/run-epic.mjs', 'a failed acceptance CHECK', 'a failed acceptance TEST')
+  const r = run(root)
+  assert.equal(r.status, 1, r.out)
+  assert.match(r.out, /run-epic\.mjs.*acceptance-check stop condition/s)
+})
+
+test('a skill dropping the CHECK/EXPECT format fails the coupling', () => {
+  const root = copyRepo()
+  // mutate() replaces every occurrence, so the whole format vanishes from the
+  // planning skill — template line and prose rule alike.
+  mutate(root, 'plugins/flow/skills/epic/SKILL.md', 'CHECK: ', 'VERIFY: ')
+  const r = run(root)
+  assert.equal(r.status, 1, r.out)
+  assert.match(r.out, /epic\/SKILL\.md.*machine-runnable acceptance criteria/s)
+})
