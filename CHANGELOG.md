@@ -8,6 +8,43 @@ with one version and date.
 
 ## Unreleased
 
+- **The standing quick epic rolls over by era** (`skills/quick/SKILL.md`
+  steps 2 and 5, `skills/retro/SKILL.md` steps 1 and 6, README,
+  METHODOLOGY). Adapted from beads' compaction after a comparative read,
+  reshaped to fit append-only: the quick epic never closes, so its log and
+  ticket doc grow without bound and ride every quick branch and
+  pull-request diff — `brief` fixed the read side, nothing fixed the carry
+  side. The quick skill now signals when the log passes roughly 25 entries;
+  `/flow:retro quick` performs the rollover behind the owed-conversion gate
+  (an unconverted owed item would vanish from every future brief): the era
+  is archived verbatim to `epics/_archive/quick-<date>` — nothing
+  summarized, nothing rewritten — and a fresh quick epic continues the ID
+  sequence with a `Q-IDs continue at Q-<n+1>` ground rule, because archived
+  headings are no longer read and a reused number would read as already
+  shipped off main's commit subjects. The rest of beads was read and not
+  adopted; METHODOLOGY records the standing verdicts (stored-and-reported
+  state vs derived; `bd prime` vs `brief`; the dependency graph stays
+  removed, with the strict-parse shape noted for a future parallel lane).
+- **Three Spec Kit-inspired planning refinements** (`skills/epic/SKILL.md`
+  step 3 and template, `agents/plan-reviewer.md`, `skills/retro/SKILL.md`
+  step 4, `scripts/plan-page.mjs` + test, METHODOLOGY). Adapted from
+  GitHub's Spec Kit after a comparative read; each passed the admission
+  test, and the rest of Spec Kit (constitution, analyze, in-session
+  implement) was deliberately not adopted. One: a **clarify pass** before
+  the shape checkpoint — the planner sweeps the brief for underspecified
+  points by category and asks the user the questions whose answers change
+  the shape, batched and bounded, recording every answer in the documents;
+  questions that do not change the shape ride to sign-off as open
+  questions. Two: an optional numbered **`Requirements:` preamble block**
+  — the WHAT held apart from the HOW, written before slicing and never
+  bent to it; the plan reviewer now walks it both ways (a requirement no
+  ticket reaches, a ticket no requirement needs, requirements reworded
+  toward the implementation), and the plan page renders it as its own
+  numbered section. Deliberately part of the preamble, so `brief` hands
+  every worker the WHAT its ticket serves. Three: a sixth retro mining
+  question adapted from converge — the delta between the documents'
+  promises and what git shipped, both ways, because a gap only the diff
+  knows about is debt with no ledger entry.
 - **All three roles' models configure in one place, and the configuration
   surface is documented as one table** (`scripts/tickets.mjs`,
   `skills/epic/SKILL.md` steps 3-4 and template, README). A new optional

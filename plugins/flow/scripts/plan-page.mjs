@@ -23,6 +23,9 @@
 //     "epic": "payments",
 //     "outcome": { "problem": "...", "change": "...",
 //                  "evidence": "...", "reversal": "..." },
+//     "requirements": [ "when <condition> the system shall <result>" ],
+//                                          // the WHAT, apart from the HOW;
+//                                          // unnumbered — the page numbers them
 //     "delivery": { "choice": "release" | "incremental", "why": "..." },
 //     "areas": [ { "name": "api-gateway",
 //                  "instructions": "api-gateway/CLAUDE.md" } ],
@@ -75,6 +78,13 @@ export function renderPlan(plan, { generatedAt = '' } = {}) {
 <div class="cell"><h3>Evidence</h3><p>${esc(plan.outcome.evidence)}</p></div>
 <div class="cell"><h3>Reversal condition</h3><p>${esc(plan.outcome.reversal)}</p></div>
 </div></section>`
+    : ''
+
+  const requirements = plan.requirements && plan.requirements.length
+    ? `<section><h2>Requirements — the WHAT, apart from the HOW</h2>
+<ol class="reqs">
+${plan.requirements.map(r => `<li>${esc(r)}</li>`).join('\n')}
+</ol></section>`
     : ''
 
   const meta = `<section><div class="chips">
@@ -169,6 +179,8 @@ ${pr.questions && pr.questions.length ? `<h3>Its open questions</h3>${list(pr.qu
   .steer { border-top:1px solid var(--line); padding-top:1.25rem; }
   .steer ul { padding-left:1.15rem; } .steer li { margin:0.35rem 0; font-size:0.92rem; }
   ul { margin:0.4rem 0; } li { margin:0.25rem 0; }
+  ol.reqs { padding-left:1.5rem; margin:0.5rem 0 0; } ol.reqs li { margin:0.45rem 0; }
+  ol.reqs li::marker { font-family:ui-monospace, Menlo, monospace; color:var(--accent-ink); }
   .dim { color:var(--muted); }
   .meta { color:var(--muted); font-size:0.82rem; margin-top:3rem; }
 </style>
@@ -177,6 +189,7 @@ ${pr.questions && pr.questions.length ? `<h3>Its open questions</h3>${list(pr.qu
 <h1>${esc(plan.epic)}</h1>
 <div class="banner">${banner}</div>
 ${outcome}
+${requirements}
 ${meta}
 ${grounding}
 ${tickets}

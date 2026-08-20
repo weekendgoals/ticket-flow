@@ -72,16 +72,33 @@ thrown away.
 - `node "${CLAUDE_PLUGIN_ROOT}/scripts/tickets.mjs" list` — what other epics are
   open, and where they overlap this one.
 
-## 3. Agree the shape, then write `epics/<name>/tickets.md`
+## 3. Clarify, agree the shape, then write `epics/<name>/tickets.md`
 
-**Before writing the full document, show the user the shape and let them
-bend it.** A finished decomposition anchors: presented whole, it turns
+**First, hunt what you would otherwise guess.** The most expensive planning
+defects are not wrong answers — they are questions nobody asked, resolved
+silently by whichever reading was easiest to build. Before proposing any
+shape, sweep the brief and the grounding for underspecified points, category
+by category: scope boundaries (what is adjacent and excluded), data and its
+lifecycle, error and edge behaviour, integration points and their contracts,
+non-functional expectations (scale, latency, security posture), and any
+sentence two readers could read two ways. For each, decide: does the answer
+change the shape of the work? **Ask the user the ones that do — batched,
+concrete, each with the readings you are choosing between** (an
+interrogation is as bad as guessing; a handful of sharp questions is the
+budget). Record every answer in the ticket document — a ground rule, the
+Outcome line, a ticket's scope — because an answer living only in this
+conversation is lost to every worker that starts empty. The ones that do
+not change the shape ride to sign-off as open questions instead of
+blocking here.
+
+**Then show the user the shape and let them bend it.** A finished decomposition anchors: presented whole, it turns
 sign-off into yes/no on the only shape in the room, when the cheap moment
 to re-split is now — a re-split costs a sentence here and a rewrite after
 the bodies are written. Present, compactly:
 
 - the draft **Outcome** line — the problem, the observable change, the
-  evidence, the reversal condition;
+  evidence, the reversal condition — and, when the epic carries one, the
+  numbered **Requirements** list;
 - the **areas in scope** and anything grounding turned up that changes the
   work's shape;
 - the **delivery choice** and its why, in one line;
@@ -95,8 +112,9 @@ skeleton ships with the plugin, so no session builds it by hand:
 1. Write the shape as JSON into your session's **scratchpad** — never into
    the repository: it is steering material, not record, and `tickets.md`
    is the record. The schema is documented at the top of
-   `scripts/plan-page.mjs` (`stage: "shape"`, the outcome, areas, delivery
-   with its why, the ticket list with one line each, `firstWhy`).
+   `scripts/plan-page.mjs` (`stage: "shape"`, the outcome, the requirements
+   when the epic carries them, areas, delivery with its why, the ticket
+   list with one line each, `firstWhy`).
 2. Render it:
 
    ```bash
@@ -132,6 +150,19 @@ and check it can distinguish success from failure: "the record shows zero X"
 is evidence only if a record showing some X is possible — an epic once
 promised a git record proving no human intervened, when every actor shared
 the human's own identity.>
+
+Requirements: <OPTIONAL — the WHAT, held apart from the HOW. A short
+numbered list (R1, R2, …) of the user-visible behaviours this epic must
+deliver, each in the checkable form *when <condition> the system shall
+<observable result>*. Written BEFORE any ticket is sliced and never edited
+to match the slicing: the tickets implement the requirements, the
+requirements never bend to the tickets — which is exactly what lets the
+plan reviewer walk the two lists against each other, requirement to
+criteria and ticket to requirement. Part of the preamble, deliberately not
+a `##` section: the preamble is what `brief` hands every worker, and a
+worker should know the WHAT its ticket serves. Omit it for a small epic
+whose Outcome line already carries the whole WHAT — an empty ritual list
+is worse than none.>
 
 Areas in scope: <the services, packages or directories this epic touches, and
 the instruction file that binds each — e.g. `api-gateway` (api-gateway/CLAUDE.md).

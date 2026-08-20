@@ -118,7 +118,13 @@ need not dominate the diff or the language stats. Two practices, both optional:
   into live tickets and its lessons into instruction files; archiving first
   silently deletes the debt ledger. Moving is not deleting: the log stays in
   git, fully readable, and shipped detection never depended on the folder —
-  it reads commit subjects. The standing `epics/quick/` is never archived.
+  it reads commit subjects. The standing `epics/quick/` is never archived
+  whole — it **rolls over by era** instead: when its log grows long
+  (roughly 25 entries), `/flow:retro quick` converts the open owed items to
+  tickets, archives the era to `epics/_archive/quick-<date>` verbatim, and
+  recreates a fresh quick epic whose preamble records the ID floor
+  (`Q-IDs continue at Q-<n+1>`), so numbering never collides with shipped
+  work.
 
 ## Release or incremental
 
