@@ -220,6 +220,18 @@ touched. **The commands live in the project's own instruction files** — the ro
 one, or each workspace's. Read them there rather than guessing; do not invent a
 test command.
 
+**A criterion written as a runtime demonstration is run, not waved at.**
+When the ticket says *demonstrate: <action> → <result>*, drive the actual
+app — launch it by the project's own run instructions, use a real browser
+or simulator where the environment provides one — perform the action, and
+record what you **observed** in the Verified line as evidence: the concrete
+screen, response or output seen ("/login rejects an empty password with the
+inline error, screenshot checked"), never an adjective ("UI looks fine").
+Tests prove what the code does; the demonstration proves what a user gets,
+and agent-built UI is exactly where the two diverge. A demonstration this
+environment cannot perform — no browser, no device — is owed, like any
+other check.
+
 Report **counts** — "api-gateway 217/217 passed", never "tests pass". If a check
 cannot run here, say so and record it as owed. Never imply it passed.
 

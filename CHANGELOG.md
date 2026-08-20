@@ -8,6 +8,24 @@ with one version and date.
 
 ## Unreleased
 
+- **Acceptance criteria may be runtime demonstrations, held to the
+  evidence bar** (`skills/epic/SKILL.md` criteria rules,
+  `skills/ticket/SKILL.md` step 5, `skills/quick/SKILL.md` step 5).
+  Adapted from gstack's browser-QA step after a comparative read.
+  Verification was command-and-counts only, which misses behaviour no
+  test command reaches — rendered UI, interactive flows, a CLI's actual
+  output. A criterion may now be written *demonstrate: <action> →
+  <observable result>*; the implementing agent drives the real app (the
+  project's run instructions, a real browser or simulator where the
+  environment provides one) and records what it **observed** in the
+  Verified line as evidence — the concrete screen or output seen, never
+  "looks fine" — because tests prove what the code does, a demonstration
+  proves what a user gets, and agent-built UI is where the two diverge.
+  A demonstration the environment cannot perform is owed, like any other
+  check. The rest of gstack was read and not adopted — its
+  agent-side merge-and-deploy crosses the human-merge line, and its
+  role-lens plan reviews cover ground the plan reviewer's checklist
+  already walks.
 - **Worker and reviewer models are chosen as a pairing, with two named
   profiles and a decision rule** (`skills/epic/SKILL.md` template, README,
   METHODOLOGY "Why review cost is tiered"). The template's Worker/Reviewer
