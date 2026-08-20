@@ -118,7 +118,13 @@ need not dominate the diff or the language stats. Two practices, both optional:
   into live tickets and its lessons into instruction files; archiving first
   silently deletes the debt ledger. Moving is not deleting: the log stays in
   git, fully readable, and shipped detection never depended on the folder —
-  it reads commit subjects. The standing `epics/quick/` is never archived.
+  it reads commit subjects. The standing `epics/quick/` is never archived
+  whole — it **rolls over by era** instead: when its log grows long
+  (roughly 25 entries), `/flow:retro quick` converts the open owed items to
+  tickets, archives the era to `epics/_archive/quick-<date>` verbatim, and
+  recreates a fresh quick epic whose preamble records the ID floor
+  (`Q-IDs continue at Q-<n+1>`), so numbering never collides with shipped
+  work.
 
 ## Release or incremental
 
@@ -265,6 +271,17 @@ spawns it, which is a decision worth making deliberately rather than
 inheriting by accident. None of these lines is a settings file: model
 choice lives in the versioned epic document, visible at sign-off, like
 every other configuration this plugin has.
+
+Those two lines are chosen **together, as a pairing**, per epic. Two
+profiles are known-good: **capable-implementer** (`Worker model: opus`,
+tiered review — for gnarly code and thin specs) and **strong-judge**
+(`Worker model: sonnet`, `Reviewer model: opus` — the cheap implementer
+under a stronger judge, for well-specified tickets out of a clarified,
+plan-reviewed epic; worker spend is the largest per-ticket line item, so
+this is the biggest cost knob the flow has). Decide from the previous run
+records' evidence — Important findings per ticket and observed spend —
+and never cheapen the *plan* side to match: a weak plan produces tickets
+that are confidently, reviewably wrong.
 
 **The whole configuration surface is six optional preamble lines** in the
 epic's `tickets.md` — one place, one syntax (label at line start, value

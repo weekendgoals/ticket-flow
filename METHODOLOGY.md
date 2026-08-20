@@ -233,6 +233,23 @@ The plan reviewer is pinned to the strongest model outright: a wrong
 decomposition is the one defect that costs every ticket built on it, so that
 is the single place capability spend has no cheaper substitute.
 
+Whether the reviewer must be *stronger than the implementer* was examined
+(2026-08-19) and settled as a pairing, not a rule. As a rule it fails at
+the edges the ledger already paid for: review is priced by what the diff
+can break, because a maximum review of a docs diff buys nothing — and
+where the stakes are highest the guarantee already holds, since the
+consequence tier and the plan reviewer sit at or above every implementer.
+But the intuition survives as a profile: a cheap implementer under a
+stronger judge (`Worker model: sonnet`, `Reviewer model: opus`) is
+coherent and likely cheaper in total than a strong implementer under
+tiered review, because worker spend dominates the per-ticket bill and one
+strong pass over a diff costs less than a strong generation of the whole
+implementation. The epic template now names both pairings —
+capable-implementer and strong-judge — with the decision rule beside
+them; the run records' per-ticket findings and meter deltas are the
+evidence that picks between them, epic by epic, and the printed default
+moves when a live ledger says so, not before.
+
 ## Why the re-review became a code gate below the consequence tier
 
 The re-review existed so a merged diff is always a reviewed diff: fix
@@ -367,6 +384,25 @@ list as one line each — where a re-split costs a sentence, and the sign-off
 itself presents one considered-and-rejected alternative so approval is a
 choice between shapes rather than a ratification of the one shown.
 
+Two refinements arrived from reading GitHub's Spec Kit against this flow
+(2026-08-19) — its planning front end is more developed than this one was,
+and two of its ideas passed the admission test. A **clarify pass** now
+precedes the shape: the planner sweeps the brief for underspecified points
+— scope boundaries, data lifecycle, error behaviour, integrations,
+non-functional expectations — and asks the user the ones whose answers
+change the shape, recording every answer in the documents, because the
+costliest planning defects are questions nobody asked, resolved silently by
+whichever reading was easiest to build. And an optional numbered
+**Requirements block** holds the WHAT apart from the HOW, written before
+any ticket is sliced and never bent to fit the slicing — which gives the
+plan reviewer a mechanical walk nothing else provided: every requirement
+reachable through some ticket's criteria, every ticket serving some
+requirement. What was deliberately not adopted: Spec Kit's constitution (a
+separate principles document — the instruction files and epic ground rules
+already are one), its analyze step (check-invariants plus the fresh-context
+plan reviewer are the stronger pair), and its in-session implement lane
+(the biased execution this flow's workers exist to replace).
+
 So the same trick used on code is used on the plan: a fresh-context agent with
 no stake in the decomposition, reading it against the actual code, reporting
 without rewriting. External evidence points the same way — Cloudflare reports
@@ -429,6 +465,12 @@ it is already written down, and none of it changes the next epic unless
 something moves it from the record into the rules. That move is the retro: owed
 work becomes tickets, repeated rediscoveries become instruction-file lines,
 repeated review findings become invariants the next reviewer judges against.
+A sixth mining question closes the loop the ledger cannot see (adapted from
+Spec Kit's converge step, 2026-08-19): the delta between the documents'
+promises and what git says actually shipped — unshipped scope no Owed line
+recorded, shipped behaviour no ticket owns, instruction files the work made
+stale. The record is honest about what was written down; only the diff
+knows what was not.
 
 Three constraints keep it honest. The mining runs in a fresh-context agent
 (user request at the autonomous epic's retro, 2026-08-08): the invoking
@@ -672,6 +714,21 @@ run marks the session as carrying implementation context (so a later
 start empty, stay open), and quick itself is never refused, because
 in-session is now its design, not its leak.
 
+The standing epic's one structural cost is that it never closes: the log
+and ticket doc grow without bound, and both ride every quick branch and
+pull-request diff. `brief` fixed the read side — O(epic), not O(history) —
+but nothing fixed the carry side. The fix is an **era rollover** (adapted
+from beads' compaction, 2026-08-19, reshaped to fit this flow's doctrine):
+where beads semantically summarizes old closed issues, append-only forbids
+rewriting history, so the retro moves the era aside whole — archived
+verbatim, nothing summarized — and a fresh quick epic continues the ID
+sequence, with the floor recorded as a ground rule because the archived
+headings are no longer read and a reused number would read as already
+shipped. The record survives untouched; the working copy stops paying for
+it. The rollover lives behind the retro's owed-conversion gate for the
+same reason the general archive step does: the archive drops off the
+board, and an unconverted owed item would vanish from every future brief.
+
 ## The failure modes this is designed against
 
 - **Scope creep in a fresh session.** An agent doesn't know what it doesn't know,
@@ -714,4 +771,10 @@ time.
 - **A dependency graph with parsed `Depends on:` fields and automatic stacking.**
   It computed something the branch already knew, and its failure mode was silent:
   a dependency written in prose rather than as a bare ID read as a hard blocker
-  and stalled the ticket.
+  and stalled the ticket. Revisited against beads' ready-computation
+  (2026-08-19): still fails the admission test while the lanes are serial —
+  document order is the dependency mechanism, and owed items carry the
+  cross-epic cases. The shape to reach for if a parallel lane ever lands:
+  bare-ID `Blocked by:` lines parsed strictly, doctor near-miss coverage,
+  and a `waiting` board state — the strict parse being exactly what the
+  first version lacked.
