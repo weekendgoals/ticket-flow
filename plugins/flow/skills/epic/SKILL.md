@@ -217,15 +217,35 @@ place, one syntax, all validated by `/flow:doctor`'s near-miss scan. Label
 at line start, value the first word after the colon, prose after the value
 welcome. The full set:
 
-`Worker model: <model>` — the implementing workers' model. Without it each
-worker inherits the session that spawns it, and planning sessions often run
-the most expensive class available — a price nobody decided on. `opus` is
-the recommended default: plan on the stronger model, implement on this one.
-Drop the line only when inheriting is a decision, not an accident.
+`Worker model: <model>` and `Reviewer model: <model>` — the implementing
+workers and the ticket reviewer, chosen **together, as a pairing**. Two
+profiles are known-good:
 
-`Reviewer model: <model>` — pins the ticket reviewer's model; otherwise the
-ticket skill's consequence tiers choose it (haiku / sonnet / opus). Set it
-to redirect review permanently; the tiers are the better default.
+- **capable-implementer** (the template's printed default):
+  `Worker model: opus`, no Reviewer line — the consequence tiers price
+  review (haiku / sonnet / opus). Choose it for gnarly code, thin specs,
+  unfamiliar territory: implementation quality is bought up front, and
+  routine review stays cheap.
+- **strong-judge**: `Worker model: sonnet`, `Reviewer model: opus` — the
+  cheap implementer under the stronger judge. Choose it for
+  well-specified tickets out of a plan this skill clarified, shaped and
+  had reviewed: the scaffolding (binding scope, checkable criteria,
+  fresh-context review, fix bounds) exists precisely to make a cheaper
+  implementer safe, and worker spend is the largest line item per
+  ticket, so this is the flow's highest-leverage cost knob.
+
+Decide from evidence, not taste: previous run records carry each
+ticket's Important-finding count and observed token spend — a
+strong-judge epic whose tickets keep collecting Important findings and
+fix loops is saying its tickets were not specified well enough for the
+profile, and the fix is the profile or the planning, whichever the
+findings point at. Without a Worker line each worker inherits the
+session that spawns it — often the most expensive class available, a
+price nobody decided on — so drop the line only when inheriting is a
+decision. And never cheapen the plan side to match the worker: a weak
+implementation produces findings a reviewer catches; a weak plan
+produces tickets that are confidently, reviewably wrong, and every gate
+downstream approves a correct implementation of the wrong thing.
 
 `Planner model: <model>` — pins the plan reviewer for THIS epic's step 4
 review; otherwise the plan-reviewer agent's own pinned strongest model is

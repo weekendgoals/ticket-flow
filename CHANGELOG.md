@@ -8,6 +8,21 @@ with one version and date.
 
 ## Unreleased
 
+- **Worker and reviewer models are chosen as a pairing, with two named
+  profiles and a decision rule** (`skills/epic/SKILL.md` template, README,
+  METHODOLOGY "Why review cost is tiered"). The template's Worker/Reviewer
+  guidance now presents **capable-implementer** (`opus` worker, tiered
+  review — gnarly code, thin specs) and **strong-judge** (`sonnet` worker,
+  `opus` reviewer — the cheap implementer under a stronger judge, for
+  well-specified tickets out of a clarified, plan-reviewed epic) as the
+  two known-good pairings, decided from run-record evidence: Important
+  findings per ticket and observed spend, which the driver records
+  automatically. METHODOLOGY settles "the reviewer must be stronger than
+  the implementer" as a profile, not a rule — review stays priced by
+  consequence, the plan side is never cheapened, and the printed default
+  (`opus` worker) moves only when a live ledger says so. No code change:
+  both profiles were already expressible; the choice is now named,
+  reasoned, and tied to its evidence.
 - **The standing quick epic rolls over by era** (`skills/quick/SKILL.md`
   steps 2 and 5, `skills/retro/SKILL.md` steps 1 and 6, README,
   METHODOLOGY). Adapted from beads' compaction after a comparative read,

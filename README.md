@@ -272,6 +272,17 @@ inheriting by accident. None of these lines is a settings file: model
 choice lives in the versioned epic document, visible at sign-off, like
 every other configuration this plugin has.
 
+Those two lines are chosen **together, as a pairing**, per epic. Two
+profiles are known-good: **capable-implementer** (`Worker model: opus`,
+tiered review — for gnarly code and thin specs) and **strong-judge**
+(`Worker model: sonnet`, `Reviewer model: opus` — the cheap implementer
+under a stronger judge, for well-specified tickets out of a clarified,
+plan-reviewed epic; worker spend is the largest per-ticket line item, so
+this is the biggest cost knob the flow has). Decide from the previous run
+records' evidence — Important findings per ticket and observed spend —
+and never cheapen the *plan* side to match: a weak plan produces tickets
+that are confidently, reviewably wrong.
+
 **The whole configuration surface is six optional preamble lines** in the
 epic's `tickets.md` — one place, one syntax (label at line start, value
 first after the colon, prose after it ignored), every near-miss flagged by

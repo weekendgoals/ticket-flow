@@ -233,6 +233,23 @@ The plan reviewer is pinned to the strongest model outright: a wrong
 decomposition is the one defect that costs every ticket built on it, so that
 is the single place capability spend has no cheaper substitute.
 
+Whether the reviewer must be *stronger than the implementer* was examined
+(2026-08-19) and settled as a pairing, not a rule. As a rule it fails at
+the edges the ledger already paid for: review is priced by what the diff
+can break, because a maximum review of a docs diff buys nothing — and
+where the stakes are highest the guarantee already holds, since the
+consequence tier and the plan reviewer sit at or above every implementer.
+But the intuition survives as a profile: a cheap implementer under a
+stronger judge (`Worker model: sonnet`, `Reviewer model: opus`) is
+coherent and likely cheaper in total than a strong implementer under
+tiered review, because worker spend dominates the per-ticket bill and one
+strong pass over a diff costs less than a strong generation of the whole
+implementation. The epic template now names both pairings —
+capable-implementer and strong-judge — with the decision rule beside
+them; the run records' per-ticket findings and meter deltas are the
+evidence that picks between them, epic by epic, and the printed default
+moves when a live ledger says so, not before.
+
 ## Why the re-review became a code gate below the consequence tier
 
 The re-review existed so a merged diff is always a reviewed diff: fix
