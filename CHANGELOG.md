@@ -8,6 +8,47 @@ with one version and date.
 
 ## Unreleased
 
+- **Acceptance criteria may be machine-runnable, and the run driver gates
+  the merge on them in code** (`scripts/tickets.mjs` new `check`
+  subcommand and doctor near-misses, `workflows/run-epic.mjs` new
+  Acceptance step and stop condition, `skills/epic/SKILL.md` template and
+  criteria rules, `skills/ticket/SKILL.md` step 5, `skills/quick/SKILL.md`
+  step 5, `skills/run/SKILL.md` steps 4–5, `scripts/check-invariants.mjs`
+  two new couplings). Adapted from unlazy's gate files after a comparative
+  read. A criterion may carry an indented `CHECK: <command>` line with an
+  optional `EXPECT: <text the output must contain>`; `tickets.mjs check
+  <ID>` runs them from the repository root and reports a pass/fail ledger
+  with the deciding output as evidence — a malformed CHECK fails the gate
+  rather than silently never running, and doctor flags the near-miss
+  shapes. Workers and quick tickets verify with the tool's ledger instead
+  of their own reading of test output. In an unattended run the driver
+  re-runs the checks against the pushed branch **after** the disposition
+  (fix commits included) with `--from origin/epic/<name>` — the criteria
+  as **signed off**, which no ticket branch can edit, closing the
+  self-authored-gate hole the source idea carries — and code, not an
+  agent, compares the counts; any failure is a new stop condition. This
+  moves the last merge-relevant fact that was still taken on an agent's
+  word (the worker's verification claim) to repository state. CHECK lines
+  are optional: prose and *demonstrate:* criteria remain first-class, and
+  a ticket without them passes the gate untouched.
+- **Acceptance criteria may be runtime demonstrations, held to the
+  evidence bar** (`skills/epic/SKILL.md` criteria rules,
+  `skills/ticket/SKILL.md` step 5, `skills/quick/SKILL.md` step 5).
+  Adapted from gstack's browser-QA step after a comparative read.
+  Verification was command-and-counts only, which misses behaviour no
+  test command reaches — rendered UI, interactive flows, a CLI's actual
+  output. A criterion may now be written *demonstrate: <action> →
+  <observable result>*; the implementing agent drives the real app (the
+  project's run instructions, a real browser or simulator where the
+  environment provides one) and records what it **observed** in the
+  Verified line as evidence — the concrete screen or output seen, never
+  "looks fine" — because tests prove what the code does, a demonstration
+  proves what a user gets, and agent-built UI is where the two diverge.
+  A demonstration the environment cannot perform is owed, like any other
+  check. The rest of gstack was read and not adopted — its
+  agent-side merge-and-deploy crosses the human-merge line, and its
+  role-lens plan reviews cover ground the plan reviewer's checklist
+  already walks.
 - **Worker and reviewer models are chosen as a pairing, with two named
   profiles and a decision rule** (`skills/epic/SKILL.md` template, README,
   METHODOLOGY "Why review cost is tiered"). The template's Worker/Reviewer

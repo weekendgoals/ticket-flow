@@ -115,6 +115,8 @@ const resolvedOk = {
   headSha: 'beefc0ffee42',
   detail: '',
 }
+const acceptOk = { outcome: 'ran', total: 2, passed: 2, failures: [], detail: '' }
+const acceptNone = { outcome: 'ran', total: 0, passed: 0, failures: [], detail: '' }
 const mergedOk = { outcome: 'merged', detail: '' }
 const integratedOk = { commandSucceeded: true, state: 'integrated', prUrl: '' }
 
@@ -128,6 +130,7 @@ const oneTicket = (over = {}) => (label, prompt) => {
   if (label === 'tier-facts:PAY-1') return tierFactsCode
   if (label === 'review:PAY-1') return reviewClean
   if (label === 'disposition:PAY-1') return dispClean
+  if (label === 'accept:PAY-1') return acceptOk
   if (label === 'resolve:PAY-1') return resolvedOk
   if (label === 'merge:PAY-1') return mergedOk
   if (label === 'verify:PAY-1') return integratedOk
@@ -136,7 +139,7 @@ const oneTicket = (over = {}) => (label, prompt) => {
 
 // ---- the sequence -----------------------------------------------------------
 
-test('the happy path runs refresh+select -> worker -> review -> disposition -> resolve -> merge -> verify, per ticket', async () => {
+test('the happy path runs refresh+select -> worker -> review -> disposition -> accept -> resolve -> merge -> verify, per ticket', async () => {
   const r = await drive((label, prompt) => {
     if (label === 'refresh+select:1') return refreshed(['PAY-1', 'PAY-2'])
     if (label === 'refresh+select:2') return refreshed(['PAY-2'])
@@ -145,13 +148,14 @@ test('the happy path runs refresh+select -> worker -> review -> disposition -> r
     if (label.startsWith('tier-facts:')) return tierFactsCode
     if (label.startsWith('review:')) return reviewClean
     if (label.startsWith('disposition:')) return dispClean
+    if (label.startsWith('accept:')) return acceptOk
     if (label.startsWith('resolve:')) return resolvedOk
     if (label.startsWith('merge:')) return mergedOk
     if (label.startsWith('verify:')) return integratedOk
   })
   assert.deepEqual(r.labels, [
-    'refresh+select:1', 'worker:PAY-1', 'tier-facts:PAY-1', 'review:PAY-1', 'disposition:PAY-1', 'resolve:PAY-1', 'merge:PAY-1', 'verify:PAY-1',
-    'refresh+select:2', 'worker:PAY-2', 'tier-facts:PAY-2', 'review:PAY-2', 'disposition:PAY-2', 'resolve:PAY-2', 'merge:PAY-2', 'verify:PAY-2',
+    'refresh+select:1', 'worker:PAY-1', 'tier-facts:PAY-1', 'review:PAY-1', 'disposition:PAY-1', 'accept:PAY-1', 'resolve:PAY-1', 'merge:PAY-1', 'verify:PAY-1',
+    'refresh+select:2', 'worker:PAY-2', 'tier-facts:PAY-2', 'review:PAY-2', 'disposition:PAY-2', 'accept:PAY-2', 'resolve:PAY-2', 'merge:PAY-2', 'verify:PAY-2',
     'refresh+select:3',
   ])
   assert.equal(r.out.outcome, 'completed')
@@ -561,7 +565,7 @@ test('at the consequence tier, fix commits earn exactly one re-review, and a cle
     }),
   )
   assert.deepEqual(r.labels, [
-    'refresh+select:1', 'worker:PAY-1', 'tier-facts:PAY-1', 'review:PAY-1', 'disposition:PAY-1', 're-review:PAY-1', 'resolve:PAY-1', 'merge:PAY-1', 'verify:PAY-1',
+    'refresh+select:1', 'worker:PAY-1', 'tier-facts:PAY-1', 'review:PAY-1', 'disposition:PAY-1', 're-review:PAY-1', 'accept:PAY-1', 'resolve:PAY-1', 'merge:PAY-1', 'verify:PAY-1',
     'refresh+select:2',
   ])
   assert.equal(r.out.outcome, 'completed')
@@ -692,6 +696,82 @@ test('a re-reviewer that cannot be hired halts before the merge', async () => {
   assert.ok(!r.labels.some(l => l.startsWith('merge:')))
 })
 
+// ---- the acceptance-check gate ----------------------------------------------
+
+test('the accept step reads the criteria from the signed-off document on the epic branch', async () => {
+  const r = await drive(oneTicket())
+  const c = call(r, 'accept:PAY-1')
+  assert.equal(c.model, 'haiku')
+  assert.equal(c.effort, 'low')
+  assert.match(c.prompt, /tickets\.mjs" check PAY-1 --from origin\/epic\/payments --json/)
+  // The --from ref is the point: the party under review cannot soften its own
+  // gate by editing the copy riding its branch.
+  assert.match(c.prompt, /signed-off document/)
+  assert.match(c.prompt, /You judge nothing; the driver reads the counts in code/)
+  assert.doesNotMatch(c.prompt, /gh pr/)
+  const rec = r.out.ticketRecords[0]
+  assert.equal(rec.acceptanceOutcome, 'ran')
+  assert.equal(rec.acceptanceChecks, 2)
+  assert.equal(rec.acceptanceChecksPassed, 2)
+})
+
+test('a failed acceptance check halts before any merge agent exists, quoting the failures fenced', async () => {
+  const r = await drive(
+    oneTicket({
+      'accept:PAY-1': { outcome: 'ran', total: 2, passed: 1, failures: [{ criterion: 'the limit clamps to 50', evidence: 'exit 1 — AssertionError' }], detail: '' },
+    }),
+  )
+  assert.equal(r.out.haltedOn.stopCondition, 'a failed acceptance CHECK — a machine-runnable criterion whose command did not produce its expected result on the pushed branch')
+  assert.match(r.out.haltedOn.detail, /1 of 2 CHECK criteria failed/)
+  assert.match(r.out.haltedOn.detail, /<<<UNTRUSTED[\s\S]*the limit clamps to 50 — exit 1 — AssertionError/)
+  assert.ok(!r.labels.some(l => l.startsWith('resolve:') || l.startsWith('merge:')))
+})
+
+test('a ticket with no CHECK criteria passes through the gate untouched', async () => {
+  const r = await drive(oneTicket({ 'accept:PAY-1': acceptNone }))
+  assert.equal(r.out.outcome, 'completed')
+  assert.equal(r.out.ticketRecords[0].acceptanceChecks, 0)
+  assert.ok(r.logs.some(l => /no machine-runnable acceptance criteria/.test(l)))
+})
+
+test('an accept step that ran but reported no usable counts fails closed', async () => {
+  const r = await drive(oneTicket({ 'accept:PAY-1': { outcome: 'ran', detail: '' } }))
+  assert.match(r.out.haltedOn.stopCondition, /^a failed acceptance CHECK/)
+  assert.match(r.out.haltedOn.detail, /no usable counts/)
+  assert.ok(!r.labels.some(l => l.startsWith('merge:')))
+})
+
+test('an accept step that died, failed, or hit a prompt halts on its own condition', async () => {
+  const dead = await drive(oneTicket({ 'accept:PAY-1': null }))
+  assert.match(dead.out.haltedOn.stopCondition, /^a nonzero exit from any command/)
+  assert.match(dead.out.haltedOn.detail, /nothing merges on a guess/)
+  assert.ok(!dead.labels.some(l => l.startsWith('merge:')))
+  const failed = await drive(oneTicket({ 'accept:PAY-1': { outcome: 'command-failed', detail: 'exit 2: unknown command' } }))
+  assert.match(failed.out.haltedOn.stopCondition, /^a nonzero exit from any command/)
+  assert.match(failed.out.haltedOn.detail, /<<<UNTRUSTED[\s\S]*exit 2: unknown command/)
+  const prompted = await drive(oneTicket({ 'accept:PAY-1': { outcome: 'permission-prompt', detail: 'the test command would prompt' } }))
+  assert.equal(prompted.out.haltedOn.stopCondition, 'a permission prompt firing mid-run')
+  assert.ok(!prompted.labels.some(l => l.startsWith('merge:')))
+})
+
+test('the acceptance gate runs after the disposition and re-review, so fix commits are judged too', async () => {
+  // The failing check fires even though review and disposition went clean —
+  // the gate reads the pushed branch's final state, not any agent's account.
+  const r = await drive(
+    oneTicket({
+      'worker:PAY-1': workerOk('PAY-1', { tier: 'consequence' }),
+      'review:PAY-1': reviewImportant,
+      'disposition:PAY-1': dispFixed,
+      're-review:PAY-1': { important: [] },
+      'accept:PAY-1': { outcome: 'ran', total: 1, passed: 0, failures: [{ criterion: 'clamps', evidence: 'exit 1' }], detail: '' },
+    }),
+  )
+  assert.match(r.out.haltedOn.stopCondition, /^a failed acceptance CHECK/)
+  const order = r.labels
+  assert.ok(order.indexOf('accept:PAY-1') > order.indexOf('re-review:PAY-1'))
+  assert.ok(!order.some(l => l.startsWith('merge:')))
+})
+
 // ---- pre-existing findings --------------------------------------------------
 
 test('pre-existing findings reach the disposition prompt and the run record', async () => {
@@ -790,6 +870,7 @@ test('a board that hands out the same ticket twice halts as not advancing', asyn
     if (label === 'tier-facts:PAY-1') return tierFactsCode
     if (label === 'review:PAY-1') return reviewClean
     if (label === 'disposition:PAY-1') return dispClean
+    if (label === 'accept:PAY-1') return acceptOk
     if (label === 'resolve:PAY-1') return resolvedOk
     if (label === 'merge:PAY-1') return mergedOk
     if (label === 'verify:PAY-1') return integratedOk
@@ -809,6 +890,7 @@ test('a board that never runs out of tickets is stopped by the run cap', async (
     if (label.startsWith('tier-facts:')) return tierFactsCode
     if (label.startsWith('review:')) return reviewClean
     if (label.startsWith('disposition:')) return dispClean
+    if (label.startsWith('accept:')) return acceptOk
     if (label.startsWith('resolve:')) return { ...resolvedOk, headRefName: label.split(':')[1].toLowerCase() }
     if (label.startsWith('merge:')) return mergedOk
     if (label.startsWith('verify:')) return integratedOk
@@ -853,7 +935,7 @@ test('the shell-proxy agents are pinned to a fast model; the judging ones are pr
       're-review:PAY-1': { important: [] },
     }),
   )
-  for (const label of ['refresh+select:1', 'tier-facts:PAY-1', 'resolve:PAY-1', 'merge:PAY-1', 'verify:PAY-1']) assert.equal(call(r, label).model, 'haiku', label)
+  for (const label of ['refresh+select:1', 'tier-facts:PAY-1', 'accept:PAY-1', 'resolve:PAY-1', 'merge:PAY-1', 'verify:PAY-1']) assert.equal(call(r, label).model, 'haiku', label)
   assert.equal(call(r, 'worker:PAY-1').model, undefined)
   assert.equal(call(r, 'disposition:PAY-1').model, undefined)
   // Priced by the tier the worker reported — the pins never reach the judges.
@@ -929,7 +1011,7 @@ test('every agent that can write is told the default branch is never a target', 
   const r = await drive(
     oneTicket({ 'worker:PAY-1': workerOk('PAY-1', { tier: 'consequence' }), 'review:PAY-1': reviewImportant, 'disposition:PAY-1': dispFixed, 're-review:PAY-1': { important: [] } }),
   )
-  for (const label of ['refresh+select:1', 'worker:PAY-1', 'tier-facts:PAY-1', 'disposition:PAY-1', 'resolve:PAY-1', 'merge:PAY-1']) {
+  for (const label of ['refresh+select:1', 'worker:PAY-1', 'tier-facts:PAY-1', 'disposition:PAY-1', 'accept:PAY-1', 'resolve:PAY-1', 'merge:PAY-1']) {
     assert.match(call(r, label).prompt, /toward the default branch \(main\)/, label)
   }
   // The reviewers are read-only instead: the rule they carry is the stronger one.

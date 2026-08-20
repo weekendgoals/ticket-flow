@@ -1,7 +1,7 @@
 export const meta = {
   name: 'flow-run-epic',
   description:
-    "The /flow:run driver loop as code — code-controlled, agent-executed: refresh epic/<name> and take the next ticket in document order, spawn a worker that stops at its pushed branch, read the diff's file list and floor the review tier in code, hire the reviewer, gate on its findings, re-review any fix commits, resolve the pushed branch's verified head and merge exactly that commit into epic/<name> — release tickets open no pull request of their own — confirm the merge landed — and halt on any stop condition instead of improvising past it",
+    "The /flow:run driver loop as code — code-controlled, agent-executed: refresh epic/<name> and take the next ticket in document order, spawn a worker that stops at its pushed branch, read the diff's file list and floor the review tier in code, hire the reviewer, gate on its findings, re-review any fix commits, re-run the ticket's CHECK/EXPECT acceptance criteria from the signed-off document and gate on the counts in code, resolve the pushed branch's verified head and merge exactly that commit into epic/<name> — release tickets open no pull request of their own — confirm the merge landed — and halt on any stop condition instead of improvising past it",
   whenToUse:
     'Invoked by the flow:run skill AFTER it has resolved the epic, refused anything but Delivery: release, verified the sign-off traces on origin/epic/<name>, and checked the permission surface and branch protection (or its recorded waiver). Requires args {epic, defaultBranch, repoRoot, pluginRoot, today, workerModel?, reviewerModel?, consequencePaths?, ticketBudget?}. Returns {outcome: "completed"|"halted", haltedOn, ticketRecords, ...}; the calling session writes the run record and opens the release pull request. The driver hires the reviewer — the party under review never picks its judge — and the merge gate is a code check on the reviewer\'s structured findings. The script never merges, pushes, or retargets toward the default branch, and never opens or merges the release pull request.',
   phases: [
@@ -10,6 +10,7 @@ export const meta = {
     { title: 'Review', detail: "the driver hires the judge, priced by the worker's reported tier floored in code by the diff's own file list" },
     { title: 'Disposition', detail: 'fix Important findings, record pre-existing ones, commit the addendum — a merge precondition' },
     { title: 'Re-review', detail: 'one bounded pass over the fix commits — only at the consequence tier, or when the fix-bounds gate has no anchor; below that the fixes are bounds-checked in code at the resolve step' },
+    { title: 'Acceptance', detail: "run the ticket's CHECK/EXPECT criteria from the signed-off document against the pushed branch — the counts judged in code before anything can merge" },
     { title: 'Resolve', detail: 'read-only: the addendum on the pushed branch and the exact head commit it stands at, checked in code before anything can merge' },
     { title: 'Merge', detail: 'one fixed git sequence merging the code-verified head SHA into epic/<name> — a merge commit, never a squash, and a SHA cannot be retargeted' },
     { title: 'Verify', detail: 'confirm state === integrated from the board, never from an agent' },
@@ -145,6 +146,7 @@ const STOP = {
   permissionPrompt: 'a permission prompt firing mid-run',
   nonzeroExit: 'a nonzero exit from any command the run issues as a step, except those this skill explicitly marks tolerated',
   fixBounds: 'a review-fix diff outside its bounds — touching files the review never saw, or exceeding the fix line budget',
+  acceptanceCheck: 'a failed acceptance CHECK — a machine-runnable criterion whose command did not produce its expected result on the pushed branch',
   ticketBudget: "a ticket's pass exceeding the epic's per-ticket token budget",
 }
 
@@ -366,6 +368,36 @@ const RE_REVIEW_SCHEMA = {
         properties: { cite: { type: 'string' }, summary: { type: 'string' }, owner: { type: 'string' } },
       },
     },
+  },
+}
+
+// The acceptance-check step: one read-only-in-effect fast-model proxy that
+// brings the local branch to its pushed state and runs the board script's
+// `check` subcommand with `--from origin/epic/<name>` — the criteria as signed
+// off, which no ticket branch can edit — then echoes the printed counts. The
+// script, not the agent, judges them.
+const ACCEPT_SCHEMA = {
+  type: 'object',
+  required: ['outcome'],
+  properties: {
+    outcome: {
+      type: 'string',
+      enum: ['ran', 'command-failed', 'permission-prompt'],
+      description:
+        '"ran" once the check command itself executed and printed its JSON — exit 0 (all passed) and exit 1 (a check failed) are BOTH "ran"; report what it printed either way. "command-failed" only when a git command failed, the check command exited 2, or it printed no parseable JSON.',
+    },
+    total: { type: 'integer', description: 'the `total` field of the printed JSON, verbatim — 0 when the ticket has no CHECK criteria, which is an answer, not a failure' },
+    passed: { type: 'integer', description: 'the `passed` field of the printed JSON, verbatim' },
+    failures: {
+      type: 'array',
+      items: {
+        type: 'object',
+        required: ['criterion'],
+        properties: { criterion: { type: 'string' }, evidence: { type: 'string' } },
+      },
+      description: 'one entry per failed or malformed check: the criterion text (or the problem line) and its evidence, verbatim from the JSON. [] when everything passed.',
+    },
+    detail: { type: 'string', description: 'first lines of any error output, verbatim, credentials masked' },
   },
 }
 
@@ -779,6 +811,9 @@ Report honestly: \`branch-pushed\` ONLY if you saw the push of \`${branch}\` suc
     reviewedHead: '',
     fixBoundsGated: false,
     fixLines: null,
+    acceptanceOutcome: 'not reached',
+    acceptanceChecks: null,
+    acceptanceChecksPassed: null,
     resolveOutcome: 'not reached',
     mergeOutcome: 'not reached',
     addendumMatches: null,
@@ -1147,6 +1182,80 @@ Read them in the context of the whole range, but judge them: does each fix do wh
       }
       break
     }
+  }
+
+  // f3. Acceptance — the ticket's own CHECK/EXPECT criteria, re-run by the
+  //     driver against the final pushed state (fix commits included, which is
+  //     why this step sits after the disposition) and judged in code. The
+  //     worker's step 5 run of the criteria is its claim; this is the one
+  //     merge-relevant fact that was still taken on an agent's word, moved to
+  //     repository state. The `--from` ref is the point: the criteria are
+  //     read from the SIGNED-OFF document on the epic branch, never from the
+  //     ticket branch's own copy — the party under review does not edit its
+  //     own gate. A ticket with no CHECK criteria passes through: prose and
+  //     demonstrate: criteria stay the worker's verified obligations, held
+  //     by the review.
+  phase('Acceptance')
+  const accept = await agent(
+    `In the repository at ${repoRoot}, run ticket ${id}'s machine-runnable acceptance checks against its pushed branch and report what the command printed. Run exactly this sequence:
+
+\`\`\`bash
+git fetch origin ${branch}
+git checkout ${branch}
+git merge --ff-only origin/${branch}
+node "${pluginRoot}/scripts/tickets.mjs" check ${id} --from origin/${epicBranch} --json
+\`\`\`
+
+The first three commands bring the local branch to its pushed state — the state the checks must judge. The \`--from\` ref reads the CHECK/EXPECT criteria from the signed-off document on ${epicBranch}, never from this branch's own copy.
+
+The check command exits 0 when every check passed and 1 when any failed — BOTH are outcome "ran": report the JSON it printed verbatim (\`total\`, \`passed\`, and one \`failures\` entry per failed check or malformed line, with its criterion and evidence). A \`total\` of 0 — no CHECK criteria — is an answer, not a failure. Report "command-failed" only when a git command failed, the check command exited 2, or it printed no parseable JSON. You judge nothing; the driver reads the counts in code.
+
+${PROMPT_RULE}
+
+${NO_MAIN} The checkout and fast-forward only move the local branch to where the remote already is; you commit nothing and push nothing.`,
+    { label: `accept:${id}`, phase: 'Acceptance', schema: ACCEPT_SCHEMA, effort: 'low', model: 'haiku' },
+  )
+  record.acceptanceOutcome = accept ? line(accept.outcome) : 'no report'
+  if (accept && accept.outcome === 'permission-prompt') {
+    halted = { ticket: id, stopCondition: STOP.permissionPrompt, where: `running ${id}'s acceptance checks`, detail: fence(line(accept.detail || '(no command named)')) }
+    break
+  }
+  if (!accept || accept.outcome !== 'ran') {
+    halted = {
+      ticket: id,
+      stopCondition: STOP.nonzeroExit,
+      where: `running ${id}'s acceptance checks`,
+      detail: accept
+        ? `the acceptance-check step failed:${line(accept.detail) ? ` ${fence(line(accept.detail))}` : ' (no detail quoted)'}`
+        : 'the acceptance-check agent returned no report — whether the criteria pass is unknown, and nothing merges on a guess',
+    }
+    break
+  }
+  {
+    const total = Number.isInteger(accept.total) ? accept.total : null
+    const passed = Number.isInteger(accept.passed) ? accept.passed : null
+    record.acceptanceChecks = total
+    record.acceptanceChecksPassed = passed
+    if (total === null || passed === null || passed !== total) {
+      const failures = Array.isArray(accept.failures) ? accept.failures : []
+      halted = {
+        ticket: id,
+        stopCondition: STOP.acceptanceCheck,
+        where: `the acceptance checks of ${id}`,
+        detail:
+          total === null || passed === null
+            ? `the acceptance-check step reported "ran" but no usable counts — a gate that cannot read its own evidence merges nothing; doubt goes up`
+            : `${total - passed} of ${total} CHECK criteria failed on the pushed branch, judged against the signed-off document on ${epicBranch}: ${fence(
+                failures.map(f => `${line(f.criterion)} — ${line(f.evidence || '(no evidence quoted)')}`).join('; ') || '(no failures quoted)',
+              )}`,
+      }
+      break
+    }
+    log(
+      total === 0
+        ? `${id}: no machine-runnable acceptance criteria — nothing to gate here; prose and demonstrate criteria remain the worker's verified obligations.`
+        : `${id}: acceptance checks ${passed}/${total} passed against the signed-off criteria.`,
+    )
   }
 
   // g. Resolve — read-only. What the merge needs to be true is established

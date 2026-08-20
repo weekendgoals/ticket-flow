@@ -281,6 +281,19 @@ const PHRASES = [
     re: /(reports?; it does not fix|report and never fix|report\. You never fix|reports without fixing)/i,
     files: ['ticket', 'quick', 'reviewer', 'readme', 'claudemd'],
   },
+  {
+    why: 'the acceptance-check stop condition is one sentence in the skill and the script — a halt the run record quotes verbatim',
+    re: /a failed acceptance CHECK/,
+    files: ['run', 'workflow'],
+  },
+  {
+    why: 'machine-runnable acceptance criteria — the CHECK/EXPECT format is parsed and executed by tickets.mjs, taught by the planning skill, and run by both execution lanes and the driver',
+    // Absorbs the deliberate wording variants: a literal "CHECK: <command>"
+    // template line, the prose "CHECK/EXPECT", and the backticked
+    // "`CHECK:` / `EXPECT:`" — presence of the format, not one spelling.
+    re: /CHECK: |CHECK.{0,8}EXPECT/,
+    files: ['epic', 'ticket', 'quick', 'run', 'script', 'workflow'],
+  },
 ]
 
 function checkPhrases() {

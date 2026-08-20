@@ -294,6 +294,9 @@ Then one section per ticket:
 **Acceptance criteria.**
 - <test command + expected result>
 - <behaviour to demonstrate, and how>
+- <a criterion a command can decide outright>
+  CHECK: <command run from the repository root>
+  EXPECT: <text its output must contain>
 ```
 
 Rules that matter:
@@ -311,7 +314,24 @@ Rules that matter:
   what stops a fresh-context agent wandering.
 - **Acceptance criteria must be checkable.** Name the command and what it must
   show. Prefer the form *when <condition> then the system shall <observable
-  result>* — it forces a criterion something can actually test. If verification
+  result>* — it forces a criterion something can actually test. A criterion
+  may also name a **runtime demonstration** — drive the real app in a
+  browser, simulator or terminal and observe the result — for behaviour no
+  test command reaches: rendered UI, an interactive flow, a CLI's actual
+  output. Write it as *demonstrate: <action> → <observable result>*, and
+  hold it to the same bar as a command: the doer records what was actually
+  observed, never "looks fine". Tests prove what the code does; a
+  demonstration proves what a user gets, and agent-built UI is exactly
+  where the two diverge. And where a command can decide the criterion
+  outright, prefer the **machine-runnable form**: an indented
+  `CHECK: <command>` line under the bullet, with an optional
+  `EXPECT: <text the output must contain>` (exit 0 alone decides when
+  EXPECT is absent). `tickets.mjs check <ID>` runs them and reports the
+  ledger, and in an unattended run the driver re-runs them from the
+  signed-off document as a merge gate — a criterion written as a CHECK is
+  one no worker can satisfy by narration. Keep CHECK commands idempotent
+  and safe to run twice: the driver runs them again on the pushed branch
+  after any review fixes. If verification
   needs something a session may not have — Docker, cloud credentials, a browser —
   give the fallback: *"or flag it in the status doc as owed to ticket X"*.
 - **No status column.** State is derived by `tickets.mjs`; a hand-maintained

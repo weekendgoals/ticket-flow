@@ -106,6 +106,14 @@ test file path explicitly.
   loop's refresh in `workflows/run-epic.mjs`) is the safe direction — main is
   the source, never the target —
   and is not a merge toward main.
+- **CHECK/EXPECT acceptance criteria are one format in five documents and
+  one parser.** `tickets.mjs` parses and runs them (`check <ID>`, with
+  doctor near-miss coverage), the epic skill's template teaches them, the
+  ticket and quick skills run them, and the run driver re-runs them from
+  the signed-off document (`--from origin/epic/<name>`) as a code merge
+  gate — because the reviewed party must not edit its own gate. A format
+  change moves the parser, the skills and the driver in the same commit;
+  `check-invariants.mjs` holds the coupling.
 - **The two risk lists are one list.** The quick skill's entry triggers and
   the ticket skill's `xhigh` review tier measure the same consequences at two
   doors — a trigger added to either is added to the other in the same commit.

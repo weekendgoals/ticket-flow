@@ -273,6 +273,41 @@ consequence tier keeps the full re-review — capability spend belongs where
 failure is expensive — and a review that cannot name the head it reviewed
 sends its fixes there too: doubt raises scrutiny, never lowers it.
 
+## Why acceptance criteria can be machine-runnable
+
+Adopted from a comparative read of unlazy (2026-08-20), whose gate files —
+acceptance criteria written as runnable CHECK commands with expected output —
+passed the admission test on decision evidence: a criterion a command decides
+is one no agent can satisfy by narration. The gap it closes here was the last
+of its kind: after the merge gates moved into code, the one merge-relevant
+fact still taken on an agent's word was the worker's own verification claim —
+"12/12 passed" in a schema field, honest by instruction only. A `CHECK:` line
+under a criterion moves that claim to repository state: `tickets.mjs check`
+runs the command, compares the output against `EXPECT`, and reports a ledger
+whose evidence is the deciding output line, and the unattended driver gates
+the merge on those counts in code.
+
+The source idea needed one correction to survive here. unlazy's gates are
+written by the same agent that then satisfies them — self-certification moved
+up a level, not removed. In this flow the criteria are written at planning
+time, challenged by the plan reviewer, and signed off by a human — and the
+driver reads them from the **signed-off document on the epic branch**
+(`--from origin/epic/<name>`), never from the copy riding the ticket branch,
+so the party under review structurally cannot soften its own gate. The same
+fail-closed rule applies as everywhere else in the run lane: a CHECK that
+almost parses fails the gate rather than silently never running (doctor
+flags the near-miss shapes), and a check step whose counts the code cannot
+read halts — doubt goes up, never down.
+
+Two deliberate limits. CHECK is optional, because most criteria are not
+mechanizable and forcing them into commands is ceremony — prose criteria and
+runtime demonstrations remain first-class, verified by the worker and held by
+the review. And the driver runs the checks once, after the disposition, not
+before the review: fix commits change the code, so the only run that proves
+the merged state is the one against the final pushed branch — the worker's
+own step 5 run already caught the cheap failures before the reviewer was
+ever hired.
+
 ## Why token figures are observed, never asked
 
 The Tokens lines exist as planning evidence — they are what priced the
