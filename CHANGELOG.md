@@ -8,6 +8,17 @@ with one version and date.
 
 ## Unreleased
 
+- **The check runner survives noisy test output** (`scripts/tickets.mjs`
+  `runChecks`). The first live run of the acceptance gate halted on a
+  green ticket: a passing 68/68 jest run printed ~1.2 MB of Mongo logs,
+  `spawnSync`'s default 1 MB `maxBuffer` killed the child with ENOBUFS,
+  and the ledger saw a dead command — the fail-closed halt was correct,
+  the capacity was not. The runner now carries a generous named cap
+  (`CHECK_MAX_BUFFER`, 64 MB) alongside its timeout — never Infinity,
+  so one pathological command cannot eat the machine's memory before the
+  timeout fires — and an ENOBUFS that still occurs names itself in the
+  evidence line with the fix (quieten the command) instead of a bare
+  error message.
 - **Acceptance criteria may be machine-runnable, and the run driver gates
   the merge on them in code** (`scripts/tickets.mjs` new `check`
   subcommand and doctor near-misses, `workflows/run-epic.mjs` new

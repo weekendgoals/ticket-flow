@@ -268,9 +268,18 @@ function parseChecks(body) {
 // longer than ten minutes is not an acceptance check any more.
 const CHECK_TIMEOUT_MS = 600_000
 
+// spawnSync holds the child's output in memory, and its default cap is 1 MB —
+// which a real test suite's logging exceeds easily (the first live hit was a
+// passing 68/68 jest run printing ~1.2 MB of Mongo logs: the child died on
+// ENOBUFS, the ledger saw a dead command, and the run halted on a green
+// ticket). Generous, fixed, and named, like the timeout: 64 MB clears any
+// realistic suite, while never-Infinity keeps one pathological command from
+// eating the machine's memory before the timeout fires.
+const CHECK_MAX_BUFFER = 64 * 1024 * 1024
+
 function runChecks(checks) {
   return checks.map((c, idx) => {
-    const r = spawnSync(c.check, { cwd: repoRoot, shell: true, encoding: 'utf8', timeout: CHECK_TIMEOUT_MS })
+    const r = spawnSync(c.check, { cwd: repoRoot, shell: true, encoding: 'utf8', timeout: CHECK_TIMEOUT_MS, maxBuffer: CHECK_MAX_BUFFER })
     const output = `${r.stdout || ''}${r.stderr || ''}`
     const exitCode = r.status === null ? -1 : r.status
     const okExit = exitCode === 0 && !r.error
@@ -279,7 +288,14 @@ function runChecks(checks) {
     // The evidence line is what the ledger records — the deciding output,
     // never a feeling of completion.
     let evidence
-    if (r.error) evidence = `command could not run: ${r.error.code === 'ETIMEDOUT' ? `timed out after ${CHECK_TIMEOUT_MS / 1000}s` : r.error.message}`
+    if (r.error)
+      evidence = `command could not run: ${
+        r.error.code === 'ETIMEDOUT'
+          ? `timed out after ${CHECK_TIMEOUT_MS / 1000}s`
+          : r.error.code === 'ENOBUFS'
+            ? `printed more than ${CHECK_MAX_BUFFER / 1024 / 1024} MB of output and was killed — quieten the command (e.g. drop debug logging, or pipe through tail) so the ledger can read its result`
+            : r.error.message
+      }`
     else if (passed) evidence = c.expect ? (output.split('\n').find((l) => l.includes(c.expect)) || c.expect).trim().slice(0, 300) : 'exit 0'
     else if (!okExit) evidence = `exit ${exitCode}${output.trim() ? ` — ${output.trim().split('\n').slice(-3).join(' / ').slice(0, 300)}` : ''}`
     else evidence = `exit 0, but the output does not contain ${JSON.stringify(c.expect)}`

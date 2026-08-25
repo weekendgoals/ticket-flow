@@ -1012,3 +1012,29 @@ test('doctor flags CHECK/EXPECT near-misses as silently-never-runs', () => {
   assert.ok(k5.some((r) => /no CHECK line above it/.test(r.msg)))
   assert.ok(k5.some((r) => /its own bullet/.test(r.msg)))
 })
+
+test('a passing check is not killed by more than 1 MB of output noise', () => {
+  // The first live run of the gate halted on a green ticket: a 68/68 jest run
+  // printed ~1.2 MB of logs, spawnSync's default 1 MB maxBuffer killed the
+  // child with ENOBUFS, and the ledger saw a dead command. The runner now
+  // carries a generous named cap; this pins it.
+  const original = readFileSync(checksDoc, 'utf8')
+  try {
+    writeFileSync(
+      checksDoc,
+      `${original}
+## K-6 — noisy but green
+
+**Acceptance criteria.**
+- passes underneath two megabytes of logging
+  CHECK: node -e "process.stdout.write('x'.repeat(2 * 1024 * 1024) + '\\n'); console.log('noisy-ok 68/68')"
+  EXPECT: noisy-ok 68/68
+`,
+    )
+    const out = JSON.parse(run(crepo, 'check', 'K-6', '--json'))
+    assert.equal(out.allPassed, true)
+    assert.match(out.checks[0].evidence, /noisy-ok 68\/68/)
+  } finally {
+    writeFileSync(checksDoc, original)
+  }
+})
