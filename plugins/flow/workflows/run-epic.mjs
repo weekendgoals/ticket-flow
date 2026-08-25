@@ -1282,14 +1282,14 @@ The first command lists the files the review saw — report its paths, verbatim,
   const resolved = await agent(
     `In the repository at ${repoRoot}, report ${boundsGated ? 'three' : 'two'} facts about one ticket's pushed branch. **You change nothing**: no merge, no push, no edit. You do not judge what you find — report what the commands printed and let the driver decide.
 
-FACT 1 — how many of **${id}'s own** review addenda dated ${today} are in the branch as pushed:
+FACT 1 — how many dated review addenda sit under **${id}'s own** entries in the branch as pushed:
 
 \`\`\`bash
 git fetch origin ${branch}
-git show origin/${branch}:epics/${epic}/status.md | awk '/^### /{f=/^### ${id} /} f' | grep -c "Addendum — review — ${today}" || true
+git show origin/${branch}:epics/${epic}/status.md | awk '/^### /{f=/^### ${id} /} f' | grep -cE "Addendum — review — [0-9]{4}-[0-9]{2}-[0-9]{2}" || true
 \`\`\`
 
-The status log is append-only and this branch was cut from ${epicBranch}, so it also carries every EARLIER ticket's entries and their addenda. The \`awk\` narrows the file to \`${id}\`'s own entries — \`f\` turns on at a \`### ${id} \` heading and off at the next entry heading — so only an addendum written under this ticket counts. Do not simplify it away: without it, yesterday's ticket satisfies today's check.
+The date is matched by SHAPE, never by value: the run pins its own date for cache stability, but the agent that wrote the addendum dates it with the real day, and the two legitimately diverge when a run crosses midnight — a gate grepping for the pinned value once halted a green ticket on exactly that. The status log is append-only and this branch was cut from ${epicBranch}, so it also carries every EARLIER ticket's entries and their addenda — all matching this same dated shape, which is why the \`awk\` narrowing IS the check: \`f\` turns on at a \`### ${id} \` heading and off at the next entry heading, so only an addendum written under this ticket counts. Do not simplify either part away: without the awk, any earlier ticket's addendum satisfies this one's check.
 
 \`grep -c\` prints the count; it exits 1 when the count is 0, which is an answer, not a failure (that is what \`|| true\` is for). Report the number as \`addendumMatches\` — including 0. Report \`-1\` only if \`git show\` could not read that file at all.
 
@@ -1337,7 +1337,7 @@ ${NO_MAIN} You are read-only here in any case: nothing in this task writes anyth
     } else if (!(Number.isInteger(record.addendumMatches) && record.addendumMatches >= 1)) {
       stop(
         STOP.blocked,
-        `no \`Addendum — review — ${today}\` line under ${id}'s own entries in \`epics/${epic}/status.md\` on \`origin/${branch}\` (count ${
+        `no dated \`Addendum — review —\` line under ${id}'s own entries in \`epics/${epic}/status.md\` on \`origin/${branch}\` (count ${
           record.addendumMatches === null ? 'unreported' : record.addendumMatches === -1 ? 'unreadable' : record.addendumMatches
         }) — the disposition said it committed the addendum, the branch says otherwise, and the branch is the evidence. An unreviewed-on-the-record ticket is never merged.${quoted}`,
       )

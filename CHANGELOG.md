@@ -8,6 +8,25 @@ with one version and date.
 
 ## Unreleased
 
+- **The merge gate matches a dated review addendum by shape, never by the
+  run's pinned date** (`workflows/run-epic.mjs` resolve step,
+  `skills/run/SKILL.md` steps 4-5). A live run halted a green ticket at
+  midnight: the run pins `args.today` for cache stability, the disposition
+  agent dated the addendum with the real day, and the resolve step's grep
+  for the pinned value counted zero — "not reviewed on the record" for a
+  ticket whose review was committed and pushed. The two dates diverge
+  legitimately whenever a run crosses midnight, and the pinned-value match
+  bought nothing: the awk narrowing to the ticket's own entries is the
+  real check, since every earlier ticket's addendum carries the same dated
+  shape under its own heading. The grep is now
+  `grep -cE "Addendum — review — [0-9]{4}-[0-9]{2}-[0-9]{2}"` — the dated
+  shape the ticket skill's step 8 requires, any value. Only the resolve
+  prompt changed, deliberately: a halted run resumed with
+  `resumeFromRunId` replays its cached prefix and re-runs live from the
+  first edited call, so touching any earlier prompt (worker, review,
+  disposition) would re-execute finished work on integrated tickets,
+  while a re-run resolve is read-only and harmless.
+
 - **The check runner survives noisy test output** (`scripts/tickets.mjs`
   `runChecks`). The first live run of the acceptance gate halted on a
   green ticket: a passing 68/68 jest run printed ~1.2 MB of Mongo logs,
