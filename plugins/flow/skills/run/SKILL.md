@@ -172,8 +172,8 @@ Workflow({
     repoRoot: "<the repository's absolute path>",
     pluginRoot: "${CLAUDE_PLUGIN_ROOT}",
     today: "<YYYY-MM-DD, from your own clock>",
-    workerModel: "<modes[<name>].workerModel — omit the key when absent>",
-    reviewerModel: "<modes[<name>].reviewerModel — omit the key when absent>",
+    workerModel: <modes[<name>].workerModelChain — the whole declared chain, omit the key when null>,
+    reviewerModel: <modes[<name>].reviewerModelChain — the whole declared chain, omit the key when null>,
     consequencePaths: <modes[<name>].consequencePaths — omit the key when null>,
     fixBoundsExclude: <modes[<name>].fixBoundsExclude — omit the key when null>,
     ticketBudget: <modes[<name>].ticketBudget — omit the key when null>
@@ -203,8 +203,12 @@ looping until `tickets.mjs next <epic> --json` comes back empty:
   cause. The **first ticket** the board hands back is the one that runs —
   that is document order, and document order is the plan's de-risking order.
 - **spawns one worker for it**: a fresh general-purpose agent, full toolset,
-  empty context, on `workerModel` when the epic set one and on the session's
-  model otherwise. Its prompt says:
+  empty context, on the epic's `Worker model:` when it set one and on the
+  session's model otherwise. A worker that dies (a spend-capped model kills
+  an agent without saying so) respawns down the epic's **declared** chain
+  (`Worker model: opus, sonnet`) and only there — no chain, no improvised
+  substitute — and the ticket skill's own guards stop a respawn that finds
+  a half-dead predecessor's partial state. Its prompt says:
 
   > A driver spawned you for this one ticket. Run the `flow:ticket` skill for
   > `<ID>`, exactly as written — you are working from documents, not from any
@@ -492,7 +496,16 @@ code path that resumes past one. The run halts:
 - on **reviewer-spawn failure after the sanctioned fallback also fails** —
   the fallback being a general agent instructed by the reviewer definition
   plus the review skill, and the same path covers the review and the
-  re-review. This is the **script's own** hiring failing, not a worker's: the
+  re-review. Before this fires, hiring also recovers across models — a
+  spend-capped model kills a spawn without saying so — but only in the safe
+  direction: the rest of a **declared** `Reviewer model:` chain
+  (`Reviewer model: fable, opus`), or, when the tier table priced the
+  judge, the ladder **upward** (`sonnet → opus`). A judge is never
+  downgraded to recover, and a declared single model is a pin: it halts
+  here rather than substituting. Workers recover the same way through a
+  declared `Worker model:` chain only — the run never improvises a
+  substitute implementer — and the fast-model shell proxies retry once a
+  rung up. This is the **script's own** hiring failing, not a worker's: the
   driver hires the judge, so nothing the script spawns ever needs to spawn
   anything, and the lane works on builds that withhold the Agent tool from
   workflow agents. When it does fire, the ticket's branch stays pushed and

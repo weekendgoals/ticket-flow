@@ -8,6 +8,25 @@ with one version and date.
 
 ## Unreleased
 
+- **Agents recover from an unavailable model — up the ladder, or down a
+  declared chain, never silently weaker** (`scripts/tickets.mjs` model
+  lines parse comma-separated chains, `workflows/run-epic.mjs` hiring and
+  proxies, `skills/run/SKILL.md`, `skills/ticket/SKILL.md` steps 0 and 7,
+  `skills/epic/SKILL.md` config lines, README, METHODOLOGY "Why model
+  recovery goes up, or as declared"). A spend-capped model kills an agent
+  without saying so — the runtime cannot distinguish that death from any
+  other — and one capped model could halt a whole unattended run. Now: a
+  model preamble line may declare a fallback chain
+  (`Worker model: opus, sonnet` — prose set off with an em dash, never a
+  comma), walked in declared order; tier-priced reviewers and the
+  haiku-pinned shell proxies escalate **upward only** on a failed hire or
+  a dead agent (a judge is never silently downgraded, and more scrutiny
+  is always safe); a declared single model is a pin that halts rather
+  than substitutes; workers recover only through a declared chain, their
+  respawn guarded by the ticket skill's own dirty-tree checks. Every
+  recovery is logged, and the run record and addendum header carry the
+  model that actually did the work.
+
 - **A seventh preamble line, `Fix bounds exclude:`, lets an epic exempt
   mechanical fan-out files from the run's fix-bounds gate**
   (`scripts/tickets.mjs` preamble parse and doctor near-misses,
