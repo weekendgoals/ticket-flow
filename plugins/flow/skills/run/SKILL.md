@@ -175,6 +175,7 @@ Workflow({
     workerModel: "<modes[<name>].workerModel — omit the key when absent>",
     reviewerModel: "<modes[<name>].reviewerModel — omit the key when absent>",
     consequencePaths: <modes[<name>].consequencePaths — omit the key when null>,
+    fixBoundsExclude: <modes[<name>].fixBoundsExclude — omit the key when null>,
     ticketBudget: <modes[<name>].ticketBudget — omit the key when null>
   }
 })
@@ -292,10 +293,14 @@ looping until `tickets.mjs next <epic> --json` comes back empty:
   and deliberately **no second round**: iterating a reviewer and a fixer
   toward agreement is the improvisation this lane forbids. Below
   `consequence` the fixes are gated **mechanically** instead: the resolve
-  step reads the fix diff anchored on the reviewed head, and the script
-  halts unless every fixed file was in the diff the review saw and the fix
-  stays under a small line budget — a fix that grows the surface is new
-  work, and granting it a review is a human's call, not the run's. A review
+  step reads the fix diff anchored on the reviewed head — minus `epics/`
+  and the epic's optional `Fix bounds exclude:` globs, for files a fix
+  fans out into mechanically (translation catalogs are the canonical
+  case: one new key touches every locale file, and the line count
+  measures the catalog's width, not the fix's blast radius) — and the
+  script halts unless every fixed file was in the diff the review saw and
+  the fix stays under a small line budget — a fix that grows the surface
+  is new work, and granting it a review is a human's call, not the run's. A review
   that reported no usable `reviewedHead` sends its fixes to the re-review
   anyway: doubt raises scrutiny, never lowers it. A clean review skips all
   of this, so it costs nothing on the common path.
@@ -457,9 +462,11 @@ code path that resumes past one. The run halts:
   never saw, or exceeding the fix line budget. Below the consequence tier
   the fix commits merge without a second model pass, and this mechanical
   check is what replaced it: the resolve step reads the fix diff anchored on
-  the review's `reviewedHead`, and the script refuses anything the review's
-  eyes never covered — including a resolve step that could not report the
-  fix-diff facts at all, because an unbounded fix is never merged;
+  the review's `reviewedHead` (minus the epic's `Fix bounds exclude:` globs,
+  which sign-off approved as mechanical fan-out), and the script refuses
+  anything the review's eyes never covered — including a resolve step that
+  could not report the fix-diff facts at all, because an unbounded fix is
+  never merged;
 - on **a failed acceptance CHECK — a machine-runnable criterion whose
   command did not produce its expected result on the pushed branch** — the
   driver re-runs the signed-off CHECK/EXPECT lines from the epic branch's
