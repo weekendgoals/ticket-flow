@@ -125,6 +125,19 @@ function parsePreamble(ticketsDoc) {
     const m = preamble.match(new RegExp(`^${label}[^\\S\\n]*:[^\\S\\n]*(${charset})`, 'im'))
     return m ? m[1].toLowerCase() : null
   }
+  // A model line's value may be a comma-separated fallback CHAIN —
+  // "Worker model: opus, sonnet" — tried in order by whoever spawns the
+  // agent, for when a model is unavailable (a spend cap kills an agent
+  // without saying so). The chain regex continues past a token only when a
+  // comma follows it directly, so em-dash prose after the last model never
+  // parses as a phantom entry — which is why prose on these lines is set
+  // off with an em dash, never a comma.
+  const grabModelChain = label => {
+    const m = preamble.match(
+      new RegExp(`^${label}[^\\S\\n]*:[^\\S\\n]*([A-Za-z0-9._-]+(?:[^\\S\\n]*,[^\\S\\n]*[A-Za-z0-9._-]+)*)`, 'im'),
+    )
+    return m ? m[1].toLowerCase().split(',').map((s) => s.trim()).filter(Boolean) : null
+  }
   const grabPathList = label => {
     const m = preamble.match(new RegExp(`^${label}[^\\S\\n]*:[^\\S\\n]*(\\S[^\\n]*)`, 'im'))
     if (!m) return null
@@ -145,11 +158,20 @@ function parsePreamble(ticketsDoc) {
     if (!v) return null
     return parseInt(v, 10) * (v.endsWith('k') ? 1e3 : v.endsWith('m') ? 1e6 : 1)
   })()
+  // The scalar model fields stay the chain's first entry — every skill that
+  // reads a single model keeps working — and the *Chain fields carry the
+  // whole declared list for the spawners that can walk a fallback.
+  const reviewerChain = grabModelChain('Reviewer model')
+  const workerChain = grabModelChain('Worker model')
+  const plannerChain = grabModelChain('Planner model')
   return {
     delivery: grab('Delivery') ?? 'incremental',
-    reviewerModel: grab('Reviewer model', '[A-Za-z0-9._-]+'),
-    workerModel: grab('Worker model', '[A-Za-z0-9._-]+'),
-    plannerModel: grab('Planner model', '[A-Za-z0-9._-]+'),
+    reviewerModel: reviewerChain?.[0] ?? null,
+    workerModel: workerChain?.[0] ?? null,
+    plannerModel: plannerChain?.[0] ?? null,
+    reviewerModelChain: reviewerChain,
+    workerModelChain: workerChain,
+    plannerModelChain: plannerChain,
     consequencePaths: grabPathList('Consequence paths'),
     // "Fix bounds exclude" is the sixth optional line: comma-separated path
     // globs the run driver's fix-bounds gate leaves out of the review-fix
@@ -788,6 +810,9 @@ function ticketFacts(data, t) {
     reviewerModel: epic.reviewerModel,
     workerModel: epic.workerModel,
     plannerModel: epic.plannerModel,
+    reviewerModelChain: epic.reviewerModelChain,
+    workerModelChain: epic.workerModelChain,
+    plannerModelChain: epic.plannerModelChain,
     consequencePaths: epic.consequencePaths,
     fixBoundsExclude: epic.fixBoundsExclude,
     ticketBudget: epic.ticketBudget,
@@ -969,7 +994,7 @@ switch (cmd) {
         modes: Object.fromEntries(
           data.epics.map((e) => [
             e.epic,
-            { delivery: e.delivery, reviewerModel: e.reviewerModel, workerModel: e.workerModel, plannerModel: e.plannerModel, consequencePaths: e.consequencePaths, fixBoundsExclude: e.fixBoundsExclude, ticketBudget: e.ticketBudget },
+            { delivery: e.delivery, reviewerModel: e.reviewerModel, workerModel: e.workerModel, plannerModel: e.plannerModel, reviewerModelChain: e.reviewerModelChain, workerModelChain: e.workerModelChain, plannerModelChain: e.plannerModelChain, consequencePaths: e.consequencePaths, fixBoundsExclude: e.fixBoundsExclude, ticketBudget: e.ticketBudget },
           ]),
         ),
         duplicates: data.duplicates,

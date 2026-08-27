@@ -276,7 +276,7 @@ test('a reported tier can raise the price above the floor', async () => {
 })
 
 test('a dead or unusable tier-facts agent floors at consequence — doubt goes up', async () => {
-  const dead = await drive(oneTicket({ 'tier-facts:PAY-1': null }))
+  const dead = await drive(oneTicket({ 'tier-facts:PAY-1': null, 'tier-facts:PAY-1:retry': null }))
   assert.equal(dead.out.outcome, 'completed')
   assert.equal(call(dead, 'review:PAY-1').model, 'opus')
   assert.equal(dead.out.ticketRecords[0].tierFloor, 'consequence')
@@ -363,7 +363,7 @@ test('a reviewer that returns something which is not a review is a failed hire, 
 })
 
 test('a malformed review from both hires halts rather than merging on an empty findings list', async () => {
-  const r = await drive(oneTicket({ 'review:PAY-1': { important: 'none, looks good' }, 'review:PAY-1:fallback': { checkedAndSound: 'everything' } }))
+  const r = await drive(oneTicket({ 'worker:PAY-1': workerOk('PAY-1', { tier: 'consequence' }), 'review:PAY-1': { important: 'none, looks good' }, 'review:PAY-1:fallback': { checkedAndSound: 'everything' } }))
   assert.equal(r.out.haltedOn.stopCondition, 'reviewer-spawn failure after the sanctioned fallback also fails')
   assert.ok(!r.labels.some(l => l.startsWith('merge:')))
 })
@@ -375,7 +375,7 @@ test('a malformed re-review is a failed hire too', async () => {
 })
 
 test('a reviewer that fails twice halts the run with nothing merged', async () => {
-  const r = await drive(oneTicket({ 'review:PAY-1': null, 'review:PAY-1:fallback': null }))
+  const r = await drive(oneTicket({ 'worker:PAY-1': workerOk('PAY-1', { tier: 'consequence' }), 'review:PAY-1': null, 'review:PAY-1:fallback': null }))
   assert.equal(r.out.haltedOn.stopCondition, 'reviewer-spawn failure after the sanctioned fallback also fails')
   assert.ok(!r.labels.some(l => l.startsWith('disposition:') || l.startsWith('merge:')))
 })
@@ -397,7 +397,7 @@ test('an Important finding left unfixed halts before the merge', async () => {
 test('a disposition that failed or died halts the run', async () => {
   const failed = await drive(oneTicket({ 'disposition:PAY-1': { outcome: 'failed', addendumCommitted: false, detail: 'tests would not run' } }))
   assert.match(failed.out.haltedOn.stopCondition, /^BLOCKED/)
-  const dead = await drive(oneTicket({ 'disposition:PAY-1': null }))
+  const dead = await drive(oneTicket({ 'disposition:PAY-1': null, 'disposition:PAY-1:retry': null }))
   assert.match(dead.out.haltedOn.stopCondition, /^BLOCKED/)
   assert.ok(!dead.labels.some(l => l.startsWith('merge:')))
 })
@@ -545,7 +545,7 @@ test('a resolve step that cannot read the repository halts without merging', asy
   const prompted = await drive(oneTicket({ 'resolve:PAY-1': { outcome: 'permission-prompt', detail: 'gh pr list would prompt' } }))
   assert.equal(prompted.out.haltedOn.stopCondition, 'a permission prompt firing mid-run')
   assert.ok(!prompted.labels.some(l => l.startsWith('merge:')))
-  const dead = await drive(oneTicket({ 'resolve:PAY-1': null }))
+  const dead = await drive(oneTicket({ 'resolve:PAY-1': null, 'resolve:PAY-1:retry': null }))
   assert.match(dead.out.haltedOn.stopCondition, /^a nonzero exit from any command/)
   assert.match(dead.out.haltedOn.detail, /nothing is merged on a guess/)
   assert.ok(!dead.labels.some(l => l.startsWith('merge:')))
@@ -559,7 +559,7 @@ test('a failed merge halts on nonzero exit, and a conflicting one on merge confl
   assert.match(conflict.out.haltedOn.stopCondition, /^a merge conflict/)
   const prompted = await drive(oneTicket({ 'merge:PAY-1': { outcome: 'permission-prompt', detail: 'gh would prompt' } }))
   assert.equal(prompted.out.haltedOn.stopCondition, 'a permission prompt firing mid-run')
-  const dead = await drive(oneTicket({ 'merge:PAY-1': null }))
+  const dead = await drive(oneTicket({ 'merge:PAY-1': null, 'merge:PAY-1:retry': null }))
   assert.match(dead.out.haltedOn.stopCondition, /^a nonzero exit from any command/)
   assert.match(dead.out.haltedOn.detail, /cannot be assumed to have happened/)
   assert.ok(!dead.labels.some(l => l.startsWith('verify:')))
@@ -770,7 +770,7 @@ test('an accept step that ran but reported no usable counts fails closed', async
 })
 
 test('an accept step that died, failed, or hit a prompt halts on its own condition', async () => {
-  const dead = await drive(oneTicket({ 'accept:PAY-1': null }))
+  const dead = await drive(oneTicket({ 'accept:PAY-1': null, 'accept:PAY-1:retry': null }))
   assert.match(dead.out.haltedOn.stopCondition, /^a nonzero exit from any command/)
   assert.match(dead.out.haltedOn.detail, /nothing merges on a guess/)
   assert.ok(!dead.labels.some(l => l.startsWith('merge:')))
@@ -947,7 +947,7 @@ test('a failed fast-forward pull halts on the nonzero-exit condition', async () 
 })
 
 test('a refresh agent that returns nothing is not assumed to have refreshed', async () => {
-  const r = await drive(oneTicket({ 'refresh+select:1': null }))
+  const r = await drive(oneTicket({ 'refresh+select:1': null, 'refresh+select:1:retry': null }))
   assert.equal(r.out.outcome, 'halted')
   assert.match(r.out.haltedOn.detail, /returned no report/)
 })
@@ -1157,4 +1157,83 @@ test('a completed run tells the session to open the pull request BEFORE writing 
   )
   assert.match(r.out.next, /quoting the pull request's real URL/)
   assert.deepEqual(r.out.deployPreconditions, ['PAY-1_ENV'])
+})
+
+// ---- model recovery ---------------------------------------------------------
+// A spend-capped model kills an agent without saying so — the runtime cannot
+// distinguish that death from any other. Recovery never lowers scrutiny: a
+// declared chain is walked as signed off, a tier-priced judge escalates
+// upward only, a code-pinned proxy raises its own pin, and everything else
+// halts as before.
+
+test('a dead worker respawns down the declared chain, and the record names the rung used', async () => {
+  const r = await drive(
+    oneTicket({ 'worker:PAY-1': null, 'worker:PAY-1:fb1': workerOk() }),
+    { ...ARGS, workerModel: ['opus', 'sonnet'] },
+  )
+  assert.equal(r.out.outcome, 'completed')
+  assert.equal(call(r, 'worker:PAY-1').model, 'opus')
+  const fb = call(r, 'worker:PAY-1:fb1')
+  assert.equal(fb.model, 'sonnet')
+  // The respawned worker is told its own label, so the status entry's Mode
+  // line and the run record keep naming the same agent.
+  assert.match(fb.prompt, /worker label for this run is `worker:PAY-1:fb1`/)
+  assert.equal(r.out.ticketRecords[0].workerAgent, 'worker:PAY-1:fb1')
+  assert.equal(r.out.ticketRecords[0].workerModel, 'sonnet')
+  assert.ok(r.logs.some(l => /Worker model line declares a fallback/.test(l)))
+})
+
+test('a dead worker with no declared chain halts — no improvised substitute', async () => {
+  const r = await drive(oneTicket({ 'worker:PAY-1': null }))
+  assert.match(r.out.haltedOn.stopCondition, /^BLOCKED/)
+  assert.match(r.out.haltedOn.detail, /returned no report/)
+  assert.ok(!r.labels.some(l => l.startsWith('worker:PAY-1:fb')))
+})
+
+test('a failed hire at the normal tier escalates up the ladder, never down', async () => {
+  const r = await drive(oneTicket({ 'review:PAY-1': null, 'review:PAY-1:fallback': null, 'review:PAY-1:up1': reviewClean }))
+  assert.equal(r.out.outcome, 'completed')
+  const up = call(r, 'review:PAY-1:up1')
+  assert.equal(up.model, 'opus')
+  assert.equal(up.effort, 'high', 'the effort stays priced; only the model climbs')
+  assert.equal(up.agentType, 'flow:ticket-reviewer')
+  assert.equal(r.out.ticketRecords[0].reviewerModelUsed, 'opus')
+  // The addendum header carries the model that actually reviewed, not the
+  // price tag of the hire that failed.
+  assert.match(call(r, 'disposition:PAY-1').prompt, /opus\/high/)
+  assert.ok(r.logs.some(l => /escalating up the tier ladder/.test(l) && /never downgraded/.test(l)))
+})
+
+test('a declared Reviewer model recovers only as its declared chain', async () => {
+  const r = await drive(
+    oneTicket({ 'review:PAY-1': null, 'review:PAY-1:fallback': null, 'review:PAY-1:up1': reviewClean }),
+    { ...ARGS, reviewerModel: ['fable', 'opus'] },
+  )
+  assert.equal(r.out.outcome, 'completed')
+  assert.equal(call(r, 'review:PAY-1').model, 'fable')
+  assert.equal(call(r, 'review:PAY-1:up1').model, 'opus')
+  assert.equal(r.out.ticketRecords[0].reviewerModelUsed, 'opus')
+  assert.ok(r.logs.some(l => /Reviewer model line declares a fallback/.test(l)))
+})
+
+test('a declared single-model reviewer pin halts rather than substituting — a pin is a pin', async () => {
+  const r = await drive(
+    oneTicket({ 'review:PAY-1': null, 'review:PAY-1:fallback': null }),
+    { ...ARGS, reviewerModel: 'pinned-model' },
+  )
+  assert.equal(r.out.haltedOn.stopCondition, 'reviewer-spawn failure after the sanctioned fallback also fails')
+  assert.ok(!r.labels.some(l => l.includes(':up')))
+  assert.ok(!r.labels.some(l => l.startsWith('merge:')))
+})
+
+test('a dead proxy retries once a rung up and the run continues', async () => {
+  const r = await drive(oneTicket({ 'tier-facts:PAY-1': null, 'tier-facts:PAY-1:retry': tierFactsCode }))
+  assert.equal(r.out.outcome, 'completed')
+  assert.equal(call(r, 'tier-facts:PAY-1').model, 'haiku')
+  assert.equal(call(r, 'tier-facts:PAY-1:retry').model, 'sonnet')
+  // The retried facts are real facts: the floor prices from them, not from
+  // the dead first attempt.
+  assert.equal(r.out.ticketRecords[0].tierFloor, 'normal')
+  assert.equal(call(r, 'review:PAY-1').model, 'sonnet')
+  assert.ok(r.logs.some(l => /recovery only ever raises the pin/.test(l)))
 })

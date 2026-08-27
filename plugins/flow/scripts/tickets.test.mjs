@@ -550,8 +550,8 @@ test('the Delivery line parses tolerantly and exposes in find and list', () => {
   assert.equal(a.delivery, 'incremental')
 
   const data = JSON.parse(run(repo, 'list', '--json'))
-  assert.deepEqual(data.modes.gamma, { delivery: 'release', reviewerModel: 'opus', workerModel: 'sonnet', plannerModel: 'fable', consequencePaths: ['src/auth/**', 'migrations/**'], fixBoundsExclude: ['src/messages/*.json'], ticketBudget: 250000 })
-  assert.deepEqual(data.modes.alpha, { delivery: 'incremental', reviewerModel: null, workerModel: null, plannerModel: null, consequencePaths: null, fixBoundsExclude: null, ticketBudget: null })
+  assert.deepEqual(data.modes.gamma, { delivery: 'release', reviewerModel: 'opus', workerModel: 'sonnet', plannerModel: 'fable', reviewerModelChain: ['opus'], workerModelChain: ['sonnet'], plannerModelChain: ['fable'], consequencePaths: ['src/auth/**', 'migrations/**'], fixBoundsExclude: ['src/messages/*.json'], ticketBudget: 250000 })
+  assert.deepEqual(data.modes.alpha, { delivery: 'incremental', reviewerModel: null, workerModel: null, plannerModel: null, reviewerModelChain: null, workerModelChain: null, plannerModelChain: null, consequencePaths: null, fixBoundsExclude: null, ticketBudget: null })
 })
 
 test('a Worker model line pins the implementer; absent, workers inherit the session', () => {
@@ -580,7 +580,7 @@ test('an unrecognised or near-miss Delivery line warns instead of silently defau
     assert.equal(data.modes.misdeclared.delivery, 'continuous', 'the raw value is exposed, not coerced')
     assert.deepEqual(
       data.modes['fancy-delivery'],
-      { delivery: 'incremental', reviewerModel: null, workerModel: null, plannerModel: null, consequencePaths: null, fixBoundsExclude: null, ticketBudget: null },
+      { delivery: 'incremental', reviewerModel: null, workerModel: null, plannerModel: null, reviewerModelChain: null, workerModelChain: null, plannerModelChain: null, consequencePaths: null, fixBoundsExclude: null, ticketBudget: null },
       'a formatted Delivery line reads as absent, so the default applies',
     )
     const rows = JSON.parse(run(repo, 'doctor', '--json'))
@@ -607,7 +607,7 @@ test('the retired two-line syntax is flagged, not silently ignored', () => {
     const data = JSON.parse(run(repo, 'list', '--json'))
     assert.deepEqual(
       data.modes.oldstyle,
-      { delivery: 'incremental', reviewerModel: null, workerModel: null, plannerModel: null, consequencePaths: null, fixBoundsExclude: null, ticketBudget: null },
+      { delivery: 'incremental', reviewerModel: null, workerModel: null, plannerModel: null, reviewerModelChain: null, workerModelChain: null, plannerModelChain: null, consequencePaths: null, fixBoundsExclude: null, ticketBudget: null },
       'the dead labels parse as nothing; the delivery default applies',
     )
     const rows = JSON.parse(run(repo, 'doctor', '--json'))
@@ -726,7 +726,7 @@ test('an epic with no declaration lines defaults to incremental delivery', () =>
   writeFileSync(join(repo, 'epics/delta/tickets.md'), '# Delta\n\n## D-1 — bare epic\n\n**Scope.** Bare.\n')
   try {
     const data = JSON.parse(run(repo, 'list', '--json'))
-    assert.deepEqual(data.modes.delta, { delivery: 'incremental', reviewerModel: null, workerModel: null, plannerModel: null, consequencePaths: null, fixBoundsExclude: null, ticketBudget: null })
+    assert.deepEqual(data.modes.delta, { delivery: 'incremental', reviewerModel: null, workerModel: null, plannerModel: null, reviewerModelChain: null, workerModelChain: null, plannerModelChain: null, consequencePaths: null, fixBoundsExclude: null, ticketBudget: null })
   } finally {
     rmSync(join(repo, 'epics/delta'), { recursive: true, force: true })
   }
@@ -740,7 +740,7 @@ test('the Delivery line parses case-insensitively', () => {
   )
   try {
     const data = JSON.parse(run(repo, 'list', '--json'))
-    assert.deepEqual(data.modes.shout, { delivery: 'release', reviewerModel: null, workerModel: null, plannerModel: null, consequencePaths: null, fixBoundsExclude: null, ticketBudget: null })
+    assert.deepEqual(data.modes.shout, { delivery: 'release', reviewerModel: null, workerModel: null, plannerModel: null, reviewerModelChain: null, workerModelChain: null, plannerModelChain: null, consequencePaths: null, fixBoundsExclude: null, ticketBudget: null })
   } finally {
     rmSync(join(repo, 'epics/shout'), { recursive: true, force: true })
   }
@@ -765,7 +765,7 @@ test('a value-less label line reads as absent, never the next paragraph\'s first
     const data = JSON.parse(run(repo, 'list', '--json'))
     assert.deepEqual(
       data.modes.bare,
-      { delivery: 'incremental', reviewerModel: null, workerModel: null, plannerModel: null, consequencePaths: null, fixBoundsExclude: null, ticketBudget: null },
+      { delivery: 'incremental', reviewerModel: null, workerModel: null, plannerModel: null, reviewerModelChain: null, workerModelChain: null, plannerModelChain: null, consequencePaths: null, fixBoundsExclude: null, ticketBudget: null },
       'a value-less label must read as absent (incremental default / null), never scavenge prose',
     )
     // And doctor's near-miss wording is true of these lines: they will not
@@ -1038,5 +1038,24 @@ test('a passing check is not killed by more than 1 MB of output noise', () => {
     assert.match(out.checks[0].evidence, /noisy-ok 68\/68/)
   } finally {
     writeFileSync(checksDoc, original)
+  }
+})
+
+test('a model line parses a comma-separated fallback chain, em-dash prose ignored even when it carries commas', () => {
+  mkdirSync(join(repo, 'epics/chain'), { recursive: true })
+  writeFileSync(
+    join(repo, 'epics/chain/tickets.md'),
+    '# Chain\n\nWorker model: opus, sonnet — try in order, cheapest last\n\nReviewer model: fable\n\n## CH-1 — chained models\n\n**Scope.** C.\n',
+  )
+  try {
+    const m = JSON.parse(run(repo, 'list', '--json')).modes.chain
+    // The chain continues past a token only on a directly-following comma, so
+    // "— try in order, cheapest last" never contributes a phantom model.
+    assert.deepEqual(m.workerModelChain, ['opus', 'sonnet'])
+    assert.equal(m.workerModel, 'opus', 'the scalar field stays the first entry')
+    assert.deepEqual(m.reviewerModelChain, ['fable'])
+    assert.equal(m.reviewerModel, 'fable')
+  } finally {
+    rmSync(join(repo, 'epics/chain'), { recursive: true, force: true })
   }
 })

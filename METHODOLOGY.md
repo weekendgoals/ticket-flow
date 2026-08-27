@@ -250,6 +250,33 @@ them; the run records' per-ticket findings and meter deltas are the
 evidence that picks between them, epic by epic, and the printed default
 moves when a live ledger says so, not before.
 
+## Why model recovery goes up, or as declared — never down
+
+A spend-capped model kills an agent without saying so: the workflow runtime
+reports a dead agent identically whether the cause was a cap, a crash, or a
+context blowout. Before recovery existed, one capped model halted a whole
+unattended run at its first spawn. But "recover with the next best model"
+hides a scrutiny question: substituting a weaker reviewer than the one the
+tier table or the sign-off priced is exactly the silent-downgrade the tier
+floor exists to prevent — an availability accident must not do what the
+reviewed party is forbidden to do.
+
+So recovery is split by direction and by who chose the model. Where **code**
+chose it (the tier table's reviewer, the haiku-pinned shell proxies), code
+may raise its own choice: a failed hire escalates up the ladder, a dead
+proxy retries one rung up — more scrutiny is always safe, only more
+expensive. Where **the document** chose it, the document is the whole
+authority: a comma-separated model line (`Worker model: opus, sonnet`) is a
+fallback chain walked in declared order, visible at sign-off like every
+other configuration, and a single declared model is a pin that halts rather
+than substitutes. Workers recover only through declared chains — the run
+cannot compute "next best" below a model it cannot see, and it never
+improvises an implementer — and a respawn is safe against a half-dead
+predecessor because the ticket skill's own guards (a dirty tree, an
+existing branch) stop the new worker rather than let it build on wreckage.
+Every recovery is logged, and the record and addendum name the model that
+actually did the work, never the price tag of the hire that failed.
+
 ## Why the re-review became a code gate below the consequence tier
 
 The re-review existed so a merged diff is always a reviewed diff: fix

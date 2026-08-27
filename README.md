@@ -291,8 +291,8 @@ first after the colon, prose after it ignored), every near-miss flagged by
 | Line | Example | Controls | Absent |
 |---|---|---|---|
 | `Delivery:` | `release` | how work reaches main: unattended into `epic/<name>` with one release PR, or one human-gated PR per ticket | `incremental` |
-| `Worker model:` | `opus` | the implementing workers | workers inherit the spawning session's model |
-| `Reviewer model:` | `opus` | the ticket reviewer, overriding the tier table | the consequence tiers pick (haiku/sonnet/opus) |
+| `Worker model:` | `opus, sonnet` | the implementing workers; a comma-separated chain is a fallback list, tried in order when a model is unavailable (spend caps) | workers inherit the spawning session's model |
+| `Reviewer model:` | `fable, opus` | the ticket reviewer, overriding the tier table; a chain is the **only** way a reviewer ever recovers to a weaker model — automatic recovery goes up the ladder only, and a single declared model halts rather than substitutes | the consequence tiers pick (haiku/sonnet/opus), escalating upward on a failed hire |
 | `Planner model:` | `fable` | the plan reviewer for this epic | the agent definition's pinned strongest |
 | `Consequence paths:` | `src/auth/**, migrations/**` | globs that force the consequence review tier in a run — the code floor under the worker's self-reported tier | tier floor still applies (docs-only vs code), globs add nothing |
 | `Fix bounds exclude:` | `src/messages/*.json` | globs the run's fix-bounds gate leaves out of the review-fix diff (as it already leaves out `epics/`) — for files a fix fans out into mechanically, translation catalogs being the canonical case | every fixed file counts toward the bounds |

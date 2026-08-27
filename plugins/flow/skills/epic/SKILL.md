@@ -217,9 +217,16 @@ place, one syntax, all validated by `/flow:doctor`'s near-miss scan. Label
 at line start, value the first word after the colon, prose after the value
 welcome. The full set:
 
-`Worker model: <model>` and `Reviewer model: <model>` — the implementing
-workers and the ticket reviewer, chosen **together, as a pairing**. Two
-profiles are known-good:
+`Worker model: <model>[, <model>]` and `Reviewer model: <model>[, <model>]`
+— the implementing workers and the ticket reviewer, chosen **together, as a
+pairing**. A comma-separated value is a **fallback chain**, tried in order
+when a model is unavailable (a spend cap kills an agent without saying so):
+`Worker model: opus, sonnet` respawns a dead worker on sonnet, and a
+declared Reviewer chain is the only way a reviewer ever moves to a weaker
+model — automatic recovery goes **up** the tier ladder only, because a
+judge is never silently downgraded, and a single declared model is a pin
+that halts rather than substitutes. Set prose off with an em dash, never a
+comma — the chain parse stops at the dash. Two profiles are known-good:
 
 - **capable-implementer** (the template's printed default):
   `Worker model: opus`, no Reviewer line — the consequence tiers price

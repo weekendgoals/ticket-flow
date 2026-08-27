@@ -30,7 +30,10 @@ and implements nothing:
    reviewer's, so that pinning the implementer's model is an edit to the
    epic's documents; it is how a plan written on one model is implemented
    by another); absent, pass no model and the worker inherits this
-   session's. Tell it: a supervisor spawned it for this one ticket; run
+   session's. When the line declares a comma-separated chain
+   (`workerModelChain`), a spawn that dies moves to the chain's next entry
+   — a spend-capped model kills an agent without saying so — and never to
+   a model of your own choosing: the chain is the signed-off list. Tell it: a supervisor spawned it for this one ticket; run
    the `flow:ticket` skill for the ID from step 1 exactly as written;
    execute steps 1–6 (through the committed status entry) and stop with a
    report (built, verified with counts, branch, cut-from base, commit
@@ -390,6 +393,11 @@ Spawn the reviewer with the **Agent** tool:
   `reviewerModel`; it overrides the tier table, so redirecting the reviewer
   is an edit to the epic's documents, never a mid-run conversational
   directive. Absent (`reviewerModel: null`), use the tier table's model.
+  If the chosen model cannot produce a review — a spend cap kills a spawn
+  silently — recover only in the safe direction: the rest of the epic's
+  declared chain (`reviewerModelChain`) when one exists, else the next
+  model **up** the tier table. A judge is never downgraded to recover, and
+  the addendum header (step 8) names the model that actually reviewed.
 - `effort`: the tier table's.
 
 Tell it to follow **the `/flow:review` skill** and give it:

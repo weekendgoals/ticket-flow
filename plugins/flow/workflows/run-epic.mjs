@@ -57,10 +57,24 @@ if (!/^\d{4}-\d{2}-\d{2}$/.test(today)) {
   throw new Error(`args.today must be an ISO date the session read from its own clock, e.g. "2026-08-11" — got ${JSON.stringify(today)}`)
 }
 const MODEL = /^[A-Za-z0-9._-]+$/
-const workerModel = ARGS.workerModel && MODEL.test(ARGS.workerModel) ? ARGS.workerModel : null
-const reviewerModel = ARGS.reviewerModel && MODEL.test(ARGS.reviewerModel) ? ARGS.reviewerModel : null
-if (ARGS.workerModel && !workerModel) log(`ignoring unusable workerModel ${JSON.stringify(ARGS.workerModel)} — the worker inherits the driver's model`)
-if (ARGS.reviewerModel && !reviewerModel) log(`ignoring unusable reviewerModel ${JSON.stringify(ARGS.reviewerModel)} — the tier table prices the reviewer instead`)
+// A model arg may be a single name or a fallback CHAIN — the epic's
+// "Worker model: opus, sonnet" line, tried in order when a model is
+// unavailable: a spend-capped model kills an agent without saying so, and
+// the runtime cannot distinguish that death from any other. Unusable entries
+// are dropped with a log — the safe direction for models: a dropped entry is
+// one less fallback, never lower scrutiny.
+const modelChain = (v, name) => {
+  const chain = []
+  for (const m of v == null ? [] : Array.isArray(v) ? v : [v]) {
+    if (typeof m === 'string' && MODEL.test(m)) chain.push(m)
+    else log(`ignoring unusable ${name} entry ${JSON.stringify(m)} — a model name is [A-Za-z0-9._-]+`)
+  }
+  return chain
+}
+const workerChain = modelChain(ARGS.workerModel, 'workerModel')
+const reviewerChain = modelChain(ARGS.reviewerModel, 'reviewerModel')
+if (ARGS.workerModel != null && !workerChain.length) log(`ignoring unusable workerModel ${JSON.stringify(ARGS.workerModel)} — the worker inherits the driver's model`)
+if (ARGS.reviewerModel != null && !reviewerChain.length) log(`ignoring unusable reviewerModel ${JSON.stringify(ARGS.reviewerModel)} — the tier table prices the reviewer instead`)
 
 // The epic's optional `Consequence paths:` globs — file paths whose changes
 // always price review at the consequence tier. Unlike an unusable model (which
@@ -544,6 +558,11 @@ const tierFloor = files => {
   return 'normal'
 }
 
+// The recovery ladder for tier-priced reviewers and code-pinned proxies.
+// Recovery only ever climbs it: a judge is never silently downgraded, and
+// more scrutiny is always safe — only more expensive.
+const REVIEW_LADDER = ['haiku', 'sonnet', 'opus']
+
 const priceReview = (reported, floor) => {
   // `Object.hasOwn`, not truthiness: a reported tier of "toString" or
   // "constructor" finds a prototype member, and the run would then price the
@@ -555,13 +574,20 @@ const priceReview = (reported, floor) => {
   // max(reported, floor): the report can raise the price, never lower it.
   const tier = TIER_RANK[f] > TIER_RANK[rep] ? f : rep
   const t = REVIEW_TIERS[tier]
-  const model = reviewerModel || t.model
+  const model = reviewerChain[0] || t.model
+  // What hiring falls back to when `model` cannot produce a review: the rest
+  // of a declared chain — a pin is a pin, so a declared Reviewer model
+  // recovers only as its document declares — or, when the tier table priced
+  // it, the ladder upward from the tier's model. Never downward, from
+  // either source the run controls.
+  const escalation = reviewerChain.length ? reviewerChain.slice(1) : REVIEW_LADDER.slice(REVIEW_LADDER.indexOf(t.model) + 1)
   return {
     tier,
     reportedUsable,
     floored: reportedUsable && TIER_RANK[f] > TIER_RANK[rep],
     effort: t.effort,
     model,
+    escalation,
     modelUsed: model || 'inherited (the class this session runs on)',
   }
 }
@@ -585,31 +611,61 @@ const REVIEWER_RULES = `- You REPORT. You NEVER fix: no edits, no commits, no pu
 const isReview = r => r != null && typeof r === 'object' && Array.isArray(r.important)
 
 // One hiring path, used by the review and by the re-review: the plugin's
-// reviewer agent first, then exactly one fallback, then nothing. Returns null
-// when both fail — the caller halts, because an unreviewed ticket is never
-// merged, anywhere.
+// reviewer agent first, then exactly one fallback, then — when a next model
+// exists (the rest of a declared chain, or the tier ladder upward) — the same
+// two attempts a model up, because a spend-capped model kills a hire without
+// saying so and a judge is never downgraded to recover. Returns
+// {review, modelUsed} on success and null when every attempt fails — the
+// caller halts, because an unreviewed ticket is never merged, anywhere.
 const hireReviewer = async ({ label, phaseName, task, packet, schema, priced, id }) => {
-  const opts = { phase: phaseName, schema, effort: priced.effort, ...(priced.model ? { model: priced.model } : {}) }
-  const first = await agent(`${task}\n\n${packet}`, { ...opts, label, agentType: 'flow:ticket-reviewer' })
-  if (isReview(first)) return first
-  log(
-    first
-      ? `${id}: the ticket-reviewer agent returned something that is not a review (no findings array) — treating it as a failed hire and retrying once with the sanctioned fallback.`
-      : `${id}: the ticket-reviewer agent returned nothing — retrying once with the sanctioned fallback (a general agent given the reviewer's rules).`,
-  )
-  const second = await agent(
-    `${task}
+  const models = [priced.model, ...priced.escalation]
+  for (let i = 0; i < models.length; i++) {
+    const model = models[i]
+    const opts = { phase: phaseName, schema, effort: priced.effort, model }
+    const lbl = i ? `${label}:up${i}` : label
+    const first = await agent(`${task}\n\n${packet}`, { ...opts, label: lbl, agentType: 'flow:ticket-reviewer' })
+    if (isReview(first)) return { review: first, modelUsed: model }
+    log(
+      first
+        ? `${id}: the ticket-reviewer agent returned something that is not a review (no findings array) — treating it as a failed hire and retrying once with the sanctioned fallback.`
+        : `${id}: the ticket-reviewer agent returned nothing — retrying once with the sanctioned fallback (a general agent given the reviewer's rules).`,
+    )
+    const second = await agent(
+      `${task}
 
 You are standing in for the \`flow:ticket-reviewer\` agent, which could not be spawned. Follow the \`/flow:review\` skill for the procedure, and these core rules of the reviewer definition, which are not optional:
 
 ${REVIEWER_RULES}
 
 ${packet}`,
-    { ...opts, label: `${label}:fallback`, agentType: 'general-purpose' },
-  )
-  if (isReview(second)) return second
-  if (second) log(`${id}: the fallback reviewer also returned something that is not a review — no review was obtained.`)
+      { ...opts, label: `${lbl}:fallback`, agentType: 'general-purpose' },
+    )
+    if (isReview(second)) return { review: second, modelUsed: model }
+    if (second) log(`${id}: the fallback reviewer also returned something that is not a review — no review was obtained.`)
+    if (i + 1 < models.length)
+      log(
+        `${id}: no review obtained on ${model} — ${
+          reviewerChain.length ? "the epic's Reviewer model line declares a fallback; trying" : 'escalating up the tier ladder to'
+        } ${models[i + 1]}. A judge is never downgraded to recover, and a capped model dies without saying so.`,
+      )
+  }
   return null
+}
+
+// The shell proxies are pinned to the fast model by code, so code may raise
+// its own pin once: an agent that returns nothing may have died on a model
+// spend cap — the runtime cannot say why an agent died — and every proxy is
+// read-only or safely re-runnable (the merge sequence is idempotent on an
+// already-merged SHA; a re-appended addendum is at worst a duplicate line
+// the gate still counts). One retry, one rung up, and only on a DEAD agent:
+// an agent that reported a failure gave an answer, and answers are gated,
+// never retried.
+const PROXY_MODELS = ['haiku', 'sonnet']
+const proxy = async (prompt, opts) => {
+  const first = await agent(prompt, { ...opts, effort: 'low', model: PROXY_MODELS[0] })
+  if (first != null) return first
+  log(`${opts.label}: the ${PROXY_MODELS[0]}-pinned proxy returned no report — retrying once on ${PROXY_MODELS[1]}; a capped model dies without saying so, and recovery only ever raises the pin.`)
+  return agent(prompt, { ...opts, label: `${opts.label}:retry`, effort: 'low', model: PROXY_MODELS[1] })
 }
 
 // ---- the loop ---------------------------------------------------------------
@@ -626,12 +682,13 @@ log(`Driving ${epicBranch} unattended: one ticket at a time, in document order �
 // Refresh the epic branch, then — only on a clean refresh — read the board.
 // One agent for both: the board is only worth reading on a branch that has just
 // been refreshed, so the order was fixed anyway, and a second spawn bought
-// nothing. Pinned to a fast model: its whole job is running a fixed command
-// sequence and echoing structured output. The advice to omit `model` is about
-// agents that reason; a shell proxy is the clear case for the cheap tier.
+// nothing. Pinned to a fast model (with the proxy's one-rung-up retry): its
+// whole job is running a fixed command sequence and echoing structured
+// output. The advice to omit `model` is about agents that reason; a shell
+// proxy is the clear case for the cheap tier.
 const refreshAndSelect = async label => {
   phase('Refresh + select')
-  const r = await agent(
+  const r = await proxy(
     `In the repository at ${repoRoot}, refresh the epic branch from the default branch and then read the board. Two steps, in this order, and nothing else.
 
 STEP 1 — refresh \`${epicBranch}\`. Run exactly this sequence:
@@ -660,7 +717,7 @@ It prints a JSON array of startable tickets in document order (possibly empty). 
 ${PROMPT_RULE}
 
 ${NO_MAIN} \`git push origin ${epicBranch}\` is the only push you make.`,
-    { label, phase: 'Refresh + select', schema: REFRESH_NEXT_SCHEMA, effort: 'low', model: 'haiku' },
+    { label, phase: 'Refresh + select', schema: REFRESH_NEXT_SCHEMA },
   )
   if (!r || !r.refresh) {
     return {
@@ -774,8 +831,7 @@ for (let i = 0; i < MAX_TICKETS && !halted; i++) {
   //    request; review, gate and merge belong to the driver.
   phase('Ticket')
   const workerLabel = `worker:${id}`
-  const worker = await agent(
-    `A driver spawned you for this one ticket. Run the \`flow:ticket\` skill for \`${id}\`, exactly as written — you are working from documents, not from any conversation — but scoped as this prompt scopes it, which the skill's step 0 explicitly allows ("honoring whatever your spawn prompt scopes or forbids").
+  const workerPromptFor = lbl => `A driver spawned you for this one ticket. Run the \`flow:ticket\` skill for \`${id}\`, exactly as written — you are working from documents, not from any conversation — but scoped as this prompt scopes it, which the skill's step 0 explicitly allows ("honoring whatever your spawn prompt scopes or forbids").
 
 RUN: steps 1–6 (resolve, read, branch from ${epicBranch}, implement, verify with counts, write and commit the status entry), then step 9's summary and push — print your summary and \`git push -u origin ${branch}\`. Do NOT open a pull request: a release ticket has none of its own, and the release pull request at the epic's end is the only pull request this epic owns. STOP at the successful push and report.
 
@@ -783,32 +839,55 @@ DO NOT run step 7 (review), step 8 (fix and addendum) or step 10 (the gate and t
 
 REPORT THE REVIEW TIER for your own diff, from the ticket skill's step 7 table: \`prose\` (documentation and code comments only — nothing any runtime, parser, test or agent reads), \`consequence\` (the risk list: authentication or authorization boundaries, secrets, crypto, network exposure, migrations, anything that deletes or rewrites data, payments or billing, anything that can fail open), or \`normal\` (everything else, including configuration, user-facing strings, CLI output and agent/skill instructions). Give one line of why. **When in doubt, the higher tier** — an unrecognised or missing tier is priced as \`consequence\`. The driver also reads your branch's changed file list itself and floors the tier in code, so your report can raise the review's price but never lower it — you are under review, and the reviewed party does not price its own judge.
 
-Your worker label for this run is \`${workerLabel}\` — record it in the status entry's Mode line (\`autonomous — driver-spawned worker ${workerLabel}\`), because the run record names the same label and those two lines together are what makes "the driver never implements" auditable after the fact. Report no token figure anywhere: you cannot see your own counter, and the session observes every agent's spend from the run's own transcripts after the run — your status entry's Tokens line reads \`recorded in the run record\`.
+Your worker label for this run is \`${lbl}\` — record it in the status entry's Mode line (\`autonomous — driver-spawned worker ${lbl}\`), because the run record names the same label and those two lines together are what makes "the driver never implements" auditable after the fact. Report no token figure anywhere: you cannot see your own counter, and the session observes every agent's spend from the run's own transcripts after the run — your status entry's Tokens line reads \`recorded in the run record\`.
 
 The repository is at ${repoRoot}; the epic is \`${epic}\` and its branch is \`${epicBranch}\`. Everything else you need is in the epic's documents — start at \`${TICKETS} find ${id} --json\`, as the skill's step 1 says. Do NOT start another ticket, do not refresh the epic branch, and do not report on any ticket but this one.
 
 ${NO_MAIN}
 
-Report honestly: \`branch-pushed\` ONLY if you saw the push of \`${branch}\` succeed. If a stop condition fired — a document/code contradiction, a merge conflict, a permission prompt, anything that made the ticket undoable from its documents — write the status entry the skill requires and report it with the matching stopCondition. A halt is the mechanism working, not a failure; inventing progress past one is the only real failure.`,
-    {
-      label: workerLabel,
+Report honestly: \`branch-pushed\` ONLY if you saw the push of \`${branch}\` succeed. If a stop condition fired — a document/code contradiction, a merge conflict, a permission prompt, anything that made the ticket undoable from its documents — write the status entry the skill requires and report it with the matching stopCondition. A halt is the mechanism working, not a failure; inventing progress past one is the only real failure.`
+
+  let workerAgentUsed = workerLabel
+  let workerModelUsed = workerChain[0] || 'inherited'
+  let worker = await agent(workerPromptFor(workerLabel), {
+    label: workerLabel,
+    phase: 'Ticket',
+    // A fresh general-purpose agent, full toolset, empty context — the same
+    // worker shape the skill's prose loop spawned.
+    agentType: 'general-purpose',
+    schema: WORKER_SCHEMA,
+    // The epic's optional `Worker model:` preamble line; absent, the worker
+    // inherits the session's model.
+    ...(workerChain[0] ? { model: workerChain[0] } : {}),
+  })
+  // A dead worker recovers only through a DECLARED chain — the epic's
+  // "Worker model: opus, sonnet" line, visible at sign-off. No chain, no
+  // improvised substitute: the runtime cannot say why an agent died, and an
+  // inherited model has no computable "next". The respawn is safe against a
+  // half-dead predecessor because the ticket skill's own step 1 and step 3
+  // guards (a dirty tree it did not make, an existing branch) stop the new
+  // worker, which halts the run honestly instead of building on wreckage.
+  for (let w = 1; worker == null && w < workerChain.length; w++) {
+    log(
+      `${id}: the worker on ${workerChain[w - 1]} returned no report — a capped model dies without saying so, and the epic's Worker model line declares a fallback: respawning once on ${workerChain[w]}.`,
+    )
+    workerAgentUsed = `${workerLabel}:fb${w}`
+    workerModelUsed = workerChain[w]
+    worker = await agent(workerPromptFor(workerAgentUsed), {
+      label: workerAgentUsed,
       phase: 'Ticket',
-      // A fresh general-purpose agent, full toolset, empty context — the same
-      // worker shape the skill's prose loop spawned.
       agentType: 'general-purpose',
       schema: WORKER_SCHEMA,
-      // The epic's optional `Worker model:` preamble line; absent, the worker
-      // inherits the session's model.
-      ...(workerModel ? { model: workerModel } : {}),
-    },
-  )
+      model: workerChain[w],
+    })
+  }
 
   const record = {
     id,
     title: line(ticket.title || ''),
     branch,
-    workerAgent: workerLabel,
-    workerModel: workerModel || 'inherited',
+    workerAgent: workerAgentUsed,
+    workerModel: workerModelUsed,
     // Priced after the tier-facts step below — a ticket that halts before its
     // pull request opens never reaches pricing, and says so.
     tier: 'not priced',
@@ -872,7 +951,7 @@ Report honestly: \`branch-pushed\` ONLY if you saw the push of \`${branch}\` suc
   //    the price but never lower it. One read-only fast-model step, like
   //    resolve: the agent reports what the diff printed and judges nothing.
   phase('Review')
-  const tierFacts = await agent(
+  const tierFacts = await proxy(
     `In the repository at ${repoRoot}, report one fact about ticket ${id}'s pushed branch: which files it changed. Run exactly:
 
 \`\`\`bash
@@ -887,7 +966,7 @@ Report the printed paths verbatim under \`files\`, one entry per line — \`[]\`
 ${PROMPT_RULE}
 
 ${NO_MAIN} You are read-only here in any case: nothing in this task writes anything.`,
-    { label: `tier-facts:${id}`, phase: 'Review', schema: TIER_FACTS_SCHEMA, effort: 'low', model: 'haiku' },
+    { label: `tier-facts:${id}`, phase: 'Review', schema: TIER_FACTS_SCHEMA },
   )
   if (tierFacts && tierFacts.outcome === 'permission-prompt') {
     halted = { ticket: id, stopCondition: STOP.permissionPrompt, where: `reading ${id}'s changed files to price its review`, detail: fence(line(tierFacts.detail || '(no command named)')) }
@@ -945,7 +1024,7 @@ You REPORT; you never fix. No edits, no commits, no pushes — an agent that can
 
 Report no token figure: you cannot see your own counter, and the session observes every agent's spend from the run's own transcripts after the run.`
 
-  const review = await hireReviewer({
+  const hired = await hireReviewer({
     label: `review:${id}`,
     phaseName: 'Review',
     task: 'Review the commit range for one finished ticket of an unattended release run. Follow the `/flow:review` skill for the procedure and your own agent definition for the bar.',
@@ -954,15 +1033,22 @@ Report no token figure: you cannot see your own counter, and the session observe
     priced,
     id,
   })
-  if (!review) {
+  if (!hired) {
     halted = {
       ticket: id,
       stopCondition: STOP.reviewerSpawn,
       where: `hiring the reviewer for ${id}`,
-      detail: `both the \`flow:ticket-reviewer\` agent and the sanctioned general-agent fallback returned no review. The branch ${branch} stays pushed and unmerged: an unreviewed ticket is never merged, anywhere.`,
+      detail: `the \`flow:ticket-reviewer\` agent and the sanctioned general-agent fallback returned no review on any model the run may use (${[priced.model, ...priced.escalation].join(', ')} — recovery never goes below the priced model). The branch ${branch} stays pushed and unmerged: an unreviewed ticket is never merged, anywhere.`,
     }
     break
   }
+  const review = hired.review
+  // The model that actually produced the review — the priced model, or the
+  // rung recovery landed on. The record and the addendum header carry it,
+  // never the price tag of a hire that failed.
+  const reviewerUsed = hired.modelUsed
+  record.reviewerModelUsed = reviewerUsed
+  if (reviewerUsed !== priced.model) log(`${id}: the review was produced on ${reviewerUsed}, not the priced ${priced.model} — recorded as such.`)
 
   const important = Array.isArray(review.important) ? review.important : []
   const nits = Array.isArray(review.nits) ? review.nits : []
@@ -1004,8 +1090,7 @@ Report no token figure: you cannot see your own counter, and the session observe
     ? preExisting.map(f => `- ${line(f.cite)} — ${line(f.summary)}${f.owner ? ` (reviewer suggests owner: ${line(f.owner)})` : ''}`).join('\n')
     : '(none)'
 
-  const disposition = await agent(
-    `Disposition a completed review for ticket \`${id}\` in the repository at ${repoRoot}, then leave the record straight. Its branch \`${branch}\` is pushed; a driver reviewed it and now needs the findings dispositioned before it may merge into ${epicBranch}. A release ticket has no pull request of its own — the branch and the log are the whole record.
+  const dispositionPrompt = `Disposition a completed review for ticket \`${id}\` in the repository at ${repoRoot}, then leave the record straight. Its branch \`${branch}\` is pushed; a driver reviewed it and now needs the findings dispositioned before it may merge into ${epicBranch}. A release ticket has no pull request of its own — the branch and the log are the whole record.
 
 Start with \`git checkout ${branch}\`. You append to the END of this ticket's entry in the status log — the entries above it belong to earlier tickets and are not your reading; do not spend context on them.
 
@@ -1018,7 +1103,7 @@ Do, in order:
 1. **Fix every Important finding** as NEW commits — never amend, the review has to stay auditable against exactly what was reviewed. Subject each one \`${id}: <what changed> (review fix)\`. Re-run the checks each fix affects and record the exact commands and their counts.
 2. **Append the dated review addendum** to this ticket's entry in ${repoRoot}/epics/${epic}/status.md, per the ticket skill's step 8 — append, never edit the original entry:
 
-   \`**Addendum — review — ${today} — ${priced.modelUsed}/${priced.effort}:** <findings; what was fixed, in which commit, with counts; what was not fixed, each with its reason; "nothing deferred" explicitly when that is true. End with \`Tokens: recorded in the run record\`.>\`
+   \`**Addendum — review — ${today} — ${reviewerUsed}/${priced.effort}:** <findings; what was fixed, in which commit, with counts; what was not fixed, each with its reason; "nothing deferred" explicitly when that is true. End with \`Tokens: recorded in the run record\`.>\`
 
    The reviewer's model and effort come from this prompt because the DRIVER hired the reviewer; use them verbatim. Token figures are deliberately absent: no agent can see its own counter, so the session sums the run's own transcripts into the run record after the run ends — the addendum points there instead of quoting a number nobody observed.
 
@@ -1033,19 +1118,15 @@ Nits: fix one only if it is trivial and in scope; otherwise record it in the add
 
 ${PROMPT_RULE}
 
-${NO_MAIN} You do not merge this branch; the driver does, after its own gate.`,
-    {
-      label: `disposition:${id}`,
-      phase: 'Disposition',
-      agentType: 'general-purpose',
-      schema: DISPOSITION_SCHEMA,
-      effort: important.length ? 'high' : 'low',
-      // With nothing to fix, the disposition is clerical — write the addendum,
-      // commit, push — so it is priced like the other shell-adjacent steps.
-      // Anything with an Important finding to fix keeps the inherited model.
-      ...(important.length ? {} : { model: 'haiku' }),
-    },
-  )
+${NO_MAIN} You do not merge this branch; the driver does, after its own gate.`
+  const dispositionOpts = { label: `disposition:${id}`, phase: 'Disposition', agentType: 'general-purpose', schema: DISPOSITION_SCHEMA }
+  // With nothing to fix, the disposition is clerical — write the addendum,
+  // commit, push — so it is priced like the other shell-adjacent steps and
+  // rides the proxy's one-rung-up retry. Anything with an Important finding
+  // to fix keeps the inherited model at high effort.
+  const disposition = important.length
+    ? await agent(dispositionPrompt, { ...dispositionOpts, effort: 'high' })
+    : await proxy(dispositionPrompt, dispositionOpts)
 
   record.disposition = disposition ? line(disposition.outcome) : 'no report'
   if (disposition) {
@@ -1152,7 +1233,7 @@ ${NO_MAIN} You do not merge this branch; the driver does, after its own gate.`,
       log(`${id}: the review reported no usable reviewedHead, so the fix-bounds gate has no anchor — the fixes take the bounded re-review instead.`)
     }
     log(`${id}: ${record.fixedCommits.length} review-fix commit(s) — one bounded re-review before the merge.`)
-    const reReview = await hireReviewer({
+    const reHired = await hireReviewer({
       label: `re-review:${id}`,
       phaseName: 'Re-review',
       task: 'RE-REVIEW one ticket of an unattended release run. It was reviewed once, findings were fixed, and you are checking the fixes before anything merges. This is the re-review mode of the `/flow:review` skill and of your own definition: **suppress new nits entirely** and report only Important findings — ones the fix commits introduced, plus anything from the first review still unaddressed.',
@@ -1167,15 +1248,16 @@ Read them in the context of the whole range, but judge them: does each fix do wh
       priced,
       id,
     })
-    if (!reReview) {
+    if (!reHired) {
       halted = {
         ticket: id,
         stopCondition: STOP.reviewerSpawn,
         where: `hiring the re-reviewer for ${id}`,
-        detail: `both the \`flow:ticket-reviewer\` agent and the sanctioned general-agent fallback returned no re-review of the fix commits. The pull request stays open and unmerged: the merged diff has to be a reviewed diff, and these commits were written after the review that approved the rest.`,
+        detail: `the \`flow:ticket-reviewer\` agent and the sanctioned general-agent fallback returned no re-review of the fix commits on any model the run may use. The pull request stays open and unmerged: the merged diff has to be a reviewed diff, and these commits were written after the review that approved the rest.`,
       }
       break
     }
+    const reReview = reHired.review
     const reImportant = Array.isArray(reReview.important) ? reReview.important : []
     const rePreExisting = Array.isArray(reReview.preExisting) ? reReview.preExisting : []
     record.reReviewRan = true
@@ -1219,7 +1301,7 @@ Read them in the context of the whole range, but judge them: does each fix do wh
   //     demonstrate: criteria stay the worker's verified obligations, held
   //     by the review.
   phase('Acceptance')
-  const accept = await agent(
+  const accept = await proxy(
     `In the repository at ${repoRoot}, run ticket ${id}'s machine-runnable acceptance checks against its pushed branch and report what the command printed. Run exactly this sequence:
 
 \`\`\`bash
@@ -1236,7 +1318,7 @@ The check command exits 0 when every check passed and 1 when any failed — BOTH
 ${PROMPT_RULE}
 
 ${NO_MAIN} The checkout and fast-forward only move the local branch to where the remote already is; you commit nothing and push nothing.`,
-    { label: `accept:${id}`, phase: 'Acceptance', schema: ACCEPT_SCHEMA, effort: 'low', model: 'haiku' },
+    { label: `accept:${id}`, phase: 'Acceptance', schema: ACCEPT_SCHEMA },
   )
   record.acceptanceOutcome = accept ? line(accept.outcome) : 'no report'
   if (accept && accept.outcome === 'permission-prompt') {
@@ -1307,7 +1389,7 @@ git diff --numstat ${reviewedHead} origin/${branch} -- ${boundsPathspecs}
 
 The first command lists the files the review saw — report its paths, verbatim, as \`reviewedFiles\`. The second lists what the fix commits changed after the review (the status-log addendum${fixBoundsExclude.length ? " and the epic's excluded fan-out globs are" : ' is'} excluded by the pathspec) — report its paths as \`fixFiles\` and the sum of every added and deleted count it printed as \`fixLines\`: 0 when it prints nothing, and -1 if any count prints "-" (a binary file) — both are answers, not failures. You judge none of it; the driver checks the bounds in code.`
     : ''
-  const resolved = await agent(
+  const resolved = await proxy(
     `In the repository at ${repoRoot}, report ${boundsGated ? 'three' : 'two'} facts about one ticket's pushed branch. **You change nothing**: no merge, no push, no edit. You do not judge what you find — report what the commands printed and let the driver decide.
 
 FACT 1 — how many dated review addenda sit under **${id}'s own** entries in the branch as pushed:
@@ -1334,7 +1416,7 @@ Report outcome "resolved" once every command above has run, whatever it printed.
 ${PROMPT_RULE}
 
 ${NO_MAIN} You are read-only here in any case: nothing in this task writes anything.`,
-    { label: `resolve:${id}`, phase: 'Resolve', schema: RESOLVE_SCHEMA, effort: 'low', model: 'haiku' },
+    { label: `resolve:${id}`, phase: 'Resolve', schema: RESOLVE_SCHEMA },
   )
 
   // The gate, in code, on facts nothing has acted on yet. Every branch below
@@ -1405,7 +1487,7 @@ ${NO_MAIN} You are read-only here in any case: nothing in this task writes anyth
   //    and a SHA — unlike a branch name or a pull-request number — cannot be
   //    retargeted between the resolve step's check and this merge.
   phase('Merge')
-  const merged = await agent(
+  const merged = await proxy(
     `In the repository at ${repoRoot}, run exactly this sequence and report what it did:
 
 \`\`\`bash
@@ -1424,7 +1506,7 @@ ${PROMPT_RULE}
 ${NO_MAIN} This merge into ${epicBranch} is the only merge you perform.`,
     // The last of the shell proxies, pinned to a fast model: one fixed command
     // whose arguments came from code.
-    { label: `merge:${id}`, phase: 'Merge', schema: MERGE_SCHEMA, effort: 'low', model: 'haiku' },
+    { label: `merge:${id}`, phase: 'Merge', schema: MERGE_SCHEMA },
   )
   record.mergeOutcome = merged ? line(merged.outcome) : 'no report'
   if (!merged || merged.outcome !== 'merged') {
@@ -1447,7 +1529,7 @@ ${NO_MAIN} This merge into ${epicBranch} is the only merge you perform.`,
   // g. Verify the outcome mechanically. The merged pull request into the epic
   //    branch is the only evidence that counts, not any agent's report.
   phase('Verify')
-  const found = await agent(
+  const found = await proxy(
     `In the repository at ${repoRoot}, run exactly this command and report what it printed:
 
 \`\`\`bash
@@ -1459,7 +1541,7 @@ Report the \`state\` field verbatim and the \`pr.url\` field if present. Report 
 ${PROMPT_RULE}`,
     // One command, echoed structurally: the third of the shell proxies pinned
     // to a fast model.
-    { label: `verify:${id}`, phase: 'Verify', schema: FIND_SCHEMA, effort: 'low', model: 'haiku' },
+    { label: `verify:${id}`, phase: 'Verify', schema: FIND_SCHEMA },
   )
   if (!found || !found.commandSucceeded) {
     const failure = found && line(found.failure) ? fence(line(found.failure)) : ''
