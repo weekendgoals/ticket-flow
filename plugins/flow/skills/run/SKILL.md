@@ -317,11 +317,15 @@ looping until `tickets.mjs next <epic> --json` comes back empty:
   before anything can merge.** One agent runs two commands (three when the
   fix-bounds gate is armed) and reports what they printed, deciding nothing:
   `git show origin/<id lowercased>:epics/<epic>/status.md`
-  narrowed by `awk` to **this ticket's own entries** and grepped for the day's
-  `Addendum — review —` line (the narrowing *is* the check — the branch was
-  cut from `epic/<name>` and the log is append-only, so it already carries
-  every earlier ticket's addenda, and an unscoped grep for today's date would
-  be satisfied by one of those), and `git rev-parse origin/<id lowercased>` —
+  narrowed by `awk` to **this ticket's own entries** and grepped for a dated
+  `Addendum — review —` line — matched by **shape, never by the run's pinned
+  date**: the run pins its date for cache stability, the addendum carries the
+  real day, and the two diverge legitimately when a run crosses midnight,
+  which once halted a green ticket. The narrowing *is* the check — the
+  branch was cut from `epic/<name>` and the log is append-only, so it
+  already carries every earlier ticket's addenda in the same dated shape,
+  and an unscoped grep would be satisfied by one of those. And
+  `git rev-parse origin/<id lowercased>` —
   the exact commit the pushed branch stands at.
   When the ticket carries fix commits below the consequence tier, the same
   agent also reads the fix diff anchored on the review's `reviewedHead` —
@@ -440,7 +444,7 @@ code path that resumes past one. The run halts:
   the board does not show, halts here too. Two more shapes land here because
   they leave a ticket unmergeable: a review that is not on the record — the disposition
   never committed the addendum, or **this ticket's** entries in the pushed
-  status log do not carry the day's `Addendum — review —` line when the
+  status log carry no dated `Addendum — review —` line when the
   resolve step counts them. An unreviewed-**on-the-record** ticket is never
   merged, whatever an agent says it did;
 - on **an Important review finding it cannot fix** — the script's own gate

@@ -433,16 +433,20 @@ test('an uncommitted addendum halts before the merge (the self-reported flag)', 
 test('an addendum missing from the pushed branch halts before any merge agent exists', async () => {
   const r = await drive(oneTicket({ 'resolve:PAY-1': { ...resolvedOk, addendumMatches: 0 } }))
   assert.match(r.out.haltedOn.stopCondition, /^BLOCKED/)
-  assert.match(r.out.haltedOn.detail, /Addendum — review — 2026-08-11/)
+  assert.match(r.out.haltedOn.detail, /no dated `Addendum — review —` line/)
   assert.match(r.out.haltedOn.detail, /origin\/pay-1/)
   assert.ok(!r.labels.some(l => l.startsWith('merge:') || l.startsWith('verify:')))
   const p = call(r, 'resolve:PAY-1').prompt
   assert.match(p, /git fetch origin pay-1/)
   // Scoped to THIS ticket's entries: the branch was cut from the epic branch,
   // so the log already carries every earlier ticket's addenda, and an unscoped
-  // grep for today's date would be satisfied by one of those.
-  assert.match(p, /git show origin\/pay-1:epics\/payments\/status\.md \| awk '.+' \| grep -c "Addendum — review — 2026-08-11"/)
+  // grep would be satisfied by one of those.
+  assert.match(p, /git show origin\/pay-1:epics\/payments\/status\.md \| awk '.+' \| grep -cE "Addendum — review — \[0-9\]\{4\}-\[0-9\]\{2\}-\[0-9\]\{2\}"/)
   assert.doesNotMatch(p, /status\.md \| grep -c/)
+  // Matched by shape, never by the run's pinned date: the addendum carries
+  // the real day, which diverges from args.today when a run crosses midnight
+  // — grepping for the pinned value once halted a green ticket.
+  assert.doesNotMatch(p, /grep -c[E]? "Addendum — review — 2026-08-11"/)
 })
 
 test('an unreadable status log on the branch halts as unreviewed-on-the-record', async () => {
@@ -476,10 +480,12 @@ test("the addendum check counts only addenda under this ticket's own entries", a
 
   const r = await drive(oneTicket())
   const program = call(r, 'resolve:PAY-1').prompt.match(/awk '([^']+)'/)[1]
+  // The grep stage matches the dated SHAPE, not the run's pinned date —
+  // simulated here with the same regex the prompt carries.
   const countFor = log =>
     execFileSync('awk', [program], { input: log, encoding: 'utf8' })
       .split('\n')
-      .filter(l => l.includes('Addendum — review — 2026-08-11')).length
+      .filter(l => /Addendum — review — [0-9]{4}-[0-9]{2}-[0-9]{2}/.test(l)).length
 
   const earlierTicketOnly = [
     '# Payments — status log',
@@ -499,6 +505,12 @@ test("the addendum check counts only addenda under this ticket's own entries", a
   // And a later ticket's entry must not leak into this ticket's window either.
   const laterTicketAfter = `${withOwnAddendum}\n### PAY-2 — third — 2026-08-11 — DONE\n**Addendum — review — 2026-08-11 — haiku/low:** clean.\n`
   assert.equal(countFor(laterTicketAfter), 1)
+
+  // The midnight case: the run is pinned to 2026-08-11, the disposition
+  // wrote the real day. The gate matches the dated shape, so a green ticket
+  // is not halted by the calendar — the live failure this pins (GHF-4).
+  const crossedMidnight = `${earlierTicketOnly}**Addendum — review — 2026-08-12 — sonnet/high:** clean.\n`
+  assert.equal(countFor(crossedMidnight), 1, "an addendum dated the real day must satisfy a run pinned to yesterday's date")
 })
 
 // ---- mechanical pull-request resolution -------------------------------------
