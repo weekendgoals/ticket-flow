@@ -8,6 +8,24 @@ with one version and date.
 
 ## Unreleased
 
+- **A seventh preamble line, `Fix bounds exclude:`, lets an epic exempt
+  mechanical fan-out files from the run's fix-bounds gate**
+  (`scripts/tickets.mjs` preamble parse and doctor near-misses,
+  `workflows/run-epic.mjs` args and resolve step, `skills/run/SKILL.md`,
+  README config table). A live run halted a green ticket whose review fix
+  added a translation key: the catalog fan-out — one key touching every
+  locale file — blew the fix line budget, which was measuring the
+  catalog's width, not the fix's blast radius. The epic may now declare
+  comma-separated globs (e.g. `src/messages/*.json`) that the resolve
+  step's fix-diff commands exclude the same way they already exclude
+  `epics/`. Deliberately configuration, not a hardcoded path: baking one
+  project's i18n layout into the shared driver would silently exempt
+  translation-named paths in every installed project, and per-project
+  path policy belongs in the epic document, visible at sign-off, like
+  `Consequence paths:`. Validated on the same terms — an unusable glob
+  refuses the run, because a glob line that cannot be applied is fixed in
+  the document, never silently approximated.
+
 - **The merge gate matches a dated review addendum by shape, never by the
   run's pinned date** (`workflows/run-epic.mjs` resolve step,
   `skills/run/SKILL.md` steps 4-5). A live run halted a green ticket at

@@ -3,7 +3,7 @@ export const meta = {
   description:
     "The /flow:run driver loop as code — code-controlled, agent-executed: refresh epic/<name> and take the next ticket in document order, spawn a worker that stops at its pushed branch, read the diff's file list and floor the review tier in code, hire the reviewer, gate on its findings, re-review any fix commits, re-run the ticket's CHECK/EXPECT acceptance criteria from the signed-off document and gate on the counts in code, resolve the pushed branch's verified head and merge exactly that commit into epic/<name> — release tickets open no pull request of their own — confirm the merge landed — and halt on any stop condition instead of improvising past it",
   whenToUse:
-    'Invoked by the flow:run skill AFTER it has resolved the epic, refused anything but Delivery: release, verified the sign-off traces on origin/epic/<name>, and checked the permission surface and branch protection (or its recorded waiver). Requires args {epic, defaultBranch, repoRoot, pluginRoot, today, workerModel?, reviewerModel?, consequencePaths?, ticketBudget?}. Returns {outcome: "completed"|"halted", haltedOn, ticketRecords, ...}; the calling session writes the run record and opens the release pull request. The driver hires the reviewer — the party under review never picks its judge — and the merge gate is a code check on the reviewer\'s structured findings. The script never merges, pushes, or retargets toward the default branch, and never opens or merges the release pull request.',
+    'Invoked by the flow:run skill AFTER it has resolved the epic, refused anything but Delivery: release, verified the sign-off traces on origin/epic/<name>, and checked the permission surface and branch protection (or its recorded waiver). Requires args {epic, defaultBranch, repoRoot, pluginRoot, today, workerModel?, reviewerModel?, consequencePaths?, fixBoundsExclude?, ticketBudget?}. Returns {outcome: "completed"|"halted", haltedOn, ticketRecords, ...}; the calling session writes the run record and opens the release pull request. The driver hires the reviewer — the party under review never picks its judge — and the merge gate is a code check on the reviewer\'s structured findings. The script never merges, pushes, or retargets toward the default branch, and never opens or merges the release pull request.',
   phases: [
     { title: 'Refresh + select', detail: 'merge the default branch into epic/<name>, then read the next startable ticket — one agent, one command sequence' },
     { title: 'Ticket', detail: 'one fresh-context worker per ticket, stopping at its pushed branch — release tickets open no pull request of their own' },
@@ -34,7 +34,7 @@ const today = ARGS && ARGS.today
 
 if (!epic || !defaultBranch || !repoRoot || !pluginRoot || !today) {
   throw new Error(
-    'flow-run-epic requires args: {epic, defaultBranch, repoRoot, pluginRoot, today, workerModel?, reviewerModel?, consequencePaths?} — e.g. {epic:"payments", defaultBranch:"main", repoRoot:"/Users/x/proj", pluginRoot:"/Users/x/.claude/plugins/.../flow", today:"2026-08-11"}. The flow:run skill supplies all of them from its steps 1-3; run it only after those steps have passed.',
+    'flow-run-epic requires args: {epic, defaultBranch, repoRoot, pluginRoot, today, workerModel?, reviewerModel?, consequencePaths?, fixBoundsExclude?} — e.g. {epic:"payments", defaultBranch:"main", repoRoot:"/Users/x/proj", pluginRoot:"/Users/x/.claude/plugins/.../flow", today:"2026-08-11"}. The flow:run skill supplies all of them from its steps 1-3; run it only after those steps have passed.',
   )
 }
 
@@ -80,6 +80,29 @@ if (ARGS.consequencePaths != null) {
     consequencePaths.push(g)
   }
 }
+// The epic's optional `Fix bounds exclude:` globs — files the fix-bounds gate
+// leaves out of the review-fix diff, the way it already leaves out `epics/`.
+// For files a fix legitimately fans out into mechanically (the canonical
+// case: translation catalogs, where one new key touches every locale file),
+// whose line count measures the catalog's width, not the fix's blast radius.
+// Validated exactly like the consequence globs and refused on the same terms:
+// dropping an unusable entry would not lower scrutiny here, but it would
+// re-halt the exact fan-out the line exists to wave through — and a glob
+// line that cannot be applied is fixed in the epic's document, never
+// silently approximated. One rule for both preamble glob lists.
+const fixBoundsExclude = []
+if (ARGS.fixBoundsExclude != null) {
+  if (!Array.isArray(ARGS.fixBoundsExclude)) throw new Error('args.fixBoundsExclude must be an array of path globs when present')
+  for (const g of ARGS.fixBoundsExclude) {
+    if (typeof g !== 'string' || !GLOB.test(g) || g.includes('..')) {
+      throw new Error(
+        `Unsafe fixBoundsExclude entry ${JSON.stringify(g)} — a glob is [A-Za-z0-9._*/-] with no ".."; fix the epic's \`Fix bounds exclude:\` line, because an entry that cannot be applied re-halts the fan-out it exists to admit`,
+      )
+    }
+    fixBoundsExclude.push(g)
+  }
+}
+
 // Globs support `**` (across segments), `*` (within a segment) and literals,
 // matched against the full repository-relative path.
 const globRe = g =>
@@ -1267,17 +1290,22 @@ ${NO_MAIN} The checkout and fast-forward only move the local branch to where the
   // The fix-bounds facts ride the resolve step because it is already the
   // read-only fact reader: the SHA below was shape-verified when the review
   // returned, so nothing agent-authored is interpolated into these commands.
+  // The epic's exclude globs join epics/ in both pathspecs: files a fix fans
+  // out into mechanically are invisible to the bounds facts, so the gate
+  // measures the fix, not the catalog. Globs were shape-validated at start;
+  // nothing agent-authored is interpolated here.
+  const boundsPathspecs = [`':(exclude)epics'`, ...fixBoundsExclude.map(g => `':(exclude,glob)${g}'`)].join(' ')
   const fixBoundsFacts = boundsGated
     ? `
 
 FACT 3 — the review-fix diff, anchored on the reviewed head \`${reviewedHead}\`:
 
 \`\`\`bash
-git diff --name-only origin/${epicBranch} ${reviewedHead} -- ':(exclude)epics'
-git diff --numstat ${reviewedHead} origin/${branch} -- ':(exclude)epics'
+git diff --name-only origin/${epicBranch} ${reviewedHead} -- ${boundsPathspecs}
+git diff --numstat ${reviewedHead} origin/${branch} -- ${boundsPathspecs}
 \`\`\`
 
-The first command lists the files the review saw — report its paths, verbatim, as \`reviewedFiles\`. The second lists what the fix commits changed after the review (the status-log addendum is excluded by the pathspec) — report its paths as \`fixFiles\` and the sum of every added and deleted count it printed as \`fixLines\`: 0 when it prints nothing, and -1 if any count prints "-" (a binary file) — both are answers, not failures. You judge none of it; the driver checks the bounds in code.`
+The first command lists the files the review saw — report its paths, verbatim, as \`reviewedFiles\`. The second lists what the fix commits changed after the review (the status-log addendum${fixBoundsExclude.length ? " and the epic's excluded fan-out globs are" : ' is'} excluded by the pathspec) — report its paths as \`fixFiles\` and the sum of every added and deleted count it printed as \`fixLines\`: 0 when it prints nothing, and -1 if any count prints "-" (a binary file) — both are answers, not failures. You judge none of it; the driver checks the bounds in code.`
     : ''
   const resolved = await agent(
     `In the repository at ${repoRoot}, report ${boundsGated ? 'three' : 'two'} facts about one ticket's pushed branch. **You change nothing**: no merge, no push, no edit. You do not judge what you find — report what the commands printed and let the driver decide.

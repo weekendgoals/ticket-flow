@@ -151,6 +151,15 @@ function parsePreamble(ticketsDoc) {
     workerModel: grab('Worker model', '[A-Za-z0-9._-]+'),
     plannerModel: grab('Planner model', '[A-Za-z0-9._-]+'),
     consequencePaths: grabPathList('Consequence paths'),
+    // "Fix bounds exclude" is the sixth optional line: comma-separated path
+    // globs the run driver's fix-bounds gate leaves out of the review-fix
+    // diff — the same way it already leaves out epics/. For files a fix
+    // legitimately fans out into mechanically (the canonical case:
+    // translation catalogs, where one new key touches every locale file),
+    // whose line count says nothing about the fix's blast radius. Same
+    // tolerant list parse as Consequence paths; this script only parses it,
+    // the run driver validates and applies it.
+    fixBoundsExclude: grabPathList('Fix bounds exclude'),
     ticketBudget: budget,
   }
 }
@@ -666,14 +675,14 @@ function doctor() {
   // old two-line syntax ("Release mode:" / "Run mode:") is in the near set
   // deliberately: those labels parse as nothing at all now, and a preamble
   // written in them would silently run incremental.
-  const declNear = /^[^A-Za-z]*\b(delivery|(reviewer|worker|planner)\s+model|consequence\s+paths|ticket\s+budget|(release|run)\s+mode)\b/i
-  const declStrict = /^Delivery\s*:\s*[A-Za-z-]+|^(Reviewer|Worker|Planner) model\s*:\s*[A-Za-z0-9._-]+|^Consequence paths\s*:\s*\S+|^Ticket budget\s*:\s*\d+[km]?(\s|$)/i
+  const declNear = /^[^A-Za-z]*\b(delivery|(reviewer|worker|planner)\s+model|consequence\s+paths|fix\s+bounds\s+exclude|ticket\s+budget|(release|run)\s+mode)\b/i
+  const declStrict = /^Delivery\s*:\s*[A-Za-z-]+|^(Reviewer|Worker|Planner) model\s*:\s*[A-Za-z0-9._-]+|^Consequence paths\s*:\s*\S+|^Fix bounds exclude\s*:\s*\S+|^Ticket budget\s*:\s*\d+[km]?(\s|$)/i
   for (const epic of epics) {
     if (!DELIVERIES.has(epic.delivery))
       add('warn', `${epic.epic}: unrecognised delivery "${epic.delivery}" (known: release, incremental) — skills reading it will not know how this epic ships`)
     readFileSync(epic.ticketsDoc, 'utf8').split(/^##\s/m)[0].split('\n').forEach((line, i) => {
       if (declNear.test(line) && !declStrict.test(line))
-        add('warn', `${epic.epic}/tickets.md:${i + 1} — looks like a declaration line but will not parse, so it silently defaults (needs "Delivery: release|incremental" / "Reviewer model: <value>" / "Worker model: <value>" / "Planner model: <value>" / "Consequence paths: <glob>[, <glob>]" / "Ticket budget: <digits, optional k or m suffix>" — label at line start, no formatting, value on the label's own line; "Release mode:"/"Run mode:" are not read at all): ${line.trim()}`)
+        add('warn', `${epic.epic}/tickets.md:${i + 1} — looks like a declaration line but will not parse, so it silently defaults (needs "Delivery: release|incremental" / "Reviewer model: <value>" / "Worker model: <value>" / "Planner model: <value>" / "Consequence paths: <glob>[, <glob>]" / "Fix bounds exclude: <glob>[, <glob>]" / "Ticket budget: <digits, optional k or m suffix>" — label at line start, no formatting, value on the label's own line; "Release mode:"/"Run mode:" are not read at all): ${line.trim()}`)
     })
   }
 
@@ -780,6 +789,7 @@ function ticketFacts(data, t) {
     workerModel: epic.workerModel,
     plannerModel: epic.plannerModel,
     consequencePaths: epic.consequencePaths,
+    fixBoundsExclude: epic.fixBoundsExclude,
     ticketBudget: epic.ticketBudget,
     repoRoot,
     epicDir: epic.dir,
@@ -959,7 +969,7 @@ switch (cmd) {
         modes: Object.fromEntries(
           data.epics.map((e) => [
             e.epic,
-            { delivery: e.delivery, reviewerModel: e.reviewerModel, workerModel: e.workerModel, plannerModel: e.plannerModel, consequencePaths: e.consequencePaths, ticketBudget: e.ticketBudget },
+            { delivery: e.delivery, reviewerModel: e.reviewerModel, workerModel: e.workerModel, plannerModel: e.plannerModel, consequencePaths: e.consequencePaths, fixBoundsExclude: e.fixBoundsExclude, ticketBudget: e.ticketBudget },
           ]),
         ),
         duplicates: data.duplicates,

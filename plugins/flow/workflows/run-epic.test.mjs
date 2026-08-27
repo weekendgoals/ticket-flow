@@ -624,6 +624,22 @@ test('below the consequence tier, fixes skip the re-review and are bounds-checke
   assert.match(p, /the driver checks the bounds in code/i)
 })
 
+test("the epic's Fix bounds exclude globs join epics/ in both fix-diff pathspecs", async () => {
+  // Translation-catalog fan-outs: one new key touches every locale file, and
+  // the line count would measure the catalog's width, not the fix. Sign-off
+  // approved the globs; the resolve step's commands leave them out the same
+  // way they leave out epics/.
+  const r = await drive(
+    oneTicket({ 'review:PAY-1': reviewImportant, 'disposition:PAY-1': dispFixed, 'resolve:PAY-1': { ...resolvedOk, ...resolvedOkBounds } }),
+    { ...ARGS, fixBoundsExclude: ['src/messages/*.json'] },
+  )
+  assert.equal(r.out.outcome, 'completed')
+  const p = call(r, 'resolve:PAY-1').prompt
+  assert.match(p, /git diff --name-only origin\/epic\/payments abc1234def0 -- ':\(exclude\)epics' ':\(exclude,glob\)src\/messages\/\*\.json'/)
+  assert.match(p, /git diff --numstat abc1234def0 origin\/pay-1 -- ':\(exclude\)epics' ':\(exclude,glob\)src\/messages\/\*\.json'/)
+  assert.match(p, /the epic's excluded fan-out globs are excluded by the pathspec/)
+})
+
 test('a fix touching files outside the reviewed diff halts with nothing merged', async () => {
   const r = await drive(
     oneTicket({
@@ -1092,6 +1108,9 @@ test('the script refuses unusable arguments before spending an agent', async () 
     [{ ...ARGS, consequencePaths: ['src/**; rm -rf /'] }, /Unsafe consequencePaths entry/],
     [{ ...ARGS, consequencePaths: ['../secrets/**'] }, /Unsafe consequencePaths entry/],
     [{ ...ARGS, consequencePaths: 'src/**' }, /must be an array/],
+    [{ ...ARGS, fixBoundsExclude: ["src/messages/*.json' --", 'x'] }, /Unsafe fixBoundsExclude entry/],
+    [{ ...ARGS, fixBoundsExclude: ['../outside/**'] }, /Unsafe fixBoundsExclude entry/],
+    [{ ...ARGS, fixBoundsExclude: 'src/messages/*.json' }, /must be an array/],
   ]) {
     const r = await drive(() => undefined, args)
     assert.match(r.out.threw, re)
