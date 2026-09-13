@@ -40,11 +40,20 @@ const STATES = [
 ]
 const LABEL = Object.fromEntries(STATES)
 
-export function renderBoard(data, { title = 'Ticket board', generatedAt = '' } = {}) {
+const fmtTokens = n => (typeof n === 'number' ? n.toLocaleString('en-US') : '')
+
+// `spend` is the optional `tickets.mjs spend --json` report — recorded token
+// figures, derived from the status logs the same way the board's states are
+// derived from git. Absent, the page renders without the column: the board
+// never invents a figure, and a missing ledger is not a zero.
+export function renderBoard(data, { title = 'Ticket board', generatedAt = '', spend = null } = {}) {
   const tickets = Array.isArray(data.tickets) ? data.tickets : []
   const epics = Array.isArray(data.epics) ? data.epics : []
   const modes = data.modes || {}
   const duplicates = data.duplicates || {}
+  const spendByEpic = Object.fromEntries(((spend && spend.epics) || []).map(e => [e.epic, e]))
+  const spendByTicket = Object.fromEntries(((spend && spend.epics) || []).flatMap(e => e.tickets.map(t => [t.id, t])))
+  const hasSpend = Boolean(spend && spend.epics)
 
   const notes = []
   if (data.prsAvailable === false) notes.push('gh unavailable — pull-request state omitted, "done" may already be merged')
@@ -63,6 +72,10 @@ export function renderBoard(data, { title = 'Ticket board', generatedAt = '' } =
       .filter(([, n]) => n)
       .map(([label, n]) => `${n} ${esc(label)}`)
       .join(' · ')
+    const es = spendByEpic[name]
+    const spendLine = hasSpend && es
+      ? ` · <span class="tokens">${fmtTokens(es.totals.total) || '0'} tokens recorded${es.unknownTickets ? `, ${es.unknownTickets} unknown` : ''}</span>`
+      : ''
     const rows = mine
       .map(t => {
         const pr = t.pr && t.pr.number
@@ -70,13 +83,19 @@ export function renderBoard(data, { title = 'Ticket board', generatedAt = '' } =
             ? `<a href="${esc(t.pr.url)}">#${esc(t.pr.number)}</a>`
             : `#${esc(t.pr.number)}`
           : ''
-        return `<tr><td class="id">${esc(t.id)}</td><td>${esc(t.title)}</td><td><span class="badge s-${esc(t.state)}">${esc(LABEL[t.state] || t.state)}</span></td><td class="pr">${pr}</td></tr>`
+        const ts = spendByTicket[t.id]
+        const tokens = !hasSpend
+          ? ''
+          : ts && typeof ts.total === 'number'
+            ? `<td class="tokens" title="${esc(['worker', 'reviewer', 're-review', 'disposition', 'proxies'].filter(r => typeof ts[r] === 'number' || ts.unknown.includes(r)).map(r => `${r} ${typeof ts[r] === 'number' ? fmtTokens(ts[r]) : '?'}`).join(' · '))}">${fmtTokens(ts.total)}${ts.unknown.length ? '<span class="dim">+?</span>' : ''}</td>`
+            : `<td class="tokens dim">${ts && ts.unknown.length ? '?' : '—'}</td>`
+        return `<tr><td class="id">${esc(t.id)}</td><td>${esc(t.title)}</td><td><span class="badge s-${esc(t.state)}">${esc(LABEL[t.state] || t.state)}</span></td><td class="pr">${pr}</td>${tokens}</tr>`
       })
       .join('\n')
     return `<section class="epic">
 <h2>${esc(name)} ${delivery} ${here}</h2>
-<p class="counts">${mine.length} tickets · ${counts}</p>
-<table><thead><tr><th>ID</th><th>Ticket</th><th>State</th><th>PR</th></tr></thead><tbody>
+<p class="counts">${mine.length} tickets · ${counts}${spendLine}</p>
+<table><thead><tr><th>ID</th><th>Ticket</th><th>State</th><th>PR</th>${hasSpend ? '<th>Tokens</th>' : ''}</tr></thead><tbody>
 ${rows}
 </tbody></table>
 </section>`
@@ -117,6 +136,9 @@ ${rows}
        border-bottom:1.5px solid var(--ink); padding:0.35rem 0.75rem 0.35rem 0; }
   td { border-bottom:1px solid var(--line); padding:0.45rem 0.75rem 0.45rem 0; }
   .id, .pr, code { font-family:ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size:0.85em; }
+  td.tokens { font-variant-numeric:tabular-nums; text-align:right; white-space:nowrap; }
+  th:last-child { text-align:right; }
+  .tokens .dim { margin-left:0.15rem; }
   .badge { font-size:0.72rem; border-radius:99px; padding:0.1rem 0.55rem; background:var(--chip); white-space:nowrap; }
   .s-shipped { color:var(--ok); } .s-integrated { color:var(--info); } .s-in-review { color:var(--info); }
   .s-done, .s-in-progress { color:var(--warn); } .s-blocked { color:var(--bad); } .s-todo { color:var(--muted); }
@@ -126,7 +148,7 @@ ${rows}
 </style>
 <main>
 <h1>${esc(title)}</h1>
-<p class="meta">derived from git, commit subjects on ${esc(data.defaultBranch || 'the default branch')}, and open pull requests${generatedAt ? ` · generated ${esc(generatedAt)}` : ''} — a snapshot, not a store; regenerate rather than edit</p>
+<p class="meta">derived from git, commit subjects on ${esc(data.defaultBranch || 'the default branch')}, and open pull requests${hasSpend ? '; tokens as recorded in the status logs, never estimated (? marks an unknown, — nothing recorded)' : ''}${generatedAt ? ` · generated ${esc(generatedAt)}` : ''} — a snapshot, not a store; regenerate rather than edit</p>
 ${notes.map(n => `<div class="note">${n}</div>`).join('\n')}
 ${body}
 ${nextUp.length ? `<section class="epic"><h2>Next up</h2><ul class="next">\n${nextUp.join('\n')}\n</ul></section>` : ''}
@@ -155,6 +177,13 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     stdio: ['ignore', 'pipe', 'inherit'], // tickets.mjs errors (unknown epic, not a repo) surface verbatim
   })
   const data = JSON.parse(raw)
+  // The spend ledger rides along the same way — derived, never stored. Its
+  // failure is not the board's: an unreadable ledger drops the column, and
+  // the page says nothing about tokens rather than something wrong.
+  let spend = null
+  try {
+    spend = JSON.parse(execFileSync(process.execPath, [ticketsScript, 'spend', ...(epic ? [epic] : []), '--json'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }))
+  } catch { /* no ledger — no column */ }
 
   let repoName = basename(process.cwd())
   try {
@@ -164,6 +193,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   const html = renderBoard(data, {
     title: epic ? `${repoName} — ${epic} board` : `${repoName} board`,
     generatedAt: new Date().toISOString().slice(0, 16).replace('T', ' '),
+    spend,
   })
   if (outFile) writeFileSync(outFile, html)
   else process.stdout.write(html)

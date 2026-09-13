@@ -90,3 +90,36 @@ test('the page names itself and opens with a <title> for the artifact publisher'
   assert.match(html, /generated 2026-08-18 12:00/)
   assert.match(html, /a snapshot, not a store; regenerate rather than edit/)
 })
+
+// ---- the tokens column --------------------------------------------------------
+
+const spend = {
+  epics: [
+    {
+      epic: 'alpha',
+      totals: { worker: 12000, reviewer: 65729, 're-review': 0, disposition: 0, proxies: 0, total: 77729 },
+      unknownTickets: 2,
+      tickets: [
+        { id: 'A-1', worker: 12000, reviewer: 65729, 're-review': null, disposition: null, proxies: null, total: 77729, unknown: [], source: 'log' },
+        { id: 'A-2', worker: null, reviewer: null, 're-review': null, disposition: null, proxies: null, total: null, unknown: ['ticket'], source: 'log' },
+        { id: 'A-3', worker: null, reviewer: null, 're-review': null, disposition: null, proxies: null, total: null, unknown: [], source: null },
+      ],
+    },
+  ],
+}
+
+test('with a spend ledger the board gains a Tokens column: a figure, ? for unknown, — for nothing recorded', () => {
+  const html = renderBoard(base, { spend })
+  assert.match(html, /<th>Tokens<\/th>/)
+  assert.match(html, /<td class="tokens" title="worker 12,000 · reviewer 65,729">77,729<\/td>/)
+  assert.match(html, /A-2<\/td>.*<td class="tokens dim">\?<\/td>/)
+  assert.match(html, /A-3<\/td>.*<td class="tokens dim">—<\/td>/)
+  assert.match(html, /77,729 tokens recorded, 2 unknown/)
+  assert.match(html, /never estimated/)
+})
+
+test('without a ledger the board renders exactly as before — no column, no zeros', () => {
+  const html = renderBoard(base)
+  assert.doesNotMatch(html, /Tokens/)
+  assert.doesNotMatch(html, /class="tokens/)
+})

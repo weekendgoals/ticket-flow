@@ -1510,6 +1510,16 @@ ${PROMPT_RULE}`,
   if (METER) {
     const spent = METER.spent() - spentAtStart
     record.outputTokensObserved = spent
+    // Spend is surfaced as it happens, not only in the record after the run:
+    // the meter delta is the runtime's own count of this ticket's output
+    // tokens across every agent it spawned, and a runner's usage (Codex's
+    // event stream) is the one figure the worker's side can add.
+    const wu = record.workerUsage
+    log(
+      `${id}: spend — ${spent} output tokens by the runtime meter` +
+        (wu ? `; ${record.workerRunner} worker in=${wu.input ?? '?'} cached=${wu.cached ?? '?'} out=${wu.output ?? '?'} by its own meter` : '') +
+        (ticketBudget ? ` (budget ${ticketBudget})` : ''),
+    )
     if (ticketBudget && spent > ticketBudget) {
       halted = {
         ticket: id,

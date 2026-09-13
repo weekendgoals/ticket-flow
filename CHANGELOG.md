@@ -8,6 +8,23 @@ with one version and date.
 
 ## Unreleased
 
+- **Spend is one command away, on the board, and live during a run**
+  (new `skills/spend/SKILL.md`; `scripts/board.mjs` and its tests;
+  `workflows/run-epic.mjs` and its tests; `skills/board/SKILL.md`; README).
+  The ledger `tickets.mjs spend` derives had no door: a user had to know
+  the node command. `/flow:spend [epic]` prints it, with commentary rules
+  that forbid estimating or filling a figure the ledger lacks. The board
+  page runs the same ledger beside `list --json` and gains a **Tokens**
+  column — a figure with the per-role split as its tooltip, `?` for an
+  unknown, `—` for nothing recorded, and the epic's recorded total with its
+  unknown count in the counts line; an unreadable ledger drops the column
+  rather than rendering a wrong one. And the driver now logs each
+  integrated ticket's meter delta as it happens (`<ID>: spend — <n> output
+  tokens by the runtime meter`, plus the Codex runner's own usage when a
+  runner ran it), so an unattended run shows its cost while it runs instead
+  of only in the record afterwards; with no meter it logs nothing, because
+  unmetered is not zero.
+
 - **A release epic can hand implementation to Codex** (`scripts/runners/
   codex.mjs` and its tests, `workflows/run-epic.mjs` worker step and
   `workerRunner` arg, `scripts/tickets.mjs` `Worker runner:` preamble line

@@ -1201,3 +1201,19 @@ test("a codex worker's halt is the same halt: the runner's reconciled result dri
   assert.equal(r.out.haltedOn.stopCondition, 'a document/code contradiction — reported by a worker, or met by the script\'s own checks')
   assert.equal(r.out.haltedOn.ticket, 'PAY-1')
 })
+
+// ---- live spend line --------------------------------------------------------
+
+test('every integrated ticket logs its meter delta as it happens, with the runner usage when there is one', async () => {
+  const r = await drive(oneTicket(), { ...ARGS, ticketBudget: 5000 }, meter(1200))
+  assert.ok(r.logs.some(l => /^PAY-1: spend — 1200 output tokens by the runtime meter \(budget 5000\)$/.test(l)), r.logs.join('\n'))
+
+  const usage = { input: 1000, cached: 200, output: 300 }
+  const c = await drive(oneTicket({ 'worker:PAY-1': workerOk('PAY-1', { runner: { name: 'codex', usage, pushed: true } }) }), { ...ARGS, workerRunner: 'codex' }, meter(700))
+  assert.ok(c.logs.some(l => l === 'PAY-1: spend — 700 output tokens by the runtime meter; codex worker in=1000 cached=200 out=300 by its own meter'), c.logs.join('\n'))
+})
+
+test('with no meter the run logs no spend line — unmetered is unmetered, not zero', async () => {
+  const r = await drive(oneTicket())
+  assert.ok(!r.logs.some(l => /spend —/.test(l)))
+})
