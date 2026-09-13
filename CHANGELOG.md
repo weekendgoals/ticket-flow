@@ -8,6 +8,143 @@ with one version and date.
 
 ## Unreleased
 
+- **Doctor probes the Codex runner's environment at planning time**
+  (`scripts/tickets.mjs` doctor and four tests, `skills/doctor/SKILL.md`,
+  `skills/run/SKILL.md` step 3, `skills/epic/SKILL.md` template). When any
+  epic declares `Worker runner: codex`, doctor runs `codex --version` and
+  looks for the credential where Codex itself keeps it — `auth.json` under
+  `$CODEX_HOME` or `~/.codex`, or `OPENAI_API_KEY` — and fails with the fix
+  (`npm install -g @openai/codex`; `codex login`, or a key piped into
+  `codex login --with-api-key`) when either is missing, because a run that
+  discovers this at ticket one halts with nobody there. An unrecognised
+  runner value warns, naming the driver's refusal. Nothing is probed when no
+  epic declares a runner. The plugin still handles no credential: it checks
+  that Codex's own sign-in exists and nothing more. The shared test fixture
+  gains a fake `codex` and a signed-in `CODEX_HOME` so the suite passes on
+  machines and CI without Codex.
+
+- **Spend is one command away, on the board, and live during a run**
+  (new `skills/spend/SKILL.md`; `scripts/board.mjs` and its tests;
+  `workflows/run-epic.mjs` and its tests; `skills/board/SKILL.md`; README).
+  The ledger `tickets.mjs spend` derives had no door: a user had to know
+  the node command. `/flow:spend [epic]` prints it, with commentary rules
+  that forbid estimating or filling a figure the ledger lacks. The board
+  page runs the same ledger beside `list --json` and gains a **Tokens**
+  column — a figure with the per-role split as its tooltip, `?` for an
+  unknown, `—` for nothing recorded, and the epic's recorded total with its
+  unknown count in the counts line; an unreadable ledger drops the column
+  rather than rendering a wrong one. And the driver now logs each
+  integrated ticket's meter delta as it happens (`<ID>: spend — <n> output
+  tokens by the runtime meter`, plus the Codex runner's own usage when a
+  runner ran it), so an unattended run shows its cost while it runs instead
+  of only in the record afterwards; with no meter it logs nothing, because
+  unmetered is not zero.
+
+- **A release epic can hand implementation to Codex** (`scripts/runners/
+  codex.mjs` and its tests, `workflows/run-epic.mjs` worker step and
+  `workerRunner` arg, `scripts/tickets.mjs` `Worker runner:` preamble line
+  with doctor near-miss coverage, `skills/run/SKILL.md` steps 3–4,
+  `skills/epic/SKILL.md` template, README). A new optional preamble line,
+  `Worker runner: codex`, makes the unattended worker OpenAI's Codex CLI
+  instead of a Claude subagent; the driver then spawns a fast-model shell
+  proxy that runs the runner script and relays its JSON verbatim. The
+  runner owns what the model must not — **git, entirely**: it fetches and
+  creates the ticket branch before the run, launches `codex exec` in the
+  workspace-write sandbox (where `.git` is read-only and there is **no
+  network**), hands Codex the same scoped slice of the ticket skill a
+  Claude worker gets (pointed at the skill file, since Codex cannot load a
+  plugin skill by name), constrains the final message to the worker
+  schema, commits everything Codex left in the working tree under an
+  ID-prefixed subject (the tree must be clean at the start, or the runner
+  refuses), and then reconciles the report with git — a claim of work that
+  left no change is a document/code contradiction, a failed push is a
+  halt, a BLOCKED branch is still pushed so its entry reaches the remote —
+  before granting `branch-pushed` from the push it watched. The first live
+  run on a real Codex session settled that split: Codex read the skill,
+  reported in schema with its usage on record, and halted honestly at
+  `git checkout -b` because the sandbox denied the `.git` write. Codex's own usage lands in the
+  ticket record as `workerUsage`, observed by the runner, never reported by
+  the model. An unknown runner value refuses the run rather than
+  substituting an implementer the sign-off did not name. Every gate
+  downstream reads git, so the reviewer, the CHECK re-run, the addendum
+  check and the SHA merge are untouched. Eight runner tests drive it with
+  a stub `codex` that speaks the real CLI's JSONL protocol and, like the
+  real sandbox, never writes to `.git`; a live run on a
+  signed-in account is the only test of the model's compliance, and the
+  gates exist for the case where it does not comply.
+
+- **Token spend is derived, like every other fact** (`scripts/tickets.mjs`
+  new `spend [epic] [--json]` subcommand and tests, `skills/run/SKILL.md`
+  step 6, `skills/quick/SKILL.md` step 6, `skills/retro/SKILL.md` step 5,
+  README, `scripts/check-invariants.mjs` two new couplings). The log
+  recorded figures in three shapes — an entry's `**Tokens:**` line, the
+  addendum's `Worker tokens (implementation leg): <n>; Reviewer tokens:
+  <n>` phrases, and a run record's prose — and the only reader was the
+  retro, summing by hand, so spend was invisible until an epic closed and
+  approximate when it was not. `spend` compiles one ledger per ticket and
+  per role from all three, matching phrases over each entry's joined text
+  (the house wrap splits `Worker tokens (implementation\nleg):`), with the
+  last figure per role winning so a correction addendum overrides the
+  entry it corrects. `unknown` stays unknown and a ticket with nothing
+  recorded is reported as such, never as zero — the script derives, it
+  never estimates, and it reads no transcript. The run record's Tokens
+  line now has a machine shape, `<ID> worker=<n> reviewer=<n>
+  disposition=<n> re-review=<n> proxies=<n>` per ticket, because that is
+  the one place the run lane's figures exist; the quick skill names the
+  `Reviewer tokens: <n>` phrase it already used; and the retro reads the
+  ledger instead of the log. Two presence couplings hold the phrases to the
+  parser.
+
+- **The ticket skill is the procedure, not the argument for it**
+  (`skills/ticket/SKILL.md`, roughly 4,600 words to 2,600). Every worker
+  paid to load the whole essay before touching a file, and the imperatives
+  sat inside their justifications — the "every constraint carries its
+  reason" style, applied at paragraph length, was fighting the "skills are
+  procedure, METHODOLOGY is reasoning" split. No step, gate, template,
+  command or stop condition changed: steps 0–10 keep their numbers and
+  contents (the driver's and supervisor's prompts key on them), the
+  status-log preamble and entry heading are verbatim, the addendum prefix
+  and the tier table's tier, model and effort values are intact,
+  the consequence list and the hook's refusal message are quoted as before,
+  and `check-invariants.mjs` passes unchanged. What went: the extended
+  reasoning already carried by METHODOLOGY.md (review pricing, why release
+  tickets open no pull request, why fixes are new commits), restated
+  cross-references, and duplicated phrasing between steps 0 and 10. Each
+  constraint keeps its reason as a clause. The other long skills (run,
+  epic, quick, retro) are owed the same pass.
+- **The run skill, same treatment** (`skills/run/SKILL.md`, roughly 6,300
+  words to 3,300). Steps 1–7 keep their numbers and contents (the epic
+  skill points at step 3's probes), the Workflow call block, the result
+  shape, the run-record template and the release pull request body list
+  are intact, and the ten stop-condition sentences in step 5 still match
+  the driver's `STOP` strings word for word — verified by extracting them
+  from `run-epic.mjs` and searching the skill. The largest cut is step 4's
+  per-ticket walkthrough of the driver: the session launching the run never
+  executes those bullets, the script does and its tests enforce them, so
+  each now says what the step decides and what halts it, not how the script
+  is built. Reasoning that METHODOLOGY.md already carries (why the loop is
+  code, why release tickets open no pull request, why the re-review became
+  a code gate) is no longer restated.
+- **The epic, quick and retro skills, same treatment** (`skills/epic`
+  roughly 3,900 words to 2,400; `skills/quick` 2,000 to 1,550;
+  `skills/retro` 1,700 to 1,250). Step numbers are unchanged everywhere
+  (quick's step 2 template and step 5 preamble, epic's step 3 page and
+  step 4 review are referenced by other skills). Every template fence the
+  invariant checker parses is intact: the `tickets.md` preamble with all
+  six configuration lines and the printed `Worker model: opus` default, the
+  `## <ID> — <short name>` and `## Q-<n> — <short name>` ticket headings,
+  the `CHECK:`/`EXPECT:` lines, and the status-log preamble in all three
+  copies. Quick's risk-trigger bullet list is verbatim, since the checker
+  matches it against the ticket skill's consequence list. What went:
+  restated reasoning (why the plan is reviewed, why quick moved
+  in-session, why the era rollover exists — all in METHODOLOGY.md), the
+  template's paragraph-length explanations of each configuration line,
+  now one sentence each, and repeated cross-references. One correction
+  rode along: the retro's mining heading said "five questions" while
+  listing six; it now says six. The four short skills (review, doctor,
+  tickets, board) were read and left as they are — each is already a
+  procedure with no essay around it.
+
 - **The merge gate matches a dated review addendum by shape, never by the
   run's pinned date** (`workflows/run-epic.mjs` resolve step,
   `skills/run/SKILL.md` steps 4-5). A live run halted a green ticket at

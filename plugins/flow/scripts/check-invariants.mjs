@@ -282,6 +282,16 @@ const PHRASES = [
     files: ['ticket', 'quick', 'reviewer', 'readme', 'claudemd'],
   },
   {
+    why: "the review addendum's token phrase is what `tickets.mjs spend` parses — the ticket and quick skills must keep writing it in that shape",
+    re: /Reviewer tokens: /,
+    files: ['ticket', 'quick', 'script', 'readme'],
+  },
+  {
+    why: "the run record's per-ticket token groups are what `tickets.mjs spend` parses out of a run record — the run skill's template must keep the key=value shape",
+    re: /worker=<n> reviewer=<n>/,
+    files: ['run', 'readme'],
+  },
+  {
     why: 'the acceptance-check stop condition is one sentence in the skill and the script — a halt the run record quotes verbatim',
     re: /a failed acceptance CHECK/,
     files: ['run', 'workflow'],

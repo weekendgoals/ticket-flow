@@ -4,7 +4,7 @@ A Claude Code plugin that runs work as **epics** and **tickets**, from a request
 through to a reviewed pull request — and derives the board from git instead of
 asking anyone to maintain one.
 
-Eight skills, two reviewer agents, one board script, one workflow script
+Nine skills, two reviewer agents, one board script, one workflow script
 (`/flow:run`'s ticket loop), one session hook. No database,
 no config file, no state stored anywhere — except one per-session marker in
 the OS temp dir (the in-session-work guard's memory of the current
@@ -18,7 +18,8 @@ repository).
 | `/flow:run <epic>` | Run a `Delivery: release` epic end to end with nobody present: verifies sign-off happened, then hands the loop to a shipped **workflow script** — **code-controlled, agent-executed** — that takes the tickets in document order. Per ticket: refresh the epic branch and read the board, a **fresh-context worker** implements and stops at its pushed branch (**release tickets open no pull request of their own** — the release pull request at the end is the epic's only one), the **driver hires the reviewer** priced by a code-floored tier, a disposition agent fixes and records, fixes get one bounded re-review at the consequence tier — below it a code gate checks the fix diff stayed inside the reviewed files and under a line budget — the ticket's `CHECK`/`EXPECT` acceptance criteria are **re-run from the signed-off document** (`tickets.mjs check <ID> --from origin/epic/<name>`) and gated on in code, then the branch's review addendum and its exact head SHA are checked **in code before any agent that could merge exists**; only then does a merge agent merge that verified SHA — which cannot be retargeted — into the epic branch, and the board — not an agent — confirms the result. It halts on any stop condition, because each one is a code path rather than a judgment call. The session ends by **opening** the release pull request. Requires the Workflow tool; never merges toward the default branch |
 | `/flow:quick <description>` | The **cheap lane**: one small, low-risk piece of work, implemented **in-session** with a written scope, verification with counts, a short log entry and a pull request — and a fresh-context reviewer **only when behaviour changes** (prose-only diffs — documentation and comments, nothing a machine reads — get none; the PR is the review). Size- **and risk-gated**: auth, secrets, migrations and other consequential work is routed to `/flow:epic` at any size |
 | `/flow:tickets [epic]` | The board — shipped, in flight, blocked, todo |
-| `/flow:board [epic]` | The same board as a **styled HTML page**, published as an artifact you can open and share. A rendering of derived state, rebuilt from git on every run — never committed, never a second store |
+| `/flow:board [epic]` | The same board as a **styled HTML page**, published as an artifact you can open and share, with a **Tokens** column from the recorded spend ledger. A rendering of derived state, rebuilt from git on every run — never committed, never a second store |
+| `/flow:spend [epic]` | The **recorded token ledger** — per ticket, per role (worker, reviewer, re-review, disposition, proxies) and per epic, derived from the status logs' Tokens lines, addendum phrases and run records. `unknown` stays unknown, nothing is estimated |
 | `/flow:review [range]` | Review a commit range and report. Used by `/flow:ticket`; runnable on its own |
 | `/flow:doctor` | Is this project ready for the flow? Preconditions, merge settings, instruction-file quality, and headings that would silently misparse |
 | `/flow:retro [epic]` | Close a finished epic: a **fresh-context miner** reads the status log and review addenda and drafts the lessons and owed work — the invoking session often planned or ran the epic, so it mines nothing itself — then the approval gate and the shipping stay in-session, into instruction files and tickets |
@@ -283,7 +284,7 @@ records' evidence — Important findings per ticket and observed spend —
 and never cheapen the *plan* side to match: a weak plan produces tickets
 that are confidently, reviewably wrong.
 
-**The whole configuration surface is six optional preamble lines** in the
+**The whole configuration surface is seven optional preamble lines** in the
 epic's `tickets.md` — one place, one syntax (label at line start, value
 first after the colon, prose after it ignored), every near-miss flagged by
 `/flow:doctor`:
@@ -292,6 +293,7 @@ first after the colon, prose after it ignored), every near-miss flagged by
 |---|---|---|---|
 | `Delivery:` | `release` | how work reaches main: unattended into `epic/<name>` with one release PR, or one human-gated PR per ticket | `incremental` |
 | `Worker model:` | `opus` | the implementing workers | workers inherit the spawning session's model |
+| `Worker runner:` | `codex` | who implements in an unattended run: a Claude subagent, or OpenAI's Codex CLI through `scripts/runners/codex.mjs` — sandboxed with `.git` read-only and no network; the runner branches, commits, pushes, and reconciles the model's report with git | `claude` |
 | `Reviewer model:` | `opus` | the ticket reviewer, overriding the tier table | the consequence tiers pick (haiku/sonnet/opus) |
 | `Planner model:` | `fable` | the plan reviewer for this epic | the agent definition's pinned strongest |
 | `Consequence paths:` | `src/auth/**, migrations/**` | globs that force the consequence review tier in a run — the code floor under the worker's self-reported tier | tier floor still applies (docs-only vs code), globs add nothing |
@@ -337,6 +339,17 @@ instead of the working tree — the unattended driver passes
 `--from origin/epic/<name>` so the merge gate judges against the signed-off
 document, which no ticket branch can edit. Prose and *demonstrate:* criteria
 remain first-class; CHECK is for the criteria a command can decide outright.
+
+**Spend is derived too.** `tickets.mjs spend [epic]` compiles the recorded
+token ledger — per ticket, per role (worker, reviewer, re-review,
+disposition, shell proxies) and per epic — from the three places the status
+log carries a figure: a ticket entry's `**Tokens:**` line, its review
+addendum's `Worker tokens (implementation leg): <n>; Reviewer tokens: <n>`
+phrases, and a run record's per-ticket `<ID> worker=<n> reviewer=<n> …`
+groups. Recorded figures only, exactly as the log says: `unknown` stays
+unknown, a ticket with nothing recorded is reported as such, and nothing is
+estimated or read from a transcript. `--json` returns the same ledger for
+the retro, which reads this instead of summing the log by hand.
 
 Two blind spots worth knowing: the board reads *this checkout's* view of the
 remote, so fetch first when the answer matters; and `shipped` means some commit

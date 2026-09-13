@@ -6,89 +6,57 @@ description: Take one ticket from reading it to an open pull request — branch,
 # Ticket $ARGUMENTS
 
 One command, one ticket, ending at a pull request the user reviews and merges.
-
-You are working from documents, not conversation history. Assume you know
-nothing about this epic that is not written down.
+You work from documents, not conversation history: assume you know nothing
+about this epic that is not written down. This file is the procedure;
+METHODOLOGY.md carries the reasons.
 
 ## 0. Choose the lane: supervisor (default) or --interactive
 
-This step exists only for the session a human typed `/flow:ticket` into.
 **If the prompt that launched you says a driver or a supervisor spawned you,
-skip this step — you are the worker**: execute the skill from step 1 exactly
-as written, honoring whatever your spawn prompt scopes or forbids.
+skip this step — you are the worker.** Run from step 1 exactly as written,
+honoring whatever your spawn prompt scopes or forbids.
 
-**Default — supervisor mode.** The invoking session almost never starts
-empty: it has planned, discussed, or run earlier tickets, and that context
-biases everything it would build. So the session becomes the **supervisor**
-and implements nothing:
+**Default — supervisor mode.** The invoking session carries context that
+biases what it would build, so it supervises and implements nothing:
 
-1. Resolve the ticket (step 1) and stop there — no branch, no file edits,
-   at any point, for the rest of the ticket.
-2. Spawn a fresh-context **worker** — a general agent, full toolset, empty
-   context. Pass `model:` when step 1 reported a `workerModel` (the epic's
-   optional `Worker model: <model>` preamble line — configuration, like the
-   reviewer's, so that pinning the implementer's model is an edit to the
-   epic's documents; it is how a plan written on one model is implemented
-   by another); absent, pass no model and the worker inherits this
-   session's. Tell it: a supervisor spawned it for this one ticket; run
-   the `flow:ticket` skill for the ID from step 1 exactly as written;
-   execute steps 1–6 (through the committed status entry) and stop with a
-   report (built, verified with counts, branch, cut-from base, commit
-   range); do not spawn a reviewer, do not push, do not open a pull
-   request — those are owned elsewhere; and record the worker label you
-   give it in the step 6 **Mode** line.
-3. When the worker reports, spawn the reviewer yourself (step 7,
-   unchanged). **The supervisor hires the judge, never the party under
-   review** — a worker that picks its own reviewer recreates self-review
-   one level down.
-4. Hand back to the **same worker** the findings **and the reviewer's
-   model, effort and harness-observed token figure** — the addendum needs
-   them and only you observe them: the harness reports each subagent's
-   spend when it stops, and no agent can see its own counter, so a figure
-   an agent offers about itself is a guess by construction. Hand over the
-   worker's own implementation-leg figure — what the harness reported at
-   the worker's first stop, item 2 above — the same way, labelled as
-   such — to disposition, fix and append the addendum
-   (step 8); it has the branch context; new commits, never amendments.
-5. Have the worker push and open the pull request (step 9); relay its
-   report and finish per step 10 for the epic's mode — attended: print the
-   URL and `next`, stop; autonomous (invoked directly by a human): the
-   worker performs step 10's gate and merge and stops after it.
+1. Resolve the ticket (step 1), then stop: no branch, no file edits.
+2. Spawn a fresh-context **worker** — general agent, full toolset, empty
+   context, `model:` from step 1's `workerModel` when present. Tell it: a
+   supervisor spawned it for this one ticket; run the `flow:ticket` skill for
+   the ID exactly as written, steps 1–6, and stop with a report (built,
+   verified with counts, branch, cut-from base, commit range); spawn no
+   reviewer, push nothing, open no pull request; write the worker label into
+   the step 6 **Mode** line.
+3. Spawn the reviewer yourself (step 7). **The supervisor hires the judge,
+   never the party under review.**
+4. Hand the **same worker** the findings plus the reviewer's model, effort
+   and harness-observed token figure, and the worker's own implementation-leg
+   figure — only you observe those; no agent can see its own counter — to
+   disposition, fix and append the addendum (step 8).
+5. Have the worker push and open the pull request (step 9) and finish per
+   step 10; relay its report.
 
-Relay every stop-and-report moment to the user verbatim — a worker halting
-on a contradiction is the mechanism working, and the supervisor's job is to
-surface it, not to smooth it over. Multiple tickets per session are
-legitimate in this mode precisely because every worker starts empty.
+Relay every stop-and-report verbatim — a worker halting on a contradiction is
+the mechanism working. Several tickets per session are fine here, because
+every worker starts empty.
 
-**`--interactive` — run in-session, the steps below, yourself.** For when
-the human wants to converse with the implementing agent mid-ticket. The
-plugin's session hook records this choice at invocation, and it is
-once-per-session: **a session that already carries in-session
-implementation context — a previous `--interactive` run of this command, or
-any `/flow:quick` run (quick implements in-session by design and sets the
-same marker) — is refused every later `--interactive` run** with "this
-session already carries in-session implementation context (an interactive
-ticket or a quick ticket ran here) — rerun the command without
---interactive (supervisor mode: a fresh worker implements), or /clear to
-reset the session." Supervisor invocations still pass in that session —
-their workers start empty, which is the property the rule protects — and
-never set the marker; the marker is wiped when the session's context is
-wiped (/clear, new session) and survives resume/compact.
+**`--interactive` — run the steps yourself, in-session**, when the human
+wants to converse with the implementing agent mid-ticket. The session hook
+records the choice, once per session: a session already carrying in-session
+implementation context (an earlier `--interactive` run, or any `/flow:quick`
+run) is refused every later `--interactive` run with "this session already
+carries in-session implementation context (an interactive ticket or a quick
+ticket ran here) — rerun the command without --interactive (supervisor mode:
+a fresh worker implements), or /clear to reset the session." Supervisor
+invocations still pass and never set the marker; it dies with the session's
+context (/clear, new session) and survives resume/compact.
 
-**Autonomous epics keep their own ending**: `/flow:run`'s driver plays the
-supervisor's role one level up — **it** hires the reviewer, gates on the
-findings in code, and merges — so a driver-spawned worker runs a scoped
-slice of this skill and **stops at its pushed branch** (steps 1–6 and step
-9's summary and push; no pull request — a release ticket has none of its
-own — no step 7, no step 8, no step 10). It never reviews or merges its
-own work, for the same reason a supervisor's worker does not: the party
-under review does not pick its judge. When a **human** invokes one
-autonomous-epic ticket directly — the escape hatch for resolving a halt —
-step 0's lanes still apply and the ticket ends per step 10's autonomous gate
-unchanged: a **supervisor-spawned** worker performs that gate and the
-epic-branch merge, then stops (it was spawned for one ticket). Step 10 states
-the same split by spawn shape: driver-spawned workers stop at the pushed
-branch, supervisor-spawned ones perform the gate and the merge.
+**Driver-spawned workers** (`/flow:run`): the driver hires the reviewer,
+gates in code and merges, so you run steps 1–6 and step 9's summary and push,
+then **stop at your pushed branch** — no pull request, no step 7, 8 or 10.
+When a **human** runs one release-epic ticket directly (the escape hatch for
+a halt), a supervisor-spawned worker performs step 10's gate and merge, then
+stops.
 
 ## 1. Resolve it
 
@@ -96,56 +64,41 @@ branch, supervisor-spawned ones perform the gate and the merge.
 node "${CLAUDE_PLUGIN_ROOT}/scripts/tickets.mjs" find $ARGUMENTS --json
 ```
 
-This returns the epic's `ticketsDoc`, `statusDoc`, `contextDir`, `repoRoot`,
-the `branch` to create — as **absolute paths**; never hardcode a path or turn
-them back into relative ones — and the epic's `delivery` (`release` or
-`incremental`, the parsed `Delivery:` line, incremental when absent),
-`reviewerModel` and `workerModel`. `delivery` decides step 3, step 9 and
-step 10; `reviewerModel` is read by step 7; `workerModel` by step 0's
-worker spawn.
+Returns `ticketsDoc`, `statusDoc`, `contextDir`, `repoRoot` and the `branch`
+to create as **absolute paths** — use them as given, never turned back into
+relative ones, and anchor anything else to `repoRoot`; your cwd moves during
+verification — plus `delivery` (`release` or `incremental`, incremental when
+absent; decides steps 3, 9 and 10), `reviewerModel` (step 7) and
+`workerModel` (step 0).
 
-Both this command and every `git` command below work from anywhere in the tree —
-but your shell's cwd persists between calls, and verification moves it into a
-service directory. Use the absolute paths this returns, and anchor anything else
-to `repoRoot`.
-
-**Stop and report if:**
-
-- the ID does not resolve — it prints the IDs it knows; do not guess;
-- `isCurrentFolderEpic` is false **and** the project uses one checkout per epic —
-  say which checkout this ticket belongs to;
-- the working tree has uncommitted changes you did not make.
+**Stop and report if:** the ID does not resolve (it prints the IDs it knows;
+do not guess); `isCurrentFolderEpic` is false and the project uses one
+checkout per epic; or the working tree has uncommitted changes you did not
+make.
 
 ## 2. Read, in this order
 
-1. The root agent instructions (`CLAUDE.md` or `AGENTS.md`), then the same file
-   for every area named in the ticket doc's **Areas in scope** line.
-2. The ticket's brief:
+1. The root agent instructions (`CLAUDE.md` or `AGENTS.md`), then the same
+   file for every area on the ticket doc's **Areas in scope** line.
+2. The brief — required reading, O(epic) rather than O(history):
 
    ```bash
    node "${CLAUDE_PLUGIN_ROOT}/scripts/tickets.mjs" brief $ARGUMENTS
    ```
 
-   One command, one payload: the epic preamble (ground rules, ordering, the
-   Delivery line that decides steps 3, 9 and 10), the log's **owed items not
-   yet marked resolved**, and the ticket's own section — Scope, Not in
-   scope, Acceptance criteria. This is the required reading, and it is
-   deliberately O(epic), not O(history): the status log grows without bound,
-   and rereading all of it before every ticket is a tax that compounds. The
-   owed list is what is *recorded*, not what is *true*: a ticket may have
-   discharged an item without writing the `**Resolves owed:**` marker — check
-   the carrier an item names before re-doing it, and if it was discharged,
-   append the missing marker as a dated addendum (step 6 defines it) so the
-   next worker is not sent here again.
-3. The **full `statusDoc`** only when something sends you there: an owed item
-   or ground rule references earlier work you must build on, the ticket names
-   a predecessor's decision, or the brief leaves you unable to say what the
-   last ticket left behind. Then read the entries you need, not the diary
-   front to back.
+   It carries the epic preamble, the owed items no `**Resolves owed:**` line
+   has closed, and this ticket's Scope, Not in scope and Acceptance criteria.
+   Owed items are what is *recorded*, not what is *true*: check the named
+   carrier before redoing one, and if it was discharged unmarked, append the
+   marker as a dated addendum (step 6).
+3. The **full `statusDoc`** only when something sends you there — an owed
+   item or ground rule that builds on earlier work, a predecessor's decision
+   the ticket names, a brief that leaves you unable to say what the last
+   ticket left behind. Read the entries you need, not the diary.
 4. Anything in `contextDir` the ticket points at.
 
 Where two documents disagree, or the code contradicts a document, **stop and
-report it. Do not adapt silently.**
+report. Do not adapt silently.**
 
 ## 3. Branch — from the right base
 
@@ -153,36 +106,29 @@ report it. Do not adapt silently.**
 git fetch origin --prune
 ```
 
-There is one epic branch, `epic/<epic-name>`. `/flow:epic` created it and
-committed the epic's documents there. Which base you use depends on the
-delivery and on whether those documents have reached the default branch yet.
-
-**First, have the epic's documents shipped?**
+**First: have the epic's documents shipped?**
 
 ```bash
 git ls-tree origin/<default-branch> "epics/<epic-name>/tickets.md"
 ```
 
-Empty output means they have not. **Then this ticket must branch from
-`epic/<epic-name>`**, whatever the delivery — otherwise the epic's ticket
-doc, status log and context never reach the default branch, and the board goes
-blind to the whole epic. This is normally ticket one.
+Empty output means not yet, and then **this ticket branches from
+`epic/<epic-name>` whatever the delivery** — otherwise the documents never
+reach the default branch and the board goes blind to the epic. This is
+normally ticket one.
 
-**Incremental delivery, documents already shipped.** Start from the merged
-default branch, but check the previous ticket actually landed:
+**Incremental delivery, documents shipped.** Check the previous ticket landed:
 
 ```bash
 gh pr list --state open --json number,title,headRefName
 ```
 
-- No open pull request from this epic: `git checkout <default-branch> && git pull
-  && git checkout -b <branch>`.
-- The **previous ticket in this epic** still has an open pull request: **stop and
-  say so.** Do not silently branch off unmerged work — that is how an unplanned
-  stack forms. The user either merges it or tells you to stack deliberately.
+No open pull request from this epic: `git checkout <default-branch> && git
+pull && git checkout -b <branch>`. The **previous ticket's** pull request
+still open: **stop and say so** — the user merges it or tells you to stack
+deliberately.
 
-**Release delivery.** Every ticket branches from the epic branch and returns
-to it:
+**Release delivery.** Every ticket branches from the epic branch:
 
 ```bash
 git checkout epic/<epic-name>
@@ -190,77 +136,55 @@ git pull --ff-only 2>/dev/null || true
 git checkout -b <branch>
 ```
 
-Keep `epic/<epic-name>` current with the default branch as the epic runs, or the
-release merge becomes its own big-bang.
+Keep `epic/<epic-name>` current with the default branch, or the release merge
+becomes its own big-bang.
 
-**Whatever the delivery, note two things now: the branch you cut from, and
-the pull request base.** The PR base is what step 7 diffs against and step 9
-targets: the default branch in incremental delivery — including the first
-ticket, which cuts from `epic/<epic-name>` but ships its pull request,
-documents and all, to the default branch — or `epic/<epic-name>` in release
-delivery. The cut-from branch and the PR base differ only in that
-incremental first-ticket case.
+**Note the branch you cut from and the pull request base** — what step 7
+diffs against and step 9 targets: the default branch in incremental delivery
+(including the first ticket, which cuts from `epic/<epic-name>`), or
+`epic/<epic-name>` in release delivery.
 
 ## 4. Implement
 
-- Commit in reviewable increments. **Prefix every commit subject with the ticket
-  ID** — `SEC-3: bound the venue list limit`. This is load-bearing: `tickets.mjs`
-  reads those subjects off the default branch to decide what has shipped.
-- **Stay inside the ticket's scope.** "Not in scope" is binding, and usually
+- Commit in reviewable increments, **every subject prefixed with the ticket
+  ID** — `SEC-3: bound the venue list limit`. The board reads subjects off
+  the default branch to decide what has shipped.
+- **Stay inside the ticket's scope.** "Not in scope" is binding and usually
   names the next ticket. Do not start it.
 - Update the agent instruction files in the same commit as any change they
   describe.
-- **Stage only your own hunks.** Never `git add -A` or `git add .` — a repository
-  with unrelated uncommitted work will have it swept into your commit.
+- **Stage only your own hunks.** Never `git add -A` or `git add .`.
 
 ## 5. Verify
 
 Run the ticket's acceptance criteria plus the standing checks for what you
-touched. **The commands live in the project's own instruction files** — the root
-one, or each workspace's. Read them there rather than guessing; do not invent a
-test command.
+touched, using **the commands in the project's own instruction files** —
+never an invented test command.
 
-**A criterion written as a runtime demonstration is run, not waved at.**
-When the ticket says *demonstrate: <action> → <result>*, drive the actual
-app — launch it by the project's own run instructions, use a real browser
-or simulator where the environment provides one — perform the action, and
-record what you **observed** in the Verified line as evidence: the concrete
-screen, response or output seen ("/login rejects an empty password with the
-inline error, screenshot checked"), never an adjective ("UI looks fine").
-Tests prove what the code does; the demonstration proves what a user gets,
-and agent-built UI is exactly where the two diverge. A demonstration this
-environment cannot perform — no browser, no device — is owed, like any
-other check.
+- A criterion written *demonstrate: <action> → <result>* is **run, not waved
+  at**: drive the real app in a real browser or simulator where one exists,
+  and record what you **observed** as evidence ("/login rejects an empty
+  password with the inline error, screenshot checked"), never an adjective.
+- A criterion carrying `CHECK:` / `EXPECT:` lines runs through the board
+  script, and its ledger is your Verified line:
 
-**A criterion carrying `CHECK:` / `EXPECT:` lines is run through the board
-script, not by hand:**
+  ```bash
+  node "${CLAUDE_PLUGIN_ROOT}/scripts/tickets.mjs" check $ARGUMENTS
+  ```
 
-```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/tickets.mjs" check $ARGUMENTS
-```
+  A failing check is a ticket that is not done. In an unattended run the
+  driver re-runs it with `--from origin/epic/<name>` — the criteria as signed
+  off — and gates the merge in code.
 
-It runs every criterion's CHECK command from the repository root and compares
-the output against its EXPECT text; paste its ledger into the Verified line —
-the counts come from the tool, not from your reading of the output. A check
-that fails here is a ticket that is not done, not a note for the log. In an
-unattended run the driver re-runs the same command against the pushed branch
-with `--from origin/epic/<name>` — the criteria as signed off, which no
-ticket branch can edit — and gates the merge on the counts in code.
-
-Report **counts** — "api-gateway 217/217 passed", never "tests pass". If a check
-cannot run here, say so and record it as owed. Never imply it passed.
-
-If the project has mutation testing configured, run it scoped to the files this
-ticket changed. A surviving mutant in changed code means a test executes that
-line without checking it — treat it as an unfinished acceptance criterion, not a
-separate concern.
+Report **counts** — "api-gateway 217/217 passed", never "tests pass". A check
+that cannot run here is recorded as owed; never imply it passed. If mutation
+testing is configured, run it scoped to the changed files: a surviving mutant
+in changed code is an unfinished acceptance criterion.
 
 ## 6. Log what was done, then commit
 
-Append to `statusDoc`. Append-only — never edit an existing entry. Create the
-file if it does not exist, opening it with this exact preamble — defined here
-because this step is where creation happens, and a worker holding only this
-skill must not have to invent it:
+Append to `statusDoc` — append-only, never edit an existing entry. If the
+file does not exist, create it with this exact preamble:
 
 ```markdown
 # <Name> epic — status log
@@ -272,197 +196,124 @@ correct, never edits. Report counts, not adjectives. The **Owed** line is
 required even when empty.
 ```
 
-The epic skill's status-log template opens with the same preamble (its
-Baseline section belongs to planning and is not part of it), and the quick
-skill's step 5 carries a third copy for its in-session lane — one rule in
-three documents: a change to any copy moves the others in the same commit.
+The epic skill's template and the quick skill's step 5 carry the same block
+— one rule, three documents; a change to any copy moves the others in the
+same commit.
 
-The **entry** heading is parsed — the preamble's `#` title is not — so match
-it exactly:
+The **entry** heading is parsed, so match it exactly — `DONE`, or `BLOCKED` /
+`ABANDONED` if you stopped (a ticket that died still gets an entry saying why):
 
 ```markdown
 ### <ID> — <name> — <YYYY-MM-DD> — DONE
 ```
 
-`DONE`, or `BLOCKED` / `ABANDONED` if you stopped — a ticket that died still
-gets an entry saying why.
-
 ```markdown
-**Built:** <what exists now that didn't — one to three sentences. Enough
-that the next session needs no archaeology; not a narration of the work.
-Git already records the files and commits, tests record the details.>
+**Built:** <what exists now that did not — one to three sentences; git
+records the files>
 
-**Mode:** <how this ticket ran — `supervisor — worker <label>, reviewer
-hired by the supervisor`, or `interactive — in-session`, or `autonomous —
-driver-spawned worker <label>`, or `quick — in-session (/flow:quick)`.
-This line is what makes the fresh-context rule auditable after the fact.>
+**Mode:** <`supervisor — worker <label>, reviewer hired by the supervisor`,
+`interactive — in-session`, `autonomous — driver-spawned worker <label>`, or
+`quick — in-session (/flow:quick)`>
 
-**Tokens:** <harness-observed or `unknown` — never self-reported, never
-estimated: an agent cannot see its own counter, so a figure is written
-only by whoever watched the harness report it when an agent stopped.
-Supervisor mode: write `observed by the supervisor — see the review
-addendum`, where the figures land in step 8. Driver-spawned (unattended
-run): write `recorded in the run record` — the session sums the run's
-transcripts there. In-session lanes (interactive, quick): `unknown` — the
-session cannot observe itself. Planning evidence, never a gate.>
+**Tokens:** <harness-observed or `unknown`, never self-reported or estimated.
+Supervisor mode: `observed by the supervisor — see the review addendum`.
+Driver-spawned: `recorded in the run record`. In-session: `unknown`.>
 
 **Verified:** <exact commands and counts; manual checks with evidence>
 
-**Decisions:** <only judgment calls and deviations from the plan or the
-documents, each with the why — "none" when the ticket went as written.
-Routine actions are not decisions.>
+**Decisions:** <judgment calls and deviations from the documents, each with
+the why — "none" when the ticket went as written>
 
 **Owed:** <anything deferred and which ticket inherits it — "Nothing" if
-genuinely nothing, never omit the line. `tickets.mjs brief` hands every
-non-Nothing Owed line to future workers until a `**Resolves owed:**` line
-closes it, so write it to be read on its own. Verify the named carrier can
-structurally reach the thing being checked: an owed check was once handed to
-a lane whose entry point never touches the step it was meant to verify, and
-only review caught it>
+genuinely nothing, never omitted. `brief` hands every non-Nothing line to
+future workers until a `**Resolves owed:**` line closes it, so write it to
+be read alone, and check the named carrier can structurally reach the thing
+— an owed check was once handed to a lane that never touches the step it
+was meant to verify>
 ```
 
-**When this ticket discharges an owed item from an earlier entry**, say so
-machine-readably on its own line in this entry (or in a dated addendum):
+When this ticket discharges an owed item from an earlier entry, say so on its
+own line in this entry, or in a dated addendum beneath it (the shape the
+**Rules** block allows for anything added after the fact) — this is what
+removes it from every future brief:
 
 ```markdown
-**Resolves owed:** <ID> — <one line on how it was discharged>
+**Resolves owed:** <ID of the entry that recorded it> — <how it was discharged>
 ```
 
-`<ID>` is the entry that recorded the debt — one Owed paragraph per entry,
-so the entry ID is the item's identity. This line is what removes the item
-from every future brief; discharging silently leaves it advertised as
-outstanding forever, and the next worker pays to re-investigate it.
+Keep the entry short and written for someone who was not there. **Commit
+before the review runs** — the reviewer reads a commit range.
 
-**Keep the entry short.** The status log is read through `brief`'s owed
-extraction and by humans doing archaeology; exhaustive narration of routine
-actions makes both reads worse and every future ticket more expensive.
-Write for someone who was not there — no codenames, no "as discussed", no
-reference to this conversation — and stop when the six lines are true.
+## 7. Review — empty context, priced by consequence
 
-Commit it with the rest. **Commit before the review runs** — the reviewer reads a
-commit range, and that is what keeps the review auditable against exactly what
-was reviewed.
-
-## 7. Review — empty context, a model and effort sized to the consequence
-
-The session that wrote the code cannot review it. It will agree with itself.
-In supervisor mode this step belongs to the **supervisor**, never the
-worker (step 0); in an unattended run it belongs to the **driver script**,
-which hires the reviewer once the worker's pull request is open, and gates
-on its findings before merging (step 0). Either way the hirer is never the
-party under review.
-
-Independent review is always worth its price here; **maximum-capability
-review is not** — the strongest model at the highest effort spends 50–80k
-tokens per pass, which a prose diff cannot repay. Model and effort scale
-together, by what the diff can break:
+The session that wrote the code cannot review it. In supervisor mode this
+step is the **supervisor's**; in an unattended run, the **driver's**. The
+hirer is never the party under review.
 
 | Tier | When | Model | Effort |
 |---|---|---|---|
-| prose | documentation and code comments only — nothing any runtime, parser, test, or agent reads | a fast mid-tier model (`haiku`) | `low` |
-| normal | everything below the risk list — code, and the shapes that look like prose but are not: configuration, user-facing strings, CLI output, agent/skill instructions | a named cost-efficient model (`sonnet`) — never the session's own model, which prices routine review by whoever happened to launch the session | `high` |
-| consequence | the risk list below | the strongest reviewer-sanctioned model (`opus`) | `xhigh` |
+| prose | documentation and code comments only — nothing any runtime, parser, test or agent reads | `haiku` | `low` |
+| normal | everything below the risk list — code, and what looks like prose but is not: configuration, user-facing strings, CLI output, agent/skill instructions | `sonnet` — named, never the session's own model | `high` |
+| consequence | the risk list below | `opus` | `xhigh` |
 
 The consequence list: authentication or authorization boundaries, secrets,
-crypto, network exposure, migrations, anything that deletes or rewrites
-data, payments or billing, or anything that can fail open. This is the same
-list that gates entry to `/flow:quick` — a trigger added to either list is
-added to the other **in the same commit**. Pick the tier yourself and say
-which; do not ask. When in doubt between tiers, take the higher one — the
-tiering exists to stop routine maximum spend, not to argue small diffs
-downward.
+crypto, network exposure, migrations, anything that deletes or rewrites data,
+payments or billing, or anything that can fail open. It is the same list that
+gates entry to `/flow:quick` — a trigger added to either list is added to the
+other in the same commit. Pick the tier yourself and say which; do not ask.
+When in doubt, take the higher one. (The unattended driver floors the tier in code from the
+diff's file list, because there the reviewed party reports it.)
 
-In an unattended run the driver does not take the tier on the worker's word
-alone: it reads the branch's changed file list itself and floors the tier in
-code — a diff touching the epic's optional `Consequence paths:` globs prices
-`consequence`, any non-documentation file prices at least `normal`, and only
-a docs-only diff may price `prose` — because the worker is the party under
-review, and the reviewed party must not price its own judge down. A reported
-tier can raise the price, never lower it. (Here the hirer — supervisor or
-session — picks the tier and is not the reviewed party, so no floor is
-needed.)
+Spawn the reviewer with the **Agent** tool: `subagent_type:
+"flow:ticket-reviewer"`; `model`: step 1's `reviewerModel` when set (the
+epic's `Reviewer model:` line overrides the table), else the table's;
+`effort`: the table's. Tell it to follow **the `/flow:review` skill** and
+give it:
 
-Spawn the reviewer with the **Agent** tool:
-
-- `subagent_type: "flow:ticket-reviewer"`, and `model`: the epic's **Reviewer
-  model** when it declares one — an optional `Reviewer model: <model>` line in
-  the tickets.md preamble, exposed by step 1's `find --json` as
-  `reviewerModel`; it overrides the tier table, so redirecting the reviewer
-  is an edit to the epic's documents, never a mid-run conversational
-  directive. Absent (`reviewerModel: null`), use the tier table's model.
-- `effort`: the tier table's.
-
-Tell it to follow **the `/flow:review` skill** and give it:
-
-- the commit range — `git merge-base origin/<base-branch> HEAD`..`HEAD`, using
-  the base branch you noted in step 3,
-- the ticket's required reading, scoped —
-  `node "${CLAUDE_PLUGIN_ROOT}/scripts/tickets.mjs" brief <ID>` (the epic
-  ground rules, this ticket's Acceptance criteria and Not in scope — straying
-  outside scope is a finding — and the open owed items) rather than the whole
-  `ticketsDoc`,
-- this ticket's own entry from `statusDoc` — not the whole log, which grows
-  with every ticket and is cost, not context, for a reviewer,
+- the commit range — `git merge-base origin/<base-branch> HEAD`..`HEAD`, with
+  the base from step 3;
+- `node "${CLAUDE_PLUGIN_ROOT}/scripts/tickets.mjs" brief <ID>` — ground
+  rules, criteria, Not in scope (straying outside it is a finding), open owed
+  items — not the whole `ticketsDoc`;
+- this ticket's own entry from `statusDoc`, not the whole log;
 - the instruction files for every area in scope.
 
 **It reports; it does not fix.**
 
 ## 8. Fix, and commit the fixes separately
 
-New commits on the same branch, never amendments — the review has to stay
-auditable against what was reviewed. Mark them: `SEC-3: reject negative limit
-values (review fix)`. Re-run affected checks and report counts.
+New commits on the same branch, never amendments, marked `SEC-3: reject
+negative limit values (review fix)`. Re-run affected checks and report counts.
 
-Not every finding gets fixed. Legitimately **not fixed** = out of scope and owned
-by a later ticket, the fix is riskier than the bug, or the premise is wrong.
-A **pre-existing** finding — a real defect this ticket did not introduce — is
-recorded and handed to a named ticket, never silently dropped. Every disposition
-needs a written reason.
+Legitimately **not fixed** = out of scope and owned by a later ticket, the fix
+riskier than the bug, or the premise wrong. A **pre-existing** defect is
+recorded and handed to a named ticket, never dropped. Every disposition needs
+a written reason. **A nit does not become a ticket by default**: fix it here
+if trivial and in scope, otherwise record it for the retro — a nit earns a
+ticket only when it affects users, creates real maintenance risk, keeps
+recurring, or rides an already-planned change.
 
-**A nit does not become a ticket by default.** Fix it here if it is trivial
-and in scope; otherwise record it in the addendum and let the retro decide —
-a nit earns its own ticket only when it affects users, creates real
-maintenance risk, keeps recurring, or can ride an already-planned change.
-Auto-ticketing every nit feeds each one back into a full worker-and-reviewer
-cycle, and the loop optimizes the process instead of the product.
-
-Append the outcome to `statusDoc` as a dated addendum — never edit the original
-entry — and **commit the addendum** (with the fix commits, or on its own when
-nothing was fixed). An uncommitted addendum never reaches the remote or the
-pull request's evidence trail:
+Append the outcome to `statusDoc` as a dated addendum and **commit it** — an
+uncommitted addendum never reaches the pull request's evidence trail:
 
 ```markdown
-**Addendum — review — <YYYY-MM-DD> — <model>/<effort>:** <findings. What was
-fixed, in which commit, with counts. What was not fixed, each with its reason.
-Say "nothing deferred" explicitly if that is true. Keep it to the findings
-and their dispositions — do not reproduce verification transcripts or
-re-walk acceptance criteria the entry's Verified line already carries: the
-log is read by every later reviewer and the retro, and narration there is a
-cost every future ticket pays. End with the token
-figures the supervisor observed and handed over — `Worker tokens
-(implementation leg): <n>; Reviewer tokens: <n>`, `unknown` where the
-harness exposed nothing — completing the entry's **Tokens** line on the
-same terms: harness-observed or unknown, never asked of an agent, never
-estimated. In an unattended run the driver's disposition prompt replaces
-this ending with `Tokens: recorded in the run record`, because there the
-figures exist only after the run, summed from its transcripts.>
+**Addendum — review — <YYYY-MM-DD> — <model>/<effort>:** <what was fixed, in
+which commit, with counts; what was not fixed, each with its reason;
+"nothing deferred" explicitly when true. Findings and dispositions only. End
+with the figures the supervisor observed: `Worker tokens (implementation
+leg): <n>; Reviewer tokens: <n>`, `unknown` where the harness exposed
+nothing — or, driver-spawned, `Tokens: recorded in the run record`.>
 ```
 
 ## 9. Show the user, then push and open the pull request
 
-Print, concisely:
-
-1. **Built** — what now exists, and the files.
-2. **Verified** — commands and counts, and anything that could not run here.
-3. **Review** — effort used, findings found, fixed, and not fixed with reasons.
-
-Then push:
+Print, concisely: **Built** (what exists, and the files), **Verified**
+(commands, counts, anything that could not run), **Review** (effort, findings
+found, fixed, not fixed with reasons). Then:
 
 ```bash
 git push -u origin <branch>
 ```
-
-**What happens next depends on the delivery.**
 
 **Incremental delivery** — open the pull request; it is the human gate:
 
@@ -470,56 +321,40 @@ git push -u origin <branch>
 gh pr create --base <default-branch> --title "<ID>: <title>" --body "<body>"
 ```
 
-The first ticket of an incremental epic **branches from** `epic/<epic-name>`
-(step 3) but its pull request still targets the default branch — that pull
-request is how the epic's documents ship; basing it on the epic branch would
-strand them there, since an incremental epic has no release pull request.
-The pull request body is the only thing read before this ships, so it
-carries: what changed and why, the acceptance criteria with evidence and
-counts, the review summary, and any precondition that must exist before
-deploy (a new environment variable, a migration, a script that runs after).
+The first ticket cuts from `epic/<epic-name>` but still targets the default
+branch — that is how the documents ship. The body carries what changed and
+why, the acceptance criteria with counts, the review summary, and any deploy
+precondition (an environment variable, a migration, a script that runs after).
 
-**Release delivery — no pull request.** A release ticket has no pull request
-of its own: the human's gate is the release pull request at the epic's end,
-per-ticket review already happened on the pushed branch, and a per-ticket
-pull request would add a retargetable surface with no reader. The pushed
-branch and the committed status log ARE the ticket's record, and they travel
-to the human inside the release pull request. Everything the incremental
-body carries lives in the status entry and its review addendum instead —
-which is why step 6 requires them committed.
+**Release delivery — no pull request.** The human's gate is the release pull
+request; the pushed branch and the committed entry with its addendum are the
+ticket's record and travel inside it.
 
 Do not add Claude as a co-author. **No agent ever merges toward the default
-branch, in any mode** — no `gh pr merge` on a pull request based on main, no
-`git merge`, no pushing to main. A human merges those in the GitHub UI. A
-single-ticket pull request titled `<ID>: <title>` may be squashed — the squash
-commit inherits the title, so `tickets.mjs` still sees the ID. What must
-**never** be squashed is a release pull request: it carries many
-tickets, and squashing collapses their subjects into one, making every ticket
-but one read as unshipped.
-
-The **one sanctioned agent merge** exists only in a release epic, and its
-surface is the epic branch only — step 10 when you own the ending, or the run
-driver's merge step, after its coded gate, in an unattended run.
+branch, in any mode** — a human merges in the GitHub UI. A single-ticket pull
+request titled `<ID>: <title>` may be squashed (the squash commit inherits
+the title). A release pull request must **never be squashed**: squashing
+collapses its per-ticket subjects so every ticket but one reads as unshipped.
+The one sanctioned agent merge is a ticket branch into its epic branch,
+step 10.
 
 ## 10. Stop — or, in a release epic, integrate and continue
 
-**If `delivery` is not `release`** (an incremental epic): print the pull
-request URL and `node "${CLAUDE_PLUGIN_ROOT}/scripts/tickets.mjs" next`. Then
-stop. Do not start the next ticket. There is nothing to run after the merge.
+**Incremental:** print the pull request URL and
+`node "${CLAUDE_PLUGIN_ROOT}/scripts/tickets.mjs" next`. Then stop; nothing
+runs after the merge.
 
-**If `delivery` is `release`:**
+**Release:**
 
-- **An unreviewed ticket is never merged, anywhere.** Reaching this step
-  requires the review addendum from step 8 in the status log, **committed**,
-  and with **no Important finding left unfixed** — in an autonomous run, a
-  not-fixed disposition on an Important finding is not yours to judge,
-  whatever the proposed reason: stop, write a BLOCKED entry naming the
-  finding, merge nothing. If the reviewer agent could not be spawned, the
-  sanctioned fallback is a general agent instructed by the reviewer
-  definition plus the review skill; if that also fails, stop — BLOCKED entry,
-  no merge.
-- Merge your own branch into the epic branch — **by its verified SHA, with
-  a merge commit**:
+- **An unreviewed ticket is never merged, anywhere.** This step requires the
+  step 8 addendum **committed** with **no Important finding left unfixed** —
+  a not-fixed Important finding is not yours to accept: write a BLOCKED entry
+  naming it, merge nothing. If the reviewer agent could not be spawned, the
+  fallback is a general agent given the reviewer definition plus the review
+  skill; if that fails too, BLOCKED entry, no merge.
+- Merge **by verified SHA, with a merge commit** — the SHA is what makes the
+  merged diff exactly the reviewed one; never squash, because the ID-prefixed
+  subjects reaching `epic/<epic-name>` are how the board derives `integrated`:
 
   ```bash
   git rev-parse origin/<branch>        # the exact commit that was reviewed and fixed
@@ -529,26 +364,12 @@ stop. Do not start the next ticket. There is nothing to run after the merge.
   git push origin epic/<epic-name>
   ```
 
-  The SHA, not the branch name: merging the commit you verified is what
-  makes the merged diff exactly the reviewed one. Never squash — the release
-  pull request needs the per-ticket subjects, and those ID-prefixed subjects
-  reaching `epic/<epic-name>` are also how the board derives that this
-  ticket integrated.
-- **Which spawn shape you are decides whether this step is yours at all.**
-  Read the prompt that launched you:
-  - **A driver spawned you** (`/flow:run`'s workflow — the prompt says "a
-    driver spawned you"): **you never reach this step.** Your ticket ends at
-    step 9's pushed branch; the driver owns the review, the gate, the
-    merge, the between-ticket refresh of the epic branch, and the fresh
-    context of the next ticket's agent. Report as in step 9 and stop.
-  - **A supervisor spawned you**, or you are the whole run (a human typed
-    `/flow:ticket` — step 0's escape hatch for one ticket of a release epic):
-    **this step is yours.** Perform the gate and the epic-branch merge above,
-    then stop — you were spawned for one ticket. Continue to the next ticket
-    in document order **only when you are the whole run** and no driver and
-    no supervisor exist.
-
-  Either way, the epic's ground-rule stop conditions bind everything; halting
-  on one is the mechanism working, not a failure.
-- The default branch remains untouchable. The release pull request at the end
-  of the run is opened by the driver and merged by a human — never by you.
+- **Your spawn shape decides whether this step is yours.** A driver spawned
+  you (the prompt says "a driver spawned you"): you never reach this step —
+  report at step 9's pushed branch and stop. A supervisor spawned you, or you
+  are the whole run: perform the gate and the merge, then stop — continue to
+  the next ticket in document order **only when you are the whole run**. The
+  epic's stop conditions bind either way; halting on one is the mechanism
+  working.
+- The release pull request is opened by the driver and merged by a human —
+  never by you.

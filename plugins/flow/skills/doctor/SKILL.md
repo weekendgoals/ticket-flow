@@ -17,8 +17,10 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/tickets.mjs" doctor
 
 Print the output as-is. It checks: the `origin` remote, `origin/HEAD`, a
 fetchable default branch, `gh`, repository merge settings, the existence of
-root agent instructions, epic status logs — and, most importantly, **headings
-that almost parse**: a status heading missing its date, an unknown outcome
+root agent instructions, epic status logs, the worker runner's environment
+when an epic declares `Worker runner: codex` (the `codex` binary runs and is
+signed in — a run that discovers otherwise halts at ticket one with nobody
+there) — and, most importantly, **headings that almost parse**: a status heading missing its date, an unknown outcome
 word, a lowercase ticket ID. Those never error; they silently read as "not
 done" or "not a ticket", which is the one way the derived board lies.
 

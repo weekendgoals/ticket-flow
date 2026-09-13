@@ -3,7 +3,7 @@ export const meta = {
   description:
     "The /flow:run driver loop as code — code-controlled, agent-executed: refresh epic/<name> and take the next ticket in document order, spawn a worker that stops at its pushed branch, read the diff's file list and floor the review tier in code, hire the reviewer, gate on its findings, re-review any fix commits, re-run the ticket's CHECK/EXPECT acceptance criteria from the signed-off document and gate on the counts in code, resolve the pushed branch's verified head and merge exactly that commit into epic/<name> — release tickets open no pull request of their own — confirm the merge landed — and halt on any stop condition instead of improvising past it",
   whenToUse:
-    'Invoked by the flow:run skill AFTER it has resolved the epic, refused anything but Delivery: release, verified the sign-off traces on origin/epic/<name>, and checked the permission surface and branch protection (or its recorded waiver). Requires args {epic, defaultBranch, repoRoot, pluginRoot, today, workerModel?, reviewerModel?, consequencePaths?, ticketBudget?}. Returns {outcome: "completed"|"halted", haltedOn, ticketRecords, ...}; the calling session writes the run record and opens the release pull request. The driver hires the reviewer — the party under review never picks its judge — and the merge gate is a code check on the reviewer\'s structured findings. The script never merges, pushes, or retargets toward the default branch, and never opens or merges the release pull request.',
+    'Invoked by the flow:run skill AFTER it has resolved the epic, refused anything but Delivery: release, verified the sign-off traces on origin/epic/<name>, and checked the permission surface and branch protection (or its recorded waiver). Requires args {epic, defaultBranch, repoRoot, pluginRoot, today, workerModel?, workerRunner?, reviewerModel?, consequencePaths?, ticketBudget?}. Returns {outcome: "completed"|"halted", haltedOn, ticketRecords, ...}; the calling session writes the run record and opens the release pull request. The driver hires the reviewer — the party under review never picks its judge — and the merge gate is a code check on the reviewer\'s structured findings. The script never merges, pushes, or retargets toward the default branch, and never opens or merges the release pull request.',
   phases: [
     { title: 'Refresh + select', detail: 'merge the default branch into epic/<name>, then read the next startable ticket — one agent, one command sequence' },
     { title: 'Ticket', detail: 'one fresh-context worker per ticket, stopping at its pushed branch — release tickets open no pull request of their own' },
@@ -34,7 +34,7 @@ const today = ARGS && ARGS.today
 
 if (!epic || !defaultBranch || !repoRoot || !pluginRoot || !today) {
   throw new Error(
-    'flow-run-epic requires args: {epic, defaultBranch, repoRoot, pluginRoot, today, workerModel?, reviewerModel?, consequencePaths?} — e.g. {epic:"payments", defaultBranch:"main", repoRoot:"/Users/x/proj", pluginRoot:"/Users/x/.claude/plugins/.../flow", today:"2026-08-11"}. The flow:run skill supplies all of them from its steps 1-3; run it only after those steps have passed.',
+    'flow-run-epic requires args: {epic, defaultBranch, repoRoot, pluginRoot, today, workerModel?, workerRunner?, reviewerModel?, consequencePaths?, ticketBudget?} — e.g. {epic:"payments", defaultBranch:"main", repoRoot:"/Users/x/proj", pluginRoot:"/Users/x/.claude/plugins/.../flow", today:"2026-08-11"}. The flow:run skill supplies all of them from its steps 1-3; run it only after those steps have passed.',
   )
 }
 
@@ -60,6 +60,19 @@ const MODEL = /^[A-Za-z0-9._-]+$/
 const workerModel = ARGS.workerModel && MODEL.test(ARGS.workerModel) ? ARGS.workerModel : null
 const reviewerModel = ARGS.reviewerModel && MODEL.test(ARGS.reviewerModel) ? ARGS.reviewerModel : null
 if (ARGS.workerModel && !workerModel) log(`ignoring unusable workerModel ${JSON.stringify(ARGS.workerModel)} — the worker inherits the driver's model`)
+
+// The epic's optional `Worker runner:` line — who implements. Absent or
+// `claude`: a fresh Claude subagent, as always. `codex`: the plugin's Codex
+// runner script (`scripts/runners/codex.mjs`), driven through a shell proxy
+// because a workflow script has no shell. Unlike an unusable model, an
+// unknown runner is refused rather than ignored: silently falling back to a
+// different implementer than the signed-off document names is exactly the
+// substitution a human would want to know about.
+const RUNNERS = new Set(['claude', 'codex'])
+const workerRunner = ARGS.workerRunner == null || ARGS.workerRunner === 'claude' ? null : ARGS.workerRunner
+if (workerRunner && !RUNNERS.has(workerRunner)) {
+  throw new Error(`Unknown workerRunner ${JSON.stringify(ARGS.workerRunner)} — known: claude (default), codex. Fix the epic's \`Worker runner:\` line; the driver does not substitute an implementer the sign-off did not name.`)
+}
 if (ARGS.reviewerModel && !reviewerModel) log(`ignoring unusable reviewerModel ${JSON.stringify(ARGS.reviewerModel)} — the tier table prices the reviewer instead`)
 
 // The epic's optional `Consequence paths:` globs — file paths whose changes
@@ -751,7 +764,32 @@ for (let i = 0; i < MAX_TICKETS && !halted; i++) {
   //    request; review, gate and merge belong to the driver.
   phase('Ticket')
   const workerLabel = `worker:${id}`
-  const worker = await agent(
+  // With `Worker runner: codex`, the worker is the plugin's Codex runner
+  // script, and this agent is only its shell proxy: it runs one command and
+  // relays the JSON the runner printed. The runner owns the fetch and the
+  // push (Codex runs sandboxed with no network), so `branch-pushed` in that
+  // JSON is something the runner observed, not something a model claimed.
+  const runnerCommand = workerRunner === 'codex'
+    ? `node "${pluginRoot}/scripts/runners/codex.mjs" ${id} --epic ${epic} --epic-branch ${epicBranch} --default-branch ${defaultBranch} --repo "${repoRoot}" --plugin "${pluginRoot}" --label ${workerLabel}${workerModel ? ` --model ${workerModel}` : ''} --json`
+    : null
+  const worker = runnerCommand
+    ? await agent(
+        `You are a shell proxy for the ${workerRunner} worker runner. Run exactly this command from ${repoRoot}, wait for it to finish (it may take a long time — it runs a full ticket), and report what it printed:
+
+${runnerCommand}
+
+It prints one JSON object on stdout. Report that object's fields VERBATIM — ticket, result, stopCondition, tier, tierWhy, branch, built, verification, deployPreconditions, detail — and its \`runner\` object under \`runner\`. Change nothing, infer nothing, add nothing: the runner already reconciled the model's report with the repository, and your only job is to carry its answer. If the command exits nonzero AND prints no JSON, report result "halted", stopCondition "other", and put the exit code and the first lines of stderr in detail. ${PROMPT_RULE}
+
+${NO_MAIN}`,
+        {
+          label: workerLabel,
+          phase: 'Ticket',
+          schema: { ...WORKER_SCHEMA, properties: { ...WORKER_SCHEMA.properties, runner: { type: 'object', description: "the runner's own record: model, exit code, usage, whether it pushed" } } },
+          effort: 'low',
+          model: 'haiku',
+        },
+      )
+    : await agent(
     `A driver spawned you for this one ticket. Run the \`flow:ticket\` skill for \`${id}\`, exactly as written — you are working from documents, not from any conversation — but scoped as this prompt scopes it, which the skill's step 0 explicitly allows ("honoring whatever your spawn prompt scopes or forbids").
 
 RUN: steps 1–6 (resolve, read, branch from ${epicBranch}, implement, verify with counts, write and commit the status entry), then step 9's summary and push — print your summary and \`git push -u origin ${branch}\`. Do NOT open a pull request: a release ticket has none of its own, and the release pull request at the epic's end is the only pull request this epic owns. STOP at the successful push and report.
@@ -785,7 +823,12 @@ Report honestly: \`branch-pushed\` ONLY if you saw the push of \`${branch}\` suc
     title: line(ticket.title || ''),
     branch,
     workerAgent: workerLabel,
-    workerModel: workerModel || 'inherited',
+    workerRunner: workerRunner || 'claude',
+    workerModel: workerRunner ? `${workerRunner}:${workerModel || 'default'}` : workerModel || 'inherited',
+    // A runner's own meter (Codex's event stream) — observed by the runner,
+    // never reported by the model; null for a Claude worker, whose spend the
+    // session sums from the run's transcripts afterwards.
+    workerUsage: worker && worker.runner && worker.runner.usage ? worker.runner.usage : null,
     // Priced after the tier-facts step below — a ticket that halts before its
     // pull request opens never reaches pricing, and says so.
     tier: 'not priced',
@@ -1467,6 +1510,16 @@ ${PROMPT_RULE}`,
   if (METER) {
     const spent = METER.spent() - spentAtStart
     record.outputTokensObserved = spent
+    // Spend is surfaced as it happens, not only in the record after the run:
+    // the meter delta is the runtime's own count of this ticket's output
+    // tokens across every agent it spawned, and a runner's usage (Codex's
+    // event stream) is the one figure the worker's side can add.
+    const wu = record.workerUsage
+    log(
+      `${id}: spend — ${spent} output tokens by the runtime meter` +
+        (wu ? `; ${record.workerRunner} worker in=${wu.input ?? '?'} cached=${wu.cached ?? '?'} out=${wu.output ?? '?'} by its own meter` : '') +
+        (ticketBudget ? ` (budget ${ticketBudget})` : ''),
+    )
     if (ticketBudget && spent > ticketBudget) {
       halted = {
         ticket: id,

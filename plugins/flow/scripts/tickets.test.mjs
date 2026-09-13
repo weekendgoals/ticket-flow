@@ -8,7 +8,7 @@
 import { test, after } from 'node:test'
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, realpathSync, readFileSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, realpathSync, readFileSync, chmodSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
@@ -45,6 +45,20 @@ const tmp = realpathSync(mkdtempSync(join(tmpdir(), 'tickets-test-')))
 const remote = join(tmp, 'remote.git')
 const repo = join(tmp, 'repo')
 after(() => rmSync(tmp, { recursive: true, force: true }))
+
+// gamma declares `Worker runner: codex`, so doctor probes codex on every run.
+// A fake binary on PATH and a signed-in CODEX_HOME make the probe pass here
+// and on CI without Codex; dedicated tests below take them away again.
+const fakeBin = join(tmp, 'bin')
+mkdirSync(fakeBin)
+writeFileSync(join(fakeBin, 'codex'), '#!/bin/sh\necho fake-codex 0.0.0\n')
+chmodSync(join(fakeBin, 'codex'), 0o755)
+const codexHome = join(tmp, 'codex-home')
+mkdirSync(codexHome)
+writeFileSync(join(codexHome, 'auth.json'), '{}')
+ENV.PATH = `${fakeBin}:${process.env.PATH}`
+ENV.CODEX_HOME = codexHome
+delete ENV.OPENAI_API_KEY
 
 git(tmp, 'init', '--bare', '--initial-branch=main', remote)
 git(tmp, 'init', '--initial-branch=main', repo)
@@ -113,6 +127,8 @@ Delivery: release — one human gate, at the release pull request.
 Reviewer model: opus — for the consequence tier.
 
 Worker model: sonnet — implementation runs cheaper than planning.
+
+Worker runner: codex — the Codex CLI implements, through the plugin runner.
 
 Planner model: fable — the plan reviewer runs on the strongest class.
 
@@ -548,8 +564,8 @@ test('the Delivery line parses tolerantly and exposes in find and list', () => {
   assert.equal(a.delivery, 'incremental')
 
   const data = JSON.parse(run(repo, 'list', '--json'))
-  assert.deepEqual(data.modes.gamma, { delivery: 'release', reviewerModel: 'opus', workerModel: 'sonnet', plannerModel: 'fable', consequencePaths: ['src/auth/**', 'migrations/**'], ticketBudget: 250000 })
-  assert.deepEqual(data.modes.alpha, { delivery: 'incremental', reviewerModel: null, workerModel: null, plannerModel: null, consequencePaths: null, ticketBudget: null })
+  assert.deepEqual(data.modes.gamma, { delivery: 'release', reviewerModel: 'opus', workerModel: 'sonnet', workerRunner: 'codex', plannerModel: 'fable', consequencePaths: ['src/auth/**', 'migrations/**'], ticketBudget: 250000 })
+  assert.deepEqual(data.modes.alpha, { delivery: 'incremental', reviewerModel: null, workerModel: null, workerRunner: null, plannerModel: null, consequencePaths: null, ticketBudget: null })
 })
 
 test('a Worker model line pins the implementer; absent, workers inherit the session', () => {
@@ -578,7 +594,7 @@ test('an unrecognised or near-miss Delivery line warns instead of silently defau
     assert.equal(data.modes.misdeclared.delivery, 'continuous', 'the raw value is exposed, not coerced')
     assert.deepEqual(
       data.modes['fancy-delivery'],
-      { delivery: 'incremental', reviewerModel: null, workerModel: null, plannerModel: null, consequencePaths: null, ticketBudget: null },
+      { delivery: 'incremental', reviewerModel: null, workerModel: null, workerRunner: null, plannerModel: null, consequencePaths: null, ticketBudget: null },
       'a formatted Delivery line reads as absent, so the default applies',
     )
     const rows = JSON.parse(run(repo, 'doctor', '--json'))
@@ -605,7 +621,7 @@ test('the retired two-line syntax is flagged, not silently ignored', () => {
     const data = JSON.parse(run(repo, 'list', '--json'))
     assert.deepEqual(
       data.modes.oldstyle,
-      { delivery: 'incremental', reviewerModel: null, workerModel: null, plannerModel: null, consequencePaths: null, ticketBudget: null },
+      { delivery: 'incremental', reviewerModel: null, workerModel: null, workerRunner: null, plannerModel: null, consequencePaths: null, ticketBudget: null },
       'the dead labels parse as nothing; the delivery default applies',
     )
     const rows = JSON.parse(run(repo, 'doctor', '--json'))
@@ -724,7 +740,7 @@ test('an epic with no declaration lines defaults to incremental delivery', () =>
   writeFileSync(join(repo, 'epics/delta/tickets.md'), '# Delta\n\n## D-1 — bare epic\n\n**Scope.** Bare.\n')
   try {
     const data = JSON.parse(run(repo, 'list', '--json'))
-    assert.deepEqual(data.modes.delta, { delivery: 'incremental', reviewerModel: null, workerModel: null, plannerModel: null, consequencePaths: null, ticketBudget: null })
+    assert.deepEqual(data.modes.delta, { delivery: 'incremental', reviewerModel: null, workerModel: null, workerRunner: null, plannerModel: null, consequencePaths: null, ticketBudget: null })
   } finally {
     rmSync(join(repo, 'epics/delta'), { recursive: true, force: true })
   }
@@ -738,7 +754,7 @@ test('the Delivery line parses case-insensitively', () => {
   )
   try {
     const data = JSON.parse(run(repo, 'list', '--json'))
-    assert.deepEqual(data.modes.shout, { delivery: 'release', reviewerModel: null, workerModel: null, plannerModel: null, consequencePaths: null, ticketBudget: null })
+    assert.deepEqual(data.modes.shout, { delivery: 'release', reviewerModel: null, workerModel: null, workerRunner: null, plannerModel: null, consequencePaths: null, ticketBudget: null })
   } finally {
     rmSync(join(repo, 'epics/shout'), { recursive: true, force: true })
   }
@@ -763,7 +779,7 @@ test('a value-less label line reads as absent, never the next paragraph\'s first
     const data = JSON.parse(run(repo, 'list', '--json'))
     assert.deepEqual(
       data.modes.bare,
-      { delivery: 'incremental', reviewerModel: null, workerModel: null, plannerModel: null, consequencePaths: null, ticketBudget: null },
+      { delivery: 'incremental', reviewerModel: null, workerModel: null, workerRunner: null, plannerModel: null, consequencePaths: null, ticketBudget: null },
       'a value-less label must read as absent (incremental default / null), never scavenge prose',
     )
     // And doctor's near-miss wording is true of these lines: they will not
@@ -1037,4 +1053,194 @@ test('a passing check is not killed by more than 1 MB of output noise', () => {
   } finally {
     writeFileSync(checksDoc, original)
   }
+})
+
+// ── spend: the recorded token ledger ─────────────────────────────────────────
+// A separate repo with one epic whose status log carries every shape the
+// log has ever recorded a figure in: the ticket skill's addendum phrases
+// (wrapped at the house width), a bare `**Tokens:** unknown`, an entry that
+// points at the run record, and a run record with per-ticket key=value groups.
+
+const stmp = realpathSync(mkdtempSync(join(tmpdir(), 'tickets-spend-')))
+const sremote = join(stmp, 'remote.git')
+const srepo = join(stmp, 'repo')
+after(() => rmSync(stmp, { recursive: true, force: true }))
+git(stmp, 'init', '--bare', '--initial-branch=main', sremote)
+git(stmp, 'init', '--initial-branch=main', srepo)
+git(srepo, 'config', 'user.email', 'test@example.com')
+git(srepo, 'config', 'user.name', 'Test')
+git(srepo, 'config', 'commit.gpgsign', 'false')
+mkdirSync(join(srepo, 'epics/sigma'), { recursive: true })
+writeFileSync(
+  join(srepo, 'epics/sigma/tickets.md'),
+  `# Sigma epic — tickets
+
+Delivery: release
+
+## S-1 — attended, figures in the addendum
+
+**Scope.** One.
+
+## S-2 — in-session, unknown
+
+**Scope.** Two.
+
+## S-3 — driver-run, figures in the run record
+
+**Scope.** Three.
+
+## S-4 — nothing recorded yet
+
+**Scope.** Four.
+`,
+)
+writeFileSync(
+  join(srepo, 'epics/sigma/status.md'),
+  `# Sigma epic — status log
+
+### S-1 — attended, figures in the addendum — 2026-08-09 — DONE
+
+**Built:** one.
+
+**Tokens:** observed by the supervisor — see the review addendum
+
+**Owed:** Nothing.
+
+**Addendum — review — 2026-08-09 — sonnet/high:** No findings. Worker tokens (implementation
+leg): 12,000; Reviewer tokens: 65,729.
+
+### S-2 — in-session, unknown — 2026-08-09 — DONE
+
+**Built:** two.
+
+**Tokens:** unknown
+
+**Owed:** Nothing.
+
+### S-3 — driver-run, figures in the run record — 2026-08-10 — DONE
+
+**Built:** three.
+
+**Tokens:** recorded in the run record
+
+**Owed:** Nothing.
+
+**Addendum — review — 2026-08-10 — sonnet/high:** Clean. Tokens: recorded in the run record.
+
+### Run — 2026-08-10 — completed
+
+**Driver:** /flow:run, unattended.
+**Tokens:** S-3 worker=100,000 reviewer=20000
+disposition=5000 re-review=unknown proxies=1500; total=126,500 — summed from the run's transcripts.
+
+**Halted on:** ran to completion.
+
+## Retro — 2026-08-11
+
+Tokens mentioned here must not count: worker tokens: 999999.
+`,
+)
+git(srepo, 'add', '.')
+git(srepo, 'commit', '-m', 'sigma epic')
+git(srepo, 'remote', 'add', 'origin', sremote)
+git(srepo, 'push', '-u', 'origin', 'main')
+git(srepo, 'remote', 'set-head', 'origin', 'main')
+
+test('spend derives one ledger from addendum phrases, Tokens lines and run records', () => {
+  const out = JSON.parse(run(srepo, 'spend', 'sigma', '--json'))
+  assert.equal(out.epics.length, 1)
+  const [e] = out.epics
+  const byId = Object.fromEntries(e.tickets.map((t) => [t.id, t]))
+
+  // Wrapped addendum phrases, with thousands separators.
+  assert.equal(byId['S-1'].worker, 12000)
+  assert.equal(byId['S-1'].reviewer, 65729)
+  assert.equal(byId['S-1'].total, 77729)
+  assert.equal(byId['S-1'].source, 'log')
+  assert.deepEqual(byId['S-1'].unknown, [])
+
+  // A bare unknown is unknown, never zero.
+  assert.equal(byId['S-2'].total, null)
+  assert.deepEqual(byId['S-2'].unknown, ['ticket'])
+
+  // The run record's per-ticket group fills a ticket whose entry only points there.
+  assert.equal(byId['S-3'].worker, 100000)
+  assert.equal(byId['S-3'].reviewer, 20000)
+  assert.equal(byId['S-3'].disposition, 5000)
+  assert.equal(byId['S-3'].proxies, 1500)
+  assert.equal(byId['S-3']['re-review'], null)
+  assert.deepEqual(byId['S-3'].unknown, ['re-review'])
+  assert.equal(byId['S-3'].total, 126500)
+  assert.equal(byId['S-3'].source, 'run-record')
+
+  // Nothing recorded: reported as such, with the note absent.
+  assert.equal(byId['S-4'].total, null)
+  assert.equal(byId['S-4'].source, null)
+
+  // Epic totals sum only known figures; the retro section never counts.
+  assert.equal(e.totals.worker, 112000)
+  assert.equal(e.totals.total, 204229)
+  assert.equal(e.unknownTickets, 3)
+})
+
+test('spend text output names the source and never prints an unknown as a number', () => {
+  const out = run(srepo, 'spend', 'sigma')
+  assert.match(out, /S-1\s+worker 12,000\s+reviewer 65,729\s+total 77,729\s+\(log\)/)
+  assert.match(out, /S-2\s+no figure recorded/)
+  assert.match(out, /S-3 .*re-review \?/)
+  assert.match(out, /S-4\s+no figure recorded/)
+  assert.match(out, /recorded 204,229 tokens · 3 with unknown or missing figures/)
+  assert.doesNotMatch(out, /999,?999/)
+})
+
+test('spend on an unknown epic refuses like the board does', () => {
+  const r = runFail(srepo, 'spend', 'nope', '--json')
+  assert.ok(r && r.status !== 0)
+})
+
+// ── doctor: the codex runner probe ─────────────────────────────────────────
+
+// doctor exits 1 on any fail row, so read its JSON off either outcome.
+const doctorWith = (env, cwd = repo) => {
+  try {
+    return JSON.parse(execFileSync(process.execPath, [SCRIPT, 'doctor', '--json'], { cwd, encoding: 'utf8', env: { ...ENV, ...env }, stdio: ['ignore', 'pipe', 'pipe'] }))
+  } catch (e) {
+    return JSON.parse(String(e.stdout))
+  }
+}
+// A PATH with git and nothing else — no codex, real or fake — for the
+// not-installed case; the developer's own PATH may well carry a real codex.
+const gitOnlyBin = join(tmp, 'git-only-bin')
+mkdirSync(gitOnlyBin)
+writeFileSync(join(gitOnlyBin, 'git'), `#!/bin/sh\nexec "${execFileSync('which', ['git'], { encoding: 'utf8' }).trim()}" "$@"\n`)
+chmodSync(join(gitOnlyBin, 'git'), 0o755)
+
+test('doctor probes the codex runner when an epic declares it: the binary and the sign-in', () => {
+  const rows = doctorWith({})
+  assert.ok(rows.some((r) => r.level === 'ok' && r.msg === 'codex runner available: fake-codex 0.0.0'), rows.map((r) => r.msg).join('\n'))
+  assert.ok(rows.some((r) => r.level === 'ok' && r.msg.startsWith('codex signed in (')))
+})
+
+test('doctor fails when the declared codex runner is not installed — a run would halt at ticket one', () => {
+  const rows = doctorWith({ PATH: gitOnlyBin })
+  const fail = rows.find((r) => r.level === 'fail' && /Worker runner: codex is declared but `codex --version` could not run \(ENOENT\)/.test(r.msg))
+  assert.ok(fail, rows.map((r) => r.msg).join('\n'))
+  assert.match(fail.msg, /npm install -g @openai\/codex/)
+})
+
+test('doctor fails when codex is installed but not signed in, and names both ways to sign in', () => {
+  const rows = doctorWith({ CODEX_HOME: join(tmp, 'empty-home') })
+  const fail = rows.find((r) => r.level === 'fail' && /codex is not signed in/.test(r.msg))
+  assert.ok(fail, rows.map((r) => r.msg).join('\n'))
+  assert.match(fail.msg, /codex login/)
+  assert.match(fail.msg, /--with-api-key/)
+  // An API key in the environment is the other accepted credential.
+  const keyed = doctorWith({ CODEX_HOME: join(tmp, 'empty-home'), OPENAI_API_KEY: 'sk-test' })
+  assert.ok(keyed.some((r) => r.level === 'ok' && /OPENAI_API_KEY is set/.test(r.msg)))
+  assert.ok(!keyed.some((r) => /not signed in/.test(r.msg)))
+})
+
+test('doctor says nothing about codex when no epic declares the runner', () => {
+  const rows = doctorWith({}, crepo)
+  assert.ok(!rows.some((r) => /codex/.test(r.msg)), rows.map((r) => r.msg).join('\n'))
 })

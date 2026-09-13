@@ -28,6 +28,11 @@
 //                                        ledger; --from reads the criteria
 //                                        from a git ref (the signed-off
 //                                        document) instead of the working tree
+//   tickets.mjs spend [epic] [--json]    the recorded token ledger per ticket
+//                                        and per epic, derived from the
+//                                        status log's Tokens lines, addendum
+//                                        phrases and run records; unknown
+//                                        stays unknown, never zero
 //   tickets.mjs epics [--json]           list known epics
 //   tickets.mjs current [--json]         the epic this folder belongs to
 //   tickets.mjs doctor [--json]          check the flow's preconditions and
@@ -41,6 +46,7 @@
 import { execFileSync, spawnSync } from 'node:child_process'
 import { readFileSync, readdirSync, existsSync, statSync } from 'node:fs'
 import { join, basename } from 'node:path'
+import { homedir } from 'node:os'
 
 const TICKET_ID = '[A-Z][A-Z0-9]*-\\d+'
 
@@ -149,6 +155,11 @@ function parsePreamble(ticketsDoc) {
     delivery: grab('Delivery') ?? 'incremental',
     reviewerModel: grab('Reviewer model', '[A-Za-z0-9._-]+'),
     workerModel: grab('Worker model', '[A-Za-z0-9._-]+'),
+    // "Worker runner" names who implements in an unattended run: absent or
+    // `claude` is a Claude subagent; `codex` is the plugin's Codex runner
+    // script. Parsed here, validated by the run driver, which refuses an
+    // unknown value rather than substituting an implementer.
+    workerRunner: grab('Worker runner', '[A-Za-z-]+'),
     plannerModel: grab('Planner model', '[A-Za-z0-9._-]+'),
     consequencePaths: grabPathList('Consequence paths'),
     ticketBudget: budget,
@@ -368,6 +379,118 @@ function parseOwed(epic) {
     }
   }
   return owed.filter((o) => o.text && !/^nothing\b/i.test(o.text) && !resolved.has(o.id))
+}
+
+// ── token spend ──────────────────────────────────────────────────────────────
+// The status log records spend in three places, and this derives one ledger
+// from all of them so nobody sums by hand: a ticket entry's **Tokens** line,
+// its review addendum's `Worker tokens (implementation leg): <n>;
+// Reviewer tokens: <n>` phrases, and a run record's `**Tokens:**` line, which carries
+// `<ID> worker=<n> reviewer=<n> disposition=<n> re-review=<n> proxies=<n>`
+// groups. Recorded figures only — harness-observed or `unknown`, exactly as
+// the log says; this script never estimates and never reads a transcript.
+// Within a region the last figure for a role wins, so a dated correction
+// addendum overrides the entry it corrects, like every other correction.
+const SPEND_ROLES = ['worker', 'reviewer', 're-review', 'disposition', 'proxies']
+const RUN_HEADING = /^###\s+Run\s*[—–-]\s*(\d{4}-\d{2}-\d{2})\s*[—–-]/
+const ROLE_RE = SPEND_ROLES.join('|')
+const ROLE_PHRASE = new RegExp(`\\b(${ROLE_RE})\\s+tokens\\b[^:]{0,40}:\\s*(\\d[\\d,]*|unknown)`, 'gi')
+const ROLE_PAIR = new RegExp(`\\b(${ROLE_RE})=(\\d[\\d,]*|unknown)`, 'gi')
+const ROLE_UNKNOWN = new RegExp(`\\b(${ROLE_RE})\\s+unknown\\b`, 'gi')
+const TOKENS_LINE = /\*\*Tokens:\*\*\s*([^\n]*)/gi
+const RUN_GROUP = new RegExp(`\\b(${TICKET_ID})((?:\\s+(?:${ROLE_RE})=(?:\\d[\\d,]*|unknown))+)`, 'g')
+const toNum = (s) => Number(s.replace(/,/g, ''))
+
+function parseSpend(epic) {
+  const byId = {}
+  if (!epic.statusDoc) return byId
+  const rec = (id) => byId[id] || (byId[id] = { id, figures: {}, unknown: new Set(), source: null, note: null })
+  const apply = (r, role, val, source) => {
+    role = role.toLowerCase()
+    if (/^unknown$/i.test(val)) {
+      r.unknown.add(role)
+      delete r.figures[role]
+    } else {
+      r.figures[role] = toNum(val)
+      r.unknown.delete(role)
+    }
+    r.source = source
+  }
+  // Entries wrap at the house width, so phrases are matched over a region's
+  // joined text, never line by line: "Worker tokens (implementation\nleg):".
+  const flush = (region, text) => {
+    if (!region) return
+    const flat = text.replace(/\s+/g, ' ')
+    if (region.id) {
+      const r = rec(region.id)
+      for (const m of flat.matchAll(ROLE_PHRASE)) apply(r, m[1], m[2], 'log')
+      for (const m of flat.matchAll(ROLE_PAIR)) apply(r, m[1], m[2], 'log')
+      for (const m of flat.matchAll(ROLE_UNKNOWN)) apply(r, m[1], 'unknown', 'log')
+      for (const m of flat.matchAll(TOKENS_LINE)) {
+        const v = m[1].trim()
+        if (/^unknown\b/i.test(v)) {
+          r.unknown.add('ticket')
+          r.source = r.source || 'log'
+        } else if (/run record/i.test(v)) r.note = 'run-record'
+        else if (/supervisor/i.test(v)) r.note = 'addendum'
+      }
+    } else {
+      for (const m of flat.matchAll(RUN_GROUP)) {
+        const r = rec(m[1])
+        for (const p of m[2].matchAll(ROLE_PAIR)) apply(r, p[1], p[2], 'run-record')
+        r.unknown.delete('ticket')
+      }
+    }
+  }
+  let region = null // { id } for a ticket entry, { run: date } for a run record
+  let text = ''
+  for (const line of readFileSync(epic.statusDoc, 'utf8').split('\n')) {
+    const h = line.match(STATUS_HEADING)
+    const run = h ? null : line.match(RUN_HEADING)
+    if (h || run || /^##\s/.test(line)) {
+      flush(region, text)
+      region = h ? { id: h[1] } : run ? { run: run[1] } : null
+      text = ''
+      continue
+    }
+    if (region) text += `${line}\n`
+  }
+  flush(region, text)
+  return byId
+}
+
+function spendReport(epicFilter) {
+  const data = board(epicFilter)
+  requireKnownEpic(data, epicFilter)
+  const epics = []
+  for (const epic of data.epics) {
+    const spend = parseSpend(epic)
+    const tickets = data.tickets
+      .filter((t) => t.epic === epic.epic)
+      .map((t) => {
+        const r = spend[t.id] || { figures: {}, unknown: new Set(), source: null, note: null }
+        const known = Object.values(r.figures)
+        return {
+          id: t.id,
+          title: t.title,
+          state: t.state,
+          ...Object.fromEntries(SPEND_ROLES.map((role) => [role, r.figures[role] ?? null])),
+          total: known.length ? known.reduce((a, b) => a + b, 0) : null,
+          unknown: [...r.unknown].sort(),
+          source: r.source,
+          note: r.note,
+        }
+      })
+    const totals = Object.fromEntries(SPEND_ROLES.map((role) => [role, tickets.reduce((a, t) => a + (t[role] || 0), 0)]))
+    totals.total = tickets.reduce((a, t) => a + (t.total || 0), 0)
+    epics.push({
+      epic: epic.epic,
+      tickets,
+      totals,
+      unknownTickets: tickets.filter((t) => t.total === null || t.unknown.length).length,
+    })
+  }
+  return { epics }
 }
 
 // ── git and GitHub state ─────────────────────────────────────────────────────
@@ -666,15 +789,39 @@ function doctor() {
   // old two-line syntax ("Release mode:" / "Run mode:") is in the near set
   // deliberately: those labels parse as nothing at all now, and a preamble
   // written in them would silently run incremental.
-  const declNear = /^[^A-Za-z]*\b(delivery|(reviewer|worker|planner)\s+model|consequence\s+paths|ticket\s+budget|(release|run)\s+mode)\b/i
-  const declStrict = /^Delivery\s*:\s*[A-Za-z-]+|^(Reviewer|Worker|Planner) model\s*:\s*[A-Za-z0-9._-]+|^Consequence paths\s*:\s*\S+|^Ticket budget\s*:\s*\d+[km]?(\s|$)/i
+  const declNear = /^[^A-Za-z]*\b(delivery|(reviewer|worker|planner)\s+model|worker\s+runner|consequence\s+paths|ticket\s+budget|(release|run)\s+mode)\b/i
+  const declStrict = /^Delivery\s*:\s*[A-Za-z-]+|^(Reviewer|Worker|Planner) model\s*:\s*[A-Za-z0-9._-]+|^Worker runner\s*:\s*[A-Za-z-]+|^Consequence paths\s*:\s*\S+|^Ticket budget\s*:\s*\d+[km]?(\s|$)/i
   for (const epic of epics) {
     if (!DELIVERIES.has(epic.delivery))
       add('warn', `${epic.epic}: unrecognised delivery "${epic.delivery}" (known: release, incremental) — skills reading it will not know how this epic ships`)
     readFileSync(epic.ticketsDoc, 'utf8').split(/^##\s/m)[0].split('\n').forEach((line, i) => {
       if (declNear.test(line) && !declStrict.test(line))
-        add('warn', `${epic.epic}/tickets.md:${i + 1} — looks like a declaration line but will not parse, so it silently defaults (needs "Delivery: release|incremental" / "Reviewer model: <value>" / "Worker model: <value>" / "Planner model: <value>" / "Consequence paths: <glob>[, <glob>]" / "Ticket budget: <digits, optional k or m suffix>" — label at line start, no formatting, value on the label's own line; "Release mode:"/"Run mode:" are not read at all): ${line.trim()}`)
+        add('warn', `${epic.epic}/tickets.md:${i + 1} — looks like a declaration line but will not parse, so it silently defaults (needs "Delivery: release|incremental" / "Reviewer model: <value>" / "Worker model: <value>" / "Worker runner: claude|codex" / "Planner model: <value>" / "Consequence paths: <glob>[, <glob>]" / "Ticket budget: <digits, optional k or m suffix>" — label at line start, no formatting, value on the label's own line; "Release mode:"/"Run mode:" are not read at all): ${line.trim()}`)
     })
+  }
+
+  // The worker runner's environment, when an epic names one. `codex` must
+  // run and be signed in before ticket one — the runner cannot sign in, and
+  // a run that discovers this at its first ticket halts with nobody there.
+  // Probed here so planning sees it (declaring the runner obligates the plan
+  // to run doctor), the way branch protection is probed at planning time.
+  // Codex's own conventions locate the credential: $CODEX_HOME, else
+  // ~/.codex, holding auth.json; or OPENAI_API_KEY in the environment.
+  for (const runner of new Set(epics.map((e) => e.workerRunner).filter(Boolean))) {
+    if (runner === 'claude') continue
+    if (runner !== 'codex') {
+      add('warn', `unrecognised Worker runner "${runner}" (known: claude, codex) — the run driver refuses to start rather than substitute an implementer`)
+      continue
+    }
+    const v = spawnSync('codex', ['--version'], { encoding: 'utf8', timeout: 15_000 })
+    if (v.error || v.status !== 0)
+      add('fail', `Worker runner: codex is declared but \`codex --version\` ${v.error ? `could not run (${v.error.code})` : `exited ${v.status}`} — install it (npm install -g @openai/codex) before an unattended run; the runner halts the first ticket without it`)
+    else add('ok', `codex runner available: ${(v.stdout || '').trim()}`)
+    const codexHome = process.env.CODEX_HOME || join(homedir(), '.codex')
+    if (existsSync(join(codexHome, 'auth.json'))) add('ok', `codex signed in (${join(codexHome, 'auth.json')} exists)`)
+    else if (process.env.OPENAI_API_KEY) add('ok', 'codex credential: OPENAI_API_KEY is set in this environment')
+    else
+      add('fail', `Worker runner: codex is declared but codex is not signed in — no ${join(codexHome, 'auth.json')} and no OPENAI_API_KEY; run \`codex login\` (or pipe a key into \`codex login --with-api-key\`) before an unattended run`)
   }
 
   const nearTicket = new RegExp(`^##\\s+[A-Za-z][A-Za-z0-9]*-\\d+`)
@@ -778,6 +925,7 @@ function ticketFacts(data, t) {
     delivery: epic.delivery,
     reviewerModel: epic.reviewerModel,
     workerModel: epic.workerModel,
+    workerRunner: epic.workerRunner,
     plannerModel: epic.plannerModel,
     consequencePaths: epic.consequencePaths,
     ticketBudget: epic.ticketBudget,
@@ -945,6 +1093,37 @@ switch (cmd) {
     break
   }
 
+  case 'spend': {
+    // The recorded token ledger, per ticket and per epic — derived from the
+    // status log's Tokens lines, addendum phrases and run records, so the
+    // retro and the board never sum by hand. Unknown figures stay unknown;
+    // a ticket with no recorded figure is reported as such, never as zero.
+    const report = spendReport(arg || null)
+    if (json) emit(report)
+    else {
+      const fmt = (n) => (n === null || n === undefined ? '?' : n.toLocaleString('en-US'))
+      for (const e of report.epics) {
+        console.log(
+          `${C.bold}${e.epic}${C.off} — ${e.tickets.length} tickets · recorded ${fmt(e.totals.total)} tokens` +
+            (e.unknownTickets ? ` · ${e.unknownTickets} with unknown or missing figures` : ''),
+        )
+        for (const t of e.tickets) {
+          const parts = SPEND_ROLES.filter((r) => t[r] !== null || t.unknown.includes(r)).map((r) => `${r} ${fmt(t[r])}`)
+          const detail = parts.length
+            ? `${parts.join('  ')}  total ${fmt(t.total)}  ${C.dim}(${t.source})${C.off}`
+            : `${C.dim}no figure recorded${t.note ? ` — points at the ${t.note}` : ''}${C.off}`
+          console.log(`  ${t.id.padEnd(8)} ${detail}`)
+        }
+        console.log(
+          `  ${C.dim}${SPEND_ROLES.map((r) => `${r} ${fmt(e.totals[r])}`).join('  ')}${C.off}`,
+        )
+        console.log()
+      }
+      console.log(`${C.dim}Recorded figures only — harness-observed or unknown, as the log says; nothing here is estimated.${C.off}`)
+    }
+    break
+  }
+
   case 'list':
   case undefined: {
     const data = board(arg || null)
@@ -959,7 +1138,7 @@ switch (cmd) {
         modes: Object.fromEntries(
           data.epics.map((e) => [
             e.epic,
-            { delivery: e.delivery, reviewerModel: e.reviewerModel, workerModel: e.workerModel, plannerModel: e.plannerModel, consequencePaths: e.consequencePaths, ticketBudget: e.ticketBudget },
+            { delivery: e.delivery, reviewerModel: e.reviewerModel, workerModel: e.workerModel, workerRunner: e.workerRunner, plannerModel: e.plannerModel, consequencePaths: e.consequencePaths, ticketBudget: e.ticketBudget },
           ]),
         ),
         duplicates: data.duplicates,
@@ -981,6 +1160,6 @@ switch (cmd) {
   }
 
   default:
-    console.error(`tickets: unknown command "${cmd}" (try: list, find, brief, next, check, epics, current, doctor)`)
+    console.error(`tickets: unknown command "${cmd}" (try: list, find, brief, next, check, spend, epics, current, doctor)`)
     process.exit(2)
 }

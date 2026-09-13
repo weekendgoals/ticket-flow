@@ -32,8 +32,11 @@ Re-publishing the same file path updates the same URL — do that on later
 user's tab stays live.
 
 Print the URL. Say in one line what the snapshot is: derived at this moment
-from git, commit subjects and open pull requests — the terminal `list`
-remains the live view, and the page is regenerated, never edited.
+from git, commit subjects and open pull requests, with a **Tokens** column
+from the recorded spend ledger (`tickets.mjs spend`; `?` is an unknown
+figure, `—` nothing recorded — never a zero, never an estimate) — the
+terminal `list` remains the live view, and the page is regenerated, never
+edited.
 
 ## 3. Never commit the page
 

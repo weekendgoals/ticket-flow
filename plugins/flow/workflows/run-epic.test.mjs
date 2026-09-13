@@ -1139,3 +1139,81 @@ test('a completed run tells the session to open the pull request BEFORE writing 
   assert.match(r.out.next, /quoting the pull request's real URL/)
   assert.deepEqual(r.out.deployPreconditions, ['PAY-1_ENV'])
 })
+
+// ---- worker runner ----------------------------------------------------------
+
+test('Worker runner: codex swaps the worker for a shell proxy that runs the runner script and relays its JSON', async () => {
+  const usage = { input: 1000, cached: 200, output: 300 }
+  const r = await drive(oneTicket({ 'worker:PAY-1': workerOk('PAY-1', { runner: { name: 'codex', usage, pushed: true } }) }), {
+    ...ARGS,
+    workerRunner: 'codex',
+    workerModel: 'gpt-5-codex',
+  })
+  const c = call(r, 'worker:PAY-1')
+  assert.match(c.prompt, /shell proxy for the codex worker runner/)
+  assert.match(
+    c.prompt,
+    /node "\/plugins\/flow\/scripts\/runners\/codex\.mjs" PAY-1 --epic payments --epic-branch epic\/payments --default-branch main --repo "\/repo" --plugin "\/plugins\/flow" --label worker:PAY-1 --model gpt-5-codex --json/,
+  )
+  assert.match(c.prompt, /Report that object's fields VERBATIM/)
+  assert.match(c.prompt, /toward the default branch/)
+  assert.equal(c.model, 'haiku')
+  assert.equal(c.effort, 'low')
+  assert.equal(c.agentType, undefined, 'a shell proxy, not a general-purpose worker')
+  assert.equal(r.out.outcome, 'completed')
+  const rec = r.out.ticketRecords[0]
+  assert.equal(rec.workerRunner, 'codex')
+  assert.equal(rec.workerModel, 'codex:gpt-5-codex')
+  assert.deepEqual(rec.workerUsage, usage)
+  // Everything after the worker is unchanged: the review, the gate, the merge.
+  assert.deepEqual(r.labels.slice(1), ['worker:PAY-1', 'tier-facts:PAY-1', 'review:PAY-1', 'disposition:PAY-1', 'accept:PAY-1', 'resolve:PAY-1', 'merge:PAY-1', 'verify:PAY-1', 'refresh+select:2'])
+})
+
+test('without a runner line the worker is the Claude subagent it always was, and the record says so', async () => {
+  const r = await drive(oneTicket())
+  const c = call(r, 'worker:PAY-1')
+  assert.doesNotMatch(c.prompt, /shell proxy/)
+  assert.equal(c.agentType, 'general-purpose')
+  assert.equal(r.out.ticketRecords[0].workerRunner, 'claude')
+  assert.equal(r.out.ticketRecords[0].workerUsage, null)
+})
+
+test('Worker runner: claude is the default spelled out, not a different runner', async () => {
+  const r = await drive(oneTicket(), { ...ARGS, workerRunner: 'claude' })
+  assert.equal(call(r, 'worker:PAY-1').agentType, 'general-purpose')
+  assert.equal(r.out.ticketRecords[0].workerRunner, 'claude')
+})
+
+test('an unknown runner refuses the run rather than substituting an implementer', async () => {
+  const r = await drive(oneTicket(), { ...ARGS, workerRunner: 'gemini' })
+  assert.match(r.out.threw, /Unknown workerRunner "gemini"/)
+  assert.equal(r.calls.length, 0, 'nothing spawned')
+})
+
+test("a codex worker's halt is the same halt: the runner's reconciled result drives the stop mapping", async () => {
+  const r = await drive(
+    oneTicket({
+      'worker:PAY-1': workerOk('PAY-1', { result: 'halted', stopCondition: 'document-contradiction', detail: 'codex reported work-committed but pay-1 has no commits ahead of origin/epic/payments' }),
+    }),
+    { ...ARGS, workerRunner: 'codex' },
+  )
+  assert.equal(r.out.outcome, 'halted')
+  assert.equal(r.out.haltedOn.stopCondition, 'a document/code contradiction — reported by a worker, or met by the script\'s own checks')
+  assert.equal(r.out.haltedOn.ticket, 'PAY-1')
+})
+
+// ---- live spend line --------------------------------------------------------
+
+test('every integrated ticket logs its meter delta as it happens, with the runner usage when there is one', async () => {
+  const r = await drive(oneTicket(), { ...ARGS, ticketBudget: 5000 }, meter(1200))
+  assert.ok(r.logs.some(l => /^PAY-1: spend — 1200 output tokens by the runtime meter \(budget 5000\)$/.test(l)), r.logs.join('\n'))
+
+  const usage = { input: 1000, cached: 200, output: 300 }
+  const c = await drive(oneTicket({ 'worker:PAY-1': workerOk('PAY-1', { runner: { name: 'codex', usage, pushed: true } }) }), { ...ARGS, workerRunner: 'codex' }, meter(700))
+  assert.ok(c.logs.some(l => l === 'PAY-1: spend — 700 output tokens by the runtime meter; codex worker in=1000 cached=200 out=300 by its own meter'), c.logs.join('\n'))
+})
+
+test('with no meter the run logs no spend line — unmetered is unmetered, not zero', async () => {
+  const r = await drive(oneTicket())
+  assert.ok(!r.logs.some(l => /spend —/.test(l)))
+})
