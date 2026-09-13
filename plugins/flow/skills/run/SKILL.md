@@ -130,7 +130,8 @@ Workflow({
 
 Everything mechanical rides in `args` because a workflow script has **no
 filesystem, no shell and no clock** — every fact it uses is fetched by an
-agent it spawns.
+agent it spawns. Pass the date and the two absolute paths, or the script
+refuses to start.
 
 **What the script does**, per ticket, in document order, until
 `tickets.mjs next <epic> --json` comes back empty:
@@ -262,7 +263,8 @@ that resumes past one. The run halts:
   agent that dies without reporting, or reports success the board does not
   show, halts here too. So does a review that is not on the record: the
   addendum never committed, or this ticket's entries in the pushed log
-  carrying no dated `Addendum — review —` line;
+  carrying no dated `Addendum — review —` line. An unreviewed-on-the-record
+  ticket is never merged, whatever an agent says it did;
 - on **an Important review finding it cannot fix** — accepting a not-fixed
   Important is not an agent's to decide in an unattended run, so the
   disposition reports it and the run stops for a human. The same halt fires

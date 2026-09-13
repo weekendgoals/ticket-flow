@@ -16,7 +16,8 @@ with one version and date.
   procedure, METHODOLOGY is reasoning" split. No step, gate, template,
   command or stop condition changed: steps 0–10 keep their numbers and
   contents (the driver's and supervisor's prompts key on them), the
-  status-log preamble, entry heading, addendum and tier table are verbatim,
+  status-log preamble and entry heading are verbatim, the addendum prefix
+  and the tier table's tier, model and effort values are intact,
   the consequence list and the hook's refusal message are quoted as before,
   and `check-invariants.mjs` passes unchanged. What went: the extended
   reasoning already carried by METHODOLOGY.md (review pricing, why release

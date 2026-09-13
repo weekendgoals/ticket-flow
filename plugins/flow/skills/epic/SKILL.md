@@ -149,7 +149,7 @@ the plan side to match. Without a Worker line each worker inherits the
 spawning session's model — a price nobody decided on.
 
 `Planner model:` — pins this epic's plan reviewer (step 4); otherwise the
-agent's pinned strongest model.
+agent's pinned strongest model. Lower it only for genuinely low-stakes work.
 
 `Consequence paths: <glob>[, <glob>]` — e.g. `src/auth/**, migrations/**`:
 paths the unattended driver always prices at the consequence review tier, a

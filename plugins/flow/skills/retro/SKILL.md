@@ -58,7 +58,8 @@ its cwd may move mid-task, and relative paths break there.
 The full `status.md` including every addendum, `tickets.md` as it ended up,
 anything in `context/`, and the shipped work itself:
 `git -C <repoRoot> log origin/<default> --oneline | grep <epic's IDs>`. The
-instruction files for the areas the epic touched, as they are **now**.
+instruction files for the areas the epic touched, as they are **now**, read
+from under `repoRoot`.
 
 ## 4. Mine it — six questions
 
@@ -66,7 +67,8 @@ instruction files for the areas the epic touched, as they are **now**.
   evidence and a reversal condition — check them: achieved (cite the
   evidence), not achieved (a planning finding, not a failure to hide), or
   not yet assessable (say what evidence is still to arrive, and when to look
-  again). Older epics without an Outcome line: say so and move on.
+  again). Older epics without an Outcome line: say so and move on — do not retrofit
+  one.
 - **What is still owed?** Every **Owed** line and every review finding
   dispositioned as pre-existing or out of scope: did a shipped ticket
   actually inherit it? What survives is unfinished work that exists nowhere
@@ -114,7 +116,8 @@ edit to the evidence. Then **ask, and wait.**
   through a reviewed pull request, never committed to the default branch
   directly.
 - Leftover owed work becomes tickets: appended to a live epic's `tickets.md`
-  where one owns the area, or a new `/flow:epic` where none does.
+  where one owns the area, or a new `/flow:epic` where none does. Never
+  leave it as a memory of this conversation.
 - **Optionally archive the closed epic**: `git mv epics/<name>
   epics/_archive/<name>`, in the same pull request. The board only discovers
   epics directly under `epics/`, so the archived epic drops off it — safe

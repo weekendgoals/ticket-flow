@@ -65,7 +65,8 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/tickets.mjs" find $ARGUMENTS --json
 ```
 
 Returns `ticketsDoc`, `statusDoc`, `contextDir`, `repoRoot` and the `branch`
-to create as **absolute paths** — use them as given; your cwd moves during
+to create as **absolute paths** — use them as given, never turned back into
+relative ones, and anchor anything else to `repoRoot`; your cwd moves during
 verification — plus `delivery` (`release` or `incremental`, incremental when
 absent; decides steps 3, 9 and 10), `reviewerModel` (step 7) and
 `workerModel` (step 0).
@@ -92,7 +93,8 @@ make.
    marker as a dated addendum (step 6).
 3. The **full `statusDoc`** only when something sends you there — an owed
    item or ground rule that builds on earlier work, a predecessor's decision
-   the ticket names. Read the entries you need, not the diary.
+   the ticket names, a brief that leaves you unable to say what the last
+   ticket left behind. Read the entries you need, not the diary.
 4. Anything in `contextDir` the ticket points at.
 
 Where two documents disagree, or the code contradicts a document, **stop and
@@ -231,7 +233,9 @@ was meant to verify>
 ```
 
 When this ticket discharges an owed item from an earlier entry, say so on its
-own line — this is what removes it from every future brief:
+own line in this entry, or in a dated addendum beneath it (the shape the
+**Rules** block allows for anything added after the fact) — this is what
+removes it from every future brief:
 
 ```markdown
 **Resolves owed:** <ID of the entry that recorded it> — <how it was discharged>
@@ -256,8 +260,8 @@ The consequence list: authentication or authorization boundaries, secrets,
 crypto, network exposure, migrations, anything that deletes or rewrites data,
 payments or billing, or anything that can fail open. It is the same list that
 gates entry to `/flow:quick` — a trigger added to either list is added to the
-other in the same commit. Pick the tier yourself and say which; when in doubt,
-take the higher one. (The unattended driver floors the tier in code from the
+other in the same commit. Pick the tier yourself and say which; do not ask.
+When in doubt, take the higher one. (The unattended driver floors the tier in code from the
 diff's file list, because there the reviewed party reports it.)
 
 Spawn the reviewer with the **Agent** tool: `subagent_type:
