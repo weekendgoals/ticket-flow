@@ -38,7 +38,7 @@ go through the flow, one-off work goes through `/flow:quick` into
   asserts the sequence, the gate branches and the halt mapping. It needs
   nothing but Node: no git, no network, no filesystem beyond the script.
   The Codex worker runner has
-  `node --test plugins/flow/scripts/runners/codex.test.mjs` (`# pass 7`) —
+  `node --test plugins/flow/scripts/runners/codex.test.mjs` (`# pass 8`) —
   a stub `codex` binary that speaks the real CLI's JSONL protocol drives
   the runner through a throwaway git repo; it needs `git` and nothing else,
   and never calls the real Codex.

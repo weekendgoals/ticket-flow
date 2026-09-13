@@ -33,21 +33,28 @@ with one version and date.
   `Worker runner: codex`, makes the unattended worker OpenAI's Codex CLI
   instead of a Claude subagent; the driver then spawns a fast-model shell
   proxy that runs the runner script and relays its JSON verbatim. The
-  runner owns what the model must not: it fetches before the run, launches
-  `codex exec` in the workspace-write sandbox with **no network**, hands
-  Codex the same scoped slice of the ticket skill a Claude worker gets
-  (pointed at the skill file, since Codex cannot load a plugin skill by
-  name), constrains the final message to the worker schema, and then
-  reconciles that report with git — a claim of work over an empty branch
-  is a document/code contradiction, a failed push is a halt, a BLOCKED
-  branch is still pushed so its entry reaches the remote — before granting
-  `branch-pushed` from the push it watched. Codex's own usage lands in the
+  runner owns what the model must not — **git, entirely**: it fetches and
+  creates the ticket branch before the run, launches `codex exec` in the
+  workspace-write sandbox (where `.git` is read-only and there is **no
+  network**), hands Codex the same scoped slice of the ticket skill a
+  Claude worker gets (pointed at the skill file, since Codex cannot load a
+  plugin skill by name), constrains the final message to the worker
+  schema, commits everything Codex left in the working tree under an
+  ID-prefixed subject (the tree must be clean at the start, or the runner
+  refuses), and then reconciles the report with git — a claim of work that
+  left no change is a document/code contradiction, a failed push is a
+  halt, a BLOCKED branch is still pushed so its entry reaches the remote —
+  before granting `branch-pushed` from the push it watched. The first live
+  run on a real Codex session settled that split: Codex read the skill,
+  reported in schema with its usage on record, and halted honestly at
+  `git checkout -b` because the sandbox denied the `.git` write. Codex's own usage lands in the
   ticket record as `workerUsage`, observed by the runner, never reported by
   the model. An unknown runner value refuses the run rather than
   substituting an implementer the sign-off did not name. Every gate
   downstream reads git, so the reviewer, the CHECK re-run, the addendum
-  check and the SHA merge are untouched. Seven runner tests drive it with
-  a stub `codex` that speaks the real CLI's JSONL protocol; a live run on a
+  check and the SHA merge are untouched. Eight runner tests drive it with
+  a stub `codex` that speaks the real CLI's JSONL protocol and, like the
+  real sandbox, never writes to `.git`; a live run on a
   signed-in account is the only test of the model's compliance, and the
   gates exist for the case where it does not comply.
 

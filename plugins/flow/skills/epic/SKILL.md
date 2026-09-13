@@ -153,8 +153,9 @@ agent's pinned strongest model. Lower it only for genuinely low-stakes work.
 
 `Worker runner: claude | codex` — who implements in an unattended run.
 Absent or `claude`: a fresh Claude subagent. `codex`: OpenAI's Codex CLI
-through the plugin's runner script, sandboxed with no network — the runner
-fetches and pushes — with `Worker model:` then naming a Codex model. Every
+through the plugin's runner script, sandboxed with `.git` read-only and no
+network — the runner branches, commits and pushes, so one commit per
+ticket — with `Worker model:` then naming a Codex model. Every
 gate downstream reads git, so the reviewer, the CHECK re-run and the SHA
 merge are unchanged; declaring it obligates the plan to confirm `codex` is
 installed and signed in (the run skill's step 3).

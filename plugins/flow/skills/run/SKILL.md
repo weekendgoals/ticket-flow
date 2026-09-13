@@ -105,9 +105,13 @@ ticket one. Report what is missing and stop.
   succeed and the account must already be signed in (`~/.codex/auth.json`
   exists; `codex exec` runs non-interactively) — the runner cannot sign in,
   and a missing binary halts the first ticket. Codex runs in its
-  workspace-write sandbox with no network: the runner fetches before and
-  pushes after, so `branch-pushed` is what the runner saw, never what the
-  model claimed.
+  workspace-write sandbox, where `.git` is read-only and there is no
+  network: the runner owns git entirely — it fetches and creates the
+  ticket branch before, commits everything Codex left under an ID-prefixed
+  subject and pushes after — so the model's write surface is the working
+  tree, and `branch-pushed` is what the runner saw, never what the model
+  claimed. The runner refuses to start over a dirty tree for the same
+  reason: it commits everything it finds.
 - **The automation's identity — recommended, not required.** The run acts as
   whoever `git` and `gh` are authenticated as; when that is the human's own
   account, protection cannot tell agent from human. For high-consequence
