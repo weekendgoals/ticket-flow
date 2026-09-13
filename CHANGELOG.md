@@ -8,6 +8,55 @@ with one version and date.
 
 ## Unreleased
 
+- **The ticket skill is the procedure, not the argument for it**
+  (`skills/ticket/SKILL.md`, roughly 4,600 words to 2,600). Every worker
+  paid to load the whole essay before touching a file, and the imperatives
+  sat inside their justifications — the "every constraint carries its
+  reason" style, applied at paragraph length, was fighting the "skills are
+  procedure, METHODOLOGY is reasoning" split. No step, gate, template,
+  command or stop condition changed: steps 0–10 keep their numbers and
+  contents (the driver's and supervisor's prompts key on them), the
+  status-log preamble, entry heading, addendum and tier table are verbatim,
+  the consequence list and the hook's refusal message are quoted as before,
+  and `check-invariants.mjs` passes unchanged. What went: the extended
+  reasoning already carried by METHODOLOGY.md (review pricing, why release
+  tickets open no pull request, why fixes are new commits), restated
+  cross-references, and duplicated phrasing between steps 0 and 10. Each
+  constraint keeps its reason as a clause. The other long skills (run,
+  epic, quick, retro) are owed the same pass.
+- **The run skill, same treatment** (`skills/run/SKILL.md`, roughly 6,300
+  words to 3,300). Steps 1–7 keep their numbers and contents (the epic
+  skill points at step 3's probes), the Workflow call block, the result
+  shape, the run-record template and the release pull request body list
+  are intact, and the ten stop-condition sentences in step 5 still match
+  the driver's `STOP` strings word for word — verified by extracting them
+  from `run-epic.mjs` and searching the skill. The largest cut is step 4's
+  per-ticket walkthrough of the driver: the session launching the run never
+  executes those bullets, the script does and its tests enforce them, so
+  each now says what the step decides and what halts it, not how the script
+  is built. Reasoning that METHODOLOGY.md already carries (why the loop is
+  code, why release tickets open no pull request, why the re-review became
+  a code gate) is no longer restated.
+- **The epic, quick and retro skills, same treatment** (`skills/epic`
+  roughly 3,900 words to 2,400; `skills/quick` 2,000 to 1,550;
+  `skills/retro` 1,700 to 1,250). Step numbers are unchanged everywhere
+  (quick's step 2 template and step 5 preamble, epic's step 3 page and
+  step 4 review are referenced by other skills). Every template fence the
+  invariant checker parses is intact: the `tickets.md` preamble with all
+  six configuration lines and the printed `Worker model: opus` default, the
+  `## <ID> — <short name>` and `## Q-<n> — <short name>` ticket headings,
+  the `CHECK:`/`EXPECT:` lines, and the status-log preamble in all three
+  copies. Quick's risk-trigger bullet list is verbatim, since the checker
+  matches it against the ticket skill's consequence list. What went:
+  restated reasoning (why the plan is reviewed, why quick moved
+  in-session, why the era rollover exists — all in METHODOLOGY.md), the
+  template's paragraph-length explanations of each configuration line,
+  now one sentence each, and repeated cross-references. One correction
+  rode along: the retro's mining heading said "five questions" while
+  listing six; it now says six. The four short skills (review, doctor,
+  tickets, board) were read and left as they are — each is already a
+  procedure with no essay around it.
+
 - **The merge gate matches a dated review addendum by shape, never by the
   run's pinned date** (`workflows/run-epic.mjs` resolve step,
   `skills/run/SKILL.md` steps 4-5). A live run halted a green ticket at

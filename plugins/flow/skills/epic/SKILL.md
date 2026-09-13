@@ -5,12 +5,13 @@ description: Turn a feature request, investigation or conversation into an epic 
 
 # Plan epic $ARGUMENTS
 
-You are producing **a folder and a decision**, not code. Nothing is implemented
-in this session.
+You are producing **a folder and a decision**, not code. Nothing is
+implemented in this session. This file is the procedure; METHODOLOGY.md
+carries the reasons.
 
 ## 1. Read the arguments, then get the input
 
-`$ARGUMENTS` is **the epic name, optionally followed by any number of sources**:
+`$ARGUMENTS` is **the epic name, optionally followed by sources**:
 
 ```
 /flow:epic venue-identity
@@ -18,257 +19,146 @@ in this session.
 /flow:epic leagues docs/census.md https://example.com/spec  epics/*/context/prior.csv
 ```
 
-Parse it like this:
-
-- The **first whitespace-delimited token is the epic name**, and it becomes the
-  directory `epics/<name>/`. It must be kebab-case with no slashes or dots.
-- **If that first token looks like a path or a URL** — it contains `/`, ends in a
-  file extension, or starts with a scheme — then no name was given. Treat every
-  token as a source, and propose a name once you have read them.
+- The **first token is the epic name** → `epics/<name>/`; kebab-case, no
+  slashes or dots. If it looks like a path or URL (contains `/`, has a file
+  extension, starts with a scheme), no name was given: treat every token as
+  a source and propose a name after reading them.
 - **Everything after the name is a source**: a file path, a glob, or a URL.
 
-Below, **`<name>`** means the epic name you parsed out — never the raw
-`$ARGUMENTS` string, which now also holds the sources.
+Below, `<name>` is the parsed epic name, never the raw `$ARGUMENTS`.
 
-**The conversation is always input, and sources are added to it — never instead
-of it.** If the user has been describing the problem for ten minutes and then
-passes a file, both matter. If they passed sources and said nothing, the sources
-are the whole brief. If they passed nothing, the conversation is.
+**The conversation is always input; sources are added to it, never instead
+of it.** Say in the sign-off which shaped what.
 
-Say in the sign-off which shaped what, so a disagreement lands in the right place.
+**Sources.** Read every source **in full** before proposing anything, and
+copy each into `epics/<name>/context/`: a file or glob verbatim (the ticket
+doc is your reading of it; a future session may need to disagree with your
+reading); a URL fetched and saved with the URL and today's date at the top (a
+link rots). Anything unreadable: **stop and say so** — never proceed on a
+partial brief.
 
-### Handling sources
-
-Read every source **in full** before proposing anything, and copy each into
-`epics/<name>/context/`:
-
-- A **file or glob** — copy it verbatim. Do not summarise it into the ticket doc
-  and discard the original; the ticket doc is your reading of it, and a future
-  session may need to disagree with your reading.
-- A **URL** — fetch it and save what it said as a file, with the URL and today's
-  date at the top. A link is not context. It rots, it moves, and it may need
-  credentials a later session does not have.
-- Anything **unreadable** — a path that does not exist, a URL that fails, a file
-  you lack permission for — **stop and say so**. Do not proceed on a partial
-  brief and do not guess at what it contained.
-
-### If there is no source at all
-
-The epic then rests on the conversation, an investigation you just ran, or the
-user's description. That is legitimate — but **ask about anything you would
-otherwise guess at**, and write what you learn into the ticket document, because
-this conversation is the only place it currently exists and it is about to be
-thrown away.
+**No source at all** is legitimate — the brief is the conversation — but
+**ask about anything you would otherwise guess at**, and write what you learn
+into the ticket document, because this conversation is about to be thrown
+away.
 
 ## 2. Ground yourself before decomposing
 
-- The repository's root agent instructions (`CLAUDE.md`, or `AGENTS.md`), and the
-  same file for every service, package or workspace in play. **If they are stale,
-  fixing them is the first thing you do** — every ticket will be written and
-  executed against them, so an inaccuracy here multiplies.
-- The actual code and data the epic concerns. A decomposition written from the
-  description alone invents tickets for problems that do not exist and misses
-  the ones that do.
-- `node "${CLAUDE_PLUGIN_ROOT}/scripts/tickets.mjs" list` — what other epics are
-  open, and where they overlap this one.
+- The root agent instructions (`CLAUDE.md` or `AGENTS.md`) and the same file
+  for every service, package or workspace in play. **If they are stale, fix
+  them first** — every ticket will be written and executed against them.
+- The actual code and data the epic concerns. A decomposition written from
+  the description alone invents tickets for problems that do not exist and
+  misses the ones that do.
+- `node "${CLAUDE_PLUGIN_ROOT}/scripts/tickets.mjs" list` — what other epics
+  are open, and where they overlap this one.
 
 ## 3. Clarify, agree the shape, then write `epics/<name>/tickets.md`
 
-**First, hunt what you would otherwise guess.** The most expensive planning
-defects are not wrong answers — they are questions nobody asked, resolved
-silently by whichever reading was easiest to build. Before proposing any
-shape, sweep the brief and the grounding for underspecified points, category
-by category: scope boundaries (what is adjacent and excluded), data and its
-lifecycle, error and edge behaviour, integration points and their contracts,
-non-functional expectations (scale, latency, security posture), and any
-sentence two readers could read two ways. For each, decide: does the answer
-change the shape of the work? **Ask the user the ones that do — batched,
-concrete, each with the readings you are choosing between** (an
-interrogation is as bad as guessing; a handful of sharp questions is the
-budget). Record every answer in the ticket document — a ground rule, the
-Outcome line, a ticket's scope — because an answer living only in this
-conversation is lost to every worker that starts empty. The ones that do
-not change the shape ride to sign-off as open questions instead of
-blocking here.
+**First, hunt what you would otherwise guess.** Sweep the brief and the
+grounding for underspecified points — scope boundaries, data and its
+lifecycle, error and edge behaviour, integration contracts, non-functional
+expectations, any sentence two readers could read two ways. **Ask the user
+the ones whose answer changes the shape of the work — batched, concrete,
+each with the readings you are choosing between**; a handful of sharp
+questions is the budget. Record every answer in the ticket document. The
+rest ride to sign-off as open questions.
 
-**Then show the user the shape and let them bend it.** A finished decomposition anchors: presented whole, it turns
-sign-off into yes/no on the only shape in the room, when the cheap moment
-to re-split is now — a re-split costs a sentence here and a rewrite after
-the bodies are written. Present, compactly:
+**Then show the user the shape and let them bend it** — a finished
+decomposition anchors, and a re-split costs a sentence now and a rewrite
+later. Present, compactly: the draft **Outcome** line (and the numbered
+**Requirements** when the epic carries them); the **areas in scope** and
+anything grounding turned up; the **delivery choice** and its why, in one
+line; the **ticket list as one line each** — `ID — name — what it proves or
+builds` — in order, with a word on why the first is first.
 
-- the draft **Outcome** line — the problem, the observable change, the
-  evidence, the reversal condition — and, when the epic carries one, the
-  numbered **Requirements** list;
-- the **areas in scope** and anything grounding turned up that changes the
-  work's shape;
-- the **delivery choice** and its why, in one line;
-- the **ticket list as one line each** — `ID — name — what it proves or
-  builds` — in the intended order, with a word on why the first is first.
+**Render the shape as a page.** Write it as JSON into your session's
+**scratchpad** (never the repository — `tickets.md` is the record); the
+schema is at the top of `scripts/plan-page.mjs` (`stage: "shape"`, outcome,
+requirements, areas, delivery with its why, the ticket lines, `firstWhy`).
+Then:
 
-**Render the shape as a page** — the reading experience is the point of
-stopping here, and a wall of chat text is where a shape gets skimmed. The
-skeleton ships with the plugin, so no session builds it by hand:
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/plan-page.mjs" <scratchpad>/plan-<name>.json --out <scratchpad>/plan-<name>.html
+```
 
-1. Write the shape as JSON into your session's **scratchpad** — never into
-   the repository: it is steering material, not record, and `tickets.md`
-   is the record. The schema is documented at the top of
-   `scripts/plan-page.mjs` (`stage: "shape"`, the outcome, the requirements
-   when the epic carries them, areas, delivery with its why, the ticket
-   list with one line each, `firstWhy`).
-2. Render it:
-
-   ```bash
-   node "${CLAUDE_PLUGIN_ROOT}/scripts/plan-page.mjs" <scratchpad>/plan-<name>.json --out <scratchpad>/plan-<name>.html
-   ```
-
-3. Publish the page as an artifact and print the URL (where no artifact
-   surface exists, send the file to the user instead). Keep the ticket
-   list in chat too, one line each — the page is the reading view; the
-   chat lines are what the user's reply quotes.
-
-Invite edits and answer questions; **wait for the user to say the shape is
-right** before writing the full sections. This is a steering stop, not the
-sign-off gate — step 5 still gates on the finished document with the plan
-review in hand. If the user redirects the shape, update the JSON, re-render,
-and **republish the same file path** — the page keeps its URL and evolves
-with the plan instead of scattering across stale copies.
+Publish it as an artifact and print the URL (no artifact surface: send the
+file). Keep the ticket lines in chat too — the page is the reading view, the
+chat lines are what the reply quotes. **Wait for the user to say the shape is
+right** before writing the full sections; this is a steering stop, not the
+sign-off gate. On a redirect, update the JSON, re-render, and **republish
+the same file path** so the URL evolves with the plan.
 
 Then write the document:
 
 ```markdown
 # <Name> epic — tickets
 
-Source: <where this came from, with date. Point at context/ if there is material>
+Source: <where this came from, with date; point at context/ if there is material>
 
-Outcome: <the problem and who has it, the observable change that should result,
-the evidence that would show it worked, and what would make us reverse or
-remove it. Falsifiable, or it is decoration — "improve UX" can never fail;
-"support requests about X stop arriving" can be checked at the retro.
-Acceptance criteria prove the build behaves as intended; this line is what
-proves it was worth building. Name the observer for each piece of evidence
-and check it can distinguish success from failure: "the record shows zero X"
-is evidence only if a record showing some X is possible — an epic once
-promised a git record proving no human intervened, when every actor shared
-the human's own identity.>
+Outcome: <the problem and who has it, the observable change, the evidence
+that would show it worked, and what would make us reverse it. Falsifiable,
+or it is decoration — "improve UX" can never fail; "support requests about
+X stop arriving" can be checked at the retro. Name the observer for each
+piece of evidence and check it can distinguish success from failure.>
 
-Requirements: <OPTIONAL — the WHAT, held apart from the HOW. A short
-numbered list (R1, R2, …) of the user-visible behaviours this epic must
-deliver, each in the checkable form *when <condition> the system shall
-<observable result>*. Written BEFORE any ticket is sliced and never edited
-to match the slicing: the tickets implement the requirements, the
-requirements never bend to the tickets — which is exactly what lets the
-plan reviewer walk the two lists against each other, requirement to
-criteria and ticket to requirement. Part of the preamble, deliberately not
-a `##` section: the preamble is what `brief` hands every worker, and a
-worker should know the WHAT its ticket serves. Omit it for a small epic
-whose Outcome line already carries the whole WHAT — an empty ritual list
-is worse than none.>
+Requirements: <OPTIONAL — the WHAT, apart from the HOW: a numbered list
+(R1, R2, …) of user-visible behaviours, each *when <condition> the system
+shall <observable result>*, written BEFORE any ticket is sliced and never
+bent to fit the slicing — that is what lets the plan reviewer walk
+requirement to criteria and ticket to requirement. Part of the preamble, so
+`brief` hands it to every worker. Omit it when the Outcome line already
+carries the whole WHAT.>
 
-Areas in scope: <the services, packages or directories this epic touches, and
-the instruction file that binds each — e.g. `api-gateway` (api-gateway/CLAUDE.md).
-A ticket reads these before it starts; naming them here is what stops each
-session rediscovering them.>
+Areas in scope: <the services, packages or directories this touches, and
+the instruction file that binds each — e.g. `api-gateway` (api-gateway/CLAUDE.md)>
 
 Delivery: release | incremental
-<one line, one decision: how this epic's work reaches the default branch.
+<one line, one decision. **release** — the default for a multi-ticket epic:
+after sign-off, `/flow:run` implements, reviews and merges each ticket into
+`epic/<name>` unattended, no per-ticket pull request; the human decides
+twice, here and at the release pull request. Bound it: roughly 3–6 tickets,
+days not weeks, a release diff a human can review — beyond that, split it
+or go incremental. **incremental** — one human-gated pull request per
+ticket against the default branch, merged before the next starts; for
+per-ticket production feedback, a fast-moving main, or a staged migration.
 
-release — THE DEFAULT for a multi-ticket epic. After sign-off, each ticket
-implements, is reviewed, fixes findings and merges its branch into
-`epic/<name>` unattended (`/flow:run`) — no per-ticket pull request; the
-human's two decisions are this sign-off and the release pull request at the
-end, the epic's only one. Choose it because the
-valuable human gates are the plan and the release — a human approving every
-intermediate pull request is acting as a scheduler, not a judge. Bound it:
-roughly 3–6 tickets, days not weeks, and a release diff a human can
-actually review — a release epic that would exceed that is either split or
-made incremental.
-
-incremental — each ticket opens its own pull request against the default
-branch, human-gated, merged before the next starts. Choose it when early
-delivery or production feedback per ticket matters, when main moves fast in
-the same area, when a migration needs staged deployment — or when the epic
-would outgrow the release bounds above. Attended by definition: the human
-merge between tickets is the point of choosing it.
-
-Declaring `release` obligates the plan to probe the environment
-prerequisites NOW — branch protection on the default branch (the run
-skill's step 3 has the probe commands) and the pre-authorized permission
-surface (step 3 enumerates what must be allowed; check that list against
-what the environment actually pre-authorizes) — and record the result as
-prose on this Delivery line or under the ground rules, never as its own
-mode-shaped preamble line, which doctor's near-miss scan would flag. If the
-protection probe finds it missing or unavailable (a free-plan 403 on both
-endpoints), the human decides at sign-off: fix the environment, or **waive
-it — and the waiver is written here too, as a decision, never a bare
-finding**: "waived <date>: <who> chose to run without the hard floor",
-because the run skill's step 3 proceeds only on recorded human acceptance
-and treats a probe result alone as no waiver. A prerequisite first probed
-on run day is discovered at the worst moment: the first live run hit an
-unprobed free-plan 403, and its waiver landed seconds before run start.
-
-A ticket of a release epic can still be run one-at-a-time with
-`/flow:ticket` — that is the escape hatch for resolving a halt or watching
-one consequential ticket closely, not a planned mode.>
+Declaring `release` obligates the plan to probe branch protection and the
+permission surface NOW (the run skill's step 3 has the commands) and record
+the result as prose here or under the ground rules — never as its own
+mode-shaped line. Missing or unavailable protection (a free-plan 403) is
+the human's call at sign-off: fix it, or **waive it, written here as a
+decision, never a bare finding** — "waived <date>: <who> chose to run
+without the hard floor" — because the run proceeds only on recorded human
+acceptance.>
 
 Worker model: opus
 
-<EVERY OTHER CONFIGURATION LINE IS OPTIONAL, and they all live here — one
-place, one syntax, all validated by `/flow:doctor`'s near-miss scan. Label
-at line start, value the first word after the colon, prose after the value
-welcome. The full set:
+<Every other configuration line is optional and lives here — label at line
+start, value the first word after the colon, prose after it welcome;
+`/flow:doctor` flags near-misses.
 
-`Worker model: <model>` and `Reviewer model: <model>` — the implementing
-workers and the ticket reviewer, chosen **together, as a pairing**. Two
-profiles are known-good:
+`Worker model:` and `Reviewer model:` — chosen **together as a pairing**:
+**capable-implementer** (`Worker model: opus`, no Reviewer line; the
+consequence tiers price review) for gnarly code and thin specs;
+**strong-judge** (`Worker model: sonnet`, `Reviewer model: opus`) for
+well-specified tickets out of a plan-reviewed epic — worker spend is the
+largest line item, so this is the biggest cost knob. Decide from previous
+run records (Important findings per ticket, observed spend); never cheapen
+the plan side to match. Without a Worker line each worker inherits the
+spawning session's model — a price nobody decided on.
 
-- **capable-implementer** (the template's printed default):
-  `Worker model: opus`, no Reviewer line — the consequence tiers price
-  review (haiku / sonnet / opus). Choose it for gnarly code, thin specs,
-  unfamiliar territory: implementation quality is bought up front, and
-  routine review stays cheap.
-- **strong-judge**: `Worker model: sonnet`, `Reviewer model: opus` — the
-  cheap implementer under the stronger judge. Choose it for
-  well-specified tickets out of a plan this skill clarified, shaped and
-  had reviewed: the scaffolding (binding scope, checkable criteria,
-  fresh-context review, fix bounds) exists precisely to make a cheaper
-  implementer safe, and worker spend is the largest line item per
-  ticket, so this is the flow's highest-leverage cost knob.
-
-Decide from evidence, not taste: previous run records carry each
-ticket's Important-finding count and observed token spend — a
-strong-judge epic whose tickets keep collecting Important findings and
-fix loops is saying its tickets were not specified well enough for the
-profile, and the fix is the profile or the planning, whichever the
-findings point at. Without a Worker line each worker inherits the
-session that spawns it — often the most expensive class available, a
-price nobody decided on — so drop the line only when inheriting is a
-decision. And never cheapen the plan side to match the worker: a weak
-implementation produces findings a reviewer catches; a weak plan
-produces tickets that are confidently, reviewably wrong, and every gate
-downstream approves a correct implementation of the wrong thing.
-
-`Planner model: <model>` — pins the plan reviewer for THIS epic's step 4
-review; otherwise the plan-reviewer agent's own pinned strongest model is
-used. A wrong decomposition costs every downstream ticket, so lower this
-only for genuinely low-stakes epics.
+`Planner model:` — pins this epic's plan reviewer (step 4); otherwise the
+agent's pinned strongest model.
 
 `Consequence paths: <glob>[, <glob>]` — e.g. `src/auth/**, migrations/**`:
-paths whose changes always price review at the consequence tier in an
-unattended run — the risk list projected onto this repository's layout,
-applied by the run driver as a code floor under the worker's self-reported
-tier, so the reviewed party cannot price its own judge down. Globs only on
-this line (prose after a comma would parse as a glob); `**` crosses
-directory separators, `*` stays within one. The globs supplement the
-worker's judgment, never replace it — the semantic risk list still binds,
-and a reported `consequence` tier is honored with or without a matching
-glob.
+paths the unattended driver always prices at the consequence review tier, a
+code floor under the worker's self-reported tier. Globs only on this line;
+`**` crosses directories, `*` stays within one.
 
 `Ticket budget: <n>` — e.g. `250k` or `1m`: a per-ticket output-token
-ceiling for unattended runs. The run driver measures every ticket's pass
-against the runtime's own meter and halts after any ticket that exceeds
-this — the ticket stays merged; the run stops before the next one. Set it
-from the epic's expected ticket class so a runaway ticket becomes a signal
-instead of a bill.>
+ceiling for unattended runs; the driver halts after any ticket that exceeds
+it (the ticket stays merged), so a runaway ticket is a signal, not a bill.>
 
 Status log: `epics/<name>/status.md`. Run a ticket with `/flow:ticket <ID>`.
 
@@ -301,93 +191,72 @@ Then one section per ticket:
 
 Rules that matter:
 
-- **Stable short IDs prefixed by epic** — `SEC-3`, `DATA-7`. They prefix every
-  commit, name every branch, and are how shipped state is detected.
-- **Document order is the intended order.** `tickets.mjs` proposes the first
-  unstarted ticket per epic by position, so put the de-risking probe or the live
-  regression first. If the plan rests on an unproven assumption, ticket one
+- **Stable short IDs prefixed by epic** — `SEC-3`, `DATA-7`. They prefix
+  every commit, name every branch, and are how shipped state is detected.
+- **Document order is the intended order.** The board proposes the first
+  unstarted ticket by position, so put the de-risking probe or the live
+  regression first; if the plan rests on an unproven assumption, ticket one
   proves or kills it, and the doc says what happens on failure.
-- **Sized for one session, and for a reviewable pull request.** If you cannot
-  state the acceptance criteria in a handful of bullets, split it. Aim for a few
-  hundred changed lines; defect discovery collapses past roughly 400.
-- **All three of Scope / Not in scope / Acceptance criteria.** "Not in scope" is
-  what stops a fresh-context agent wandering.
-- **Acceptance criteria must be checkable.** Name the command and what it must
-  show. Prefer the form *when <condition> then the system shall <observable
-  result>* — it forces a criterion something can actually test. A criterion
-  may also name a **runtime demonstration** — drive the real app in a
-  browser, simulator or terminal and observe the result — for behaviour no
-  test command reaches: rendered UI, an interactive flow, a CLI's actual
-  output. Write it as *demonstrate: <action> → <observable result>*, and
-  hold it to the same bar as a command: the doer records what was actually
-  observed, never "looks fine". Tests prove what the code does; a
-  demonstration proves what a user gets, and agent-built UI is exactly
-  where the two diverge. And where a command can decide the criterion
-  outright, prefer the **machine-runnable form**: an indented
-  `CHECK: <command>` line under the bullet, with an optional
-  `EXPECT: <text the output must contain>` (exit 0 alone decides when
-  EXPECT is absent). `tickets.mjs check <ID>` runs them and reports the
-  ledger, and in an unattended run the driver re-runs them from the
-  signed-off document as a merge gate — a criterion written as a CHECK is
-  one no worker can satisfy by narration. Keep CHECK commands idempotent
-  and safe to run twice: the driver runs them again on the pushed branch
-  after any review fixes. If verification
-  needs something a session may not have — Docker, cloud credentials, a browser —
-  give the fallback: *"or flag it in the status doc as owed to ticket X"*.
+- **Sized for one session and a reviewable pull request** — a few hundred
+  changed lines; defect discovery collapses past roughly 400. If the
+  criteria will not fit a handful of bullets, split it.
+- **All three of Scope / Not in scope / Acceptance criteria.** "Not in
+  scope" is what stops a fresh-context agent wandering.
+- **Acceptance criteria must be checkable.** Prefer *when <condition> then
+  the system shall <observable result>*. For behaviour no test command
+  reaches (rendered UI, an interactive flow, a CLI's output) write a
+  **runtime demonstration** — *demonstrate: <action> → <observable result>*
+  — and the doer records what was observed, never "looks fine". Where a
+  command can decide it outright, use the **machine-runnable form**: an
+  indented `CHECK: <command>` with an optional `EXPECT: <text the output
+  must contain>` (exit 0 alone decides when EXPECT is absent).
+  `tickets.mjs check <ID>` runs them, and the unattended driver re-runs them
+  from the signed-off document as a merge gate — a CHECK criterion is one no
+  worker can satisfy by narration; keep the commands idempotent. If
+  verification needs something a session may not have (Docker, credentials,
+  a browser), give the fallback: *"or flag it as owed to ticket X"*.
 - **No status column.** State is derived by `tickets.mjs`; a hand-maintained
   table drifts within days.
 
 ## 4. Plan review — fresh eyes before the gate
 
-The session that wrote the decomposition cannot review it. It will agree with
-itself — and a wrong decomposition caught after sign-off costs every ticket
-built on it.
+The session that wrote the decomposition cannot review it, and a wrong
+decomposition caught after sign-off costs every ticket built on it.
 
 Spawn `flow:plan-reviewer` with the **Agent** tool — `model`: the draft's
-own `Planner model:` line when it declares one (configuration binds where
-it is read, and you just wrote it with the user), otherwise omit the
-parameter and the agent definition's pinned strongest model applies;
-`effort: high`. Give it: the draft `epics/<name>/tickets.md`, the
-`context/` directory, the root instruction file and each in-scope area's, and
-one line on what was requested. It reads the plan against the actual code and
-reports; it does not rewrite anything.
+own `Planner model:` line when it declares one, otherwise omit the parameter
+so the agent definition's pinned model applies; `effort: high`. Give it the
+draft `epics/<name>/tickets.md`, the `context/` directory, the root
+instruction file and each in-scope area's, and one line on what was
+requested. It reports; it does not rewrite.
 
-Then, before showing the user:
-
-- **Fix what is right.** This is the cheap moment to re-split a ticket or
-  reorder — edit `tickets.md` now.
-- **Keep what you reject, with a reason.** A finding you disagree with goes to
-  the user, not into silence.
-- **Carry its "Questions for sign-off" forward unchanged.** Those are the
-  human's to answer, not yours.
+Then, before showing the user: **fix what is right** (re-split, reorder —
+edit `tickets.md` now, while it is cheap); **keep what you reject, with a
+reason** for the user; **carry its "Questions for sign-off" forward
+unchanged** — they are the human's to answer.
 
 ## 5. Get sign-off — hard gate
 
-Show the user: the ticket list with one line each, the order, what ticket one
-proves, the delivery choice and why, anything you found while grounding that
-changes the shape of the work — plus **one alternative decomposition you
-considered and rejected, with the reason** (a different split, a different
-order, a different first ticket — one line each side), so sign-off is a
-choice between shapes rather than a ratification of the only shape shown —
-and the plan review's outcome: what it flagged, what you changed, what you
-rejected and why, and its open questions.
+Show the user: the ticket list with one line each, the order, what ticket
+one proves, the delivery choice and why, anything grounding found that
+changes the shape — plus **one alternative decomposition you considered and
+rejected, with the reason**, so sign-off is a choice between shapes rather
+than a ratification of the only one shown — and the plan review's outcome:
+what it flagged, what you changed, what you rejected and why, its open
+questions.
 
 **Bring the plan page to this gate too**: update step 3's JSON — `stage:
 "sign-off"`, the `alternative` with its rejection reason, the `planReview`
-outcome, any `openQuestions` — re-render with `plan-page.mjs`, and
-republish the **same file path**, so the URL the user already has now shows
-the finished plan with the review in hand. The chat still carries the ask;
-the page is where the plan is actually read.
+outcome, any `openQuestions` — re-render, and republish the **same file
+path**.
 
-**If the epic declares `Delivery: release`, the sign-off must say so in
-plain terms**: "after
+**If the epic declares `Delivery: release`, say so in plain terms**: "after
 your approval, tickets will implement, review and merge into `epic/<name>`
-unattended; your next decision point is the release pull request." Approval
-of a release epic is approval of that, and the user must be able to see it.
+unattended; your next decision point is the release pull request."
+Approval of a release epic is approval of that.
 
-**Ask explicitly, and wait.** Do not write the status doc, do not touch the root
-instruction file, do not start ticket one. Re-planning is cheap now and expensive
-after three tickets are built on a wrong decomposition.
+**Ask explicitly, and wait.** Do not write the status doc, do not touch the
+root instruction file, do not start ticket one.
 
 ## 6. After sign-off
 
@@ -408,18 +277,16 @@ required even when empty.
 from>
 ```
 
-This template's preamble — the heading through the **Rules** block; the
-Baseline section is planning's own — is also carried by the ticket skill's
-step 6, the door where a missing status log is created mid-ticket, and by
-the quick skill's step 5 for its in-session lane. One rule, three documents:
-a change to any copy moves the others in the same commit.
+The preamble (heading through the **Rules** block; Baseline is planning's
+own) is also carried by the ticket skill's step 6 and the quick skill's step
+5 — one rule, three documents: a change to any copy moves the others in the
+same commit.
 
-**The status log is a diary, not a dashboard.** It records what happened, in
-order, permanently. It never answers "which tickets are done" — `/flow:tickets`
-derives that from git. Do not add a summary table to it.
+**The status log is a diary, not a dashboard.** It never answers "which
+tickets are done" — `/flow:tickets` derives that. No summary table.
 
-If the repository's root instruction file carries a short "current work" section,
-add one line for this epic there.
+If the root instruction file carries a short "current work" section, add one
+line for this epic there.
 
 ## 7. Commit and push — no pull request
 
@@ -432,42 +299,29 @@ git commit
 git push -u origin epic/<name>
 ```
 
-**Cut the epic branch from `origin/<default-branch>`, never from whatever
-happens to be checked out.** Planning often runs from a stale or unrelated
-branch, and an epic branch cut from one silently carries that branch's commits
-into every ticket.
+**Cut the epic branch from `origin/<default-branch>`, never from whatever is
+checked out** — planning often runs from a stale branch, whose commits would
+ride into every ticket. Anchor paths to `$REPO`; `git add epics/…` is
+relative to the shell's cwd. **Push now**: in a release epic every ticket
+merges into `epic/<name>`, and its presence on the remote is how
+`/flow:run` verifies sign-off happened.
 
-Anchor the paths to `$REPO`. `git add epics/…` is interpreted relative to the
-shell's cwd, which is not necessarily the repo root.
+**No pull request for the plan.** Incremental: ticket one branches from here
+and the docs land in its pull request. Release: they land with the release
+pull request. **The epic's documents are never deleted to make a diff
+smaller** — if a pull request is too large to review, the epic was too
+large; split the work, not the record.
 
-**Push the epic branch now**, not when someone first needs it: in a release
-epic every ticket's pull request uses `epic/<name>` as its base, and a base
-that exists only locally makes `gh pr create` fail — in an unattended run,
-with nobody there to answer. The push is also what lets `/flow:run` verify
-sign-off happened before starting an unattended run.
-
-**Do not open a pull request for the plan.** In an incremental epic the docs
-reach the default branch for free: ticket one branches from here, so they
-land in that ticket's pull request along with the code they describe. In a
-release epic they land with the release pull request.
-
-**The epic's documents are never deleted to make a diff smaller.** If a pull
-request is too large to review, the epic was too large — split the work, not the
-record.
-
-Commit on `epic/<name>`, not on the default branch. Committing to a local
-default branch leaves it diverged from the remote once ticket one merges.
+Commit on `epic/<name>`, not on the default branch.
 
 ## 8. Hand over
 
-If the epic declares `Delivery: release`, say that `/flow:run <name>`
-starts the unattended run — that is what the sign-off approved. For an incremental epic, say which
-ticket is first and that `/flow:ticket <first-ID>` runs next, from this same
-working copy.
+Release epic: say that `/flow:run <name>` starts the unattended run — that
+is what the sign-off approved. Incremental: say which ticket is first and
+that `/flow:ticket <first-ID>` runs next, from this working copy.
 
 If the project uses one checkout per epic and you were **not** run from this
-epic's own checkout, say so — a fresh checkout resets to the remote default
-branch, so it will not contain these documents until ticket one's pull request
-merges. Planning inside the epic's own checkout avoids that entirely.
+epic's own checkout, say so — a fresh checkout will not contain these
+documents until ticket one's pull request merges.
 
 Then stop.
