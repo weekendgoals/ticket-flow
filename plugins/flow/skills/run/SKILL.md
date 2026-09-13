@@ -99,6 +99,15 @@ ticket one. Report what is missing and stop.
   Waiver found: proceed and carry it into the run record (step 6) and the
   release pull request body (step 7). None: report the probe results and
   stop.
+- **The worker runner, when the epic names one.** `Worker runner: codex`
+  hands implementation to the Codex CLI through the plugin's runner script
+  (`scripts/runners/codex.mjs`). Before ticket one, `codex --version` must
+  succeed and the account must already be signed in (`~/.codex/auth.json`
+  exists; `codex exec` runs non-interactively) — the runner cannot sign in,
+  and a missing binary halts the first ticket. Codex runs in its
+  workspace-write sandbox with no network: the runner fetches before and
+  pushes after, so `branch-pushed` is what the runner saw, never what the
+  model claimed.
 - **The automation's identity — recommended, not required.** The run acts as
   whoever `git` and `gh` are authenticated as; when that is the human's own
   account, protection cannot tell agent from human. For high-consequence
@@ -121,6 +130,7 @@ Workflow({
     pluginRoot: "${CLAUDE_PLUGIN_ROOT}",
     today: "<YYYY-MM-DD, from your own clock>",
     workerModel: "<modes[<name>].workerModel — omit the key when absent>",
+    workerRunner: "<modes[<name>].workerRunner — omit the key when absent>",
     reviewerModel: "<modes[<name>].reviewerModel — omit the key when absent>",
     consequencePaths: <modes[<name>].consequencePaths — omit the key when null>,
     ticketBudget: <modes[<name>].ticketBudget — omit the key when null>
@@ -147,7 +157,11 @@ refuses to start.
   review, no addendum, no merge, no agents of its own. The worker reports
   the **review tier** its diff earns (a missing or unrecognised tier prices
   as `consequence`) and writes its label (`worker:<ID>`) into the entry's
-  **Mode** line.
+  **Mode** line. With `Worker runner: codex` the worker is the runner script
+  instead, driven by a fast-model shell proxy that relays its JSON verbatim;
+  the runner reconciles the model's report with the repository (a claim of
+  work over an empty branch is a contradiction, a failed push is a halt) and
+  records Codex's own usage under `workerUsage`.
 - **Floors that tier in code** from the branch's changed files (a read-only
   fast-model listing, `epics/` excluded): `Consequence paths:` matches floor
   at `consequence`, any non-documentation file at `normal`, docs-only may

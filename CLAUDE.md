@@ -37,6 +37,11 @@ go through the flow, one-off work goes through `/flow:quick` into
   which evaluates `run-epic.mjs`'s module body with stubbed agents and
   asserts the sequence, the gate branches and the halt mapping. It needs
   nothing but Node: no git, no network, no filesystem beyond the script.
+  The Codex worker runner has
+  `node --test plugins/flow/scripts/runners/codex.test.mjs` (`# pass 7`) —
+  a stub `codex` binary that speaks the real CLI's JSONL protocol drives
+  the runner through a throwaway git repo; it needs `git` and nothing else,
+  and never calls the real Codex.
 - **Doctrine invariants:** `node plugins/flow/scripts/check-invariants.mjs` —
   must exit 0 on this repo; mechanically verifies the string-checkable
   cross-document couplings (the status-log preamble's three copies, the two

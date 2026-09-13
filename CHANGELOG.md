@@ -8,6 +8,32 @@ with one version and date.
 
 ## Unreleased
 
+- **A release epic can hand implementation to Codex** (`scripts/runners/
+  codex.mjs` and its tests, `workflows/run-epic.mjs` worker step and
+  `workerRunner` arg, `scripts/tickets.mjs` `Worker runner:` preamble line
+  with doctor near-miss coverage, `skills/run/SKILL.md` steps 3–4,
+  `skills/epic/SKILL.md` template, README). A new optional preamble line,
+  `Worker runner: codex`, makes the unattended worker OpenAI's Codex CLI
+  instead of a Claude subagent; the driver then spawns a fast-model shell
+  proxy that runs the runner script and relays its JSON verbatim. The
+  runner owns what the model must not: it fetches before the run, launches
+  `codex exec` in the workspace-write sandbox with **no network**, hands
+  Codex the same scoped slice of the ticket skill a Claude worker gets
+  (pointed at the skill file, since Codex cannot load a plugin skill by
+  name), constrains the final message to the worker schema, and then
+  reconciles that report with git — a claim of work over an empty branch
+  is a document/code contradiction, a failed push is a halt, a BLOCKED
+  branch is still pushed so its entry reaches the remote — before granting
+  `branch-pushed` from the push it watched. Codex's own usage lands in the
+  ticket record as `workerUsage`, observed by the runner, never reported by
+  the model. An unknown runner value refuses the run rather than
+  substituting an implementer the sign-off did not name. Every gate
+  downstream reads git, so the reviewer, the CHECK re-run, the addendum
+  check and the SHA merge are untouched. Seven runner tests drive it with
+  a stub `codex` that speaks the real CLI's JSONL protocol; a live run on a
+  signed-in account is the only test of the model's compliance, and the
+  gates exist for the case where it does not comply.
+
 - **Token spend is derived, like every other fact** (`scripts/tickets.mjs`
   new `spend [epic] [--json]` subcommand and tests, `skills/run/SKILL.md`
   step 6, `skills/quick/SKILL.md` step 6, `skills/retro/SKILL.md` step 5,
