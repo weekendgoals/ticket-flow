@@ -8,6 +8,28 @@ with one version and date.
 
 ## Unreleased
 
+- **Token spend is derived, like every other fact** (`scripts/tickets.mjs`
+  new `spend [epic] [--json]` subcommand and tests, `skills/run/SKILL.md`
+  step 6, `skills/quick/SKILL.md` step 6, `skills/retro/SKILL.md` step 5,
+  README, `scripts/check-invariants.mjs` two new couplings). The log
+  recorded figures in three shapes — an entry's `**Tokens:**` line, the
+  addendum's `Worker tokens (implementation leg): <n>; Reviewer tokens:
+  <n>` phrases, and a run record's prose — and the only reader was the
+  retro, summing by hand, so spend was invisible until an epic closed and
+  approximate when it was not. `spend` compiles one ledger per ticket and
+  per role from all three, matching phrases over each entry's joined text
+  (the house wrap splits `Worker tokens (implementation\nleg):`), with the
+  last figure per role winning so a correction addendum overrides the
+  entry it corrects. `unknown` stays unknown and a ticket with nothing
+  recorded is reported as such, never as zero — the script derives, it
+  never estimates, and it reads no transcript. The run record's Tokens
+  line now has a machine shape, `<ID> worker=<n> reviewer=<n>
+  disposition=<n> re-review=<n> proxies=<n>` per ticket, because that is
+  the one place the run lane's figures exist; the quick skill names the
+  `Reviewer tokens: <n>` phrase it already used; and the retro reads the
+  ledger instead of the log. Two presence couplings hold the phrases to the
+  parser.
+
 - **The ticket skill is the procedure, not the argument for it**
   (`skills/ticket/SKILL.md`, roughly 4,600 words to 2,600). Every worker
   paid to load the whole essay before touching a file, and the imperatives

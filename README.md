@@ -338,6 +338,17 @@ instead of the working tree — the unattended driver passes
 document, which no ticket branch can edit. Prose and *demonstrate:* criteria
 remain first-class; CHECK is for the criteria a command can decide outright.
 
+**Spend is derived too.** `tickets.mjs spend [epic]` compiles the recorded
+token ledger — per ticket, per role (worker, reviewer, re-review,
+disposition, shell proxies) and per epic — from the three places the status
+log carries a figure: a ticket entry's `**Tokens:**` line, its review
+addendum's `Worker tokens (implementation leg): <n>; Reviewer tokens: <n>`
+phrases, and a run record's per-ticket `<ID> worker=<n> reviewer=<n> …`
+groups. Recorded figures only, exactly as the log says: `unknown` stays
+unknown, a ticket with nothing recorded is reported as such, and nothing is
+estimated or read from a transcript. `--json` returns the same ledger for
+the retro, which reads this instead of summing the log by hand.
+
 Two blind spots worth knowing: the board reads *this checkout's* view of the
 remote, so fetch first when the answer matters; and `shipped` means some commit
 carrying that ID landed, which a partial merge or a docs-only commit also

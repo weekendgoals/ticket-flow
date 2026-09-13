@@ -331,18 +331,19 @@ the reviewed diff" when `fixBoundsGated` — "acceptance:
 integrated | halted. A record that omits the fix gate reads as though the
 fixes were never looked at.>
 
-**Tokens:** <harness-observed from the run's own transcripts — never from an
-agent's report; no agent can see its own counter. The Workflow run persists
-each `agent()` call's transcript under this session's directory:
-`journal.jsonl` maps the labels (`worker:<ID>`, `review:<ID>`,
-`disposition:<ID>`, `re-review:<ID>`, the shell proxies) to their
-`agent-<id>.jsonl` files. Sum each agent's `usage` and state, per ticket:
-worker, reviewer (with tier, model, effort), re-review when it ran,
-disposition — plus the run total and the phase subtotals (workers,
-reviewers, dispositions, shell proxies), because a total alone cannot say
-where the spend went. `unknown` where the transcripts expose no usage. This
-is the run lane's only token record: ticket entries and addenda point here.
-Planning evidence, never a gate.>
+**Tokens:** <one group per ticket, in this exact machine-readable shape —
+`<ID> worker=<n> reviewer=<n> disposition=<n> re-review=<n> proxies=<n>`,
+groups separated by `;`, `unknown` in place of any figure the transcripts
+did not expose, then `total=<n>` — because `tickets.mjs spend` parses these
+groups into the epic's ledger and the retro reads that instead of summing by
+hand. Figures are harness-observed from the run's own transcripts, never
+from an agent's report: the Workflow run persists each `agent()` call's
+transcript under this session's directory, and `journal.jsonl` maps the
+labels (`worker:<ID>`, `review:<ID>`, `disposition:<ID>`, `re-review:<ID>`,
+the shell proxies) to their `agent-<id>.jsonl` files — sum each agent's
+`usage`. Add the reviewer's tier, model and effort as prose after the
+groups. This is the run lane's only token record: ticket entries and
+addenda point here. Planning evidence, never a gate.>
 
 **Halted on:** <`haltedOn.stopCondition` verbatim, with `haltedOn.ticket`
 and `haltedOn.where` — or "ran to completion".>

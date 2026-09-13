@@ -97,11 +97,12 @@ from under `repoRoot`.
 Draft, ready to hand back unchanged: instruction-file edits as concrete
 before/after lines, owed work as draft ticket sections ready to append,
 planning lessons with the evidence (quote the log), and the epic's token
-spend — each ticket counted **once**, from wherever its lane recorded it: an
-attended ticket in its entry's **Tokens** line plus its review addendum (a
-sum of Tokens lines alone drops every reviewer); a driver-run ticket in the
-**run record's Tokens line**, which its entry and addendum point at. Name
-`unknown` figures rather than counting them as zero.
+spend from `node "${CLAUDE_PLUGIN_ROOT}/scripts/tickets.mjs" spend <epic>`
+— the derived ledger, each ticket counted **once** from wherever its lane
+recorded it (an attended ticket's entry and addendum, a driver-run ticket's
+run record), with `unknown` figures named rather than counted as zero. Do
+not sum the log by hand; if a figure the log carries is missing from the
+ledger, that is a finding about the log's shape.
 
 Back in the invoking session: show the miner's report to the user
 **unedited** — disagreeing with a finding is a comment at the gate, never an

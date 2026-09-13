@@ -28,6 +28,11 @@
 //                                        ledger; --from reads the criteria
 //                                        from a git ref (the signed-off
 //                                        document) instead of the working tree
+//   tickets.mjs spend [epic] [--json]    the recorded token ledger per ticket
+//                                        and per epic, derived from the
+//                                        status log's Tokens lines, addendum
+//                                        phrases and run records; unknown
+//                                        stays unknown, never zero
 //   tickets.mjs epics [--json]           list known epics
 //   tickets.mjs current [--json]         the epic this folder belongs to
 //   tickets.mjs doctor [--json]          check the flow's preconditions and
@@ -368,6 +373,118 @@ function parseOwed(epic) {
     }
   }
   return owed.filter((o) => o.text && !/^nothing\b/i.test(o.text) && !resolved.has(o.id))
+}
+
+// ── token spend ──────────────────────────────────────────────────────────────
+// The status log records spend in three places, and this derives one ledger
+// from all of them so nobody sums by hand: a ticket entry's **Tokens** line,
+// its review addendum's `Worker tokens (implementation leg): <n>;
+// Reviewer tokens: <n>` phrases, and a run record's `**Tokens:**` line, which carries
+// `<ID> worker=<n> reviewer=<n> disposition=<n> re-review=<n> proxies=<n>`
+// groups. Recorded figures only — harness-observed or `unknown`, exactly as
+// the log says; this script never estimates and never reads a transcript.
+// Within a region the last figure for a role wins, so a dated correction
+// addendum overrides the entry it corrects, like every other correction.
+const SPEND_ROLES = ['worker', 'reviewer', 're-review', 'disposition', 'proxies']
+const RUN_HEADING = /^###\s+Run\s*[—–-]\s*(\d{4}-\d{2}-\d{2})\s*[—–-]/
+const ROLE_RE = SPEND_ROLES.join('|')
+const ROLE_PHRASE = new RegExp(`\\b(${ROLE_RE})\\s+tokens\\b[^:]{0,40}:\\s*(\\d[\\d,]*|unknown)`, 'gi')
+const ROLE_PAIR = new RegExp(`\\b(${ROLE_RE})=(\\d[\\d,]*|unknown)`, 'gi')
+const ROLE_UNKNOWN = new RegExp(`\\b(${ROLE_RE})\\s+unknown\\b`, 'gi')
+const TOKENS_LINE = /\*\*Tokens:\*\*\s*([^\n]*)/gi
+const RUN_GROUP = new RegExp(`\\b(${TICKET_ID})((?:\\s+(?:${ROLE_RE})=(?:\\d[\\d,]*|unknown))+)`, 'g')
+const toNum = (s) => Number(s.replace(/,/g, ''))
+
+function parseSpend(epic) {
+  const byId = {}
+  if (!epic.statusDoc) return byId
+  const rec = (id) => byId[id] || (byId[id] = { id, figures: {}, unknown: new Set(), source: null, note: null })
+  const apply = (r, role, val, source) => {
+    role = role.toLowerCase()
+    if (/^unknown$/i.test(val)) {
+      r.unknown.add(role)
+      delete r.figures[role]
+    } else {
+      r.figures[role] = toNum(val)
+      r.unknown.delete(role)
+    }
+    r.source = source
+  }
+  // Entries wrap at the house width, so phrases are matched over a region's
+  // joined text, never line by line: "Worker tokens (implementation\nleg):".
+  const flush = (region, text) => {
+    if (!region) return
+    const flat = text.replace(/\s+/g, ' ')
+    if (region.id) {
+      const r = rec(region.id)
+      for (const m of flat.matchAll(ROLE_PHRASE)) apply(r, m[1], m[2], 'log')
+      for (const m of flat.matchAll(ROLE_PAIR)) apply(r, m[1], m[2], 'log')
+      for (const m of flat.matchAll(ROLE_UNKNOWN)) apply(r, m[1], 'unknown', 'log')
+      for (const m of flat.matchAll(TOKENS_LINE)) {
+        const v = m[1].trim()
+        if (/^unknown\b/i.test(v)) {
+          r.unknown.add('ticket')
+          r.source = r.source || 'log'
+        } else if (/run record/i.test(v)) r.note = 'run-record'
+        else if (/supervisor/i.test(v)) r.note = 'addendum'
+      }
+    } else {
+      for (const m of flat.matchAll(RUN_GROUP)) {
+        const r = rec(m[1])
+        for (const p of m[2].matchAll(ROLE_PAIR)) apply(r, p[1], p[2], 'run-record')
+        r.unknown.delete('ticket')
+      }
+    }
+  }
+  let region = null // { id } for a ticket entry, { run: date } for a run record
+  let text = ''
+  for (const line of readFileSync(epic.statusDoc, 'utf8').split('\n')) {
+    const h = line.match(STATUS_HEADING)
+    const run = h ? null : line.match(RUN_HEADING)
+    if (h || run || /^##\s/.test(line)) {
+      flush(region, text)
+      region = h ? { id: h[1] } : run ? { run: run[1] } : null
+      text = ''
+      continue
+    }
+    if (region) text += `${line}\n`
+  }
+  flush(region, text)
+  return byId
+}
+
+function spendReport(epicFilter) {
+  const data = board(epicFilter)
+  requireKnownEpic(data, epicFilter)
+  const epics = []
+  for (const epic of data.epics) {
+    const spend = parseSpend(epic)
+    const tickets = data.tickets
+      .filter((t) => t.epic === epic.epic)
+      .map((t) => {
+        const r = spend[t.id] || { figures: {}, unknown: new Set(), source: null, note: null }
+        const known = Object.values(r.figures)
+        return {
+          id: t.id,
+          title: t.title,
+          state: t.state,
+          ...Object.fromEntries(SPEND_ROLES.map((role) => [role, r.figures[role] ?? null])),
+          total: known.length ? known.reduce((a, b) => a + b, 0) : null,
+          unknown: [...r.unknown].sort(),
+          source: r.source,
+          note: r.note,
+        }
+      })
+    const totals = Object.fromEntries(SPEND_ROLES.map((role) => [role, tickets.reduce((a, t) => a + (t[role] || 0), 0)]))
+    totals.total = tickets.reduce((a, t) => a + (t.total || 0), 0)
+    epics.push({
+      epic: epic.epic,
+      tickets,
+      totals,
+      unknownTickets: tickets.filter((t) => t.total === null || t.unknown.length).length,
+    })
+  }
+  return { epics }
 }
 
 // ── git and GitHub state ─────────────────────────────────────────────────────
@@ -945,6 +1062,37 @@ switch (cmd) {
     break
   }
 
+  case 'spend': {
+    // The recorded token ledger, per ticket and per epic — derived from the
+    // status log's Tokens lines, addendum phrases and run records, so the
+    // retro and the board never sum by hand. Unknown figures stay unknown;
+    // a ticket with no recorded figure is reported as such, never as zero.
+    const report = spendReport(arg || null)
+    if (json) emit(report)
+    else {
+      const fmt = (n) => (n === null || n === undefined ? '?' : n.toLocaleString('en-US'))
+      for (const e of report.epics) {
+        console.log(
+          `${C.bold}${e.epic}${C.off} — ${e.tickets.length} tickets · recorded ${fmt(e.totals.total)} tokens` +
+            (e.unknownTickets ? ` · ${e.unknownTickets} with unknown or missing figures` : ''),
+        )
+        for (const t of e.tickets) {
+          const parts = SPEND_ROLES.filter((r) => t[r] !== null || t.unknown.includes(r)).map((r) => `${r} ${fmt(t[r])}`)
+          const detail = parts.length
+            ? `${parts.join('  ')}  total ${fmt(t.total)}  ${C.dim}(${t.source})${C.off}`
+            : `${C.dim}no figure recorded${t.note ? ` — points at the ${t.note}` : ''}${C.off}`
+          console.log(`  ${t.id.padEnd(8)} ${detail}`)
+        }
+        console.log(
+          `  ${C.dim}${SPEND_ROLES.map((r) => `${r} ${fmt(e.totals[r])}`).join('  ')}${C.off}`,
+        )
+        console.log()
+      }
+      console.log(`${C.dim}Recorded figures only — harness-observed or unknown, as the log says; nothing here is estimated.${C.off}`)
+    }
+    break
+  }
+
   case 'list':
   case undefined: {
     const data = board(arg || null)
@@ -981,6 +1129,6 @@ switch (cmd) {
   }
 
   default:
-    console.error(`tickets: unknown command "${cmd}" (try: list, find, brief, next, check, epics, current, doctor)`)
+    console.error(`tickets: unknown command "${cmd}" (try: list, find, brief, next, check, spend, epics, current, doctor)`)
     process.exit(2)
 }

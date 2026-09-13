@@ -1038,3 +1038,146 @@ test('a passing check is not killed by more than 1 MB of output noise', () => {
     writeFileSync(checksDoc, original)
   }
 })
+
+// ── spend: the recorded token ledger ─────────────────────────────────────────
+// A separate repo with one epic whose status log carries every shape the
+// log has ever recorded a figure in: the ticket skill's addendum phrases
+// (wrapped at the house width), a bare `**Tokens:** unknown`, an entry that
+// points at the run record, and a run record with per-ticket key=value groups.
+
+const stmp = realpathSync(mkdtempSync(join(tmpdir(), 'tickets-spend-')))
+const sremote = join(stmp, 'remote.git')
+const srepo = join(stmp, 'repo')
+after(() => rmSync(stmp, { recursive: true, force: true }))
+git(stmp, 'init', '--bare', '--initial-branch=main', sremote)
+git(stmp, 'init', '--initial-branch=main', srepo)
+git(srepo, 'config', 'user.email', 'test@example.com')
+git(srepo, 'config', 'user.name', 'Test')
+git(srepo, 'config', 'commit.gpgsign', 'false')
+mkdirSync(join(srepo, 'epics/sigma'), { recursive: true })
+writeFileSync(
+  join(srepo, 'epics/sigma/tickets.md'),
+  `# Sigma epic — tickets
+
+Delivery: release
+
+## S-1 — attended, figures in the addendum
+
+**Scope.** One.
+
+## S-2 — in-session, unknown
+
+**Scope.** Two.
+
+## S-3 — driver-run, figures in the run record
+
+**Scope.** Three.
+
+## S-4 — nothing recorded yet
+
+**Scope.** Four.
+`,
+)
+writeFileSync(
+  join(srepo, 'epics/sigma/status.md'),
+  `# Sigma epic — status log
+
+### S-1 — attended, figures in the addendum — 2026-08-09 — DONE
+
+**Built:** one.
+
+**Tokens:** observed by the supervisor — see the review addendum
+
+**Owed:** Nothing.
+
+**Addendum — review — 2026-08-09 — sonnet/high:** No findings. Worker tokens (implementation
+leg): 12,000; Reviewer tokens: 65,729.
+
+### S-2 — in-session, unknown — 2026-08-09 — DONE
+
+**Built:** two.
+
+**Tokens:** unknown
+
+**Owed:** Nothing.
+
+### S-3 — driver-run, figures in the run record — 2026-08-10 — DONE
+
+**Built:** three.
+
+**Tokens:** recorded in the run record
+
+**Owed:** Nothing.
+
+**Addendum — review — 2026-08-10 — sonnet/high:** Clean. Tokens: recorded in the run record.
+
+### Run — 2026-08-10 — completed
+
+**Driver:** /flow:run, unattended.
+**Tokens:** S-3 worker=100,000 reviewer=20000
+disposition=5000 re-review=unknown proxies=1500; total=126,500 — summed from the run's transcripts.
+
+**Halted on:** ran to completion.
+
+## Retro — 2026-08-11
+
+Tokens mentioned here must not count: worker tokens: 999999.
+`,
+)
+git(srepo, 'add', '.')
+git(srepo, 'commit', '-m', 'sigma epic')
+git(srepo, 'remote', 'add', 'origin', sremote)
+git(srepo, 'push', '-u', 'origin', 'main')
+git(srepo, 'remote', 'set-head', 'origin', 'main')
+
+test('spend derives one ledger from addendum phrases, Tokens lines and run records', () => {
+  const out = JSON.parse(run(srepo, 'spend', 'sigma', '--json'))
+  assert.equal(out.epics.length, 1)
+  const [e] = out.epics
+  const byId = Object.fromEntries(e.tickets.map((t) => [t.id, t]))
+
+  // Wrapped addendum phrases, with thousands separators.
+  assert.equal(byId['S-1'].worker, 12000)
+  assert.equal(byId['S-1'].reviewer, 65729)
+  assert.equal(byId['S-1'].total, 77729)
+  assert.equal(byId['S-1'].source, 'log')
+  assert.deepEqual(byId['S-1'].unknown, [])
+
+  // A bare unknown is unknown, never zero.
+  assert.equal(byId['S-2'].total, null)
+  assert.deepEqual(byId['S-2'].unknown, ['ticket'])
+
+  // The run record's per-ticket group fills a ticket whose entry only points there.
+  assert.equal(byId['S-3'].worker, 100000)
+  assert.equal(byId['S-3'].reviewer, 20000)
+  assert.equal(byId['S-3'].disposition, 5000)
+  assert.equal(byId['S-3'].proxies, 1500)
+  assert.equal(byId['S-3']['re-review'], null)
+  assert.deepEqual(byId['S-3'].unknown, ['re-review'])
+  assert.equal(byId['S-3'].total, 126500)
+  assert.equal(byId['S-3'].source, 'run-record')
+
+  // Nothing recorded: reported as such, with the note absent.
+  assert.equal(byId['S-4'].total, null)
+  assert.equal(byId['S-4'].source, null)
+
+  // Epic totals sum only known figures; the retro section never counts.
+  assert.equal(e.totals.worker, 112000)
+  assert.equal(e.totals.total, 204229)
+  assert.equal(e.unknownTickets, 3)
+})
+
+test('spend text output names the source and never prints an unknown as a number', () => {
+  const out = run(srepo, 'spend', 'sigma')
+  assert.match(out, /S-1\s+worker 12,000\s+reviewer 65,729\s+total 77,729\s+\(log\)/)
+  assert.match(out, /S-2\s+no figure recorded/)
+  assert.match(out, /S-3 .*re-review \?/)
+  assert.match(out, /S-4\s+no figure recorded/)
+  assert.match(out, /recorded 204,229 tokens · 3 with unknown or missing figures/)
+  assert.doesNotMatch(out, /999,?999/)
+})
+
+test('spend on an unknown epic refuses like the board does', () => {
+  const r = runFail(srepo, 'spend', 'nope', '--json')
+  assert.ok(r && r.status !== 0)
+})

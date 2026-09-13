@@ -199,8 +199,9 @@ after the retro has converted the open owed items.
 Fix Important findings as new commits (`Q-<n>: … (review fix)`), re-run the
 affected checks, and add one dated addendum line to the entry with the
 outcome and the reviewer's token figure **as the harness reported it when
-the reviewer stopped** (`unknown` when it exposed nothing; the reviewer is
-never asked — it cannot see its own counter). **A nit does not become a
+the reviewer stopped**, in the phrase `Reviewer tokens: <n>` (`unknown` when
+it exposed nothing; the reviewer is never asked — it cannot see its own
+counter) — the phrase `tickets.mjs spend` parses. **A nit does not become a
 ticket by default**: fix it here if trivial and in scope, otherwise note it
 in the addendum for the retro.
 
