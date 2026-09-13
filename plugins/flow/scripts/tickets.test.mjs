@@ -8,7 +8,7 @@
 import { test, after } from 'node:test'
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, realpathSync, readFileSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, realpathSync, readFileSync, chmodSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
@@ -45,6 +45,20 @@ const tmp = realpathSync(mkdtempSync(join(tmpdir(), 'tickets-test-')))
 const remote = join(tmp, 'remote.git')
 const repo = join(tmp, 'repo')
 after(() => rmSync(tmp, { recursive: true, force: true }))
+
+// gamma declares `Worker runner: codex`, so doctor probes codex on every run.
+// A fake binary on PATH and a signed-in CODEX_HOME make the probe pass here
+// and on CI without Codex; dedicated tests below take them away again.
+const fakeBin = join(tmp, 'bin')
+mkdirSync(fakeBin)
+writeFileSync(join(fakeBin, 'codex'), '#!/bin/sh\necho fake-codex 0.0.0\n')
+chmodSync(join(fakeBin, 'codex'), 0o755)
+const codexHome = join(tmp, 'codex-home')
+mkdirSync(codexHome)
+writeFileSync(join(codexHome, 'auth.json'), '{}')
+ENV.PATH = `${fakeBin}:${process.env.PATH}`
+ENV.CODEX_HOME = codexHome
+delete ENV.OPENAI_API_KEY
 
 git(tmp, 'init', '--bare', '--initial-branch=main', remote)
 git(tmp, 'init', '--initial-branch=main', repo)
@@ -1182,4 +1196,51 @@ test('spend text output names the source and never prints an unknown as a number
 test('spend on an unknown epic refuses like the board does', () => {
   const r = runFail(srepo, 'spend', 'nope', '--json')
   assert.ok(r && r.status !== 0)
+})
+
+// ── doctor: the codex runner probe ─────────────────────────────────────────
+
+// doctor exits 1 on any fail row, so read its JSON off either outcome.
+const doctorWith = (env, cwd = repo) => {
+  try {
+    return JSON.parse(execFileSync(process.execPath, [SCRIPT, 'doctor', '--json'], { cwd, encoding: 'utf8', env: { ...ENV, ...env }, stdio: ['ignore', 'pipe', 'pipe'] }))
+  } catch (e) {
+    return JSON.parse(String(e.stdout))
+  }
+}
+// A PATH with git and nothing else — no codex, real or fake — for the
+// not-installed case; the developer's own PATH may well carry a real codex.
+const gitOnlyBin = join(tmp, 'git-only-bin')
+mkdirSync(gitOnlyBin)
+writeFileSync(join(gitOnlyBin, 'git'), `#!/bin/sh\nexec "${execFileSync('which', ['git'], { encoding: 'utf8' }).trim()}" "$@"\n`)
+chmodSync(join(gitOnlyBin, 'git'), 0o755)
+
+test('doctor probes the codex runner when an epic declares it: the binary and the sign-in', () => {
+  const rows = doctorWith({})
+  assert.ok(rows.some((r) => r.level === 'ok' && r.msg === 'codex runner available: fake-codex 0.0.0'), rows.map((r) => r.msg).join('\n'))
+  assert.ok(rows.some((r) => r.level === 'ok' && r.msg.startsWith('codex signed in (')))
+})
+
+test('doctor fails when the declared codex runner is not installed — a run would halt at ticket one', () => {
+  const rows = doctorWith({ PATH: gitOnlyBin })
+  const fail = rows.find((r) => r.level === 'fail' && /Worker runner: codex is declared but `codex --version` could not run \(ENOENT\)/.test(r.msg))
+  assert.ok(fail, rows.map((r) => r.msg).join('\n'))
+  assert.match(fail.msg, /npm install -g @openai\/codex/)
+})
+
+test('doctor fails when codex is installed but not signed in, and names both ways to sign in', () => {
+  const rows = doctorWith({ CODEX_HOME: join(tmp, 'empty-home') })
+  const fail = rows.find((r) => r.level === 'fail' && /codex is not signed in/.test(r.msg))
+  assert.ok(fail, rows.map((r) => r.msg).join('\n'))
+  assert.match(fail.msg, /codex login/)
+  assert.match(fail.msg, /--with-api-key/)
+  // An API key in the environment is the other accepted credential.
+  const keyed = doctorWith({ CODEX_HOME: join(tmp, 'empty-home'), OPENAI_API_KEY: 'sk-test' })
+  assert.ok(keyed.some((r) => r.level === 'ok' && /OPENAI_API_KEY is set/.test(r.msg)))
+  assert.ok(!keyed.some((r) => /not signed in/.test(r.msg)))
+})
+
+test('doctor says nothing about codex when no epic declares the runner', () => {
+  const rows = doctorWith({}, crepo)
+  assert.ok(!rows.some((r) => /codex/.test(r.msg)), rows.map((r) => r.msg).join('\n'))
 })

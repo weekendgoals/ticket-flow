@@ -8,6 +8,21 @@ with one version and date.
 
 ## Unreleased
 
+- **Doctor probes the Codex runner's environment at planning time**
+  (`scripts/tickets.mjs` doctor and four tests, `skills/doctor/SKILL.md`,
+  `skills/run/SKILL.md` step 3, `skills/epic/SKILL.md` template). When any
+  epic declares `Worker runner: codex`, doctor runs `codex --version` and
+  looks for the credential where Codex itself keeps it — `auth.json` under
+  `$CODEX_HOME` or `~/.codex`, or `OPENAI_API_KEY` — and fails with the fix
+  (`npm install -g @openai/codex`; `codex login`, or a key piped into
+  `codex login --with-api-key`) when either is missing, because a run that
+  discovers this at ticket one halts with nobody there. An unrecognised
+  runner value warns, naming the driver's refusal. Nothing is probed when no
+  epic declares a runner. The plugin still handles no credential: it checks
+  that Codex's own sign-in exists and nothing more. The shared test fixture
+  gains a fake `codex` and a signed-in `CODEX_HOME` so the suite passes on
+  machines and CI without Codex.
+
 - **Spend is one command away, on the board, and live during a run**
   (new `skills/spend/SKILL.md`; `scripts/board.mjs` and its tests;
   `workflows/run-epic.mjs` and its tests; `skills/board/SKILL.md`; README).

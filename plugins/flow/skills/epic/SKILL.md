@@ -157,8 +157,9 @@ through the plugin's runner script, sandboxed with `.git` read-only and no
 network — the runner branches, commits and pushes, so one commit per
 ticket — with `Worker model:` then naming a Codex model. Every
 gate downstream reads git, so the reviewer, the CHECK re-run and the SHA
-merge are unchanged; declaring it obligates the plan to confirm `codex` is
-installed and signed in (the run skill's step 3).
+merge are unchanged; declaring it obligates the plan to run `/flow:doctor`,
+which probes that `codex` is installed and signed in, and to record the
+result here like the protection probe.
 
 `Consequence paths: <glob>[, <glob>]` — e.g. `src/auth/**, migrations/**`:
 paths the unattended driver always prices at the consequence review tier, a

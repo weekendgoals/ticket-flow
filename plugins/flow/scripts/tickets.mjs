@@ -46,6 +46,7 @@
 import { execFileSync, spawnSync } from 'node:child_process'
 import { readFileSync, readdirSync, existsSync, statSync } from 'node:fs'
 import { join, basename } from 'node:path'
+import { homedir } from 'node:os'
 
 const TICKET_ID = '[A-Z][A-Z0-9]*-\\d+'
 
@@ -797,6 +798,30 @@ function doctor() {
       if (declNear.test(line) && !declStrict.test(line))
         add('warn', `${epic.epic}/tickets.md:${i + 1} — looks like a declaration line but will not parse, so it silently defaults (needs "Delivery: release|incremental" / "Reviewer model: <value>" / "Worker model: <value>" / "Worker runner: claude|codex" / "Planner model: <value>" / "Consequence paths: <glob>[, <glob>]" / "Ticket budget: <digits, optional k or m suffix>" — label at line start, no formatting, value on the label's own line; "Release mode:"/"Run mode:" are not read at all): ${line.trim()}`)
     })
+  }
+
+  // The worker runner's environment, when an epic names one. `codex` must
+  // run and be signed in before ticket one — the runner cannot sign in, and
+  // a run that discovers this at its first ticket halts with nobody there.
+  // Probed here so planning sees it (declaring the runner obligates the plan
+  // to run doctor), the way branch protection is probed at planning time.
+  // Codex's own conventions locate the credential: $CODEX_HOME, else
+  // ~/.codex, holding auth.json; or OPENAI_API_KEY in the environment.
+  for (const runner of new Set(epics.map((e) => e.workerRunner).filter(Boolean))) {
+    if (runner === 'claude') continue
+    if (runner !== 'codex') {
+      add('warn', `unrecognised Worker runner "${runner}" (known: claude, codex) — the run driver refuses to start rather than substitute an implementer`)
+      continue
+    }
+    const v = spawnSync('codex', ['--version'], { encoding: 'utf8', timeout: 15_000 })
+    if (v.error || v.status !== 0)
+      add('fail', `Worker runner: codex is declared but \`codex --version\` ${v.error ? `could not run (${v.error.code})` : `exited ${v.status}`} — install it (npm install -g @openai/codex) before an unattended run; the runner halts the first ticket without it`)
+    else add('ok', `codex runner available: ${(v.stdout || '').trim()}`)
+    const codexHome = process.env.CODEX_HOME || join(homedir(), '.codex')
+    if (existsSync(join(codexHome, 'auth.json'))) add('ok', `codex signed in (${join(codexHome, 'auth.json')} exists)`)
+    else if (process.env.OPENAI_API_KEY) add('ok', 'codex credential: OPENAI_API_KEY is set in this environment')
+    else
+      add('fail', `Worker runner: codex is declared but codex is not signed in — no ${join(codexHome, 'auth.json')} and no OPENAI_API_KEY; run \`codex login\` (or pipe a key into \`codex login --with-api-key\`) before an unattended run`)
   }
 
   const nearTicket = new RegExp(`^##\\s+[A-Za-z][A-Za-z0-9]*-\\d+`)
