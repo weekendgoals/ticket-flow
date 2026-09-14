@@ -8,6 +8,28 @@ with one version and date.
 
 ## Unreleased
 
+- **The retro asks what every halt bought** (`skills/retro/SKILL.md` step 4's
+  question list and step 5's proposals, README, METHODOLOGY § "Why an epic
+  ends with a retro"). Step 4 is seven questions now, not six: the seventh
+  reads every `### Run —` record's **Halted on:** line and classifies the
+  halt as **work** (a defect in the implementation), **plan** (a defective,
+  vacuous or decorative CHECK, a wrong assumption in `tickets.md`),
+  **plugin/environment** (the driver, a spawn failure, a session limit, a
+  buffer, a tooling fault) or **policy** (a budget or bounds trip), with what
+  the human did to resume and whether the later record shows the stop retired
+  a real risk or fired on a clean state. Step 5's proposals gain the matching
+  **Halts** section. The first three release epics run unattended halted
+  twelve times across twenty-three tickets — 5 plugin/environment, 4 policy,
+  2 plan, 1 code — and not one of those halts was ever examined, because none
+  of the six questions asked and each halt cost a human a resume that
+  appeared in no other section. Two classes are flagged **transferable**,
+  because the epic that paid for the lesson is rarely the one that can act on
+  it: a policy trip whose later re-review found nothing is a proposal against
+  the policy, and a plugin/environment halt is a ticket for the plugin's own
+  repository. The classification is the retro's reading, not the driver's
+  claim — the run that stopped cannot judge its own stop — so the run record
+  is unchanged and nothing in `tickets.mjs` automates it.
+
 - **After a halt: finish the ticket by hand, then re-run — never resume**
   (`skills/run/SKILL.md` step 1 and a new `## Resuming after a halt` section,
   METHODOLOGY § "Why the run loop is code, not prose", a new
