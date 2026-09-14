@@ -170,19 +170,25 @@ refuses to start.
   the runner reconciles the model's report with the repository (a claim of
   work over an empty branch is a contradiction, a failed push is a halt) and
   records Codex's own usage under `workerUsage`.
-- **Floors that tier in code** from the branch's changed files (a read-only
-  fast-model listing, `epics/` excluded): `Consequence paths:` matches floor
+- **Floors that tier in code** from the branch's changed files, and reads
+  the pushed head in the same step (one read-only fast-model listing,
+  `epics/` excluded, plus `git rev-parse origin/<branch>`; that SHA is the
+  review anchor, and an unusable one costs the fix-bounds gate its anchor
+  rather than weakening anything): `Consequence paths:` matches floor
   at `consequence`, any non-documentation file at `normal`, docs-only may
   keep `prose`. The report can raise the price, never lower it — the
   reviewed party does not price its own judge down.
 - **Hires the reviewer** — `flow:ticket-reviewer` on the `/flow:review`
   skill, with a packet the script assembles (the range
-  `origin/epic/<name>..origin/<id lowercased>`, computed from the branch
-  invariant rather than the worker's narrative; the `brief`; the ticket's
-  own status entry; the instruction files), priced by the ticket skill's
-  tier table with `Reviewer model:` overriding the model. It returns
-  structured findings and the head commit it reviewed (`reviewedHead`). A
-  failed spawn gets one retry with the sanctioned fallback, then halts.
+  `origin/epic/<name>...<reviewedHead>`, anchored on the SHA the tier-facts
+  step read rather than on the worker's narrative or a branch name that can
+  move; the `brief`; the ticket's own status entry; the instruction files),
+  priced by the ticket skill's tier table with `Reviewer model:` overriding
+  the model. It returns structured findings and its own reading of the head
+  (`reviewerReportedHead`) — a **cross-check** against the driver's anchor,
+  logged when it disagrees, never the anchor itself: the party under review
+  does not name the commit that was reviewed. A failed spawn gets one retry
+  with the sanctioned fallback, then halts.
 - **Dispositions the findings** in another fresh agent: Important findings
   fixed as new commits (`<ID>: … (review fix)`), checks re-run with counts,
   pre-existing findings recorded with a named owner (`retro` when none
@@ -202,13 +208,17 @@ refuses to start.
   like any other. That pass runs where the trip is detected: **after** the
   resolve step's bounds check and just before the merge, so a ticket that
   halts in `Re-review` with `fixBoundsTripped` had already passed its
-  acceptance checks. No usable `reviewedHead` sends the fixes to the re-review
-  anyway — doubt raises scrutiny. A clean review skips all of this.
+  acceptance checks. No usable anchor from the tier-facts step sends the
+  fixes to the re-review anyway — doubt raises scrutiny. A clean review skips
+  all of this.
 - **Re-runs the ticket's CHECK/EXPECT criteria from the signed-off
   document** — `tickets.mjs check <ID> --from origin/epic/<name> --json` on
   the pushed branch, after the disposition so fix commits are judged too —
-  and gates on the printed counts in code. A ticket with no CHECK criteria
-  passes untouched.
+  and gates in code on the ledger the script printed: its own `allPassed`
+  verdict and its count of malformed CHECK lines, not the counts alone. A
+  CHECK the parser rejects runs nothing, so `passed === total` is trivially
+  true on it; reading the verdict is what keeps a criterion nobody can
+  satisfy from merging. A ticket with no CHECK criteria passes untouched.
 - **Resolves the merge inputs read-only, and the code judges them before a
   merging agent exists**: the pushed log narrowed to **this ticket's own
   entries** must carry a dated `Addendum — review —` line (matched by shape,
@@ -238,10 +248,12 @@ enters your context from the loop:
                      findings, checkedAndSound,
                      fixedCommits, notFixed, disposition,
                      reReviewRan, reReviewImportantCount,
-                     reReviewFindings, reviewedHead, fixBoundsGated,
+                     reReviewFindings, reviewedHead,
+                     reviewerReportedHead, fixBoundsGated,
                      fixBoundsTripped,
                      fixLines, acceptanceOutcome, acceptanceChecks,
-                     acceptanceChecksPassed, resolveOutcome, mergeOutcome,
+                     acceptanceChecksPassed, acceptanceAllPassed,
+                     acceptanceProblems, resolveOutcome, mergeOutcome,
                      addendumMatches, headSha,
                      built, verification, workerReported,
                      outputTokensObserved,
@@ -307,8 +319,11 @@ that resumes past one. The run halts:
   unmeasurable fix is never merged** — the one case the bounds gate still
   halts on, because a re-review of a diff nothing measured proves nothing;
 - on **a failed acceptance CHECK — a machine-runnable criterion whose
-  command did not produce its expected result on the pushed branch** — a
-  malformed CHECK fails too, and so do counts the code cannot read;
+  command did not produce its expected result on the pushed branch** — the
+  gate reads the ledger's `allPassed` verdict, so a malformed CHECK line
+  halts even when every runnable check passed (it never ran: a criterion
+  nobody can satisfy is failed, not skipped), and so does a report the code
+  cannot read — missing counts, missing verdict, missing problem count;
 - on **a document/code contradiction — reported by a worker, or met by the
   script's own checks**: a ticket ID off the plugin's shape, a board that
   hands out the same ticket twice, a board reporting success without a
@@ -364,7 +379,9 @@ ID — worker agent — review tier and outcome (`importantCount` Important,
 after fixes: `<reReviewImportantCount>` Important" when `reReviewRan`
 without a trip, or "fixes bounds-checked in code: `<fixLines>` lines inside
 the reviewed diff" when `fixBoundsGated` and nothing tripped — "acceptance:
-`<acceptanceChecksPassed>/<acceptanceChecks>` CHECKs" when any ran —
+`<acceptanceChecksPassed>/<acceptanceChecks>` CHECKs" when any ran, plus
+"`<acceptanceProblems>` malformed" whenever that count is above zero,
+because a malformed CHECK is why an acceptance halt can read as all-green —
 integrated | halted. A record that omits the fix gate reads as though the
 fixes were never looked at.>
 

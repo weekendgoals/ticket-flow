@@ -79,8 +79,10 @@ const workerOk = (id = 'PAY-1', over = {}) => ({
 // The changed-file facts behind the tier floor. The default names a code file,
 // so the floor is `normal`; docs-only variants price `prose` in the tests that
 // need it.
-const tierFactsCode = { outcome: 'listed', files: ['src/a.ts'], detail: '' }
-const tierFactsDocs = { outcome: 'listed', files: ['README.md', 'docs/guide.md'], detail: '' }
+// `head` is the driver's review anchor: read here, before the reviewer is
+// hired, so the reviewed party never names the commit that was reviewed.
+const tierFactsCode = { outcome: 'listed', files: ['src/a.ts'], head: 'abc1234def0', detail: '' }
+const tierFactsDocs = { outcome: 'listed', files: ['README.md', 'docs/guide.md'], head: 'abc1234def0', detail: '' }
 const reviewClean = {
   important: [],
   nits: [{ cite: 'a.ts:3', summary: 'naming' }],
@@ -115,8 +117,8 @@ const resolvedOk = {
   headSha: 'beefc0ffee42',
   detail: '',
 }
-const acceptOk = { outcome: 'ran', total: 2, passed: 2, failures: [], detail: '' }
-const acceptNone = { outcome: 'ran', total: 0, passed: 0, failures: [], detail: '' }
+const acceptOk = { outcome: 'ran', total: 2, passed: 2, allPassed: true, problems: 0, failures: [], detail: '' }
+const acceptNone = { outcome: 'ran', total: 0, passed: 0, allPassed: true, problems: 0, failures: [], detail: '' }
 const mergedOk = { outcome: 'merged', detail: '' }
 const integratedOk = { commandSucceeded: true, state: 'integrated', prUrl: '' }
 
@@ -216,7 +218,10 @@ test('the reviewer packet is computed from the ticket ID, never from the worker 
   const r = await drive(oneTicket())
   const c = call(r, 'review:PAY-1')
   assert.equal(c.agentType, 'flow:ticket-reviewer')
-  assert.match(c.prompt, /Commit range: origin\/epic\/payments\.\.origin\/pay-1/)
+  // The range is the driver's own anchor SHA, three dots from the epic
+  // branch — a branch name can move under the reviewer between the hire and
+  // the read; the commit the driver verified cannot.
+  assert.match(c.prompt, /Commit range: origin\/epic\/payments\.\.\.abc1234def0/)
   // The epic's documents grow with every ticket, so the packet hands the
   // reviewer scoped reads — the brief and this ticket's own status entry —
   // never the whole documents.
@@ -595,6 +600,10 @@ test('at the consequence tier, fix commits earn exactly one re-review, and a cle
   assert.match(p, /<<<UNTRUSTED/)
   assert.equal(call(r, 're-review:PAY-1').agentType, 'flow:ticket-reviewer')
   assert.equal(call(r, 're-review:PAY-1').effort, 'xhigh')
+  // RE_REVIEW_SCHEMA declares no `reviewedHead`; a packet that asks for it
+  // teaches the re-reviewer to answer off-contract, so the cross-check
+  // request rides the first review only.
+  assert.doesNotMatch(p, /Report `reviewedHead`/)
   // With the re-review standing guard, the resolve step carries no FACT 3.
   assert.doesNotMatch(call(r, 'resolve:PAY-1').prompt, /FACT 3/)
 })
@@ -756,10 +765,14 @@ test("a fix touching only a file the review's findings named is inside the bound
   assert.ok(r.labels.includes('merge:PAY-1'))
 })
 
-test('a review with no usable reviewedHead sends fixes to the bounded re-review instead — doubt goes up', async () => {
+test('no usable head from the tier-facts step sends fixes to the bounded re-review instead — doubt goes up', async () => {
+  // The anchor is the driver's own read, so this is the step that can lose
+  // it. Nothing weakens: without an anchor the bounds gate cannot measure,
+  // and the fixes take the pass the consequence tier would have bought.
   const r = await drive(
     oneTicket({
-      'review:PAY-1': { ...reviewImportant, reviewedHead: 'HEAD~1; rm -rf /' },
+      'tier-facts:PAY-1': { ...tierFactsCode, head: 'HEAD~1; rm -rf /' },
+      'review:PAY-1': reviewImportant,
       'disposition:PAY-1': dispFixed,
       're-review:PAY-1': { important: [] },
     }),
@@ -768,9 +781,12 @@ test('a review with no usable reviewedHead sends fixes to the bounded re-review 
   assert.equal(r.out.ticketRecords[0].reReviewRan, true)
   assert.equal(r.out.ticketRecords[0].fixBoundsGated, false)
   assert.equal(r.out.ticketRecords[0].reviewedHead, '')
-  assert.ok(r.logs.some(l => /no usable reviewedHead/.test(l)))
-  // The unusable value never reaches a prompt.
+  assert.ok(r.logs.some(l => /no usable head SHA from the tier-facts step/.test(l) && /doubt goes up/.test(l)))
+  // The unusable value never reaches a prompt: not the reviewer's range, not
+  // the resolve step's commands.
+  assert.doesNotMatch(call(r, 'review:PAY-1').prompt, /rm -rf/)
   assert.doesNotMatch(call(r, 'resolve:PAY-1').prompt, /rm -rf/)
+  assert.match(call(r, 'review:PAY-1').prompt, /Commit range: origin\/epic\/payments\.\.origin\/pay-1/)
 })
 
 test('a re-review that finds an Important halts, with no second fix round', async () => {
@@ -805,6 +821,56 @@ test('a re-reviewer that cannot be hired halts before the merge', async () => {
   assert.ok(!r.labels.some(l => l.startsWith('merge:')))
 })
 
+
+// ---- the review anchor: the driver reads the head it sends to review -------
+
+test('the review anchor is the driver own read of the pushed head, and the reviewer gets a SHA range', async () => {
+  const r = await drive(oneTicket())
+  // The head is read in the same read-only proxy that lists the diff's files,
+  // BEFORE the reviewer is hired — so the commit under review is a driver
+  // fact, not the reviewed party's account of what was reviewed.
+  const facts = call(r, 'tier-facts:PAY-1')
+  assert.match(facts.prompt, /git rev-parse origin\/pay-1/)
+  assert.match(facts.prompt, /Report what `git rev-parse` printed as `head`/)
+  assert.ok(r.labels.indexOf('tier-facts:PAY-1') < r.labels.indexOf('review:PAY-1'))
+  const p = call(r, 'review:PAY-1').prompt
+  assert.match(p, /Commit range: origin\/epic\/payments\.\.\.abc1234def0/)
+  assert.match(p, /Reviewed head \(the driver read it from `origin\/pay-1`[^)]*\): abc1234def0/)
+  assert.equal(r.out.ticketRecords[0].reviewedHead, 'abc1234def0')
+})
+
+test('a reviewer head disagreeing with the review anchor is a logged cross-check, and the driver anchor wins', async () => {
+  const r = await drive(
+    oneTicket({
+      'review:PAY-1': { ...reviewImportant, reviewedHead: 'f00dfaced00' },
+      'disposition:PAY-1': dispFixed,
+      'resolve:PAY-1': { ...resolvedOk, ...resolvedOkBounds },
+    }),
+  )
+  assert.equal(r.out.outcome, 'completed')
+  const rec = r.out.ticketRecords[0]
+  // Both are recorded; only one is load-bearing.
+  assert.equal(rec.reviewedHead, 'abc1234def0')
+  assert.equal(rec.reviewerReportedHead, 'f00dfaced00')
+  assert.ok(r.logs.some(l => /cross-check mismatch/.test(l) && /<<<UNTRUSTED\nf00dfaced00\nUNTRUSTED>>>/.test(l) && /driver's anchor wins/.test(l)))
+  // The bounds gate measures from the driver's anchor: the reviewer's number
+  // never reaches the commands that decide whether the fixes need a second
+  // pass, so a wrong (or adversarial) report cannot widen the bounds.
+  const resolve = call(r, 'resolve:PAY-1').prompt
+  assert.match(resolve, /git diff --name-only origin\/epic\/payments abc1234def0 -- ':\(exclude\)epics'/)
+  assert.doesNotMatch(resolve, /f00dfaced00/)
+  assert.equal(rec.fixBoundsGated, true)
+  assert.equal(rec.fixBoundsTripped, false)
+})
+
+// A short SHA is a legitimate spelling of the same commit, not a mismatch.
+// Named off the acceptance pattern on purpose: it is extra coverage, and the
+// criterion's `# pass 6` is exact.
+test('a reviewer head that abbreviates the driver head is not a mismatch', async () => {
+  const r = await drive(oneTicket({ 'review:PAY-1': { ...reviewClean, reviewedHead: 'abc1234' } }))
+  assert.equal(r.out.outcome, 'completed')
+  assert.ok(!r.logs.some(l => /cross-check mismatch/.test(l)))
+})
 // ---- the acceptance-check gate ----------------------------------------------
 
 test('the accept step reads the criteria from the signed-off document on the epic branch', async () => {
@@ -816,18 +882,28 @@ test('the accept step reads the criteria from the signed-off document on the epi
   // The --from ref is the point: the party under review cannot soften its own
   // gate by editing the copy riding its branch.
   assert.match(c.prompt, /signed-off document/)
-  assert.match(c.prompt, /You judge nothing; the driver reads the counts in code/)
+  assert.match(c.prompt, /You judge nothing; the driver reads the ledger in code/)
   assert.doesNotMatch(c.prompt, /gh pr/)
   const rec = r.out.ticketRecords[0]
   assert.equal(rec.acceptanceOutcome, 'ran')
   assert.equal(rec.acceptanceChecks, 2)
   assert.equal(rec.acceptanceChecksPassed, 2)
+  assert.equal(rec.acceptanceAllPassed, true)
+  assert.equal(rec.acceptanceProblems, 0)
 })
 
 test('a failed acceptance check halts before any merge agent exists, quoting the failures fenced', async () => {
   const r = await drive(
     oneTicket({
-      'accept:PAY-1': { outcome: 'ran', total: 2, passed: 1, failures: [{ criterion: 'the limit clamps to 50', evidence: 'exit 1 — AssertionError' }], detail: '' },
+      'accept:PAY-1': {
+        outcome: 'ran',
+        total: 2,
+        passed: 1,
+        allPassed: false,
+        problems: 0,
+        failures: [{ criterion: 'the limit clamps to 50', evidence: 'exit 1 — AssertionError' }],
+        detail: '',
+      },
     }),
   )
   assert.equal(r.out.haltedOn.stopCondition, 'a failed acceptance CHECK — a machine-runnable criterion whose command did not produce its expected result on the pushed branch')
@@ -879,6 +955,56 @@ test('the acceptance gate runs after the disposition and re-review, so fix commi
   const order = r.labels
   assert.ok(order.indexOf('accept:PAY-1') > order.indexOf('re-review:PAY-1'))
   assert.ok(!order.some(l => l.startsWith('merge:')))
+})
+
+
+test('the acceptance gate halts when the ledger says allPassed false though passed equals total', async () => {
+  // The shape a malformed criterion produces: nothing ran, so the counts
+  // agree with themselves. The script's own verdict is what the gate reads.
+  const r = await drive(
+    oneTicket({ 'accept:PAY-1': { outcome: 'ran', total: 1, passed: 1, allPassed: false, problems: 0, failures: [], detail: '' } }),
+  )
+  assert.match(r.out.haltedOn.stopCondition, /^a failed acceptance CHECK/)
+  assert.match(r.out.haltedOn.detail, /allPassed: false/)
+  assert.equal(r.out.ticketRecords[0].acceptanceAllPassed, false)
+  assert.ok(!r.labels.some(l => l.startsWith('resolve:') || l.startsWith('merge:')))
+})
+
+test('the acceptance gate halts on a malformed CHECK even when every runnable check passed, quoting the problem', async () => {
+  const r = await drive(
+    oneTicket({
+      'accept:PAY-1': {
+        outcome: 'ran',
+        total: 2,
+        passed: 2,
+        allPassed: false,
+        problems: 1,
+        failures: [{ criterion: 'CHECK npm test', evidence: 'looks like a CHECK/EXPECT line but will not parse, so it silently never runs' }],
+        detail: '',
+      },
+    }),
+  )
+  assert.match(r.out.haltedOn.stopCondition, /^a failed acceptance CHECK/)
+  assert.match(r.out.haltedOn.detail, /1 malformed CHECK line\(s\) never ran/)
+  assert.match(r.out.haltedOn.detail, /<<<UNTRUSTED[\s\S]*will not parse/)
+  assert.doesNotMatch(r.out.haltedOn.detail, /of 2 CHECK criteria failed/)
+  assert.equal(r.out.ticketRecords[0].acceptanceProblems, 1)
+  assert.ok(!r.labels.some(l => l.startsWith('resolve:') || l.startsWith('merge:')))
+})
+
+test('the acceptance gate treats a report missing allPassed as unreadable evidence and halts', async () => {
+  const r = await drive(oneTicket({ 'accept:PAY-1': { outcome: 'ran', total: 2, passed: 2, problems: 0, failures: [], detail: '' } }))
+  assert.match(r.out.haltedOn.stopCondition, /^a failed acceptance CHECK/)
+  assert.match(r.out.haltedOn.detail, /no usable counts or verdict/)
+  assert.equal(r.out.ticketRecords[0].acceptanceAllPassed, null)
+  assert.ok(!r.labels.some(l => l.startsWith('merge:')))
+  // The same for a problems count the code cannot read: the gate never
+  // assumes zero, because assuming zero is exactly the merge this fixes.
+  const noProblems = await drive(
+    oneTicket({ 'accept:PAY-1': { outcome: 'ran', total: 2, passed: 2, allPassed: true, failures: [], detail: '' } }),
+  )
+  assert.match(noProblems.out.haltedOn.stopCondition, /^a failed acceptance CHECK/)
+  assert.ok(!noProblems.labels.some(l => l.startsWith('merge:')))
 })
 
 // ---- pre-existing findings --------------------------------------------------

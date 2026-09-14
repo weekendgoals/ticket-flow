@@ -217,10 +217,15 @@ const REFRESH_NEXT_SCHEMA = {
   },
 }
 
-// The changed-file list behind the tier floor: one read-only fast-model step,
-// so the party under review never prices its own judge. The worker still
+// The changed-file list behind the tier floor, and the head SHA behind the
+// review anchor: one read-only fast-model step, so the party under review
+// never prices its own judge and never names its own anchor. The worker still
 // reports a tier — its judgment of what the diff can break — but the driver
 // reads the diff's file list itself and prices at the higher of the two.
+// `head` is read here, BEFORE the reviewer is hired, because the driver must
+// know which commit it is sending to review: an anchor that arrives inside
+// the review's own report is the reviewed party's account of what was
+// reviewed, and the fix-bounds gate hangs off it.
 const TIER_FACTS_SCHEMA = {
   type: 'object',
   required: ['outcome'],
@@ -232,6 +237,11 @@ const TIER_FACTS_SCHEMA = {
         '"listed" once both commands ran and you are reporting what the diff printed — an empty list is an answer, not a failure. "command-failed" for any nonzero exit.',
     },
     files: { type: 'array', items: { type: 'string' }, description: 'the paths the diff printed, verbatim, one entry per line — [] when it printed nothing' },
+    head: {
+      type: 'string',
+      description:
+        'what `git rev-parse origin/<the ticket branch>` printed, verbatim — 40 hex characters, never reconstructed from memory and never read from a local branch. "" only if that command printed nothing.',
+    },
     detail: { type: 'string', description: 'first lines of any error output, verbatim, credentials masked' },
   },
 }
@@ -341,7 +351,7 @@ const REVIEW_SCHEMA = {
     reviewedHead: {
       type: 'string',
       description:
-        'the commit you reviewed: what `git rev-parse origin/<the ticket branch>` printed when you read the range, 7-40 hex characters, verbatim — never reconstructed from memory. The driver anchors its fix-diff bounds check on this.',
+        'the commit you reviewed: what `git rev-parse origin/<the ticket branch>` printed when you read the range, 7-40 hex characters, verbatim — never reconstructed from memory. The driver read that commit itself before hiring you and anchors on its own read; this is the cross-check against it.',
     },
   },
 }
@@ -392,8 +402,12 @@ const RE_REVIEW_SCHEMA = {
 // The acceptance-check step: one read-only-in-effect fast-model proxy that
 // brings the local branch to its pushed state and runs the board script's
 // `check` subcommand with `--from origin/epic/<name>` — the criteria as signed
-// off, which no ticket branch can edit — then echoes the printed counts. The
-// script, not the agent, judges them.
+// off, which no ticket branch can edit — then echoes the printed ledger. The
+// script, not the agent, judges them: the gate below reads the ledger's own
+// `allPassed` verdict and its count of malformed CHECK lines, because counts
+// alone cannot see a criterion that never ran. A CHECK the parser rejects
+// runs nothing, so `passed === total` is trivially true on it — that is the
+// shape that once merged a criterion nobody could satisfy.
 const ACCEPT_SCHEMA = {
   type: 'object',
   required: ['outcome'],
@@ -402,10 +416,20 @@ const ACCEPT_SCHEMA = {
       type: 'string',
       enum: ['ran', 'command-failed', 'permission-prompt'],
       description:
-        '"ran" once the check command itself executed and printed its JSON — exit 0 (all passed) and exit 1 (a check failed) are BOTH "ran"; report what it printed either way. "command-failed" only when a git command failed, the check command exited 2, or it printed no parseable JSON.',
+        '"ran" once the check command itself executed and printed its JSON — exit 0 (every check passed and every criterion parsed) and exit 1 (a check failed, or a CHECK line is malformed) are BOTH "ran"; report what it printed either way. "command-failed" only when a git command failed, the check command exited 2, or it printed no parseable JSON.',
     },
     total: { type: 'integer', description: 'the `total` field of the printed JSON, verbatim — 0 when the ticket has no CHECK criteria, which is an answer, not a failure' },
     passed: { type: 'integer', description: 'the `passed` field of the printed JSON, verbatim' },
+    allPassed: {
+      type: 'boolean',
+      description:
+        "the `allPassed` field of the printed JSON, verbatim — the ledger's own verdict. Report it as printed; never infer it from the counts, and never omit it: the driver halts on a report that does not carry it.",
+    },
+    problems: {
+      type: 'integer',
+      description:
+        'how many entries the printed JSON\'s `problems` array holds — its LENGTH, not its contents (0 when it is empty). These are CHECK/EXPECT lines the parser rejected: criteria that never ran. Their text goes in `failures`.',
+    },
     failures: {
       type: 'array',
       items: {
@@ -413,7 +437,8 @@ const ACCEPT_SCHEMA = {
         required: ['criterion'],
         properties: { criterion: { type: 'string' }, evidence: { type: 'string' } },
       },
-      description: 'one entry per failed or malformed check: the criterion text (or the problem line) and its evidence, verbatim from the JSON. [] when everything passed.',
+      description:
+        'one entry per failed check AND one per entry of `problems`: for a failed check the criterion text and its evidence; for a problem the `text` and the `why`, both verbatim from the JSON. [] only when the ledger holds neither. The driver quotes these in the halt.',
     },
     detail: { type: 'string', description: 'first lines of any error output, verbatim, credentials masked' },
   },
@@ -760,7 +785,6 @@ for (let i = 0; i < MAX_TICKETS && !halted; i++) {
   // Branches are the lowercased ID — a plugin invariant, which is why the
   // review range can be computed here instead of taken from the worker's prose.
   const branch = id.toLowerCase()
-  const range = `origin/${epicBranch}..origin/${branch}`
   log(`Ticket ${ticketRecords.length + 1}: ${id}${ticket.title ? ` — ${line(ticket.title)}` : ''}`)
 
   // c. Spawn the worker: a fresh agent, empty context, one ticket. "A driver
@@ -857,12 +881,15 @@ Report honestly: \`branch-pushed\` ONLY if you saw the push of \`${branch}\` suc
     reReviewImportantCount: 0,
     reReviewFindings: [],
     reviewedHead: '',
+    reviewerReportedHead: '',
     fixBoundsGated: false,
     fixBoundsTripped: false,
     fixLines: null,
     acceptanceOutcome: 'not reached',
     acceptanceChecks: null,
     acceptanceChecksPassed: null,
+    acceptanceAllPassed: null,
+    acceptanceProblems: null,
     resolveOutcome: 'not reached',
     mergeOutcome: 'not reached',
     addendumMatches: null,
@@ -899,16 +926,17 @@ Report honestly: \`branch-pushed\` ONLY if you saw the push of \`${branch}\` suc
   //    resolve: the agent reports what the diff printed and judges nothing.
   phase('Review')
   const tierFacts = await agent(
-    `In the repository at ${repoRoot}, report one fact about ticket ${id}'s pushed branch: which files it changed. Run exactly:
+    `In the repository at ${repoRoot}, report two facts about ticket ${id}'s pushed branch: which files it changed, and which commit it stands at. Run exactly:
 
 \`\`\`bash
 git fetch origin ${branch}
 git diff --name-only origin/${epicBranch}...origin/${branch} -- ':(exclude)epics'
+git rev-parse origin/${branch}
 \`\`\`
 
 Three dots, not two: the merge-base diff is the ticket's own changes, not the epic branch's drift. The \`epics/\` exclusion keeps the flow's own bookkeeping (status log, ticket doc) out of the pricing facts.
 
-Report the printed paths verbatim under \`files\`, one entry per line — \`[]\` when it prints nothing, which is an answer, not a failure. You judge nothing; the driver prices the review from this list in code.
+Report the printed paths verbatim under \`files\`, one entry per line — \`[]\` when it prints nothing, which is an answer, not a failure. Report what \`git rev-parse\` printed as \`head\`, **verbatim** — never reconstructed from memory, never from a local branch. That SHA is the commit the driver sends to review and anchors the fix-diff bounds check on. You judge nothing; the driver prices the review from this list in code.
 
 ${PROMPT_RULE}
 
@@ -939,6 +967,29 @@ ${NO_MAIN} You are read-only here in any case: nothing in this task writes anyth
     log(`${id}: no usable changed-file facts (${tierFacts ? 'the listing returned no file array' : 'the tier-facts agent returned no report'}) — the tier floor is consequence; doubt goes up.`)
   }
 
+  // The review anchor: the head the DRIVER read, shape-verified here, before
+  // the reviewer exists. It names the commit the review packet points at and
+  // anchors the fix-bounds gate; the reviewer's own `reviewedHead` is kept
+  // only as a cross-check, because a party under review reporting which
+  // commit was reviewed is the one fact the gate cannot take on its word.
+  // An unusable value never weakens anything: the range falls back to the
+  // branch name and the bounds gate loses its anchor, which sends the fixes
+  // to the bounded re-review instead. Doubt goes up.
+  const anchorHead =
+    tierFacts && tierFacts.outcome === 'listed' && typeof tierFacts.head === 'string' && /^[0-9a-f]{7,40}$/.test(tierFacts.head.trim())
+      ? tierFacts.head.trim()
+      : null
+  record.reviewedHead = anchorHead || ''
+  if (!anchorHead) {
+    log(
+      `${id}: no usable head SHA from the tier-facts step (${tierFacts ? `it reported ${fence(line(tierFacts.head || '(nothing)'))}` : 'the agent returned no report'}) — the review range falls back to the branch name and the fix-bounds gate has no anchor; doubt goes up.`,
+    )
+  }
+  // Three dots against the epic branch, so the range is this ticket's own
+  // commits and not the epic branch's drift; a SHA, not a branch name, so the
+  // range cannot move under the reviewer between the hire and the read.
+  const range = anchorHead ? `origin/${epicBranch}...${anchorHead}` : `origin/${epicBranch}..origin/${branch}`
+
   const priced = priceReview(worker.tier, floor)
   record.tier = priced.tier
   record.reviewerModelUsed = priced.modelUsed
@@ -955,13 +1006,11 @@ ${NO_MAIN} You are read-only here in any case: nothing in this task writes anyth
   //    branch-naming invariant, never from the worker's narrative.
   const reviewPacket = `Repository: ${repoRoot}
 Ticket: ${id}
-Commit range: ${range}
+Commit range: ${range}${anchorHead ? `\nReviewed head (the driver read it from \`origin/${branch}\` and verified its shape before hiring you): ${anchorHead} — review that commit, not whatever the branch name points at by the time you read it.` : ''}
 Read as well — these commands are the scoped reads; the epic's documents grow with every ticket, and reading them whole is cost, not diligence:
 - \`${TICKETS} brief ${id}\` — the epic's ground rules (preamble), this ticket's Acceptance criteria and Not in scope, and the open owed items, in one command. Scope is binding: work that strayed outside it is a finding.
 - \`git show origin/${branch}:epics/${epic}/status.md | awk '/^### /{f=/^### ${id} /} f'\` — this ticket's own status entry, written by the agent that did the work. Do not read the rest of the log: earlier tickets' entries are not this review's context.
 - the repository's own agent instruction files for the areas in scope (start with ${repoRoot}/CLAUDE.md and ${repoRoot}/AGENTS.md where they exist). Judge against the project's standards, not your preferences.
-
-Report \`reviewedHead\`: what \`git rev-parse origin/${branch}\` prints when you read the range, verbatim — the driver anchors its fix-diff bounds check on it.
 
 Read the diff first, then read enough of each changed file to know whether the change is correct IN CONTEXT — its callers, its tests, what it returns. Findings derived from a diff alone are where false positives come from.
 
@@ -975,7 +1024,12 @@ Report no token figure: you cannot see your own counter, and the session observe
     label: `review:${id}`,
     phaseName: 'Review',
     task: 'Review the commit range for one finished ticket of an unattended release run. Follow the `/flow:review` skill for the procedure and your own agent definition for the bar.',
-    packet: reviewPacket,
+    // The cross-check request rides the first review only: RE_REVIEW_SCHEMA
+    // declares no `reviewedHead`, and a packet that asks for a field the
+    // schema cannot carry teaches the re-reviewer to answer off-contract.
+    packet: `${reviewPacket}
+
+Report \`reviewedHead\`: what \`git rev-parse origin/${branch}\` prints when you read the range, verbatim — never reconstructed from memory. The driver already anchored on its own read of that commit; yours is a cross-check, and a disagreement is logged with the driver's anchor standing.`,
     schema: REVIEW_SCHEMA,
     priced,
     id,
@@ -1008,12 +1062,21 @@ Report no token figure: you cannot see your own counter, and the session observe
     failure: fence(f.failure),
   }))
   record.checkedAndSound = review.checkedAndSound ? fence(review.checkedAndSound) : ''
-  // The reviewed head anchors the fix-bounds gate below. Shape-validated here;
-  // an unusable value never weakens the gate — it routes fixes back to the
-  // bounded re-review instead, because doubt goes up.
-  const reviewedHead =
+  // The reviewer's own report of the head it read: a cross-check against the
+  // driver's anchor, never the anchor itself. A mismatch is logged and the
+  // driver's read wins — the fix-bounds gate measures from the commit the
+  // driver sent to review, so an agent's account of what it reviewed cannot
+  // move the bounds, whether it is mistaken or adversarial.
+  const reportedHead =
     typeof review.reviewedHead === 'string' && /^[0-9a-f]{7,40}$/.test(review.reviewedHead.trim()) ? review.reviewedHead.trim() : null
-  record.reviewedHead = reviewedHead || ''
+  record.reviewerReportedHead = reportedHead || ''
+  if (anchorHead && !(reportedHead && (anchorHead.startsWith(reportedHead) || reportedHead.startsWith(anchorHead)))) {
+    // Abbreviations are legitimate (a reviewer may print a short SHA), so the
+    // comparison is by prefix in either direction; anything else disagrees.
+    log(
+      `${id}: cross-check mismatch — the reviewer reported head ${fence(line(review.reviewedHead || '(nothing usable)'))} but the driver's anchor is ${anchorHead}. The driver's anchor wins: it read the commit before hiring the reviewer.`,
+    )
+  }
   log(`${id}: review returned ${important.length} Important, ${nits.length} nit(s)${record.nitOverflowCount ? ` (+${record.nitOverflowCount} unlisted)` : ''}, ${record.preExistingCount} pre-existing.`)
 
   // e. Disposition — always, even on zero findings: the committed addendum is
@@ -1164,7 +1227,7 @@ ${NO_MAIN} You do not merge this branch; the driver does, after its own gate.`,
   // they are gated mechanically at the resolve step instead — unless the
   // review reported no usable head to anchor that gate on, in which case the
   // fixes take the re-review anyway: doubt raises scrutiny, never lowers it.
-  const needsReReview = record.fixedCommits.length > 0 && (priced.tier === 'consequence' || !reviewedHead)
+  const needsReReview = record.fixedCommits.length > 0 && (priced.tier === 'consequence' || !anchorHead)
   const boundsGated = record.fixedCommits.length > 0 && !needsReReview
   record.fixBoundsGated = boundsGated
   if (boundsGated) {
@@ -1239,7 +1302,7 @@ Read them in the context of the whole range, but judge them: does each fix do wh
 
   if (needsReReview) {
     if (priced.tier !== 'consequence') {
-      log(`${id}: the review reported no usable reviewedHead, so the fix-bounds gate has no anchor — the fixes take the bounded re-review instead.`)
+      log(`${id}: the driver has no usable review anchor, so the fix-bounds gate has nothing to measure from — the fixes take the bounded re-review instead.`)
     }
     const halt = await boundedReReview(priced, priced.tier === 'consequence' ? 'the consequence tier' : 'the fix-bounds gate has no anchor')
     if (halt) {
@@ -1272,7 +1335,7 @@ node "${pluginRoot}/scripts/tickets.mjs" check ${id} --from origin/${epicBranch}
 
 The first three commands bring the local branch to its pushed state — the state the checks must judge. The \`--from\` ref reads the CHECK/EXPECT criteria from the signed-off document on ${epicBranch}, never from this branch's own copy.
 
-The check command exits 0 when every check passed and 1 when any failed — BOTH are outcome "ran": report the JSON it printed verbatim (\`total\`, \`passed\`, and one \`failures\` entry per failed check or malformed line, with its criterion and evidence). A \`total\` of 0 — no CHECK criteria — is an answer, not a failure. Report "command-failed" only when a git command failed, the check command exited 2, or it printed no parseable JSON. You judge nothing; the driver reads the counts in code.
+The check command exits 0 when every check passed AND every criterion parsed; it exits 1 when any check failed **or any CHECK/EXPECT line is malformed** — a malformed line is a criterion that never ran, which is why it fails the gate rather than being skipped. BOTH exit codes are outcome "ran": report the JSON it printed verbatim — \`total\`, \`passed\`, \`allPassed\` exactly as the JSON prints it, \`problems\` as the LENGTH of the JSON's \`problems\` array, and one \`failures\` entry per failed check (criterion and evidence) and per problem (its \`text\` and \`why\`). Never infer \`allPassed\` from the counts and never leave it out: the driver halts on a report missing it. A \`total\` of 0 — no CHECK criteria — is an answer, not a failure. Report "command-failed" only when a git command failed, the check command exited 2, or it printed no parseable JSON. You judge nothing; the driver reads the ledger in code.
 
 ${PROMPT_RULE}
 
@@ -1296,29 +1359,48 @@ ${NO_MAIN} The checkout and fast-forward only move the local branch to where the
     break
   }
   {
+    // The gate reads the ledger the script printed, not a count the proxy
+    // could arrive at two ways. `allPassed` is the script's own verdict —
+    // every check green AND every criterion parsed — so a malformed CHECK,
+    // which runs nothing and therefore leaves `passed === total` trivially
+    // true, is a halt here rather than a silent merge (RUN-2's reviewer found
+    // exactly that hole). Every one of these facts arrives through a schema
+    // field and is refused when it is missing or the wrong type: a gate that
+    // cannot read its own evidence fails closed.
     const total = Number.isInteger(accept.total) ? accept.total : null
     const passed = Number.isInteger(accept.passed) ? accept.passed : null
+    const allPassed = typeof accept.allPassed === 'boolean' ? accept.allPassed : null
+    const problems = Number.isInteger(accept.problems) && accept.problems >= 0 ? accept.problems : null
     record.acceptanceChecks = total
     record.acceptanceChecksPassed = passed
-    if (total === null || passed === null || passed !== total) {
+    record.acceptanceAllPassed = allPassed
+    record.acceptanceProblems = problems
+    const unreadable = total === null || passed === null || allPassed === null || problems === null
+    if (unreadable || allPassed !== true || problems > 0 || passed !== total) {
       const failures = Array.isArray(accept.failures) ? accept.failures : []
+      const quoted = fence(
+        failures.map(f => `${line(f.criterion)} — ${line(f.evidence || '(no evidence quoted)')}`).join('; ') || '(no failures quoted)',
+      )
+      // More than one reason can be true at once; the halt says all of them,
+      // because the human reading the run record fixes what it names.
+      const why = []
+      if (passed !== null && total !== null && passed !== total) why.push(`${total - passed} of ${total} CHECK criteria failed on the pushed branch`)
+      if (problems > 0) why.push(`${problems} malformed CHECK line(s) never ran — a criterion nobody can satisfy is a failed criterion, not a skipped one`)
+      if (!why.length) why.push(`the ledger's own verdict is \`allPassed: false\` though its counts read ${passed}/${total} with no malformed line — the verdict is what the gate trusts`)
       halted = {
         ticket: id,
         stopCondition: STOP.acceptanceCheck,
         where: `the acceptance checks of ${id}`,
-        detail:
-          total === null || passed === null
-            ? `the acceptance-check step reported "ran" but no usable counts — a gate that cannot read its own evidence merges nothing; doubt goes up`
-            : `${total - passed} of ${total} CHECK criteria failed on the pushed branch, judged against the signed-off document on ${epicBranch}: ${fence(
-                failures.map(f => `${line(f.criterion)} — ${line(f.evidence || '(no evidence quoted)')}`).join('; ') || '(no failures quoted)',
-              )}`,
+        detail: unreadable
+          ? `the acceptance-check step reported "ran" but no usable counts or verdict (total, passed, allPassed, problems) — a gate that cannot read its own evidence merges nothing; doubt goes up`
+          : `${why.join('; and ')}, judged against the signed-off document on ${epicBranch}: ${quoted}`,
       }
       break
     }
     log(
       total === 0
         ? `${id}: no machine-runnable acceptance criteria — nothing to gate here; prose and demonstrate criteria remain the worker's verified obligations.`
-        : `${id}: acceptance checks ${passed}/${total} passed against the signed-off criteria.`,
+        : `${id}: acceptance checks ${passed}/${total} passed against the signed-off criteria, with no malformed CHECK line (the ledger's own \`allPassed\`).`,
     )
   }
 
@@ -1339,11 +1421,11 @@ ${NO_MAIN} The checkout and fast-forward only move the local branch to where the
   const fixBoundsFacts = boundsGated
     ? `
 
-FACT 3 — the review-fix diff, anchored on the reviewed head \`${reviewedHead}\`:
+FACT 3 — the review-fix diff, anchored on the reviewed head \`${anchorHead}\`:
 
 \`\`\`bash
-git diff --name-only origin/${epicBranch} ${reviewedHead} -- ':(exclude)epics'
-git diff --numstat ${reviewedHead} origin/${branch} -- ':(exclude)epics'
+git diff --name-only origin/${epicBranch} ${anchorHead} -- ':(exclude)epics'
+git diff --numstat ${anchorHead} origin/${branch} -- ':(exclude)epics'
 \`\`\`
 
 The first command lists the files the review saw — report its paths, verbatim, as \`reviewedFiles\`. The second lists what the fix commits changed after the review (the status-log addendum is excluded by the pathspec) — report its paths as \`fixFiles\` and the sum of every added and deleted count it printed as \`fixLines\`: 0 when it prints nothing, and -1 if any count prints "-" (a binary file) — both are answers, not failures. You judge none of it; the driver checks the bounds in code.`
