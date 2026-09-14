@@ -332,6 +332,26 @@ almost parses fails the gate rather than silently never running (doctor
 flags the near-miss shapes), and a check step whose counts the code cannot
 read halts — doubt goes up, never down.
 
+That sentence needs its bound stated, or it will be read as more than it is.
+`--from` secures the command string and nothing the string reaches. The text
+of the CHECK comes from the signed-off document; everything the command runs
+through is still the reviewed party's to write — the npm script it invokes
+(redesign-foundation's FND-5 found no `test:it` script existed and created
+the one its own criterion runs), the spec file that script executes, and the
+assertion inside that spec. A criterion that greps a file for a string is
+secured end to end, because the command *is* the assertion. A criterion that
+shells out to the repository's own test tooling is secured only as far as
+the tooling's name, and the same worker owns the rest. Two mechanisms close
+part of the gap. HARD-1's `allPassed` gate reads the ledger's own verdict
+and halts on a malformed CHECK rather than letting a criterion that never
+ran exit 0 into a green count — the shape a worker's edit would most cheaply
+produce. RUN-2's red-before rule requires the criterion to have been *seen
+failing* on the tree before the work existed, so a gate quietly hollowed out
+later has to explain how it was ever red. What closes the rest is not a
+mechanism but the human at the release gate, reading one diff that contains
+both the criterion and the code it judges. Naming the limit is the point: a
+gate believed to prove more than it proves is a gate nobody re-examines.
+
 The first three live release epics found the second correction: a CHECK is
 only evidence if it was ever **red**. Six of groundhopper-foundation's eight
 CHECKs were a whole-suite run with `EXPECT: Tests:`, which passes on the tree
@@ -691,7 +711,14 @@ the one thing the log's rules do not allow.
 Moving the loop into code also moved the judge. The driver hires each
 ticket's reviewer — the supervisor pattern one level up — and the worker
 stops at its pushed branch without reviewing or merging anything it
-wrote. That closes the last place where the party under review still picked
+wrote. The fallback under that hiring — one general agent, when the reviewer
+agent cannot be spawned — covers a crashed agent and not an exhausted
+environment, because it shares the primary's failure mode: in
+groundhopper-foundation on 2026-08-24 both spawns hit the same session limit
+milliseconds apart and the run halted, which was the correct outcome and the
+one halt of that epic that retired real risk — the review the human resumed
+into found two Important findings that would otherwise have merged unseen.
+That closes the last place where the party under review still picked
 its own judge, and it makes the merge gate mechanical: the reviewer returns
 findings as structured data, and code, not prose, decides that an Important
 finding left unfixed or a review addendum left uncommitted stops the run. A
