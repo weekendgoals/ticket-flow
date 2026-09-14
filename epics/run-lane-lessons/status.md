@@ -125,3 +125,29 @@ unlanded and superseded for the halt, not re-landed here — sign-off decision
 2 gives it to the second batch.
 
 **Owed:** Nothing.
+
+**Addendum — review — 2026-09-14 — opus/xhigh:** 0 Important, 4 nits, no
+pre-existing findings owned by this ticket; reviewed head `baf3d70`. Three
+nits fixed in `4af5cd8`. (1) The trip case asserted only that the log line
+carried the agent-reported path, so deleting the `fence(` call left the
+suite green — it now asserts the `<<<UNTRUSTED … UNTRUSTED>>>` markers
+around the path, and removing `fence(` fails that case (checked by
+deleting it, running, and restoring). (2) `meta.phases` and the run skill's
+step 4 listed Re-review before Acceptance and Resolve, while the pass a
+trip buys runs after the resolve step's bounds check and just before the
+merge; both now say so, so a record halted in `Re-review` with
+`fixBoundsTripped` is not read as one whose acceptance checks never ran.
+(3) The `PHRASES` entry pinned only the stop condition's first clause; it
+now pins the sentence whole, and the suite case mutates the tail clause
+("an unmeasurable fix is never merged") as well as the opening. Nit 4 — one
+120-character line in this entry's Verified paragraph — is recorded, not
+fixed: the log is append-only and rewrapping it would edit an entry. Two
+pre-existing defects in the driver, neither this ticket's and both for
+`retro`: the re-review packet asks for `reviewedHead` though
+`RE_REVIEW_SCHEMA` declares no such property, and the reviewer's commit
+range is a branch-name range while the merge is pinned to `resolvedHead`.
+Re-ran after the fixes: check-invariants 12/12, run-epic 92/92, tickets
+56/56, session guard 14/14, board 9/9, plan-page 8/8, codex 8/8, all `# fail
+0`; `check-invariants.mjs` exit 0, `doctor` exit 0, the runtime-style parse
+of `run-epic.mjs` exit 0, `tickets.mjs check RUN-1` 2/2. Nothing deferred.
+Worker tokens (implementation leg): 220,318; Reviewer tokens: 165,091.
