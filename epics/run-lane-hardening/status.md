@@ -332,3 +332,73 @@ stays with its named owner (a follow-up run-lane ticket, or this epic's
 retro) and was not touched here.
 
 **Owed:** Nothing.
+
+**Addendum — review — 2026-09-14 — opus/xhigh:** Two Important findings, both
+fixed; five nits, all fixed; two re-reviews. **Important 1** (first review,
+head `1477c70`): the re-read took `ticketBudget` from the verify step's
+`find --json`, which parses the working tree *after* `git merge --no-ff`, so
+the ticket branch's own copy of `tickets.md` set the ceiling that judged it —
+a worker or disposition commit could raise its own ceiling, the exact property
+the acceptance gate protects with `check --from origin/epic/<name>`. Fixed in
+`7f8c5c9`: `tickets.mjs` gains `find --from <ref>` (the epic's declarations
+parsed from `git show <ref>:epics/<epic>/tickets.md`; other facts unchanged;
+an unreadable ref exits 1, a bare `--from` exits 2), the read moves to the
+resolve step's new unconditional FACT 3 reading `origin/epic/<name>` before
+the merge, `RESOLVE_SCHEMA` requires `ticketBudget`, `FIND_SCHEMA`'s field and
+the verify prompt's budget sentence are removed, and the fix-bounds fact
+renumbers to FACT 4. The finding has its own test — a ticket branch cannot
+raise the ceiling that judges it — kept outside the graded phrase so the
+criterion's `# pass 4` stays exact. **Nits**, all confirmed and fixed: (2) the
+resolve proxy's budget instruction is pinned in its own test (`fa0d83e`), as
+the suite pins the other gates' prompt text; (3) the budget halts recorded no
+spend — `recordSpend()` now reads the meter once per ticket and every budget
+halt records the delta before halting, because a halt whose subject is the
+spending must not report `unknown`; (4) the run skill's contradiction bullet
+no longer calls the budget re-read an exception to "merged nothing" (the
+halts moved pre-merge) and names the ticket-count cap, which does fire after
+merges; (5) the no-meter halt says "run on a build", not "resume", matching
+the launch-time twin and the skill's ban on resuming a halted run; (6) the
+malformed value is fenced like every other quoted agent report. (3), (5) and
+(6) are pinned by assertions, including `doesNotMatch(/resume on a build/)`.
+**Important 2** (re-review of `1477c70..fa0d83e`, confirmed by trace): the fix
+read `origin/epic/<name>`, a *local* remote-tracking ref that nothing updated
+mid-ticket — the run's only full fetch is in refresh+select before the worker,
+the other three fetch the ticket branch, and the merge's `git pull --ff-only`
+runs after the read — so a raise pushed during the ticket still reported the
+stale value and FND-1's timeline reproduced exactly. Every test passed because
+the resolve agent is stubbed. Fixed in `55c640a`: FACT 3 fetches
+`origin <epicBranch>` immediately above the read, the test pins the fetch **by
+position** (`indexOf(fetch) < indexOf(find)`) rather than by presence, and the
+step's closing line now states the read-only contract precisely — the fetches
+write remote-tracking refs, nothing else writes. **Verdicts:** re-review of
+`1477c70..fa0d83e` — Important 1 fixed, five nits addressed, one new
+Important; narrow re-review of `fa0d83e..55c640a`, head `55c640a` — 0
+Important, nothing from either round open, the fetch confirmed ahead of the
+read in both composed prompts. Counts after the fixes: tickets 62/62, run-epic
+107/107, session guard 14/14, check-invariants 13/13, board 9/9, plan-page
+8/8, codex 8/8 (every suite `# fail 0`); `check-invariants.mjs` exit 0;
+`doctor` exit 0; `node --check plugins/flow/scripts/tickets.mjs` exit 0; the
+driver's runtime-style parse exit 0; `tickets.mjs check HARD-3` 2/2 with the
+pattern still exactly `# pass 4`. **Deviation from the signed-off document:**
+its scope named the verify step's `find --json` as the door (planning decision
+2); the review showed that door reads the tree the merge just produced, where
+the reviewed party's own copy of the preamble is the document. The resolve
+step on `origin/epic/<name>`, fetched first, is the door the invariant
+requires — read-only, before the merge, on a ref no ticket branch can edit.
+Recorded here rather than edited into the signed-off document; planning
+decision 3 (a null keeps the last value and logs it) is unchanged and
+implemented as written. **Not nothing deferred.** (a) A residual, accepted:
+at the resolve step the working tree is on the ticket branch, so the ticket
+branch decides *which path* is read from the ref (`epics/<epic>/tickets.md`);
+a renamed epic directory makes `git show` fail, `find` exit 1, the proxy
+report `command-failed` and the run halt before any merge — it fails closed,
+the safe direction, so it is recorded, not fixed. (b) A wording nit the
+reviewer declined to block on: the phrase `re-read at every refresh` names no
+refresh that actually performs the read, and it survives only because it is
+what the acceptance CHECK greps — owner **this epic's retro**, together with
+moving the criterion off the phrase. (c) The pre-existing hyphenated-label gap
+HARD-2 handed on (a `Ticket-budget:` style label escapes doctor's near-miss
+scan) is untouched and keeps its owner, **a follow-up run-lane ticket, or this
+epic's retro**: it is about how the label parses, not where the parsed value
+is read. Worker tokens (implementation leg): 130,536; Reviewer tokens: 598,961
+(first review 157,035; re-review 213,399; narrow re-review 228,527).
