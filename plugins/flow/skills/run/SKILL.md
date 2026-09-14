@@ -408,8 +408,12 @@ that resumes past one. The run halts:
 **Nothing improvises past one.** Halting is the mechanism working; a run that
 pushes through is a run whose release pull request cannot be trusted. On a
 `halted` result, or a Workflow call that errored: append the run record
-(step 6) with `haltedOn.stopCondition` verbatim and the ticket it fired on,
-commit and push it on `epic/<name>`, report, and stop. If the halt's detail
+(step 6) with `haltedOn.stopCondition` verbatim, the ticket it fired on, and
+the **Diagnosis:** paragraph step 6 requires of every halted record — the
+halt reason is the driver's account of where it stopped, the diagnosis is
+what you find when you inspect what it stopped on, and the second is what a
+human fixing the plugin reads — commit and push it on `epic/<name>`, report,
+and stop. If the halt's detail
 says a conflicted merge was **not** aborted, run `git merge --abort` on
 `epic/<name>` first — recovery, not reconciliation. Merge nothing more and
 open no release pull request. A halt from a worker's BLOCKED entry already
@@ -493,6 +497,23 @@ never by editing the record.>
 
 **Halted on:** <`haltedOn.stopCondition` verbatim, with `haltedOn.ticket`
 and `haltedOn.where` — or "ran to completion".>
+
+**Diagnosis:** <**required on a halted record**, omitted only when the run
+ran to completion. What the driver's halt detail says; what you found when
+you went and looked — the command re-run by hand with its counts, the file
+and line of the mechanism, the branch state as git reports it; and the
+reading the record is written for: does the stop look like a real risk
+retired, or like a fire on a green state? The driver's halt detail is one
+input, not the diagnosis — it is the machine's account of where it stopped,
+while this is what inspection found afterwards. Your reading is evidence for
+the retro, not its verdict: the retro's miner classifies the halt itself,
+because the run that stopped cannot be the judge of its own stop. Write it
+especially when the answer is "the work is fine, the instrument is not":
+both plugin fixes of August exist because a driver wrote this paragraph when
+nothing required it — the check runner's `maxBuffer` (`4eb0f4b`, from a
+diagnosis showing a 68/68 suite dying on ENOBUFS) and the addendum-date
+lookup (`9a859c7`, from one showing a green ticket failing a date-string
+grep). The retro's seventh question reads this paragraph first.>
 
 **Protection:** <"present" — or the recorded waiver quoted, with where it
 lives in `tickets.md`. A run without the hard floor must say so here.>

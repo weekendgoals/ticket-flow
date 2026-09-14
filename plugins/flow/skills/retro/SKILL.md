@@ -98,7 +98,12 @@ from under `repoRoot`.
   transferable ones as candidates for the methodology itself.
 - **What did the run halt on, and what did each halt buy?** For every
   `### Run —` record in `runs.md` — and in `status.md`, where the epics that
-  ran before the split keep theirs — its **Halted on:** line names the stop
+  ran before the split keep theirs — read its **Diagnosis:** paragraph
+  first: that is where the run was inspected while the evidence was live, and
+  it names the command re-run by hand, the file and line, and whether the
+  work or the instrument was at fault. Records from runs before 2026-09-14
+  carry none — classify those from the halt line and what the later records
+  show. Then its **Halted on:** line, which names the stop
   condition, the ticket and the stage: the halt condensed to a sentence, its
   cause classified as **work** (a defect in the implementation), **plan** (a
   defective, vacuous or decorative CHECK, a wrong assumption in
@@ -110,9 +115,11 @@ from under `repoRoot`.
   **policy** trip whose later re-review found nothing is a proposal against
   the policy, and a **plugin/environment** halt is a candidate ticket for the
   plugin's own repository — flag both as transferable, the way the question
-  above flags transferable planning lessons. The classification is yours to
-  make, not the record's to carry: the run that stopped could not judge its
-  own stop, and you read the records you did not write. An epic run attended,
+  above flags transferable planning lessons. The **Diagnosis** is evidence
+  gathered while the halt was fresh, never a verdict to adopt: the
+  classification is yours to make, not the record's to carry, because the run
+  that stopped could not judge its own stop, and you read the records you did
+  not write. An epic run attended,
   with no `### Run —` records: say so and move on.
 
 ## 5. Propose — the miner drafts, the invoking session gates

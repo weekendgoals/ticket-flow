@@ -8,6 +8,25 @@ with one version and date.
 
 ## Unreleased
 
+- **A halted run record must carry a `**Diagnosis:**` paragraph, and the
+  retro reads it first** (`skills/run/SKILL.md`: the step 6 record template
+  gains the field, and step 5's halt path names it where the halted session
+  is told what to append; `skills/retro/SKILL.md`'s seventh question reads
+  the paragraph before the **Halted on:** line and says why the
+  classification stays the miner's). The evidence is August's two plugin
+  fixes: the check runner's `maxBuffer` (`4eb0f4b`) and the
+  shape-matched addendum-date lookup (`9a859c7`) both exist because a driver
+  wrote a diagnosis when nothing asked for one — a 68/68 suite dying on
+  ENOBUFS, and a reviewed green ticket failing a date-string grep — while
+  three fresh-context retros read straight past twelve halts that carried
+  only a stop condition. The halt reason is the machine's account of where
+  it stopped; the diagnosis is what inspection found, including the file and
+  line and the command re-run by hand. It is **evidence, not a verdict**: the
+  retro's miner still classifies the halt, because the run that stopped
+  cannot judge its own stop. Records written before 2026-09-14 carry no
+  diagnosis and are classified from the halt line, so nothing is retrofitted
+  into an append-only log.
+
 - **Run records move to `epics/<name>/runs.md`, so the run and its tickets
   stop writing to one file tail** (`scripts/tickets.mjs`: `runsDoc` in
   `discoverEpics`, `epics --json` and `find --json` — the latter with
