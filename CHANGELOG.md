@@ -8,6 +8,37 @@ with one version and date.
 
 ## Unreleased
 
+- **An eighth preamble line, `Fix bounds exclude:`, lets an epic exempt
+  mechanical fan-out files from the run's fix-bounds gate**
+  (`scripts/tickets.mjs` preamble parse, doctor near-misses and both JSON
+  exposures; `workflows/run-epic.mjs` args validation and resolve step;
+  `skills/run/SKILL.md`; `skills/epic/SKILL.md`'s preamble template;
+  README's configuration table; two new tests in each suite). A live run
+  halted a green ticket whose review fix added a translation key: the
+  catalog fan-out — one key touching every locale file — blew the fix line
+  budget, which was measuring the catalog's width, not the fix's blast
+  radius. The epic may now declare comma-separated globs (e.g.
+  `src/messages/*.json`) that both of the resolve step's fix-diff commands
+  exclude the same way they already exclude `epics/`, so an excluded file
+  cannot reach `fixFiles` or `fixLines` and a pure fan-out neither halts nor
+  buys the bounded re-review a trip costs. Deliberately configuration, not a
+  hardcoded path: baking one project's i18n layout into the shared driver
+  would silently exempt translation-named paths in every installed project,
+  and per-project path policy belongs in the epic document, visible at
+  sign-off, like `Consequence paths:`. Validated on the same terms — an
+  unusable glob refuses the run before the first agent is spawned, because a
+  glob line that cannot be applied is fixed in the document, never silently
+  approximated. The narrowing is visible afterwards: the ticket record carries
+  `fixBoundsExclude` (`[]` when the gate measured the whole fix) and the run
+  logs the applied globs, so a retro can tell a gate that measured everything
+  from one a broad glob narrowed to nothing — legal by design, and the
+  human's call at sign-off, which is why it is recorded rather than inferred. **This line shipped once before and never arrived:** PR #42
+  merged on 2026-08-27 as `8ac3bef` into `addendum-gate-date`, a branch that
+  had already been merged, so the commit reached no release and no epic
+  could use the line it documented. Re-landed here against the current
+  driver — RUN-1's bounded re-review and HARD-1's `anchorHead` moved the
+  resolve step underneath it — rather than replayed as a cherry-pick.
+
 - **The unattended acceptance gate reads the ledger's verdict, and the review
   anchor is the driver's own read** (`workflows/run-epic.mjs`
   `ACCEPT_SCHEMA`, the acceptance prompt and its code gate; `TIER_FACTS_SCHEMA`

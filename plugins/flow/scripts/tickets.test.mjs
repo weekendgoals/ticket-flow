@@ -134,6 +134,8 @@ Planner model: fable — the plan reviewer runs on the strongest class.
 
 Consequence paths: src/auth/**, migrations/** — the risk list as globs.
 
+Fix bounds exclude: src/messages/*.json — translation fan-outs never count toward fix bounds.
+
 Ticket budget: 250000 — the run halts after any ticket spending past this.
 
 ## G-1 — expand the schema
@@ -564,8 +566,8 @@ test('the Delivery line parses tolerantly and exposes in find and list', () => {
   assert.equal(a.delivery, 'incremental')
 
   const data = JSON.parse(run(repo, 'list', '--json'))
-  assert.deepEqual(data.modes.gamma, { delivery: 'release', reviewerModel: 'opus', workerModel: 'sonnet', workerRunner: 'codex', plannerModel: 'fable', consequencePaths: ['src/auth/**', 'migrations/**'], ticketBudget: 250000 })
-  assert.deepEqual(data.modes.alpha, { delivery: 'incremental', reviewerModel: null, workerModel: null, workerRunner: null, plannerModel: null, consequencePaths: null, ticketBudget: null })
+  assert.deepEqual(data.modes.gamma, { delivery: 'release', reviewerModel: 'opus', workerModel: 'sonnet', workerRunner: 'codex', plannerModel: 'fable', consequencePaths: ['src/auth/**', 'migrations/**'], fixBoundsExclude: ['src/messages/*.json'], ticketBudget: 250000 })
+  assert.deepEqual(data.modes.alpha, { delivery: 'incremental', reviewerModel: null, workerModel: null, workerRunner: null, plannerModel: null, consequencePaths: null, fixBoundsExclude: null, ticketBudget: null })
 })
 
 test('a Worker model line pins the implementer; absent, workers inherit the session', () => {
@@ -594,7 +596,7 @@ test('an unrecognised or near-miss Delivery line warns instead of silently defau
     assert.equal(data.modes.misdeclared.delivery, 'continuous', 'the raw value is exposed, not coerced')
     assert.deepEqual(
       data.modes['fancy-delivery'],
-      { delivery: 'incremental', reviewerModel: null, workerModel: null, workerRunner: null, plannerModel: null, consequencePaths: null, ticketBudget: null },
+      { delivery: 'incremental', reviewerModel: null, workerModel: null, workerRunner: null, plannerModel: null, consequencePaths: null, fixBoundsExclude: null, ticketBudget: null },
       'a formatted Delivery line reads as absent, so the default applies',
     )
     const rows = JSON.parse(run(repo, 'doctor', '--json'))
@@ -621,7 +623,7 @@ test('the retired two-line syntax is flagged, not silently ignored', () => {
     const data = JSON.parse(run(repo, 'list', '--json'))
     assert.deepEqual(
       data.modes.oldstyle,
-      { delivery: 'incremental', reviewerModel: null, workerModel: null, workerRunner: null, plannerModel: null, consequencePaths: null, ticketBudget: null },
+      { delivery: 'incremental', reviewerModel: null, workerModel: null, workerRunner: null, plannerModel: null, consequencePaths: null, fixBoundsExclude: null, ticketBudget: null },
       'the dead labels parse as nothing; the delivery default applies',
     )
     const rows = JSON.parse(run(repo, 'doctor', '--json'))
@@ -694,6 +696,66 @@ test('a Consequence paths line parses as a glob list, case preserved, prose igno
   }
 })
 
+test('a Fix bounds exclude line parses as a glob list and reaches find --json and list --json', () => {
+  // The run driver's fix-bounds gate leaves these globs out of the review-fix
+  // diff, the way it already leaves out epics/ — for files a fix fans out
+  // into mechanically (translation catalogs: one new key touches every locale
+  // file). Same tolerant list parse as Consequence paths, and this script
+  // only parses and exposes it; the driver validates and applies it. Both
+  // commands must carry it: `find` is the door a ticket walks through and
+  // `list --json` is the one the run skill reads the epic's configuration
+  // from, so a line exposed by only one of them reaches no run.
+  const g = JSON.parse(run(repo, 'find', 'G-1', '--json'))
+  // The fixture's trailing prose is comma-free on purpose: the list splits on
+  // commas, so a comma in the prose would make the rest of the sentence an
+  // entry and the driver would refuse the run. Only the first WORD of each
+  // comma-separated segment is the glob — that is what this asserts.
+  assert.deepEqual(g.fixBoundsExclude, ['src/messages/*.json'], 'comma-free prose after the last glob must not break the parse')
+  assert.equal(JSON.parse(run(repo, 'find', 'A-2', '--json')).fixBoundsExclude, null, 'absent is null, never a default')
+  assert.deepEqual(JSON.parse(run(repo, 'list', '--json')).modes.gamma.fixBoundsExclude, ['src/messages/*.json'])
+
+  mkdirSync(join(repo, 'epics/fanout'), { recursive: true })
+  writeFileSync(
+    join(repo, 'epics/fanout/tickets.md'),
+    '# Fanout\n\nFix bounds exclude: Src/Messages/*.json, locales/**\n\n## F-1 — fan-out\n\n**Scope.** F.\n',
+  )
+  try {
+    assert.deepEqual(
+      JSON.parse(run(repo, 'list', '--json')).modes.fanout.fixBoundsExclude,
+      ['Src/Messages/*.json', 'locales/**'],
+      'case survives — paths are case-sensitive — and every comma-separated glob is kept',
+    )
+  } finally {
+    rmSync(join(repo, 'epics/fanout'), { recursive: true, force: true })
+  }
+})
+
+test('a Fix bounds exclude near-miss is flagged by doctor, never silently dropped', () => {
+  // A formatted line is declaration-shaped but parses as nothing, and the
+  // default is "no exclusions" — which re-halts the exact fan-out the line
+  // was written to wave through, silently. Same failure class as every other
+  // near-miss, so the label belongs in doctor's near set, and the warning
+  // must spell the syntax that would parse.
+  mkdirSync(join(repo, 'epics/bolded'), { recursive: true })
+  writeFileSync(
+    join(repo, 'epics/bolded/tickets.md'),
+    '# Bolded\n\n**Fix bounds exclude:** src/messages/*.json\n\n## B-9 — bolded line\n\n**Scope.** B.\n',
+  )
+  try {
+    assert.equal(JSON.parse(run(repo, 'list', '--json')).modes.bolded.fixBoundsExclude, null, 'the bolded line is not parsed')
+    const rows = JSON.parse(run(repo, 'doctor', '--json'))
+    const row = rows.find((r) => r.level === 'warn' && r.msg.includes('bolded/tickets.md') && /will not parse/.test(r.msg))
+    assert.ok(row, 'the near-miss scan covers the Fix bounds exclude label')
+    assert.match(
+      row.msg,
+      /"Fix bounds exclude: <glob>\[, <glob>\]"/,
+      'the warning enumerates the line among the declarations that do parse — a near-miss message that cannot name the right syntax teaches nothing',
+    )
+  } finally {
+    rmSync(join(repo, 'epics/bolded'), { recursive: true, force: true })
+  }
+})
+
 test('a Ticket budget line parses digits with k/m suffixes; an unrecognised suffix reads as absent and is flagged', () => {
   // The run driver enforces this as a per-ticket output-token ceiling; this
   // script only parses and exposes it. The suffix boundary is load-bearing:
@@ -740,7 +802,7 @@ test('an epic with no declaration lines defaults to incremental delivery', () =>
   writeFileSync(join(repo, 'epics/delta/tickets.md'), '# Delta\n\n## D-1 — bare epic\n\n**Scope.** Bare.\n')
   try {
     const data = JSON.parse(run(repo, 'list', '--json'))
-    assert.deepEqual(data.modes.delta, { delivery: 'incremental', reviewerModel: null, workerModel: null, workerRunner: null, plannerModel: null, consequencePaths: null, ticketBudget: null })
+    assert.deepEqual(data.modes.delta, { delivery: 'incremental', reviewerModel: null, workerModel: null, workerRunner: null, plannerModel: null, consequencePaths: null, fixBoundsExclude: null, ticketBudget: null })
   } finally {
     rmSync(join(repo, 'epics/delta'), { recursive: true, force: true })
   }
@@ -754,7 +816,7 @@ test('the Delivery line parses case-insensitively', () => {
   )
   try {
     const data = JSON.parse(run(repo, 'list', '--json'))
-    assert.deepEqual(data.modes.shout, { delivery: 'release', reviewerModel: null, workerModel: null, workerRunner: null, plannerModel: null, consequencePaths: null, ticketBudget: null })
+    assert.deepEqual(data.modes.shout, { delivery: 'release', reviewerModel: null, workerModel: null, workerRunner: null, plannerModel: null, consequencePaths: null, fixBoundsExclude: null, ticketBudget: null })
   } finally {
     rmSync(join(repo, 'epics/shout'), { recursive: true, force: true })
   }
@@ -779,7 +841,7 @@ test('a value-less label line reads as absent, never the next paragraph\'s first
     const data = JSON.parse(run(repo, 'list', '--json'))
     assert.deepEqual(
       data.modes.bare,
-      { delivery: 'incremental', reviewerModel: null, workerModel: null, workerRunner: null, plannerModel: null, consequencePaths: null, ticketBudget: null },
+      { delivery: 'incremental', reviewerModel: null, workerModel: null, workerRunner: null, plannerModel: null, consequencePaths: null, fixBoundsExclude: null, ticketBudget: null },
       'a value-less label must read as absent (incremental default / null), never scavenge prose',
     )
     // And doctor's near-miss wording is true of these lines: they will not

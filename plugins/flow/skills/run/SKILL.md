@@ -141,6 +141,7 @@ Workflow({
     workerRunner: "<modes[<name>].workerRunner — omit the key when absent>",
     reviewerModel: "<modes[<name>].reviewerModel — omit the key when absent>",
     consequencePaths: <modes[<name>].consequencePaths — omit the key when null>,
+    fixBoundsExclude: <modes[<name>].fixBoundsExclude — omit the key when null>,
     ticketBudget: <modes[<name>].ticketBudget — omit the key when null>
   }
 })
@@ -202,10 +203,15 @@ refuses to start.
   are gated in code instead: every fixed file must be in the diff the review
   saw **or named by one of its own findings** (a "the deliverable was not
   produced" finding is fixed outside the reviewed diff by construction), and
-  the fix under a small line budget. **A trip there buys the same bounded
-  re-review at the consequence tier rather than halting** — all three live
-  trips were clean fixes and each halt cost a human a resume — and an
-  Important finding in that pass halts on the Important-finding condition
+  the fix under a small line budget. Both fix-diff commands leave out
+  `epics/` and the epic's optional `Fix bounds exclude:` globs, so a file a
+  fix fans out into mechanically is invisible to the gate — translation
+  catalogs are the canonical case: one new key touches every locale file, and
+  the line count measures the catalog's width, not the fix's blast radius, so
+  a pure fan-out neither halts nor buys a re-review. **A trip there buys the
+  same bounded re-review at the consequence tier rather than halting** — all
+  three live trips were clean fixes and each halt cost a human a resume — and
+  an Important finding in that pass halts on the Important-finding condition
   like any other. That pass gets its own range, `<reviewedHead>..origin/<id
   lowercased>`: the fix commits were pushed after the anchor, so the first
   review's anchored range cannot contain them. That pass runs where the trip is detected: **after** the
@@ -253,7 +259,7 @@ enters your context from the loop:
                      reReviewRan, reReviewImportantCount,
                      reReviewFindings, reviewedHead,
                      reviewerReportedHead, fixBoundsGated,
-                     fixBoundsTripped,
+                     fixBoundsTripped, fixBoundsExclude,
                      fixLines, acceptanceOutcome, acceptanceChecks,
                      acceptanceChecksPassed, acceptanceAllPassed,
                      acceptanceProblems, resolveOutcome, mergeOutcome,
@@ -320,7 +326,9 @@ that resumes past one. The run halts:
 - on **a review-fix diff the run could not measure — no usable fix-diff facts
   from the resolve step, or a fix whose changed lines cannot be counted; an
   unmeasurable fix is never merged** — the one case the bounds gate still
-  halts on, because a re-review of a diff nothing measured proves nothing;
+  halts on, because a re-review of a diff nothing measured proves nothing.
+  What it measures is the fix diff minus `epics/` and the epic's `Fix bounds
+  exclude:` globs, which sign-off approved as mechanical fan-out;
 - on **a failed acceptance CHECK — a machine-runnable criterion whose
   command did not produce its expected result on the pushed branch, a CHECK
   line too malformed to run at all, or an acceptance report the gate could
@@ -445,8 +453,9 @@ in this mode. It carries:
   (found / fixed / not fixed with reasons), and **what stood between its fix
   commits and the merge** — the re-review (`reReviewRan`,
   `reReviewImportantCount`, `reReviewFindings`), the code bounds check
-  (`fixBoundsGated`, `fixLines`), and whether that check tripped and bought
-  the re-review (`fixBoundsTripped`);
+  (`fixBoundsGated`, `fixLines`, and `fixBoundsExclude` — what the gate was
+  allowed not to look at, `[]` when it measured the whole fix), and whether
+  that check tripped and bought the re-review (`fixBoundsTripped`);
 - the release's size up front — `git diff --stat
   origin/<default-branch>...epic/<name>` — a release too large to review is
   a fact the human sees before approving;

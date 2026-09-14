@@ -166,6 +166,21 @@ paths the unattended driver always prices at the consequence review tier, a
 code floor under the worker's self-reported tier. Globs only on this line;
 `**` crosses directories, `*` stays within one.
 
+`Fix bounds exclude: <glob>[, <glob>]` — e.g. `src/messages/*.json`: files
+the unattended driver's fix-bounds gate leaves out of the review-fix diff,
+the way it already leaves out `epics/`. For files a fix fans out into
+mechanically — translation catalogs are the canonical case: one new key
+touches every locale file, and the line count measures the catalog's width,
+not the fix's blast radius, so without the line a clean fan-out buys a
+re-review or a halt. Same glob syntax as `Consequence paths:` — globs only on
+this line, `**` crossing directories and `*` staying within one — and
+declared here rather than built into the driver because per-project path
+policy belongs in the document a human signs off. An unusable glob refuses
+the run: a line that cannot be applied is fixed here, never silently
+approximated. Both glob lines split on commas, so a comma inside trailing
+prose makes that prose an entry and the run refuses to start — keep prose on
+these two lines comma-free, or leave it off.
+
 `Ticket budget: <n>` — e.g. `250k` or `1m`: a per-ticket output-token
 ceiling for unattended runs; the driver halts after any ticket that exceeds
 it (the ticket stays merged), so a runaway ticket is a signal, not a bill.>

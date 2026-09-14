@@ -634,6 +634,65 @@ test('below the consequence tier, fixes skip the re-review and are bounds-checke
   assert.match(p, /the driver checks the bounds in code/i)
 })
 
+test("the epic's Fix bounds exclude globs keep a fan-out file out of both fix-diff pathspecs, so it never counts toward a trip", async () => {
+  // Translation-catalog fan-outs: one new key touches every locale file, and
+  // the line count would measure the catalog's width, not the fix. Sign-off
+  // approved the globs; the resolve step's commands leave them out the same
+  // way they leave out epics/, in BOTH pathspecs — so an excluded file cannot
+  // appear in `fixFiles` and its lines cannot reach `fixLines`, and a pure
+  // fan-out neither trips the bounds nor buys a re-review.
+  const r = await drive(
+    oneTicket({ 'review:PAY-1': reviewImportant, 'disposition:PAY-1': dispFixed, 'resolve:PAY-1': { ...resolvedOk, ...resolvedOkBounds } }),
+    { ...ARGS, fixBoundsExclude: ['src/messages/*.json'] },
+  )
+  assert.equal(r.out.outcome, 'completed')
+  const p = call(r, 'resolve:PAY-1').prompt
+  assert.match(p, /git diff --name-only origin\/epic\/payments abc1234def0 -- ':\(exclude\)epics' ':\(exclude,glob\)src\/messages\/\*\.json'/)
+  assert.match(p, /git diff --numstat abc1234def0 origin\/pay-1 -- ':\(exclude\)epics' ':\(exclude,glob\)src\/messages\/\*\.json'/)
+  assert.match(p, /the epic's excluded fan-out globs are excluded by the pathspec/)
+  // The fan-out is invisible to the facts, so the gate reads what is left: in
+  // bounds, no trip, no second pass bought, and the merge proceeds.
+  const rec = r.out.ticketRecords[0]
+  assert.equal(rec.fixBoundsGated, true)
+  assert.equal(rec.fixBoundsTripped, false)
+  assert.ok(!r.labels.some(l => l.startsWith('re-review:')))
+  assert.equal(r.out.totals.reReviews, 0)
+  // A gate that measured everything and one narrowed to nothing both read as
+  // "no trip" in the record, so the narrowing is recorded and logged: a broad
+  // glob is legal by design, and the retro has to be able to see it.
+  assert.deepEqual(rec.fixBoundsExclude, ['src/messages/*.json'])
+  assert.ok(r.logs.some(l => /fix-bounds gate runs narrowed/.test(l) && /src\/messages\/\*\.json/.test(l)))
+  // Without the line the commands carry epics/ alone — the exclusion is the
+  // epic's declaration, never a path baked into the shared driver — and the
+  // record says the gate measured the whole fix.
+  const bare = await drive(
+    oneTicket({ 'review:PAY-1': reviewImportant, 'disposition:PAY-1': dispFixed, 'resolve:PAY-1': { ...resolvedOk, ...resolvedOkBounds } }),
+  )
+  assert.doesNotMatch(call(bare, 'resolve:PAY-1').prompt, /exclude,glob/)
+  assert.match(call(bare, 'resolve:PAY-1').prompt, /the status-log addendum is excluded by the pathspec/)
+  assert.deepEqual(bare.out.ticketRecords[0].fixBoundsExclude, [])
+  assert.ok(!bare.logs.some(l => /runs narrowed/.test(l)))
+})
+
+test('an unusable Fix bounds exclude glob refuses the run before spending an agent', async () => {
+  // Validated exactly like the consequence globs: dropping an unusable entry
+  // would not lower scrutiny here, but it would re-halt the fan-out the line
+  // exists to admit — and a glob that cannot be applied is fixed in the epic's
+  // document, never silently approximated. A refusal before the first spawn
+  // is a configuration error a human reads, not a run that burns tokens first.
+  for (const [args, re] of [
+    [{ ...ARGS, fixBoundsExclude: ["src/messages/*.json' --", 'x'] }, /Unsafe fixBoundsExclude entry/],
+    [{ ...ARGS, fixBoundsExclude: ['../outside/**'] }, /Unsafe fixBoundsExclude entry/],
+    [{ ...ARGS, fixBoundsExclude: [42] }, /Unsafe fixBoundsExclude entry/],
+    [{ ...ARGS, fixBoundsExclude: 'src/messages/*.json' }, /must be an array/],
+  ]) {
+    const r = await drive(() => undefined, args)
+    assert.match(r.out.threw, re)
+    assert.match(r.out.threw, /Fix bounds exclude|must be an array/)
+    assert.equal(r.calls.length, 0, 'the refusal comes before any agent is spawned')
+  }
+})
+
 // A fix that leaves the bounds the cheap gate can judge buys the bounded
 // re-review the consequence tier gets, instead of halting the run: all three
 // live trips (GHL-1, GHL-9, GHL-10) were clean fixes, and every halt cost a
