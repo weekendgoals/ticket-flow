@@ -575,3 +575,19 @@ Recorded rather than edited into anything: the documents cite the fixes by
 commit and mechanism, so no numbering travels with them.
 
 **Owed:** Nothing.
+
+**Addendum — review — 2026-09-14 — sonnet/high:** No findings — 0 Important,
+0 nits, nothing pre-existing — at the normal tier, reviewed head `212f600`.
+Checked and found sound: both cited commits exist and say what the documents
+claim (`4eb0f4b` the check runner's buffer, `9a859c7` the shape-matched
+addendum-date lookup); the FND-5 `test:it` citation and the session-limit
+fallback citation against the context reports; the `**Diagnosis:**` field's
+placement after **Halted on:** in the step 6 template, with the
+ran-to-completion record's shape untouched; `run-epic.mjs` and the scripts
+untouched; both CHANGELOG entries under `## Unreleased`; and the
+reconciliation between the run and retro skills reading as one rule — the
+diagnosis is evidence, the classification stays the miner's. The entry's
+discrepancy note was verified against the retro report and is correct: the
+two shipped fixes came from the diagnoses under halts 2 and 3, not 1 and 2.
+Nothing fixed, because nothing was found; **nothing deferred.** Worker
+tokens (implementation leg): 119,882; Reviewer tokens: 127,026.
