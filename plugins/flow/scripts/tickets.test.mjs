@@ -706,7 +706,11 @@ test('a Fix bounds exclude line parses as a glob list and reaches find --json an
   // `list --json` is the one the run skill reads the epic's configuration
   // from, so a line exposed by only one of them reaches no run.
   const g = JSON.parse(run(repo, 'find', 'G-1', '--json'))
-  assert.deepEqual(g.fixBoundsExclude, ['src/messages/*.json'], 'prose after the last glob must not break the parse')
+  // The fixture's trailing prose is comma-free on purpose: the list splits on
+  // commas, so a comma in the prose would make the rest of the sentence an
+  // entry and the driver would refuse the run. Only the first WORD of each
+  // comma-separated segment is the glob — that is what this asserts.
+  assert.deepEqual(g.fixBoundsExclude, ['src/messages/*.json'], 'comma-free prose after the last glob must not break the parse')
   assert.equal(JSON.parse(run(repo, 'find', 'A-2', '--json')).fixBoundsExclude, null, 'absent is null, never a default')
   assert.deepEqual(JSON.parse(run(repo, 'list', '--json')).modes.gamma.fixBoundsExclude, ['src/messages/*.json'])
 

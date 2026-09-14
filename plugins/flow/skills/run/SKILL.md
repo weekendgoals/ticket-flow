@@ -208,10 +208,10 @@ refuses to start.
   fix fans out into mechanically is invisible to the gate — translation
   catalogs are the canonical case: one new key touches every locale file, and
   the line count measures the catalog's width, not the fix's blast radius, so
-  a pure fan-out neither halts nor buys a re-review. **A trip there buys the same bounded
-  re-review at the consequence tier rather than halting** — all three live
-  trips were clean fixes and each halt cost a human a resume — and an
-  Important finding in that pass halts on the Important-finding condition
+  a pure fan-out neither halts nor buys a re-review. **A trip there buys the
+  same bounded re-review at the consequence tier rather than halting** — all
+  three live trips were clean fixes and each halt cost a human a resume — and
+  an Important finding in that pass halts on the Important-finding condition
   like any other. That pass gets its own range, `<reviewedHead>..origin/<id
   lowercased>`: the fix commits were pushed after the anchor, so the first
   review's anchored range cannot contain them. That pass runs where the trip is detected: **after** the
@@ -259,7 +259,7 @@ enters your context from the loop:
                      reReviewRan, reReviewImportantCount,
                      reReviewFindings, reviewedHead,
                      reviewerReportedHead, fixBoundsGated,
-                     fixBoundsTripped,
+                     fixBoundsTripped, fixBoundsExclude,
                      fixLines, acceptanceOutcome, acceptanceChecks,
                      acceptanceChecksPassed, acceptanceAllPassed,
                      acceptanceProblems, resolveOutcome, mergeOutcome,
@@ -453,8 +453,9 @@ in this mode. It carries:
   (found / fixed / not fixed with reasons), and **what stood between its fix
   commits and the merge** — the re-review (`reReviewRan`,
   `reReviewImportantCount`, `reReviewFindings`), the code bounds check
-  (`fixBoundsGated`, `fixLines`), and whether that check tripped and bought
-  the re-review (`fixBoundsTripped`);
+  (`fixBoundsGated`, `fixLines`, and `fixBoundsExclude` — what the gate was
+  allowed not to look at, `[]` when it measured the whole fix), and whether
+  that check tripped and bought the re-review (`fixBoundsTripped`);
 - the release's size up front — `git diff --stat
   origin/<default-branch>...epic/<name>` — a release too large to review is
   a fact the human sees before approving;

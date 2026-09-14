@@ -907,6 +907,9 @@ Report honestly: \`branch-pushed\` ONLY if you saw the push of \`${branch}\` suc
     reviewerReportedHead: '',
     fixBoundsGated: false,
     fixBoundsTripped: false,
+    // The epic's `Fix bounds exclude:` globs as the gate applied them — [] is
+    // "measured everything", and a retro can tell the two apart.
+    fixBoundsExclude: [],
     fixLines: null,
     acceptanceOutcome: 'not reached',
     acceptanceChecks: null,
@@ -1268,10 +1271,21 @@ ${NO_MAIN} You do not merge this branch; the driver does, after its own gate.`,
   const needsReReview = record.fixedCommits.length > 0 && (priced.tier === 'consequence' || !anchorHead)
   const boundsGated = record.fixedCommits.length > 0 && !needsReReview
   record.fixBoundsGated = boundsGated
+  // What the gate was allowed NOT to look at, on the record and in the log:
+  // a retro reading a ticket that passed the bounds check cannot otherwise
+  // tell a gate that measured the whole fix from one narrowed to nothing. The
+  // globs are the epic's declaration, so a broad one (`**` measures nothing)
+  // is legal by design — the human's call at sign-off — which is exactly why
+  // it must be visible here rather than inferred from the epic document.
+  record.fixBoundsExclude = fixBoundsExclude
   if (boundsGated) {
     log(
       `${id}: ${record.fixedCommits.length} review-fix commit(s) at tier ${priced.tier} — no automatic re-review below the consequence tier; the fix diff is bounds-checked in code at the resolve step (files the review saw or its findings named, ≤${FIX_LINE_BUDGET} changed lines), and a trip there buys the same bounded re-review at the consequence tier.`,
     )
+    if (fixBoundsExclude.length)
+      log(
+        `${id}: the fix-bounds gate runs narrowed — the epic's \`Fix bounds exclude:\` globs (${fixBoundsExclude.join(', ')}) leave those files out of both fix-diff commands, so their changes count toward neither the file set nor the ${FIX_LINE_BUDGET}-line budget.`,
+      )
   }
 
   // The bounded pass itself, with two doors into it: the consequence tier's
@@ -1473,14 +1487,18 @@ ${NO_MAIN} The checkout and fast-forward only move the local branch to where the
   // The fix-bounds facts ride the resolve step because it is already the
   // read-only fact reader: the SHA below was shape-verified when the review
   // returned, so nothing agent-authored is interpolated into these commands.
-  // The epic's exclude globs join epics/ in BOTH pathspecs: a file the fix
-  // fans out into mechanically is then invisible to both facts — it cannot
-  // appear in `fixFiles` and its lines cannot reach `fixLines` — so the gate
-  // measures the fix and a pure fan-out neither halts nor buys a re-review.
-  // Both commands carry the same pathspecs on purpose: excluding a file from
-  // the fix side alone would leave it out of the reviewed set too, which is
-  // the trip it exists to prevent. Globs were shape-validated at start;
-  // nothing agent-authored is interpolated here.
+  // The epic's exclude globs join epics/ in BOTH pathspecs. The `--numstat`
+  // command is what the feature turns on: `fixFiles` and `fixLines` come from
+  // it alone, so an excluded file cannot be in the set the gate measures and
+  // its fanned-out lines cannot reach the budget — a pure fan-out then
+  // neither halts nor buys a re-review. The `--name-only` command carries the
+  // same pathspecs so both facts describe the same universe, and because the
+  // asymmetry in that direction is the harmful one: excluding on the
+  // `--name-only` side alone would shrink `reviewedFiles` while the file
+  // still arrived in `fixFiles`, and the trip is `fixFiles` minus
+  // `reviewedFiles` — a guaranteed trip on every fan-out fix, the opposite of
+  // what the line is for. Globs were shape-validated at start; nothing
+  // agent-authored is interpolated here.
   const boundsPathspecs = [`':(exclude)epics'`, ...fixBoundsExclude.map(g => `':(exclude,glob)${g}'`)].join(' ')
   const fixBoundsFacts = boundsGated
     ? `

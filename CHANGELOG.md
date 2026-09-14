@@ -28,7 +28,11 @@ with one version and date.
   sign-off, like `Consequence paths:`. Validated on the same terms — an
   unusable glob refuses the run before the first agent is spawned, because a
   glob line that cannot be applied is fixed in the document, never silently
-  approximated. **This line shipped once before and never arrived:** PR #42
+  approximated. The narrowing is visible afterwards: the ticket record carries
+  `fixBoundsExclude` (`[]` when the gate measured the whole fix) and the run
+  logs the applied globs, so a retro can tell a gate that measured everything
+  from one a broad glob narrowed to nothing — legal by design, and the
+  human's call at sign-off, which is why it is recorded rather than inferred. **This line shipped once before and never arrived:** PR #42
   merged on 2026-08-27 as `8ac3bef` into `addendum-gate-date`, a branch that
   had already been merged, so the commit reached no release and no epic
   could use the line it documented. Re-landed here against the current

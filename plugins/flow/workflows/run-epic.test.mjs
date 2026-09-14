@@ -657,13 +657,21 @@ test("the epic's Fix bounds exclude globs keep a fan-out file out of both fix-di
   assert.equal(rec.fixBoundsTripped, false)
   assert.ok(!r.labels.some(l => l.startsWith('re-review:')))
   assert.equal(r.out.totals.reReviews, 0)
+  // A gate that measured everything and one narrowed to nothing both read as
+  // "no trip" in the record, so the narrowing is recorded and logged: a broad
+  // glob is legal by design, and the retro has to be able to see it.
+  assert.deepEqual(rec.fixBoundsExclude, ['src/messages/*.json'])
+  assert.ok(r.logs.some(l => /fix-bounds gate runs narrowed/.test(l) && /src\/messages\/\*\.json/.test(l)))
   // Without the line the commands carry epics/ alone — the exclusion is the
-  // epic's declaration, never a path baked into the shared driver.
+  // epic's declaration, never a path baked into the shared driver — and the
+  // record says the gate measured the whole fix.
   const bare = await drive(
     oneTicket({ 'review:PAY-1': reviewImportant, 'disposition:PAY-1': dispFixed, 'resolve:PAY-1': { ...resolvedOk, ...resolvedOkBounds } }),
   )
   assert.doesNotMatch(call(bare, 'resolve:PAY-1').prompt, /exclude,glob/)
   assert.match(call(bare, 'resolve:PAY-1').prompt, /the status-log addendum is excluded by the pathspec/)
+  assert.deepEqual(bare.out.ticketRecords[0].fixBoundsExclude, [])
+  assert.ok(!bare.logs.some(l => /runs narrowed/.test(l)))
 })
 
 test('an unusable Fix bounds exclude glob refuses the run before spending an agent', async () => {
