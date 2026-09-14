@@ -473,3 +473,57 @@ the table already carried `context/` as a fourth row before this change.
 script and a count is not a branch.
 
 **Owed:** Nothing.
+
+**Addendum — review — 2026-09-14 — opus/xhigh:** Consequence tier, reviewed
+head `12a494c`: 1 Important, 5 nits, 1 pre-existing; backward compatibility
+verified byte-identical against `weekendgoals`. **Important, fixed in
+`2f08507`:** cross-file precedence lost recorded figures — `parseSpend` read
+all of `status.md` then all of `runs.md`, so a run record's `unknown` deleted a
+figure the other file had recorded (executed case: a halted run's `X-1
+worker=unknown reviewer=unknown` in `runs.md` erased the attended entry's
+40,000 / 12,000, and the ledger reported the ticket unmeasured with total 0,
+where the same content in one file yields 52,000). The fix states the ranking
+instead of inheriting it from file order: **`unknown` never overwrites a known
+figure in either direction** — it records the absence of an observation, not a
+correction — and **between two known figures for one ticket and role the last
+read wins, with `runs.md` read after `status.md`**, so a correction to a run
+record's figures is appended in `runs.md`. The rule is stated in the run
+skill's step 6, the spend skill's reading section and README's `spend`
+paragraph, and pinned by a test named outside the graded pattern covering both
+directions. **Nits fixed in the same commit** (the `tau` fixture serves the
+Important case and three nits in one literal, so the fixes were not split into
+separate commits): a `status.md` record whose heading already appears in
+`runs.md` is a repaired one and is no longer re-flagged; the misfile flag is
+strictly after the split date; a `runs.md` that exists with no parseable record
+is now itself flagged, instead of silently disabling the misfile scan; the run
+skill names `find --json` alone as carrying `runsDoc`/`runsDocExists`.
+**Recorded, not fixed:** README's "The three documents" heading now stands over
+five rows — the entry's decision 5 stands, the ticket owns the row and not the
+section. **Three deviations, from the signed-off scope and from this entry's
+own Decisions:** (1) the misfile flag is **strictly after** the split date, not
+the scope's "on or after" — a date carries no time, so a record written on the
+split day may well predate the first record in `runs.md`, and a record that
+cannot be moved must not be flagged; (2) doctor's run-record scans sit **below**
+the status-heading scan, with the `no status.md` branch's `continue` replaced
+by an `else`, so the scans stay reachable for an epic that has `runs.md` and no
+`status.md` while `doctor`'s row order stays byte-identical to before this
+ticket; (3) the cross-file ranking rule above, which the scope did not name at
+all. **Re-review:** bounded, `12a494c..2f08507`, head `2f08507`, opus/xhigh —
+the Important and all four nits verified fixed against the reviewer's own
+fixtures, `weekendgoals` `spend`, `spend --json`, `doctor`, `doctor --json` and
+`list --json` byte-identical including row order; 0 Important open. **Counts
+after the fixes:** tickets 67/67, run-epic 107/107, session guard 14/14,
+check-invariants 15/15, board 9/9, plan-page 8/8, codex 8/8 (every suite
+`# fail 0`); `check-invariants.mjs` exit 0; `doctor` exit 0;
+`node --check plugins/flow/scripts/tickets.mjs` exit 0; the driver's
+runtime-style parse exit 0; `tickets.mjs check HARD-4` 3/3 with the pattern
+still exactly `# pass 3`. **Not nothing deferred.** (a) The pre-existing gap
+the review found: the run-heading scans and `runRecordHeadings` do not skip
+fenced code blocks, so a log quoting a `### Run —` example inside a fence reads
+as a record — owner **this epic's retro**. (b) The repaired-record skip's one
+blind spot, introduced by its own fix: two *distinct* records whose headings
+are byte-identical (same date, no qualifier), one in each file, suppress the
+misfile warning while the ledger still reads both — the record's first Tokens
+line is a cheap second key if it ever matters; owner **this epic's retro**.
+Worker tokens (implementation leg): 175,004; Reviewer tokens: 334,967 (first
+review 148,747; re-review 186,220).
