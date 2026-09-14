@@ -247,6 +247,48 @@ const EXPECT_LINE = /^\s*EXPECT:\s*(\S.*)$/
 const CHECK_NEAR = /^\s*(check|expect)\s*:/i
 const CHECK_BULLET_NEAR = /^\s*[-*]\s+(CHECK|EXPECT)\s*:/i
 
+// One layer in from a near-miss: shapes that parse, run, and still cannot
+// decide anything. Both are quoted from redesign-foundation's history, where
+// they merged and then cost the run a halt.
+//
+// One: `\\|` inside a CHECK's quoted `node -e` or `sh -c` string. The quoting
+// layer consumes the escape, grep receives a literal `|`, and an alternation
+// that is not an alternation matches nothing.
+const CHECK_ESCAPED_PIPE = /\\\\\|/
+const CHECK_QUOTED_SCRIPT = /\bnode\s+-e\b|\bsh\s+-c\b/
+// Two: grep given both -r and -c. Recursive counting prints `path:count` per
+// file, never a bare number, whatever the CHECK compares it against — so the
+// comparison is decided by the path, not the count.
+function grepCountsRecursively(command) {
+  for (const m of command.matchAll(/(?:^|[\s;|&(`'"])grep((?:\s+-{1,2}[A-Za-z][A-Za-z-]*)*)/g)) {
+    let recursive = false
+    let counting = false
+    for (const flag of m[1].trim().split(/\s+/).filter(Boolean)) {
+      if (flag.startsWith('--')) {
+        if (flag === '--recursive' || flag === '--dereference-recursive') recursive = true
+        if (flag === '--count') counting = true
+      } else {
+        const letters = flag.slice(1)
+        if (/[rR]/.test(letters)) recursive = true
+        if (letters.includes('c')) counting = true
+      }
+    }
+    if (recursive && counting) return true
+  }
+  return false
+}
+
+// A single-file `grep -c path` prints a bare count and is sound — it is not
+// flagged, and the fixture carries one to prove it (GHF-1's passed live).
+function checkShapeProblems(command) {
+  const why = []
+  if (CHECK_ESCAPED_PIPE.test(command) && CHECK_QUOTED_SCRIPT.test(command))
+    why.push('this CHECK parses and runs but can never pass: `\\\\|` inside a quoted `node -e` / `sh -c` string — the quoting layer consumes one backslash, so grep receives a literal "|" and the alternation never matches (use `grep -E` in a plain shell test)')
+  if (grepCountsRecursively(command))
+    why.push('this CHECK parses and runs but can never pass: grep given both -r and -c prints "path:count" per file, never a bare number, whatever the CHECK compares it against (count one named file, or pipe through `wc -l`)')
+  return why
+}
+
 function parseChecks(body) {
   const checks = []
   const problems = []
@@ -256,7 +298,9 @@ function parseChecks(body) {
     const e = line.match(EXPECT_LINE)
     const b = line.match(/^\s*[-*]\s+(.*)$/)
     if (c) {
-      checks.push({ criterion: bullet, check: c[1].trim(), expect: null })
+      const command = c[1].trim()
+      checks.push({ criterion: bullet, check: command, expect: null })
+      for (const why of checkShapeProblems(command)) problems.push({ line: i + 1, text: line.trim(), why })
     } else if (e) {
       const last = checks[checks.length - 1]
       if (!last || last.expect !== null)
@@ -890,7 +934,9 @@ function doctor() {
     })
     // A CHECK that almost parses never runs, and the ticket then passes its
     // acceptance gate on silence — the same failure class as a heading
-    // near-miss, flagged the same way.
+    // near-miss, flagged the same way. The same scan carries the shapes that
+    // do parse and run yet can never pass, because a criterion that cannot
+    // come out green lies in exactly the same direction.
     for (const t of parseTickets(epic))
       for (const p of parseChecks(t.body).problems)
         add('warn', `${epic.epic}/tickets.md (${t.id}) — ${p.why}: ${p.text}`)

@@ -934,6 +934,29 @@ Delivery: incremental
 - orphan expect
   EXPECT: nothing above me
 - CHECK: node -e "console.log('bullet form')"
+
+## K-7 — CHECK shapes that parse and run but can never pass
+
+The two defective lines are quoted verbatim from redesign-foundation's
+history (weekendgoals 650169d7 repaired both): FND-2's, whose escaped pipe
+made it pass on any tree, and FND-6's, which carries both shapes at once and
+halted a live run on correct code.
+
+**Acceptance criteria.**
+- FND-2's MobileSidebar check — escaped pipe, no recursive count
+  CHECK: cd weekendgoals-ui-next && node -e "const{execSync}=require('child_process');const o=execSync('grep -rn \\"MobileSidebar\\\\|mobile-sidebar\\" src test || true').toString();process.exit(o.trim()?1:0)"
+- FND-6's breadcrumb check — escaped pipe and a recursive count together
+  CHECK: cd weekendgoals-ui-next && node -e "const{execSync}=require('child_process');const n=execSync('grep -rc \\"export const generateBreadcrumbListSchema\\\\|export function generateBreadcrumbListSchema\\" src/functional/structured-data.ts').toString().trim();process.exit(n==='1'?0:1)"
+  EXPECT: 1
+- the same recursive count spelled -cr
+  CHECK: sh -c "grep -cr generateBreadcrumbListSchema src"
+  EXPECT: 1
+- and spelled as two separate flags
+  CHECK: grep -r -c generateBreadcrumbListSchema src
+  EXPECT: 1
+- GHF-1's single-file count is sound and passed live — it must not be flagged
+  CHECK: grep -c "Me and the log" api-gateway/CLAUDE.md
+  EXPECT: 1
 `,
 )
 git(crepo, 'add', '.')
@@ -1027,6 +1050,36 @@ test('doctor flags CHECK/EXPECT near-misses as silently-never-runs', () => {
   assert.ok(k5.some((r) => /will not parse, so it silently never runs/.test(r.msg)))
   assert.ok(k5.some((r) => /no CHECK line above it/.test(r.msg)))
   assert.ok(k5.some((r) => /its own bullet/.test(r.msg)))
+})
+
+// The two shapes below parse, run, and still decide nothing — the failure a
+// near-miss scan exists to catch, one layer in. Both merged live before
+// anything flagged them: FND-2's passed on every tree, FND-6's halted a run
+// on correct code.
+
+test('doctor flags a CHECK shape that runs but can never pass: an escaped pipe in a quoted script', () => {
+  // No origin remote in this fixture, so doctor exits 1 on that hard
+  // precondition — the shape rows still print and are what this asserts.
+  const rows = JSON.parse(runFail(crepo, 'doctor', '--json').stdout)
+  const k7 = rows.filter((r) => r.level === 'warn' && r.msg.includes('(K-7)'))
+  const escaped = k7.filter((r) => /consumes one backslash/.test(r.msg))
+  assert.equal(escaped.length, 2, k7.map((r) => r.msg).join('\n'))
+  assert.ok(escaped.some((r) => r.msg.includes('MobileSidebar')))
+  assert.ok(escaped.some((r) => r.msg.includes('generateBreadcrumbListSchema')))
+  // The sentence must say why it can never pass, not merely that it is odd.
+  assert.ok(escaped.every((r) => /can never pass/.test(r.msg)))
+})
+
+test('doctor flags a CHECK shape that runs but can never pass: grep -r with -c, and leaves a sound single-file count alone', () => {
+  const rows = JSON.parse(runFail(crepo, 'doctor', '--json').stdout)
+  const k7 = rows.filter((r) => r.level === 'warn' && r.msg.includes('(K-7)'))
+  const recursive = k7.filter((r) => /never a bare number/.test(r.msg))
+  // -rc, -cr and -r -c are the same mistake spelled three ways.
+  assert.equal(recursive.length, 3, k7.map((r) => r.msg).join('\n'))
+  assert.ok(recursive.every((r) => /can never pass/.test(r.msg)))
+  // GHF-1's `grep -c "Me and the log" <file>` prints a bare count and passed
+  // live: the scan must say nothing about it.
+  assert.ok(!k7.some((r) => r.msg.includes('Me and the log')), k7.map((r) => r.msg).join('\n'))
 })
 
 test('a passing check is not killed by more than 1 MB of output noise', () => {
