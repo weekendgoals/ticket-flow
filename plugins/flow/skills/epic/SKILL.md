@@ -225,6 +225,20 @@ Rules that matter:
   worker can satisfy by narration; keep the commands idempotent. If
   verification needs something a session may not have (Docker, credentials,
   a browser), give the fallback: *"or flag it as owed to ticket X"*.
+- **Every CHECK you write must fail on the tree before the ticket exists,
+  and you prove it before sign-off.** Run each one now, on the tree as it is,
+  with `node "${CLAUDE_PLUGIN_ROOT}/scripts/tickets.mjs" check <ID>`, and
+  read the ledger. A CHECK that is already green proves nothing the ticket
+  will do and merges green whatever the worker builds — FND-2's
+  `MobileSidebar` CHECK passed vacuously and shipped that way. The same rule
+  retires the decorative shape: a whole-suite run with `EXPECT: Tests:`
+  passes on the pre-ticket tree too (six of one live epic's eight CHECKs
+  were this), so it is **not a criterion** — the suite stays a standing
+  check the doer reports under **Verified**, and a CHECK names the one test,
+  assertion or fact this ticket turns green. Record the ledger in the draft:
+  which CHECKs were proven failing, and which could not run here and why (an
+  interactive runner, a minutes-long suite). The plan reviewer re-runs the
+  runnable ones, and step 5 shows the ledger at the gate.
 - **No status column.** State is derived by `tickets.mjs`; a hand-maintained
   table drifts within days.
 
@@ -254,6 +268,11 @@ rejected, with the reason**, so sign-off is a choice between shapes rather
 than a ratification of the only one shown — and the plan review's outcome:
 what it flagged, what you changed, what you rejected and why, its open
 questions.
+
+**Show the CHECK ledger here**: which CHECKs were proven red on the current
+tree, and which could not run in this session and why. A criterion whose
+CHECK nobody has seen fail is a criterion nobody has tested; the human
+signing off is the last reader before a worker builds against it.
 
 **Bring the plan page to this gate too**: update step 3's JSON — `stage:
 "sign-off"`, the `alternative` with its rejection reason, the `planReview`

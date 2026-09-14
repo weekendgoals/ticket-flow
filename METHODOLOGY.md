@@ -264,14 +264,47 @@ the admission test.
 
 What replaced it constrains blast radius instead of re-judging: the reviewer
 reports the head it reviewed, the read-only resolve step diffs the fix
-commits against it, and code — not a model — refuses fixes that touch any
-file the review never saw or exceed a small line budget. Inside those
-bounds a fix is re-verified by the disposition's re-run counts and re-read
-by the human on the release pull request; outside them it is new work, and
-granting new work a review is a human's decision, so the run halts. The
-consequence tier keeps the full re-review — capability spend belongs where
-failure is expensive — and a review that cannot name the head it reviewed
-sends its fixes there too: doubt raises scrutiny, never lowers it.
+commits against it, and code — not a model — measures whether the fixes
+stayed inside the files the review saw (plus the files its own findings
+name) and under a small line budget. Inside those bounds a fix is
+re-verified by the disposition's re-run counts and re-read by the human on
+the release pull request. The consequence tier keeps the full re-review —
+capability spend belongs where failure is expensive — and a review that
+cannot name the head it reviewed sends its fixes there too: doubt raises
+scrutiny, never lowers it.
+
+Leaving the bounds first halted the run, on the reasoning that new work
+deserves a review and granting one is a human's decision. Three live trips
+say the second half of that was wrong. GHL-1: 66 lines, 18 of them a
+translation fan-out, merged by hand under a standing rule with no re-review.
+GHL-9: 119 lines; re-reviewed by hand, 41,368 tokens, 0 Important. GHL-10:
+two files outside — the two its own findings said were missing; re-reviewed
+by hand, 40,465 tokens, 0 Important. Every trip was a clean fix, every halt
+cost a human a resume, and in two of the three the human's answer was to buy
+exactly the pass the run could have bought itself. So a trip now buys the
+bounded re-review at the consequence tier instead of halting, an Important
+finding in it halts on the same stop condition the consequence tier's own
+re-review uses — one event, one stop string, one class for the retro to read
+— and only a fix diff nothing could measure still halts, because a
+re-review of an unmeasured diff proves nothing. GHL-10's shape also moved
+into the bounds themselves: for the finding class "the deliverable named in
+scope was not produced" the fix lands outside the reviewed diff **by
+construction**, so the files the findings name count as inside.
+
+The reversal condition, and its first data point. If a bounds re-review ever
+lets an Important defect through to a release pull request — found by the
+human at the release gate, the one observer left after this change — the
+halt is restored and the epic's record says what the automation cost. The
+first data point already exists and is not yet that failure:
+redesign-foundation's FND-6 made a test-motivated out-of-bounds fix that a
+bounded re-review cleared and a later commit corrected. A bounded pass
+clearing a fix that needed a second look is the failure mode to watch, not a
+reason to keep a halt that fired three times on clean work. Separately, PR
+#42 proposed a `Fix bounds exclude:` line — a planner-declared exclusion for
+fan-out files like GHL-1's translations — and never reached the default
+branch: its merge commit `8ac3bef` sits only on `origin/addendum-gate-date`.
+This section supersedes it for the halt; whether the exclusion also lands is
+a separate decision and a separate pull request.
 
 ## Why acceptance criteria can be machine-runnable
 
@@ -298,6 +331,25 @@ fail-closed rule applies as everywhere else in the run lane: a CHECK that
 almost parses fails the gate rather than silently never running (doctor
 flags the near-miss shapes), and a check step whose counts the code cannot
 read halts — doubt goes up, never down.
+
+The first three live release epics found the second correction: a CHECK is
+only evidence if it was ever **red**. Six of groundhopper-foundation's eight
+CHECKs were a whole-suite run with `EXPECT: Tests:`, which passes on the tree
+before the ticket exists and therefore measures nothing the ticket does; a
+suite is a standing check the doer reports, not a criterion. Worse, FND-2's
+`MobileSidebar` CHECK passed vacuously — its `\|` reached grep as a literal
+through the quoting layer — and merged green having tested nothing, while
+FND-6's `grep -rc` printed `file:0` against an `EXPECT` of `1`, a comparison
+no correct code could satisfy, and halted the run. So the rule is
+red-before-green, proven at the door the criterion is written at: the planner
+runs each CHECK on the current tree, records which were red and which could
+not run here, and the plan reviewer — who has no stake in the plan — re-runs
+the runnable ones under a per-command bound. A CHECK green before the work is
+a finding; a CHECK that errors is a finding. Doctor carries the two shapes
+that can never pass, so the cheapest of these is caught without an agent at
+all. The admission test: this reduces uncertainty (a criterion nobody has
+seen fail is a criterion nobody has tested) and provides decision evidence at
+the sign-off gate, where the ledger is shown.
 
 Two deliberate limits. CHECK is optional, because most criteria are not
 mechanizable and forcing them into commands is ceremony — prose criteria and
@@ -500,12 +552,32 @@ it is already written down, and none of it changes the next epic unless
 something moves it from the record into the rules. That move is the retro: owed
 work becomes tickets, repeated rediscoveries become instruction-file lines,
 repeated review findings become invariants the next reviewer judges against.
-A sixth mining question closes the loop the ledger cannot see (adapted from
+The converge question closes the loop the ledger cannot see (adapted from
 Spec Kit's converge step, 2026-08-19): the delta between the documents'
 promises and what git says actually shipped — unshipped scope no Owed line
 recorded, shipped behaviour no ticket owns, instruction files the work made
 stale. The record is honest about what was written down; only the diff
 knows what was not.
+
+The seventh question does the same for the run lane's halts (2026-09-14).
+The first three release epics run unattended halted twelve times across
+twenty-three tickets: five on the plugin or the environment, four on a
+policy trip, two on a plan defect, one on a code defect. Every one of them
+was written down — the run records carry a **Halted on:** line quoting the
+stop condition verbatim — and every one of them cost a human a resume. None
+was ever examined: three fresh-context retros mined those epics and read
+straight past the halts, because none of the six questions asked. That is
+the diary failure one level up, and the same move fixes it. Classification
+is what makes the cheap halts visible, and it has to be the retro's reading
+rather than the driver's claim: the run that stopped could not judge its own
+stop, and the miner reads the records it did not write. A **policy** trip
+whose later re-review found nothing did not retire a risk — it charged a
+human for a resume, and three such trips in a row are an argument against
+the policy, not evidence for it. A **plugin/environment** halt is not this
+project's defect at all; it is a ticket for the plugin's own repository.
+Both are flagged transferable for the same reason the transferable planning
+lessons are: the epic that paid for the lesson is rarely the one that can
+act on it.
 
 Three constraints keep it honest. The mining runs in a fresh-context agent
 (user request at the autonomous epic's retro, 2026-08-08): the invoking
@@ -587,6 +659,19 @@ scripts do not make decisions. There is deliberately no prose fallback when
 the Workflow tool is missing: a fallback loop would quietly restore the
 improvisation surface the script exists to remove, and the attended lane
 (`/flow:ticket`, one ticket at a time) already covers the emergency.
+
+That determinism has a second edge, and it points at the human holding the
+halt. A run pins its own date (`args.today`) so that a re-invocation's
+prompts are byte-identical and the runtime's prefix cache can replay them —
+cache stability is bought deliberately, because it makes a run's steps
+reproducible. But a run halts precisely because something outside the script
+changed, and a cache cannot tell a stale recorded failure from a current one.
+So a halted run is picked up by re-running `/flow:run` — never
+`resumeFromRunId`. The first live run to try it replayed its own recorded
+failure from cache and halted again on a defect the plugin had already fixed.
+The same property that makes each step reproducible makes resuming a run a
+statement about the past: the board, not the cache, is where a re-run learns
+what is left to do.
 
 Moving the loop into code also moved the judge. The driver hires each
 ticket's reviewer — the supervisor pattern one level up — and the worker

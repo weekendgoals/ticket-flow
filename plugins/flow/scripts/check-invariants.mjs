@@ -43,6 +43,7 @@ const FILES = {
   workflow: 'plugins/flow/workflows/run-epic.mjs',
   readme: 'README.md',
   claudemd: 'CLAUDE.md',
+  methodology: 'METHODOLOGY.md',
 }
 const read = (key) => readFileSync(join(root, FILES[key]), 'utf8')
 const norm = (s) => s.replace(/\s+/g, ' ').trim()
@@ -295,6 +296,16 @@ const PHRASES = [
     why: 'the acceptance-check stop condition is one sentence in the skill and the script — a halt the run record quotes verbatim',
     re: /a failed acceptance CHECK/,
     files: ['run', 'workflow'],
+  },
+  {
+    why: 'the fix-bounds stop condition is one sentence in the skill and the script — since a bounds trip buys a re-review instead of a halt, the only fix that still halts is one nothing could measure, and both documents must say so in the same words. Pinned whole, not by its first clause: what it now excludes is as load-bearing as what it names',
+    re: /no usable fix-diff facts from the resolve step, or a fix whose changed lines cannot be counted; an unmeasurable fix is never merged/,
+    files: ['run', 'workflow'],
+  },
+  {
+    why: 'the never-resume-by-id rule — a halted run is re-run, not resumed, because the runtime replays the recorded failure from the prefix cache; the run skill states the rule where the halt is met and METHODOLOGY carries its reason, and a document that keeps only one of the two turns the rule back into folklore',
+    re: /never `resumeFromRunId`/i,
+    files: ['run', 'methodology'],
   },
   {
     why: 'machine-runnable acceptance criteria — the CHECK/EXPECT format is parsed and executed by tickets.mjs, taught by the planning skill, and run by both execution lanes and the driver',

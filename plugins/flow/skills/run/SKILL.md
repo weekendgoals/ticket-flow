@@ -41,7 +41,9 @@ Stop and report too if:
 - the working tree has uncommitted changes you did not make;
 - any ticket is `in-progress`, `in-review` or `done` — a previous run died
   mid-ticket, and redoing or skipping half-finished work destroys the
-  evidence trail;
+  evidence trail. The recovery: finish that one ticket by hand with
+  `/flow:ticket <ID>`, then re-run this command — § "Resuming after a halt"
+  at the end of this skill carries the procedure and the reason;
 - any ticket is `blocked` — a previous run halted on it, and `next` only
   hands out `todo` tickets, so starting now would build every successor on
   the blocked one. The human resolves or re-plans it first.
@@ -188,12 +190,20 @@ refuses to start.
   (ending `Tokens: recorded in the run record`), committed and pushed. **This
   runs even on a clean review**: the committed addendum is the merge
   precondition.
-- **Re-reviews the fixes once, at the consequence tier only** — Important
-  findings only, any Important halts, no second round. Below `consequence`
-  the fixes are gated in code instead: every fixed file must be in the diff
-  the review saw, and the fix under a small line budget. No usable
-  `reviewedHead` sends the fixes to the re-review anyway — doubt raises
-  scrutiny. A clean review skips all of this.
+- **Re-reviews the fixes once, at the consequence tier** — Important findings
+  only, any Important halts, no second round. Below `consequence` the fixes
+  are gated in code instead: every fixed file must be in the diff the review
+  saw **or named by one of its own findings** (a "the deliverable was not
+  produced" finding is fixed outside the reviewed diff by construction), and
+  the fix under a small line budget. **A trip there buys the same bounded
+  re-review at the consequence tier rather than halting** — all three live
+  trips were clean fixes and each halt cost a human a resume — and an
+  Important finding in that pass halts on the Important-finding condition
+  like any other. That pass runs where the trip is detected: **after** the
+  resolve step's bounds check and just before the merge, so a ticket that
+  halts in `Re-review` with `fixBoundsTripped` had already passed its
+  acceptance checks. No usable `reviewedHead` sends the fixes to the re-review
+  anyway — doubt raises scrutiny. A clean review skips all of this.
 - **Re-runs the ticket's CHECK/EXPECT criteria from the signed-off
   document** — `tickets.mjs check <ID> --from origin/epic/<name> --json` on
   the pushed branch, after the disposition so fix commits are judged too —
@@ -229,6 +239,7 @@ enters your context from the loop:
                      fixedCommits, notFixed, disposition,
                      reReviewRan, reReviewImportantCount,
                      reReviewFindings, reviewedHead, fixBoundsGated,
+                     fixBoundsTripped,
                      fixLines, acceptanceOutcome, acceptanceChecks,
                      acceptanceChecksPassed, resolveOutcome, mergeOutcome,
                      addendumMatches, headSha,
@@ -288,12 +299,13 @@ that resumes past one. The run halts:
 - on **an Important review finding it cannot fix** — accepting a not-fixed
   Important is not an agent's to decide in an unattended run, so the
   disposition reports it and the run stops for a human. The same halt fires
-  when the consequence-tier re-review finds an Important in the fix commits;
-  there is no second fix round;
-- on **a review-fix diff outside its bounds — touching files the review
-  never saw, or exceeding the fix line budget** — including a resolve step
-  that could not report the fix-diff facts at all, because an unbounded fix
-  is never merged;
+  when the bounded re-review finds an Important in the fix commits — the
+  consequence tier's own pass, or the one a fix-bounds trip buys; there is no
+  second fix round, and one stop string keeps the two one class;
+- on **a review-fix diff the run could not measure — no usable fix-diff facts
+  from the resolve step, or a fix whose changed lines cannot be counted; an
+  unmeasurable fix is never merged** — the one case the bounds gate still
+  halts on, because a re-review of a diff nothing measured proves nothing;
 - on **a failed acceptance CHECK — a machine-runnable criterion whose
   command did not produce its expected result on the pushed branch** — a
   malformed CHECK fails too, and so do counts the code cannot read;
@@ -335,7 +347,10 @@ says why; point at it rather than restating it.
 
 Append to the epic's `status.md` on `epic/<name>`, in session, from the step
 4 result — fenced prose quoted, markers dropped. The heading names no ticket
-ID, so the board ignores it and `doctor` will not flag it:
+ID, so the board ignores it; `spend` reads the record by it, so `doctor`
+flags one that will not parse. A qualifier in parentheses after the date is
+allowed and is how same-day runs are told apart — `### Run — 2026-08-25
+(second run) — halted`:
 
 ```markdown
 ### Run — <YYYY-MM-DD> — <completed | halted>
@@ -344,9 +359,11 @@ ID, so the board ignores it and `doctor` will not flag it:
 **Tickets this run:** <one line per ticket, in order, from `ticketRecords`:
 ID — worker agent — review tier and outcome (`importantCount` Important,
 `nitCount` nits, fixed or not) — what stood between the fixes and the merge:
-"re-reviewed after fixes: `<reReviewImportantCount>` Important" when
-`reReviewRan`, or "fixes bounds-checked in code: `<fixLines>` lines inside
-the reviewed diff" when `fixBoundsGated` — "acceptance:
+"fixes outside the reviewed bounds — re-reviewed at the consequence tier:
+`<reReviewImportantCount>` Important" when `fixBoundsTripped`, "re-reviewed
+after fixes: `<reReviewImportantCount>` Important" when `reReviewRan`
+without a trip, or "fixes bounds-checked in code: `<fixLines>` lines inside
+the reviewed diff" when `fixBoundsGated` and nothing tripped — "acceptance:
 `<acceptanceChecksPassed>/<acceptanceChecks>` CHECKs" when any ran —
 integrated | halted. A record that omits the fix gate reads as though the
 fixes were never looked at.>
@@ -363,7 +380,10 @@ labels (`worker:<ID>`, `review:<ID>`, `disposition:<ID>`, `re-review:<ID>`,
 the shell proxies) to their `agent-<id>.jsonl` files — sum each agent's
 `usage`. Add the reviewer's tier, model and effort as prose after the
 groups. This is the run lane's only token record: ticket entries and
-addenda point here. Planning evidence, never a gate.>
+addenda point here. Planning evidence, never a gate. A record written
+without the groups reads as nothing — `doctor` flags it — and is repaired
+by a dated addendum beneath the record restating the figures as groups,
+never by editing the record.>
 
 **Halted on:** <`haltedOn.stopCondition` verbatim, with `haltedOn.ticket`
 and `haltedOn.where` — or "ran to completion".>
@@ -401,8 +421,9 @@ in this mode. It carries:
 - every ticket: what it built, its verification counts, its review outcome
   (found / fixed / not fixed with reasons), and **what stood between its fix
   commits and the merge** — the re-review (`reReviewRan`,
-  `reReviewImportantCount`, `reReviewFindings`) or the code bounds check
-  (`fixBoundsGated`, `fixLines`);
+  `reReviewImportantCount`, `reReviewFindings`), the code bounds check
+  (`fixBoundsGated`, `fixLines`), and whether that check tripped and bought
+  the re-review (`fixBoundsTripped`);
 - the release's size up front — `git diff --stat
   origin/<default-branch>...epic/<name>` — a release too large to review is
   a fact the human sees before approving;
@@ -424,3 +445,75 @@ Then append the run record (step 6), print the pull request URL, and stop.
 **You do not merge it, approve it, or comment on it. No agent does.** The
 human gate moved here, and everything this run did was structured to keep
 this one click trustworthy.
+
+## Resuming after a halt
+
+A halted run is picked up by **re-running `/flow:run <epic>`** — a new run,
+reading the board — after whatever the halt left half-finished is finished by
+hand. The board says which case you are in:
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/tickets.mjs" list <epic>
+```
+
+Three shapes are possible, and the halted ticket's **status entry** — the
+thing the board reads — is what tells them apart. Read them off the board,
+not off the halt's narrative: the worker writes its entry and pushes its
+branch (steps 1–6 and step 9) *before* the driver hires a reviewer, so most
+halt messages name a stage the ticket had already passed.
+
+**1. No status entry** — the ticket reads `todo`, or `in-progress` when the
+worker got as far as committing on its local branch. A refresh that failed, a
+worker that returned nothing, a session limit before anything was committed:
+redesign-foundation's second run of 2026-09-13 halted this way — "the
+refresh/select agent returned no report — the refresh cannot be assumed to
+have happened" — and recorded "FND-5 did not start". A `todo` ticket needs
+nothing but a re-run of `/flow:run <epic>`: the loop asks `next` for each
+ticket, `next` hands out only `todo` tickets, and `integrated` ones are
+skipped, which is how re-running resumes after the work that landed instead
+of redoing it. An `in-progress` ticket is step 1's refusal, because a local
+branch with commits and no entry is work no record describes: a human either
+finishes it by hand (shape 2's route) or discards the branch so the ticket
+reads `todo` again. Nothing is lost by discarding — nothing was reviewed.
+
+**2. A DONE entry on a pushed branch, with or without a review addendum** —
+the ticket reads `done`. This is the common shape: ten of the twelve halts
+across the first three live release epics. Everything from the reviewer
+onward halts here, because the entry and the push happened first — a
+reviewer that could not be spawned ("the branch `ghf-2` stays pushed and
+unmerged", groundhopper-foundation, 2026-08-24), an Important finding the
+disposition could not fix, a failed acceptance CHECK, a fix diff nothing
+could measure, a merge that would not go in. **Finish that one ticket by
+hand first**: `/flow:ticket <ID>`, the escape hatch step 1's refusal names.
+Its supervisor-spawned worker checks out the pushed branch and builds
+nothing — the ticket skill's step 0 and step 3 carry that exception — and the
+supervisor picks the leg up where the run dropped it: step 7's review when
+the entry carries no `Addendum — review —` line, step 8 when it does and
+findings are still open, step 10's gate and merge by verified SHA when the
+addendum is committed. Rebuilding instead would throw away work the run
+already paid for, and skipping the ticket would build its successors on
+unreviewed work. An Important finding nobody could fix is the one case that
+does not end in a merge: step 10 refuses it, and a human decides. Once the
+board reads `integrated`, re-run `/flow:run <epic>`.
+
+**3. A BLOCKED or ABANDONED entry** — the ticket reads `blocked`, which step
+1 refuses for its own reason: `next` never hands out a blocked ticket, so a
+re-run would build every successor on it while leaving it behind. The worker
+already wrote why it stopped; a human resolves or re-plans the ticket — which
+usually means editing the epic's documents the worker found wrong — and only
+then re-runs.
+
+**Never `resumeFromRunId`, in any of the three.** The Workflow runtime replays
+every unchanged `agent()` call from the run's prefix cache, live-running only
+from the first edited call onward — and a run halts precisely because
+something *outside* the script changed: the plugin, the environment, the
+repository. The cache cannot see any of that. groundhopper-foundation's run
+of 2026-08-24, resumed on 2026-08-25 after the plugin's check runner gained a
+`maxBuffer`, recorded what that costs: "first resume replayed the stale
+failed acceptance from cache (0 tokens) and halted again" — the fix was live
+in the plugin, and the resumed run never reached it. A resume after a
+*pushed* fix fails the other way: review and disposition would re-run live
+against a branch that already carries a committed addendum, reviewing and
+dispositioning the same work twice. A fresh `/flow:run` costs one cheap pass
+over the board and starts from repository state, which is the only state that
+is true.

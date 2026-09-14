@@ -8,6 +8,146 @@ with one version and date.
 
 ## Unreleased
 
+- **The retro asks what every halt bought** (`skills/retro/SKILL.md` step 4's
+  question list and step 5's proposals, README, METHODOLOGY § "Why an epic
+  ends with a retro"). Step 4 is seven questions now, not six: the seventh
+  reads every `### Run —` record's **Halted on:** line and classifies the
+  halt as **work** (a defect in the implementation), **plan** (a defective,
+  vacuous or decorative CHECK, a wrong assumption in `tickets.md`),
+  **plugin/environment** (the driver, a spawn failure, a session limit, a
+  buffer, a tooling fault) or **policy** (a budget or bounds trip), with what
+  the human did to resume and whether the later record shows the stop retired
+  a real risk or fired on a clean state. Step 5's proposals gain the matching
+  **Halts** section. The first three release epics run unattended halted
+  twelve times across twenty-three tickets — 5 plugin/environment, 4 policy,
+  2 plan, 1 code — and not one of those halts was ever examined, because none
+  of the six questions asked and each halt cost a human a resume that
+  appeared in no other section. Two classes are flagged **transferable**,
+  because the epic that paid for the lesson is rarely the one that can act on
+  it: a policy trip whose later re-review found nothing is a proposal against
+  the policy, and a plugin/environment halt is a ticket for the plugin's own
+  repository. The classification is the retro's reading, not the driver's
+  claim — the run that stopped cannot judge its own stop — so the run record
+  is unchanged and nothing in `tickets.mjs` automates it.
+
+- **After a halt: finish the ticket by hand, then re-run — never resume**
+  (`skills/run/SKILL.md` step 1 and a new `## Resuming after a halt` section,
+  METHODOLOGY § "Why the run loop is code, not prose", a new
+  `check-invariants.mjs` phrase over the run skill and METHODOLOGY, one new
+  drift test). The recovery after a halted run was written nowhere, and the
+  step 1 refusal on an `in-progress` / `in-review` / `done` ticket named no
+  way out of the state it refused. It now does: finish that one ticket by
+  hand with `/flow:ticket <ID>` — a supervisor-spawned worker performs step
+  10's gate and merge by verified SHA — then re-run `/flow:run <epic>`, which
+  the board makes safe because `next` hands out only `todo` tickets and
+  `integrated` ones are skipped. A halt *before* the status entry exists
+  needs only the re-run. **Never `resumeFromRunId`:** the Workflow runtime
+  replays every unchanged `agent()` call from the prefix cache, and a run
+  halts because something outside the script changed — groundhopper-
+  foundation's 2026-08-25 resume "replayed the stale failed acceptance from
+  cache (0 tokens) and halted again" after the plugin fix that would have
+  cleared it, and a resume after a pushed fix would re-review a branch that
+  already carries a committed addendum. The section sorts the halt by the one
+  thing the board reads — the ticket's **status entry** — because the worker
+  writes it and pushes its branch *before* the driver hires a reviewer, so a
+  halt message usually names a stage the ticket had already passed: no entry
+  (`todo`, or `in-progress` on a local branch) re-runs; a DONE entry on a
+  pushed branch is finished by hand; a BLOCKED entry waits for a human to
+  resolve or re-plan. `skills/ticket/SKILL.md` makes that recovery real
+  rather than advertised: when step 1 reports the ticket `done` or
+  `in-review` and `origin/<branch>` exists, the worker builds nothing — step
+  3 checks the existing branch out instead of running `git checkout -b`,
+  which fails on it — and the leg resumes at step 7, 8 or 10 depending on
+  whether the branch's entry already carries a review addendum. Doctrine
+  only: `run-epic.mjs` is unchanged.
+
+- **A CHECK criterion must be red before its ticket is built**
+  (`skills/epic/SKILL.md` "Rules that matter" and step 5,
+  `agents/plan-reviewer.md`, `scripts/tickets.mjs` `parseChecks`, two new
+  `CHECK shape` cases and the K-7 fixture in `tickets.test.mjs`, README,
+  METHODOLOGY). A CHECK written at planning time and already green on the
+  current tree proves nothing about the ticket and merges green whatever the
+  worker builds. The planner now runs every CHECK it writes before sign-off,
+  records the ledger in the draft (proven failing; could not run here and
+  why), and shows it at the gate; the plan reviewer **re-runs** the runnable
+  ones under a 60-second per-command bound, skips and names the rest, and
+  reports as findings a CHECK that passes on the current tree, one whose
+  command errors, and a ledger claim it cannot reproduce. The same rule
+  retires the decorative whole-suite CHECK (`EXPECT: Tests:` passes on the
+  pre-ticket tree too — six of groundhopper-foundation's eight CHECKs were
+  this): the suite is a standing check reported under **Verified**, and a
+  CHECK names the one test, assertion or fact the ticket turns green.
+  `doctor` gains two shapes under its existing CHECK scan, each flagged with
+  the sentence saying why it can never pass: `\\|` inside a quoted
+  `node -e` / `sh -c` string (the quoting layer consumes one backslash, so
+  grep receives a literal `|` — FND-2's `MobileSidebar` CHECK passed on every
+  tree this way), and `grep` given both `-r` and `-c` in any spelling
+  (recursive counting prints `path:count` per file, never a bare number —
+  FND-6's printed `file:0` against an `EXPECT` of `1` and halted a live run
+  on correct code). A sound single-file `grep -c` is not flagged, and the
+  fixture carries GHF-1's to pin it. Both shapes ride the shared
+  `parseChecks` problems list, so `check <ID>` fails the gate on them too.
+  Doctor stays read-only: it never runs a CHECK.
+
+- **A fix-bounds trip buys a re-review, not a halt** (`workflows/run-epic.mjs`
+  resolve step and re-review, four new `bounds trip` cases plus the updated
+  existing ones in `run-epic.test.mjs`, `scripts/check-invariants.mjs`
+  `PHRASES` and one suite case, `skills/run/SKILL.md` steps 4, 5, 6 and 7,
+  README, METHODOLOGY). Below the consequence tier the driver bounds-checked
+  the review-fix diff in code and **halted** when it left those bounds. The
+  first three live release epics tripped that gate three times, and all three
+  were clean fixes: GHL-1 (66 lines, 18 of them a translation fan-out;
+  merged by hand under a standing rule, no re-review), GHL-9 (119 lines;
+  hand re-review, 41,368 tokens, **0 Important**) and GHL-10 (two files
+  outside the reviewed diff — the two its own findings said were missing;
+  hand re-review, 40,465 tokens, **0 Important**). Every one cost a human a
+  resume, and twice the human's answer was to buy the pass the run could
+  have bought itself. Now a trip spawns the same bounded re-review the
+  consequence tier gets, priced at that tier, and merges on a clean one; an
+  Important finding in it halts on **the Important-finding stop condition**,
+  the same string the consequence tier's re-review uses, so the retro's
+  classifier reads one class. Two narrower changes ride with it: files the
+  review's own findings **name** now count as inside the bounds (GHL-10's
+  trip was guaranteed — for the finding class "the deliverable named in
+  scope was not produced" the fix is outside the reviewed diff by
+  construction), and `STOP.fixBounds` now covers only the case that stays
+  its own — a fix diff nothing could measure (no usable fix-diff facts, or a
+  binary numstat), because re-reviewing an unmeasured diff proves nothing.
+  The line budget is unchanged at 60. The record carries `fixBoundsTripped`
+  beside `fixBoundsGated`, and the run record names the trip. Reversal, in
+  METHODOLOGY: if a bounds re-review ever lets an Important defect reach a
+  release pull request, the halt comes back — its first data point is
+  redesign-foundation's FND-6, a test-motivated out-of-bounds fix a bounded
+  re-review cleared and a later commit corrected. PR #42's `Fix bounds
+  exclude:` line never reached the default branch (its merge commit
+  `8ac3bef` sits only on `origin/addendum-gate-date`); this supersedes it
+  for the halt, and whether the exclusion also lands is its own pull
+  request.
+
+- **Doctor flags the run records the spend ledger cannot read**
+  (`scripts/tickets.mjs` doctor, `RUN_HEADING` and `parseSpend`, plus one
+  test and a wider spend fixture; `skills/run/SKILL.md` step 6,
+  `skills/doctor/SKILL.md`, `skills/spend/SKILL.md`, README). The first
+  three live release epics wrote every run record's Tokens line as prose —
+  the ledger's shape landed the evening those runs ended — and six of
+  their fourteen run headings carried a qualifier after the date
+  (`### Run — 2026-08-24 (resumed 2026-08-25) — halted`), which the strict
+  heading did not read. `spend` therefore reported "no figure recorded"
+  for every run ticket, indistinguishable from a run nobody measured. Now
+  the heading accepts a parenthesised qualifier after the date (the shape
+  real usage needed), `doctor` warns on a `### Run —` heading that still
+  will not parse and on a run record whose Tokens line carries figures but
+  no `<ID> worker=<n> …` group, and both warnings name the repair: a dated
+  addendum beneath the record restating the figures as groups, never an
+  edit. A labelled group names its own ticket, so the parser now reads it
+  from any region — the repair can be appended at the end of the log,
+  append-only, and still reaches the ticket it names rather than the entry
+  it landed in (bare `worker=<n>` pairs and `Worker tokens:` phrases stay
+  the enclosing entry's); the test proves the recovery works in the
+  flagged state. And every h2/h3 heading now closes a parse region, so
+  groups under a malformed heading are dropped rather than attributed to
+  the entry above them.
+
 - **Doctor probes the Codex runner's environment at planning time**
   (`scripts/tickets.mjs` doctor and four tests, `skills/doctor/SKILL.md`,
   `skills/run/SKILL.md` step 3, `skills/epic/SKILL.md` template). When any

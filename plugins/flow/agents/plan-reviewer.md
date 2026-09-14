@@ -52,6 +52,21 @@ quoted.
 - **Acceptance criteria nothing can check.** No command, no observable result,
   or a criterion whose verification needs something a session will not have,
   with no stated fallback.
+- **A CHECK that is already green — verify the planner's ledger, do not read
+  it.** The draft must record which CHECKs it proved failing on the current
+  tree and which it could not run. **Re-run every CHECK the ledger marks
+  runnable yourself**, from the repository root, each bounded at 60 seconds
+  (your Bash timeout, or `timeout 60 …`); skip the ones marked unrunnable and
+  say in your report which you skipped and why. Then:
+  - a CHECK that **passes** on the current tree is a finding — it proves
+    nothing the ticket will do, and merges green whatever the worker builds
+    (FND-2's `MobileSidebar` CHECK passed vacuously and shipped that way);
+  - a CHECK whose command **errors** — an unrecognised flag, a quoting fault
+    — is a finding: FND-6's `\|` reached grep as a literal and its `grep -rc`
+    printed `file:0`, a shape no comparison against `1` can ever match;
+  - a CHECK the ledger claims failing that you find passing, or claims
+    runnable that will not run, is a finding against the ledger itself.
+  Report each with the command and the output you saw, never a verdict alone.
 - **A missing or hollow "Not in scope"** where the adjacent temptation is
   obvious — especially one that fails to name which ticket owns the deferred
   work.
