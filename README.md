@@ -284,7 +284,7 @@ records' evidence — Important findings per ticket and observed spend —
 and never cheapen the *plan* side to match: a weak plan produces tickets
 that are confidently, reviewably wrong.
 
-**The whole configuration surface is seven optional preamble lines** in the
+**The whole configuration surface is eight optional preamble lines** in the
 epic's `tickets.md` — one place, one syntax (label at line start, value
 first after the colon, prose after it ignored), every near-miss flagged by
 `/flow:doctor`:
@@ -297,6 +297,7 @@ first after the colon, prose after it ignored), every near-miss flagged by
 | `Reviewer model:` | `opus` | the ticket reviewer, overriding the tier table | the consequence tiers pick (haiku/sonnet/opus) |
 | `Planner model:` | `fable` | the plan reviewer for this epic | the agent definition's pinned strongest |
 | `Consequence paths:` | `src/auth/**, migrations/**` | globs that force the consequence review tier in a run — the code floor under the worker's self-reported tier | tier floor still applies (docs-only vs code), globs add nothing |
+| `Fix bounds exclude:` | `src/messages/*.json` | globs the run's fix-bounds gate leaves out of the review-fix diff (as it already leaves out `epics/`) — for files a fix fans out into mechanically, translation catalogs being the canonical case | every fixed file counts toward the bounds |
 | `Ticket budget:` | `250k` | per-ticket output-token ceiling in a run; an over-budget ticket stays merged and the run halts before the next | no ceiling; per-ticket spend still recorded when the runtime meters it |
 
 ## Reading the board

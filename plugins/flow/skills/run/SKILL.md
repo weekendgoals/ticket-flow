@@ -141,6 +141,7 @@ Workflow({
     workerRunner: "<modes[<name>].workerRunner — omit the key when absent>",
     reviewerModel: "<modes[<name>].reviewerModel — omit the key when absent>",
     consequencePaths: <modes[<name>].consequencePaths — omit the key when null>,
+    fixBoundsExclude: <modes[<name>].fixBoundsExclude — omit the key when null>,
     ticketBudget: <modes[<name>].ticketBudget — omit the key when null>
   }
 })
@@ -202,7 +203,12 @@ refuses to start.
   are gated in code instead: every fixed file must be in the diff the review
   saw **or named by one of its own findings** (a "the deliverable was not
   produced" finding is fixed outside the reviewed diff by construction), and
-  the fix under a small line budget. **A trip there buys the same bounded
+  the fix under a small line budget. Both fix-diff commands leave out
+  `epics/` and the epic's optional `Fix bounds exclude:` globs, so a file a
+  fix fans out into mechanically is invisible to the gate — translation
+  catalogs are the canonical case: one new key touches every locale file, and
+  the line count measures the catalog's width, not the fix's blast radius, so
+  a pure fan-out neither halts nor buys a re-review. **A trip there buys the same bounded
   re-review at the consequence tier rather than halting** — all three live
   trips were clean fixes and each halt cost a human a resume — and an
   Important finding in that pass halts on the Important-finding condition
@@ -320,7 +326,9 @@ that resumes past one. The run halts:
 - on **a review-fix diff the run could not measure — no usable fix-diff facts
   from the resolve step, or a fix whose changed lines cannot be counted; an
   unmeasurable fix is never merged** — the one case the bounds gate still
-  halts on, because a re-review of a diff nothing measured proves nothing;
+  halts on, because a re-review of a diff nothing measured proves nothing.
+  What it measures is the fix diff minus `epics/` and the epic's `Fix bounds
+  exclude:` globs, which sign-off approved as mechanical fan-out;
 - on **a failed acceptance CHECK — a machine-runnable criterion whose
   command did not produce its expected result on the pushed branch, a CHECK
   line too malformed to run at all, or an acceptance report the gate could
