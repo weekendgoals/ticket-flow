@@ -673,6 +673,21 @@ The same property that makes each step reproducible makes resuming a run a
 statement about the past: the board, not the cache, is where a re-run learns
 what is left to do.
 
+The run's own bookkeeping got a file of its own for a related reason. A run
+record used to be appended to the epic's `status.md`, where the ticket
+entries live — but the two are written by different agents on different
+branches: a worker appends its entry on its ticket branch, the run session
+appends the record on the epic branch. Two writers, one file tail, and every
+mid-ticket halt followed by a hand merge conflicted on it (the groundhopper
+run's reconcile merge, `a5d96449`). So run records moved to `epics/<name>/runs.md`,
+and the conflict has nowhere to happen. The alternative considered was a
+`merge=union` attribute on `epics/*/status.md`: one line, but per-project
+configuration a doctor probe can only nag about, and union also *hides* an
+overlapping edit — which an append-only log forbids — instead of surfacing
+it as a conflict. The records written before the split stay in `status.md`
+and are still read there, because rewriting an append-only log to tidy it is
+the one thing the log's rules do not allow.
+
 Moving the loop into code also moved the judge. The driver hires each
 ticket's reviewer — the supervisor pattern one level up — and the worker
 stops at its pushed branch without reviewing or merging anything it

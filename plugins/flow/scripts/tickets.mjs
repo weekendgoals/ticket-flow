@@ -7,6 +7,7 @@
 //
 //   what the tickets are  ->  "## <ID> — <title>" headings in epics/<e>/tickets.md
 //   what is implemented   ->  "### <ID> — … — DONE" headings in epics/<e>/status.md
+//   what the runs spent   ->  "### Run — …" records in epics/<e>/runs.md
 //   what is in flight     ->  local git branches named for the ticket
 //   what has shipped      ->  commit subjects on main, and gh pr list
 //
@@ -36,8 +37,10 @@
 //   tickets.mjs spend [epic] [--json]    the recorded token ledger per ticket
 //                                        and per epic, derived from the
 //                                        status log's Tokens lines, addendum
-//                                        phrases and run records; unknown
-//                                        stays unknown, never zero
+//                                        phrases and the run records in
+//                                        epics/<e>/runs.md (and in status.md
+//                                        for logs written before the split);
+//                                        unknown stays unknown, never zero
 //   tickets.mjs epics [--json]           list known epics
 //   tickets.mjs current [--json]         the epic this folder belongs to
 //   tickets.mjs doctor [--json]          check the flow's preconditions and
@@ -187,8 +190,8 @@ function parsePreambleText(doc) {
   }
 }
 
-// An epic is a directory under epics/ containing tickets.md. Its status log and
-// context live beside it, so there is no index file to keep honest.
+// An epic is a directory under epics/ containing tickets.md. Its status log, run
+// log and context live beside it, so there is no index file to keep honest.
 function discoverEpics() {
   const root = join(repoRoot, 'epics')
   if (!existsSync(root)) return []
@@ -206,6 +209,13 @@ function discoverEpics() {
         dir,
         ticketsDoc,
         statusDoc: optional('status.md'),
+        // The run log is separate from the status log because two writers used
+        // to share one file tail: a worker appends a ticket entry on its ticket
+        // branch while the run session appends the run record on the epic
+        // branch, and every mid-ticket halt then cost a hand merge. Absent
+        // until the first run record after the split — every log written
+        // before it keeps its records in status.md and is still read there.
+        runsDoc: optional('runs.md'),
         contextDir: optional('context'),
         ...parsePreamble(ticketsDoc),
       }
@@ -472,13 +482,30 @@ const toNum = (s) => Number(s.replace(/,/g, ''))
 
 function parseSpend(epic) {
   const byId = {}
-  if (!epic.statusDoc) return byId
+  // Ticket entries are always in status.md; run records are in runs.md once an
+  // epic has split them out, and in status.md for every log written before the
+  // split. Both files are read — the split moved where a record is written,
+  // never where an old one can be found.
+  const docs = [epic.statusDoc, epic.runsDoc].filter(Boolean)
+  if (!docs.length) return byId
   const rec = (id) => byId[id] || (byId[id] = { id, figures: {}, unknown: new Set(), source: null, note: null })
+  // Two files means two orders, so the ranking is stated rather than left to
+  // whichever file is read last:
+  //
+  //   1. `unknown` never overwrites a known figure. `unknown` records the
+  //      absence of an observation, not a correction — a halted run that could
+  //      not read its meter must not erase the figure the finished ticket's
+  //      own entry recorded. (The reverse still applies: a known figure
+  //      replaces an earlier `unknown`.)
+  //   2. Between two known figures for the same ticket and role, the last one
+  //      read wins, and runs.md is read after status.md — so a run record's
+  //      figure outranks a status entry's, and a correction to a run record's
+  //      figures belongs in runs.md, beneath the record it corrects.
   const apply = (r, role, val, source) => {
     role = role.toLowerCase()
     if (/^unknown$/i.test(val)) {
+      if (role in r.figures) return // rule 1 — and the known figure keeps its own source
       r.unknown.add(role)
-      delete r.figures[role]
     } else {
       r.figures[role] = toNum(val)
       r.unknown.delete(role)
@@ -515,24 +542,28 @@ function parseSpend(epic) {
       }
     }
   }
-  let region = null // { id } for a ticket entry, { run: date } for a run record
-  let text = ''
-  for (const line of readFileSync(epic.statusDoc, 'utf8').split('\n')) {
-    const h = line.match(STATUS_HEADING)
-    const run = h ? null : line.match(RUN_HEADING)
-    // Every h2/h3 closes the region — including a heading that parses as
-    // neither shape. Otherwise the groups under a malformed run heading
-    // would land in whatever region precedes it, and a ticket entry's region
-    // would take them as its own figures; doctor flags the heading instead.
-    if (h || run || /^#{2,3}\s/.test(line)) {
-      flush(region, text)
-      region = h ? { id: h[1] } : run ? { run: run[1] } : null
-      text = ''
-      continue
+  // status.md first, so that a correction appended to runs.md wins the
+  // last-figure-for-a-role rule over anything the older file recorded.
+  for (const doc of docs) {
+    let region = null // { id } for a ticket entry, { run: date } for a run record
+    let text = ''
+    for (const line of readFileSync(doc, 'utf8').split('\n')) {
+      const h = line.match(STATUS_HEADING)
+      const run = h ? null : line.match(RUN_HEADING)
+      // Every h2/h3 closes the region — including a heading that parses as
+      // neither shape. Otherwise the groups under a malformed run heading
+      // would land in whatever region precedes it, and a ticket entry's region
+      // would take them as its own figures; doctor flags the heading instead.
+      if (h || run || /^#{2,3}\s/.test(line)) {
+        flush(region, text)
+        region = h ? { id: h[1] } : run ? { run: run[1] } : null
+        text = ''
+        continue
+      }
+      if (region) text += `${line}\n`
     }
-    if (region) text += `${line}\n`
+    flush(region, text)
   }
-  flush(region, text)
   return byId
 }
 
@@ -543,7 +574,7 @@ function parseSpend(epic) {
 // repair is the log's own correction mechanism — a dated addendum beneath the
 // record restating the figures as groups — and parseSpend already reads a
 // region's addenda, so the advertised recovery works in the flagged state.
-function runRecordNearMisses(statusDoc) {
+function runRecordNearMisses(doc) {
   const misses = []
   let region = null // { line } for a run record; null elsewhere
   let text = ''
@@ -559,7 +590,7 @@ function runRecordNearMisses(statusDoc) {
     const hasFigure = /(?<![\d-])\d[\d,]+(?![\d-])/.test(region.tokensParagraph)
     if (!groups.length && hasFigure) misses.push({ line: region.tokensLine, heading: region.heading })
   }
-  readFileSync(statusDoc, 'utf8').split('\n').forEach((line, i) => {
+  readFileSync(doc, 'utf8').split('\n').forEach((line, i) => {
     if (/^#{2,3}\s/.test(line)) {
       flush()
       region = RUN_HEADING.test(line) ? { line: i + 1, heading: line.trim(), tokensParagraph: '' } : null
@@ -579,6 +610,21 @@ function runRecordNearMisses(statusDoc) {
   })
   flush()
   return misses
+}
+
+// Every parsing run-record heading in a log, in document order. Used by doctor
+// to date-scope the wrong-file flag: an append-only log is written in date
+// order, so the first record in runs.md is the moment that epic's records
+// moved there.
+function runRecordHeadings(doc) {
+  const found = []
+  readFileSync(doc, 'utf8')
+    .split('\n')
+    .forEach((line, i) => {
+      const m = line.match(RUN_HEADING)
+      if (m) found.push({ line: i + 1, date: m[1], heading: line.trim() })
+    })
+  return found
 }
 
 function spendReport(epicFilter) {
@@ -968,31 +1014,76 @@ function doctor() {
       // each as a command the reader can run — or the hint advertises a
       // recovery unreachable from the state that triggers it (Q-16).
       add('warn', `${epic.epic}: no status.md — created at sign-off by /flow:epic, or by the first ticket's status entry (/flow:ticket <ID>, or in-session by /flow:quick); without it DONE/BLOCKED are invisible`)
-      continue
+    } else {
+      readFileSync(epic.statusDoc, 'utf8').split('\n').forEach((line, i) => {
+        if (!nearStatus.test(line)) return
+        const m = line.match(STATUS_HEADING)
+        if (!m)
+          add('warn', `${epic.epic}/status.md:${i + 1} — heading will not parse, so this ticket reads as not done (needs "### <ID> — <name> — YYYY-MM-DD — DONE|BLOCKED|ABANDONED"): ${line.trim()}`)
+        else if (!KNOWN_OUTCOMES.has(m[4]))
+          add('warn', `${epic.epic}/status.md:${i + 1} — unknown outcome "${m[4]}" is ignored by the board (known: DONE, BLOCKED, ABANDONED)`)
+      })
     }
-    readFileSync(epic.statusDoc, 'utf8').split('\n').forEach((line, i) => {
-      if (!nearStatus.test(line)) return
-      const m = line.match(STATUS_HEADING)
-      if (!m)
-        add('warn', `${epic.epic}/status.md:${i + 1} — heading will not parse, so this ticket reads as not done (needs "### <ID> — <name> — YYYY-MM-DD — DONE|BLOCKED|ABANDONED"): ${line.trim()}`)
-      else if (!KNOWN_OUTCOMES.has(m[4]))
-        add('warn', `${epic.epic}/status.md:${i + 1} — unknown outcome "${m[4]}" is ignored by the board (known: DONE, BLOCKED, ABANDONED)`)
-    })
-    // A run heading that almost parses — a missing date, a qualifier outside
-    // its parentheses — starts no run region, so its Tokens groups land in
-    // whatever region precedes it, and a ticket entry's region would take
-    // them as its own figures.
-    readFileSync(epic.statusDoc, 'utf8').split('\n').forEach((line, i) => {
-      // A ticket entry whose ID starts with "RUN" (RUN-1 — …) is a status
-      // heading, not a run heading that almost parses.
-      if (/^###\s+Run\b/i.test(line) && !RUN_HEADING.test(line) && !STATUS_HEADING.test(line))
-        add('warn', `${epic.epic}/status.md:${i + 1} — run heading will not parse, so spend reads no groups from this record (needs "### Run — YYYY-MM-DD — completed|halted", an optional "(qualifier)" after the date): ${line.trim()}`)
-    })
-    // A run record's Tokens line written as prose reads as nothing: every
-    // ticket that points at the record then reports "no figure recorded",
-    // which is indistinguishable from a run nobody measured.
-    for (const miss of runRecordNearMisses(epic.statusDoc))
-      add('warn', `${epic.epic}/status.md:${miss.line} — the run record's Tokens line carries figures but no machine-shaped group, so spend reads nothing from it (needs "<ID> worker=<n> reviewer=<n> disposition=<n> re-review=<n> proxies=<n>" per ticket, "unknown" for any missing figure); repair by appending a dated addendum beneath the record restating the figures as groups — never by editing the record: ${miss.heading}`)
+    // The run-record scans below run whether or not status.md exists — an epic
+    // whose records are split out has a runs.md to check either way, and the
+    // early `continue` that used to sit here skipped it silently.
+    // Run records are read from runs.md and from status.md (where every log
+    // written before the split keeps them), so both files get the run-record
+    // scans — a record flagged in only one of them would be a gate at a door
+    // its writer no longer walks through.
+    for (const doc of [epic.statusDoc, epic.runsDoc].filter(Boolean)) {
+      const name = basename(doc)
+      // A run heading that almost parses — a missing date, a qualifier outside
+      // its parentheses — starts no run region, so its Tokens groups land in
+      // whatever region precedes it, and a ticket entry's region would take
+      // them as its own figures.
+      readFileSync(doc, 'utf8').split('\n').forEach((line, i) => {
+        // A ticket entry whose ID starts with "RUN" (RUN-1 — …) is a status
+        // heading, not a run heading that almost parses.
+        if (/^###\s+Run\b/i.test(line) && !RUN_HEADING.test(line) && !STATUS_HEADING.test(line))
+          add('warn', `${epic.epic}/${name}:${i + 1} — run heading will not parse, so spend reads no groups from this record (needs "### Run — YYYY-MM-DD — completed|halted", an optional "(qualifier)" after the date): ${line.trim()}`)
+      })
+      // A run record's Tokens line written as prose reads as nothing: every
+      // ticket that points at the record then reports "no figure recorded",
+      // which is indistinguishable from a run nobody measured.
+      for (const miss of runRecordNearMisses(doc))
+        add('warn', `${epic.epic}/${name}:${miss.line} — the run record's Tokens line carries figures but no machine-shaped group, so spend reads nothing from it (needs "<ID> worker=<n> reviewer=<n> disposition=<n> re-review=<n> proxies=<n>" per ticket, "unknown" for any missing figure); repair by appending a dated addendum beneath the record restating the figures as groups — never by editing the record: ${miss.heading}`)
+    }
+    // Once an epic has a runs.md, a run record appended to status.md puts the
+    // two writers back on one file tail — the conflict the split ended. The
+    // flag is date-scoped to records written after the split, because the
+    // older ones are forbidden to move: an append-only log is never rewritten,
+    // and a warning whose only recovery is forbidden is worse than none.
+    if (epic.statusDoc && epic.runsDoc) {
+      const runRecords = runRecordHeadings(epic.runsDoc)
+      const split = runRecords[0]
+      if (!split)
+        // With no parseable record in runs.md there is no split date, so the
+        // scan below silently checks nothing — and a record that reaches
+        // status.md from here on is never flagged. Say so: the file exists, so
+        // the epic has split, and the first record's own heading is what dates
+        // the split.
+        add(
+          'warn',
+          `${epic.epic}/runs.md carries no parseable run record, so nothing dates the split and a run record misfiled into status.md cannot be flagged (needs "### Run — YYYY-MM-DD — completed|halted", an optional "(qualifier)" after the date); if a record is in there with a heading that will not parse, repair it the way every other record is repaired — a dated addendum beneath it, never an edit`,
+        )
+      else {
+        // A record whose heading is already in runs.md is a repaired one: the
+        // advertised recovery is to append it there and leave the committed
+        // status.md copy alone, so re-flagging it would be a warning that can
+        // never be cleared.
+        const repaired = new Set(runRecords.map((r) => r.heading))
+        // Strictly after: a date carries no time, so a record written on the
+        // split day itself may well predate the first record in runs.md, and a
+        // warning whose repair is forbidden (the record may not move) must not
+        // fire on a record that never misbehaved.
+        for (const r of runRecordHeadings(epic.statusDoc).filter((r) => r.date > split.date && !repaired.has(r.heading)))
+          add(
+            'warn',
+            `${epic.epic}/status.md:${r.line} — this run record (dated ${r.date}) sits in status.md, but this epic's run records live in runs.md from ${split.date} on, and appending them beside the ticket entries is the two-writers conflict the split ended; repair by appending the record to runs.md and, when the status.md copy is already committed, a dated addendum beneath it naming where the record now lives — never by deleting it, and records dated ${split.date} or earlier stay where they are and are read there: ${r.heading}`,
+          )
+      }
+    }
   }
 
   const seen = {}
@@ -1074,6 +1165,11 @@ function ticketFacts(data, t) {
     ticketsDoc: epic.ticketsDoc,
     statusDoc: epic.statusDoc || join(epic.dir, 'status.md'),
     statusDocExists: Boolean(epic.statusDoc),
+    // Where run records go. The path is always given — the run skill creates
+    // the file with its preamble on the first record — and the flag says
+    // whether it is there yet, so a caller never has to guess either.
+    runsDoc: epic.runsDoc || join(epic.dir, 'runs.md'),
+    runsDocExists: Boolean(epic.runsDoc),
     contextDir: epic.contextDir,
     isCurrentFolderEpic: data.current?.epic === t.epic,
     pr: t.pr || null,

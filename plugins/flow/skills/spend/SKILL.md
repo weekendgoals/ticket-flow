@@ -13,14 +13,21 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/tickets.mjs" spend $ARGUMENTS
 
 Print the output. **Do not re-derive, estimate, or fill in a figure the
 ledger does not carry** — the script reads the status logs' Tokens lines,
-addendum phrases and run records, and a number it does not show is a number
-nobody observed. `unknown` and `no figure recorded` are honest answers.
+addendum phrases and the run records in `runs.md`, and a number it does not
+show is a number nobody observed. `unknown` and `no figure recorded` are honest answers.
 
 ## Reading it
 
 - **Per ticket:** `worker`, `reviewer`, `re-review`, `disposition` and
   `proxies` figures, a `total` of the known ones, and the source — `(log)`
   for an entry or addendum, `(run-record)` for a driver run.
+- **Two logs, one ledger:** ticket entries and their addenda are in
+  `status.md`, run records in `runs.md` (and in `status.md` for logs written
+  before the split). Where both carry a figure for the same ticket and role,
+  the one in `runs.md` wins, which is why a correction to a run record's
+  figures is appended there. An `unknown` never overwrites a known figure in
+  either direction: `unknown` is the absence of an observation, not a
+  correction.
 - **Per epic:** the sum of known figures and the count of tickets with
   unknown or missing figures — the second number is what makes the first
   one honest.

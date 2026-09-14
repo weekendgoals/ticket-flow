@@ -402,3 +402,128 @@ scan) is untouched and keeps its owner, **a follow-up run-lane ticket, or this
 epic's retro**: it is about how the label parses, not where the parsed value
 is read. Worker tokens (implementation leg): 130,536; Reviewer tokens: 598,961
 (first review 157,035; re-review 213,399; narrow re-review 228,527).
+
+### HARD-4 — Run records get their own file — 2026-09-14 — DONE
+
+**Built:** Run records have their own append-only log, `epics/<name>/runs.md`,
+so the ticket entries on ticket branches and the run record on the epic branch
+no longer share one file tail. `tickets.mjs` gains `runsDoc` (in
+`discoverEpics`, so `epics --json` carries it; in `find --json` with
+`runsDocExists`), reads run regions from both logs in `parseSpend`, runs
+doctor's run-heading and Tokens near-miss scans over both files named by the
+file they fired in, and flags a `### Run —` record left in `status.md` once
+that epic has a `runs.md` — date-scoped to records dated on or after the first
+one in `runs.md`. The driver's two `next` strings, the run skill's step 6 (with
+the new file's preamble), the retro skill's miner hand-off, record read and
+halts question, README's document table and `spend` paragraph, METHODOLOGY §
+"Why the run loop is code" and `check-invariants.mjs` all state the new home;
+nothing migrates.
+
+**Mode:** autonomous — supervisor-spawned worker worker:HARD-4 (opus)
+
+**Tokens:** observed by the supervisor — see the review addendum
+
+**Verified:** Base-tree ledger first, at `68a17d3`: `tickets.mjs check HARD-4`
+0/3 — criterion 1 exited 0 printing `# pass 1` (the file wrapper, no case
+matching the pattern), criteria 2 and 3 exited 1 printing nothing, matching the
+planning ledger. After the change `node plugins/flow/scripts/tickets.mjs check
+HARD-4` is 3/3, criterion 1's output exactly `# pass 3` (three cases:
+`spend reads a run record from runs.md, and still reads the records that
+predate the split from status.md`; `doctor flags a run record appended to
+status.md after the split to runs.md, and never one that predates it`;
+`find --json exposes runsDoc, whether or not the epic has split its runs.md out
+yet`). Every suite in root `CLAUDE.md`, each `# fail 0`:
+`node --test plugins/flow/scripts/tickets.test.mjs` 65/65 (was 62),
+`… hooks/ticket-session-guard.test.mjs` 14/14,
+`… scripts/check-invariants.test.mjs` 15/15 (was 13),
+`… scripts/board.test.mjs` 9/9, `… scripts/plan-page.test.mjs` 8/8,
+`… workflows/run-epic.test.mjs` 107/107,
+`… scripts/runners/codex.test.mjs` 8/8.
+`node plugins/flow/scripts/check-invariants.mjs` exit 0 (six checks ✓, one of
+them new); `node plugins/flow/scripts/tickets.mjs doctor` exit 0;
+`node --check plugins/flow/scripts/tickets.mjs` exit 0; the driver's
+runtime-style parse from root `CLAUDE.md` exit 0. The two existing run-record
+fixtures (sigma's status.md records, and every fixture epic without a runs.md)
+are unchanged and still pass, which is the "existing logs keep their records
+where they are" half of the scope.
+
+**Decisions:** (1) `find --json` exposes `runsDocExists` beside `runsDoc`,
+which the scope did not name: `statusDoc`/`statusDocExists` is the existing
+shape, and the run skill has to know whether to write the preamble before
+appending — a path alone would make it guess. (2) The **Rules** block in
+`runs.md`'s preamble is the status log's verbatim, as the scope requires,
+including "The **Owed** line is required even when empty" — inert for a run
+record, which has no Owed line, but a fourth copy that paraphrases is a fourth
+place to drift; `check-invariants.mjs` now compares the two blocks, and a fifth
+doctrine phrase entry requires the file's name in the run skill, the retro
+skill, the driver, README and the script. (3) Doctor's run-record scans were
+hoisted above the `no status.md` `continue`, so an epic that has `runs.md` and
+no `status.md` is still scanned — the previous position would have skipped it
+silently. (4) The misfile warning's advertised recovery is *append the record
+to `runs.md`, and a dated addendum beneath the committed copy* — never delete
+it: the flagged record sits in an append-only log, so a recovery that removes
+it cannot be taken in the state that triggers the flag. The ledger reads the
+same groups from either file, so nothing is lost while the misfile stands.
+(5) README's table is under the heading "The three documents" and now has five
+rows; the scope said the table gains the row, so the row was added and the
+heading left alone rather than renaming a section this ticket does not own —
+the table already carried `context/` as a fourth row before this change.
+(6) Two driver tests were extended (not added) to pin both `next` strings to
+`runs.md` and away from `status.md`, because the CHECK only counts greps in the
+script and a count is not a branch.
+
+**Owed:** Nothing.
+
+**Addendum — review — 2026-09-14 — opus/xhigh:** Consequence tier, reviewed
+head `12a494c`: 1 Important, 5 nits, 1 pre-existing; backward compatibility
+verified byte-identical against `weekendgoals`. **Important, fixed in
+`2f08507`:** cross-file precedence lost recorded figures — `parseSpend` read
+all of `status.md` then all of `runs.md`, so a run record's `unknown` deleted a
+figure the other file had recorded (executed case: a halted run's `X-1
+worker=unknown reviewer=unknown` in `runs.md` erased the attended entry's
+40,000 / 12,000, and the ledger reported the ticket unmeasured with total 0,
+where the same content in one file yields 52,000). The fix states the ranking
+instead of inheriting it from file order: **`unknown` never overwrites a known
+figure in either direction** — it records the absence of an observation, not a
+correction — and **between two known figures for one ticket and role the last
+read wins, with `runs.md` read after `status.md`**, so a correction to a run
+record's figures is appended in `runs.md`. The rule is stated in the run
+skill's step 6, the spend skill's reading section and README's `spend`
+paragraph, and pinned by a test named outside the graded pattern covering both
+directions. **Nits fixed in the same commit** (the `tau` fixture serves the
+Important case and three nits in one literal, so the fixes were not split into
+separate commits): a `status.md` record whose heading already appears in
+`runs.md` is a repaired one and is no longer re-flagged; the misfile flag is
+strictly after the split date; a `runs.md` that exists with no parseable record
+is now itself flagged, instead of silently disabling the misfile scan; the run
+skill names `find --json` alone as carrying `runsDoc`/`runsDocExists`.
+**Recorded, not fixed:** README's "The three documents" heading now stands over
+five rows — the entry's decision 5 stands, the ticket owns the row and not the
+section. **Three deviations, from the signed-off scope and from this entry's
+own Decisions:** (1) the misfile flag is **strictly after** the split date, not
+the scope's "on or after" — a date carries no time, so a record written on the
+split day may well predate the first record in `runs.md`, and a record that
+cannot be moved must not be flagged; (2) doctor's run-record scans sit **below**
+the status-heading scan, with the `no status.md` branch's `continue` replaced
+by an `else`, so the scans stay reachable for an epic that has `runs.md` and no
+`status.md` while `doctor`'s row order stays byte-identical to before this
+ticket; (3) the cross-file ranking rule above, which the scope did not name at
+all. **Re-review:** bounded, `12a494c..2f08507`, head `2f08507`, opus/xhigh —
+the Important and all four nits verified fixed against the reviewer's own
+fixtures, `weekendgoals` `spend`, `spend --json`, `doctor`, `doctor --json` and
+`list --json` byte-identical including row order; 0 Important open. **Counts
+after the fixes:** tickets 67/67, run-epic 107/107, session guard 14/14,
+check-invariants 15/15, board 9/9, plan-page 8/8, codex 8/8 (every suite
+`# fail 0`); `check-invariants.mjs` exit 0; `doctor` exit 0;
+`node --check plugins/flow/scripts/tickets.mjs` exit 0; the driver's
+runtime-style parse exit 0; `tickets.mjs check HARD-4` 3/3 with the pattern
+still exactly `# pass 3`. **Not nothing deferred.** (a) The pre-existing gap
+the review found: the run-heading scans and `runRecordHeadings` do not skip
+fenced code blocks, so a log quoting a `### Run —` example inside a fence reads
+as a record — owner **this epic's retro**. (b) The repaired-record skip's one
+blind spot, introduced by its own fix: two *distinct* records whose headings
+are byte-identical (same date, no qualifier), one in each file, suppress the
+misfile warning while the ledger still reads both — the record's first Tokens
+line is a cheap second key if it ever matters; owner **this epic's retro**.
+Worker tokens (implementation leg): 175,004; Reviewer tokens: 334,967 (first
+review 148,747; re-review 186,220).

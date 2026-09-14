@@ -1901,7 +1901,12 @@ return {
   // request exists can only predict one. The first live run (flow-demo,
   // 2026-08-11) did exactly that when this string said otherwise — it guessed
   // the number right, which is worse, not better.
+  // The record goes to the epic's runs.md, never its status.md: the ticket
+  // entries are written on ticket branches while this record is written on the
+  // epic branch, and sharing one file tail cost a hand merge on every
+  // mid-ticket halt (GHF-2). runs.md is created with its preamble by the first
+  // record if it does not exist yet.
   next: halted
-    ? "Append the run record to the epic's status.md with this stop condition quoted verbatim and the ticket it fired on — its Release PR field reads \"not opened: run halted\", which needs no URL because nothing was opened — then commit and push it on the epic branch, report, and stop. Merge nothing more; open no release pull request; never re-run the ticket."
-    : "OPEN the release pull request against the default branch — never merge it, never squash it. The epic branch has already been refreshed. THEN append the run record to the epic's status.md, quoting the pull request's real URL in its Release PR field, commit and push the record on the epic branch, print the URL, and stop. The record is written after the pull request exists so it can quote it: a URL written before it exists is a prediction, and this run records evidence.",
+    ? "Append the run record to the epic's runs.md (creating it with its preamble if it does not exist) with this stop condition quoted verbatim and the ticket it fired on — its Release PR field reads \"not opened: run halted\", which needs no URL because nothing was opened — then commit and push it on the epic branch, report, and stop. Merge nothing more; open no release pull request; never re-run the ticket."
+    : "OPEN the release pull request against the default branch — never merge it, never squash it. The epic branch has already been refreshed. THEN append the run record to the epic's runs.md (creating it with its preamble if it does not exist), quoting the pull request's real URL in its Release PR field, commit and push the record on the epic branch, print the URL, and stop. The record is written after the pull request exists so it can quote it: a URL written before it exists is a prediction, and this run records evidence.",
 }
