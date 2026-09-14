@@ -303,14 +303,13 @@ tree, and which could not run in this session and why. A criterion whose
 CHECK nobody has seen fail is a criterion nobody has tested; the human
 signing off is the last reader before a worker builds against it.
 
-**Name what the lane cannot do, and what nobody will collect.** Say which
-ground rules and acceptance criteria need an actor the declared delivery
-mode does not provide — and which ticket, with a human owner, now carries
-each one ahead of the release; a criterion parked as owed to the release
-pull request is a criterion that merges unperformed. And say which Outcome
-evidence clause nothing will produce, or whose observer could not read
-success from failure. The human is signing off on the lane as much as on
-the decomposition.
+**Name what the lane cannot do, and what nobody will collect**: which ground
+rules and criteria need an actor the declared delivery mode does not provide
+and which human-owned ticket now carries each ahead of the release, and which
+Outcome evidence clause nothing will produce. A criterion parked as owed to
+the release pull request merges unperformed, and an observer with nothing to
+read reports nothing — the human is signing off on the lane as much as on the
+decomposition.
 
 **Bring the plan page to this gate too**: update step 3's JSON — `stage:
 "sign-off"`, the `alternative` with its rejection reason, the `planReview`
