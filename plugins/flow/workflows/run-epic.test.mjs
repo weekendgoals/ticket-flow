@@ -941,7 +941,12 @@ test('a failed acceptance check halts before any merge agent exists, quoting the
       },
     }),
   )
-  assert.equal(r.out.haltedOn.stopCondition, 'a failed acceptance CHECK — a machine-runnable criterion whose command did not produce its expected result on the pushed branch')
+  // The whole string, not a prefix: the clauses about a malformed CHECK and
+  // an unreadable report are what make a retro file those halts correctly.
+  assert.equal(
+    r.out.haltedOn.stopCondition,
+    'a failed acceptance CHECK — a machine-runnable criterion whose command did not produce its expected result on the pushed branch, a CHECK line too malformed to run at all, or an acceptance report the gate could not read',
+  )
   assert.match(r.out.haltedOn.detail, /1 of 2 CHECK criteria failed/)
   assert.match(r.out.haltedOn.detail, /<<<UNTRUSTED[\s\S]*the limit clamps to 50 — exit 1 — AssertionError/)
   assert.ok(!r.labels.some(l => l.startsWith('resolve:') || l.startsWith('merge:')))

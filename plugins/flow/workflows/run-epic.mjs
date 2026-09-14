@@ -162,7 +162,8 @@ const STOP = {
   permissionPrompt: 'a permission prompt firing mid-run',
   nonzeroExit: 'a nonzero exit from any command the run issues as a step, except those this skill explicitly marks tolerated',
   fixBounds: 'a review-fix diff the run could not measure — no usable fix-diff facts from the resolve step, or a fix whose changed lines cannot be counted; an unmeasurable fix is never merged',
-  acceptanceCheck: 'a failed acceptance CHECK — a machine-runnable criterion whose command did not produce its expected result on the pushed branch',
+  acceptanceCheck:
+    'a failed acceptance CHECK — a machine-runnable criterion whose command did not produce its expected result on the pushed branch, a CHECK line too malformed to run at all, or an acceptance report the gate could not read',
   ticketBudget: "a ticket's pass exceeding the epic's per-ticket token budget",
 }
 
@@ -985,9 +986,15 @@ ${NO_MAIN} You are read-only here in any case: nothing in this task writes anyth
       `${id}: no usable head SHA from the tier-facts step (${tierFacts ? `it reported ${fence(line(tierFacts.head || '(nothing)'))}` : 'the agent returned no report'}) — the review range falls back to the branch name and the fix-bounds gate has no anchor; doubt goes up.`,
     )
   }
-  // Three dots against the epic branch, so the range is this ticket's own
-  // commits and not the epic branch's drift; a SHA, not a branch name, so the
-  // range cannot move under the reviewer between the hire and the read.
+  // The range the reviewer is given, spelled for the command it reads first:
+  // `git diff A...B` is the merge-base diff — this ticket's own changes, not
+  // the epic branch's drift — which is why the anchored form takes three dots.
+  // The same spelling in `git log` prints the symmetric difference, so a log
+  // over it also lists whatever the epic branch gained since the base: wider
+  // than the ticket, never narrower. The fallback's two dots are the opposite
+  // trade (a ticket-only log, a drift-inclusive diff) and are what there is
+  // when no verified commit can be named. Either way the point of the SHA is
+  // that it cannot move under the reviewer between the hire and the read.
   const range = anchorHead ? `origin/${epicBranch}...${anchorHead}` : `origin/${epicBranch}..origin/${branch}`
 
   const priced = priceReview(worker.tier, floor)

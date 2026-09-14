@@ -185,7 +185,8 @@ refuses to start.
   move; the `brief`; the ticket's own status entry; the instruction files),
   priced by the ticket skill's tier table with `Reviewer model:` overriding
   the model. It returns structured findings and its own reading of the head
-  (`reviewerReportedHead`) — a **cross-check** against the driver's anchor,
+  in the schema's `reviewedHead` (recorded as `reviewerReportedHead`, to keep
+  it distinct from the driver's `reviewedHead` anchor) — a **cross-check**,
   logged when it disagrees, never the anchor itself: the party under review
   does not name the commit that was reviewed. A failed spawn gets one retry
   with the sanctioned fallback, then halts.
@@ -205,7 +206,9 @@ refuses to start.
   re-review at the consequence tier rather than halting** — all three live
   trips were clean fixes and each halt cost a human a resume — and an
   Important finding in that pass halts on the Important-finding condition
-  like any other. That pass runs where the trip is detected: **after** the
+  like any other. That pass gets its own range, `<reviewedHead>..origin/<id
+  lowercased>`: the fix commits were pushed after the anchor, so the first
+  review's anchored range cannot contain them. That pass runs where the trip is detected: **after** the
   resolve step's bounds check and just before the merge, so a ticket that
   halts in `Re-review` with `fixBoundsTripped` had already passed its
   acceptance checks. No usable anchor from the tier-facts step sends the
@@ -319,11 +322,14 @@ that resumes past one. The run halts:
   unmeasurable fix is never merged** — the one case the bounds gate still
   halts on, because a re-review of a diff nothing measured proves nothing;
 - on **a failed acceptance CHECK — a machine-runnable criterion whose
-  command did not produce its expected result on the pushed branch** — the
-  gate reads the ledger's `allPassed` verdict, so a malformed CHECK line
-  halts even when every runnable check passed (it never ran: a criterion
-  nobody can satisfy is failed, not skipped), and so does a report the code
-  cannot read — missing counts, missing verdict, missing problem count;
+  command did not produce its expected result on the pushed branch, a CHECK
+  line too malformed to run at all, or an acceptance report the gate could
+  not read** — the gate reads the ledger's `allPassed` verdict, so a
+  malformed CHECK line halts even when every runnable check passed (it never
+  ran: a criterion nobody can satisfy is failed, not skipped), and an
+  unreadable report — missing counts, missing verdict, missing problem count
+  — halts on the same string. All three are one class, so a retro reading the
+  stop string alone files the halt correctly;
 - on **a document/code contradiction — reported by a worker, or met by the
   script's own checks**: a ticket ID off the plugin's shape, a board that
   hands out the same ticket twice, a board reporting success without a

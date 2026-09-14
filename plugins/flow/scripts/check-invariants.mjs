@@ -293,8 +293,8 @@ const PHRASES = [
     files: ['run', 'readme'],
   },
   {
-    why: 'the acceptance-check stop condition is one sentence in the skill and the script — a halt the run record quotes verbatim',
-    re: /a failed acceptance CHECK/,
+    why: "the acceptance-check stop condition is one sentence in the skill and the script — a halt the run record quotes verbatim. Pinned whole, like the fix-bounds sentence: the gate halts on a malformed CHECK and on a report it cannot read as well as on a failing one, and a retro that reads only the first clause files those halts as something else",
+    re: /a failed acceptance CHECK — a machine-runnable criterion whose command did not produce its expected result on the pushed branch, a CHECK line too malformed to run at all, or an acceptance report the gate could not read/,
     files: ['run', 'workflow'],
   },
   {

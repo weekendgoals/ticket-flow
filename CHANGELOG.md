@@ -31,8 +31,14 @@ with one version and date.
   (`origin/epic/<name>...<sha>`), and keeps the reviewer's number only as a
   cross-check: a disagreement is logged and the driver's anchor wins. The
   re-review packet no longer asks for a field `RE_REVIEW_SCHEMA` cannot
-  carry. No usable anchor still routes the fixes to the bounded re-review —
-  doubt raises scrutiny, never lowers it.
+  carry, and gets its own range — `<reviewedHead>..origin/<branch>`, the fix
+  commits themselves — because the anchored range the first review read
+  predates them. No usable anchor still routes the fixes to the bounded
+  re-review — doubt raises scrutiny, never lowers it. The
+  `STOP.acceptanceCheck` sentence grows to name all three halts the gate now
+  fires on (a failing check, a CHECK too malformed to run, a report the gate
+  cannot read), with the run skill's step 5 copy and `check-invariants.mjs`
+  moving in the same commit; `PHRASES` pins the sentence whole.
 
 - **The retro asks what every halt bought** (`skills/retro/SKILL.md` step 4's
   question list and step 5's proposals, README, METHODOLOGY § "Why an epic
