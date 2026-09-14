@@ -225,3 +225,46 @@ supervisor's spawn prompt identified them. Only the files this ticket changed
 were staged; none of those files appear in the commit range.
 
 **Owed:** Nothing.
+
+**Addendum — review — 2026-09-14 — sonnet/high:** 0 Important introduced, 0
+nits; reviewed head `7344040`. Nothing fixed, because nothing was found in
+this range: both regexes were checked against a battery including
+single-backslash BRE alternation and `grep -c file` / `-rn` / `-rl` (none
+flagged), the fixture's FND-2 and FND-6 lines were matched against
+`650169d7^:epics/redesign-foundation/tickets.md` lines 308 and 548, doctor
+was confirmed read-only, `plan-reviewer.md` carries no write instruction,
+every count in the entry above was reproduced, and Decision (1) — recording
+the FND-4 discrepancy rather than halting — was confirmed correct.
+
+One **pre-existing Important**, not introduced here and not blocking this
+merge, handed on: the unattended driver's acceptance gate reads only `total`
+and `passed` from `tickets.mjs check --json` (`workflows/run-epic.mjs`
+~407-408 and ~1303, which gates on `passed !== total`) and never `problems`
+or `allPassed`, while `tickets.mjs` computes `total` and `passed` from
+`runChecks` alone. So a CHECK that matches a never-pass shape — including the
+two this ticket adds — but whose own command exits 0, which is FND-2's actual
+shape with no EXPECT, yields `total:1, passed:1, allPassed:false`, CLI exit
+1, and the driver merges it. The reviewer reproduced the same class on the
+base tree with an orphan EXPECT, so it predates this ticket;
+`run-epic.mjs:1275`'s prompt sentence ("exits 0 when every check passed and 1
+when any failed") is stale for the same reason. **Owner: second batch — the
+driver's acceptance gate must read `allPassed` (or `problems`), not
+`passed === total`.**
+
+Two observations the reviewer declined to file, recorded for the retro:
+`grep -r pattern -c file`, with the flags split around the positional
+pattern, is not caught by the new scan (the cluster walk stops at the first
+non-flag word); and the red-before rule is worded slightly differently in
+README, METHODOLOGY, the epic skill and the changelog entry, with no
+`PHRASES` entry in `check-invariants.mjs` holding them together.
+
+Correction to the entry above, which is append-only: its Verified paragraph
+says the base-tree pattern run "printed `# pass 0`". That figure was not
+observed — what was observed is `tickets.mjs check RUN-2` reporting `0/2
+checks passed` with the evidence "exit 0, but the output does not contain
+`# pass 2`". A no-match `--test-name-pattern` run prints `# pass 1` under
+Node 22 (this machine, v22.19.0) for the file wrapper and `# pass 0` under
+Node 20; the criterion's `EXPECT: # pass 2` is robust to both, and the
+red-before claim stands either way. Not "nothing deferred": the pre-existing
+driver finding above is deferred to the second batch with the owner named.
+Worker tokens (implementation leg): 136,124; Reviewer tokens: 161,094.
