@@ -8,6 +8,30 @@ with one version and date.
 
 ## Unreleased
 
+- **Doctor flags the run records the spend ledger cannot read**
+  (`scripts/tickets.mjs` doctor, `RUN_HEADING` and `parseSpend`, plus one
+  test and a wider spend fixture; `skills/run/SKILL.md` step 6,
+  `skills/doctor/SKILL.md`, `skills/spend/SKILL.md`, README). The first
+  three live release epics wrote every run record's Tokens line as prose —
+  the ledger's shape landed the evening those runs ended — and six of
+  their fourteen run headings carried a qualifier after the date
+  (`### Run — 2026-08-24 (resumed 2026-08-25) — halted`), which the strict
+  heading did not read. `spend` therefore reported "no figure recorded"
+  for every run ticket, indistinguishable from a run nobody measured. Now
+  the heading accepts a parenthesised qualifier after the date (the shape
+  real usage needed), `doctor` warns on a `### Run —` heading that still
+  will not parse and on a run record whose Tokens line carries figures but
+  no `<ID> worker=<n> …` group, and both warnings name the repair: a dated
+  addendum beneath the record restating the figures as groups, never an
+  edit. A labelled group names its own ticket, so the parser now reads it
+  from any region — the repair can be appended at the end of the log,
+  append-only, and still reaches the ticket it names rather than the entry
+  it landed in (bare `worker=<n>` pairs and `Worker tokens:` phrases stay
+  the enclosing entry's); the test proves the recovery works in the
+  flagged state. And every h2/h3 heading now closes a parse region, so
+  groups under a malformed heading are dropped rather than attributed to
+  the entry above them.
+
 - **Doctor probes the Codex runner's environment at planning time**
   (`scripts/tickets.mjs` doctor and four tests, `skills/doctor/SKILL.md`,
   `skills/run/SKILL.md` step 3, `skills/epic/SKILL.md` template). When any
