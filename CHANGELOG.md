@@ -27,6 +27,25 @@ with one version and date.
   diagnosis and are classified from the halt line, so nothing is retrofitted
   into an append-only log.
 
+- **METHODOLOGY states what `--from` protects and what it does not**
+  (§ "Why acceptance criteria can be machine-runnable", § "Why the run loop
+  is code, not prose"). The doctrine said reading the criteria from the
+  signed-off document meant the reviewed party "structurally cannot soften
+  its own gate", which claims more than the mechanism delivers: `--from`
+  secures the command string and nothing the string reaches — not the npm
+  script it invokes (redesign-foundation's FND-5 created the `test:it` script
+  its own criterion runs), not the spec file that script executes, not the
+  assertion inside it. HARD-1's `allPassed` gate and RUN-2's red-before rule
+  close part of that gap; the human at the release gate, reading one diff
+  carrying both the criterion and the code it judges, closes the rest. The
+  run-loop section gains the matching bound on the reviewer fallback: one
+  general agent covers a crashed reviewer, not an exhausted environment,
+  because it shares the primary's failure mode — both spawns hit the same
+  session limit in groundhopper-foundation on 2026-08-24 — and halting there
+  was correct, since the review the human resumed into found two Important
+  findings. A gate believed to prove more than it proves is a gate nobody
+  re-examines.
+
 - **Run records move to `epics/<name>/runs.md`, so the run and its tickets
   stop writing to one file tail** (`scripts/tickets.mjs`: `runsDoc` in
   `discoverEpics`, `epics --json` and `find --json` — the latter with
