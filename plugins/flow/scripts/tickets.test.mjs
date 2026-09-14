@@ -1102,6 +1102,39 @@ test('--from a ref that cannot be read refuses instead of falling back to the wo
   assert.match(bare.stderr, /--from needs a git ref/)
 })
 
+test('find --from reads the epic declarations from the ref, never the working tree', () => {
+  const original = readFileSync(checksDoc, 'utf8')
+  try {
+    // Raise the ceiling in the working tree the way a ticket branch's own copy
+    // of the preamble could. The run driver reads the budget through this
+    // flag precisely so that edit cannot reach the gate that judges it.
+    writeFileSync(checksDoc, original.replace('Delivery: incremental', 'Delivery: incremental\nTicket budget: 999k'))
+    assert.equal(JSON.parse(run(crepo, 'find', 'K-1', '--json')).ticketBudget, 999000, 'the working tree sees the edit')
+    const out = JSON.parse(run(crepo, 'find', 'K-1', '--json', '--from', 'HEAD'))
+    assert.equal(out.ticketBudget, null, 'the committed document is the source')
+    assert.equal(out.from, 'HEAD')
+    // Every other preamble declaration comes from the ref too...
+    assert.equal(out.delivery, 'incremental')
+    // ...and the facts that describe the repository as it is now do not move.
+    assert.equal(out.branch, 'k-1')
+    assert.equal(out.ticketsDoc, checksDoc)
+    // Without --from there is no `from` key at all: the default shape is what
+    // every installed consumer of `find --json` reads.
+    assert.ok(!('from' in JSON.parse(run(crepo, 'find', 'K-1', '--json'))))
+  } finally {
+    writeFileSync(checksDoc, original)
+  }
+})
+
+test('find --from a ref that cannot be read refuses instead of falling back to the working tree', () => {
+  const fail = runFail(crepo, 'find', 'K-1', '--json', '--from', 'refs/no/such/ref')
+  assert.equal(fail.status, 1)
+  assert.match(fail.stderr, /cannot read epics\/checks\/tickets\.md from ref/)
+  const bare = runFail(crepo, 'find', 'K-1', '--from')
+  assert.equal(bare.status, 2)
+  assert.match(bare.stderr, /--from needs a git ref/)
+})
+
 test('doctor flags CHECK/EXPECT near-misses as silently-never-runs', () => {
   // No origin remote in this fixture, so doctor exits 1 on that hard
   // precondition — the near-miss rows still print and are what this asserts.

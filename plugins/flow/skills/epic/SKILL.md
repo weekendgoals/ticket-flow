@@ -184,11 +184,12 @@ these two lines comma-free, or leave it off.
 `Ticket budget: <n>` — e.g. `250k` or `1m`: a per-ticket output-token
 ceiling for unattended runs; the driver halts after any ticket that exceeds
 it (the ticket stays merged), so a runaway ticket is a signal, not a bill.
-Unlike every other line here, this one is **re-read at every refresh** of
-this document during a run — each ticket's merge pulls the epic branch and
-the verify step reads the line back — so raising it mid-run governs the
-ticket that is running. Removing it mid-run does not lift the ceiling: the
-run keeps the last value and logs that it did.>
+Unlike every other line here, this one is re-read during a run: each ticket's
+resolve step reads it off `origin/epic/<name>` before the merge, so a raise
+you commit and push to the epic branch governs the ticket that is running.
+It is read from that ref and never from the ticket's own branch, so a branch
+cannot raise the ceiling that judges it. Removing the line mid-run does not
+lift the ceiling: the run keeps the last value and logs that it did.>
 
 Status log: `epics/<name>/status.md`. Run a ticket with `/flow:ticket <ID>`.
 

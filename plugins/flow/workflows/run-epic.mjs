@@ -269,24 +269,17 @@ const TIER_FACTS_SCHEMA = {
   },
 }
 
-// The verify step is also where the per-ticket ceiling is re-read, so
-// `ticketBudget` is a required fact here and not an optional extra: the
-// merge's `git pull --ff-only` has just brought the epic branch's documents
-// forward, and this command parses the preamble on that refreshed branch. A
-// ceiling that arrives only at launch cannot govern a raise made while the
-// run is going, which is the one moment a human reaches for it.
+// The verify step reads the tree the merge just produced, so it reports the
+// board's verdict and nothing the ticket is judged by. The per-ticket ceiling
+// is read at the resolve step instead, from `origin/<epic branch>` — see
+// RESOLVE_SCHEMA's `ticketBudget`.
 const FIND_SCHEMA = {
   type: 'object',
-  required: ['commandSucceeded', 'state', 'ticketBudget'],
+  required: ['commandSucceeded', 'state'],
   properties: {
     commandSucceeded: { type: 'boolean' },
     state: { type: 'string', description: 'the `state` field from the JSON, verbatim ("integrated", "in-review", "blocked", ...). "" when the command failed.' },
     prUrl: { type: 'string', description: 'the `pr.url` field when present, else ""' },
-    ticketBudget: {
-      type: ['integer', 'null'],
-      description:
-        'the `ticketBudget` field from the JSON, exactly as printed: the number when the JSON carries a number, null when it carries null. Never convert it, never round it, and never fill in a value you remember from earlier — the driver re-reads the epic\'s ceiling from this one command. Report null when the command failed.',
-    },
     failure: { type: 'string', description: 'when commandSucceeded is false: the exit code and the first lines of stderr, verbatim' },
     permissionPrompt: { type: 'boolean' },
   },
@@ -516,15 +509,30 @@ const DISPOSITION_SCHEMA = {
 // un-merges a pull request that pointed at the default branch. This agent reads
 // and reports; every decision on what it found is made below, in code, before
 // any agent capable of merging exists.
+// The resolve step is also where the per-ticket ceiling is read, so
+// `ticketBudget` is a required fact here and not an optional extra. This is
+// the door the check walks through: the step is read-only, runs BEFORE the
+// merge, and reads `origin/<epic branch>` — the signed-off document, which no
+// ticket branch can edit. Reading it after the merge instead would take the
+// ceiling from the merged tree, where the ticket's own copy of the preamble
+// sets the number that judges it; the acceptance gate reads
+// `check --from origin/epic/<name>` for exactly that reason. A human's raise,
+// committed and pushed to the epic branch while the ticket runs, is on that
+// ref before this step reads it — which is the case the re-read exists for.
 const RESOLVE_SCHEMA = {
   type: 'object',
-  required: ['outcome'],
+  required: ['outcome', 'ticketBudget'],
   properties: {
     outcome: {
       type: 'string',
       enum: ['resolved', 'command-failed', 'permission-prompt'],
       description:
-        '"resolved" when both commands ran and you are reporting what they printed — even if what they printed looks wrong to you; judging it is not your job. "command-failed" if a command exited nonzero for any other reason than the grep counting zero.',
+        '"resolved" when every command ran and you are reporting what they printed — even if what they printed looks wrong to you; judging it is not your job. "command-failed" if a command exited nonzero for any other reason than the grep counting zero.',
+    },
+    ticketBudget: {
+      type: ['integer', 'null'],
+      description:
+        "the `ticketBudget` field from the JSON the board command printed, exactly as printed: the number when it is a number, null when it is null. Never convert it, never round it, and never fill in a value you remember from earlier in the run — the driver reads the epic's ceiling from this one command.",
     },
     addendumMatches: {
       type: 'integer',
@@ -538,16 +546,16 @@ const RESOLVE_SCHEMA = {
     reviewedFiles: {
       type: 'array',
       items: { type: 'string' },
-      description: 'FACT 3 only: the file paths the first diff command printed, verbatim, one entry per line. Omit when the prompt has no FACT 3.',
+      description: 'FACT 4 only: the file paths the first diff command printed, verbatim, one entry per line. Omit when the prompt has no FACT 4.',
     },
     fixFiles: {
       type: 'array',
       items: { type: 'string' },
-      description: 'FACT 3 only: the file paths the second (numstat) diff command printed, verbatim. [] when it printed nothing.',
+      description: 'FACT 4 only: the file paths the second (numstat) diff command printed, verbatim. [] when it printed nothing.',
     },
     fixLines: {
       type: 'integer',
-      description: 'FACT 3 only: the sum of every added and deleted count the numstat printed — 0 when it printed nothing. A "-" count (binary file) is reported as -1 here, never guessed at.',
+      description: 'FACT 4 only: the sum of every added and deleted count the numstat printed — 0 when it printed nothing. A "-" count (binary file) is reported as -1 here, never guessed at.',
     },
     detail: { type: 'string', description: 'first lines of any error output, verbatim, credentials masked' },
   },
@@ -754,6 +762,29 @@ for (let i = 0; i < MAX_TICKETS && !halted; i++) {
   // calls the session is awaiting this workflow, so the delta is, to a close
   // approximation, this ticket's own output-token spend.
   const spentAtStart = METER ? METER.spent() : null
+  // Reading the meter is what closes this ticket's spend, so it happens once
+  // and the figure is reusable: the budget check needs it, and so does a halt
+  // that fires before the budget check — a halt whose subject IS the spending
+  // that must not report `unknown` for what was spent. Idempotent on purpose;
+  // a second reading would measure the agents of the halt itself.
+  let spendRecorded = false
+  const recordSpend = () => {
+    if (!METER || spendRecorded) return record.outputTokensObserved
+    spendRecorded = true
+    const spent = METER.spent() - spentAtStart
+    record.outputTokensObserved = spent
+    // Spend is surfaced as it happens, not only in the record after the run:
+    // the meter delta is the runtime's own count of this ticket's output
+    // tokens across every agent it spawned, and a runner's usage (Codex's
+    // event stream) is the one figure the worker's side can add.
+    const wu = record.workerUsage
+    log(
+      `${id}: spend — ${spent} output tokens by the runtime meter` +
+        (wu ? `; ${record.workerRunner} worker in=${wu.input ?? '?'} cached=${wu.cached ?? '?'} out=${wu.output ?? '?'} by its own meter` : '') +
+        (ticketBudget ? ` (budget ${ticketBudget})` : ''),
+    )
+    return spent
+  }
 
   // a. Refresh epic/<name> from the default branch — between every ticket, or
   //    the release merge becomes its own big-bang — and then take the first
@@ -1514,7 +1545,7 @@ ${NO_MAIN} The checkout and fast-forward only move the local branch to where the
   const fixBoundsFacts = boundsGated
     ? `
 
-FACT 3 — the review-fix diff, anchored on the reviewed head \`${anchorHead}\`:
+FACT 4 — the review-fix diff, anchored on the reviewed head \`${anchorHead}\`:
 
 \`\`\`bash
 git diff --name-only origin/${epicBranch} ${anchorHead} -- ${boundsPathspecs}
@@ -1524,7 +1555,7 @@ git diff --numstat ${anchorHead} origin/${branch} -- ${boundsPathspecs}
 The first command lists the files the review saw — report its paths, verbatim, as \`reviewedFiles\`. The second lists what the fix commits changed after the review (the status-log addendum${fixBoundsExclude.length ? " and the epic's excluded fan-out globs are" : ' is'} excluded by the pathspec) — report its paths as \`fixFiles\` and the sum of every added and deleted count it printed as \`fixLines\`: 0 when it prints nothing, and -1 if any count prints "-" (a binary file) — both are answers, not failures. You judge none of it; the driver checks the bounds in code.`
     : ''
   const resolved = await agent(
-    `In the repository at ${repoRoot}, report ${boundsGated ? 'three' : 'two'} facts about one ticket's pushed branch. **You change nothing**: no merge, no push, no edit. You do not judge what you find — report what the commands printed and let the driver decide.
+    `In the repository at ${repoRoot}, report ${boundsGated ? 'four' : 'three'} facts about one ticket's pushed branch. **You change nothing**: no merge, no push, no edit. You do not judge what you find — report what the commands printed and let the driver decide.
 
 FACT 1 — how many dated review addenda sit under **${id}'s own** entries in the branch as pushed:
 
@@ -1543,7 +1574,15 @@ FACT 2 — the exact commit the pushed branch stands at:
 git rev-parse origin/${branch}
 \`\`\`
 
-Report what it printed as \`headSha\`, **verbatim** — never reconstructed from memory, never from a local branch. The driver merges exactly this commit into ${epicBranch}; a SHA, unlike a branch name or a pull-request number, cannot be retargeted between the check and the merge.${fixBoundsFacts}
+Report what it printed as \`headSha\`, **verbatim** — never reconstructed from memory, never from a local branch. The driver merges exactly this commit into ${epicBranch}; a SHA, unlike a branch name or a pull-request number, cannot be retargeted between the check and the merge.
+
+FACT 3 — the epic's per-ticket token ceiling, as the signed-off document declares it on \`origin/${epicBranch}\`:
+
+\`\`\`bash
+${TICKETS} find ${id} --json --from origin/${epicBranch}
+\`\`\`
+
+\`--from\` is what makes this fact trustworthy: it reads the epic's declarations from that ref, not from the working tree, so the branch under review cannot raise the ceiling it is judged by. Report the \`ticketBudget\` field exactly as the JSON prints it — the number when it is a number, \`null\` when it is null. \`null\` is an answer (most epics declare no budget), not a failure. Never convert it, never round it, never substitute a number you saw earlier in this run.${fixBoundsFacts}
 
 Report outcome "resolved" once every command above has run, whatever it printed. "command-failed" is for a command that failed for some other reason (the fetch could not reach the remote, \`gh\` is not authenticated) — never for a count of 0 or an empty listing, which are answers.
 
@@ -1623,6 +1662,59 @@ ${NO_MAIN} You are read-only here in any case: nothing in this task writes anyth
         }
       }
     }
+
+    // The per-ticket ceiling, adopted from FACT 3 — the epic's `Ticket
+    // budget:` line as it stands on `origin/${epicBranch}`, which is the
+    // signed-off document and not this branch's copy of it. `args.ticketBudget`
+    // stays the launch-time value; what moves is which number the post-merge
+    // check compares against, so a raise a human pushed to the epic branch
+    // while this ticket was running governs this ticket's own check.
+    //
+    // Every halt below fires before a merge agent exists, like the rest of
+    // this block: nothing is merged on a ceiling the run cannot read. The
+    // spend is recorded first — a halt about the budget that reports
+    // `unknown` for what was spent tells a human nothing.
+    if (!halted) {
+      const reportedBudget = resolved.ticketBudget
+      if (reportedBudget === undefined) {
+        recordSpend()
+        stop(
+          STOP.contradiction,
+          `the resolve step reported no \`ticketBudget\` field at all, so the run cannot say what ceiling is in force for ${id}. Nothing merged — the run does not fall back to a launch-time number the signed-off document may have replaced.${quoted}`,
+        )
+      } else if (reportedBudget === null) {
+        // A ceiling that was in force does not evaporate because the line
+        // stopped being readable. `**Ticket budget:** 600k` parses as null,
+        // and the run never runs doctor — so a formatting slip would
+        // otherwise lift the ceiling silently, which is the one failure a
+        // ceiling must not have.
+        if (ticketBudget !== null) {
+          log(
+            `${id}: \`origin/${epicBranch}\` now reports no \`Ticket budget:\` line; keeping the ceiling of ${ticketBudget} in force. A line that stopped parsing does not lift a ceiling — check the preamble's formatting if the removal was meant.`,
+          )
+        }
+      } else if (!Number.isInteger(reportedBudget) || reportedBudget <= 0) {
+        recordSpend()
+        stop(
+          STOP.contradiction,
+          `the resolve step reported a ticket budget that is not a positive integer of output tokens: ${fence(line(JSON.stringify(reportedBudget)))} Nothing merged — fix the epic's \`Ticket budget:\` line on ${epicBranch}, or the report that mangled it.${quoted}`,
+        )
+      } else if (!METER) {
+        // Launch refuses a ceiling it cannot meter; a ceiling that appears
+        // mid-run is refused on exactly the same terms, at the same door, for
+        // the same reason — a ceiling that silently cannot fire is worse than
+        // none, whether it was declared before the run or during it.
+        stop(
+          STOP.contradiction,
+          `\`origin/${epicBranch}\` declares a \`Ticket budget:\` of ${reportedBudget}, but this workflow runtime exposes no budget meter to enforce it — the same refusal launch would have made. Nothing merged; remove the Ticket budget line, or run on a build whose workflow runtime provides \`budget\`.${quoted}`,
+        )
+      } else {
+        if (reportedBudget !== ticketBudget) {
+          log(`${id}: ticket budget read from \`origin/${epicBranch}\` — ${ticketBudget === null ? 'none' : ticketBudget} -> ${reportedBudget}; this ticket's own check uses it.`)
+        }
+        ticketBudget = reportedBudget
+      }
+    }
   }
   if (halted) break
 
@@ -1697,7 +1789,7 @@ ${NO_MAIN} This merge into ${epicBranch} is the only merge you perform.`,
 ${TICKETS} find ${id} --json
 \`\`\`
 
-Report the \`state\` field verbatim, the \`pr.url\` field if present, and the \`ticketBudget\` field exactly as the JSON prints it — the number when it is a number, null when it is null. Report what the command printed — never what you expect it to print, never a state you inferred from the git log, and never a budget you remember from earlier in the run. Run no other command; change no file.
+Report the \`state\` field verbatim and the \`pr.url\` field if present. Report what the command printed — never what you expect it to print, and never a state you inferred from the git log. Run no other command; change no file.
 
 ${PROMPT_RULE}`,
     // One command, echoed structurally: the third of the shell proxies pinned
@@ -1730,88 +1822,21 @@ ${PROMPT_RULE}`,
   record.result = 'integrated'
   log(`${id}: integrated (confirmed from the board, not from any agent's report).`)
 
-  // The ceiling is re-read here, from the report the verify step just made,
-  // and it governs THIS ticket's check below. That is the door the check
-  // walks through: the merge ran `git pull --ff-only` on the epic branch a
-  // moment ago, so `find --json` parsed the `Ticket budget:` line as it now
-  // stands on the refreshed branch — which is how a raise made while this
-  // ticket was running reaches the check it was meant to govern. The refresh
-  // step is the wrong door: it precedes the worker, so a raise landing during
-  // the ticket would still miss its own check.
-  //
-  // `args.ticketBudget` stays the launch-time value, validated at launch as
-  // before; what moves is which number the comparison uses.
-  const reportedBudget = found.ticketBudget
-  if (reportedBudget === undefined) {
-    halted = {
-      ticket: id,
-      stopCondition: STOP.contradiction,
-      where: `re-reading the ticket budget from \`tickets.mjs find ${id} --json\``,
-      detail: `${id} integrated, but the verify report carried no \`ticketBudget\` field at all, so the run cannot say what ceiling is now in force. The work is merged and stays merged; the run stops rather than fall back to a launch-time number the document may have replaced.`,
-    }
-    break
-  }
-  if (reportedBudget === null) {
-    // A budget that was in force does not evaporate because the line stopped
-    // being readable. `**Ticket budget:** 600k` parses as null, and the run
-    // never runs doctor — so a formatting slip would otherwise lift the
-    // ceiling silently, which is the one failure a ceiling must not have.
-    if (ticketBudget !== null) {
-      log(
-        `${id}: the epic branch now reports no \`Ticket budget:\` line; keeping the ceiling of ${ticketBudget} in force. A line that stopped parsing does not lift a ceiling — check the preamble's formatting if the removal was meant.`,
-      )
-    }
-  } else if (!Number.isInteger(reportedBudget) || reportedBudget <= 0) {
-    halted = {
-      ticket: id,
-      stopCondition: STOP.contradiction,
-      where: `re-reading the ticket budget from \`tickets.mjs find ${id} --json\``,
-      detail: `${id} integrated, but the verify report gave a ticket budget of ${line(JSON.stringify(reportedBudget))}, which is not a positive integer of output tokens. The work is merged and stays merged; the run stops rather than guess at a ceiling — fix the epic's \`Ticket budget:\` line, or the report that mangled it.`,
-    }
-    break
-  } else if (!METER) {
-    // Launch refuses a ceiling it cannot meter; a ceiling that appears
-    // mid-run is refused on exactly the same terms, at the same door, for
-    // the same reason — a ceiling that silently cannot fire is worse than
-    // none, whether it was declared before the run or during it.
-    halted = {
-      ticket: id,
-      stopCondition: STOP.contradiction,
-      where: `re-reading the ticket budget from \`tickets.mjs find ${id} --json\``,
-      detail: `${id} integrated, and the epic branch now declares a \`Ticket budget:\` of ${reportedBudget}, but this workflow runtime exposes no budget meter to enforce it — the same refusal launch would have made. The work is merged and stays merged; remove the Ticket budget line, or resume on a build whose workflow runtime provides \`budget\`.`,
-    }
-    break
-  } else {
-    if (reportedBudget !== ticketBudget) {
-      log(`${id}: ticket budget re-read from the epic branch — ${ticketBudget === null ? 'none' : ticketBudget} -> ${reportedBudget}; this ticket's own check uses the new ceiling.`)
-    }
-    ticketBudget = reportedBudget
-  }
-
   // The per-ticket budget, checked AFTER integration: nothing un-merges, so
   // the ticket that overspent stays merged — the ceiling stops the run from
   // starting the NEXT ticket, because a ticket whose spend leaves its class
   // is a planning signal a human reads, not a cost the run absorbs silently.
-  // The delta is meter-observed, never any agent's report.
+  // The delta is meter-observed, never any agent's report; the ceiling it is
+  // measured against came from the resolve step's read of the signed-off epic
+  // ref, never from the tree this merge just produced.
   if (METER) {
-    const spent = METER.spent() - spentAtStart
-    record.outputTokensObserved = spent
-    // Spend is surfaced as it happens, not only in the record after the run:
-    // the meter delta is the runtime's own count of this ticket's output
-    // tokens across every agent it spawned, and a runner's usage (Codex's
-    // event stream) is the one figure the worker's side can add.
-    const wu = record.workerUsage
-    log(
-      `${id}: spend — ${spent} output tokens by the runtime meter` +
-        (wu ? `; ${record.workerRunner} worker in=${wu.input ?? '?'} cached=${wu.cached ?? '?'} out=${wu.output ?? '?'} by its own meter` : '') +
-        (ticketBudget ? ` (budget ${ticketBudget})` : ''),
-    )
+    const spent = recordSpend()
     if (ticketBudget && spent > ticketBudget) {
       halted = {
         ticket: id,
         stopCondition: STOP.ticketBudget,
         where: 'the per-ticket token budget, after the merge was confirmed',
-        detail: `${id} integrated, but its pass spent ${spent} output tokens against the epic's budget of ${ticketBudget}. The work is merged and stays merged; the run stops before the next ticket so a human can decide whether this class of spend is expected — raise the epic's Ticket budget line on ${epicBranch} (the run re-reads that line from the branch at every ticket, so a raise that lands while a ticket is still running governs that ticket's own check), or look at why the ticket outgrew its plan.`,
+        detail: `${id} integrated, but its pass spent ${spent} output tokens against the epic's budget of ${ticketBudget}. The work is merged and stays merged; the run stops before the next ticket so a human can decide whether this class of spend is expected — raise the epic's Ticket budget line on ${epicBranch} and push it (every later ticket reads that line off \`origin/${epicBranch}\` before its own merge, so a raise that lands while a ticket is still running governs that ticket's own check), or look at why the ticket outgrew its plan.`,
       }
       break
     }
