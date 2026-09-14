@@ -41,7 +41,9 @@ Stop and report too if:
 - the working tree has uncommitted changes you did not make;
 - any ticket is `in-progress`, `in-review` or `done` — a previous run died
   mid-ticket, and redoing or skipping half-finished work destroys the
-  evidence trail;
+  evidence trail. The recovery: finish that one ticket by hand with
+  `/flow:ticket <ID>`, then re-run this command — § "Resuming after a halt"
+  at the end of this skill carries the procedure and the reason;
 - any ticket is `blocked` — a previous run halted on it, and `next` only
   hands out `todo` tickets, so starting now would build every successor on
   the blocked one. The human resolves or re-plans it first.
@@ -443,3 +445,52 @@ Then append the run record (step 6), print the pull request URL, and stop.
 **You do not merge it, approve it, or comment on it. No agent does.** The
 human gate moved here, and everything this run did was structured to keep
 this one click trustworthy.
+
+## Resuming after a halt
+
+A halted run is picked up by **re-running `/flow:run <epic>`** — a new run,
+reading the board — after whatever the halt left half-finished is finished by
+hand. The board says which case you are in:
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/tickets.mjs" list <epic>
+```
+
+**Halted before the ticket wrote its status entry** — a failed refresh, a
+reviewer that could not be spawned, a worker that came back blocked. Nothing
+merged, and the ticket is still `todo`. Re-run `/flow:run <epic>` and nothing
+else: the loop asks `next` for each ticket, `next` hands out only `todo`
+tickets, and `integrated` ones are skipped — which is why re-running resumes
+after the work that landed instead of redoing it. A ticket left `blocked` is
+the exception, and step 1 refuses on it for its own reason: `next` will not
+hand it out, so every successor would be built on it. A human resolves or
+re-plans it before the re-run.
+
+**Halted mid-ticket** — the branch pushed, the DONE entry and the review
+addendum committed, nothing merged. This is the common shape: ten of the
+twelve halts across the first three live release epics. The ticket now reads
+`in-progress`, `in-review` or `done`, which is exactly what step 1 refuses to
+start over, so **finish that one ticket by hand first**: `/flow:ticket <ID>`,
+the escape hatch step 1's refusal names. A supervisor-spawned worker performs
+the ticket skill's step 10 — the gate (addendum committed, no Important
+finding left unfixed) and the merge into `epic/<name>` by verified SHA — and
+stops. What remains is that gate and that merge, not a rebuild: redoing the
+ticket from scratch would throw away the review the halt already paid for,
+and skipping it would build its successors on unreviewed work. Once the board
+reads `integrated`, re-run `/flow:run <epic>`: step 1 now passes and the loop
+takes the next `todo` ticket.
+
+**Never `resumeFromRunId`, in either case.** The Workflow runtime replays
+every unchanged `agent()` call from the run's prefix cache, live-running only
+from the first edited call onward — and a run halts precisely because
+something *outside* the script changed: the plugin, the environment, the
+repository. The cache cannot see any of that. groundhopper-foundation's run
+of 2026-08-24, resumed on 2026-08-25 after the plugin's check runner gained a
+`maxBuffer`, recorded what that costs: "first resume replayed the stale
+failed acceptance from cache (0 tokens) and halted again" — the fix was live
+in the plugin, and the resumed run never reached it. A resume after a
+*pushed* fix fails the other way: review and disposition would re-run live
+against a branch that already carries a committed addendum, reviewing and
+dispositioning the same work twice. A fresh `/flow:run` costs one cheap pass
+over the board and starts from repository state, which is the only state that
+is true.

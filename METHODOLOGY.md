@@ -640,6 +640,19 @@ the Workflow tool is missing: a fallback loop would quietly restore the
 improvisation surface the script exists to remove, and the attended lane
 (`/flow:ticket`, one ticket at a time) already covers the emergency.
 
+That determinism has a second edge, and it points at the human holding the
+halt. A run pins its own date (`args.today`) so that a re-invocation's
+prompts are byte-identical and the runtime's prefix cache can replay them —
+cache stability is bought deliberately, because it makes a run's steps
+reproducible. But a run halts precisely because something outside the script
+changed, and a cache cannot tell a stale recorded failure from a current one.
+So a halted run is picked up by re-running `/flow:run` — never
+`resumeFromRunId`. The first live run to try it replayed its own recorded
+failure from cache and halted again on a defect the plugin had already fixed.
+The same property that makes each step reproducible makes resuming a run a
+statement about the past: the board, not the cache, is where a re-run learns
+what is left to do.
+
 Moving the loop into code also moved the judge. The driver hires each
 ticket's reviewer — the supervisor pattern one level up — and the worker
 stops at its pushed branch without reviewing or merging anything it
