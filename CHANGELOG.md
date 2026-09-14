@@ -31,7 +31,13 @@ with one version and date.
   halt message usually names a stage the ticket had already passed: no entry
   (`todo`, or `in-progress` on a local branch) re-runs; a DONE entry on a
   pushed branch is finished by hand; a BLOCKED entry waits for a human to
-  resolve or re-plan. Doctrine only: `run-epic.mjs` is unchanged.
+  resolve or re-plan. `skills/ticket/SKILL.md` makes that recovery real
+  rather than advertised: when step 1 reports the ticket `done` or
+  `in-review` and `origin/<branch>` exists, the worker builds nothing — step
+  3 checks the existing branch out instead of running `git checkout -b`,
+  which fails on it — and the leg resumes at step 7, 8 or 10 depending on
+  whether the branch's entry already carries a review addendum. Doctrine
+  only: `run-epic.mjs` is unchanged.
 
 - **A CHECK criterion must be red before its ticket is built**
   (`skills/epic/SKILL.md` "Rules that matter" and step 5,
