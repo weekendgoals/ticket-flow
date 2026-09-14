@@ -25,8 +25,13 @@ with one version and date.
   foundation's 2026-08-25 resume "replayed the stale failed acceptance from
   cache (0 tokens) and halted again" after the plugin fix that would have
   cleared it, and a resume after a pushed fix would re-review a branch that
-  already carries a committed addendum. Doctrine only: `run-epic.mjs` is
-  unchanged.
+  already carries a committed addendum. The section sorts the halt by the one
+  thing the board reads — the ticket's **status entry** — because the worker
+  writes it and pushes its branch *before* the driver hires a reviewer, so a
+  halt message usually names a stage the ticket had already passed: no entry
+  (`todo`, or `in-progress` on a local branch) re-runs; a DONE entry on a
+  pushed branch is finished by hand; a BLOCKED entry waits for a human to
+  resolve or re-plan. Doctrine only: `run-epic.mjs` is unchanged.
 
 - **A CHECK criterion must be red before its ticket is built**
   (`skills/epic/SKILL.md` "Rules that matter" and step 5,

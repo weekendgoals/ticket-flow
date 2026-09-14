@@ -456,31 +456,54 @@ hand. The board says which case you are in:
 node "${CLAUDE_PLUGIN_ROOT}/scripts/tickets.mjs" list <epic>
 ```
 
-**Halted before the ticket wrote its status entry** — a failed refresh, a
-reviewer that could not be spawned, a worker that came back blocked. Nothing
-merged, and the ticket is still `todo`. Re-run `/flow:run <epic>` and nothing
-else: the loop asks `next` for each ticket, `next` hands out only `todo`
-tickets, and `integrated` ones are skipped — which is why re-running resumes
-after the work that landed instead of redoing it. A ticket left `blocked` is
-the exception, and step 1 refuses on it for its own reason: `next` will not
-hand it out, so every successor would be built on it. A human resolves or
-re-plans it before the re-run.
+Three shapes are possible, and the halted ticket's **status entry** — the
+thing the board reads — is what tells them apart. Read them off the board,
+not off the halt's narrative: the worker writes its entry and pushes its
+branch (steps 1–6 and step 9) *before* the driver hires a reviewer, so most
+halt messages name a stage the ticket had already passed.
 
-**Halted mid-ticket** — the branch pushed, the DONE entry and the review
-addendum committed, nothing merged. This is the common shape: ten of the
-twelve halts across the first three live release epics. The ticket now reads
-`in-progress`, `in-review` or `done`, which is exactly what step 1 refuses to
-start over, so **finish that one ticket by hand first**: `/flow:ticket <ID>`,
-the escape hatch step 1's refusal names. A supervisor-spawned worker performs
-the ticket skill's step 10 — the gate (addendum committed, no Important
-finding left unfixed) and the merge into `epic/<name>` by verified SHA — and
-stops. What remains is that gate and that merge, not a rebuild: redoing the
-ticket from scratch would throw away the review the halt already paid for,
-and skipping it would build its successors on unreviewed work. Once the board
-reads `integrated`, re-run `/flow:run <epic>`: step 1 now passes and the loop
-takes the next `todo` ticket.
+**1. No status entry** — the ticket reads `todo`, or `in-progress` when the
+worker got as far as committing on its local branch. A refresh that failed, a
+worker that returned nothing, a session limit before anything was committed:
+redesign-foundation's second run of 2026-09-13 halted this way — "the
+refresh/select agent returned no report — the refresh cannot be assumed to
+have happened" — and recorded "FND-5 did not start". A `todo` ticket needs
+nothing but a re-run of `/flow:run <epic>`: the loop asks `next` for each
+ticket, `next` hands out only `todo` tickets, and `integrated` ones are
+skipped, which is how re-running resumes after the work that landed instead
+of redoing it. An `in-progress` ticket is step 1's refusal, because a local
+branch with commits and no entry is work no record describes: a human either
+finishes it by hand (shape 2's route) or discards the branch so the ticket
+reads `todo` again. Nothing is lost by discarding — nothing was reviewed.
 
-**Never `resumeFromRunId`, in either case.** The Workflow runtime replays
+**2. A DONE entry on a pushed branch, with or without a review addendum** —
+the ticket reads `done`. This is the common shape: ten of the twelve halts
+across the first three live release epics. Everything from the reviewer
+onward halts here, because the entry and the push happened first — a
+reviewer that could not be spawned ("the branch `ghf-2` stays pushed and
+unmerged", groundhopper-foundation, 2026-08-24), an Important finding the
+disposition could not fix, a failed acceptance CHECK, a fix diff nothing
+could measure, a merge that would not go in. **Finish that one ticket by
+hand first**: `/flow:ticket <ID>`, the escape hatch step 1's refusal names.
+Its supervisor-spawned worker checks out the pushed branch and builds
+nothing — the ticket skill's step 0 and step 3 carry that exception — and the
+supervisor picks the leg up where the run dropped it: step 7's review when
+the entry carries no `Addendum — review —` line, step 8 when it does and
+findings are still open, step 10's gate and merge by verified SHA when the
+addendum is committed. Rebuilding instead would throw away work the run
+already paid for, and skipping the ticket would build its successors on
+unreviewed work. An Important finding nobody could fix is the one case that
+does not end in a merge: step 10 refuses it, and a human decides. Once the
+board reads `integrated`, re-run `/flow:run <epic>`.
+
+**3. A BLOCKED or ABANDONED entry** — the ticket reads `blocked`, which step
+1 refuses for its own reason: `next` never hands out a blocked ticket, so a
+re-run would build every successor on it while leaving it behind. The worker
+already wrote why it stopped; a human resolves or re-plans the ticket — which
+usually means editing the epic's documents the worker found wrong — and only
+then re-runs.
+
+**Never `resumeFromRunId`, in any of the three.** The Workflow runtime replays
 every unchanged `agent()` call from the run's prefix cache, live-running only
 from the first edited call onward — and a run halts precisely because
 something *outside* the script changed: the plugin, the environment, the
