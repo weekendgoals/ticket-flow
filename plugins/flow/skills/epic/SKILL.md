@@ -100,7 +100,10 @@ Outcome: <the problem and who has it, the observable change, the evidence
 that would show it worked, and what would make us reverse it. Falsifiable,
 or it is decoration — "improve UX" can never fail; "support requests about
 X stop arriving" can be checked at the retro. Name the observer for each
-piece of evidence and check it can distinguish success from failure.>
+piece of evidence and check it can distinguish success from failure — and
+name what will **produce** it, because a clause nothing collects is as empty
+as one that cannot fail: a check wired into two of nine page types, or an
+event two controls both fire, reads as falsifiable and never is.>
 
 Requirements: <OPTIONAL — the WHAT, apart from the HOW: a numbered list
 (R1, R2, …) of user-visible behaviours, each *when <condition> the system
@@ -196,7 +199,11 @@ Status log: `epics/<name>/status.md`. Run a ticket with `/flow:ticket <ID>`.
 
 ## Ground rules for every ticket in this epic
 
-- <the invariants an agent with no context would otherwise violate>
+- <the invariants an agent with no context would otherwise violate — and
+  where a rule needs someone to carry it out, name that actor and check the
+  delivery mode above gives you one: an unattended release worker spawns no
+  agents, holds no phone and drives no interactive tool, so a rule that
+  needs any of them is a rule every ticket will record a deviation against>
 
 ## Order
 
@@ -295,6 +302,14 @@ questions.
 tree, and which could not run in this session and why. A criterion whose
 CHECK nobody has seen fail is a criterion nobody has tested; the human
 signing off is the last reader before a worker builds against it.
+
+**Name what the lane cannot do, and what nobody will collect**: which ground
+rules and criteria need an actor the declared delivery mode does not provide
+and which human-owned ticket now carries each ahead of the release, and which
+Outcome evidence clause nothing will produce. A criterion parked as owed to
+the release pull request merges unperformed, and an observer with nothing to
+read reports nothing — the human is signing off on the lane as much as on the
+decomposition.
 
 **Bring the plan page to this gate too**: update step 3's JSON — `stage:
 "sign-off"`, the `alternative` with its rejection reason, the `planReview`

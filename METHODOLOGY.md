@@ -518,6 +518,33 @@ in roughly six hundred designs before any code existed. The human still signs
 off; they just do it with adversarial findings and the reviewer's open
 questions in hand, instead of with prose written to be agreed with.
 
+Two of the reviewer's questions come from epics that shipped past everyone
+(2026-09-14, the retros of the first three live release epics). The first
+asks, for every ground rule and every acceptance criterion, **who executes
+it in the delivery mode the draft declares** — because groundhopper-log
+required its translated strings to pass through seventeen per-language
+agents in an epic run unattended, where the worker's spawn prompt forbids
+spawning any agent. The rule was unsatisfiable the moment it was written;
+nine consecutive tickets recorded the deviation and shipped anyway, at the
+cost of 92 damaged strings and three follow-up tickets. The same epic
+deferred ten "demonstrate on a phone" criteria to its release pull request,
+which merged with none of them performed — so a criterion the lane cannot
+perform is now its own ticket with a human owner, ordered before the
+release, rather than a line owed to a document. This is the invariant "a
+gate is verified at the door its actor walks through", applied one level up:
+the rules and criteria need a door their actor can walk through too.
+
+The second asks whether the Outcome's evidence is **collectable**: what will
+produce each clause, and whether the named observer could tell success from
+failure with it. Redesign-foundation's Outcome promised `h6count = 0` on
+every page type with the check wired into two of nine, and a four-week
+analytics reading of an event the new control and a pre-existing picker both
+fire. Both clauses were falsifiable in form and unanswerable in practice,
+and both were knowable at plan time. Naming an observer was already
+required; it is not enough, because an observer with nothing to read reports
+nothing — and the retro that finds this out is months downstream of the
+one-line fix.
+
 ## Why attended tickets get a supervisor
 
 The autonomous epic's live run proved something that had nothing to do with
@@ -800,7 +827,9 @@ it, the observable change expected, the evidence that would show it, and the
 condition that would reverse the decision — written at planning time, when
 disagreeing costs one conversation. The plan reviewer flags an outcome that
 cannot fail, because an unfalsifiable outcome is a promise to never learn
-anything. The retro closes the loop by checking the evidence.
+anything — and it flags evidence nothing will produce, for the same reason:
+a clause whose evidence never arrives leaves the retro holding the same
+nothing. The retro closes the loop by checking the evidence.
 
 This is the only part of the flow that looks past the merge, and it does so
 without violating "nothing runs after the merge": the check belongs to the
