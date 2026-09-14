@@ -8,6 +8,51 @@ with one version and date.
 
 ## Unreleased
 
+- **The per-ticket token budget is re-read from the signed-off epic ref
+  before every merge, so raising it mid-run reaches the run that tripped it**
+  (`scripts/tickets.mjs` gains `find --from <ref>`; `workflows/run-epic.mjs`
+  `RESOLVE_SCHEMA`, a new FACT 3 in the resolve prompt and a re-read block in
+  the resolve gate; `skills/run/SKILL.md`'s args block, `Resolves` bullet and
+  two stop conditions; `skills/epic/SKILL.md`'s `Ticket budget:` template
+  line; README's configuration table and its `--from` paragraph; six new
+  driver tests and two new script tests). A live run halted on a budget the
+  human had already raised 24 minutes before the merge that tripped it:
+  `args.ticketBudget` was read once at launch, so the halt's own advice —
+  "raise the epic's Ticket budget line" — could not be taken without
+  abandoning the run. The ceiling is now read per ticket at **the resolve
+  step**, which fetches the epic branch and reads the signed-off document
+  from it before the merge: `git fetch origin epic/<name>`, then
+  `tickets.mjs find <ID> --json --from origin/epic/<name>`. Three things
+  make that read mean something. *Before the merge*, because a halt over a
+  ceiling the run cannot read must merge nothing. *`--from`*, because reading
+  the budget after the merge, off the tree the merge produced, would let the
+  ticket branch's own copy of the preamble set the ceiling that judges it;
+  the acceptance gate reads `check --from origin/epic/<name>` for exactly
+  that reason, and `find --from` is the same move for the epic's
+  declarations. *The fetch*, because `--from` reads the local
+  remote-tracking ref and nothing updates it between the ticket's start and
+  the resolve step — the run's only full fetch is in refresh+select, before
+  the worker, and the merge's `git pull --ff-only` comes after the read, so
+  without it the ceiling would be the one that stood hours ago, reproducing
+  FND-1's timeline exactly. With it, a human's raise committed and pushed to
+  the epic branch while the ticket runs is on that ref before the resolve
+  step reads it, which is the case the change exists for. A fetch writes
+  refs and nothing else, so the resolve step is still read-only in the sense
+  that matters. `args` stays the launch-time value
+  and is validated as before; three code checks guard what arrives, because a
+  fact with no check is a fact the report can invent: a value present but not
+  a positive integer (and a report missing the field altogether) halts as a
+  contradiction with the value fenced; a ceiling declared where the runtime
+  has no meter is refused exactly as launch refuses it; and a reported `null`
+  where a ceiling was in force **keeps that ceiling and logs it**, because
+  `**Ticket budget:** 600k` parses as null and the run never runs doctor — a
+  formatting slip must not lift a ceiling silently. Each of those halts
+  records the ticket's meter delta first: a halt whose subject is the
+  spending must not report `unknown` for what was spent. Only this line is
+  re-read: `Reviewer model:`, `Consequence paths:` and `Fix bounds exclude:`
+  stay launch-time, since changing who judges or what is scrutinised mid-run
+  would rewrite the terms the sign-off set.
+
 - **An eighth preamble line, `Fix bounds exclude:`, lets an epic exempt
   mechanical fan-out files from the run's fix-bounds gate**
   (`scripts/tickets.mjs` preamble parse, doctor near-misses and both JSON

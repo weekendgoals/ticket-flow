@@ -152,6 +152,26 @@ filesystem, no shell and no clock** — every fact it uses is fetched by an
 agent it spawns. Pass the date and the two absolute paths, or the script
 refuses to start.
 
+`ticketBudget` is the **launch-time** value, and the only one of these the
+script does not keep: the ceiling is **re-read at every refresh** of the
+epic's signed-off document. Concretely, each ticket's **resolve step** — the
+read-only one, before the merge — **fetches the epic branch and reads the
+signed-off document from it** (`git fetch origin epic/<name>`, then
+`tickets.mjs find <ID> --json --from origin/epic/<name>`), reporting the
+`Ticket budget:` line as it stands on that ref; the post-merge check compares
+the ticket's spend against that number. So a raise a human commits and pushes
+to `epic/<name>` while a ticket is running governs that ticket's own check.
+Both halves are load-bearing. **The fetch**, because `--from` reads the local
+remote-tracking ref and nothing else updates it between the ticket's start
+and here — the run's only full fetch is in refresh+select, before the worker,
+and the merge's `git pull --ff-only` comes after this read; without the fetch
+the ceiling would be the one that stood hours ago. **`--from`**, because read
+after the merge instead, the ceiling would come from the merged tree, where
+the ticket branch's own copy of the preamble sets the number that judges it —
+the same reason acceptance runs `check --from origin/epic/<name>`.
+Everything else here (`reviewerModel`, `consequencePaths`,
+`fixBoundsExclude`, the models) stays fixed at what you passed.
+
 **What the script does**, per ticket, in document order, until
 `tickets.mjs next <epic> --json` comes back empty:
 
@@ -233,7 +253,20 @@ refuses to start.
   entries** must carry a dated `Addendum — review —` line (matched by shape,
   never by the run's pinned date, which diverges when a run crosses
   midnight), and `git rev-parse origin/<branch>` must yield a head SHA of
-  the right shape. A failure here merged nothing.
+  the right shape. The same step **fetches the epic branch and reads the
+  signed-off document from it** for the per-ticket ceiling
+  (`git fetch origin epic/<name>`, then `tickets.mjs find <ID> --json --from
+  origin/epic/<name>`) — that ref and not this branch's copy of the document,
+  so the party under review cannot raise the ceiling it is judged by, and
+  fetched first because the local ref is otherwise as old as the ticket. A
+  fetch writes refs and nothing else, so the step stays read-only in the
+  sense that matters: no merge, no checkout, no file changed. A reported value that is not a positive
+  integer, or missing altogether, halts on the contradiction condition; a
+  reported `null` **keeps the last ceiling in force and logs it**, because a
+  line that stopped parsing (`**Ticket budget:** 600k` parses as null, and
+  the run never runs doctor) must not lift a ceiling silently; a ceiling
+  declared where the runtime has no meter is refused exactly as launch
+  refuses it. A failure here merged nothing.
 - **Merges** by a fixed git sequence on that SHA: checkout `epic/<name>`,
   `pull --ff-only`, `git merge --no-ff <headSha>`, push. The SHA, so the
   merged commit is exactly the one verified; a merge commit, never a squash,
@@ -342,8 +375,13 @@ that resumes past one. The run halts:
   script's own checks**: a ticket ID off the plugin's shape, a board that
   hands out the same ticket twice, a board reporting success without a
   ticket list, a disposition whose story does not match the review it
-  dispositioned, or a resolve step with no usable head SHA. These are
-  checked before the merge command exists, so a halt here merged nothing;
+  dispositioned, a resolve step with no usable head SHA, or a ticket budget
+  the resolve step reported as missing, unusable, or unmeterable. All of
+  those are checked before the merge command exists, so the halt merged
+  nothing. One member of this class is not: the **ticket-count cap** (40
+  tickets in one epic, past any release epic's size) fires between tickets,
+  after the ones before it have merged, and they stay merged — nothing
+  un-merges, here or anywhere;
 - on **a merge conflict — refreshing the epic branch, or anywhere else,
   including a ticket branch that will not merge into the epic branch**;
 - on **reviewer-spawn failure after the sanctioned fallback also fails** —
@@ -355,8 +393,13 @@ that resumes past one. The run halts:
   when the preamble declares `Ticket budget: <n>` (output tokens, metered by
   the runtime; the script refuses to start if no meter exists). Checked
   **after** the merge is confirmed, because nothing un-merges: the ticket
-  stays integrated and the run stops before the next. Each ticket's meter
-  delta lands in `outputTokensObserved` either way;
+  stays integrated and the run stops before the next. The ceiling it uses is
+  the one the resolve step fetched and read off `origin/epic/<name>` a moment before the
+  merge, not the launch-time `args` value — so the halt's advice to raise the
+  `Ticket budget:` line is advice that works inside the same run, provided
+  the raise is committed and pushed to the epic branch. Each ticket's meter
+  delta lands in `outputTokensObserved` either way, including on a halt whose
+  subject is the spending;
 - on **a nonzero exit from any command the run issues as a step, except
   those this skill explicitly marks tolerated** — the one tolerated shape is
   a 404 or 403 from step 3's protection probes, which run in session before

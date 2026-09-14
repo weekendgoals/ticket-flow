@@ -111,12 +111,19 @@ const dispFixed = {
   counts: '13 pass',
   detail: '',
 }
+// The resolve step reports the epic's `ticketBudget` alongside the merge
+// inputs: it is the door the per-ticket ceiling is read through, and it reads
+// `origin/epic/<name>` before the merge, so every resolve stub carries the
+// field the way the real command prints it — null when the epic declares no
+// `Ticket budget:` line.
 const resolvedOk = {
   outcome: 'resolved',
   addendumMatches: 1,
   headSha: 'beefc0ffee42',
+  ticketBudget: null,
   detail: '',
 }
+const resolvedWithBudget = n => ({ ...resolvedOk, ticketBudget: n })
 const acceptOk = { outcome: 'ran', total: 2, passed: 2, allPassed: true, problems: 0, failures: [], detail: '' }
 const acceptNone = { outcome: 'ran', total: 0, passed: 0, allPassed: true, problems: 0, failures: [], detail: '' }
 const mergedOk = { outcome: 'merged', detail: '' }
@@ -604,8 +611,10 @@ test('at the consequence tier, fix commits earn exactly one re-review, and a cle
   // teaches the re-reviewer to answer off-contract, so the cross-check
   // request rides the first review only.
   assert.doesNotMatch(p, /Report `reviewedHead`/)
-  // With the re-review standing guard, the resolve step carries no FACT 3.
-  assert.doesNotMatch(call(r, 'resolve:PAY-1').prompt, /FACT 3/)
+  // With the re-review standing guard, the resolve step carries no fix-bounds
+  // fact (FACT 4); FACT 3, the epic's ceiling, is asked for unconditionally.
+  assert.doesNotMatch(call(r, 'resolve:PAY-1').prompt, /FACT 4/)
+  assert.match(call(r, 'resolve:PAY-1').prompt, /FACT 3 — the epic's per-ticket token ceiling/)
 })
 
 test('below the consequence tier, fixes skip the re-review and are bounds-checked in code at the resolve step', async () => {
@@ -628,7 +637,7 @@ test('below the consequence tier, fixes skip the re-review and are bounds-checke
   const p = call(r, 'resolve:PAY-1').prompt
   // The bounds commands are anchored on the code-verified reviewed head and
   // exclude the epics/ addendum commit; the resolve agent judges nothing.
-  assert.match(p, /FACT 3/)
+  assert.match(p, /FACT 4/)
   assert.match(p, /git diff --name-only origin\/epic\/payments abc1234def0 -- ':\(exclude\)epics'/)
   assert.match(p, /git diff --numstat abc1234def0 origin\/pay-1 -- ':\(exclude\)epics'/)
   assert.match(p, /the driver checks the bounds in code/i)
@@ -1400,6 +1409,136 @@ test('an unusable budget value refuses the run', async () => {
     assert.match(r.out.threw, /ticketBudget must be a positive integer/, String(bad))
     assert.equal(r.calls.length, 0)
   }
+})
+
+// ---- the budget re-read at the resolve step ---------------------------------
+// The ceiling is read at the resolve step — read-only, before the merge, off
+// `origin/epic/<name>` via `find --json --from` — so a raise a human pushed to
+// the epic branch while a ticket was running governs that ticket's own check,
+// and the branch under review cannot raise the ceiling that judges it. Each
+// case below names the phrase the epic's acceptance criterion greps for.
+
+test('budget re-read: a budget raised on the epic branch during a ticket governs that ticket\'s own post-merge check', async () => {
+  // Launched at 50k, the ticket spends 60k — the launch ceiling would halt it.
+  // The epic branch now carries 100k, which is what the resolve step reads.
+  const r = await drive(oneTicket({ 'resolve:PAY-1': resolvedWithBudget(100000) }), { ...ARGS, ticketBudget: 50000 }, meter(60000))
+  assert.equal(r.out.outcome, 'completed', JSON.stringify(r.out.haltedOn))
+  assert.equal(r.out.ticketRecords[0].outputTokensObserved, 60000)
+  assert.ok(
+    r.logs.some(l => l === "PAY-1: ticket budget read from `origin/epic/payments` — 50000 -> 100000; this ticket's own check uses it."),
+    r.logs.join('\n'),
+  )
+  // And the raise is not a one-ticket waiver: it is the ceiling from here on.
+  const lowered = await drive(oneTicket({ 'resolve:PAY-1': resolvedWithBudget(55000) }), { ...ARGS, ticketBudget: 100000 }, meter(60000))
+  assert.equal(lowered.out.outcome, 'halted')
+  assert.match(lowered.out.haltedOn.detail, /against the epic's budget of 55000/)
+})
+
+test('budget re-read: a resolve report with a malformed budget halts before the merge, with the value fenced', async () => {
+  // A value that is present but not a positive integer of output tokens.
+  for (const bad of ['600k', 0, -5, 1.5]) {
+    const r = await drive(oneTicket({ 'resolve:PAY-1': resolvedWithBudget(bad) }), { ...ARGS, ticketBudget: 50000 }, meter(1000))
+    assert.equal(r.out.outcome, 'halted', String(bad))
+    assert.equal(r.out.haltedOn.stopCondition, "a document/code contradiction — reported by a worker, or met by the script's own checks", String(bad))
+    assert.match(r.out.haltedOn.detail, /not a positive integer of output tokens/, String(bad))
+    assert.match(r.out.haltedOn.detail, /Nothing merged/, String(bad))
+    // Agent-authored, so fenced like every other quoted report.
+    assert.match(r.out.haltedOn.detail, /<<<UNTRUSTED\n.*UNTRUSTED>>>/s, String(bad))
+    // Nothing merged means exactly that: no merge or verify agent was spawned.
+    assert.ok(!r.labels.some(l => l.startsWith('merge:') || l.startsWith('verify:')), String(bad))
+    // And a halt about spending reports what was spent.
+    assert.equal(r.out.ticketRecords[0].outputTokensObserved, 1000, String(bad))
+    assert.ok(r.logs.some(l => /^PAY-1: spend — 1000 output tokens/.test(l)), String(bad))
+  }
+  // A report missing the field entirely is the same class: the run cannot say
+  // what ceiling is in force, so it does not fall back to the launch value.
+  const missing = await drive(
+    oneTicket({ 'resolve:PAY-1': { outcome: 'resolved', addendumMatches: 1, headSha: 'beefc0ffee42', detail: '' } }),
+    { ...ARGS, ticketBudget: 50000 },
+    meter(1000),
+  )
+  assert.equal(missing.out.outcome, 'halted')
+  assert.match(missing.out.haltedOn.detail, /no `ticketBudget` field at all/)
+  assert.ok(!missing.labels.some(l => l.startsWith('merge:')))
+})
+
+test('budget re-read: a reported null keeps the last value in force and logs it', async () => {
+  // `**Ticket budget:** 600k` parses as null and the run never runs doctor —
+  // so a line that stopped parsing must not lift the ceiling silently.
+  const r = await drive(oneTicket(), { ...ARGS, ticketBudget: 50000 }, meter(60000))
+  assert.equal(r.out.outcome, 'halted')
+  assert.equal(r.out.haltedOn.stopCondition, "a ticket's pass exceeding the epic's per-ticket token budget")
+  assert.match(r.out.haltedOn.detail, /against the epic's budget of 50000/)
+  assert.ok(
+    r.logs.some(l => /^PAY-1: `origin\/epic\/payments` now reports no `Ticket budget:` line; keeping the ceiling of 50000 in force\./.test(l)),
+    r.logs.join('\n'),
+  )
+  // With no ceiling in force there is nothing to keep, and nothing to log.
+  const none = await drive(oneTicket(), ARGS, meter(60000))
+  assert.equal(none.out.outcome, 'completed')
+  assert.ok(!none.logs.some(l => /keeping the ceiling/.test(l)), none.logs.join('\n'))
+})
+
+test('budget re-read: a budget appearing mid-run with no meter halts, naming the missing meter', async () => {
+  // Launch refuses an unmeterable ceiling; a ceiling that appears on the epic
+  // branch mid-run is refused at the same door on the same terms.
+  const r = await drive(oneTicket({ 'resolve:PAY-1': resolvedWithBudget(50000) }), ARGS, null)
+  assert.equal(r.out.outcome, 'halted')
+  assert.equal(r.out.haltedOn.stopCondition, "a document/code contradiction — reported by a worker, or met by the script's own checks")
+  assert.match(r.out.haltedOn.detail, /no budget meter to enforce it/)
+  assert.match(r.out.haltedOn.detail, /declares a `Ticket budget:` of 50000/)
+  // The run skill forbids resuming a halted run; the advice says "run", as the
+  // launch-time twin does.
+  assert.match(r.out.haltedOn.detail, /run on a build whose workflow runtime provides/)
+  assert.doesNotMatch(r.out.haltedOn.detail, /resume on a build/)
+  assert.ok(!r.labels.some(l => l.startsWith('merge:')))
+})
+
+// ---- the ceiling comes from the ref, not from the merged tree ---------------
+
+test('a ticket branch cannot raise the ceiling that judges it — the ref is the source', async () => {
+  // The resolve step reads `origin/epic/<name>` with `--from`, so a
+  // `Ticket budget:` line edited on the ticket branch (which is what the
+  // merged working tree would show, and what the verify step would read)
+  // changes nothing. Here the ticket branch "says" 999999 and the signed-off
+  // epic ref says 50000; the 60k pass halts.
+  const r = await drive(
+    oneTicket({ 'resolve:PAY-1': resolvedWithBudget(50000), 'verify:PAY-1': { ...integratedOk, ticketBudget: 999999 } }),
+    { ...ARGS, ticketBudget: 50000 },
+    meter(60000),
+  )
+  assert.equal(r.out.outcome, 'halted')
+  assert.equal(r.out.haltedOn.stopCondition, "a ticket's pass exceeding the epic's per-ticket token budget")
+  assert.match(r.out.haltedOn.detail, /against the epic's budget of 50000/)
+  // The command that makes it true: `--from` on the signed-off ref, and
+  // nothing in the verify step asking for a budget at all.
+  assert.match(call(r, 'resolve:PAY-1').prompt, /tickets\.mjs" find PAY-1 --json --from origin\/epic\/payments/)
+  assert.doesNotMatch(call(r, 'verify:PAY-1').prompt, /ticketBudget|budget/)
+})
+
+test('the resolve prompt tells the proxy what to report for the budget, and why the ref is the source', async () => {
+  // The proxy is a fast model reading a JSON field: what it is told decides
+  // whether the driver gets the number, a conversion of it, or a memory of an
+  // earlier one. The suite pins the prompt text behind the other gates; this
+  // pins the budget instruction the same way.
+  const p = call(await drive(oneTicket()), 'resolve:PAY-1').prompt
+  assert.match(p, /FACT 3 — the epic's per-ticket token ceiling, as the signed-off document declares it on `origin\/epic\/payments`/)
+  // The fetch, and its position: `--from` reads the LOCAL remote-tracking
+  // ref, which nothing updates between this ticket's start and here — without
+  // the fetch above the read, the ceiling is the one that stood before the
+  // worker ran, which is the staleness the whole read exists to remove.
+  const fetchAt = p.indexOf('git fetch origin epic/payments')
+  const findAt = p.indexOf('find PAY-1 --json --from origin/epic/payments')
+  assert.ok(fetchAt !== -1, 'the epic branch is fetched')
+  assert.ok(findAt !== -1 && fetchAt < findAt, 'the fetch precedes the read')
+  assert.match(p, /Run the fetch first and do not skip it/)
+  assert.match(p, /`--from` is what makes this fact trustworthy/)
+  assert.match(p, /the branch under review cannot raise the ceiling it is judged by/)
+  assert.match(p, /Report the `ticketBudget` field exactly as the JSON prints it/)
+  // null is an answer: most epics declare no budget, and a proxy that treats
+  // it as a failure would halt every one of them.
+  assert.match(p, /`null` is an answer \(most epics declare no budget\), not a failure/)
+  assert.match(p, /Never convert it, never round it, never substitute a number you saw earlier in this run\./)
 })
 
 // ---- arguments --------------------------------------------------------------

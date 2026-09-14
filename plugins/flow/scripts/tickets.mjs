@@ -15,7 +15,12 @@
 // `node "${CLAUDE_PLUGIN_ROOT}/scripts/tickets.mjs" <command>`:
 //
 //   tickets.mjs list [epic] [--json]     status board, all epics or one
-//   tickets.mjs find <ID> [--json]       resolve an ID to its epic's doc paths
+//   tickets.mjs find <ID> [--json] [--from <ref>]
+//                                        resolve an ID to its epic's doc paths
+//                                        and the epic's declarations; --from
+//                                        reads those declarations from a git
+//                                        ref (the signed-off document)
+//                                        instead of the working tree
 //   tickets.mjs brief [ID] [--json]      a ticket's full section + the epic
 //                                        preamble (ground rules) + owed items
 //                                        not yet marked resolved + derived
@@ -125,8 +130,15 @@ const DELIVERIES = new Set(['release', 'incremental'])
 // is prose. Case is preserved — paths are case-sensitive, unlike models
 // and delivery. Absent is null; this script never judges the globs, the
 // run driver validates and applies them.
+// `parsePreamble` reads the working tree; `parsePreambleText` parses a document
+// already in hand, which is how `find --from <ref>` reads the declarations as
+// they stand at a git ref rather than on whatever branch is checked out. One
+// parser either way — a second copy would drift the moment a line is added.
 function parsePreamble(ticketsDoc) {
-  const preamble = readFileSync(ticketsDoc, 'utf8').split(/^##\s/m)[0]
+  return parsePreambleText(readFileSync(ticketsDoc, 'utf8'))
+}
+function parsePreambleText(doc) {
+  const preamble = doc.split(/^##\s/m)[0]
   const grab = (label, charset = '[A-Za-z-]+') => {
     const m = preamble.match(new RegExp(`^${label}[^\\S\\n]*:[^\\S\\n]*(${charset})`, 'im'))
     return m ? m[1].toLowerCase() : null
@@ -1087,12 +1099,36 @@ switch (cmd) {
 
   case 'find': {
     if (!arg) {
-      console.error('usage: tickets.mjs find <ID>')
+      console.error('usage: tickets.mjs find <ID> [--json] [--from <ref>]')
+      process.exit(2)
+    }
+    if (fromIdx !== -1 && !fromRef) {
+      console.error('tickets: --from needs a git ref (e.g. --from origin/epic/<name>)')
       process.exit(2)
     }
     const data = board(null)
     const t = resolveTicket(data, arg.toUpperCase())
     const out = ticketFacts(data, t)
+    if (fromRef) {
+      // `--from <ref>` reads the epic's DECLARATIONS from that ref instead of
+      // the working tree — the same move `check --from` makes on the criteria,
+      // and for the same reason: the party under review must not be able to
+      // edit the terms it is judged by. The run driver reads the ticket
+      // budget this way, from `origin/epic/<name>`, so a ticket branch's own
+      // copy of the preamble cannot raise the ceiling that judges it.
+      // Everything else `find` reports — the branch, the board state, the
+      // paths — describes the repository as it is now and is untouched.
+      const rel = `epics/${t.epic}/tickets.md`
+      const shown = git(['show', `${fromRef}:${rel}`], { allowFail: true })
+      if (shown === null) {
+        console.error(`tickets: cannot read ${rel} from ref "${fromRef}" — fetch the ref, or check its name`)
+        process.exit(1)
+      }
+      // `from` appears only under `--from`: the default shape is what every
+      // installed consumer of `find --json` reads, and a permanent "from null"
+      // row in the human listing buys nothing.
+      Object.assign(out, parsePreambleText(shown), { from: fromRef })
+    }
     if (json) emit(out)
     else
       for (const [k, v] of Object.entries(out)) {
