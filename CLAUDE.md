@@ -44,7 +44,8 @@ go through the flow, one-off work goes through `/flow:quick` into
   and never calls the real Codex.
 - **Doctrine invariants:** `node plugins/flow/scripts/check-invariants.mjs` —
   must exit 0 on this repo; mechanically verifies the string-checkable
-  cross-document couplings (the status-log preamble's three copies, the two
+  cross-document couplings (the status-log preamble's three copies, the run
+  log's copy of its **Rules** block, the two
   risk lists, skill heading templates against the parser regexes, the session
   guard's refusal message as the ticket skill quotes it, load-bearing doctrine
   phrases). Run it whenever a skill, agent, hook or doctrine document changes —

@@ -1583,6 +1583,9 @@ test('a halted run tells the session to record the halt and open nothing', async
   // field has no URL to wait for.
   assert.match(r.out.next, /not opened: run halted/)
   assert.ok(r.out.next.indexOf('run record') < r.out.next.indexOf('open no release pull request'))
+  // The record goes to runs.md, never the status.md the ticket entries share.
+  assert.match(r.out.next, /epic's runs\.md/)
+  assert.doesNotMatch(r.out.next, /status\.md/)
   assert.equal(r.out.finalRefresh, 'not reached: the run halted')
   assert.equal(r.out.date, '2026-08-11')
 })
@@ -1598,6 +1601,8 @@ test('a completed run tells the session to open the pull request BEFORE writing 
     'the completed-path instruction must open the pull request before the run record is appended',
   )
   assert.match(r.out.next, /quoting the pull request's real URL/)
+  assert.match(r.out.next, /epic's runs\.md/)
+  assert.doesNotMatch(r.out.next, /status\.md/)
   assert.deepEqual(r.out.deployPreconditions, ['PAY-1_ENV'])
 })
 

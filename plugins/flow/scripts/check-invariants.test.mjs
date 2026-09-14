@@ -21,6 +21,7 @@ const FILES = [
   'plugins/flow/skills/ticket/SKILL.md',
   'plugins/flow/skills/quick/SKILL.md',
   'plugins/flow/skills/run/SKILL.md',
+  'plugins/flow/skills/retro/SKILL.md',
   'plugins/flow/agents/ticket-reviewer.md',
   'plugins/flow/scripts/tickets.mjs',
   'plugins/flow/hooks/ticket-session-guard.mjs',
@@ -65,6 +66,22 @@ test('a drifted status-log preamble copy fails', () => {
   const r = run(root)
   assert.equal(r.status, 1, r.out)
   assert.match(r.out, /preamble drifted/)
+})
+
+test("a drifted run-log Rules block fails against the status log's", () => {
+  const root = copyRepo()
+  mutate(root, 'plugins/flow/skills/run/SKILL.md', 'Report counts, not adjectives', 'Report vibes, not adjectives')
+  const r = run(root)
+  assert.equal(r.status, 1, r.out)
+  assert.match(r.out, /run log's Rules block/)
+})
+
+test('a document that sends the run record back to status.md fails the coupling', () => {
+  const root = copyRepo()
+  mutate(root, 'plugins/flow/skills/retro/SKILL.md', 'runs.md', 'status.md')
+  const r = run(root)
+  assert.equal(r.status, 1, r.out)
+  assert.match(r.out, /doctrine phrase missing/)
 })
 
 test('a risk trigger removed from one door fails', () => {

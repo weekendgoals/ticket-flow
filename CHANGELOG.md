@@ -8,6 +8,37 @@ with one version and date.
 
 ## Unreleased
 
+- **Run records move to `epics/<name>/runs.md`, so the run and its tickets
+  stop writing to one file tail** (`scripts/tickets.mjs`: `runsDoc` in
+  `discoverEpics`, `epics --json` and `find --json` — the latter with
+  `runsDocExists` — `parseSpend` reading both logs, doctor's run-record scans
+  covering both files and a new misfile warning; `workflows/run-epic.mjs`'s
+  two `next` strings; `skills/run/SKILL.md` step 6 with the new file's
+  preamble; `skills/retro/SKILL.md` steps 2, 3 and its halts question;
+  `scripts/check-invariants.mjs` holding the run log's **Rules** block to the
+  status log's and the file's name across the five documents that state it;
+  README's document table and `spend` paragraph; METHODOLOGY § "Why the run
+  loop is code"; three new script tests, two new invariant tests). A ticket
+  worker appends its status entry on a ticket branch while the run session
+  appends the run record on the epic branch, so every mid-ticket halt
+  followed by a hand merge conflicted on `status.md` — the groundhopper
+  run's reconcile merge `a5d96449` is the recorded case. Splitting the files
+  removes the shared tail instead of teaching git to paper over it: the
+  considered alternative, a `merge=union` attribute on `epics/*/status.md`,
+  is one line but per-project configuration a doctor probe can only nag
+  about, and union also hides an overlapping edit — which append-only
+  forbids — instead of surfacing it as a conflict. **Nothing migrates.**
+  Every log written before the split keeps its run records in `status.md`
+  and `spend` still reads them there; `runs.md` is created, with the status
+  log's **Rules** block verbatim, by the first record written after an epic
+  splits. The one new warning is date-scoped for the same reason: once an
+  epic has a `runs.md`, a `### Run —` record in `status.md` dated on or
+  after the first record in `runs.md` is flagged as a misfile (repair by
+  appending it to `runs.md`, never by deleting the committed copy), and
+  records that predate the split are never flagged, because moving them is
+  exactly what append-only forbids and a warning whose only recovery is
+  forbidden is worse than none.
+
 - **The per-ticket token budget is re-read from the signed-off epic ref
   before every merge, so raising it mid-run reaches the run that tripped it**
   (`scripts/tickets.mjs` gains `find --from <ref>`; `workflows/run-epic.mjs`

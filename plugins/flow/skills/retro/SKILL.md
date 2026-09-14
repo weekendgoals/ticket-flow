@@ -50,12 +50,17 @@ epic; execute steps 3 through 5's drafting of the `flow:retro` skill exactly
 as written (give it this skill file's absolute path) and return the finished
 report and proposals; it edits no files, creates no tickets, and asks the
 user nothing. Hand it the epic name, the absolute `ticketsDoc`, `statusDoc`
-and `repoRoot`, `contextDir` when not null, and the default branch name —
-its cwd may move mid-task, and relative paths break there.
+and `runsDoc` (`epics --json` carries both; `runsDoc` may not exist yet —
+epics that ran attended, and every log written before the run records were
+split out of `status.md`, have no `runs.md`) and `repoRoot`, `contextDir`
+when not null, and the default branch name — its cwd may move mid-task, and
+relative paths break there.
 
 ## 3. Read the whole record
 
-The full `status.md` including every addendum, `tickets.md` as it ended up,
+The full `status.md` including every addendum, the full `runs.md` when it
+exists — the run records live there, and in `status.md` for epics that ran
+before the split — `tickets.md` as it ended up,
 anything in `context/`, and the shipped work itself:
 `git -C <repoRoot> log origin/<default> --oneline | grep <epic's IDs>`. The
 instruction files for the areas the epic touched, as they are **now**, read
@@ -92,7 +97,8 @@ from under `repoRoot`.
   (ground rules) and lessons that transfer to *any* project — flag the
   transferable ones as candidates for the methodology itself.
 - **What did the run halt on, and what did each halt buy?** For every
-  `### Run —` record in the log — its **Halted on:** line names the stop
+  `### Run —` record in `runs.md` — and in `status.md`, where the epics that
+  ran before the split keep theirs — its **Halted on:** line names the stop
   condition, the ticket and the stage: the halt condensed to a sentence, its
   cause classified as **work** (a defect in the implementation), **plan** (a
   defective, vacuous or decorative CHECK, a wrong assumption in

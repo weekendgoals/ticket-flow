@@ -37,6 +37,7 @@ const FILES = {
   ticket: 'plugins/flow/skills/ticket/SKILL.md',
   quick: 'plugins/flow/skills/quick/SKILL.md',
   run: 'plugins/flow/skills/run/SKILL.md',
+  retro: 'plugins/flow/skills/retro/SKILL.md',
   reviewer: 'plugins/flow/agents/ticket-reviewer.md',
   script: 'plugins/flow/scripts/tickets.mjs',
   hook: 'plugins/flow/hooks/ticket-session-guard.mjs',
@@ -88,6 +89,35 @@ function checkPreambleCopies() {
         `status-log preamble drifted: ${FILES[key]} differs from ${FILES.epic} — the three copies are one rule and move in the same commit`,
       )
   }
+}
+
+// ── 1b. The run log's Rules block is the status log's ────────────────────────
+// `runs.md` carries the same **Rules** block as `status.md` — append only,
+// corrections as dated addenda, counts not adjectives — so the run skill holds
+// a fourth copy of it. A fourth copy is a fourth place to drift, so it is
+// pinned to the same reference the three status-log copies are checked against.
+
+const rulesBlock = (text) => {
+  const m = text.match(/\*\*Rules\.\*\*[\s\S]*$/)
+  return m ? norm(m[0]) : null
+}
+
+function runLogPreamble() {
+  for (const block of fences(read('run'))) {
+    const lines = block.split('\n')
+    if (/^# .+ — run log\s*$/.test(lines[0])) return block
+  }
+  throw new Error(`no run-log preamble fence in ${FILES.run} — the run record's file has no template to create it from`)
+}
+
+function checkRunLogRules() {
+  const reference = rulesBlock(statusPreamble('epic'))
+  if (!reference) throw new Error(`no **Rules.** block in the status-log preamble in ${FILES.epic}`)
+  const runRules = rulesBlock(runLogPreamble())
+  if (runRules !== reference)
+    throw new Error(
+      `the run log's Rules block in ${FILES.run} differs from the status log's in ${FILES.epic} — they are one rule and move in the same commit`,
+    )
 }
 
 // ── 2. The two risk lists are one list ───────────────────────────────────────
@@ -308,6 +338,11 @@ const PHRASES = [
     files: ['run', 'methodology'],
   },
   {
+    why: "where a run record is written — runs.md, never the status.md the ticket entries share. The run skill writes it, the driver's `next` strings tell the session to, the retro's miner reads it, and README's document table names it; a document that keeps the old home sends one of those writers back onto the shared file tail",
+    re: /runs\.md/,
+    files: ['run', 'retro', 'workflow', 'readme', 'script'],
+  },
+  {
     why: 'machine-runnable acceptance criteria — the CHECK/EXPECT format is parsed and executed by tickets.mjs, taught by the planning skill, and run by both execution lanes and the driver',
     // Absorbs the deliberate wording variants: a literal "CHECK: <command>"
     // template line, the prose "CHECK/EXPECT", and the backticked
@@ -331,6 +366,7 @@ function checkPhrases() {
 
 const CHECKS = [
   ['status-log preamble identical across its three copies', checkPreambleCopies],
+  ["the run log's Rules block is the status log's, verbatim", checkRunLogRules],
   ['the two risk lists cover the same trigger set', checkRiskLists],
   ['skill heading templates match the parser regexes', checkTemplates],
   ['hook refusal message quoted verbatim by the ticket skill', checkRefusalMessage],

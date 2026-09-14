@@ -417,12 +417,35 @@ says why; point at it rather than restating it.
 
 ## 6. The run record
 
-Append to the epic's `status.md` on `epic/<name>`, in session, from the step
-4 result — fenced prose quoted, markers dropped. The heading names no ticket
-ID, so the board ignores it; `spend` reads the record by it, so `doctor`
-flags one that will not parse. A qualifier in parentheses after the date is
-allowed and is how same-day runs are told apart — `### Run — 2026-08-25
-(second run) — halted`:
+Append to the epic's **`runs.md`** on `epic/<name>`, in session, from the
+step 4 result — fenced prose quoted, markers dropped. **Never `status.md`:**
+that file's tail belongs to the ticket entries, written on ticket branches
+while this record is written on the epic branch, and two writers on one tail
+cost a hand merge on every mid-ticket halt. The heading names no ticket ID,
+so the board ignores it; `spend` reads the record by it from either file, so
+`doctor` flags one that will not parse — and, once `runs.md` exists, a `###
+Run —` record appended to `status.md` after it. A qualifier in parentheses
+after the date is allowed and is how same-day runs are told apart — `### Run
+— 2026-08-25 (second run) — halted`.
+
+`find --json` and `epics --json` carry `runsDoc` (with `runsDocExists`), so
+the path is read, never built by hand. If `runs.md` does not exist, create it
+with this exact preamble — the **Rules** block is the status log's, verbatim,
+because it is one rule and `check-invariants.mjs` holds the two copies
+together:
+
+```markdown
+# <Name> epic — run log
+
+Append-only record of unattended runs. Tickets: `epics/<name>/tickets.md`.
+Ticket entries and their review addenda stay in `epics/<name>/status.md`.
+
+**Rules.** Append only. Corrections are new dated addenda beneath the entry they
+correct, never edits. Report counts, not adjectives. The **Owed** line is
+required even when empty.
+```
+
+Then the record itself:
 
 ```markdown
 ### Run — <YYYY-MM-DD> — <completed | halted>

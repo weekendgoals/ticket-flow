@@ -90,7 +90,15 @@ checks all of it, so run that first in a new project.
 | `CLAUDE.md` (root, and per area) | What the project **is** | Edited in place, **in the same commit** as the change it describes |
 | `epics/<e>/tickets.md` | What the work **is** | Written up front. Edited to re-plan, never to record progress |
 | `epics/<e>/status.md` | What **happened** | Append-only. Corrections are dated addenda |
+| `epics/<e>/runs.md` | What the **runs** did | Append-only. Corrections are dated addenda |
 | `epics/<e>/context/` | What it was based on | Frozen. Add, never rewrite |
+
+`runs.md` exists because two writers used to share one file tail: a ticket
+worker appends its entry on a ticket branch while an unattended run appends
+its record on the epic branch, and every mid-ticket halt then cost a hand
+merge. It is created by the first run record written after an epic splits
+them out; logs written before the split keep their records in `status.md`
+and are still read there, because an append-only log is never rewritten.
 
 The status log is a **diary, not a dashboard**. "Which tickets are done" is
 answered by `/flow:tickets`, computed fresh from ticket headings, status-log
@@ -354,11 +362,13 @@ remain first-class; CHECK is for the criteria a command can decide outright.
 
 **Spend is derived too.** `tickets.mjs spend [epic]` compiles the recorded
 token ledger — per ticket, per role (worker, reviewer, re-review,
-disposition, shell proxies) and per epic — from the three places the status
-log carries a figure: a ticket entry's `**Tokens:**` line, its review
-addendum's `Worker tokens (implementation leg): <n>; Reviewer tokens: <n>`
-phrases, and a run record's per-ticket `<ID> worker=<n> reviewer=<n> …`
-groups. Recorded figures only, exactly as the log says: `unknown` stays
+disposition, shell proxies) and per epic — from the three places the epic's
+logs carry a figure: a ticket entry's `**Tokens:**` line in `status.md`, its
+review addendum's `Worker tokens (implementation leg): <n>; Reviewer tokens:
+<n>` phrases, and a run record's per-ticket `<ID> worker=<n> reviewer=<n> …`
+groups in `runs.md` — or in `status.md`, for the logs written before the run
+records were split out. Recorded figures only, exactly as the log says:
+`unknown` stays
 unknown, a ticket with nothing recorded is reported as such, and nothing is
 estimated or read from a transcript. `--json` returns the same ledger for
 the retro, which reads this instead of summing the log by hand. A run
@@ -366,7 +376,11 @@ record's heading may carry a qualifier in parentheses after its date (how
 same-day runs are told apart); `doctor` flags a run heading that will not
 parse and a run record whose Tokens line carries figures but no groups —
 the ledger silently reads nothing from either, and the repair is a dated
-addendum beneath the record, never an edit.
+addendum beneath the record, never an edit. It also flags a run record
+appended to `status.md` once that epic has a `runs.md`, dated from the first
+record in it on: the ledger still reads the figures, but the two writers are
+back on one file tail. Records that predate the split are never flagged —
+moving them is what append-only forbids.
 
 Two blind spots worth knowing: the board reads *this checkout's* view of the
 remote, so fetch first when the answer matters; and `shipped` means some commit
