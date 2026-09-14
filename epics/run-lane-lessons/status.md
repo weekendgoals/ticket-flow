@@ -362,3 +362,93 @@ run-epic 92, codex 8. Pre-existing: none found in this range. Nothing
 deferred. Worker tokens (implementation leg): 140,576; Reviewer tokens:
 370,653 — 170,753 for the first review and 199,900 for the bounded
 re-review.
+
+### RUN-3 — The retro asks what every halt bought — 2026-09-14 — DONE
+
+**Built:** `skills/retro/SKILL.md` step 4 is seven questions, not six: the
+seventh reads every `### Run —` record's **Halted on:** line, condenses the
+halt, classifies its cause as work, plan, plugin/environment or policy, and
+says what the human did to resume and whether the later record shows the stop
+retired a real risk or fired on a clean state — flagging a clean policy trip
+as a proposal against the policy and a plugin/environment halt as a ticket for
+the plugin's own repository. Step 5's proposals gain the matching **Halts**
+section, README's `/flow:retro` row names the question and its four classes,
+and METHODOLOGY § "Why an epic ends with a retro" records why twelve halts sat
+unexamined. CHANGELOG carries the entry. The run record's shape and
+`tickets.mjs` are untouched — the classification is the retro's reading, not
+the driver's claim.
+
+**Mode:** autonomous — supervisor-spawned worker worker:RUN-3 (opus)
+
+**Tokens:** observed by the supervisor — see the review addendum
+
+**Verified:** `node plugins/flow/scripts/tickets.mjs check RUN-3` — 1/1 checks
+passed (exit 0) on the head of `run-3`; on the base tree (`17fe07e`, before
+any edit) the same command printed `0/1 checks passed` ("exit 0, but the
+output does not contain `7`"), and the criterion's own pipeline run against
+`17fe07e:plugins/flow/skills/retro/SKILL.md` printed `6` — red before, green
+after. `node plugins/flow/scripts/check-invariants.mjs` — all 5 checks ✓, exit
+0 (run after the skill, README and METHODOLOGY edits). `node
+plugins/flow/scripts/tickets.mjs doctor` — exit 0, 5 ✓ lines, no warning. The
+rest of the CI set, unchanged by this documentation-only ticket and run to
+confirm it: `tickets.test.mjs` `# pass 58`, `ticket-session-guard.test.mjs`
+`# pass 14`, `check-invariants.test.mjs` `# pass 13`, `board.test.mjs`
+`# pass 9`, `plan-page.test.mjs` `# pass 8`, `run-epic.test.mjs` `# pass 92`,
+`runners/codex.test.mjs` `# pass 8` — `# fail 0` on every one.
+
+demonstrate — a retro miner given a status log with one halted run record: a
+fresh-context general agent was spawned with the retro skill's step 2 prompt
+(execute steps 3–5 as written, edit nothing) and given a scratchpad excerpt of
+weekendgoals' real `epics/redesign-foundation` — its `status.md` cut after the
+first ticket, so it holds FND-1's entry, its review addendum and exactly one
+`### Run — 2026-09-13 — halted` record, with `tickets.md` cut to match and
+`repoRoot` the real (read-only) weekendgoals checkout. It returned the Halts
+section below, verbatim:
+
+> ## Halts
+>
+> - **FND-1 — per-ticket token budget, 2026-09-13 — class: policy — fired on
+>   a clean state, bought nothing.** Tripped at 429,137 output tokens against
+>   a 400k limit that had been raised to 600k mid-run; tripped *after* FND-1's
+>   merge was confirmed, with 0 Important findings on re-review and 3/3
+>   acceptance. Human resumed by relaunching the run (FND-2 had not started).
+>   **Transferable, two ways:**
+>   - *Policy proposal:* a per-ticket budget read once at launch is not a
+>     budget, it is a launch-time snapshot. Either the driver re-reads it at
+>     each ticket boundary, or the budget stops being editable mid-run and the
+>     skill says so. Today it is editable and ignored, which is the worst of
+>     the three.
+>   - *Plugin-repository ticket (ticket-flow):* see draft T-A below.
+> - No other `### Run —` record in this excerpt.
+
+Its step 4 answer to the seventh question carried the same classification with
+the evidence quoted from the record (`ff2e9351`, merged as `4b919ddf`;
+"Halted on: a ticket's pass exceeding the epic's per-ticket token budget …
+after the merge was confirmed"), and its proposals turned the transferable
+halves into a draft plugin ticket. Every classification in it is the miner's;
+nothing in the fixture names a class.
+
+**Decisions:** (1) METHODOLOGY's converge paragraph opened "A sixth mining
+question closes the loop the ledger cannot see"; it now opens "The converge
+question …". The ordinal was a statement about how many questions there were,
+and this ticket makes it false — the converge question is the fifth in list
+order and no longer the newest. The sentence's content is untouched. (2) No
+`check-invariants.mjs` phrase was added for the four class names. The ticket's
+scope names four documents and the acceptance CHECK counts the bullets in the
+skill, which is the copy the miner executes; a `PHRASES` entry over prose that
+each document states once, plus the drift test and the CLAUDE.md count it
+would move, is a fifth artifact this ticket was not asked for. Recorded for
+the retro, not owed. (3) The demonstration used a truncated real log rather
+than the `tickets.test.mjs` sigma fixture: the fixture's run records carry no
+`**Halted on:**` line, which is the line the new question reads, so it could
+not have shown the question working. The miner's own report is honest that the
+excerpt is an excerpt. (4) The working tree carries untracked research files
+(`club-town-*`, `football-ground-*`, `venue-city-verdicts.md`, `scripts/`)
+that are not this ticket's; the supervisor's spawn prompt identified them.
+Only the four files this ticket changed were staged, and none of those files
+appears in the commit range. (5) The seventh question ends with "An epic run
+attended, with no `### Run —` records: say so and move on" — the shape the
+first question already uses for an epic with no Outcome line, and the case
+this very epic is in.
+
+**Owed:** Nothing.
