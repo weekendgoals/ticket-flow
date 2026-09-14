@@ -120,7 +120,12 @@ const resolvedOk = {
 const acceptOk = { outcome: 'ran', total: 2, passed: 2, allPassed: true, problems: 0, failures: [], detail: '' }
 const acceptNone = { outcome: 'ran', total: 0, passed: 0, allPassed: true, problems: 0, failures: [], detail: '' }
 const mergedOk = { outcome: 'merged', detail: '' }
-const integratedOk = { commandSucceeded: true, state: 'integrated', prUrl: '' }
+// The verify step reports the board's `ticketBudget` alongside the state: it is
+// the door the per-ticket ceiling is re-read through, so every verify stub
+// carries the field the way the real command prints it — null when the epic
+// declares no `Ticket budget:` line.
+const integratedOk = { commandSucceeded: true, state: 'integrated', prUrl: '', ticketBudget: null }
+const integratedWithBudget = n => ({ ...integratedOk, ticketBudget: n })
 
 // A one-ticket run whose stages can each be overridden; anything not overridden
 // takes the clean path, so each test states only what it is about.
@@ -1400,6 +1405,74 @@ test('an unusable budget value refuses the run', async () => {
     assert.match(r.out.threw, /ticketBudget must be a positive integer/, String(bad))
     assert.equal(r.calls.length, 0)
   }
+})
+
+// ---- the budget re-read at the verify step ----------------------------------
+// The ceiling is re-read from the board at the verify step, after the merge's
+// `git pull --ff-only` has brought the epic branch's documents forward — so a
+// raise made while a ticket was running governs that ticket's own check. Each
+// case below names the phrase the epic's acceptance criterion greps for.
+
+test('budget re-read: a budget raised on the epic branch during a ticket governs that ticket\'s own post-merge check', async () => {
+  // Launched at 50k, the ticket spends 60k — the launch ceiling would halt it.
+  // The epic branch now carries 100k, which is what the verify step reads.
+  const r = await drive(oneTicket({ 'verify:PAY-1': integratedWithBudget(100000) }), { ...ARGS, ticketBudget: 50000 }, meter(60000))
+  assert.equal(r.out.outcome, 'completed', JSON.stringify(r.out.haltedOn))
+  assert.equal(r.out.ticketRecords[0].outputTokensObserved, 60000)
+  assert.ok(
+    r.logs.some(l => l === "PAY-1: ticket budget re-read from the epic branch — 50000 -> 100000; this ticket's own check uses the new ceiling."),
+    r.logs.join('\n'),
+  )
+  // And the raise is not a one-ticket waiver: it is the ceiling from here on.
+  const lowered = await drive(oneTicket({ 'verify:PAY-1': integratedWithBudget(55000) }), { ...ARGS, ticketBudget: 100000 }, meter(60000))
+  assert.equal(lowered.out.outcome, 'halted')
+  assert.match(lowered.out.haltedOn.detail, /against the epic's budget of 55000/)
+})
+
+test('budget re-read: a verify report with a malformed budget halts, and the ticket stays merged', async () => {
+  // A value that is present but not a positive integer of output tokens.
+  for (const bad of ['600k', 0, -5, 1.5]) {
+    const r = await drive(oneTicket({ 'verify:PAY-1': integratedWithBudget(bad) }), { ...ARGS, ticketBudget: 50000 }, meter(1000))
+    assert.equal(r.out.outcome, 'halted', String(bad))
+    assert.equal(r.out.haltedOn.stopCondition, "a document/code contradiction — reported by a worker, or met by the script's own checks", String(bad))
+    assert.match(r.out.haltedOn.detail, /not a positive integer of output tokens/, String(bad))
+    assert.match(r.out.haltedOn.detail, /stays merged/, String(bad))
+    assert.equal(r.out.ticketRecords[0].result, 'integrated', String(bad))
+  }
+  // A report missing the field entirely is the same class: the run cannot say
+  // what ceiling is in force, so it does not fall back to the launch value.
+  const missing = await drive(
+    oneTicket({ 'verify:PAY-1': { commandSucceeded: true, state: 'integrated', prUrl: '' } }),
+    { ...ARGS, ticketBudget: 50000 },
+    meter(1000),
+  )
+  assert.equal(missing.out.outcome, 'halted')
+  assert.match(missing.out.haltedOn.detail, /carried no `ticketBudget` field at all/)
+})
+
+test('budget re-read: a reported null keeps the last value in force and logs it', async () => {
+  // `**Ticket budget:** 600k` parses as null and the run never runs doctor —
+  // so a line that stopped parsing must not lift the ceiling silently.
+  const r = await drive(oneTicket(), { ...ARGS, ticketBudget: 50000 }, meter(60000))
+  assert.equal(r.out.outcome, 'halted')
+  assert.equal(r.out.haltedOn.stopCondition, "a ticket's pass exceeding the epic's per-ticket token budget")
+  assert.match(r.out.haltedOn.detail, /against the epic's budget of 50000/)
+  assert.ok(r.logs.some(l => /^PAY-1: the epic branch now reports no `Ticket budget:` line; keeping the ceiling of 50000 in force\./.test(l)), r.logs.join('\n'))
+  // With no ceiling in force there is nothing to keep, and nothing to log.
+  const none = await drive(oneTicket(), ARGS, meter(60000))
+  assert.equal(none.out.outcome, 'completed')
+  assert.ok(!none.logs.some(l => /keeping the ceiling/.test(l)), none.logs.join('\n'))
+})
+
+test('budget re-read: a budget appearing mid-run with no meter halts, naming the missing meter', async () => {
+  // Launch refuses an unmeterable ceiling; a ceiling that appears on the epic
+  // branch mid-run is refused at the same door on the same terms.
+  const r = await drive(oneTicket({ 'verify:PAY-1': integratedWithBudget(50000) }), ARGS, null)
+  assert.equal(r.out.outcome, 'halted')
+  assert.equal(r.out.haltedOn.stopCondition, "a document/code contradiction — reported by a worker, or met by the script's own checks")
+  assert.match(r.out.haltedOn.detail, /no budget meter to enforce it/)
+  assert.match(r.out.haltedOn.detail, /declares a `Ticket budget:` of 50000/)
+  assert.equal(r.out.ticketRecords[0].result, 'integrated')
 })
 
 // ---- arguments --------------------------------------------------------------
