@@ -327,3 +327,38 @@ cases). The root instructions sanction a stale-low count ("the count grows,
 the fail line does not"), so only the count this ticket changed was moved.
 
 **Owed:** Nothing.
+
+**Addendum — review — 2026-09-14 — sonnet/high:** Two Important, both fixed;
+0 nits. Reviewed head `1bf6aa8`. (1) The new section split halts into "before
+the status entry" and "mid-ticket" and put a reviewer-spawn failure and a
+blocked worker in the first — both wrong: the driver-spawned worker commits
+its status entry and pushes its branch (steps 1–6 and step 9) before the
+review phase is reached at all, `run-epic.mjs` enters that phase only on
+`branch-pushed`, and `resolveState` reads a BLOCKED entry as `blocked`.
+Fixed in `2e3cfd1`: the section now sorts by the one thing the board reads —
+the status entry — into three shapes, with a reviewer-spawn failure moved to
+the DONE-entry-on-a-pushed-branch shape where it belongs, `in-progress`
+named as the shape-1 case a local branch produces, and BLOCKED/ABANDONED its
+own shape. The reviewer verified both new evidence quotes verbatim against
+`redesign-foundation/status.md:363` and `groundhopper-foundation/status.md:237`
+in the weekendgoals repository. (2) The section advertised `/flow:ticket <ID>`
+as the way out of a halted run's ticket, but the ticket skill sent a worker
+through steps 1–6 unconditionally and step 3 ran `git checkout -b <branch>`
+unconditionally, which fails on the branch a halted run already pushed — a
+refusal's advertised recovery that does not work in the refused state. Fixed
+in `ac17a58`: `skills/ticket/SKILL.md` step 0 gains the recovery paragraph
+(ticket `done` or `in-review` with `origin/<branch>` present: build nothing,
+check the branch out, continue at step 7, 8 or 10 by whether the entry
+carries an addendum), step 3 gains the existing-branch exception with its
+reason, and the escape-hatch paragraph points at both — so the recovery is
+reachable at the point a supervisor actually reads it. Bounded re-review of
+`1bf6aa8..ac17a58`: **0 Important**, nothing from the first review left
+unaddressed, reviewed head `ac17a58`. Verified after the fixes:
+`tickets.mjs check RUN-4` 3/3 (the grep counts held exact — the ticket skill
+naming the section is a different file), `check-invariants.mjs` exit 0 (run
+after the ticket-skill edit), `doctor` exit 0, and every suite `# fail 0`:
+check-invariants 13, tickets 58, session-guard 14, board 9, plan-page 8,
+run-epic 92, codex 8. Pre-existing: none found in this range. Nothing
+deferred. Worker tokens (implementation leg): 140,576; Reviewer tokens:
+370,653 — 170,753 for the first review and 199,900 for the bounded
+re-review.
