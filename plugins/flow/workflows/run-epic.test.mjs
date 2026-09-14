@@ -1523,6 +1523,15 @@ test('the resolve prompt tells the proxy what to report for the budget, and why 
   // pins the budget instruction the same way.
   const p = call(await drive(oneTicket()), 'resolve:PAY-1').prompt
   assert.match(p, /FACT 3 — the epic's per-ticket token ceiling, as the signed-off document declares it on `origin\/epic\/payments`/)
+  // The fetch, and its position: `--from` reads the LOCAL remote-tracking
+  // ref, which nothing updates between this ticket's start and here — without
+  // the fetch above the read, the ceiling is the one that stood before the
+  // worker ran, which is the staleness the whole read exists to remove.
+  const fetchAt = p.indexOf('git fetch origin epic/payments')
+  const findAt = p.indexOf('find PAY-1 --json --from origin/epic/payments')
+  assert.ok(fetchAt !== -1, 'the epic branch is fetched')
+  assert.ok(findAt !== -1 && fetchAt < findAt, 'the fetch precedes the read')
+  assert.match(p, /Run the fetch first and do not skip it/)
   assert.match(p, /`--from` is what makes this fact trustworthy/)
   assert.match(p, /the branch under review cannot raise the ceiling it is judged by/)
   assert.match(p, /Report the `ticketBudget` field exactly as the JSON prints it/)

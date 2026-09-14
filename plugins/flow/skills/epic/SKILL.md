@@ -185,8 +185,9 @@ these two lines comma-free, or leave it off.
 ceiling for unattended runs; the driver halts after any ticket that exceeds
 it (the ticket stays merged), so a runaway ticket is a signal, not a bill.
 Unlike every other line here, this one is re-read during a run: each ticket's
-resolve step reads it off `origin/epic/<name>` before the merge, so a raise
-you commit and push to the epic branch governs the ticket that is running.
+resolve step fetches the epic branch and reads the signed-off document from
+it before the merge, so a raise you commit and push to the epic branch
+governs the ticket that is running.
 It is read from that ref and never from the ticket's own branch, so a branch
 cannot raise the ceiling that judges it. Removing the line mid-run does not
 lift the ceiling: the run keeps the last value and logs that it did.>

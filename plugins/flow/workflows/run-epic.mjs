@@ -1579,8 +1579,11 @@ Report what it printed as \`headSha\`, **verbatim** — never reconstructed from
 FACT 3 — the epic's per-ticket token ceiling, as the signed-off document declares it on \`origin/${epicBranch}\`:
 
 \`\`\`bash
+git fetch origin ${epicBranch}
 ${TICKETS} find ${id} --json --from origin/${epicBranch}
 \`\`\`
+
+Run the fetch first and do not skip it: \`--from\` reads the LOCAL remote-tracking ref, which nothing has updated since before this ticket's worker started — without the fetch the ceiling would be the one that stood hours ago, which is exactly the staleness this read exists to remove. A fetch writes refs and nothing else, so this step is still read-only in every sense that matters: no merge, no checkout, no file changed.
 
 \`--from\` is what makes this fact trustworthy: it reads the epic's declarations from that ref, not from the working tree, so the branch under review cannot raise the ceiling it is judged by. Report the \`ticketBudget\` field exactly as the JSON prints it — the number when it is a number, \`null\` when it is null. \`null\` is an answer (most epics declare no budget), not a failure. Never convert it, never round it, never substitute a number you saw earlier in this run.${fixBoundsFacts}
 
@@ -1588,7 +1591,7 @@ Report outcome "resolved" once every command above has run, whatever it printed.
 
 ${PROMPT_RULE}
 
-${NO_MAIN} You are read-only here in any case: nothing in this task writes anything.`,
+${NO_MAIN} You are read-only here in any case: the two fetches update remote-tracking refs, and nothing else in this task writes anything — no merge, no push, no checkout, no file changed.`,
     { label: `resolve:${id}`, phase: 'Resolve', schema: RESOLVE_SCHEMA, effort: 'low', model: 'haiku' },
   )
 

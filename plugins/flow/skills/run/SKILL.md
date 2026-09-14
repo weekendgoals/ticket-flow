@@ -155,14 +155,20 @@ refuses to start.
 `ticketBudget` is the **launch-time** value, and the only one of these the
 script does not keep: the ceiling is **re-read at every refresh** of the
 epic's signed-off document. Concretely, each ticket's **resolve step** — the
-read-only one, before the merge — runs `tickets.mjs find <ID> --json --from
-origin/epic/<name>` and reports the `Ticket budget:` line as it stands on
-that ref; the post-merge check compares the ticket's spend against that
-number. So a raise a human commits and pushes to `epic/<name>` while a ticket
-is running governs that ticket's own check. `--from` is the load-bearing
-half: read after the merge instead, the ceiling would come from the merged
-tree, where the ticket branch's own copy of the preamble sets the number that
-judges it — the same reason acceptance runs `check --from origin/epic/<name>`.
+read-only one, before the merge — **fetches the epic branch and reads the
+signed-off document from it** (`git fetch origin epic/<name>`, then
+`tickets.mjs find <ID> --json --from origin/epic/<name>`), reporting the
+`Ticket budget:` line as it stands on that ref; the post-merge check compares
+the ticket's spend against that number. So a raise a human commits and pushes
+to `epic/<name>` while a ticket is running governs that ticket's own check.
+Both halves are load-bearing. **The fetch**, because `--from` reads the local
+remote-tracking ref and nothing else updates it between the ticket's start
+and here — the run's only full fetch is in refresh+select, before the worker,
+and the merge's `git pull --ff-only` comes after this read; without the fetch
+the ceiling would be the one that stood hours ago. **`--from`**, because read
+after the merge instead, the ceiling would come from the merged tree, where
+the ticket branch's own copy of the preamble sets the number that judges it —
+the same reason acceptance runs `check --from origin/epic/<name>`.
 Everything else here (`reviewerModel`, `consequencePaths`,
 `fixBoundsExclude`, the models) stays fixed at what you passed.
 
@@ -247,10 +253,14 @@ Everything else here (`reviewerModel`, `consequencePaths`,
   entries** must carry a dated `Addendum — review —` line (matched by shape,
   never by the run's pinned date, which diverges when a run crosses
   midnight), and `git rev-parse origin/<branch>` must yield a head SHA of
-  the right shape. The same step reads the epic's per-ticket ceiling with
-  `tickets.mjs find <ID> --json --from origin/epic/<name>` — the signed-off
-  document, not this branch's copy of it, so the party under review cannot
-  raise the ceiling it is judged by. A reported value that is not a positive
+  the right shape. The same step **fetches the epic branch and reads the
+  signed-off document from it** for the per-ticket ceiling
+  (`git fetch origin epic/<name>`, then `tickets.mjs find <ID> --json --from
+  origin/epic/<name>`) — that ref and not this branch's copy of the document,
+  so the party under review cannot raise the ceiling it is judged by, and
+  fetched first because the local ref is otherwise as old as the ticket. A
+  fetch writes refs and nothing else, so the step stays read-only in the
+  sense that matters: no merge, no checkout, no file changed. A reported value that is not a positive
   integer, or missing altogether, halts on the contradiction condition; a
   reported `null` **keeps the last ceiling in force and logs it**, because a
   line that stopped parsing (`**Ticket budget:** 600k` parses as null, and
@@ -384,7 +394,7 @@ that resumes past one. The run halts:
   the runtime; the script refuses to start if no meter exists). Checked
   **after** the merge is confirmed, because nothing un-merges: the ticket
   stays integrated and the run stops before the next. The ceiling it uses is
-  the one the resolve step read off `origin/epic/<name>` a moment before the
+  the one the resolve step fetched and read off `origin/epic/<name>` a moment before the
   merge, not the launch-time `args` value — so the halt's advice to raise the
   `Ticket budget:` line is advice that works inside the same run, provided
   the raise is committed and pushed to the epic branch. Each ticket's meter
