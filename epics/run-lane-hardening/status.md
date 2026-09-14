@@ -263,3 +263,72 @@ that since it shipped and `Fix bounds exclude:` inherits it. Both are older
 than this ticket and neither is in its scope; the skills now warn about (b)
 in prose, which is a mitigation, not the fix. Nothing else was left unfixed.
 Worker tokens (implementation leg): 170,716; Reviewer tokens: 153,837.
+
+### HARD-3 — The ticket budget is re-read at every refresh — 2026-09-14 — DONE
+
+**Built:** The unattended run's per-ticket token ceiling is no longer fixed at
+launch. `FIND_SCHEMA` requires a `ticketBudget` field, the verify step's
+prompt asks the proxy to report it verbatim off `tickets.mjs find <ID>
+--json`, and a re-read block ahead of the post-merge budget check makes that
+reported number the ceiling the check uses — so a `Ticket budget:` line
+raised on `epic/<name>` while a ticket is running governs that ticket's own
+check, which is the moment FND-1's raise would have governed its own. Three
+code checks guard the reported value: missing or not a positive integer halts
+as a contradiction, a ceiling with no runtime meter is refused as launch
+refuses it, and a reported `null` keeps the last ceiling in force and logs
+that it did. `skills/run/SKILL.md` (args block, `Verifies` bullet, the budget
+and contradiction stop conditions), `skills/epic/SKILL.md`'s `Ticket budget:`
+template line, README's configuration table and CHANGELOG say so.
+
+**Mode:** autonomous — supervisor-spawned worker worker:HARD-3 (opus)
+
+**Tokens:** observed by the supervisor — see the review addendum
+
+**Verified:** On the base tree (`e444c83`) before any edit, `node
+plugins/flow/scripts/tickets.mjs check HARD-3` was 0/2 red — the named-case
+pattern printed no `# pass 4`, the skill grep exited 1. After the change, on
+this branch: `node plugins/flow/scripts/tickets.mjs check HARD-3` 2/2 passed,
+with `node --test --test-name-pattern 'budget re-read'
+plugins/flow/workflows/run-epic.test.mjs` printing exactly `# pass 4` and the
+skill grep printing `budget-live`. Suites: `node --test
+plugins/flow/workflows/run-epic.test.mjs` 105/105 (101 before, four added);
+tickets 60/60; session guard 14/14; check-invariants 13/13; board 9/9;
+plan-page 8/8; codex 8/8 — every suite `# fail 0`. `node
+plugins/flow/scripts/check-invariants.mjs` exit 0 (five checks); `node
+plugins/flow/scripts/tickets.mjs doctor` exit 0; `node --check
+plugins/flow/scripts/tickets.mjs` exit 0; the driver's runtime-style parse
+(CLAUDE.md's `AsyncFunction` command, since `node --check` rejects the
+top-level `return`) exit 0.
+
+**Decisions:** (1) The two new halts — a malformed reported budget, and a
+ceiling that appears where no meter exists — fire on `STOP.contradiction`
+rather than a widened `STOP.ticketBudget`. Stop strings are what a retro
+files halts by, and rewording the budget string would re-file every existing
+budget halt; neither new case is an overspend anyway. (2) That choice
+contradicted a sentence in the run skill: the contradiction stop condition
+claimed its checks all run "before the merge command exists, so a halt here
+merged nothing", which the re-read's position at the verify step falsifies.
+Recorded here rather than silently left: the bullet now names the budget
+re-read as the one exception, with the reason it must sit after the merge —
+the refreshed document it reads exists only once the merge has pulled it —
+and both halt details say the ticket stays merged. (3) `ticketBudget` is both
+declared in `FIND_SCHEMA` (as `['integer','null']`, in `required`) and
+checked in code, not one or the other: a schema is a request to an agent, and
+the driver's standing rule is that every fact it acts on carries its own code
+check. (4) The re-read block sits ahead of the `if (METER)` guard, because
+the no-meter case is only reachable outside it. (5) The phrase "re-read at
+every refresh" is stated with its mechanism named in the same sentence
+everywhere it appears — the `git pull --ff-only` inside each ticket's merge,
+read back by that ticket's verify step. "Refresh" there is the refresh of the
+epic's documents, not the driver's Refresh phase, which the ticket names as
+the wrong door and which the text says so about. (6) CLAUDE.md's Commands
+section quotes suite counts below what the suites now print (`run-epic # pass
+78` against 105, `tickets # pass 36` against 60, and others). Nothing edited:
+that section states the counts grow and only the fail line is fixed. (7)
+HARD-2's addendum handed on a pre-existing defect touching a `Ticket-budget:`
+label — a hyphenated declaration label escapes doctor's near-miss scan. It is
+about how the label parses, not about where the parsed value is read, so it
+stays with its named owner (a follow-up run-lane ticket, or this epic's
+retro) and was not touched here.
+
+**Owed:** Nothing.
