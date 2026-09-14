@@ -61,7 +61,7 @@ anything in `context/`, and the shipped work itself:
 instruction files for the areas the epic touched, as they are **now**, read
 from under `repoRoot`.
 
-## 4. Mine it — six questions
+## 4. Mine it — seven questions
 
 - **Did it work?** The **Outcome** line named an observable change, its
   evidence and a reversal condition — check them: achieved (cite the
@@ -91,13 +91,36 @@ from under `repoRoot`.
   that failed to stop a wander. Sort into fixes to how *this project* plans
   (ground rules) and lessons that transfer to *any* project — flag the
   transferable ones as candidates for the methodology itself.
+- **What did the run halt on, and what did each halt buy?** For every
+  `### Run —` record in the log — its **Halted on:** line names the stop
+  condition, the ticket and the stage: the halt condensed to a sentence, its
+  cause classified as **work** (a defect in the implementation), **plan** (a
+  defective, vacuous or decorative CHECK, a wrong assumption in
+  `tickets.md`), **plugin/environment** (the driver, a spawn failure, a
+  session limit, a buffer, a tooling fault) or **policy** (a budget or bounds
+  trip), what the human did to resume, and whether the later record shows the
+  stop retired a real risk or fired on a clean state. Every halt costs a human
+  a resume, so a stop that keeps firing clean is paid for and buys nothing: a
+  **policy** trip whose later re-review found nothing is a proposal against
+  the policy, and a **plugin/environment** halt is a candidate ticket for the
+  plugin's own repository — flag both as transferable, the way the question
+  above flags transferable planning lessons. The classification is yours to
+  make, not the record's to carry: the run that stopped could not judge its
+  own stop, and you read the records you did not write. An epic run attended,
+  with no `### Run —` records: say so and move on.
 
 ## 5. Propose — the miner drafts, the invoking session gates
 
 Draft, ready to hand back unchanged: instruction-file edits as concrete
 before/after lines, owed work as draft ticket sections ready to append,
-planning lessons with the evidence (quote the log), and the epic's token
-spend from `node "${CLAUDE_PLUGIN_ROOT}/scripts/tickets.mjs" spend <epic>`
+planning lessons with the evidence (quote the log), a **Halts** section —
+one line per halt event with its class, what the human did to resume, and
+whether it retired a real risk or fired on a clean state, the transferable
+ones named as such (a policy proposal, a plugin-repository ticket), and
+"none: this epic ran attended" when there are no run records — because a
+stop that fires clean charges a human for a resume and is invisible in every
+other section — and the epic's token spend from
+`node "${CLAUDE_PLUGIN_ROOT}/scripts/tickets.mjs" spend <epic>`
 — the derived ledger, each ticket counted **once** from wherever its lane
 recorded it (an attended ticket's entry and addendum, a driver-run ticket's
 run record), with `unknown` figures named rather than counted as zero. Do

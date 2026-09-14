@@ -22,7 +22,7 @@ repository).
 | `/flow:spend [epic]` | The **recorded token ledger** — per ticket, per role (worker, reviewer, re-review, disposition, proxies) and per epic, derived from the status logs' Tokens lines, addendum phrases and run records. `unknown` stays unknown, nothing is estimated |
 | `/flow:review [range]` | Review a commit range and report. Used by `/flow:ticket`; runnable on its own |
 | `/flow:doctor` | Is this project ready for the flow? Preconditions, merge settings, instruction-file quality, and headings that would silently misparse |
-| `/flow:retro [epic]` | Close a finished epic: a **fresh-context miner** reads the status log and review addenda and drafts the lessons and owed work — the invoking session often planned or ran the epic, so it mines nothing itself — then the approval gate and the shipping stay in-session, into instruction files and tickets |
+| `/flow:retro [epic]` | Close a finished epic: a **fresh-context miner** reads the status log and review addenda and drafts the lessons and owed work — the invoking session often planned or ran the epic, so it mines nothing itself — then the approval gate and the shipping stay in-session, into instruction files and tickets. Its **seventh question asks what the run halted on and what each halt bought**: every `### Run —` record's halt classified as **work**, **plan**, **plugin/environment** or **policy**, with what the human did to resume and whether the stop retired a real risk or fired on a clean state — a policy stop that keeps firing clean becomes a proposal against the policy, a plugin halt a ticket for the plugin's own repository |
 
 You review the pull request and merge it. **There is no command after the
 merge.** In a release epic the pull request you review is the release one —

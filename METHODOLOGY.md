@@ -552,12 +552,32 @@ it is already written down, and none of it changes the next epic unless
 something moves it from the record into the rules. That move is the retro: owed
 work becomes tickets, repeated rediscoveries become instruction-file lines,
 repeated review findings become invariants the next reviewer judges against.
-A sixth mining question closes the loop the ledger cannot see (adapted from
+The converge question closes the loop the ledger cannot see (adapted from
 Spec Kit's converge step, 2026-08-19): the delta between the documents'
 promises and what git says actually shipped — unshipped scope no Owed line
 recorded, shipped behaviour no ticket owns, instruction files the work made
 stale. The record is honest about what was written down; only the diff
 knows what was not.
+
+The seventh question does the same for the run lane's halts (2026-09-14).
+The first three release epics run unattended halted twelve times across
+twenty-three tickets: five on the plugin or the environment, four on a
+policy trip, two on a plan defect, one on a code defect. Every one of them
+was written down — the run records carry a **Halted on:** line quoting the
+stop condition verbatim — and every one of them cost a human a resume. None
+was ever examined: three fresh-context retros mined those epics and read
+straight past the halts, because none of the six questions asked. That is
+the diary failure one level up, and the same move fixes it. Classification
+is what makes the cheap halts visible, and it has to be the retro's reading
+rather than the driver's claim: the run that stopped could not judge its own
+stop, and the miner reads the records it did not write. A **policy** trip
+whose later re-review found nothing did not retire a risk — it charged a
+human for a resume, and three such trips in a row are an argument against
+the policy, not evidence for it. A **plugin/environment** halt is not this
+project's defect at all; it is a ticket for the plugin's own repository.
+Both are flagged transferable for the same reason the transferable planning
+lessons are: the epic that paid for the lesson is rarely the one that can
+act on it.
 
 Three constraints keep it honest. The mining runs in a fresh-context agent
 (user request at the autonomous epic's retro, 2026-08-08): the invoking
