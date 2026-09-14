@@ -392,7 +392,11 @@ function parseOwed(epic) {
 // Within a region the last figure for a role wins, so a dated correction
 // addendum overrides the entry it corrects, like every other correction.
 const SPEND_ROLES = ['worker', 'reviewer', 're-review', 'disposition', 'proxies']
-const RUN_HEADING = /^###\s+Run\s*[—–-]\s*(\d{4}-\d{2}-\d{2})\s*[—–-]/
+// A qualifier in parentheses after the date is allowed — same-day runs need
+// telling apart ("(resumed 2026-08-25)", "(second run)"); the first live
+// epics wrote six of fourteen records that way and the strict shape read
+// none of them.
+const RUN_HEADING = /^###\s+Run\s*[—–-]\s*(\d{4}-\d{2}-\d{2})(?:\s*\([^)]*\))?\s*[—–-]/
 const ROLE_RE = SPEND_ROLES.join('|')
 const ROLE_PHRASE = new RegExp(`\\b(${ROLE_RE})\\s+tokens\\b[^:]{0,40}:\\s*(\\d[\\d,]*|unknown)`, 'gi')
 const ROLE_PAIR = new RegExp(`\\b(${ROLE_RE})=(\\d[\\d,]*|unknown)`, 'gi')
@@ -421,11 +425,21 @@ function parseSpend(epic) {
   const flush = (region, text) => {
     if (!region) return
     const flat = text.replace(/\s+/g, ' ')
+    // A machine-shaped group names its own ticket, so it is read wherever it
+    // sits — a correction addendum for a run record appended at the end of
+    // a log lands in whatever entry is last, and must still reach the ticket
+    // it names rather than the entry it landed in.
+    for (const m of flat.matchAll(RUN_GROUP)) {
+      const r = rec(m[1])
+      for (const p of m[2].matchAll(ROLE_PAIR)) apply(r, p[1], p[2], 'run-record')
+      r.unknown.delete('ticket')
+    }
     if (region.id) {
       const r = rec(region.id)
-      for (const m of flat.matchAll(ROLE_PHRASE)) apply(r, m[1], m[2], 'log')
-      for (const m of flat.matchAll(ROLE_PAIR)) apply(r, m[1], m[2], 'log')
-      for (const m of flat.matchAll(ROLE_UNKNOWN)) apply(r, m[1], 'unknown', 'log')
+      const own = flat.replace(RUN_GROUP, ' ') // bare pairs and phrases belong to this entry; labelled groups do not
+      for (const m of own.matchAll(ROLE_PHRASE)) apply(r, m[1], m[2], 'log')
+      for (const m of own.matchAll(ROLE_PAIR)) apply(r, m[1], m[2], 'log')
+      for (const m of own.matchAll(ROLE_UNKNOWN)) apply(r, m[1], 'unknown', 'log')
       for (const m of flat.matchAll(TOKENS_LINE)) {
         const v = m[1].trim()
         if (/^unknown\b/i.test(v)) {
@@ -434,12 +448,6 @@ function parseSpend(epic) {
         } else if (/run record/i.test(v)) r.note = 'run-record'
         else if (/supervisor/i.test(v)) r.note = 'addendum'
       }
-    } else {
-      for (const m of flat.matchAll(RUN_GROUP)) {
-        const r = rec(m[1])
-        for (const p of m[2].matchAll(ROLE_PAIR)) apply(r, p[1], p[2], 'run-record')
-        r.unknown.delete('ticket')
-      }
     }
   }
   let region = null // { id } for a ticket entry, { run: date } for a run record
@@ -447,7 +455,11 @@ function parseSpend(epic) {
   for (const line of readFileSync(epic.statusDoc, 'utf8').split('\n')) {
     const h = line.match(STATUS_HEADING)
     const run = h ? null : line.match(RUN_HEADING)
-    if (h || run || /^##\s/.test(line)) {
+    // Every h2/h3 closes the region — including a heading that parses as
+    // neither shape. Otherwise the groups under a malformed run heading
+    // would land in whatever region precedes it, and a ticket entry's region
+    // would take them as its own figures; doctor flags the heading instead.
+    if (h || run || /^#{2,3}\s/.test(line)) {
       flush(region, text)
       region = h ? { id: h[1] } : run ? { run: run[1] } : null
       text = ''
@@ -457,6 +469,51 @@ function parseSpend(epic) {
   }
   flush(region, text)
   return byId
+}
+
+// A run record whose Tokens line carries figures but no machine-shaped group
+// is the ledger's one silent failure: the figures exist, `spend` reads nothing,
+// and the run lane's tickets report "no figure recorded" as if nobody had
+// measured. Doctor flags it the way it flags a heading that almost parses. The
+// repair is the log's own correction mechanism — a dated addendum beneath the
+// record restating the figures as groups — and parseSpend already reads a
+// region's addenda, so the advertised recovery works in the flagged state.
+function runRecordNearMisses(statusDoc) {
+  const misses = []
+  let region = null // { line } for a run record; null elsewhere
+  let text = ''
+  const flush = () => {
+    if (!region || region.tokensLine === undefined) return
+    const flat = text.replace(/\s+/g, ' ')
+    const groups = [...flat.matchAll(RUN_GROUP)]
+    // The figure must sit in the Tokens paragraph itself — the line and its
+    // house-width continuation lines, up to the next blank line or bold
+    // label — not anywhere later in the record: a Halted-on sentence that
+    // mentions a token count is not a figure the ledger was meant to read.
+    // A date (2026-08-24) is not a figure either.
+    const hasFigure = /(?<![\d-])\d[\d,]+(?![\d-])/.test(region.tokensParagraph)
+    if (!groups.length && hasFigure) misses.push({ line: region.tokensLine, heading: region.heading })
+  }
+  readFileSync(statusDoc, 'utf8').split('\n').forEach((line, i) => {
+    if (/^#{2,3}\s/.test(line)) {
+      flush()
+      region = RUN_HEADING.test(line) ? { line: i + 1, heading: line.trim(), tokensParagraph: '' } : null
+      text = ''
+      return
+    }
+    if (!region) return
+    if (region.tokensLine === undefined && /^\*\*Tokens:\*\*/i.test(line)) {
+      region.tokensLine = i + 1
+      region.inTokens = true
+      region.tokensParagraph = line.replace(/^\*\*Tokens:\*\*/i, '')
+    } else if (region.inTokens) {
+      if (line.trim() === '' || /^\*\*/.test(line)) region.inTokens = false
+      else region.tokensParagraph += ` ${line}`
+    }
+    text += `${line}\n`
+  })
+  flush()
+  return misses
 }
 
 function spendReport(epicFilter) {
@@ -854,6 +911,21 @@ function doctor() {
       else if (!KNOWN_OUTCOMES.has(m[4]))
         add('warn', `${epic.epic}/status.md:${i + 1} — unknown outcome "${m[4]}" is ignored by the board (known: DONE, BLOCKED, ABANDONED)`)
     })
+    // A run heading that almost parses — a missing date, a qualifier outside
+    // its parentheses — starts no run region, so its Tokens groups land in
+    // whatever region precedes it, and a ticket entry's region would take
+    // them as its own figures.
+    readFileSync(epic.statusDoc, 'utf8').split('\n').forEach((line, i) => {
+      // A ticket entry whose ID starts with "RUN" (RUN-1 — …) is a status
+      // heading, not a run heading that almost parses.
+      if (/^###\s+Run\b/i.test(line) && !RUN_HEADING.test(line) && !STATUS_HEADING.test(line))
+        add('warn', `${epic.epic}/status.md:${i + 1} — run heading will not parse, so spend reads no groups from this record (needs "### Run — YYYY-MM-DD — completed|halted", an optional "(qualifier)" after the date): ${line.trim()}`)
+    })
+    // A run record's Tokens line written as prose reads as nothing: every
+    // ticket that points at the record then reports "no figure recorded",
+    // which is indistinguishable from a run nobody measured.
+    for (const miss of runRecordNearMisses(epic.statusDoc))
+      add('warn', `${epic.epic}/status.md:${miss.line} — the run record's Tokens line carries figures but no machine-shaped group, so spend reads nothing from it (needs "<ID> worker=<n> reviewer=<n> disposition=<n> re-review=<n> proxies=<n>" per ticket, "unknown" for any missing figure); repair by appending a dated addendum beneath the record restating the figures as groups — never by editing the record: ${miss.heading}`)
   }
 
   const seen = {}

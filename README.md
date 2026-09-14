@@ -349,7 +349,12 @@ phrases, and a run record's per-ticket `<ID> worker=<n> reviewer=<n> …`
 groups. Recorded figures only, exactly as the log says: `unknown` stays
 unknown, a ticket with nothing recorded is reported as such, and nothing is
 estimated or read from a transcript. `--json` returns the same ledger for
-the retro, which reads this instead of summing the log by hand.
+the retro, which reads this instead of summing the log by hand. A run
+record's heading may carry a qualifier in parentheses after its date (how
+same-day runs are told apart); `doctor` flags a run heading that will not
+parse and a run record whose Tokens line carries figures but no groups —
+the ledger silently reads nothing from either, and the repair is a dated
+addendum beneath the record, never an edit.
 
 Two blind spots worth knowing: the board reads *this checkout's* view of the
 remote, so fetch first when the answer matters; and `shipped` means some commit

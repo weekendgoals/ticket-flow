@@ -1092,6 +1092,14 @@ Delivery: release
 ## S-4 — nothing recorded yet
 
 **Scope.** Four.
+
+## S-5 — driver-run, record written as prose, repaired by addendum
+
+**Scope.** Five.
+
+## RUN-1 — an ID that starts with the word Run
+
+**Scope.** Six.
 `,
 )
 writeFileSync(
@@ -1135,6 +1143,56 @@ disposition=5000 re-review=unknown proxies=1500; total=126,500 — summed from t
 
 **Halted on:** ran to completion.
 
+### S-5 — driver-run, record written as prose, repaired by addendum — 2026-08-12 — DONE
+
+**Built:** five.
+
+**Tokens:** recorded in the run record
+
+**Owed:** Nothing.
+
+**Addendum — tokens — 2026-08-14:** a group appended under the wrong entry
+still reaches its own ticket: S-4 disposition=2,500 — and this entry's own
+figure stays its own: Worker tokens (implementation leg): 900.
+
+### Run — 2026-08-12 (second run) — halted
+
+**Driver:** /flow:run, unattended.
+**Tokens:** harness-observed from the run's own transcripts (output tokens).
+Workers: S-4 48,379 · S-5 110,939 = 159,318. Reviewers: S-5 review (fable, xhigh) 21,785.
+
+**Halted on:** something.
+
+**Addendum — tokens — 2026-08-13:** the groups the ledger reads, restated
+from the figures above: S-5 worker=110,939 reviewer=21,785 disposition=0
+re-review=unknown proxies=800.
+
+### Run — 2026-08-12 (third run) — halted
+
+**Tokens:** harness-observed: worker (sonnet) 12,345 and reviewer (fable) 6,789 — no per-ticket groups, never repaired.
+
+**Halted on:** something else.
+
+### Run 2026-08-12 — halted
+
+**Tokens:** S-4 worker=1 reviewer=1 — under a heading that does not parse.
+
+### Run — 2026-08-15 — halted
+
+**Tokens:** unknown — the meter exposed nothing on
+2026-08-15, and this wrapped line is still the Tokens paragraph.
+
+**Halted on:** the session limit, after roughly 128,000 tokens — a figure
+outside the Tokens paragraph, which must not read as a recorded one.
+
+### RUN-1 — an ID that starts with the word Run — 2026-08-15 — DONE
+
+**Built:** six.
+
+**Tokens:** unknown
+
+**Owed:** Nothing.
+
 ## Retro — 2026-08-11
 
 Tokens mentioned here must not count: worker tokens: 999999.
@@ -1173,14 +1231,54 @@ test('spend derives one ledger from addendum phrases, Tokens lines and run recor
   assert.equal(byId['S-3'].total, 126500)
   assert.equal(byId['S-3'].source, 'run-record')
 
-  // Nothing recorded: reported as such, with the note absent.
-  assert.equal(byId['S-4'].total, null)
-  assert.equal(byId['S-4'].source, null)
+  // Nothing recorded: reported as such, with the note absent. The prose run
+  // record names S-4 with a figure, and the run record under the malformed
+  // heading carries an S-4 group — neither is read: prose is not a group, and
+  // a heading that does not parse starts no region.
+  // …except the labelled group under S-5's entry, which names S-4 and so
+  // reaches it wherever it sits; S-5's own bare phrase stays S-5's.
+  assert.equal(byId['S-4'].disposition, 2500)
+  assert.equal(byId['S-4'].total, 2500)
+  assert.equal(byId['S-4'].source, 'run-record')
+  assert.equal(byId['S-5'].worker, 110939)
+
+  // The repair path: a record written as prose, restated as groups in a
+  // dated addendum beneath it, under a heading with a same-day qualifier.
+  assert.equal(byId['S-5'].worker, 110939)
+  assert.equal(byId['S-5'].reviewer, 21785)
+  assert.equal(byId['S-5'].disposition, 0)
+  assert.equal(byId['S-5'].proxies, 800)
+  assert.deepEqual(byId['S-5'].unknown, ['re-review'])
+  assert.equal(byId['S-5'].source, 'run-record')
 
   // Epic totals sum only known figures; the retro section never counts.
-  assert.equal(e.totals.worker, 112000)
-  assert.equal(e.totals.total, 204229)
-  assert.equal(e.unknownTickets, 3)
+  assert.equal(e.totals.worker, 222939)
+  assert.equal(e.totals.total, 340253)
+  assert.equal(e.unknownTickets, 4)
+  assert.deepEqual(byId['RUN-1'].unknown, ['ticket'])
+})
+
+test('doctor flags a run record the ledger cannot read, and the run heading that almost parses', () => {
+  // The first live epics wrote every run record's Tokens line as prose, and
+  // spend reported "no figure recorded" for every run ticket — the same
+  // silence as a run nobody measured. The flagged state must be repairable
+  // by the advertised recovery (a dated addendum with groups), which the
+  // S-5 record above proves: it is repaired, so it is not flagged.
+  const rows = JSON.parse(run(srepo, 'doctor', '--json'))
+  const tokens = rows.filter((r) => r.level === 'warn' && /Tokens line carries figures but no machine-shaped group/.test(r.msg))
+  assert.equal(tokens.length, 1, rows.map((r) => r.msg).join('\n'))
+  assert.match(tokens[0].msg, /^sigma\/status\.md:\d+ — /)
+  assert.match(tokens[0].msg, /### Run — 2026-08-12 \(third run\) — halted$/)
+  assert.match(tokens[0].msg, /dated addendum beneath the record/)
+  const heading = rows.filter((r) => r.level === 'warn' && /run heading will not parse/.test(r.msg))
+  assert.equal(heading.length, 1, rows.map((r) => r.msg).join('\n'))
+  assert.match(heading[0].msg, /### Run 2026-08-12 — halted$/)
+  // Review fixes: a ticket entry whose ID starts with "Run" is a status
+  // heading, never a near-miss run heading; and a run record whose Tokens
+  // paragraph says unknown is not flagged because a later sentence in the
+  // same record mentions a number.
+  assert.ok(!rows.some((r) => /RUN-1/.test(r.msg)), rows.map((r) => r.msg).join('\n'))
+  assert.ok(!rows.some((r) => /2026-08-15 — halted/.test(r.msg)), rows.map((r) => r.msg).join('\n'))
 })
 
 test('spend text output names the source and never prints an unknown as a number', () => {
@@ -1188,8 +1286,9 @@ test('spend text output names the source and never prints an unknown as a number
   assert.match(out, /S-1\s+worker 12,000\s+reviewer 65,729\s+total 77,729\s+\(log\)/)
   assert.match(out, /S-2\s+no figure recorded/)
   assert.match(out, /S-3 .*re-review \?/)
-  assert.match(out, /S-4\s+no figure recorded/)
-  assert.match(out, /recorded 204,229 tokens · 3 with unknown or missing figures/)
+  assert.match(out, /S-4\s+disposition 2,500\s+total 2,500\s+\(run-record\)/)
+  assert.match(out, /S-5 .*re-review \?/)
+  assert.match(out, /recorded 340,253 tokens · 4 with unknown or missing figures/)
   assert.doesNotMatch(out, /999,?999/)
 })
 

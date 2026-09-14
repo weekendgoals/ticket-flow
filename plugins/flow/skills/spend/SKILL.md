@@ -38,6 +38,7 @@ One line each, only where the ledger shows something a human should act on:
   say which lane, and that supervisor or driver runs would record it.
 - **A driver-run ticket with no run-record group** — the run record's
   Tokens line was written without the per-ticket shape the run skill's step
-  6 asks for; say so, and that a dated addendum can add it.
+  6 asks for; say so, that `/flow:doctor` flags the record, and that a dated
+  addendum beneath it restating the figures as groups repairs it.
 
 Otherwise just show the ledger. Then stop.

@@ -335,7 +335,10 @@ says why; point at it rather than restating it.
 
 Append to the epic's `status.md` on `epic/<name>`, in session, from the step
 4 result — fenced prose quoted, markers dropped. The heading names no ticket
-ID, so the board ignores it and `doctor` will not flag it:
+ID, so the board ignores it; `spend` reads the record by it, so `doctor`
+flags one that will not parse. A qualifier in parentheses after the date is
+allowed and is how same-day runs are told apart — `### Run — 2026-08-25
+(second run) — halted`:
 
 ```markdown
 ### Run — <YYYY-MM-DD> — <completed | halted>
@@ -363,7 +366,10 @@ labels (`worker:<ID>`, `review:<ID>`, `disposition:<ID>`, `re-review:<ID>`,
 the shell proxies) to their `agent-<id>.jsonl` files — sum each agent's
 `usage`. Add the reviewer's tier, model and effort as prose after the
 groups. This is the run lane's only token record: ticket entries and
-addenda point here. Planning evidence, never a gate.>
+addenda point here. Planning evidence, never a gate. A record written
+without the groups reads as nothing — `doctor` flags it — and is repaired
+by a dated addendum beneath the record restating the figures as groups,
+never by editing the record.>
 
 **Halted on:** <`haltedOn.stopCondition` verbatim, with `haltedOn.ticket`
 and `haltedOn.where` — or "ran to completion".>

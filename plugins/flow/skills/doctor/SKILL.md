@@ -22,7 +22,11 @@ when an epic declares `Worker runner: codex` (the `codex` binary runs and is
 signed in — a run that discovers otherwise halts at ticket one with nobody
 there) — and, most importantly, **headings that almost parse**: a status heading missing its date, an unknown outcome
 word, a lowercase ticket ID. Those never error; they silently read as "not
-done" or "not a ticket", which is the one way the derived board lies.
+done" or "not a ticket", which is the one way the derived board lies. The
+same class in the run lane's records: a `### Run —` heading that will not
+parse, or a run record whose Tokens line carries figures but no
+`<ID> worker=<n> …` group — `spend` silently reads nothing from either, and
+the repair is a dated addendum beneath the record, never an edit.
 
 A `✗` is a blocker for the flow; a `!` degrades it. Explain each one the
 script found in one line of consequence, not by restating it.
