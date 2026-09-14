@@ -8,6 +8,41 @@ with one version and date.
 
 ## Unreleased
 
+- **A fix-bounds trip buys a re-review, not a halt** (`workflows/run-epic.mjs`
+  resolve step and re-review, four new `bounds trip` cases plus the updated
+  existing ones in `run-epic.test.mjs`, `scripts/check-invariants.mjs`
+  `PHRASES` and one suite case, `skills/run/SKILL.md` steps 4, 5, 6 and 7,
+  README, METHODOLOGY). Below the consequence tier the driver bounds-checked
+  the review-fix diff in code and **halted** when it left those bounds. The
+  first three live release epics tripped that gate three times, and all three
+  were clean fixes: GHL-1 (66 lines, 18 of them a translation fan-out;
+  merged by hand under a standing rule, no re-review), GHL-9 (119 lines;
+  hand re-review, 41,368 tokens, **0 Important**) and GHL-10 (two files
+  outside the reviewed diff — the two its own findings said were missing;
+  hand re-review, 40,465 tokens, **0 Important**). Every one cost a human a
+  resume, and twice the human's answer was to buy the pass the run could
+  have bought itself. Now a trip spawns the same bounded re-review the
+  consequence tier gets, priced at that tier, and merges on a clean one; an
+  Important finding in it halts on **the Important-finding stop condition**,
+  the same string the consequence tier's re-review uses, so the retro's
+  classifier reads one class. Two narrower changes ride with it: files the
+  review's own findings **name** now count as inside the bounds (GHL-10's
+  trip was guaranteed — for the finding class "the deliverable named in
+  scope was not produced" the fix is outside the reviewed diff by
+  construction), and `STOP.fixBounds` now covers only the case that stays
+  its own — a fix diff nothing could measure (no usable fix-diff facts, or a
+  binary numstat), because re-reviewing an unmeasured diff proves nothing.
+  The line budget is unchanged at 60. The record carries `fixBoundsTripped`
+  beside `fixBoundsGated`, and the run record names the trip. Reversal, in
+  METHODOLOGY: if a bounds re-review ever lets an Important defect reach a
+  release pull request, the halt comes back — its first data point is
+  redesign-foundation's FND-6, a test-motivated out-of-bounds fix a bounded
+  re-review cleared and a later commit corrected. PR #42's `Fix bounds
+  exclude:` line never reached the default branch (its merge commit
+  `8ac3bef` sits only on `origin/addendum-gate-date`); this supersedes it
+  for the halt, and whether the exclusion also lands is its own pull
+  request.
+
 - **Doctor flags the run records the spend ledger cannot read**
   (`scripts/tickets.mjs` doctor, `RUN_HEADING` and `parseSpend`, plus one
   test and a wider spend fixture; `skills/run/SKILL.md` step 6,

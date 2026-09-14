@@ -145,6 +145,14 @@ test('the workflow script losing the acceptance-check stop condition fails', () 
   assert.match(r.out, /run-epic\.mjs.*acceptance-check stop condition/s)
 })
 
+test('the run skill drifting from the fix-bounds stop condition fails', () => {
+  const root = copyRepo()
+  mutate(root, 'plugins/flow/skills/run/SKILL.md', 'no usable fix-diff facts', 'no usable fix-diff numbers')
+  const r = run(root)
+  assert.equal(r.status, 1, r.out)
+  assert.match(r.out, /run\/SKILL\.md.*fix-bounds stop condition/s)
+})
+
 test('a skill dropping the CHECK/EXPECT format fails the coupling', () => {
   const root = copyRepo()
   // mutate() replaces every occurrence, so the whole format vanishes from the

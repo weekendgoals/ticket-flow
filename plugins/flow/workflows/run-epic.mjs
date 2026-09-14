@@ -9,7 +9,7 @@ export const meta = {
     { title: 'Ticket', detail: 'one fresh-context worker per ticket, stopping at its pushed branch — release tickets open no pull request of their own' },
     { title: 'Review', detail: "the driver hires the judge, priced by the worker's reported tier floored in code by the diff's own file list" },
     { title: 'Disposition', detail: 'fix Important findings, record pre-existing ones, commit the addendum — a merge precondition' },
-    { title: 'Re-review', detail: 'one bounded pass over the fix commits — only at the consequence tier, or when the fix-bounds gate has no anchor; below that the fixes are bounds-checked in code at the resolve step' },
+    { title: 'Re-review', detail: 'one bounded pass over the fix commits — at the consequence tier, when the fix-bounds gate has no anchor, or when that gate trips; below the consequence tier the fixes are bounds-checked in code at the resolve step, and a trip buys this same pass at the consequence tier instead of halting' },
     { title: 'Acceptance', detail: "run the ticket's CHECK/EXPECT criteria from the signed-off document against the pushed branch — the counts judged in code before anything can merge" },
     { title: 'Resolve', detail: 'read-only: the addendum on the pushed branch and the exact head commit it stands at, checked in code before anything can merge' },
     { title: 'Merge', detail: 'one fixed git sequence merging the code-verified head SHA into epic/<name> — a merge commit, never a squash, and a SHA cannot be retargeted' },
@@ -134,8 +134,11 @@ const TICKET_ID = /^[A-Z][A-Z0-9]*-\d+$/
 const MAX_TICKETS = 40
 // Below the consequence tier, fix commits merge without a second model pass;
 // this budget is the mechanical half of that trade. A fix that cannot stay
-// inside the files the review saw and under this many changed lines is not a
-// fix any more — the run halts and a human looks.
+// inside the files the review saw and under this many changed lines has left
+// what the cheap gate can judge — so it buys the bounded re-review the
+// consequence tier gets, rather than halting the run: across the first three
+// live release epics all three trips were clean fixes (GHL-1, GHL-9, GHL-10),
+// and each halt cost a human a resume for nothing.
 const FIX_LINE_BUDGET = 60
 
 // Agent-authored prose (a worker's summary, a reviewer's finding, a git error)
@@ -158,7 +161,7 @@ const STOP = {
   reviewerSpawn: 'reviewer-spawn failure after the sanctioned fallback also fails',
   permissionPrompt: 'a permission prompt firing mid-run',
   nonzeroExit: 'a nonzero exit from any command the run issues as a step, except those this skill explicitly marks tolerated',
-  fixBounds: 'a review-fix diff outside its bounds — touching files the review never saw, or exceeding the fix line budget',
+  fixBounds: 'a review-fix diff the run could not measure — no usable fix-diff facts from the resolve step, or a fix whose changed lines cannot be counted; an unmeasurable fix is never merged',
   acceptanceCheck: 'a failed acceptance CHECK — a machine-runnable criterion whose command did not produce its expected result on the pushed branch',
   ticketBudget: "a ticket's pass exceeding the epic's per-ticket token budget",
 }
@@ -347,12 +350,14 @@ const REVIEW_SCHEMA = {
 // re-review mode (no new nits — only Important findings and anything still
 // unaddressed). There is deliberately no second round: iterating a reviewer
 // and a fixer toward agreement is exactly the improvisation this lane forbids.
-// It runs only at the consequence tier: five live re-reviews at the normal
-// tier all returned zero Important findings, so below the risk list the fix
-// commits are gated mechanically instead — they must stay inside the files
-// the review saw and under a small line budget (the resolve step reads the
-// diff, the code judges it), and anything outside those bounds halts for a
-// human rather than earning a second model pass.
+// It runs automatically at the consequence tier: five live re-reviews at the
+// normal tier all returned zero Important findings, so below the risk list
+// the fix commits are gated mechanically instead — they must stay inside the
+// files the review saw (plus the files the review's own findings name) and
+// under a small line budget (the resolve step reads the diff, the code judges
+// it). Leaving those bounds no longer halts the run: it buys exactly this
+// pass, priced at the consequence tier, because the fixes have left what the
+// cheap gate can judge. An Important finding in it halts like any other.
 const RE_REVIEW_SCHEMA = {
   type: 'object',
   required: ['important'],
@@ -853,6 +858,7 @@ Report honestly: \`branch-pushed\` ONLY if you saw the push of \`${branch}\` suc
     reReviewFindings: [],
     reviewedHead: '',
     fixBoundsGated: false,
+    fixBoundsTripped: false,
     fixLines: null,
     acceptanceOutcome: 'not reached',
     acceptanceChecks: null,
@@ -1163,15 +1169,20 @@ ${NO_MAIN} You do not merge this branch; the driver does, after its own gate.`,
   record.fixBoundsGated = boundsGated
   if (boundsGated) {
     log(
-      `${id}: ${record.fixedCommits.length} review-fix commit(s) at tier ${priced.tier} — no re-review below the consequence tier; the fix diff is bounds-checked in code at the resolve step (files the review saw, ≤${FIX_LINE_BUDGET} changed lines).`,
+      `${id}: ${record.fixedCommits.length} review-fix commit(s) at tier ${priced.tier} — no automatic re-review below the consequence tier; the fix diff is bounds-checked in code at the resolve step (files the review saw or its findings named, ≤${FIX_LINE_BUDGET} changed lines), and a trip there buys the same bounded re-review at the consequence tier.`,
     )
   }
-  if (needsReReview) {
+
+  // The bounded pass itself, with two doors into it: the consequence tier's
+  // own re-review below, and a fix-bounds trip at the resolve step. One
+  // label, one schema, one halt mapping — so the fixes are judged the same
+  // way and the retro's classifier reads one class, whichever door opened it.
+  // Returns a halt object, or null when the fixes came back clean.
+  const boundedReReview = async (pricedFor, why) => {
     phase('Re-review')
-    if (priced.tier !== 'consequence') {
-      log(`${id}: the review reported no usable reviewedHead, so the fix-bounds gate has no anchor — the fixes take the bounded re-review instead.`)
-    }
-    log(`${id}: ${record.fixedCommits.length} review-fix commit(s) — one bounded re-review before the merge.`)
+    log(
+      `${id}: ${record.fixedCommits.length} review-fix commit(s) — one bounded re-review before the merge (${why}), at tier ${pricedFor.tier} (${pricedFor.modelUsed}, effort ${pricedFor.effort}).`,
+    )
     const reReview = await hireReviewer({
       label: `re-review:${id}`,
       phaseName: 'Re-review',
@@ -1184,17 +1195,16 @@ ${fence(record.fixedCommits.join('\n'))}
 
 Read them in the context of the whole range, but judge them: does each fix do what it claims, and does it break anything the first review approved? Report only Important findings. An empty \`important\` list is the expected result and the one that lets the ticket merge.`,
       schema: RE_REVIEW_SCHEMA,
-      priced,
+      priced: pricedFor,
       id,
     })
     if (!reReview) {
-      halted = {
+      return {
         ticket: id,
         stopCondition: STOP.reviewerSpawn,
         where: `hiring the re-reviewer for ${id}`,
         detail: `both the \`flow:ticket-reviewer\` agent and the sanctioned general-agent fallback returned no re-review of the fix commits. The pull request stays open and unmerged: the merged diff has to be a reviewed diff, and these commits were written after the review that approved the rest.`,
       }
-      break
     }
     const reImportant = Array.isArray(reReview.important) ? reReview.important : []
     const rePreExisting = Array.isArray(reReview.preExisting) ? reReview.preExisting : []
@@ -1215,7 +1225,7 @@ Read them in the context of the whole range, but judge them: does each fix do wh
     record.preExistingCount = record.preExisting.length
     log(`${id}: re-review returned ${reImportant.length} Important finding(s)${rePreExisting.length ? ` and ${rePreExisting.length} pre-existing` : ''}.`)
     if (reImportant.length) {
-      halted = {
+      return {
         ticket: id,
         stopCondition: STOP.importantFinding,
         where: `the re-review of ${id}'s fix commits`,
@@ -1223,6 +1233,17 @@ Read them in the context of the whole range, but judge them: does each fix do wh
           reImportant.map(f => `${line(f.cite || f.file)} — ${line(f.summary)}`).join('; '),
         )}. There is deliberately no second fix round: a human decides.`,
       }
+    }
+    return null
+  }
+
+  if (needsReReview) {
+    if (priced.tier !== 'consequence') {
+      log(`${id}: the review reported no usable reviewedHead, so the fix-bounds gate has no anchor — the fixes take the bounded re-review instead.`)
+    }
+    const halt = await boundedReReview(priced, priced.tier === 'consequence' ? 'the consequence tier' : 'the fix-bounds gate has no anchor')
+    if (halt) {
+      halted = halt
       break
     }
   }
@@ -1307,6 +1328,11 @@ ${NO_MAIN} The checkout and fast-forward only move the local branch to where the
   //    checking a merge that had already happened, and nothing un-merges a
   //    pull request that pointed at the default branch.
   phase('Resolve')
+  // Set by the fix-bounds gate below when the fix diff left its bounds: the
+  // reason, in one line, for the re-review that buys the fixes their second
+  // pass. Declared out here because the gate runs inside the block below and
+  // the re-review it earns is spawned after it.
+  let boundsTripped = null
   // The fix-bounds facts ride the resolve step because it is already the
   // read-only fact reader: the SHA below was shape-verified when the review
   // returned, so nothing agent-authored is interpolated into these commands.
@@ -1385,34 +1411,61 @@ ${NO_MAIN} You are read-only here in any case: nothing in this task writes anyth
         }) — the disposition said it committed the addendum, the branch says otherwise, and the branch is the evidence. An unreviewed-on-the-record ticket is never merged.${quoted}`,
       )
     } else if (boundsGated) {
-      // The fix-bounds gate — what replaced the re-review below the
+      // The fix-bounds gate — what stands in for the re-review below the
       // consequence tier. Facts from the read-only resolve step, judged here,
-      // still before any agent that could merge exists.
-      const reviewedFiles = Array.isArray(resolved.reviewedFiles) ? resolved.reviewedFiles.map(f => line(f)) : null
+      // still before any agent that could merge exists. A trip no longer
+      // halts: it buys the bounded re-review, spawned below this block.
+      //
+      // The files the review's own findings NAME count as inside the bounds:
+      // for the finding class "the deliverable named in scope was not
+      // produced" the fix lands outside the reviewed diff by construction
+      // (GHL-10 tripped on exactly the two files its findings said were
+      // missing), so a fix that goes where the review pointed is the fix the
+      // review asked for, not new surface.
+      const findingFiles = important.map(f => line(f.file || '')).filter(Boolean)
+      const reviewedFiles = Array.isArray(resolved.reviewedFiles) ? resolved.reviewedFiles.map(f => line(f)).concat(findingFiles) : null
       const fixFiles = Array.isArray(resolved.fixFiles) ? resolved.fixFiles.map(f => line(f)) : null
       record.fixLines = Number.isInteger(resolved.fixLines) ? resolved.fixLines : null
       if (!reviewedFiles || !fixFiles || record.fixLines === null) {
         stop(
           STOP.fixBounds,
-          `the resolve step reported no usable fix-diff facts (reviewedFiles / fixFiles / fixLines) — below the consequence tier the bounds check IS the review of the fixes, and an unbounded fix is never merged.${quoted}`,
+          `the resolve step reported no usable fix-diff facts (reviewedFiles / fixFiles / fixLines) — below the consequence tier the bounds check is what decides whether the fixes need a second pass, and a fix nothing measured is never merged.${quoted}`,
+        )
+      } else if (record.fixLines < 0) {
+        // A "-" numstat count: a binary file's changed lines cannot be
+        // counted, so neither the bounds nor a re-review's reading of them
+        // means anything. This is the one case that stays STOP.fixBounds.
+        stop(
+          STOP.fixBounds,
+          `the fix commits changed an unmeasurable number of lines (a numstat count printed "-", which is a binary file) — the bounds cannot be measured and an unmeasurable fix is never merged. Nothing merged.`,
         )
       } else {
         const outside = fixFiles.filter(f => !reviewedFiles.includes(f))
         if (outside.length) {
-          stop(
-            STOP.fixBounds,
-            `${outside.length} fix-commit file(s) fall outside the diff the review saw — a fix that grows the surface is new work, not a fix: ${fence(outside.join(', '))} Nothing merged.`,
-          )
-        } else if (record.fixLines < 0 || record.fixLines > FIX_LINE_BUDGET) {
-          stop(
-            STOP.fixBounds,
-            `the fix commits changed ${record.fixLines < 0 ? 'an unmeasurable number of' : record.fixLines} lines against a budget of ${FIX_LINE_BUDGET} — past that size the fixes deserve a review, and deciding to grant one is not the run's call. Nothing merged.`,
-          )
+          boundsTripped = `${outside.length} fix-commit file(s) fall outside the diff the review saw and its findings named: ${fence(outside.join(', '))}`
+        } else if (record.fixLines > FIX_LINE_BUDGET) {
+          boundsTripped = `the fix commits changed ${record.fixLines} lines against a budget of ${FIX_LINE_BUDGET}`
         }
       }
     }
   }
   if (halted) break
+
+  // g2. The bounds trip buys a re-review, not a halt. The fixes left what the
+  //     cheap gate can judge, so the strong reviewer judges them: one bounded
+  //     pass, priced at the consequence tier whatever this ticket's tier was,
+  //     and an Important finding in it halts on the same stop condition the
+  //     consequence tier's re-review uses — one event, one stop string, one
+  //     class for the retro to read.
+  if (boundsTripped) {
+    record.fixBoundsTripped = true
+    log(`${id}: the fix-bounds gate tripped — ${boundsTripped}. Buying one bounded re-review at the consequence tier instead of halting.`)
+    const halt = await boundedReReview(priceReview('consequence', 'consequence'), 'the fix-bounds gate tripped')
+    if (halt) {
+      halted = halt
+      break
+    }
+  }
 
   // h. Merge — the one sanctioned agent merge, and its surface is the epic
   //    branch only. A fixed git sequence on a SHA this code verified, by an
