@@ -332,6 +332,25 @@ almost parses fails the gate rather than silently never running (doctor
 flags the near-miss shapes), and a check step whose counts the code cannot
 read halts — doubt goes up, never down.
 
+The first three live release epics found the second correction: a CHECK is
+only evidence if it was ever **red**. Six of groundhopper-foundation's eight
+CHECKs were a whole-suite run with `EXPECT: Tests:`, which passes on the tree
+before the ticket exists and therefore measures nothing the ticket does; a
+suite is a standing check the doer reports, not a criterion. Worse, FND-2's
+`MobileSidebar` CHECK passed vacuously — its `\|` reached grep as a literal
+through the quoting layer — and merged green having tested nothing, while
+FND-6's `grep -rc` printed `file:0` against an `EXPECT` of `1`, a comparison
+no correct code could satisfy, and halted the run. So the rule is
+red-before-green, proven at the door the criterion is written at: the planner
+runs each CHECK on the current tree, records which were red and which could
+not run here, and the plan reviewer — who has no stake in the plan — re-runs
+the runnable ones under a per-command bound. A CHECK green before the work is
+a finding; a CHECK that errors is a finding. Doctor carries the two shapes
+that can never pass, so the cheapest of these is caught without an agent at
+all. The admission test: this reduces uncertainty (a criterion nobody has
+seen fail is a criterion nobody has tested) and provides decision evidence at
+the sign-off gate, where the ledger is shown.
+
 Two deliberate limits. CHECK is optional, because most criteria are not
 mechanizable and forcing them into commands is ceremony — prose criteria and
 runtime demonstrations remain first-class, verified by the worker and held by

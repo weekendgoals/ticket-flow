@@ -334,7 +334,15 @@ must contain>` — exit 0 alone decides when EXPECT is absent. The script's
 `check <ID>` subcommand runs them from the repository root and reports a
 pass/fail ledger whose evidence is the deciding output line; a malformed
 CHECK **fails** the gate rather than silently never running, and `doctor`
-flags the near-miss shapes. `--from <ref>` reads the criteria from a git ref
+flags the near-miss shapes — including two that parse and run yet can never
+pass: `\\|` inside a quoted `node -e` / `sh -c` string (the quoting layer
+consumes one backslash, so grep matches a literal `|`) and `grep` given both
+`-r` and `-c` (recursive counting prints `path:count` per file, never a bare
+number). Every CHECK is also proven **red before the ticket exists**: the
+planner runs it at planning time, records the ledger in the draft, and the
+plan reviewer re-runs the runnable ones — a criterion already green proves
+nothing, and a whole-suite run is a standing check rather than a criterion.
+`--from <ref>` reads the criteria from a git ref
 instead of the working tree — the unattended driver passes
 `--from origin/epic/<name>` so the merge gate judges against the signed-off
 document, which no ticket branch can edit. Prose and *demonstrate:* criteria

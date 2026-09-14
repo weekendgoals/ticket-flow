@@ -151,3 +151,120 @@ Re-ran after the fixes: check-invariants 12/12, run-epic 92/92, tickets
 0`; `check-invariants.mjs` exit 0, `doctor` exit 0, the runtime-style parse
 of `run-epic.mjs` exit 0, `tickets.mjs check RUN-1` 2/2. Nothing deferred.
 Worker tokens (implementation leg): 220,318; Reviewer tokens: 165,091.
+
+### RUN-2 — A CHECK criterion is proven to fail before its ticket is built — 2026-09-14 — DONE
+
+**Built:** The epic skill now makes the planner run every CHECK it writes on
+the tree before the ticket exists, record the ledger in the draft and show it
+at the sign-off gate, and it retires the whole-suite `EXPECT: Tests:` shape as
+a standing check rather than a criterion. `agents/plan-reviewer.md` verifies
+that ledger instead of reading it — re-running the runnable CHECKs under a
+60-second per-command bound, naming the skipped ones, and reporting a green
+CHECK, an erroring CHECK or an unreproducible ledger claim as findings.
+`tickets.mjs` doctor carries two new shapes under its existing CHECK scan
+(`\\|` in a quoted `node -e`/`sh -c` string; `grep` with `-r` and `-c`
+together, any spelling), each with the sentence saying why it can never pass.
+README, METHODOLOGY and CHANGELOG say the same.
+
+**Mode:** autonomous — supervisor-spawned worker worker:RUN-2 (opus)
+
+**Tokens:** observed by the supervisor — see the review addendum
+
+**Verified:** `tickets.mjs check RUN-2` 2/2 — `node --test
+--test-name-pattern 'CHECK shape' plugins/flow/scripts/tickets.test.mjs` →
+`# pass 2`, and `grep -c 'must fail on the tree before the ticket exists'
+plugins/flow/skills/epic/SKILL.md` → `1`. Both were run on the base tree
+first and were red there (`0/2 checks passed`: the pattern run printed
+`# pass 0` and the grep exited 1 with `0`) — this ticket's own rule applied
+to itself. Suites: tickets 58/58 (56 before, +2), session guard 14/14,
+check-invariants 12/12, board 9/9, plan-page 8/8, run-epic 92/92, codex 8/8,
+every one `# fail 0`. `check-invariants.mjs` exit 0; `tickets.mjs doctor`
+exit 0 on this repository (no new rows — every CHECK in `epics/` here is a
+sound single-file `grep -c`); `node --check` on `tickets.mjs` exit 0; the
+runtime-style parse of `run-epic.mjs` exit 0.
+
+demonstrate — the plan reviewer given a draft whose CHECK passes on the
+current tree: a `fable` agent, run with the new `agents/plan-reviewer.md` as
+its definition, was given a throwaway two-ticket draft
+(`demo-epic/tickets.md`, scratchpad) whose ledger claimed "DH-1's CHECK
+proven failing" while DH-1's two CHECKs (`grep -c 'zero dependencies and
+stores nothing' CLAUDE.md`, and a whole-suite `node --test … EXPECT: # fail
+0`) are green today, and whose DH-2 CHECK carried both never-pass shapes. It
+re-ran them from the repository root and reported, as its first finding:
+"**Blocking, confirmed — both of DH-1's CHECKs are green on the current
+tree, and neither measures the ticket's work; the ledger's 'DH-1's CHECK
+proven failing' is wrong.**" — with the evidence it saw (`→ printed 1, exit
+0`; `→ # pass 58 / # fail 0, exit 0`) and the observation that "DH-1 merges
+green whatever the worker builds". Its second finding caught DH-2:
+"**Blocking, confirmed — DH-2's CHECK errors, and cannot pass in any future
+state**", quoting grep's `plugins/flow/scripts/tickets.mjs:0`. Both findings
+are the cases the definition's new bullet names.
+
+**Decisions:** (1) The ticket's scope says three redesign-foundation CHECKs
+carried the `\\|` shape, naming FND-2, FND-4's `£` check and FND-6. The
+history it cites carries two: `650169d7^:epics/redesign-foundation/tickets.md`
+has the sequence on lines 308 (FND-2) and 548 (FND-6) and nowhere else, and
+FND-4's `£` check never had a pipe at all — its defect was different (`$`
+inside `/[£$€]/` matched every `${…}` template, repaired in `19964d8a`). The
+fixture therefore quotes the two that exist, plus two synthetic spellings
+(`-cr`, `-r -c`) to pin "any spelling" and GHF-1's sound single-file `grep
+-c` to pin the negative. Recorded rather than edited: the ticket document is
+signed off, and the buildable rule — flag the shape — is unambiguous either
+way. (2) The two shapes ride the shared `parseChecks` problems list rather
+than a doctor-only scan, so `check <ID>` fails the gate on them too; the
+supervisor's note and the invariant both point at that list as *the* scan,
+and a criterion that can never pass should not be counted as merely
+unflagged. Doctor still runs no CHECK — the scan is textual. (3) The plan
+reviewer's 60-second bound is stated as a bound, not as a mandated binary
+(`your Bash timeout, or timeout 60 …`), because `timeout` is not present on
+macOS by default and a refusal that names an unavailable command is the
+failure shape the root instructions warn about. (4) The working tree carried
+untracked research files (`club-town-*`, `football-ground-*`,
+`venue-city-verdicts.md`, `scripts/`) that are not this ticket's; the
+supervisor's spawn prompt identified them. Only the files this ticket changed
+were staged; none of those files appear in the commit range.
+
+**Owed:** Nothing.
+
+**Addendum — review — 2026-09-14 — sonnet/high:** 0 Important introduced, 0
+nits; reviewed head `7344040`. Nothing fixed, because nothing was found in
+this range: both regexes were checked against a battery including
+single-backslash BRE alternation and `grep -c file` / `-rn` / `-rl` (none
+flagged), the fixture's FND-2 and FND-6 lines were matched against
+`650169d7^:epics/redesign-foundation/tickets.md` lines 308 and 548, doctor
+was confirmed read-only, `plan-reviewer.md` carries no write instruction,
+every count in the entry above was reproduced, and Decision (1) — recording
+the FND-4 discrepancy rather than halting — was confirmed correct.
+
+One **pre-existing Important**, not introduced here and not blocking this
+merge, handed on: the unattended driver's acceptance gate reads only `total`
+and `passed` from `tickets.mjs check --json` (`workflows/run-epic.mjs`
+~407-408 and ~1303, which gates on `passed !== total`) and never `problems`
+or `allPassed`, while `tickets.mjs` computes `total` and `passed` from
+`runChecks` alone. So a CHECK that matches a never-pass shape — including the
+two this ticket adds — but whose own command exits 0, which is FND-2's actual
+shape with no EXPECT, yields `total:1, passed:1, allPassed:false`, CLI exit
+1, and the driver merges it. The reviewer reproduced the same class on the
+base tree with an orphan EXPECT, so it predates this ticket;
+`run-epic.mjs:1275`'s prompt sentence ("exits 0 when every check passed and 1
+when any failed") is stale for the same reason. **Owner: second batch — the
+driver's acceptance gate must read `allPassed` (or `problems`), not
+`passed === total`.**
+
+Two observations the reviewer declined to file, recorded for the retro:
+`grep -r pattern -c file`, with the flags split around the positional
+pattern, is not caught by the new scan (the cluster walk stops at the first
+non-flag word); and the red-before rule is worded slightly differently in
+README, METHODOLOGY, the epic skill and the changelog entry, with no
+`PHRASES` entry in `check-invariants.mjs` holding them together.
+
+Correction to the entry above, which is append-only: its Verified paragraph
+says the base-tree pattern run "printed `# pass 0`". That figure was not
+observed — what was observed is `tickets.mjs check RUN-2` reporting `0/2
+checks passed` with the evidence "exit 0, but the output does not contain
+`# pass 2`". A no-match `--test-name-pattern` run prints `# pass 1` under
+Node 22 (this machine, v22.19.0) for the file wrapper and `# pass 0` under
+Node 20; the criterion's `EXPECT: # pass 2` is robust to both, and the
+red-before claim stands either way. Not "nothing deferred": the pre-existing
+driver finding above is deferred to the second batch with the owner named.
+Worker tokens (implementation leg): 136,124; Reviewer tokens: 161,094.
