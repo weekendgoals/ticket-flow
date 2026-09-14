@@ -527,3 +527,51 @@ misfile warning while the ledger still reads both — the record's first Tokens
 line is a cheap second key if it ever matters; owner **this epic's retro**.
 Worker tokens (implementation leg): 175,004; Reviewer tokens: 334,967 (first
 review 148,747; re-review 186,220).
+
+### HARD-5 — A halted run explains itself, and the doctrine says what `--from` protects — 2026-09-14 — DONE
+
+**Built:** A halted run record must now carry a `**Diagnosis:**` paragraph —
+the run skill's step 6 template declares the field and step 5's halt path
+names it where the halted session is told what to append, and the retro
+skill's seventh question reads that paragraph before the **Halted on:**
+line, with the classification stated as still the miner's. METHODOLOGY §
+"Why acceptance criteria can be machine-runnable" now bounds its
+"structurally cannot soften its own gate" claim — `--from` secures the
+command string and nothing the string reaches — and § "Why the run loop is
+code, not prose" bounds the reviewer fallback to a crashed agent rather
+than an exhausted environment. Two CHANGELOG entries under `## Unreleased`.
+
+**Mode:** autonomous — supervisor-spawned worker worker:HARD-5 (opus)
+
+**Tokens:** observed by the supervisor — see the review addendum
+
+**Verified:** `tickets.mjs check HARD-5` — **red before** on the base tree
+`eeb9ab8` (0/2: `diagnosis-required` exit 1, `from-bounded` exit 1), 2/2
+passed on the committed branch, exit 0. `check-invariants.mjs` exit 0 (6/6
+couplings). `tickets.mjs doctor` exit 0. Suites, all `# fail 0`: tickets
+67/67, run-epic 107/107, session guard 14/14, check-invariants 15/15, board
+9/9, plan-page 8/8, codex 8/8. `node --check
+plugins/flow/scripts/tickets.mjs` exit 0; the driver's runtime-style parse
+exit 0. No code changed, so no suite could have been expected to move — they
+are the standing checks for the plugin the documents describe.
+
+**Decisions:** (1) The two skills had to be reconciled, not just added to:
+the new **Diagnosis** paragraph asks the halted session whether the stop
+retired a real risk, while the retro's question already said "the
+classification is yours to make, not the record's to carry". Both now state
+one rule — the diagnosis is evidence gathered while the halt was fresh, the
+classification stays the miner's — rather than two readings of who judges a
+halt. (2) `run-epic.mjs`'s halted `next` string was left untouched. It
+tells the session to quote the stop condition and the ticket, which reads
+like a field list but is not one — the completed-path string likewise names
+only the Release PR field while the template carries five — so it is
+emphasis, not an enumeration that the new field makes stale, and the ticket
+scopes this work to doctrine. (3) The supervisor's brief pointed at the
+retro's "halts 1 and 2" for the diagnosis evidence; the file shows the two
+shipped plugin fixes came from the diagnoses under halts **2** (ENOBUFS,
+`4eb0f4b`) and **3** (the addendum date, `9a859c7`), with halt 1 being the
+session-limit spawn failure that the METHODOLOGY fallback sentence cites.
+Recorded rather than edited into anything: the documents cite the fixes by
+commit and mechanism, so no numbering travels with them.
+
+**Owed:** Nothing.
