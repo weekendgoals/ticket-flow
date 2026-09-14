@@ -486,18 +486,30 @@ function runRecordNearMisses(statusDoc) {
     if (!region || region.tokensLine === undefined) return
     const flat = text.replace(/\s+/g, ' ')
     const groups = [...flat.matchAll(RUN_GROUP)]
-    const hasFigure = /\d[\d,]{2,}/.test(flat.slice(flat.search(/\*\*Tokens:\*\*/i)))
+    // The figure must sit in the Tokens paragraph itself — the line and its
+    // house-width continuation lines, up to the next blank line or bold
+    // label — not anywhere later in the record: a Halted-on sentence that
+    // mentions a token count is not a figure the ledger was meant to read.
+    // A date (2026-08-24) is not a figure either.
+    const hasFigure = /(?<![\d-])\d[\d,]+(?![\d-])/.test(region.tokensParagraph)
     if (!groups.length && hasFigure) misses.push({ line: region.tokensLine, heading: region.heading })
   }
   readFileSync(statusDoc, 'utf8').split('\n').forEach((line, i) => {
     if (/^#{2,3}\s/.test(line)) {
       flush()
-      region = RUN_HEADING.test(line) ? { line: i + 1, heading: line.trim() } : null
+      region = RUN_HEADING.test(line) ? { line: i + 1, heading: line.trim(), tokensParagraph: '' } : null
       text = ''
       return
     }
     if (!region) return
-    if (region.tokensLine === undefined && /^\*\*Tokens:\*\*/i.test(line)) region.tokensLine = i + 1
+    if (region.tokensLine === undefined && /^\*\*Tokens:\*\*/i.test(line)) {
+      region.tokensLine = i + 1
+      region.inTokens = true
+      region.tokensParagraph = line.replace(/^\*\*Tokens:\*\*/i, '')
+    } else if (region.inTokens) {
+      if (line.trim() === '' || /^\*\*/.test(line)) region.inTokens = false
+      else region.tokensParagraph += ` ${line}`
+    }
     text += `${line}\n`
   })
   flush()
@@ -904,7 +916,9 @@ function doctor() {
     // whatever region precedes it, and a ticket entry's region would take
     // them as its own figures.
     readFileSync(epic.statusDoc, 'utf8').split('\n').forEach((line, i) => {
-      if (/^###\s+Run\b/i.test(line) && !RUN_HEADING.test(line))
+      // A ticket entry whose ID starts with "RUN" (RUN-1 — …) is a status
+      // heading, not a run heading that almost parses.
+      if (/^###\s+Run\b/i.test(line) && !RUN_HEADING.test(line) && !STATUS_HEADING.test(line))
         add('warn', `${epic.epic}/status.md:${i + 1} — run heading will not parse, so spend reads no groups from this record (needs "### Run — YYYY-MM-DD — completed|halted", an optional "(qualifier)" after the date): ${line.trim()}`)
     })
     // A run record's Tokens line written as prose reads as nothing: every

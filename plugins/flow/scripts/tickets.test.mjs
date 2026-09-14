@@ -1096,6 +1096,10 @@ Delivery: release
 ## S-5 — driver-run, record written as prose, repaired by addendum
 
 **Scope.** Five.
+
+## RUN-1 — an ID that starts with the word Run
+
+**Scope.** Six.
 `,
 )
 writeFileSync(
@@ -1173,6 +1177,22 @@ re-review=unknown proxies=800.
 
 **Tokens:** S-4 worker=1 reviewer=1 — under a heading that does not parse.
 
+### Run — 2026-08-15 — halted
+
+**Tokens:** unknown — the meter exposed nothing on
+2026-08-15, and this wrapped line is still the Tokens paragraph.
+
+**Halted on:** the session limit, after roughly 128,000 tokens — a figure
+outside the Tokens paragraph, which must not read as a recorded one.
+
+### RUN-1 — an ID that starts with the word Run — 2026-08-15 — DONE
+
+**Built:** six.
+
+**Tokens:** unknown
+
+**Owed:** Nothing.
+
 ## Retro — 2026-08-11
 
 Tokens mentioned here must not count: worker tokens: 999999.
@@ -1234,7 +1254,8 @@ test('spend derives one ledger from addendum phrases, Tokens lines and run recor
   // Epic totals sum only known figures; the retro section never counts.
   assert.equal(e.totals.worker, 222939)
   assert.equal(e.totals.total, 340253)
-  assert.equal(e.unknownTickets, 3)
+  assert.equal(e.unknownTickets, 4)
+  assert.deepEqual(byId['RUN-1'].unknown, ['ticket'])
 })
 
 test('doctor flags a run record the ledger cannot read, and the run heading that almost parses', () => {
@@ -1252,6 +1273,12 @@ test('doctor flags a run record the ledger cannot read, and the run heading that
   const heading = rows.filter((r) => r.level === 'warn' && /run heading will not parse/.test(r.msg))
   assert.equal(heading.length, 1, rows.map((r) => r.msg).join('\n'))
   assert.match(heading[0].msg, /### Run 2026-08-12 — halted$/)
+  // Review fixes: a ticket entry whose ID starts with "Run" is a status
+  // heading, never a near-miss run heading; and a run record whose Tokens
+  // paragraph says unknown is not flagged because a later sentence in the
+  // same record mentions a number.
+  assert.ok(!rows.some((r) => /RUN-1/.test(r.msg)), rows.map((r) => r.msg).join('\n'))
+  assert.ok(!rows.some((r) => /2026-08-15 — halted/.test(r.msg)), rows.map((r) => r.msg).join('\n'))
 })
 
 test('spend text output names the source and never prints an unknown as a number', () => {
@@ -1261,7 +1288,7 @@ test('spend text output names the source and never prints an unknown as a number
   assert.match(out, /S-3 .*re-review \?/)
   assert.match(out, /S-4\s+disposition 2,500\s+total 2,500\s+\(run-record\)/)
   assert.match(out, /S-5 .*re-review \?/)
-  assert.match(out, /recorded 340,253 tokens · 3 with unknown or missing figures/)
+  assert.match(out, /recorded 340,253 tokens · 4 with unknown or missing figures/)
   assert.doesNotMatch(out, /999,?999/)
 })
 
