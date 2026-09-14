@@ -1346,6 +1346,65 @@ outside the Tokens paragraph, which must not read as a recorded one.
 Tokens mentioned here must not count: worker tokens: 999999.
 `,
 )
+// tau — an epic that has split its run records into runs.md (HARD-4). Its
+// status.md carries one record from before the split (which stays there and is
+// still read) and one appended after it (the misfile doctor flags), and runs.md
+// carries the record written since. Sigma above is the other half of the pair:
+// an epic with no runs.md at all, whose records are read from status.md exactly
+// as before.
+mkdirSync(join(srepo, 'epics/tau'), { recursive: true })
+writeFileSync(
+  join(srepo, 'epics/tau/tickets.md'),
+  `# Tau epic — tickets
+
+Delivery: incremental
+
+## T-1 — recorded in runs.md
+
+**Scope.** One.
+
+## T-2 — recorded before the split, in status.md
+
+**Scope.** Two.
+
+## T-3 — recorded after the split, in the wrong file
+
+**Scope.** Three.
+`,
+)
+writeFileSync(
+  join(srepo, 'epics/tau/status.md'),
+  `# Tau epic — status log
+
+### Run — 2026-09-01 — completed
+
+**Driver:** /flow:run, unattended.
+**Tokens:** T-2 worker=1,000 reviewer=500 disposition=0 re-review=0 proxies=0; total=1,500.
+
+**Halted on:** ran to completion.
+
+### Run — 2026-09-10 — halted
+
+**Driver:** /flow:run, unattended — appended to the wrong file after the split.
+**Tokens:** T-3 worker=10 reviewer=10 disposition=0 re-review=0 proxies=0; total=20.
+
+**Halted on:** something.
+`,
+)
+writeFileSync(
+  join(srepo, 'epics/tau/runs.md'),
+  `# Tau epic — run log
+
+Append-only record of unattended runs. Tickets: \`epics/tau/tickets.md\`.
+
+### Run — 2026-09-10 — completed
+
+**Driver:** /flow:run, unattended.
+**Tokens:** T-1 worker=4,000 reviewer=2,000 disposition=0 re-review=unknown proxies=100; total=6,100.
+
+**Halted on:** ran to completion.
+`,
+)
 git(srepo, 'add', '.')
 git(srepo, 'commit', '-m', 'sigma epic')
 git(srepo, 'remote', 'add', 'origin', sremote)
@@ -1427,6 +1486,60 @@ test('doctor flags a run record the ledger cannot read, and the run heading that
   // same record mentions a number.
   assert.ok(!rows.some((r) => /RUN-1/.test(r.msg)), rows.map((r) => r.msg).join('\n'))
   assert.ok(!rows.some((r) => /2026-08-15 — halted/.test(r.msg)), rows.map((r) => r.msg).join('\n'))
+})
+
+test('spend reads a run record from runs.md, and still reads the records that predate the split from status.md', () => {
+  const out = JSON.parse(run(srepo, 'spend', 'tau', '--json'))
+  const byId = Object.fromEntries(out.epics[0].tickets.map((t) => [t.id, t]))
+
+  // The record in runs.md is read like any other.
+  assert.equal(byId['T-1'].worker, 4000)
+  assert.equal(byId['T-1'].reviewer, 2000)
+  assert.equal(byId['T-1'].proxies, 100)
+  assert.deepEqual(byId['T-1'].unknown, ['re-review'])
+  assert.equal(byId['T-1'].source, 'run-record')
+
+  // Migrating the older records is forbidden (append-only), so the split moved
+  // where a record is written, never where an old one can be found.
+  assert.equal(byId['T-2'].worker, 1000)
+  assert.equal(byId['T-2'].total, 1500)
+  assert.equal(byId['T-2'].source, 'run-record')
+
+  // Even the misfiled record's figures are read — the flag below is about the
+  // conflicting file tail, not about a ledger that lost anything.
+  assert.equal(byId['T-3'].worker, 10)
+  assert.equal(out.epics[0].totals.total, 7620)
+})
+
+test('doctor flags a run record appended to status.md after the split to runs.md, and never one that predates it', () => {
+  const rows = JSON.parse(run(srepo, 'doctor', '--json'))
+  const misfiled = rows.filter((r) => r.level === 'warn' && /run records live in runs\.md/.test(r.msg))
+  assert.equal(misfiled.length, 1, rows.map((r) => r.msg).join('\n'))
+  assert.match(misfiled[0].msg, /^tau\/status\.md:\d+ — /)
+  assert.match(misfiled[0].msg, /### Run — 2026-09-10 — halted$/)
+  // The advertised recovery has to work in the flagged state: the record is
+  // already committed in an append-only log, so the repair is appending, never
+  // deleting.
+  assert.match(misfiled[0].msg, /appending the record to runs\.md/)
+  assert.match(misfiled[0].msg, /never by deleting it/)
+  // Date-scoped: the record from before the split is left alone, because
+  // moving it is exactly what append-only forbids.
+  assert.ok(!rows.some((r) => /2026-09-01/.test(r.msg)), rows.map((r) => r.msg).join('\n'))
+  // And an epic with no runs.md at all is not nagged about one.
+  assert.ok(!rows.some((r) => /^sigma\/.*runs\.md/.test(r.msg)), rows.map((r) => r.msg).join('\n'))
+})
+
+test('find --json exposes runsDoc, whether or not the epic has split its runs.md out yet', () => {
+  const split = JSON.parse(run(srepo, 'find', 'T-1', '--json'))
+  assert.equal(split.runsDoc, join(srepo, 'epics/tau/runs.md'))
+  assert.equal(split.runsDocExists, true)
+
+  // Absent, the path is still absolute and still given — the run skill creates
+  // the file with its preamble on the first record, and no caller has to build
+  // a path by hand to find out.
+  const notSplit = JSON.parse(run(srepo, 'find', 'S-1', '--json'))
+  assert.equal(notSplit.runsDoc, join(srepo, 'epics/sigma/runs.md'))
+  assert.equal(notSplit.runsDocExists, false)
 })
 
 test('spend text output names the source and never prints an unknown as a number', () => {
