@@ -8,6 +8,37 @@ with one version and date.
 
 ## Unreleased
 
+- **After a halt: finish the ticket by hand, then re-run — never resume**
+  (`skills/run/SKILL.md` step 1 and a new `## Resuming after a halt` section,
+  METHODOLOGY § "Why the run loop is code, not prose", a new
+  `check-invariants.mjs` phrase over the run skill and METHODOLOGY, one new
+  drift test). The recovery after a halted run was written nowhere, and the
+  step 1 refusal on an `in-progress` / `in-review` / `done` ticket named no
+  way out of the state it refused. It now does: finish that one ticket by
+  hand with `/flow:ticket <ID>` — a supervisor-spawned worker performs step
+  10's gate and merge by verified SHA — then re-run `/flow:run <epic>`, which
+  the board makes safe because `next` hands out only `todo` tickets and
+  `integrated` ones are skipped. A halt *before* the status entry exists
+  needs only the re-run. **Never `resumeFromRunId`:** the Workflow runtime
+  replays every unchanged `agent()` call from the prefix cache, and a run
+  halts because something outside the script changed — groundhopper-
+  foundation's 2026-08-25 resume "replayed the stale failed acceptance from
+  cache (0 tokens) and halted again" after the plugin fix that would have
+  cleared it, and a resume after a pushed fix would re-review a branch that
+  already carries a committed addendum. The section sorts the halt by the one
+  thing the board reads — the ticket's **status entry** — because the worker
+  writes it and pushes its branch *before* the driver hires a reviewer, so a
+  halt message usually names a stage the ticket had already passed: no entry
+  (`todo`, or `in-progress` on a local branch) re-runs; a DONE entry on a
+  pushed branch is finished by hand; a BLOCKED entry waits for a human to
+  resolve or re-plan. `skills/ticket/SKILL.md` makes that recovery real
+  rather than advertised: when step 1 reports the ticket `done` or
+  `in-review` and `origin/<branch>` exists, the worker builds nothing — step
+  3 checks the existing branch out instead of running `git checkout -b`,
+  which fails on it — and the leg resumes at step 7, 8 or 10 depending on
+  whether the branch's entry already carries a review addendum. Doctrine
+  only: `run-epic.mjs` is unchanged.
+
 - **A CHECK criterion must be red before its ticket is built**
   (`skills/epic/SKILL.md` "Rules that matter" and step 5,
   `agents/plan-reviewer.md`, `scripts/tickets.mjs` `parseChecks`, two new

@@ -27,6 +27,7 @@ const FILES = [
   'plugins/flow/workflows/run-epic.mjs',
   'README.md',
   'CLAUDE.md',
+  'METHODOLOGY.md',
 ]
 
 function copyRepo() {
@@ -161,6 +162,23 @@ test('the run skill drifting from the fix-bounds stop condition fails', () => {
   const t = run(tail)
   assert.equal(t.status, 1, t.out)
   assert.match(t.out, /run\/SKILL\.md.*fix-bounds stop condition/s)
+})
+
+test('either document dropping the never-resume-by-id rule fails', () => {
+  // The rule lives at two doors: the run skill, where a human meets the halt,
+  // and METHODOLOGY, which says why the cache makes a resume a lie. Losing
+  // either half is drift.
+  const skill = copyRepo()
+  mutate(skill, 'plugins/flow/skills/run/SKILL.md', 'Never `resumeFromRunId`', 'Never resume by run id')
+  const s = run(skill)
+  assert.equal(s.status, 1, s.out)
+  assert.match(s.out, /run\/SKILL\.md.*never-resume-by-id/s)
+
+  const methodology = copyRepo()
+  mutate(methodology, 'METHODOLOGY.md', 'never\n`resumeFromRunId`', 'never by run id')
+  const m = run(methodology)
+  assert.equal(m.status, 1, m.out)
+  assert.match(m.out, /METHODOLOGY\.md.*never-resume-by-id/s)
 })
 
 test('a skill dropping the CHECK/EXPECT format fails the coupling', () => {

@@ -40,6 +40,20 @@ Relay every stop-and-report verbatim — a worker halting on a contradiction is
 the mechanism working. Several tickets per session are fine here, because
 every worker starts empty.
 
+**Recovering a ticket a halted run left behind.** When step 1's `find`
+reports the ticket `done` or `in-review` and `origin/<branch>` already exists
+— the state an unattended run leaves whenever it halts after its worker
+pushed, which is most halts — **nothing is rebuilt**. The worker checks out
+that pushed branch instead of creating one (step 3's exception), confirms the
+ticket's status entry is committed on it, and reports where the run stopped.
+You then continue the leg that did not finish: **step 7** when the entry
+carries no `Addendum — review —` line, **step 8** when it does and findings
+are still open, **step 10** when the addendum is committed and they are not.
+Re-running steps 2–6 would rewrite an entry the run already committed and
+re-do work already reviewed; that is why the recovery starts by reading the
+branch, not by building. The run skill's § "Resuming after a halt" is the
+other door onto this same rule, and names this command as the way through it.
+
 **`--interactive` — run the steps yourself, in-session**, when the human
 wants to converse with the implementing agent mid-ticket. The session hook
 records the choice, once per session: a session already carrying in-session
@@ -56,7 +70,10 @@ gates in code and merges, so you run steps 1–6 and step 9's summary and push,
 then **stop at your pushed branch** — no pull request, no step 7, 8 or 10.
 When a **human** runs one release-epic ticket directly (the escape hatch for
 a halt), a supervisor-spawned worker performs step 10's gate and merge, then
-stops.
+stops — and when the halt left a pushed branch whose status entry is already
+committed, that worker builds nothing: it checks the branch out as the
+recovery paragraph above says, and the ticket resumes at the leg the run
+stopped in.
 
 ## 1. Resolve it
 
@@ -138,6 +155,14 @@ git checkout -b <branch>
 
 Keep `epic/<epic-name>` current with the default branch, or the release merge
 becomes its own big-bang.
+
+**Exception — a branch that already exists is checked out, never re-created.**
+`git checkout -b <branch>` fails outright on an existing branch, and the
+branch a halted run pushed already carries this ticket's commits and its
+committed status entry: `git checkout -b <branch> origin/<branch>` after the
+fetch, or `git checkout <branch>` when it is already local. This is step 0's
+recovery, and the rest of the ticket resumes at the leg that did not finish —
+you implement nothing on a branch whose entry is already written.
 
 **Note the branch you cut from and the pull request base** — what step 7
 diffs against and step 9 targets: the default branch in incremental delivery

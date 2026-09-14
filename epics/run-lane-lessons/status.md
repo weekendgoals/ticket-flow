@@ -268,3 +268,97 @@ Node 20; the criterion's `EXPECT: # pass 2` is robust to both, and the
 red-before claim stands either way. Not "nothing deferred": the pre-existing
 driver finding above is deferred to the second batch with the owner named.
 Worker tokens (implementation leg): 136,124; Reviewer tokens: 161,094.
+
+### RUN-4 — After a halt: finish the ticket by hand, then re-run — never resume — 2026-09-14 — DONE
+
+**Built:** `skills/run/SKILL.md` gains `## Resuming after a halt` — the two
+halt shapes and what each needs before the re-run, and the rule never to
+resume by run id, with the cache mechanism and the live evidence — and step
+1's refusal on an `in-progress` / `in-review` / `done` ticket now names that
+recovery in its own sentence, so the gate's advertised way out works from the
+state it refuses. METHODOLOGY § "Why the run loop is code, not prose" carries
+the reason (the run pins its date for cache stability; that same stability is
+why a resume is a statement about the past). `check-invariants.mjs` gains
+`METHODOLOGY.md` in its `FILES` map and a `PHRASES` entry requiring "never
+`resumeFromRunId`" in the run skill and METHODOLOGY, with a test that mutates
+each half in turn. `run-epic.mjs` is untouched (decision 5).
+
+**Mode:** autonomous — supervisor-spawned worker worker:RUN-4 (opus)
+
+**Tokens:** observed by the supervisor — see the review addendum
+
+**Verified:** `node plugins/flow/scripts/tickets.mjs check RUN-4` — 3/3 checks
+passed (exit 0) on the head of `run-4`; the same command on the base tree
+(`99bc043`, before any edit) printed 0/3, each criterion's grep returning `0`
+— red before, green after. `node plugins/flow/scripts/check-invariants.mjs`
+— all 5 checks ✓, exit 0. `node --test
+plugins/flow/scripts/check-invariants.test.mjs` — `# pass 13`, `# fail 0`
+(12 before; the new test is the thirteenth, and CLAUDE.md's count moved with
+it). The rest of the CI set, unchanged by this ticket and run to confirm it:
+`tickets.test.mjs` `# pass 58`, `ticket-session-guard.test.mjs` `# pass 14`,
+`board.test.mjs` `# pass 9`, `plan-page.test.mjs` `# pass 8`,
+`run-epic.test.mjs` `# pass 92`, `runners/codex.test.mjs` `# pass 8` — `#
+fail 0` on every one. `node plugins/flow/scripts/tickets.mjs doctor` — exit
+0, 5 ✓ lines. `node --check` on `tickets.mjs`, `check-invariants.mjs` and
+`check-invariants.test.mjs`, and the root instructions' Function-constructor
+parse of `run-epic.mjs` — all exit 0.
+
+**Decisions:** (1) The new section sits at the end of the run skill rather
+than between the numbered steps: it is what a human does *after* a run
+ended, not a step the driver executes, and steps 1–7 stay one uninterrupted
+procedure. Step 1's refusal reaches it by name, which is what the criterion
+and the "gate verified at its own door" invariant ask for. (2) The phrase
+`Resuming after a halt` appears exactly twice in the skill — the heading and
+step 1's pointer — because the acceptance criterion counts lines
+(`grep -c`, EXPECT 2); step 5's halt paragraph deliberately does not repeat
+the name. Anything added later that mentions the section by name must move
+that EXPECT with it. (3) The `why` string of the new `PHRASES` entry avoids
+the literal `resumeFromRunId` so that
+`grep -c 'resumeFromRunId' check-invariants.mjs` stays at 1, as the third
+criterion requires; the regex line is the only occurrence. (4) The drift test
+mutates both halves in one test rather than adding two, following the
+fix-bounds test RUN-1 added; the suite therefore goes 12 → 13, not 14.
+(5) README was left alone. Its "Unattended runs" section describes what halts
+a run and says nothing about recovery, so there is no second statement of
+this rule to keep in step; adding one would be a third copy to drift.
+(6) Discrepancy, recorded rather than edited: CLAUDE.md states
+`tickets.test.mjs` at `# pass 56`; it runs `# pass 58` here (RUN-2 added two
+cases). The root instructions sanction a stale-low count ("the count grows,
+the fail line does not"), so only the count this ticket changed was moved.
+
+**Owed:** Nothing.
+
+**Addendum — review — 2026-09-14 — sonnet/high:** Two Important, both fixed;
+0 nits. Reviewed head `1bf6aa8`. (1) The new section split halts into "before
+the status entry" and "mid-ticket" and put a reviewer-spawn failure and a
+blocked worker in the first — both wrong: the driver-spawned worker commits
+its status entry and pushes its branch (steps 1–6 and step 9) before the
+review phase is reached at all, `run-epic.mjs` enters that phase only on
+`branch-pushed`, and `resolveState` reads a BLOCKED entry as `blocked`.
+Fixed in `2e3cfd1`: the section now sorts by the one thing the board reads —
+the status entry — into three shapes, with a reviewer-spawn failure moved to
+the DONE-entry-on-a-pushed-branch shape where it belongs, `in-progress`
+named as the shape-1 case a local branch produces, and BLOCKED/ABANDONED its
+own shape. The reviewer verified both new evidence quotes verbatim against
+`redesign-foundation/status.md:363` and `groundhopper-foundation/status.md:237`
+in the weekendgoals repository. (2) The section advertised `/flow:ticket <ID>`
+as the way out of a halted run's ticket, but the ticket skill sent a worker
+through steps 1–6 unconditionally and step 3 ran `git checkout -b <branch>`
+unconditionally, which fails on the branch a halted run already pushed — a
+refusal's advertised recovery that does not work in the refused state. Fixed
+in `ac17a58`: `skills/ticket/SKILL.md` step 0 gains the recovery paragraph
+(ticket `done` or `in-review` with `origin/<branch>` present: build nothing,
+check the branch out, continue at step 7, 8 or 10 by whether the entry
+carries an addendum), step 3 gains the existing-branch exception with its
+reason, and the escape-hatch paragraph points at both — so the recovery is
+reachable at the point a supervisor actually reads it. Bounded re-review of
+`1bf6aa8..ac17a58`: **0 Important**, nothing from the first review left
+unaddressed, reviewed head `ac17a58`. Verified after the fixes:
+`tickets.mjs check RUN-4` 3/3 (the grep counts held exact — the ticket skill
+naming the section is a different file), `check-invariants.mjs` exit 0 (run
+after the ticket-skill edit), `doctor` exit 0, and every suite `# fail 0`:
+check-invariants 13, tickets 58, session-guard 14, board 9, plan-page 8,
+run-epic 92, codex 8. Pre-existing: none found in this range. Nothing
+deferred. Worker tokens (implementation leg): 140,576; Reviewer tokens:
+370,653 — 170,753 for the first review and 199,900 for the bounded
+re-review.
