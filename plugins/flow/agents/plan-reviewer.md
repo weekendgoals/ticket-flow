@@ -36,6 +36,32 @@ quoted.
   reversal condition. If nothing observable could prove the epic pointless,
   sign-off is being asked to approve unfalsifiable work — and the retro will
   have nothing to check.
+- **Outcome evidence nothing will produce.** For every evidence clause in the
+  Outcome, name what will produce it and check that the named observer could
+  tell success from failure with it in hand. Evidence that is not
+  **collectable** fails the same way an unfalsifiable outcome does, one
+  sentence later and months further on: redesign-foundation promised
+  `h6count = 0` "on every page type" with the check wired into two of nine
+  page types, and a four-week reading of a GA4 `changeDisplayCurrency` event
+  that the new shell control and a pre-existing picker both fire — so no
+  reading can separate them. Both were knowable at plan time; both reached
+  the retro as questions nobody could answer.
+- **A ground rule or criterion no actor in the declared delivery mode can
+  execute.** Walk every ground rule and every acceptance criterion, name the
+  actor that will carry it out in the mode the draft declares, and confirm
+  that actor can. An unattended `Delivery: release` worker spawns no agents,
+  holds no phone, and drives no interactive tool. A rule the lane cannot
+  execute is a finding: groundhopper-log required every translated string to
+  pass through seventeen per-language agents in an epic run unattended, so
+  the rule was unsatisfiable from the moment it was written, and nine
+  consecutive tickets recorded the deviation and shipped anyway — 92 damaged
+  strings and three follow-up tickets. A criterion the lane cannot perform is
+  a finding too, and the remedy is never a line owed to the release pull
+  request: that same epic deferred ten "demonstrate on a phone" checks to its
+  pull request, which then merged with none of them performed. Such a
+  criterion becomes **its own ticket with a human owner, ordered before the
+  release**. This is "a gate is verified at the door its actor walks through"
+  applied one level up — to the rules and criteria, not only to the gates.
 - **A requirement no ticket reaches, or a ticket no requirement needs.**
   When the draft carries a numbered `Requirements:` block, walk it both
   ways: every requirement must be reachable through some ticket's

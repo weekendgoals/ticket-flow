@@ -8,6 +8,31 @@ with one version and date.
 
 ## Unreleased
 
+- **The plan reviewer asks what the lane can execute and what the evidence
+  can show** (`agents/plan-reviewer.md` gains two questions; `skills/epic/SKILL.md`
+  carries each as one clause — the step 3 Outcome template, the ground-rule
+  bullet and the step 5 sign-off; METHODOLOGY § "Why the plan is reviewed
+  before sign-off" records the evidence and § "Why an epic states its
+  outcome" adds the matching clause). One: for every ground rule and every
+  acceptance criterion, name the actor that executes it in the **declared
+  delivery mode** and confirm that actor exists there — an unattended
+  release worker spawns no agents, holds no phone and drives no interactive
+  tool. Groundhopper-log required seventeen per-language agents in an epic
+  run unattended, so nine consecutive tickets recorded the deviation and
+  shipped anyway (92 damaged strings, three follow-up tickets), and ten
+  "demonstrate on a phone" criteria deferred to the release pull request
+  merged unperformed; a criterion the lane cannot perform is now its own
+  ticket with a human owner, ordered before the release, never a line owed
+  to a pull request. Two: for every Outcome evidence clause, name what will
+  produce it and check the observer can tell success from failure —
+  redesign-foundation promised `h6count = 0` on every page type with the
+  check wired into two of nine, and a four-week reading of a GA4 event two
+  controls share. Naming an observer was already required and is not enough:
+  an observer with nothing to read reports nothing. Both questions are asked
+  by a human or a fresh-context agent reading the draft; neither is
+  automated, because the actor a rule needs and the source an evidence
+  clause depends on are not in the text of the document.
+
 - **A halted run record must carry a `**Diagnosis:**` paragraph, and the
   retro reads it first** (`skills/run/SKILL.md`: the step 6 record template
   gains the field, and step 5's halt path names it where the halted session
