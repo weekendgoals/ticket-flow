@@ -90,3 +90,43 @@ alone.
   grep found no other copy of the acceptance-gate or anchor rules.
 
 **Owed:** Nothing.
+
+**Addendum — review — 2026-09-14 — opus/xhigh:** One Important, confirmed and
+mine: the anchored SHA range froze the review packet at the pre-fix head, and
+`boundedReReview` reused that packet verbatim — so at the consequence tier and
+on every fix-bounds trip the pass that exists to judge the fix commits was
+pointed at a range that cannot contain them, told to read the anchored commit
+rather than the branch tip, and could return `important: []` having read none
+of them. Fixed in `2b153ef`: the packet is a shared body plus a per-pass
+header, the first review keeps the anchored range, and the re-review gets
+`<anchorHead>..origin/<branch>` — the fix commits themselves, the first
+review's range named as context — and is told to read the branch as pushed;
+with no anchor it gets the whole branch, wider rather than narrower. One new
+test, `re-review range covers the fix commits, and differs from the first
+review range`, named off the criterion's pattern so `# pass 6` stays exact and
+verified red on the unfixed driver (restored `HEAD:run-epic.mjs`: `# fail 1`;
+restored the fix: `ok`). Three nits, all confirmed, all fixed in `7fc8b17`:
+the range comment now says which spelling is right for `git diff` (merge-base)
+and which for `git log` (symmetric difference) instead of claiming three dots
+narrow both; the run skill now names the schema's `reviewedHead` and the
+record's `reviewerReportedHead` separately from the driver's anchor; and
+`STOP.acceptanceCheck` grew to name all three halts the gate fires on — a
+failing check, a CHECK too malformed to run, a report the gate cannot read —
+with the run skill's step 5 copy moved in the same commit and
+`check-invariants.mjs` `PHRASES` pinning the sentence whole rather than by its
+first clause. The historical quotes of the old string in `context/` are
+evidence of past runs and stay as recorded. Bounded re-review of
+`6ad7dac..7fc8b17` at opus/xhigh: **0 Important**, nothing from the first
+review unaddressed, reviewed head `7fc8b17`. Counts after the fixes: run-epic
+99/99, tickets 58/58, session guard 14/14, check-invariants 13/13, board 9/9,
+plan-page 8/8, codex 8/8 (every suite `# fail 0`); `check-invariants.mjs`
+exit 0; `doctor` exit 0; the driver's runtime-style parse exit 0;
+`tickets.mjs check HARD-1` 2/2 with the pattern still printing `# pass 6`.
+**Not nothing deferred:** one pre-existing defect is handed on — the driver
+never compares `anchorHead` with the head it merges, so on a clean review
+(`fixedCommits: []`) a commit pushed between the review and the resolve step
+merges unreviewed and unmeasured; now that `anchorHead` is a driver fact, an
+equality-or-ancestry check at the resolve step is cheap. Owner: the epic's
+retro — a follow-up run-lane ticket. Nothing else was left unfixed.
+Worker tokens (implementation leg): 181,146; Reviewer tokens: 316,806 (first
+review 148,524; re-review 168,282).
