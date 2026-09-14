@@ -655,7 +655,13 @@ test('a bounds trip whose re-review returns 0 Important merges, and the record c
   assert.equal(rec.tier, 'normal')
   assert.equal(call(outside, 're-review:PAY-1').model, 'opus')
   assert.equal(call(outside, 're-review:PAY-1').effort, 'xhigh')
-  assert.ok(outside.logs.some(l => /fix-bounds gate tripped/.test(l) && /sneaky\/new\.ts/.test(l) && /instead of halting/.test(l)))
+  // The path is agent-reported text, so it reaches the log fenced — asserted
+  // with the markers, or deleting the `fence(` call leaves this suite green.
+  assert.ok(
+    outside.logs.some(
+      l => /fix-bounds gate tripped/.test(l) && /<<<UNTRUSTED\nsneaky\/new\.ts\nUNTRUSTED>>>/.test(l) && /instead of halting/.test(l),
+    ),
+  )
   // Over the line budget is the same trip: one re-review, then the merge.
   const overBudget = await drive(
     oneTicket({

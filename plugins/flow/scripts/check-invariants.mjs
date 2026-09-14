@@ -297,8 +297,8 @@ const PHRASES = [
     files: ['run', 'workflow'],
   },
   {
-    why: 'the fix-bounds stop condition is one sentence in the skill and the script — since a bounds trip buys a re-review instead of a halt, the only fix that still halts is one nothing could measure, and both documents must say so in the same words',
-    re: /no usable fix-diff facts/,
+    why: 'the fix-bounds stop condition is one sentence in the skill and the script — since a bounds trip buys a re-review instead of a halt, the only fix that still halts is one nothing could measure, and both documents must say so in the same words. Pinned whole, not by its first clause: what it now excludes is as load-bearing as what it names',
+    re: /no usable fix-diff facts from the resolve step, or a fix whose changed lines cannot be counted; an unmeasurable fix is never merged/,
     files: ['run', 'workflow'],
   },
   {

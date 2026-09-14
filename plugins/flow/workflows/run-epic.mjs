@@ -9,7 +9,7 @@ export const meta = {
     { title: 'Ticket', detail: 'one fresh-context worker per ticket, stopping at its pushed branch — release tickets open no pull request of their own' },
     { title: 'Review', detail: "the driver hires the judge, priced by the worker's reported tier floored in code by the diff's own file list" },
     { title: 'Disposition', detail: 'fix Important findings, record pre-existing ones, commit the addendum — a merge precondition' },
-    { title: 'Re-review', detail: 'one bounded pass over the fix commits — at the consequence tier, when the fix-bounds gate has no anchor, or when that gate trips; below the consequence tier the fixes are bounds-checked in code at the resolve step, and a trip buys this same pass at the consequence tier instead of halting' },
+    { title: 'Re-review', detail: 'one bounded pass over the fix commits — at the consequence tier, when the fix-bounds gate has no anchor, or when that gate trips; below the consequence tier the fixes are bounds-checked in code at the resolve step, and a trip buys this same pass at the consequence tier instead of halting — that one runs out of order, after the resolve step measured the bounds and just before the merge, so acceptance has already run' },
     { title: 'Acceptance', detail: "run the ticket's CHECK/EXPECT criteria from the signed-off document against the pushed branch — the counts judged in code before anything can merge" },
     { title: 'Resolve', detail: 'read-only: the addendum on the pushed branch and the exact head commit it stands at, checked in code before anything can merge' },
     { title: 'Merge', detail: 'one fixed git sequence merging the code-verified head SHA into epic/<name> — a merge commit, never a squash, and a SHA cannot be retargeted' },

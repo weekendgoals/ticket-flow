@@ -197,7 +197,10 @@ refuses to start.
   re-review at the consequence tier rather than halting** — all three live
   trips were clean fixes and each halt cost a human a resume — and an
   Important finding in that pass halts on the Important-finding condition
-  like any other. No usable `reviewedHead` sends the fixes to the re-review
+  like any other. That pass runs where the trip is detected: **after** the
+  resolve step's bounds check and just before the merge, so a ticket that
+  halts in `Re-review` with `fixBoundsTripped` had already passed its
+  acceptance checks. No usable `reviewedHead` sends the fixes to the re-review
   anyway — doubt raises scrutiny. A clean review skips all of this.
 - **Re-runs the ticket's CHECK/EXPECT criteria from the signed-off
   document** — `tickets.mjs check <ID> --from origin/epic/<name> --json` on
