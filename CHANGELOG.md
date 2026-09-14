@@ -8,6 +8,38 @@ with one version and date.
 
 ## Unreleased
 
+- **The unattended acceptance gate reads the ledger's verdict, and the review
+  anchor is the driver's own read** (`workflows/run-epic.mjs`
+  `ACCEPT_SCHEMA`, the acceptance prompt and its code gate; `TIER_FACTS_SCHEMA`
+  and the tier-facts prompt; the review packet and `REVIEW_SCHEMA`;
+  `skills/run/SKILL.md`; six new driver tests). Two holes in the merge gate.
+  **One:** the gate compared `passed !== total`, and a malformed CHECK line
+  runs nothing — so `passed === total` is trivially true on a criterion
+  nobody can satisfy, and the run merged it (RUN-2's reviewer found the
+  shape). The proxy now reports the ledger's own `allPassed` verdict and the
+  number of `problems` the script printed; the gate halts on
+  `STOP.acceptanceCheck` unless `allPassed === true`, halts on any malformed
+  line even when every runnable check passed, quotes the problem text, and
+  halts as unreadable evidence when either field is missing — a gate that
+  cannot read its own evidence merges nothing. The prompt's old sentence
+  "exits 0 when every check passed and 1 when any failed" was wrong about
+  exit 1 and is corrected. **Two:** `reviewedHead` — the anchor the
+  fix-bounds gate measures from — came back inside the reviewer's own report,
+  which is the party under review saying which commit was reviewed. The
+  driver now reads it itself in the read-only tier-facts step before the
+  reviewer is hired, hands the reviewer a SHA range
+  (`origin/epic/<name>...<sha>`), and keeps the reviewer's number only as a
+  cross-check: a disagreement is logged and the driver's anchor wins. The
+  re-review packet no longer asks for a field `RE_REVIEW_SCHEMA` cannot
+  carry, and gets its own range — `<reviewedHead>..origin/<branch>`, the fix
+  commits themselves — because the anchored range the first review read
+  predates them. No usable anchor still routes the fixes to the bounded
+  re-review — doubt raises scrutiny, never lowers it. The
+  `STOP.acceptanceCheck` sentence grows to name all three halts the gate now
+  fires on (a failing check, a CHECK too malformed to run, a report the gate
+  cannot read), with the run skill's step 5 copy and `check-invariants.mjs`
+  moving in the same commit; `PHRASES` pins the sentence whole.
+
 - **The retro asks what every halt bought** (`skills/retro/SKILL.md` step 4's
   question list and step 5's proposals, README, METHODOLOGY § "Why an epic
   ends with a retro"). Step 4 is seven questions now, not six: the seventh
