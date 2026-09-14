@@ -367,7 +367,11 @@ logs carry a figure: a ticket entry's `**Tokens:**` line in `status.md`, its
 review addendum's `Worker tokens (implementation leg): <n>; Reviewer tokens:
 <n>` phrases, and a run record's per-ticket `<ID> worker=<n> reviewer=<n> …`
 groups in `runs.md` — or in `status.md`, for the logs written before the run
-records were split out. Recorded figures only, exactly as the log says:
+records were split out. Where both logs carry a figure for the same ticket and
+role, the one in `runs.md` wins — so a correction to a run record's figures is
+appended there — and an `unknown` never overwrites a known figure in either
+direction, because `unknown` is the absence of an observation, not a
+correction. Recorded figures only, exactly as the log says:
 `unknown` stays
 unknown, a ticket with nothing recorded is reported as such, and nothing is
 estimated or read from a transcript. `--json` returns the same ledger for
@@ -377,10 +381,11 @@ same-day runs are told apart); `doctor` flags a run heading that will not
 parse and a run record whose Tokens line carries figures but no groups —
 the ledger silently reads nothing from either, and the repair is a dated
 addendum beneath the record, never an edit. It also flags a run record
-appended to `status.md` once that epic has a `runs.md`, dated from the first
-record in it on: the ledger still reads the figures, but the two writers are
-back on one file tail. Records that predate the split are never flagged —
-moving them is what append-only forbids.
+appended to `status.md` once that epic has a `runs.md`, dated after the first
+record in it: the ledger still reads the figures, but the two writers are
+back on one file tail. Records dated on or before the split day are never
+flagged — moving them is what append-only forbids — nor is one whose heading
+already appears in `runs.md`, which is what the repair looks like.
 
 Two blind spots worth knowing: the board reads *this checkout's* view of the
 remote, so fetch first when the answer matters; and `shipped` means some commit

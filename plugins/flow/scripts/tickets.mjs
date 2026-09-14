@@ -489,11 +489,23 @@ function parseSpend(epic) {
   const docs = [epic.statusDoc, epic.runsDoc].filter(Boolean)
   if (!docs.length) return byId
   const rec = (id) => byId[id] || (byId[id] = { id, figures: {}, unknown: new Set(), source: null, note: null })
+  // Two files means two orders, so the ranking is stated rather than left to
+  // whichever file is read last:
+  //
+  //   1. `unknown` never overwrites a known figure. `unknown` records the
+  //      absence of an observation, not a correction — a halted run that could
+  //      not read its meter must not erase the figure the finished ticket's
+  //      own entry recorded. (The reverse still applies: a known figure
+  //      replaces an earlier `unknown`.)
+  //   2. Between two known figures for the same ticket and role, the last one
+  //      read wins, and runs.md is read after status.md — so a run record's
+  //      figure outranks a status entry's, and a correction to a run record's
+  //      figures belongs in runs.md, beneath the record it corrects.
   const apply = (r, role, val, source) => {
     role = role.toLowerCase()
     if (/^unknown$/i.test(val)) {
+      if (role in r.figures) return // rule 1 — and the known figure keeps its own source
       r.unknown.add(role)
-      delete r.figures[role]
     } else {
       r.figures[role] = toNum(val)
       r.unknown.delete(role)
@@ -995,6 +1007,26 @@ function doctor() {
     for (const t of parseTickets(epic))
       for (const p of parseChecks(t.body).problems)
         add('warn', `${epic.epic}/tickets.md (${t.id}) — ${p.why}: ${p.text}`)
+    if (!epic.statusDoc) {
+      // Two doors create this file — /flow:epic at sign-off, or the first
+      // ticket's status entry (ticket step 6 via /flow:ticket, or in-session
+      // by /flow:quick, which never runs /flow:epic). Name both, and name
+      // each as a command the reader can run — or the hint advertises a
+      // recovery unreachable from the state that triggers it (Q-16).
+      add('warn', `${epic.epic}: no status.md — created at sign-off by /flow:epic, or by the first ticket's status entry (/flow:ticket <ID>, or in-session by /flow:quick); without it DONE/BLOCKED are invisible`)
+    } else {
+      readFileSync(epic.statusDoc, 'utf8').split('\n').forEach((line, i) => {
+        if (!nearStatus.test(line)) return
+        const m = line.match(STATUS_HEADING)
+        if (!m)
+          add('warn', `${epic.epic}/status.md:${i + 1} — heading will not parse, so this ticket reads as not done (needs "### <ID> — <name> — YYYY-MM-DD — DONE|BLOCKED|ABANDONED"): ${line.trim()}`)
+        else if (!KNOWN_OUTCOMES.has(m[4]))
+          add('warn', `${epic.epic}/status.md:${i + 1} — unknown outcome "${m[4]}" is ignored by the board (known: DONE, BLOCKED, ABANDONED)`)
+      })
+    }
+    // The run-record scans below run whether or not status.md exists — an epic
+    // whose records are split out has a runs.md to check either way, and the
+    // early `continue` that used to sit here skipped it silently.
     // Run records are read from runs.md and from status.md (where every log
     // written before the split keeps them), so both files get the run-record
     // scans — a record flagged in only one of them would be a gate at a door
@@ -1023,31 +1055,35 @@ function doctor() {
     // older ones are forbidden to move: an append-only log is never rewritten,
     // and a warning whose only recovery is forbidden is worse than none.
     if (epic.statusDoc && epic.runsDoc) {
-      const split = runRecordHeadings(epic.runsDoc)[0]
-      if (split)
-        for (const r of runRecordHeadings(epic.statusDoc).filter((r) => r.date >= split.date))
+      const runRecords = runRecordHeadings(epic.runsDoc)
+      const split = runRecords[0]
+      if (!split)
+        // With no parseable record in runs.md there is no split date, so the
+        // scan below silently checks nothing — and a record that reaches
+        // status.md from here on is never flagged. Say so: the file exists, so
+        // the epic has split, and the first record's own heading is what dates
+        // the split.
+        add(
+          'warn',
+          `${epic.epic}/runs.md carries no parseable run record, so nothing dates the split and a run record misfiled into status.md cannot be flagged (needs "### Run — YYYY-MM-DD — completed|halted", an optional "(qualifier)" after the date); if a record is in there with a heading that will not parse, repair it the way every other record is repaired — a dated addendum beneath it, never an edit`,
+        )
+      else {
+        // A record whose heading is already in runs.md is a repaired one: the
+        // advertised recovery is to append it there and leave the committed
+        // status.md copy alone, so re-flagging it would be a warning that can
+        // never be cleared.
+        const repaired = new Set(runRecords.map((r) => r.heading))
+        // Strictly after: a date carries no time, so a record written on the
+        // split day itself may well predate the first record in runs.md, and a
+        // warning whose repair is forbidden (the record may not move) must not
+        // fire on a record that never misbehaved.
+        for (const r of runRecordHeadings(epic.statusDoc).filter((r) => r.date > split.date && !repaired.has(r.heading)))
           add(
             'warn',
-            `${epic.epic}/status.md:${r.line} — this run record (dated ${r.date}) sits in status.md, but this epic's run records live in runs.md from ${split.date} on, and appending them beside the ticket entries is the two-writers conflict the split ended; repair by appending the record to runs.md and, when the status.md copy is already committed, a dated addendum beneath it naming where the record now lives — never by deleting it, and records dated before ${split.date} stay where they are and are read there: ${r.heading}`,
+            `${epic.epic}/status.md:${r.line} — this run record (dated ${r.date}) sits in status.md, but this epic's run records live in runs.md from ${split.date} on, and appending them beside the ticket entries is the two-writers conflict the split ended; repair by appending the record to runs.md and, when the status.md copy is already committed, a dated addendum beneath it naming where the record now lives — never by deleting it, and records dated ${split.date} or earlier stay where they are and are read there: ${r.heading}`,
           )
+      }
     }
-    if (!epic.statusDoc) {
-      // Two doors create this file — /flow:epic at sign-off, or the first
-      // ticket's status entry (ticket step 6 via /flow:ticket, or in-session
-      // by /flow:quick, which never runs /flow:epic). Name both, and name
-      // each as a command the reader can run — or the hint advertises a
-      // recovery unreachable from the state that triggers it (Q-16).
-      add('warn', `${epic.epic}: no status.md — created at sign-off by /flow:epic, or by the first ticket's status entry (/flow:ticket <ID>, or in-session by /flow:quick); without it DONE/BLOCKED are invisible`)
-      continue
-    }
-    readFileSync(epic.statusDoc, 'utf8').split('\n').forEach((line, i) => {
-      if (!nearStatus.test(line)) return
-      const m = line.match(STATUS_HEADING)
-      if (!m)
-        add('warn', `${epic.epic}/status.md:${i + 1} — heading will not parse, so this ticket reads as not done (needs "### <ID> — <name> — YYYY-MM-DD — DONE|BLOCKED|ABANDONED"): ${line.trim()}`)
-      else if (!KNOWN_OUTCOMES.has(m[4]))
-        add('warn', `${epic.epic}/status.md:${i + 1} — unknown outcome "${m[4]}" is ignored by the board (known: DONE, BLOCKED, ABANDONED)`)
-    })
   }
 
   const seen = {}

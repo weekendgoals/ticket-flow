@@ -37,7 +37,18 @@ with one version and date.
   appending it to `runs.md`, never by deleting the committed copy), and
   records that predate the split are never flagged, because moving them is
   exactly what append-only forbids and a warning whose only recovery is
-  forbidden is worse than none.
+  forbidden is worse than none. Nor is a record whose heading already appears
+  in `runs.md` — that is what the repair looks like — nor one dated on the
+  split day itself, since a date carries no time to order it by; and a
+  `runs.md` carrying no parseable record is itself flagged, because nothing
+  then dates the split and the scan would silently check nothing. **Two logs
+  need a stated ranking, and this is it:** where both carry a figure for the
+  same ticket and role, `spend` takes the one in `runs.md` (so a correction to
+  a run record's figures is appended there), and an `unknown` never overwrites
+  a known figure in either direction — `unknown` is the absence of an
+  observation, not a correction, so a halted run that read no meter no longer
+  erases the figure the finished ticket's own entry recorded. The run skill's
+  step 6, the spend skill and README's `spend` paragraph all state it.
 
 - **The per-ticket token budget is re-read from the signed-off epic ref
   before every merge, so raising it mid-run reaches the run that tripped it**

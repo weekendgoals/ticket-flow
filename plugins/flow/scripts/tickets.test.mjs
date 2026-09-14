@@ -1367,9 +1367,25 @@ Delivery: incremental
 
 **Scope.** Two.
 
-## T-3 — recorded after the split, in the wrong file
+## T-3 — recorded on the split day, in status.md
 
 **Scope.** Three.
+
+## T-4 — recorded after the split, in the wrong file
+
+**Scope.** Four.
+
+## T-5 — misfiled, then repaired into the run log
+
+**Scope.** Five.
+
+## T-6 — a halted run read no meter; the attended finish did
+
+**Scope.** Six.
+
+## T-7 — recorded in both logs, the run record later
+
+**Scope.** Seven.
 `,
 )
 writeFileSync(
@@ -1385,10 +1401,50 @@ writeFileSync(
 
 ### Run — 2026-09-10 — halted
 
-**Driver:** /flow:run, unattended — appended to the wrong file after the split.
+**Driver:** /flow:run, unattended — written on the split day itself, which a
+date cannot order against the first record in the run log.
 **Tokens:** T-3 worker=10 reviewer=10 disposition=0 re-review=0 proxies=0; total=20.
 
 **Halted on:** something.
+
+### Run — 2026-09-12 — halted
+
+**Driver:** /flow:run, unattended — appended to the wrong file after the split.
+**Tokens:** T-4 worker=20 reviewer=20 disposition=0 re-review=0 proxies=0; total=40.
+
+**Halted on:** something.
+
+### Run — 2026-09-13 — halted
+
+**Driver:** /flow:run, unattended — misfiled here, then appended to runs.md.
+**Tokens:** T-5 worker=30 reviewer=30 disposition=0 re-review=0 proxies=0; total=60.
+
+**Halted on:** something.
+
+**Addendum — 2026-09-13:** this record was appended to the run log, where this
+epic's run records live; the copy above stays because the log is append-only.
+
+### T-6 — a halted run read no meter; the attended finish did — 2026-09-14 — DONE
+
+**Built:** six.
+
+**Tokens:** observed by the supervisor — see the review addendum
+
+**Owed:** Nothing.
+
+**Addendum — review — 2026-09-14 — sonnet/high:** No findings. Worker tokens
+(implementation leg): 40,000; Reviewer tokens: 12,000.
+
+### T-7 — recorded in both logs, the run record later — 2026-09-14 — DONE
+
+**Built:** seven.
+
+**Tokens:** observed by the supervisor — see the review addendum
+
+**Owed:** Nothing.
+
+**Addendum — review — 2026-09-14 — sonnet/high:** Worker tokens
+(implementation leg): 5; Reviewer tokens: 5.
 `,
 )
 writeFileSync(
@@ -1400,9 +1456,49 @@ Append-only record of unattended runs. Tickets: \`epics/tau/tickets.md\`.
 ### Run — 2026-09-10 — completed
 
 **Driver:** /flow:run, unattended.
-**Tokens:** T-1 worker=4,000 reviewer=2,000 disposition=0 re-review=unknown proxies=100; total=6,100.
+**Tokens:** T-1 worker=4,000 reviewer=2,000 disposition=0 re-review=unknown
+proxies=100; total=6,100. The halted leg read no meter for T-6:
+T-6 worker=unknown reviewer=unknown disposition=0 re-review=0 proxies=0.
 
 **Halted on:** ran to completion.
+
+### Run — 2026-09-13 — halted
+
+**Driver:** /flow:run, unattended — the copy of the record misfiled into
+status.md; identical heading, so the misfile is repaired, not re-flagged.
+**Tokens:** T-5 worker=30 reviewer=30 disposition=0 re-review=0 proxies=0; total=60.
+
+**Halted on:** something.
+
+### Run — 2026-09-14 — completed
+
+**Driver:** /flow:run, unattended.
+**Tokens:** T-7 worker=99 reviewer=5 disposition=0 re-review=0 proxies=0; total=104.
+
+**Halted on:** ran to completion.
+`,
+)
+// upsilon — a runs.md that exists but carries no parseable record: the split
+// has happened (the file is there), yet nothing dates it, so the misfile scan
+// would silently check nothing.
+mkdirSync(join(srepo, 'epics/upsilon'), { recursive: true })
+writeFileSync(
+  join(srepo, 'epics/upsilon/tickets.md'),
+  `# Upsilon epic — tickets
+
+Delivery: incremental
+
+## U-1 — split, but nothing recorded yet
+
+**Scope.** One.
+`,
+)
+writeFileSync(join(srepo, 'epics/upsilon/status.md'), '# Upsilon epic — status log\n')
+writeFileSync(
+  join(srepo, 'epics/upsilon/runs.md'),
+  `# Upsilon epic — run log
+
+Append-only record of unattended runs. Tickets: \`epics/upsilon/tickets.md\`.
 `,
 )
 git(srepo, 'add', '.')
@@ -1508,7 +1604,8 @@ test('spend reads a run record from runs.md, and still reads the records that pr
   // Even the misfiled record's figures are read — the flag below is about the
   // conflicting file tail, not about a ledger that lost anything.
   assert.equal(byId['T-3'].worker, 10)
-  assert.equal(out.epics[0].totals.total, 7620)
+  assert.equal(byId['T-4'].worker, 20)
+  assert.equal(out.epics[0].totals.total, 59824)
 })
 
 test('doctor flags a run record appended to status.md after the split to runs.md, and never one that predates it', () => {
@@ -1516,17 +1613,55 @@ test('doctor flags a run record appended to status.md after the split to runs.md
   const misfiled = rows.filter((r) => r.level === 'warn' && /run records live in runs\.md/.test(r.msg))
   assert.equal(misfiled.length, 1, rows.map((r) => r.msg).join('\n'))
   assert.match(misfiled[0].msg, /^tau\/status\.md:\d+ — /)
-  assert.match(misfiled[0].msg, /### Run — 2026-09-10 — halted$/)
+  assert.match(misfiled[0].msg, /### Run — 2026-09-12 — halted$/)
   // The advertised recovery has to work in the flagged state: the record is
   // already committed in an append-only log, so the repair is appending, never
   // deleting.
   assert.match(misfiled[0].msg, /appending the record to runs\.md/)
   assert.match(misfiled[0].msg, /never by deleting it/)
-  // Date-scoped: the record from before the split is left alone, because
-  // moving it is exactly what append-only forbids.
+  // Date-scoped, and strictly: the record from before the split is left alone
+  // because moving it is exactly what append-only forbids, and the one written
+  // on the split day itself may well predate the first record in the run log —
+  // a date carries no time to order them by.
   assert.ok(!rows.some((r) => /2026-09-01/.test(r.msg)), rows.map((r) => r.msg).join('\n'))
+  assert.ok(!rows.some((r) => /### Run — 2026-09-10 — halted/.test(r.msg)), rows.map((r) => r.msg).join('\n'))
+  // A record already repaired — appended to the run log, its committed copy
+  // left where it is — is not re-flagged, or the warning could never clear.
+  assert.ok(!rows.some((r) => /### Run — 2026-09-13 — halted/.test(r.msg)), rows.map((r) => r.msg).join('\n'))
   // And an epic with no runs.md at all is not nagged about one.
   assert.ok(!rows.some((r) => /^sigma\/.*runs\.md/.test(r.msg)), rows.map((r) => r.msg).join('\n'))
+})
+
+test('an unknown in one log never erases a known figure in the other; between two known figures the run log wins', () => {
+  // The executed case from HARD-4's review: a halted run recorded no meter
+  // reading for T-6, the ticket was then finished attended and its own entry
+  // carries the figures. Reading the two files in sequence used to let the
+  // later file's `unknown` delete the earlier file's number, so the ledger
+  // reported the ticket as unmeasured and its total as zero. `unknown` is the
+  // absence of an observation, not a correction.
+  const out = JSON.parse(run(srepo, 'spend', 'tau', '--json'))
+  const byId = Object.fromEntries(out.epics[0].tickets.map((t) => [t.id, t]))
+  assert.equal(byId['T-6'].worker, 40000)
+  assert.equal(byId['T-6'].reviewer, 12000)
+  assert.equal(byId['T-6'].total, 52000)
+  assert.deepEqual(byId['T-6'].unknown, [])
+
+  // Two known figures for one ticket and role: the run log is read last and
+  // wins, which is why a correction to a run record's figures belongs there.
+  assert.equal(byId['T-7'].worker, 99)
+  assert.equal(byId['T-7'].source, 'run-record')
+})
+
+test('doctor says so when the run log exists but carries no parseable record, instead of checking nothing', () => {
+  // With no record in it, nothing dates the split, so the misfile scan cannot
+  // fire at all — a scan that silently checks nothing is the failure this
+  // whole class of near-miss warnings exists to stop.
+  const rows = JSON.parse(run(srepo, 'doctor', '--json'))
+  const empty = rows.filter((r) => r.level === 'warn' && /carries no parseable run record/.test(r.msg))
+  assert.equal(empty.length, 1, rows.map((r) => r.msg).join('\n'))
+  assert.match(empty[0].msg, /^upsilon\/runs\.md /)
+  assert.match(empty[0].msg, /### Run — YYYY-MM-DD — completed\|halted/)
+  assert.match(empty[0].msg, /dated addendum beneath it, never an edit/)
 })
 
 test('find --json exposes runsDoc, whether or not the epic has split its runs.md out yet', () => {

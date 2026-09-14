@@ -428,8 +428,9 @@ Run —` record appended to `status.md` after it. A qualifier in parentheses
 after the date is allowed and is how same-day runs are told apart — `### Run
 — 2026-08-25 (second run) — halted`.
 
-`find --json` and `epics --json` carry `runsDoc` (with `runsDocExists`), so
-the path is read, never built by hand. If `runs.md` does not exist, create it
+`find --json` carries `runsDoc` (with `runsDocExists`) — the path whether or
+not the file is there yet — so it is read, never built by hand. If `runs.md`
+does not exist, create it
 with this exact preamble — the **Rules** block is the status log's, verbatim,
 because it is one rule and `check-invariants.mjs` holds the two copies
 together:
@@ -444,6 +445,14 @@ Ticket entries and their review addenda stay in `epics/<name>/status.md`.
 correct, never edits. Report counts, not adjectives. The **Owed** line is
 required even when empty.
 ```
+
+**A correction to a run record's figures goes in `runs.md`**, as a dated
+addendum beneath the record it corrects — never in `status.md`. Where both
+logs carry a figure for the same ticket and role, `spend` takes the one in
+`runs.md`; and an `unknown` never overwrites a known figure in either
+direction, because `unknown` records the absence of an observation, not a
+correction — a halted run that read no meter must not erase the figure the
+finished ticket's own entry recorded.
 
 Then the record itself:
 
