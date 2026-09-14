@@ -219,3 +219,47 @@ repository's unrelated untracked research files were left alone.
   and recorded, not adapted around.
 
 **Owed:** Nothing.
+
+**Addendum — review — 2026-09-14 — opus/xhigh:** **0 Important**; verdict
+sound, so no re-review. Four nits, all confirmed, all fixed in `6f23d01`.
+(1) The pathspec comment in `run-epic.mjs` — and this entry's Decisions bullet
+on the same point — had the mechanism inverted. `reviewedFiles` comes only
+from the `--name-only` command and `fixFiles`/`fixLines` only from
+`--numstat`, and the trip is `fixFiles` minus `reviewedFiles`: excluding on
+the numstat side alone removes the file from `fixFiles`, so **no** trip
+occurs — that side is what the feature turns on. The symmetry prevents the
+mirror case instead: excluding on the `--name-only` side alone would shrink
+`reviewedFiles` while the file still arrived in `fixFiles`, a guaranteed trip
+on every fan-out fix. The comment now states that; the entry above is
+corrected by this line rather than edited, per the log's Rules. The test
+asserts the symmetry (both commands carry the globs), not the mechanism —
+which is what a test over stubbed agents can prove. (2) Nothing in the record
+or the log said the gate had run narrowed, so a retro could not distinguish a
+gate that measured the whole fix from one a broad glob narrowed to nothing —
+`**` is legal by design, the human's call at sign-off. The ticket record now
+carries `fixBoundsExclude` (`[]` when nothing was excluded) and the run logs
+the applied globs when the gate is armed with them; the run skill's record
+field list and its run-record reading moved in the same commit, and the
+assertions ride the existing named test so the criterion's `# pass 2` stays
+exact. (3) The epic skill's new paragraph had dropped the "globs only on this
+line" caution its `Consequence paths:` sibling carries, and said nothing
+about the comma split; it now carries both, and the parser test's assertion
+message no longer reads as "trailing prose is safe" — it is safe only while
+comma-free. (4) One 89-character line in `skills/run/SKILL.md` rewrapped.
+Counts after the fixes: tickets 60/60, run-epic 101/101, session guard 14/14,
+check-invariants 13/13, board 9/9, plan-page 8/8, codex 8/8 (every suite
+`# fail 0`); `check-invariants.mjs` exit 0; `doctor` exit 0; `node --check
+plugins/flow/scripts/tickets.mjs` exit 0; the driver's runtime-style parse
+exit 0; `tickets.mjs check HARD-2` 3/3 with both patterns still exactly
+`# pass 2`. **Not nothing deferred:** two pre-existing defects are handed on,
+owner **a follow-up run-lane ticket, or this epic's retro**. (a) A hyphenated
+declaration label (`Fix-bounds exclude:`, `Ticket-budget:`, `Worker-model:`)
+escapes doctor's `declNear`, which joins multi-word labels with `\s+`, so the
+near-miss scan stays silent on a line that parses as nothing — for
+`Ticket-budget:` that is a per-ticket ceiling silently absent from a run. (b)
+`grabPathList` splits on commas, so trailing prose containing a comma becomes
+a glob entry and the driver refuses the run; `Consequence paths:` has carried
+that since it shipped and `Fix bounds exclude:` inherits it. Both are older
+than this ticket and neither is in its scope; the skills now warn about (b)
+in prose, which is a mitigation, not the fix. Nothing else was left unfixed.
+Worker tokens (implementation leg): 170,716; Reviewer tokens: 153,837.
