@@ -452,3 +452,22 @@ first question already uses for an epic with no Outcome line, and the case
 this very epic is in.
 
 **Owed:** Nothing.
+
+**Addendum — review — 2026-09-14 — sonnet/high:** 0 Important, 0 nits, no
+pre-existing findings; reviewed head `f60dc29`, normal tier. Nothing fixed,
+because nothing was found in this range. What the review checked and found
+sound: the seventh question is self-sufficient for a fresh miner — it names
+its source (`### Run —` records and their **Halted on:** line), defines all
+four classes, asks for the resume and the verdict, gives both transferable
+dispositions and the no-run-records fallback; step 5's proposals carry the
+matching **Halts** section; the `## 4.` region holds exactly seven bold
+bullets against six on the base tree; no "six" or "sixth" reference to the
+question count survives in the skill, README or METHODOLOGY, and the
+"converge question" rename is correct; the demonstration's quoted section
+classifies FND-1 as a policy trip that fired on a clean state exactly as the
+new definitions require — the reviewer notes it cannot verify the spawn
+itself, only that the quote is consistent with the skill's vocabulary; the
+CHANGELOG entry is batched under `## Unreleased` with no version bump, as the
+root instructions require; and every count in the entry above was reproduced.
+Nothing deferred. Worker tokens (implementation leg): 139,095; Reviewer
+tokens: 95,700.
