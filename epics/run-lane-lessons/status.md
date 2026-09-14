@@ -489,3 +489,5 @@ tokens: 95,700.
 **Protection:** not present — 403 on both probes (free plan). Attended run; no waiver relied on.
 
 **Release PR:** https://github.com/weekendgoals/ticket-flow/pull/45
+
+**Addendum — tokens — 2026-09-14:** the run record's `total=2,404,389` was mis-added by hand; the ledger, which reads the groups and never the total, derives 2,544,389 from the same figures (`tickets.mjs spend run-lane-lessons`). The groups stand; the ledger's figure is the one to cite.
