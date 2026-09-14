@@ -1516,6 +1516,22 @@ test('a ticket branch cannot raise the ceiling that judges it — the ref is the
   assert.doesNotMatch(call(r, 'verify:PAY-1').prompt, /ticketBudget|budget/)
 })
 
+test('the resolve prompt tells the proxy what to report for the budget, and why the ref is the source', async () => {
+  // The proxy is a fast model reading a JSON field: what it is told decides
+  // whether the driver gets the number, a conversion of it, or a memory of an
+  // earlier one. The suite pins the prompt text behind the other gates; this
+  // pins the budget instruction the same way.
+  const p = call(await drive(oneTicket()), 'resolve:PAY-1').prompt
+  assert.match(p, /FACT 3 — the epic's per-ticket token ceiling, as the signed-off document declares it on `origin\/epic\/payments`/)
+  assert.match(p, /`--from` is what makes this fact trustworthy/)
+  assert.match(p, /the branch under review cannot raise the ceiling it is judged by/)
+  assert.match(p, /Report the `ticketBudget` field exactly as the JSON prints it/)
+  // null is an answer: most epics declare no budget, and a proxy that treats
+  // it as a failure would halt every one of them.
+  assert.match(p, /`null` is an answer \(most epics declare no budget\), not a failure/)
+  assert.match(p, /Never convert it, never round it, never substitute a number you saw earlier in this run\./)
+})
+
 // ---- arguments --------------------------------------------------------------
 
 test('the script refuses unusable arguments before spending an agent', async () => {
