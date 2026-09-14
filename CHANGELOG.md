@@ -8,6 +8,34 @@ with one version and date.
 
 ## Unreleased
 
+- **A CHECK criterion must be red before its ticket is built**
+  (`skills/epic/SKILL.md` "Rules that matter" and step 5,
+  `agents/plan-reviewer.md`, `scripts/tickets.mjs` `parseChecks`, two new
+  `CHECK shape` cases and the K-7 fixture in `tickets.test.mjs`, README,
+  METHODOLOGY). A CHECK written at planning time and already green on the
+  current tree proves nothing about the ticket and merges green whatever the
+  worker builds. The planner now runs every CHECK it writes before sign-off,
+  records the ledger in the draft (proven failing; could not run here and
+  why), and shows it at the gate; the plan reviewer **re-runs** the runnable
+  ones under a 60-second per-command bound, skips and names the rest, and
+  reports as findings a CHECK that passes on the current tree, one whose
+  command errors, and a ledger claim it cannot reproduce. The same rule
+  retires the decorative whole-suite CHECK (`EXPECT: Tests:` passes on the
+  pre-ticket tree too — six of groundhopper-foundation's eight CHECKs were
+  this): the suite is a standing check reported under **Verified**, and a
+  CHECK names the one test, assertion or fact the ticket turns green.
+  `doctor` gains two shapes under its existing CHECK scan, each flagged with
+  the sentence saying why it can never pass: `\\|` inside a quoted
+  `node -e` / `sh -c` string (the quoting layer consumes one backslash, so
+  grep receives a literal `|` — FND-2's `MobileSidebar` CHECK passed on every
+  tree this way), and `grep` given both `-r` and `-c` in any spelling
+  (recursive counting prints `path:count` per file, never a bare number —
+  FND-6's printed `file:0` against an `EXPECT` of `1` and halted a live run
+  on correct code). A sound single-file `grep -c` is not flagged, and the
+  fixture carries GHF-1's to pin it. Both shapes ride the shared
+  `parseChecks` problems list, so `check <ID>` fails the gate on them too.
+  Doctor stays read-only: it never runs a CHECK.
+
 - **A fix-bounds trip buys a re-review, not a halt** (`workflows/run-epic.mjs`
   resolve step and re-review, four new `bounds trip` cases plus the updated
   existing ones in `run-epic.test.mjs`, `scripts/check-invariants.mjs`
