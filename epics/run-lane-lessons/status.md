@@ -56,3 +56,20 @@ line is a `**Tokens:**` line with figures and no group). Recorded rather than
 edited: the ticket document is signed off.
 
 **Owed:** Nothing.
+
+**Addendum — review — 2026-09-14 — sonnet/high:** Two Important findings,
+both fixed in `9910b42`: (1) doctor's new run-heading near-miss flagged any
+ticket entry whose ID starts with "Run" — this epic's own `### RUN-0` heading
+— because the check tested `RUN_HEADING` without first excluding
+`STATUS_HEADING`; (2) `hasFigure` scanned the whole run record after
+`**Tokens:**`, so a record whose Tokens paragraph said `unknown` was flagged
+when a later sentence mentioned a token count; it now reads only the Tokens
+paragraph (the line and its continuation lines up to a blank line or the
+next bold label) and ignores digits inside a date. One nit, taken with the
+second fix: the figure regex now accepts two-digit figures. Fixture and
+doctor test extended for both cases; tickets 56/56; doctor prints no
+warning for this repository and still flags exactly the 14 prose run
+records in weekendgoals. Bounded re-review of the fix commit: 0 Important,
+nothing from the first review unaddressed, reviewed head `9910b42`. Nothing
+deferred. Worker tokens (implementation leg): unknown; Reviewer tokens:
+252,343 (harness totals: first review 119,684, re-review 132,659).
