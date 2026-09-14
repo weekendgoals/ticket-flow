@@ -612,6 +612,7 @@ test('below the consequence tier, fixes skip the re-review and are bounds-checke
   const rec = r.out.ticketRecords[0]
   assert.equal(rec.reReviewRan, false)
   assert.equal(rec.fixBoundsGated, true)
+  assert.equal(rec.fixBoundsTripped, false)
   assert.equal(rec.fixLines, 12)
   assert.equal(rec.reviewedHead, 'abc1234def0')
   assert.equal(r.out.totals.reReviews, 0)
@@ -624,39 +625,135 @@ test('below the consequence tier, fixes skip the re-review and are bounds-checke
   assert.match(p, /the driver checks the bounds in code/i)
 })
 
-test('a fix touching files outside the reviewed diff halts with nothing merged', async () => {
-  const r = await drive(
+// A fix that leaves the bounds the cheap gate can judge buys the bounded
+// re-review the consequence tier gets, instead of halting the run: all three
+// live trips (GHL-1, GHL-9, GHL-10) were clean fixes, and every halt cost a
+// human a resume. What stays a halt is a fix nothing could measure.
+
+test('a bounds trip whose re-review returns 0 Important merges, and the record carries the trip with its counts', async () => {
+  const outside = await drive(
     oneTicket({
       'review:PAY-1': reviewImportant,
       'disposition:PAY-1': dispFixed,
       'resolve:PAY-1': { ...resolvedOk, ...resolvedOkBounds, fixFiles: ['a.ts', 'sneaky/new.ts'] },
+      're-review:PAY-1': { important: [] },
     }),
   )
-  assert.match(r.out.haltedOn.stopCondition, /^a review-fix diff outside its bounds/)
-  assert.match(r.out.haltedOn.detail, /<<<UNTRUSTED[\s\S]*sneaky\/new\.ts/)
+  assert.equal(outside.out.outcome, 'completed')
+  const rec = outside.out.ticketRecords[0]
+  assert.equal(rec.fixBoundsGated, true)
+  assert.equal(rec.fixBoundsTripped, true)
+  assert.equal(rec.reReviewRan, true)
+  assert.equal(rec.reReviewImportantCount, 0)
+  assert.equal(outside.out.totals.reReviews, 1)
+  // The pass is bought after the resolve step read the bounds facts and
+  // before any merging agent exists — and priced at the consequence tier,
+  // though the ticket itself was reviewed at normal.
+  const order = outside.labels
+  assert.ok(order.indexOf('re-review:PAY-1') > order.indexOf('resolve:PAY-1'))
+  assert.ok(order.indexOf('re-review:PAY-1') < order.indexOf('merge:PAY-1'))
+  assert.equal(rec.tier, 'normal')
+  assert.equal(call(outside, 're-review:PAY-1').model, 'opus')
+  assert.equal(call(outside, 're-review:PAY-1').effort, 'xhigh')
+  // The path is agent-reported text, so it reaches the log fenced — asserted
+  // with the markers, or deleting the `fence(` call leaves this suite green.
+  assert.ok(
+    outside.logs.some(
+      l => /fix-bounds gate tripped/.test(l) && /<<<UNTRUSTED\nsneaky\/new\.ts\nUNTRUSTED>>>/.test(l) && /instead of halting/.test(l),
+    ),
+  )
+  // Over the line budget is the same trip: one re-review, then the merge.
+  const overBudget = await drive(
+    oneTicket({
+      'review:PAY-1': reviewImportant,
+      'disposition:PAY-1': dispFixed,
+      'resolve:PAY-1': { ...resolvedOk, ...resolvedOkBounds, fixLines: 61 },
+      're-review:PAY-1': { important: [] },
+    }),
+  )
+  assert.equal(overBudget.out.outcome, 'completed')
+  assert.equal(overBudget.out.ticketRecords[0].fixBoundsTripped, true)
+  assert.equal(overBudget.out.ticketRecords[0].fixLines, 61)
+  assert.equal(overBudget.calls.filter(c => c.label.startsWith('re-review:')).length, 1)
+  assert.ok(overBudget.logs.some(l => /61 lines against a budget of 60/.test(l)))
+})
+
+test('a bounds trip whose re-review returns 1 Important halts on the Important-finding stop condition, with the finding quoted', async () => {
+  const r = await drive(
+    oneTicket({
+      'review:PAY-1': reviewImportant,
+      'disposition:PAY-1': dispFixed,
+      'resolve:PAY-1': { ...resolvedOk, ...resolvedOkBounds, fixLines: 61 },
+      're-review:PAY-1': {
+        important: [{ file: 'a.ts', cite: 'a.ts:31', summary: 'the oversized fix drops the guard again', confirmedOrPlausible: 'confirmed', failure: 'an empty token merges' }],
+      },
+    }),
+  )
+  // One event, one stop string: a trip that finds something halts exactly as
+  // the consequence tier's own re-review does, never on the bounds condition,
+  // so the retro's classifier reads one class.
+  assert.equal(r.out.haltedOn.stopCondition, 'an Important review finding it cannot fix')
+  assert.match(r.out.haltedOn.where, /re-review/)
+  assert.match(r.out.haltedOn.detail, /a\.ts:31/)
+  assert.match(r.out.haltedOn.detail, /<<<UNTRUSTED[\s\S]*drops the guard again/)
+  assert.match(r.out.haltedOn.detail, /no second fix round/)
+  assert.equal(r.out.ticketRecords[0].fixBoundsTripped, true)
+  assert.equal(r.out.ticketRecords[0].reReviewImportantCount, 1)
+  assert.equal(r.calls.filter(c => c.label.startsWith('re-review:')).length, 1)
   assert.ok(!r.labels.some(l => l.startsWith('merge:')))
 })
 
-test('a fix exceeding the line budget halts, and an unmeasurable one halts too', async () => {
-  const over = await drive(
-    oneTicket({ 'review:PAY-1': reviewImportant, 'disposition:PAY-1': dispFixed, 'resolve:PAY-1': { ...resolvedOk, ...resolvedOkBounds, fixLines: 61 } }),
-  )
-  assert.match(over.out.haltedOn.stopCondition, /^a review-fix diff outside its bounds/)
-  assert.match(over.out.haltedOn.detail, /61 lines against a budget of 60/)
-  assert.ok(!over.labels.some(l => l.startsWith('merge:')))
+test('no usable fix facts is not a bounds trip: it still halts on the fix-bounds condition, and an unmeasurable diff halts too', async () => {
+  // The default resolve stub reports no reviewedFiles/fixFiles/fixLines.
+  const missing = await drive(oneTicket({ 'review:PAY-1': reviewImportant, 'disposition:PAY-1': dispFixed }))
+  assert.match(missing.out.haltedOn.stopCondition, /^a review-fix diff the run could not measure/)
+  assert.match(missing.out.haltedOn.stopCondition, /no usable fix-diff facts/)
+  assert.match(missing.out.haltedOn.detail, /no usable fix-diff facts/)
+  assert.equal(missing.out.ticketRecords[0].fixBoundsTripped, false)
+  assert.ok(!missing.labels.some(l => l.startsWith('re-review:') || l.startsWith('merge:')))
+  // A binary file's numstat prints "-": neither the bounds nor a re-review's
+  // reading of them means anything, so this one stays a halt.
   const binary = await drive(
     oneTicket({ 'review:PAY-1': reviewImportant, 'disposition:PAY-1': dispFixed, 'resolve:PAY-1': { ...resolvedOk, ...resolvedOkBounds, fixLines: -1 } }),
   )
+  assert.match(binary.out.haltedOn.stopCondition, /^a review-fix diff the run could not measure/)
   assert.match(binary.out.haltedOn.detail, /unmeasurable/)
-  assert.ok(!binary.labels.some(l => l.startsWith('merge:')))
+  assert.equal(binary.out.ticketRecords[0].fixBoundsTripped, false)
+  assert.ok(!binary.labels.some(l => l.startsWith('re-review:') || l.startsWith('merge:')))
 })
 
-test('missing fix-diff facts halt rather than merging fixes unchecked', async () => {
-  const r = await drive(oneTicket({ 'review:PAY-1': reviewImportant, 'disposition:PAY-1': dispFixed }))
-  // The default resolve stub reports no reviewedFiles/fixFiles/fixLines.
-  assert.match(r.out.haltedOn.stopCondition, /^a review-fix diff outside its bounds/)
-  assert.match(r.out.haltedOn.detail, /no usable fix-diff facts/)
-  assert.ok(!r.labels.some(l => l.startsWith('merge:')))
+test("a fix touching only a file the review's findings named is inside the bounds — no bounds trip, no re-review", async () => {
+  // GHL-10's shape: the finding is "the deliverable named in scope was not
+  // produced", so the fix lands outside the diff the review read BY
+  // CONSTRUCTION. A fix that goes where the review pointed is the fix the
+  // review asked for, not new surface, so the driver adds the findings' own
+  // files to the reviewed set before measuring.
+  const r = await drive(
+    oneTicket({
+      'review:PAY-1': {
+        ...reviewImportant,
+        important: [
+          {
+            file: 'ui/CLAUDE.md',
+            cite: 'ui/CLAUDE.md:1',
+            summary: 'the instruction file this ticket promised was never written',
+            confirmedOrPlausible: 'confirmed',
+            failure: 'nothing documents the new component',
+          },
+        ],
+      },
+      'disposition:PAY-1': dispFixed,
+      'resolve:PAY-1': { ...resolvedOk, reviewedFiles: ['a.ts'], fixFiles: ['ui/CLAUDE.md'], fixLines: 12 },
+    }),
+  )
+  assert.equal(r.out.outcome, 'completed')
+  const rec = r.out.ticketRecords[0]
+  assert.equal(rec.fixBoundsGated, true)
+  assert.equal(rec.fixBoundsTripped, false)
+  assert.equal(rec.reReviewRan, false)
+  assert.equal(r.out.totals.reReviews, 0)
+  assert.ok(!r.labels.some(l => l.startsWith('re-review:')))
+  assert.ok(r.labels.includes('merge:PAY-1'))
 })
 
 test('a review with no usable reviewedHead sends fixes to the bounded re-review instead — doubt goes up', async () => {

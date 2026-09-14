@@ -264,14 +264,47 @@ the admission test.
 
 What replaced it constrains blast radius instead of re-judging: the reviewer
 reports the head it reviewed, the read-only resolve step diffs the fix
-commits against it, and code — not a model — refuses fixes that touch any
-file the review never saw or exceed a small line budget. Inside those
-bounds a fix is re-verified by the disposition's re-run counts and re-read
-by the human on the release pull request; outside them it is new work, and
-granting new work a review is a human's decision, so the run halts. The
-consequence tier keeps the full re-review — capability spend belongs where
-failure is expensive — and a review that cannot name the head it reviewed
-sends its fixes there too: doubt raises scrutiny, never lowers it.
+commits against it, and code — not a model — measures whether the fixes
+stayed inside the files the review saw (plus the files its own findings
+name) and under a small line budget. Inside those bounds a fix is
+re-verified by the disposition's re-run counts and re-read by the human on
+the release pull request. The consequence tier keeps the full re-review —
+capability spend belongs where failure is expensive — and a review that
+cannot name the head it reviewed sends its fixes there too: doubt raises
+scrutiny, never lowers it.
+
+Leaving the bounds first halted the run, on the reasoning that new work
+deserves a review and granting one is a human's decision. Three live trips
+say the second half of that was wrong. GHL-1: 66 lines, 18 of them a
+translation fan-out, merged by hand under a standing rule with no re-review.
+GHL-9: 119 lines; re-reviewed by hand, 41,368 tokens, 0 Important. GHL-10:
+two files outside — the two its own findings said were missing; re-reviewed
+by hand, 40,465 tokens, 0 Important. Every trip was a clean fix, every halt
+cost a human a resume, and in two of the three the human's answer was to buy
+exactly the pass the run could have bought itself. So a trip now buys the
+bounded re-review at the consequence tier instead of halting, an Important
+finding in it halts on the same stop condition the consequence tier's own
+re-review uses — one event, one stop string, one class for the retro to read
+— and only a fix diff nothing could measure still halts, because a
+re-review of an unmeasured diff proves nothing. GHL-10's shape also moved
+into the bounds themselves: for the finding class "the deliverable named in
+scope was not produced" the fix lands outside the reviewed diff **by
+construction**, so the files the findings name count as inside.
+
+The reversal condition, and its first data point. If a bounds re-review ever
+lets an Important defect through to a release pull request — found by the
+human at the release gate, the one observer left after this change — the
+halt is restored and the epic's record says what the automation cost. The
+first data point already exists and is not yet that failure:
+redesign-foundation's FND-6 made a test-motivated out-of-bounds fix that a
+bounded re-review cleared and a later commit corrected. A bounded pass
+clearing a fix that needed a second look is the failure mode to watch, not a
+reason to keep a halt that fired three times on clean work. Separately, PR
+#42 proposed a `Fix bounds exclude:` line — a planner-declared exclusion for
+fan-out files like GHL-1's translations — and never reached the default
+branch: its merge commit `8ac3bef` sits only on `origin/addendum-gate-date`.
+This section supersedes it for the halt; whether the exclusion also lands is
+a separate decision and a separate pull request.
 
 ## Why acceptance criteria can be machine-runnable
 

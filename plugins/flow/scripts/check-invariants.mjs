@@ -297,6 +297,11 @@ const PHRASES = [
     files: ['run', 'workflow'],
   },
   {
+    why: 'the fix-bounds stop condition is one sentence in the skill and the script — since a bounds trip buys a re-review instead of a halt, the only fix that still halts is one nothing could measure, and both documents must say so in the same words. Pinned whole, not by its first clause: what it now excludes is as load-bearing as what it names',
+    re: /no usable fix-diff facts from the resolve step, or a fix whose changed lines cannot be counted; an unmeasurable fix is never merged/,
+    files: ['run', 'workflow'],
+  },
+  {
     why: 'machine-runnable acceptance criteria — the CHECK/EXPECT format is parsed and executed by tickets.mjs, taught by the planning skill, and run by both execution lanes and the driver',
     // Absorbs the deliberate wording variants: a literal "CHECK: <command>"
     // template line, the prose "CHECK/EXPECT", and the backticked

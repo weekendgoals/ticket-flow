@@ -188,12 +188,20 @@ refuses to start.
   (ending `Tokens: recorded in the run record`), committed and pushed. **This
   runs even on a clean review**: the committed addendum is the merge
   precondition.
-- **Re-reviews the fixes once, at the consequence tier only** — Important
-  findings only, any Important halts, no second round. Below `consequence`
-  the fixes are gated in code instead: every fixed file must be in the diff
-  the review saw, and the fix under a small line budget. No usable
-  `reviewedHead` sends the fixes to the re-review anyway — doubt raises
-  scrutiny. A clean review skips all of this.
+- **Re-reviews the fixes once, at the consequence tier** — Important findings
+  only, any Important halts, no second round. Below `consequence` the fixes
+  are gated in code instead: every fixed file must be in the diff the review
+  saw **or named by one of its own findings** (a "the deliverable was not
+  produced" finding is fixed outside the reviewed diff by construction), and
+  the fix under a small line budget. **A trip there buys the same bounded
+  re-review at the consequence tier rather than halting** — all three live
+  trips were clean fixes and each halt cost a human a resume — and an
+  Important finding in that pass halts on the Important-finding condition
+  like any other. That pass runs where the trip is detected: **after** the
+  resolve step's bounds check and just before the merge, so a ticket that
+  halts in `Re-review` with `fixBoundsTripped` had already passed its
+  acceptance checks. No usable `reviewedHead` sends the fixes to the re-review
+  anyway — doubt raises scrutiny. A clean review skips all of this.
 - **Re-runs the ticket's CHECK/EXPECT criteria from the signed-off
   document** — `tickets.mjs check <ID> --from origin/epic/<name> --json` on
   the pushed branch, after the disposition so fix commits are judged too —
@@ -229,6 +237,7 @@ enters your context from the loop:
                      fixedCommits, notFixed, disposition,
                      reReviewRan, reReviewImportantCount,
                      reReviewFindings, reviewedHead, fixBoundsGated,
+                     fixBoundsTripped,
                      fixLines, acceptanceOutcome, acceptanceChecks,
                      acceptanceChecksPassed, resolveOutcome, mergeOutcome,
                      addendumMatches, headSha,
@@ -288,12 +297,13 @@ that resumes past one. The run halts:
 - on **an Important review finding it cannot fix** — accepting a not-fixed
   Important is not an agent's to decide in an unattended run, so the
   disposition reports it and the run stops for a human. The same halt fires
-  when the consequence-tier re-review finds an Important in the fix commits;
-  there is no second fix round;
-- on **a review-fix diff outside its bounds — touching files the review
-  never saw, or exceeding the fix line budget** — including a resolve step
-  that could not report the fix-diff facts at all, because an unbounded fix
-  is never merged;
+  when the bounded re-review finds an Important in the fix commits — the
+  consequence tier's own pass, or the one a fix-bounds trip buys; there is no
+  second fix round, and one stop string keeps the two one class;
+- on **a review-fix diff the run could not measure — no usable fix-diff facts
+  from the resolve step, or a fix whose changed lines cannot be counted; an
+  unmeasurable fix is never merged** — the one case the bounds gate still
+  halts on, because a re-review of a diff nothing measured proves nothing;
 - on **a failed acceptance CHECK — a machine-runnable criterion whose
   command did not produce its expected result on the pushed branch** — a
   malformed CHECK fails too, and so do counts the code cannot read;
@@ -347,9 +357,11 @@ allowed and is how same-day runs are told apart — `### Run — 2026-08-25
 **Tickets this run:** <one line per ticket, in order, from `ticketRecords`:
 ID — worker agent — review tier and outcome (`importantCount` Important,
 `nitCount` nits, fixed or not) — what stood between the fixes and the merge:
-"re-reviewed after fixes: `<reReviewImportantCount>` Important" when
-`reReviewRan`, or "fixes bounds-checked in code: `<fixLines>` lines inside
-the reviewed diff" when `fixBoundsGated` — "acceptance:
+"fixes outside the reviewed bounds — re-reviewed at the consequence tier:
+`<reReviewImportantCount>` Important" when `fixBoundsTripped`, "re-reviewed
+after fixes: `<reReviewImportantCount>` Important" when `reReviewRan`
+without a trip, or "fixes bounds-checked in code: `<fixLines>` lines inside
+the reviewed diff" when `fixBoundsGated` and nothing tripped — "acceptance:
 `<acceptanceChecksPassed>/<acceptanceChecks>` CHECKs" when any ran —
 integrated | halted. A record that omits the fix gate reads as though the
 fixes were never looked at.>
@@ -407,8 +419,9 @@ in this mode. It carries:
 - every ticket: what it built, its verification counts, its review outcome
   (found / fixed / not fixed with reasons), and **what stood between its fix
   commits and the merge** — the re-review (`reReviewRan`,
-  `reReviewImportantCount`, `reReviewFindings`) or the code bounds check
-  (`fixBoundsGated`, `fixLines`);
+  `reReviewImportantCount`, `reReviewFindings`), the code bounds check
+  (`fixBoundsGated`, `fixLines`), and whether that check tripped and bought
+  the re-review (`fixBoundsTripped`);
 - the release's size up front — `git diff --stat
   origin/<default-branch>...epic/<name>` — a release too large to review is
   a fact the human sees before approving;

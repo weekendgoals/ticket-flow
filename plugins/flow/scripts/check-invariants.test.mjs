@@ -145,6 +145,24 @@ test('the workflow script losing the acceptance-check stop condition fails', () 
   assert.match(r.out, /run-epic\.mjs.*acceptance-check stop condition/s)
 })
 
+test('the run skill drifting from the fix-bounds stop condition fails', () => {
+  const root = copyRepo()
+  mutate(root, 'plugins/flow/skills/run/SKILL.md', 'no usable fix-diff facts', 'no usable fix-diff numbers')
+  const r = run(root)
+  assert.equal(r.status, 1, r.out)
+  assert.match(r.out, /run\/SKILL\.md.*fix-bounds stop condition/s)
+  // The sentence is pinned whole: its tail clause — what the condition no
+  // longer covers now that a bounds trip buys a re-review — drifts as loudly
+  // as its opening.
+  const tail = copyRepo()
+  // The skill wraps the sentence mid-clause, so the mutation target stops at
+  // the wrap; the checker matches across it because it normalises whitespace.
+  mutate(tail, 'plugins/flow/skills/run/SKILL.md', 'unmeasurable fix is never merged', 'unbounded fix is never merged')
+  const t = run(tail)
+  assert.equal(t.status, 1, t.out)
+  assert.match(t.out, /run\/SKILL\.md.*fix-bounds stop condition/s)
+})
+
 test('a skill dropping the CHECK/EXPECT format fails the coupling', () => {
   const root = copyRepo()
   // mutate() replaces every occurrence, so the whole format vanishes from the
