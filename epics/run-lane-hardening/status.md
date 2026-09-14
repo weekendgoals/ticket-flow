@@ -130,3 +130,92 @@ equality-or-ancestry check at the resolve step is cheap. Owner: the epic's
 retro — a follow-up run-lane ticket. Nothing else was left unfixed.
 Worker tokens (implementation leg): 181,146; Reviewer tokens: 316,806 (first
 review 148,524; re-review 168,282).
+
+### HARD-2 — The fix-bounds exclusion line reaches main — 2026-09-14 — DONE
+
+**Built:** An epic may again exempt mechanical fan-out files from the
+unattended run's fix-bounds gate. `Fix bounds exclude: <glob>[, <glob>]` parses
+in `tickets.mjs` with the same tolerant list parse as `Consequence paths:`,
+joins doctor's near-miss set and its warning's enumerated syntax, and rides
+both `find --json` and `list --json`; the driver validates it exactly like
+`consequencePaths` (an unusable glob throws before the first agent is spawned)
+and joins it to `':(exclude)epics'` in **both** of the resolve step's fix-diff
+pathspecs, so an excluded file can reach neither `reviewedFiles`/`fixFiles` nor
+`fixLines` and a pure translation fan-out neither halts nor buys the bounded
+re-review a trip costs. The run skill's step 4 args block and its two
+fix-bounds paragraphs, the epic skill's preamble template, README's
+configuration table (seven lines → eight) and CHANGELOG say so.
+
+**Mode:** autonomous — supervisor-spawned worker worker:HARD-2 (opus)
+
+**Tokens:** observed by the supervisor — see the review addendum
+
+**Verified:** `node plugins/flow/scripts/tickets.mjs check HARD-2` — 3/3 checks
+passed (baseline on the branch point `40211c2`, before any edit: 0/3, all three
+criteria observed red — both patterns printed `# pass 1`, the file wrapper, and
+the grep printed 0 and exited 1). The two criterion commands run directly:
+`node --test --test-name-pattern 'bounds exclude'
+plugins/flow/scripts/tickets.test.mjs` — `# pass 2`, `# fail 0`; the same
+pattern on `plugins/flow/workflows/run-epic.test.mjs` — `# pass 2`, `# fail 0`
+(exactly the two cases each criterion names; the extra coverage sits inside
+those two tests rather than under new names, so the counts stay exact). All
+four new tests were re-run against the **base** `tickets.mjs` and
+`run-epic.mjs` restored from `HEAD` with the new tests in place: `# pass 0`,
+`# fail 2` in each suite — the criteria measure this change, not the tree.
+Standing checks on this branch: tickets 60/60 (58 at the branch point),
+run-epic 101/101 (99), session guard 14/14, check-invariants 13/13, board 9/9,
+plan-page 8/8, codex 8/8 — every suite `# fail 0`. `node
+plugins/flow/scripts/check-invariants.mjs` exit 0 (all five checks printed ✓);
+`node plugins/flow/scripts/tickets.mjs doctor` exit 0; `node --check
+plugins/flow/scripts/tickets.mjs` exit 0; the driver parsed the runtime's way
+(the `AsyncFunction` command in root `CLAUDE.md`) exit 0, no SyntaxError. No
+`git add -A`: the eight files this ticket changed were staged by name and the
+repository's unrelated untracked research files were left alone.
+
+**Decisions:**
+- Re-implemented against the current tree rather than cherry-picked, as the
+  ticket's Scope directs: `ffc3a24` does not apply — RUN-1's bounded re-review
+  and HARD-1's `anchorHead` rewrote the resolve step, the preamble parser gained
+  `Worker runner:` and `Planner model:`, and doctor's near-miss message now
+  enumerates every line. The original's decisions are kept whole: configuration
+  rather than a hardcoded path, and an unusable glob refusing the run.
+- The history claim in the CHANGELOG entry was verified, not copied:
+  `8ac3bef` is "Merge pull request #42 from weekendgoals/fix-bounds-exclude",
+  dated 2026-08-27, and `git merge-base --is-ancestor ffc3a24 origin/main` says
+  the change is not on main; the branches containing it are
+  `fix-bounds-exclude`, `model-fallback` and `origin/addendum-gate-date`.
+- The code comment carries no ordinal ("another optional line"), though
+  README's prose count moved seven → eight. The existing ordinals in
+  `tickets.mjs` are already stale — `Consequence paths` is called "the fourth
+  optional line" and `Ticket budget` "the fifth" with seven lines in the file,
+  because `Worker runner:` and `Planner model:` were added without renumbering
+  — so adding a ninth ordinal would add a number guaranteed to drift. The
+  README count is prose a reader checks against the table below it, which is
+  why that one was updated.
+- Both fix-diff pathspecs carry the globs, not just the fix side. Excluding a
+  file from the `--numstat` command alone would keep its lines out of
+  `fixLines` but also drop it from `reviewedFiles`, so a fix that legitimately
+  touched it would then read as outside the reviewed diff — the exact trip the
+  line exists to prevent. The reason is in the driver's comment and asserted by
+  the test.
+- The refusal cases live only in the test named `an unusable Fix bounds exclude
+  glob refuses the run before spending an agent`, and were **not** also added
+  to the existing `the script refuses unusable arguments before spending an
+  agent` table (where `ffc3a24` put them): the criterion's `# pass 2` is exact,
+  and duplicating the cases would buy nothing the named test does not already
+  prove.
+- The run skill's two fix-bounds paragraphs gained the exclusion, but the
+  `STOP.fixBounds` sentence `check-invariants.mjs` pins whole was not touched —
+  the new clause sits after it, so no stop string changed, no `PHRASES` entry
+  moved, and the epic's stop-string ground rule is satisfied by not touching
+  one. The doctrine grep across `skills/`, `README.md`, `METHODOLOGY.md`,
+  `CLAUDE.md` and the driver's prose found no other copy of the preamble
+  configuration surface or the fix-bounds rule to move.
+- Root `CLAUDE.md`'s suite counts remain stale (`tickets … # pass 56` against
+  58 at the branch point, `run-epic … # pass 92` against 99) and were left
+  alone, as HARD-1 recorded for the same file: that file states its counts "as
+  of" a date and says the count grows while the fail line does not, so the
+  staleness is by design and repairing it is not this ticket's scope. Observed
+  and recorded, not adapted around.
+
+**Owed:** Nothing.
