@@ -471,3 +471,21 @@ CHANGELOG entry is batched under `## Unreleased` with no version bump, as the
 root instructions require; and every count in the entry above was reproduced.
 Nothing deferred. Worker tokens (implementation leg): 139,095; Reviewer
 tokens: 95,700.
+
+### Run — 2026-09-14 — completed
+
+**Driver:** attended — every ticket through `/flow:ticket` in supervisor mode in one session (fresh-context worker, supervisor-hired reviewer, step 10's merge into `epic/run-lane-lessons` by verified SHA), never `/flow:run`; see the preamble's Delivery paragraph for why.
+**Tickets this run:**
+- RUN-0 — in-session (`--interactive`) — tier normal, reviewed by sonnet at high: 2 Important, 1 nit, all fixed (`9910b42`) — re-reviewed after fixes: 0 Important — acceptance: 1/1 CHECKs — integrated (`766bfee`, merged as `8e1f17d`).
+- RUN-1 — `worker:RUN-1 (opus)` — tier consequence, reviewed by opus at xhigh: 0 Important, 4 nits, 3 fixed (`4af5cd8`) — fixes inside the reviewed files, no re-review needed (no Important) — acceptance: 2/2 CHECKs — integrated (`65a718c`, merged as `4286054`).
+- RUN-2 — `worker:RUN-2 (opus)` — tier normal, reviewed by sonnet at high: 0 Important, 0 nits, 1 pre-existing handed on — no fixes — acceptance: 2/2 CHECKs — integrated (`9e17857`, merged as `99bc043`).
+- RUN-4 — `worker:RUN-4 (opus)` — tier normal, reviewed by sonnet at high: 2 Important, 0 nits, both fixed (`2e3cfd1`, `ac17a58`) — re-reviewed after fixes: 0 Important — acceptance: 3/3 CHECKs — integrated (`ff41650`, merged as `17fe07e`).
+- RUN-3 — `worker:RUN-3 (opus)` — tier normal, reviewed by sonnet at high: 0 Important, 0 nits — no fixes — acceptance: 1/1 CHECKs — integrated (`e3b289a`, merged as `43d2930`).
+
+**Tokens:** RUN-0 worker=unknown reviewer=119,684 re-review=132,659 disposition=unknown proxies=unknown; RUN-1 worker=220,318 reviewer=165,091 disposition=236,268 proxies=unknown; RUN-2 worker=136,124 reviewer=161,094 disposition=143,305 proxies=unknown; RUN-4 worker=140,576 reviewer=170,753 re-review=199,900 disposition=338,972 proxies=unknown; RUN-3 worker=139,095 reviewer=95,700 disposition=144,850 proxies=unknown; total=2,404,389 — harness totals per agent as the supervisor observed them at each agent's stop (worker = the implementation leg; disposition = the same worker's later legs; RUN-0's implementation and disposition ran in-session and are unknown; no shell proxies ran in an attended run). Reviewer tiers: RUN-1 opus/xhigh, the others sonnet/high.
+
+**Halted on:** ran to completion.
+
+**Protection:** not present — 403 on both probes (free plan). Attended run; no waiver relied on.
+
+**Release PR:** https://github.com/weekendgoals/ticket-flow/pull/45
