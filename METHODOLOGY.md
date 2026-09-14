@@ -332,6 +332,26 @@ almost parses fails the gate rather than silently never running (doctor
 flags the near-miss shapes), and a check step whose counts the code cannot
 read halts — doubt goes up, never down.
 
+That sentence needs its bound stated, or it will be read as more than it is.
+`--from` secures the command string and nothing the string reaches. The text
+of the CHECK comes from the signed-off document; everything the command runs
+through is still the reviewed party's to write — the npm script it invokes
+(redesign-foundation's FND-5 found no `test:it` script existed and created
+the one its own criterion runs), the spec file that script executes, and the
+assertion inside that spec. A criterion that greps a file for a string is
+secured end to end, because the command *is* the assertion. A criterion that
+shells out to the repository's own test tooling is secured only as far as
+the tooling's name, and the same worker owns the rest. Two mechanisms close
+part of the gap. HARD-1's `allPassed` gate reads the ledger's own verdict
+and halts on a malformed CHECK rather than letting a criterion that never
+ran exit 0 into a green count — the shape a worker's edit would most cheaply
+produce. RUN-2's red-before rule requires the criterion to have been *seen
+failing* on the tree before the work existed, so a gate quietly hollowed out
+later has to explain how it was ever red. What closes the rest is not a
+mechanism but the human at the release gate, reading one diff that contains
+both the criterion and the code it judges. Naming the limit is the point: a
+gate believed to prove more than it proves is a gate nobody re-examines.
+
 The first three live release epics found the second correction: a CHECK is
 only evidence if it was ever **red**. Six of groundhopper-foundation's eight
 CHECKs were a whole-suite run with `EXPECT: Tests:`, which passes on the tree
@@ -497,6 +517,33 @@ that pre-implementation design review by agents caught architectural problems
 in roughly six hundred designs before any code existed. The human still signs
 off; they just do it with adversarial findings and the reviewer's open
 questions in hand, instead of with prose written to be agreed with.
+
+Two of the reviewer's questions come from epics that shipped past everyone
+(2026-09-14, the retros of the first three live release epics). The first
+asks, for every ground rule and every acceptance criterion, **who executes
+it in the delivery mode the draft declares** — because groundhopper-log
+required its translated strings to pass through seventeen per-language
+agents in an epic run unattended, where the worker's spawn prompt forbids
+spawning any agent. The rule was unsatisfiable the moment it was written;
+nine consecutive tickets recorded the deviation and shipped anyway, at the
+cost of 92 damaged strings and three follow-up tickets. The same epic
+deferred ten "demonstrate on a phone" criteria to its release pull request,
+which merged with none of them performed — so a criterion the lane cannot
+perform is now its own ticket with a human owner, ordered before the
+release, rather than a line owed to a document. This is the invariant "a
+gate is verified at the door its actor walks through", applied one level up:
+the rules and criteria need a door their actor can walk through too.
+
+The second asks whether the Outcome's evidence is **collectable**: what will
+produce each clause, and whether the named observer could tell success from
+failure with it. Redesign-foundation's Outcome promised `h6count = 0` on
+every page type with the check wired into two of nine, and a four-week
+analytics reading of an event the new control and a pre-existing picker both
+fire. Both clauses were falsifiable in form and unanswerable in practice,
+and both were knowable at plan time. Naming an observer was already
+required; it is not enough, because an observer with nothing to read reports
+nothing — and the retro that finds this out is months downstream of the
+one-line fix.
 
 ## Why attended tickets get a supervisor
 
@@ -673,10 +720,32 @@ The same property that makes each step reproducible makes resuming a run a
 statement about the past: the board, not the cache, is where a re-run learns
 what is left to do.
 
+The run's own bookkeeping got a file of its own for a related reason. A run
+record used to be appended to the epic's `status.md`, where the ticket
+entries live — but the two are written by different agents on different
+branches: a worker appends its entry on its ticket branch, the run session
+appends the record on the epic branch. Two writers, one file tail, and every
+mid-ticket halt followed by a hand merge conflicted on it (the groundhopper
+run's reconcile merge, `a5d96449`). So run records moved to `epics/<name>/runs.md`,
+and the conflict has nowhere to happen. The alternative considered was a
+`merge=union` attribute on `epics/*/status.md`: one line, but per-project
+configuration a doctor probe can only nag about, and union also *hides* an
+overlapping edit — which an append-only log forbids — instead of surfacing
+it as a conflict. The records written before the split stay in `status.md`
+and are still read there, because rewriting an append-only log to tidy it is
+the one thing the log's rules do not allow.
+
 Moving the loop into code also moved the judge. The driver hires each
 ticket's reviewer — the supervisor pattern one level up — and the worker
 stops at its pushed branch without reviewing or merging anything it
-wrote. That closes the last place where the party under review still picked
+wrote. The fallback under that hiring — one general agent, when the reviewer
+agent cannot be spawned — covers a crashed agent and not an exhausted
+environment, because it shares the primary's failure mode: in
+groundhopper-foundation on 2026-08-24 both spawns hit the same session limit
+milliseconds apart and the run halted, which was the correct outcome and the
+one halt of that epic that retired real risk — the review the human resumed
+into found two Important findings that would otherwise have merged unseen.
+That closes the last place where the party under review still picked
 its own judge, and it makes the merge gate mechanical: the reviewer returns
 findings as structured data, and code, not prose, decides that an Important
 finding left unfixed or a review addendum left uncommitted stops the run. A
@@ -758,7 +827,9 @@ it, the observable change expected, the evidence that would show it, and the
 condition that would reverse the decision — written at planning time, when
 disagreeing costs one conversation. The plan reviewer flags an outcome that
 cannot fail, because an unfalsifiable outcome is a promise to never learn
-anything. The retro closes the loop by checking the evidence.
+anything — and it flags evidence nothing will produce, for the same reason:
+a clause whose evidence never arrives leaves the retro holding the same
+nothing. The retro closes the loop by checking the evidence.
 
 This is the only part of the flow that looks past the merge, and it does so
 without violating "nothing runs after the merge": the check belongs to the

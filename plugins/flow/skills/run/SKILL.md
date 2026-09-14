@@ -141,6 +141,7 @@ Workflow({
     workerRunner: "<modes[<name>].workerRunner — omit the key when absent>",
     reviewerModel: "<modes[<name>].reviewerModel — omit the key when absent>",
     consequencePaths: <modes[<name>].consequencePaths — omit the key when null>,
+    fixBoundsExclude: <modes[<name>].fixBoundsExclude — omit the key when null>,
     ticketBudget: <modes[<name>].ticketBudget — omit the key when null>
   }
 })
@@ -150,6 +151,26 @@ Everything mechanical rides in `args` because a workflow script has **no
 filesystem, no shell and no clock** — every fact it uses is fetched by an
 agent it spawns. Pass the date and the two absolute paths, or the script
 refuses to start.
+
+`ticketBudget` is the **launch-time** value, and the only one of these the
+script does not keep: the ceiling is **re-read at every refresh** of the
+epic's signed-off document. Concretely, each ticket's **resolve step** — the
+read-only one, before the merge — **fetches the epic branch and reads the
+signed-off document from it** (`git fetch origin epic/<name>`, then
+`tickets.mjs find <ID> --json --from origin/epic/<name>`), reporting the
+`Ticket budget:` line as it stands on that ref; the post-merge check compares
+the ticket's spend against that number. So a raise a human commits and pushes
+to `epic/<name>` while a ticket is running governs that ticket's own check.
+Both halves are load-bearing. **The fetch**, because `--from` reads the local
+remote-tracking ref and nothing else updates it between the ticket's start
+and here — the run's only full fetch is in refresh+select, before the worker,
+and the merge's `git pull --ff-only` comes after this read; without the fetch
+the ceiling would be the one that stood hours ago. **`--from`**, because read
+after the merge instead, the ceiling would come from the merged tree, where
+the ticket branch's own copy of the preamble sets the number that judges it —
+the same reason acceptance runs `check --from origin/epic/<name>`.
+Everything else here (`reviewerModel`, `consequencePaths`,
+`fixBoundsExclude`, the models) stays fixed at what you passed.
 
 **What the script does**, per ticket, in document order, until
 `tickets.mjs next <epic> --json` comes back empty:
@@ -170,19 +191,26 @@ refuses to start.
   the runner reconciles the model's report with the repository (a claim of
   work over an empty branch is a contradiction, a failed push is a halt) and
   records Codex's own usage under `workerUsage`.
-- **Floors that tier in code** from the branch's changed files (a read-only
-  fast-model listing, `epics/` excluded): `Consequence paths:` matches floor
+- **Floors that tier in code** from the branch's changed files, and reads
+  the pushed head in the same step (one read-only fast-model listing,
+  `epics/` excluded, plus `git rev-parse origin/<branch>`; that SHA is the
+  review anchor, and an unusable one costs the fix-bounds gate its anchor
+  rather than weakening anything): `Consequence paths:` matches floor
   at `consequence`, any non-documentation file at `normal`, docs-only may
   keep `prose`. The report can raise the price, never lower it — the
   reviewed party does not price its own judge down.
 - **Hires the reviewer** — `flow:ticket-reviewer` on the `/flow:review`
   skill, with a packet the script assembles (the range
-  `origin/epic/<name>..origin/<id lowercased>`, computed from the branch
-  invariant rather than the worker's narrative; the `brief`; the ticket's
-  own status entry; the instruction files), priced by the ticket skill's
-  tier table with `Reviewer model:` overriding the model. It returns
-  structured findings and the head commit it reviewed (`reviewedHead`). A
-  failed spawn gets one retry with the sanctioned fallback, then halts.
+  `origin/epic/<name>...<reviewedHead>`, anchored on the SHA the tier-facts
+  step read rather than on the worker's narrative or a branch name that can
+  move; the `brief`; the ticket's own status entry; the instruction files),
+  priced by the ticket skill's tier table with `Reviewer model:` overriding
+  the model. It returns structured findings and its own reading of the head
+  in the schema's `reviewedHead` (recorded as `reviewerReportedHead`, to keep
+  it distinct from the driver's `reviewedHead` anchor) — a **cross-check**,
+  logged when it disagrees, never the anchor itself: the party under review
+  does not name the commit that was reviewed. A failed spawn gets one retry
+  with the sanctioned fallback, then halts.
 - **Dispositions the findings** in another fresh agent: Important findings
   fixed as new commits (`<ID>: … (review fix)`), checks re-run with counts,
   pre-existing findings recorded with a named owner (`retro` when none
@@ -195,26 +223,50 @@ refuses to start.
   are gated in code instead: every fixed file must be in the diff the review
   saw **or named by one of its own findings** (a "the deliverable was not
   produced" finding is fixed outside the reviewed diff by construction), and
-  the fix under a small line budget. **A trip there buys the same bounded
-  re-review at the consequence tier rather than halting** — all three live
-  trips were clean fixes and each halt cost a human a resume — and an
-  Important finding in that pass halts on the Important-finding condition
-  like any other. That pass runs where the trip is detected: **after** the
+  the fix under a small line budget. Both fix-diff commands leave out
+  `epics/` and the epic's optional `Fix bounds exclude:` globs, so a file a
+  fix fans out into mechanically is invisible to the gate — translation
+  catalogs are the canonical case: one new key touches every locale file, and
+  the line count measures the catalog's width, not the fix's blast radius, so
+  a pure fan-out neither halts nor buys a re-review. **A trip there buys the
+  same bounded re-review at the consequence tier rather than halting** — all
+  three live trips were clean fixes and each halt cost a human a resume — and
+  an Important finding in that pass halts on the Important-finding condition
+  like any other. That pass gets its own range, `<reviewedHead>..origin/<id
+  lowercased>`: the fix commits were pushed after the anchor, so the first
+  review's anchored range cannot contain them. That pass runs where the trip is detected: **after** the
   resolve step's bounds check and just before the merge, so a ticket that
   halts in `Re-review` with `fixBoundsTripped` had already passed its
-  acceptance checks. No usable `reviewedHead` sends the fixes to the re-review
-  anyway — doubt raises scrutiny. A clean review skips all of this.
+  acceptance checks. No usable anchor from the tier-facts step sends the
+  fixes to the re-review anyway — doubt raises scrutiny. A clean review skips
+  all of this.
 - **Re-runs the ticket's CHECK/EXPECT criteria from the signed-off
   document** — `tickets.mjs check <ID> --from origin/epic/<name> --json` on
   the pushed branch, after the disposition so fix commits are judged too —
-  and gates on the printed counts in code. A ticket with no CHECK criteria
-  passes untouched.
+  and gates in code on the ledger the script printed: its own `allPassed`
+  verdict and its count of malformed CHECK lines, not the counts alone. A
+  CHECK the parser rejects runs nothing, so `passed === total` is trivially
+  true on it; reading the verdict is what keeps a criterion nobody can
+  satisfy from merging. A ticket with no CHECK criteria passes untouched.
 - **Resolves the merge inputs read-only, and the code judges them before a
   merging agent exists**: the pushed log narrowed to **this ticket's own
   entries** must carry a dated `Addendum — review —` line (matched by shape,
   never by the run's pinned date, which diverges when a run crosses
   midnight), and `git rev-parse origin/<branch>` must yield a head SHA of
-  the right shape. A failure here merged nothing.
+  the right shape. The same step **fetches the epic branch and reads the
+  signed-off document from it** for the per-ticket ceiling
+  (`git fetch origin epic/<name>`, then `tickets.mjs find <ID> --json --from
+  origin/epic/<name>`) — that ref and not this branch's copy of the document,
+  so the party under review cannot raise the ceiling it is judged by, and
+  fetched first because the local ref is otherwise as old as the ticket. A
+  fetch writes refs and nothing else, so the step stays read-only in the
+  sense that matters: no merge, no checkout, no file changed. A reported value that is not a positive
+  integer, or missing altogether, halts on the contradiction condition; a
+  reported `null` **keeps the last ceiling in force and logs it**, because a
+  line that stopped parsing (`**Ticket budget:** 600k` parses as null, and
+  the run never runs doctor) must not lift a ceiling silently; a ceiling
+  declared where the runtime has no meter is refused exactly as launch
+  refuses it. A failure here merged nothing.
 - **Merges** by a fixed git sequence on that SHA: checkout `epic/<name>`,
   `pull --ff-only`, `git merge --no-ff <headSha>`, push. The SHA, so the
   merged commit is exactly the one verified; a merge commit, never a squash,
@@ -238,10 +290,12 @@ enters your context from the loop:
                      findings, checkedAndSound,
                      fixedCommits, notFixed, disposition,
                      reReviewRan, reReviewImportantCount,
-                     reReviewFindings, reviewedHead, fixBoundsGated,
-                     fixBoundsTripped,
+                     reReviewFindings, reviewedHead,
+                     reviewerReportedHead, fixBoundsGated,
+                     fixBoundsTripped, fixBoundsExclude,
                      fixLines, acceptanceOutcome, acceptanceChecks,
-                     acceptanceChecksPassed, resolveOutcome, mergeOutcome,
+                     acceptanceChecksPassed, acceptanceAllPassed,
+                     acceptanceProblems, resolveOutcome, mergeOutcome,
                      addendumMatches, headSha,
                      built, verification, workerReported,
                      outputTokensObserved,
@@ -305,16 +359,29 @@ that resumes past one. The run halts:
 - on **a review-fix diff the run could not measure — no usable fix-diff facts
   from the resolve step, or a fix whose changed lines cannot be counted; an
   unmeasurable fix is never merged** — the one case the bounds gate still
-  halts on, because a re-review of a diff nothing measured proves nothing;
+  halts on, because a re-review of a diff nothing measured proves nothing.
+  What it measures is the fix diff minus `epics/` and the epic's `Fix bounds
+  exclude:` globs, which sign-off approved as mechanical fan-out;
 - on **a failed acceptance CHECK — a machine-runnable criterion whose
-  command did not produce its expected result on the pushed branch** — a
-  malformed CHECK fails too, and so do counts the code cannot read;
+  command did not produce its expected result on the pushed branch, a CHECK
+  line too malformed to run at all, or an acceptance report the gate could
+  not read** — the gate reads the ledger's `allPassed` verdict, so a
+  malformed CHECK line halts even when every runnable check passed (it never
+  ran: a criterion nobody can satisfy is failed, not skipped), and an
+  unreadable report — missing counts, missing verdict, missing problem count
+  — halts on the same string. All three are one class, so a retro reading the
+  stop string alone files the halt correctly;
 - on **a document/code contradiction — reported by a worker, or met by the
   script's own checks**: a ticket ID off the plugin's shape, a board that
   hands out the same ticket twice, a board reporting success without a
   ticket list, a disposition whose story does not match the review it
-  dispositioned, or a resolve step with no usable head SHA. These are
-  checked before the merge command exists, so a halt here merged nothing;
+  dispositioned, a resolve step with no usable head SHA, or a ticket budget
+  the resolve step reported as missing, unusable, or unmeterable. All of
+  those are checked before the merge command exists, so the halt merged
+  nothing. One member of this class is not: the **ticket-count cap** (40
+  tickets in one epic, past any release epic's size) fires between tickets,
+  after the ones before it have merged, and they stay merged — nothing
+  un-merges, here or anywhere;
 - on **a merge conflict — refreshing the epic branch, or anywhere else,
   including a ticket branch that will not merge into the epic branch**;
 - on **reviewer-spawn failure after the sanctioned fallback also fails** —
@@ -326,8 +393,13 @@ that resumes past one. The run halts:
   when the preamble declares `Ticket budget: <n>` (output tokens, metered by
   the runtime; the script refuses to start if no meter exists). Checked
   **after** the merge is confirmed, because nothing un-merges: the ticket
-  stays integrated and the run stops before the next. Each ticket's meter
-  delta lands in `outputTokensObserved` either way;
+  stays integrated and the run stops before the next. The ceiling it uses is
+  the one the resolve step fetched and read off `origin/epic/<name>` a moment before the
+  merge, not the launch-time `args` value — so the halt's advice to raise the
+  `Ticket budget:` line is advice that works inside the same run, provided
+  the raise is committed and pushed to the epic branch. Each ticket's meter
+  delta lands in `outputTokensObserved` either way, including on a halt whose
+  subject is the spending;
 - on **a nonzero exit from any command the run issues as a step, except
   those this skill explicitly marks tolerated** — the one tolerated shape is
   a 404 or 403 from step 3's protection probes, which run in session before
@@ -336,8 +408,12 @@ that resumes past one. The run halts:
 **Nothing improvises past one.** Halting is the mechanism working; a run that
 pushes through is a run whose release pull request cannot be trusted. On a
 `halted` result, or a Workflow call that errored: append the run record
-(step 6) with `haltedOn.stopCondition` verbatim and the ticket it fired on,
-commit and push it on `epic/<name>`, report, and stop. If the halt's detail
+(step 6) with `haltedOn.stopCondition` verbatim, the ticket it fired on, and
+the **Diagnosis:** paragraph step 6 requires of every halted record — the
+halt reason is the driver's account of where it stopped, the diagnosis is
+what you find when you inspect what it stopped on, and the second is what a
+human fixing the plugin reads — commit and push it on `epic/<name>`, report,
+and stop. If the halt's detail
 says a conflicted merge was **not** aborted, run `git merge --abort` on
 `epic/<name>` first — recovery, not reconciliation. Merge nothing more and
 open no release pull request. A halt from a worker's BLOCKED entry already
@@ -345,12 +421,44 @@ says why; point at it rather than restating it.
 
 ## 6. The run record
 
-Append to the epic's `status.md` on `epic/<name>`, in session, from the step
-4 result — fenced prose quoted, markers dropped. The heading names no ticket
-ID, so the board ignores it; `spend` reads the record by it, so `doctor`
-flags one that will not parse. A qualifier in parentheses after the date is
-allowed and is how same-day runs are told apart — `### Run — 2026-08-25
-(second run) — halted`:
+Append to the epic's **`runs.md`** on `epic/<name>`, in session, from the
+step 4 result — fenced prose quoted, markers dropped. **Never `status.md`:**
+that file's tail belongs to the ticket entries, written on ticket branches
+while this record is written on the epic branch, and two writers on one tail
+cost a hand merge on every mid-ticket halt. The heading names no ticket ID,
+so the board ignores it; `spend` reads the record by it from either file, so
+`doctor` flags one that will not parse — and, once `runs.md` exists, a `###
+Run —` record appended to `status.md` after it. A qualifier in parentheses
+after the date is allowed and is how same-day runs are told apart — `### Run
+— 2026-08-25 (second run) — halted`.
+
+`find --json` carries `runsDoc` (with `runsDocExists`) — the path whether or
+not the file is there yet — so it is read, never built by hand. If `runs.md`
+does not exist, create it
+with this exact preamble — the **Rules** block is the status log's, verbatim,
+because it is one rule and `check-invariants.mjs` holds the two copies
+together:
+
+```markdown
+# <Name> epic — run log
+
+Append-only record of unattended runs. Tickets: `epics/<name>/tickets.md`.
+Ticket entries and their review addenda stay in `epics/<name>/status.md`.
+
+**Rules.** Append only. Corrections are new dated addenda beneath the entry they
+correct, never edits. Report counts, not adjectives. The **Owed** line is
+required even when empty.
+```
+
+**A correction to a run record's figures goes in `runs.md`**, as a dated
+addendum beneath the record it corrects — never in `status.md`. Where both
+logs carry a figure for the same ticket and role, `spend` takes the one in
+`runs.md`; and an `unknown` never overwrites a known figure in either
+direction, because `unknown` records the absence of an observation, not a
+correction — a halted run that read no meter must not erase the figure the
+finished ticket's own entry recorded.
+
+Then the record itself:
 
 ```markdown
 ### Run — <YYYY-MM-DD> — <completed | halted>
@@ -364,7 +472,9 @@ ID — worker agent — review tier and outcome (`importantCount` Important,
 after fixes: `<reReviewImportantCount>` Important" when `reReviewRan`
 without a trip, or "fixes bounds-checked in code: `<fixLines>` lines inside
 the reviewed diff" when `fixBoundsGated` and nothing tripped — "acceptance:
-`<acceptanceChecksPassed>/<acceptanceChecks>` CHECKs" when any ran —
+`<acceptanceChecksPassed>/<acceptanceChecks>` CHECKs" when any ran, plus
+"`<acceptanceProblems>` malformed" whenever that count is above zero,
+because a malformed CHECK is why an acceptance halt can read as all-green —
 integrated | halted. A record that omits the fix gate reads as though the
 fixes were never looked at.>
 
@@ -387,6 +497,23 @@ never by editing the record.>
 
 **Halted on:** <`haltedOn.stopCondition` verbatim, with `haltedOn.ticket`
 and `haltedOn.where` — or "ran to completion".>
+
+**Diagnosis:** <**required on a halted record**, omitted only when the run
+ran to completion. What the driver's halt detail says; what you found when
+you went and looked — the command re-run by hand with its counts, the file
+and line of the mechanism, the branch state as git reports it; and the
+reading the record is written for: does the stop look like a real risk
+retired, or like a fire on a green state? The driver's halt detail is one
+input, not the diagnosis — it is the machine's account of where it stopped,
+while this is what inspection found afterwards. Your reading is evidence for
+the retro, not its verdict: the retro's miner classifies the halt itself,
+because the run that stopped cannot be the judge of its own stop. Write it
+especially when the answer is "the work is fine, the instrument is not":
+both plugin fixes of August exist because a driver wrote this paragraph when
+nothing required it — the check runner's `maxBuffer` (`4eb0f4b`, from a
+diagnosis showing a 68/68 suite dying on ENOBUFS) and the addendum-date
+lookup (`9a859c7`, from one showing a green ticket failing a date-string
+grep). The retro's seventh question reads this paragraph first.>
 
 **Protection:** <"present" — or the recorded waiver quoted, with where it
 lives in `tickets.md`. A run without the hard floor must say so here.>
@@ -422,8 +549,9 @@ in this mode. It carries:
   (found / fixed / not fixed with reasons), and **what stood between its fix
   commits and the merge** — the re-review (`reReviewRan`,
   `reReviewImportantCount`, `reReviewFindings`), the code bounds check
-  (`fixBoundsGated`, `fixLines`), and whether that check tripped and bought
-  the re-review (`fixBoundsTripped`);
+  (`fixBoundsGated`, `fixLines`, and `fixBoundsExclude` — what the gate was
+  allowed not to look at, `[]` when it measured the whole fix), and whether
+  that check tripped and bought the re-review (`fixBoundsTripped`);
 - the release's size up front — `git diff --stat
   origin/<default-branch>...epic/<name>` — a release too large to review is
   a fact the human sees before approving;

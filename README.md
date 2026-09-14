@@ -90,7 +90,15 @@ checks all of it, so run that first in a new project.
 | `CLAUDE.md` (root, and per area) | What the project **is** | Edited in place, **in the same commit** as the change it describes |
 | `epics/<e>/tickets.md` | What the work **is** | Written up front. Edited to re-plan, never to record progress |
 | `epics/<e>/status.md` | What **happened** | Append-only. Corrections are dated addenda |
+| `epics/<e>/runs.md` | What the **runs** did | Append-only. Corrections are dated addenda |
 | `epics/<e>/context/` | What it was based on | Frozen. Add, never rewrite |
+
+`runs.md` exists because two writers used to share one file tail: a ticket
+worker appends its entry on a ticket branch while an unattended run appends
+its record on the epic branch, and every mid-ticket halt then cost a hand
+merge. It is created by the first run record written after an epic splits
+them out; logs written before the split keep their records in `status.md`
+and are still read there, because an append-only log is never rewritten.
 
 The status log is a **diary, not a dashboard**. "Which tickets are done" is
 answered by `/flow:tickets`, computed fresh from ticket headings, status-log
@@ -284,7 +292,7 @@ records' evidence — Important findings per ticket and observed spend —
 and never cheapen the *plan* side to match: a weak plan produces tickets
 that are confidently, reviewably wrong.
 
-**The whole configuration surface is seven optional preamble lines** in the
+**The whole configuration surface is eight optional preamble lines** in the
 epic's `tickets.md` — one place, one syntax (label at line start, value
 first after the colon, prose after it ignored), every near-miss flagged by
 `/flow:doctor`:
@@ -297,7 +305,8 @@ first after the colon, prose after it ignored), every near-miss flagged by
 | `Reviewer model:` | `opus` | the ticket reviewer, overriding the tier table | the consequence tiers pick (haiku/sonnet/opus) |
 | `Planner model:` | `fable` | the plan reviewer for this epic | the agent definition's pinned strongest |
 | `Consequence paths:` | `src/auth/**, migrations/**` | globs that force the consequence review tier in a run — the code floor under the worker's self-reported tier | tier floor still applies (docs-only vs code), globs add nothing |
-| `Ticket budget:` | `250k` | per-ticket output-token ceiling in a run; an over-budget ticket stays merged and the run halts before the next | no ceiling; per-ticket spend still recorded when the runtime meters it |
+| `Fix bounds exclude:` | `src/messages/*.json` | globs the run's fix-bounds gate leaves out of the review-fix diff (as it already leaves out `epics/`) — for files a fix fans out into mechanically, translation catalogs being the canonical case | every fixed file counts toward the bounds |
+| `Ticket budget:` | `250k` | per-ticket output-token ceiling in a run; an over-budget ticket stays merged and the run halts before the next. The only line a run re-reads: each ticket's resolve step fetches the epic branch and reads the signed-off document from it before the merge, so raising it mid-run (committed and pushed) governs the running ticket, and a ticket branch cannot raise its own ceiling; removing the line keeps the last ceiling and logs that it did | no ceiling; per-ticket spend still recorded when the runtime meters it |
 
 ## Reading the board
 
@@ -345,16 +354,25 @@ nothing, and a whole-suite run is a standing check rather than a criterion.
 `--from <ref>` reads the criteria from a git ref
 instead of the working tree — the unattended driver passes
 `--from origin/epic/<name>` so the merge gate judges against the signed-off
-document, which no ticket branch can edit. Prose and *demonstrate:* criteria
+document, which no ticket branch can edit. `tickets.mjs find <ID> --from
+<ref>` is the same move for the epic's declarations — it is how the driver
+reads the `Ticket budget:` line — for the same reason: the party under review
+must not be able to edit the terms it is judged by. Prose and *demonstrate:* criteria
 remain first-class; CHECK is for the criteria a command can decide outright.
 
 **Spend is derived too.** `tickets.mjs spend [epic]` compiles the recorded
 token ledger — per ticket, per role (worker, reviewer, re-review,
-disposition, shell proxies) and per epic — from the three places the status
-log carries a figure: a ticket entry's `**Tokens:**` line, its review
-addendum's `Worker tokens (implementation leg): <n>; Reviewer tokens: <n>`
-phrases, and a run record's per-ticket `<ID> worker=<n> reviewer=<n> …`
-groups. Recorded figures only, exactly as the log says: `unknown` stays
+disposition, shell proxies) and per epic — from the three places the epic's
+logs carry a figure: a ticket entry's `**Tokens:**` line in `status.md`, its
+review addendum's `Worker tokens (implementation leg): <n>; Reviewer tokens:
+<n>` phrases, and a run record's per-ticket `<ID> worker=<n> reviewer=<n> …`
+groups in `runs.md` — or in `status.md`, for the logs written before the run
+records were split out. Where both logs carry a figure for the same ticket and
+role, the one in `runs.md` wins — so a correction to a run record's figures is
+appended there — and an `unknown` never overwrites a known figure in either
+direction, because `unknown` is the absence of an observation, not a
+correction. Recorded figures only, exactly as the log says:
+`unknown` stays
 unknown, a ticket with nothing recorded is reported as such, and nothing is
 estimated or read from a transcript. `--json` returns the same ledger for
 the retro, which reads this instead of summing the log by hand. A run
@@ -362,7 +380,12 @@ record's heading may carry a qualifier in parentheses after its date (how
 same-day runs are told apart); `doctor` flags a run heading that will not
 parse and a run record whose Tokens line carries figures but no groups —
 the ledger silently reads nothing from either, and the repair is a dated
-addendum beneath the record, never an edit.
+addendum beneath the record, never an edit. It also flags a run record
+appended to `status.md` once that epic has a `runs.md`, dated after the first
+record in it: the ledger still reads the figures, but the two writers are
+back on one file tail. Records dated on or before the split day are never
+flagged — moving them is what append-only forbids — nor is one whose heading
+already appears in `runs.md`, which is what the repair looks like.
 
 Two blind spots worth knowing: the board reads *this checkout's* view of the
 remote, so fetch first when the answer matters; and `shipped` means some commit

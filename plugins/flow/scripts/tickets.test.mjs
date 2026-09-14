@@ -134,6 +134,8 @@ Planner model: fable — the plan reviewer runs on the strongest class.
 
 Consequence paths: src/auth/**, migrations/** — the risk list as globs.
 
+Fix bounds exclude: src/messages/*.json — translation fan-outs never count toward fix bounds.
+
 Ticket budget: 250000 — the run halts after any ticket spending past this.
 
 ## G-1 — expand the schema
@@ -564,8 +566,8 @@ test('the Delivery line parses tolerantly and exposes in find and list', () => {
   assert.equal(a.delivery, 'incremental')
 
   const data = JSON.parse(run(repo, 'list', '--json'))
-  assert.deepEqual(data.modes.gamma, { delivery: 'release', reviewerModel: 'opus', workerModel: 'sonnet', workerRunner: 'codex', plannerModel: 'fable', consequencePaths: ['src/auth/**', 'migrations/**'], ticketBudget: 250000 })
-  assert.deepEqual(data.modes.alpha, { delivery: 'incremental', reviewerModel: null, workerModel: null, workerRunner: null, plannerModel: null, consequencePaths: null, ticketBudget: null })
+  assert.deepEqual(data.modes.gamma, { delivery: 'release', reviewerModel: 'opus', workerModel: 'sonnet', workerRunner: 'codex', plannerModel: 'fable', consequencePaths: ['src/auth/**', 'migrations/**'], fixBoundsExclude: ['src/messages/*.json'], ticketBudget: 250000 })
+  assert.deepEqual(data.modes.alpha, { delivery: 'incremental', reviewerModel: null, workerModel: null, workerRunner: null, plannerModel: null, consequencePaths: null, fixBoundsExclude: null, ticketBudget: null })
 })
 
 test('a Worker model line pins the implementer; absent, workers inherit the session', () => {
@@ -594,7 +596,7 @@ test('an unrecognised or near-miss Delivery line warns instead of silently defau
     assert.equal(data.modes.misdeclared.delivery, 'continuous', 'the raw value is exposed, not coerced')
     assert.deepEqual(
       data.modes['fancy-delivery'],
-      { delivery: 'incremental', reviewerModel: null, workerModel: null, workerRunner: null, plannerModel: null, consequencePaths: null, ticketBudget: null },
+      { delivery: 'incremental', reviewerModel: null, workerModel: null, workerRunner: null, plannerModel: null, consequencePaths: null, fixBoundsExclude: null, ticketBudget: null },
       'a formatted Delivery line reads as absent, so the default applies',
     )
     const rows = JSON.parse(run(repo, 'doctor', '--json'))
@@ -621,7 +623,7 @@ test('the retired two-line syntax is flagged, not silently ignored', () => {
     const data = JSON.parse(run(repo, 'list', '--json'))
     assert.deepEqual(
       data.modes.oldstyle,
-      { delivery: 'incremental', reviewerModel: null, workerModel: null, workerRunner: null, plannerModel: null, consequencePaths: null, ticketBudget: null },
+      { delivery: 'incremental', reviewerModel: null, workerModel: null, workerRunner: null, plannerModel: null, consequencePaths: null, fixBoundsExclude: null, ticketBudget: null },
       'the dead labels parse as nothing; the delivery default applies',
     )
     const rows = JSON.parse(run(repo, 'doctor', '--json'))
@@ -694,6 +696,66 @@ test('a Consequence paths line parses as a glob list, case preserved, prose igno
   }
 })
 
+test('a Fix bounds exclude line parses as a glob list and reaches find --json and list --json', () => {
+  // The run driver's fix-bounds gate leaves these globs out of the review-fix
+  // diff, the way it already leaves out epics/ — for files a fix fans out
+  // into mechanically (translation catalogs: one new key touches every locale
+  // file). Same tolerant list parse as Consequence paths, and this script
+  // only parses and exposes it; the driver validates and applies it. Both
+  // commands must carry it: `find` is the door a ticket walks through and
+  // `list --json` is the one the run skill reads the epic's configuration
+  // from, so a line exposed by only one of them reaches no run.
+  const g = JSON.parse(run(repo, 'find', 'G-1', '--json'))
+  // The fixture's trailing prose is comma-free on purpose: the list splits on
+  // commas, so a comma in the prose would make the rest of the sentence an
+  // entry and the driver would refuse the run. Only the first WORD of each
+  // comma-separated segment is the glob — that is what this asserts.
+  assert.deepEqual(g.fixBoundsExclude, ['src/messages/*.json'], 'comma-free prose after the last glob must not break the parse')
+  assert.equal(JSON.parse(run(repo, 'find', 'A-2', '--json')).fixBoundsExclude, null, 'absent is null, never a default')
+  assert.deepEqual(JSON.parse(run(repo, 'list', '--json')).modes.gamma.fixBoundsExclude, ['src/messages/*.json'])
+
+  mkdirSync(join(repo, 'epics/fanout'), { recursive: true })
+  writeFileSync(
+    join(repo, 'epics/fanout/tickets.md'),
+    '# Fanout\n\nFix bounds exclude: Src/Messages/*.json, locales/**\n\n## F-1 — fan-out\n\n**Scope.** F.\n',
+  )
+  try {
+    assert.deepEqual(
+      JSON.parse(run(repo, 'list', '--json')).modes.fanout.fixBoundsExclude,
+      ['Src/Messages/*.json', 'locales/**'],
+      'case survives — paths are case-sensitive — and every comma-separated glob is kept',
+    )
+  } finally {
+    rmSync(join(repo, 'epics/fanout'), { recursive: true, force: true })
+  }
+})
+
+test('a Fix bounds exclude near-miss is flagged by doctor, never silently dropped', () => {
+  // A formatted line is declaration-shaped but parses as nothing, and the
+  // default is "no exclusions" — which re-halts the exact fan-out the line
+  // was written to wave through, silently. Same failure class as every other
+  // near-miss, so the label belongs in doctor's near set, and the warning
+  // must spell the syntax that would parse.
+  mkdirSync(join(repo, 'epics/bolded'), { recursive: true })
+  writeFileSync(
+    join(repo, 'epics/bolded/tickets.md'),
+    '# Bolded\n\n**Fix bounds exclude:** src/messages/*.json\n\n## B-9 — bolded line\n\n**Scope.** B.\n',
+  )
+  try {
+    assert.equal(JSON.parse(run(repo, 'list', '--json')).modes.bolded.fixBoundsExclude, null, 'the bolded line is not parsed')
+    const rows = JSON.parse(run(repo, 'doctor', '--json'))
+    const row = rows.find((r) => r.level === 'warn' && r.msg.includes('bolded/tickets.md') && /will not parse/.test(r.msg))
+    assert.ok(row, 'the near-miss scan covers the Fix bounds exclude label')
+    assert.match(
+      row.msg,
+      /"Fix bounds exclude: <glob>\[, <glob>\]"/,
+      'the warning enumerates the line among the declarations that do parse — a near-miss message that cannot name the right syntax teaches nothing',
+    )
+  } finally {
+    rmSync(join(repo, 'epics/bolded'), { recursive: true, force: true })
+  }
+})
+
 test('a Ticket budget line parses digits with k/m suffixes; an unrecognised suffix reads as absent and is flagged', () => {
   // The run driver enforces this as a per-ticket output-token ceiling; this
   // script only parses and exposes it. The suffix boundary is load-bearing:
@@ -740,7 +802,7 @@ test('an epic with no declaration lines defaults to incremental delivery', () =>
   writeFileSync(join(repo, 'epics/delta/tickets.md'), '# Delta\n\n## D-1 — bare epic\n\n**Scope.** Bare.\n')
   try {
     const data = JSON.parse(run(repo, 'list', '--json'))
-    assert.deepEqual(data.modes.delta, { delivery: 'incremental', reviewerModel: null, workerModel: null, workerRunner: null, plannerModel: null, consequencePaths: null, ticketBudget: null })
+    assert.deepEqual(data.modes.delta, { delivery: 'incremental', reviewerModel: null, workerModel: null, workerRunner: null, plannerModel: null, consequencePaths: null, fixBoundsExclude: null, ticketBudget: null })
   } finally {
     rmSync(join(repo, 'epics/delta'), { recursive: true, force: true })
   }
@@ -754,7 +816,7 @@ test('the Delivery line parses case-insensitively', () => {
   )
   try {
     const data = JSON.parse(run(repo, 'list', '--json'))
-    assert.deepEqual(data.modes.shout, { delivery: 'release', reviewerModel: null, workerModel: null, workerRunner: null, plannerModel: null, consequencePaths: null, ticketBudget: null })
+    assert.deepEqual(data.modes.shout, { delivery: 'release', reviewerModel: null, workerModel: null, workerRunner: null, plannerModel: null, consequencePaths: null, fixBoundsExclude: null, ticketBudget: null })
   } finally {
     rmSync(join(repo, 'epics/shout'), { recursive: true, force: true })
   }
@@ -779,7 +841,7 @@ test('a value-less label line reads as absent, never the next paragraph\'s first
     const data = JSON.parse(run(repo, 'list', '--json'))
     assert.deepEqual(
       data.modes.bare,
-      { delivery: 'incremental', reviewerModel: null, workerModel: null, workerRunner: null, plannerModel: null, consequencePaths: null, ticketBudget: null },
+      { delivery: 'incremental', reviewerModel: null, workerModel: null, workerRunner: null, plannerModel: null, consequencePaths: null, fixBoundsExclude: null, ticketBudget: null },
       'a value-less label must read as absent (incremental default / null), never scavenge prose',
     )
     // And doctor's near-miss wording is true of these lines: they will not
@@ -1040,6 +1102,39 @@ test('--from a ref that cannot be read refuses instead of falling back to the wo
   assert.match(bare.stderr, /--from needs a git ref/)
 })
 
+test('find --from reads the epic declarations from the ref, never the working tree', () => {
+  const original = readFileSync(checksDoc, 'utf8')
+  try {
+    // Raise the ceiling in the working tree the way a ticket branch's own copy
+    // of the preamble could. The run driver reads the budget through this
+    // flag precisely so that edit cannot reach the gate that judges it.
+    writeFileSync(checksDoc, original.replace('Delivery: incremental', 'Delivery: incremental\nTicket budget: 999k'))
+    assert.equal(JSON.parse(run(crepo, 'find', 'K-1', '--json')).ticketBudget, 999000, 'the working tree sees the edit')
+    const out = JSON.parse(run(crepo, 'find', 'K-1', '--json', '--from', 'HEAD'))
+    assert.equal(out.ticketBudget, null, 'the committed document is the source')
+    assert.equal(out.from, 'HEAD')
+    // Every other preamble declaration comes from the ref too...
+    assert.equal(out.delivery, 'incremental')
+    // ...and the facts that describe the repository as it is now do not move.
+    assert.equal(out.branch, 'k-1')
+    assert.equal(out.ticketsDoc, checksDoc)
+    // Without --from there is no `from` key at all: the default shape is what
+    // every installed consumer of `find --json` reads.
+    assert.ok(!('from' in JSON.parse(run(crepo, 'find', 'K-1', '--json'))))
+  } finally {
+    writeFileSync(checksDoc, original)
+  }
+})
+
+test('find --from a ref that cannot be read refuses instead of falling back to the working tree', () => {
+  const fail = runFail(crepo, 'find', 'K-1', '--json', '--from', 'refs/no/such/ref')
+  assert.equal(fail.status, 1)
+  assert.match(fail.stderr, /cannot read epics\/checks\/tickets\.md from ref/)
+  const bare = runFail(crepo, 'find', 'K-1', '--from')
+  assert.equal(bare.status, 2)
+  assert.match(bare.stderr, /--from needs a git ref/)
+})
+
 test('doctor flags CHECK/EXPECT near-misses as silently-never-runs', () => {
   // No origin remote in this fixture, so doctor exits 1 on that hard
   // precondition — the near-miss rows still print and are what this asserts.
@@ -1251,6 +1346,161 @@ outside the Tokens paragraph, which must not read as a recorded one.
 Tokens mentioned here must not count: worker tokens: 999999.
 `,
 )
+// tau — an epic that has split its run records into runs.md (HARD-4). Its
+// status.md carries one record from before the split (which stays there and is
+// still read) and one appended after it (the misfile doctor flags), and runs.md
+// carries the record written since. Sigma above is the other half of the pair:
+// an epic with no runs.md at all, whose records are read from status.md exactly
+// as before.
+mkdirSync(join(srepo, 'epics/tau'), { recursive: true })
+writeFileSync(
+  join(srepo, 'epics/tau/tickets.md'),
+  `# Tau epic — tickets
+
+Delivery: incremental
+
+## T-1 — recorded in runs.md
+
+**Scope.** One.
+
+## T-2 — recorded before the split, in status.md
+
+**Scope.** Two.
+
+## T-3 — recorded on the split day, in status.md
+
+**Scope.** Three.
+
+## T-4 — recorded after the split, in the wrong file
+
+**Scope.** Four.
+
+## T-5 — misfiled, then repaired into the run log
+
+**Scope.** Five.
+
+## T-6 — a halted run read no meter; the attended finish did
+
+**Scope.** Six.
+
+## T-7 — recorded in both logs, the run record later
+
+**Scope.** Seven.
+`,
+)
+writeFileSync(
+  join(srepo, 'epics/tau/status.md'),
+  `# Tau epic — status log
+
+### Run — 2026-09-01 — completed
+
+**Driver:** /flow:run, unattended.
+**Tokens:** T-2 worker=1,000 reviewer=500 disposition=0 re-review=0 proxies=0; total=1,500.
+
+**Halted on:** ran to completion.
+
+### Run — 2026-09-10 — halted
+
+**Driver:** /flow:run, unattended — written on the split day itself, which a
+date cannot order against the first record in the run log.
+**Tokens:** T-3 worker=10 reviewer=10 disposition=0 re-review=0 proxies=0; total=20.
+
+**Halted on:** something.
+
+### Run — 2026-09-12 — halted
+
+**Driver:** /flow:run, unattended — appended to the wrong file after the split.
+**Tokens:** T-4 worker=20 reviewer=20 disposition=0 re-review=0 proxies=0; total=40.
+
+**Halted on:** something.
+
+### Run — 2026-09-13 — halted
+
+**Driver:** /flow:run, unattended — misfiled here, then appended to runs.md.
+**Tokens:** T-5 worker=30 reviewer=30 disposition=0 re-review=0 proxies=0; total=60.
+
+**Halted on:** something.
+
+**Addendum — 2026-09-13:** this record was appended to the run log, where this
+epic's run records live; the copy above stays because the log is append-only.
+
+### T-6 — a halted run read no meter; the attended finish did — 2026-09-14 — DONE
+
+**Built:** six.
+
+**Tokens:** observed by the supervisor — see the review addendum
+
+**Owed:** Nothing.
+
+**Addendum — review — 2026-09-14 — sonnet/high:** No findings. Worker tokens
+(implementation leg): 40,000; Reviewer tokens: 12,000.
+
+### T-7 — recorded in both logs, the run record later — 2026-09-14 — DONE
+
+**Built:** seven.
+
+**Tokens:** observed by the supervisor — see the review addendum
+
+**Owed:** Nothing.
+
+**Addendum — review — 2026-09-14 — sonnet/high:** Worker tokens
+(implementation leg): 5; Reviewer tokens: 5.
+`,
+)
+writeFileSync(
+  join(srepo, 'epics/tau/runs.md'),
+  `# Tau epic — run log
+
+Append-only record of unattended runs. Tickets: \`epics/tau/tickets.md\`.
+
+### Run — 2026-09-10 — completed
+
+**Driver:** /flow:run, unattended.
+**Tokens:** T-1 worker=4,000 reviewer=2,000 disposition=0 re-review=unknown
+proxies=100; total=6,100. The halted leg read no meter for T-6:
+T-6 worker=unknown reviewer=unknown disposition=0 re-review=0 proxies=0.
+
+**Halted on:** ran to completion.
+
+### Run — 2026-09-13 — halted
+
+**Driver:** /flow:run, unattended — the copy of the record misfiled into
+status.md; identical heading, so the misfile is repaired, not re-flagged.
+**Tokens:** T-5 worker=30 reviewer=30 disposition=0 re-review=0 proxies=0; total=60.
+
+**Halted on:** something.
+
+### Run — 2026-09-14 — completed
+
+**Driver:** /flow:run, unattended.
+**Tokens:** T-7 worker=99 reviewer=5 disposition=0 re-review=0 proxies=0; total=104.
+
+**Halted on:** ran to completion.
+`,
+)
+// upsilon — a runs.md that exists but carries no parseable record: the split
+// has happened (the file is there), yet nothing dates it, so the misfile scan
+// would silently check nothing.
+mkdirSync(join(srepo, 'epics/upsilon'), { recursive: true })
+writeFileSync(
+  join(srepo, 'epics/upsilon/tickets.md'),
+  `# Upsilon epic — tickets
+
+Delivery: incremental
+
+## U-1 — split, but nothing recorded yet
+
+**Scope.** One.
+`,
+)
+writeFileSync(join(srepo, 'epics/upsilon/status.md'), '# Upsilon epic — status log\n')
+writeFileSync(
+  join(srepo, 'epics/upsilon/runs.md'),
+  `# Upsilon epic — run log
+
+Append-only record of unattended runs. Tickets: \`epics/upsilon/tickets.md\`.
+`,
+)
 git(srepo, 'add', '.')
 git(srepo, 'commit', '-m', 'sigma epic')
 git(srepo, 'remote', 'add', 'origin', sremote)
@@ -1332,6 +1582,99 @@ test('doctor flags a run record the ledger cannot read, and the run heading that
   // same record mentions a number.
   assert.ok(!rows.some((r) => /RUN-1/.test(r.msg)), rows.map((r) => r.msg).join('\n'))
   assert.ok(!rows.some((r) => /2026-08-15 — halted/.test(r.msg)), rows.map((r) => r.msg).join('\n'))
+})
+
+test('spend reads a run record from runs.md, and still reads the records that predate the split from status.md', () => {
+  const out = JSON.parse(run(srepo, 'spend', 'tau', '--json'))
+  const byId = Object.fromEntries(out.epics[0].tickets.map((t) => [t.id, t]))
+
+  // The record in runs.md is read like any other.
+  assert.equal(byId['T-1'].worker, 4000)
+  assert.equal(byId['T-1'].reviewer, 2000)
+  assert.equal(byId['T-1'].proxies, 100)
+  assert.deepEqual(byId['T-1'].unknown, ['re-review'])
+  assert.equal(byId['T-1'].source, 'run-record')
+
+  // Migrating the older records is forbidden (append-only), so the split moved
+  // where a record is written, never where an old one can be found.
+  assert.equal(byId['T-2'].worker, 1000)
+  assert.equal(byId['T-2'].total, 1500)
+  assert.equal(byId['T-2'].source, 'run-record')
+
+  // Even the misfiled record's figures are read — the flag below is about the
+  // conflicting file tail, not about a ledger that lost anything.
+  assert.equal(byId['T-3'].worker, 10)
+  assert.equal(byId['T-4'].worker, 20)
+  assert.equal(out.epics[0].totals.total, 59824)
+})
+
+test('doctor flags a run record appended to status.md after the split to runs.md, and never one that predates it', () => {
+  const rows = JSON.parse(run(srepo, 'doctor', '--json'))
+  const misfiled = rows.filter((r) => r.level === 'warn' && /run records live in runs\.md/.test(r.msg))
+  assert.equal(misfiled.length, 1, rows.map((r) => r.msg).join('\n'))
+  assert.match(misfiled[0].msg, /^tau\/status\.md:\d+ — /)
+  assert.match(misfiled[0].msg, /### Run — 2026-09-12 — halted$/)
+  // The advertised recovery has to work in the flagged state: the record is
+  // already committed in an append-only log, so the repair is appending, never
+  // deleting.
+  assert.match(misfiled[0].msg, /appending the record to runs\.md/)
+  assert.match(misfiled[0].msg, /never by deleting it/)
+  // Date-scoped, and strictly: the record from before the split is left alone
+  // because moving it is exactly what append-only forbids, and the one written
+  // on the split day itself may well predate the first record in the run log —
+  // a date carries no time to order them by.
+  assert.ok(!rows.some((r) => /2026-09-01/.test(r.msg)), rows.map((r) => r.msg).join('\n'))
+  assert.ok(!rows.some((r) => /### Run — 2026-09-10 — halted/.test(r.msg)), rows.map((r) => r.msg).join('\n'))
+  // A record already repaired — appended to the run log, its committed copy
+  // left where it is — is not re-flagged, or the warning could never clear.
+  assert.ok(!rows.some((r) => /### Run — 2026-09-13 — halted/.test(r.msg)), rows.map((r) => r.msg).join('\n'))
+  // And an epic with no runs.md at all is not nagged about one.
+  assert.ok(!rows.some((r) => /^sigma\/.*runs\.md/.test(r.msg)), rows.map((r) => r.msg).join('\n'))
+})
+
+test('an unknown in one log never erases a known figure in the other; between two known figures the run log wins', () => {
+  // The executed case from HARD-4's review: a halted run recorded no meter
+  // reading for T-6, the ticket was then finished attended and its own entry
+  // carries the figures. Reading the two files in sequence used to let the
+  // later file's `unknown` delete the earlier file's number, so the ledger
+  // reported the ticket as unmeasured and its total as zero. `unknown` is the
+  // absence of an observation, not a correction.
+  const out = JSON.parse(run(srepo, 'spend', 'tau', '--json'))
+  const byId = Object.fromEntries(out.epics[0].tickets.map((t) => [t.id, t]))
+  assert.equal(byId['T-6'].worker, 40000)
+  assert.equal(byId['T-6'].reviewer, 12000)
+  assert.equal(byId['T-6'].total, 52000)
+  assert.deepEqual(byId['T-6'].unknown, [])
+
+  // Two known figures for one ticket and role: the run log is read last and
+  // wins, which is why a correction to a run record's figures belongs there.
+  assert.equal(byId['T-7'].worker, 99)
+  assert.equal(byId['T-7'].source, 'run-record')
+})
+
+test('doctor says so when the run log exists but carries no parseable record, instead of checking nothing', () => {
+  // With no record in it, nothing dates the split, so the misfile scan cannot
+  // fire at all — a scan that silently checks nothing is the failure this
+  // whole class of near-miss warnings exists to stop.
+  const rows = JSON.parse(run(srepo, 'doctor', '--json'))
+  const empty = rows.filter((r) => r.level === 'warn' && /carries no parseable run record/.test(r.msg))
+  assert.equal(empty.length, 1, rows.map((r) => r.msg).join('\n'))
+  assert.match(empty[0].msg, /^upsilon\/runs\.md /)
+  assert.match(empty[0].msg, /### Run — YYYY-MM-DD — completed\|halted/)
+  assert.match(empty[0].msg, /dated addendum beneath it, never an edit/)
+})
+
+test('find --json exposes runsDoc, whether or not the epic has split its runs.md out yet', () => {
+  const split = JSON.parse(run(srepo, 'find', 'T-1', '--json'))
+  assert.equal(split.runsDoc, join(srepo, 'epics/tau/runs.md'))
+  assert.equal(split.runsDocExists, true)
+
+  // Absent, the path is still absolute and still given — the run skill creates
+  // the file with its preamble on the first record, and no caller has to build
+  // a path by hand to find out.
+  const notSplit = JSON.parse(run(srepo, 'find', 'S-1', '--json'))
+  assert.equal(notSplit.runsDoc, join(srepo, 'epics/sigma/runs.md'))
+  assert.equal(notSplit.runsDocExists, false)
 })
 
 test('spend text output names the source and never prints an unknown as a number', () => {

@@ -8,6 +8,219 @@ with one version and date.
 
 ## Unreleased
 
+- **The plan reviewer asks what the lane can execute and what the evidence
+  can show** (`agents/plan-reviewer.md` gains two questions; `skills/epic/SKILL.md`
+  carries each as one clause — the step 3 Outcome template, the ground-rule
+  bullet and the step 5 sign-off; METHODOLOGY § "Why the plan is reviewed
+  before sign-off" records the evidence and § "Why an epic states its
+  outcome" adds the matching clause). One: for every ground rule and every
+  acceptance criterion, name the actor that executes it in the **declared
+  delivery mode** and confirm that actor exists there — an unattended
+  release worker spawns no agents, holds no phone and drives no interactive
+  tool. Groundhopper-log required seventeen per-language agents in an epic
+  run unattended, so nine consecutive tickets recorded the deviation and
+  shipped anyway (92 damaged strings, three follow-up tickets), and ten
+  "demonstrate on a phone" criteria deferred to the release pull request
+  merged unperformed; a criterion the lane cannot perform is now its own
+  ticket with a human owner, ordered before the release, never a line owed
+  to a pull request. Two: for every Outcome evidence clause, name what will
+  produce it and check the observer can tell success from failure —
+  redesign-foundation promised `h6count = 0` on every page type with the
+  check wired into two of nine, and a four-week reading of a GA4 event two
+  controls share. Naming an observer was already required and is not enough:
+  an observer with nothing to read reports nothing. Both questions are asked
+  by a human or a fresh-context agent reading the draft; neither is
+  automated, because the actor a rule needs and the source an evidence
+  clause depends on are not in the text of the document.
+
+- **A halted run record must carry a `**Diagnosis:**` paragraph, and the
+  retro reads it first** (`skills/run/SKILL.md`: the step 6 record template
+  gains the field, and step 5's halt path names it where the halted session
+  is told what to append; `skills/retro/SKILL.md`'s seventh question reads
+  the paragraph before the **Halted on:** line and says why the
+  classification stays the miner's). The evidence is August's two plugin
+  fixes: the check runner's `maxBuffer` (`4eb0f4b`) and the
+  shape-matched addendum-date lookup (`9a859c7`) both exist because a driver
+  wrote a diagnosis when nothing asked for one — a 68/68 suite dying on
+  ENOBUFS, and a reviewed green ticket failing a date-string grep — while
+  three fresh-context retros read straight past twelve halts that carried
+  only a stop condition. The halt reason is the machine's account of where
+  it stopped; the diagnosis is what inspection found, including the file and
+  line and the command re-run by hand. It is **evidence, not a verdict**: the
+  retro's miner still classifies the halt, because the run that stopped
+  cannot judge its own stop. Records written before 2026-09-14 carry no
+  diagnosis and are classified from the halt line, so nothing is retrofitted
+  into an append-only log.
+
+- **METHODOLOGY states what `--from` protects and what it does not**
+  (§ "Why acceptance criteria can be machine-runnable", § "Why the run loop
+  is code, not prose"). The doctrine said reading the criteria from the
+  signed-off document meant the reviewed party "structurally cannot soften
+  its own gate", which claims more than the mechanism delivers: `--from`
+  secures the command string and nothing the string reaches — not the npm
+  script it invokes (redesign-foundation's FND-5 created the `test:it` script
+  its own criterion runs), not the spec file that script executes, not the
+  assertion inside it. HARD-1's `allPassed` gate and RUN-2's red-before rule
+  close part of that gap; the human at the release gate, reading one diff
+  carrying both the criterion and the code it judges, closes the rest. The
+  run-loop section gains the matching bound on the reviewer fallback: one
+  general agent covers a crashed reviewer, not an exhausted environment,
+  because it shares the primary's failure mode — both spawns hit the same
+  session limit in groundhopper-foundation on 2026-08-24 — and halting there
+  was correct, since the review the human resumed into found two Important
+  findings. A gate believed to prove more than it proves is a gate nobody
+  re-examines.
+
+- **Run records move to `epics/<name>/runs.md`, so the run and its tickets
+  stop writing to one file tail** (`scripts/tickets.mjs`: `runsDoc` in
+  `discoverEpics`, `epics --json` and `find --json` — the latter with
+  `runsDocExists` — `parseSpend` reading both logs, doctor's run-record scans
+  covering both files and a new misfile warning; `workflows/run-epic.mjs`'s
+  two `next` strings; `skills/run/SKILL.md` step 6 with the new file's
+  preamble; `skills/retro/SKILL.md` steps 2, 3 and its halts question;
+  `scripts/check-invariants.mjs` holding the run log's **Rules** block to the
+  status log's and the file's name across the five documents that state it;
+  README's document table and `spend` paragraph; METHODOLOGY § "Why the run
+  loop is code"; three new script tests, two new invariant tests). A ticket
+  worker appends its status entry on a ticket branch while the run session
+  appends the run record on the epic branch, so every mid-ticket halt
+  followed by a hand merge conflicted on `status.md` — the groundhopper
+  run's reconcile merge `a5d96449` is the recorded case. Splitting the files
+  removes the shared tail instead of teaching git to paper over it: the
+  considered alternative, a `merge=union` attribute on `epics/*/status.md`,
+  is one line but per-project configuration a doctor probe can only nag
+  about, and union also hides an overlapping edit — which append-only
+  forbids — instead of surfacing it as a conflict. **Nothing migrates.**
+  Every log written before the split keeps its run records in `status.md`
+  and `spend` still reads them there; `runs.md` is created, with the status
+  log's **Rules** block verbatim, by the first record written after an epic
+  splits. The one new warning is date-scoped for the same reason: once an
+  epic has a `runs.md`, a `### Run —` record in `status.md` dated on or
+  after the first record in `runs.md` is flagged as a misfile (repair by
+  appending it to `runs.md`, never by deleting the committed copy), and
+  records that predate the split are never flagged, because moving them is
+  exactly what append-only forbids and a warning whose only recovery is
+  forbidden is worse than none. Nor is a record whose heading already appears
+  in `runs.md` — that is what the repair looks like — nor one dated on the
+  split day itself, since a date carries no time to order it by; and a
+  `runs.md` carrying no parseable record is itself flagged, because nothing
+  then dates the split and the scan would silently check nothing. **Two logs
+  need a stated ranking, and this is it:** where both carry a figure for the
+  same ticket and role, `spend` takes the one in `runs.md` (so a correction to
+  a run record's figures is appended there), and an `unknown` never overwrites
+  a known figure in either direction — `unknown` is the absence of an
+  observation, not a correction, so a halted run that read no meter no longer
+  erases the figure the finished ticket's own entry recorded. The run skill's
+  step 6, the spend skill and README's `spend` paragraph all state it.
+
+- **The per-ticket token budget is re-read from the signed-off epic ref
+  before every merge, so raising it mid-run reaches the run that tripped it**
+  (`scripts/tickets.mjs` gains `find --from <ref>`; `workflows/run-epic.mjs`
+  `RESOLVE_SCHEMA`, a new FACT 3 in the resolve prompt and a re-read block in
+  the resolve gate; `skills/run/SKILL.md`'s args block, `Resolves` bullet and
+  two stop conditions; `skills/epic/SKILL.md`'s `Ticket budget:` template
+  line; README's configuration table and its `--from` paragraph; six new
+  driver tests and two new script tests). A live run halted on a budget the
+  human had already raised 24 minutes before the merge that tripped it:
+  `args.ticketBudget` was read once at launch, so the halt's own advice —
+  "raise the epic's Ticket budget line" — could not be taken without
+  abandoning the run. The ceiling is now read per ticket at **the resolve
+  step**, which fetches the epic branch and reads the signed-off document
+  from it before the merge: `git fetch origin epic/<name>`, then
+  `tickets.mjs find <ID> --json --from origin/epic/<name>`. Three things
+  make that read mean something. *Before the merge*, because a halt over a
+  ceiling the run cannot read must merge nothing. *`--from`*, because reading
+  the budget after the merge, off the tree the merge produced, would let the
+  ticket branch's own copy of the preamble set the ceiling that judges it;
+  the acceptance gate reads `check --from origin/epic/<name>` for exactly
+  that reason, and `find --from` is the same move for the epic's
+  declarations. *The fetch*, because `--from` reads the local
+  remote-tracking ref and nothing updates it between the ticket's start and
+  the resolve step — the run's only full fetch is in refresh+select, before
+  the worker, and the merge's `git pull --ff-only` comes after the read, so
+  without it the ceiling would be the one that stood hours ago, reproducing
+  FND-1's timeline exactly. With it, a human's raise committed and pushed to
+  the epic branch while the ticket runs is on that ref before the resolve
+  step reads it, which is the case the change exists for. A fetch writes
+  refs and nothing else, so the resolve step is still read-only in the sense
+  that matters. `args` stays the launch-time value
+  and is validated as before; three code checks guard what arrives, because a
+  fact with no check is a fact the report can invent: a value present but not
+  a positive integer (and a report missing the field altogether) halts as a
+  contradiction with the value fenced; a ceiling declared where the runtime
+  has no meter is refused exactly as launch refuses it; and a reported `null`
+  where a ceiling was in force **keeps that ceiling and logs it**, because
+  `**Ticket budget:** 600k` parses as null and the run never runs doctor — a
+  formatting slip must not lift a ceiling silently. Each of those halts
+  records the ticket's meter delta first: a halt whose subject is the
+  spending must not report `unknown` for what was spent. Only this line is
+  re-read: `Reviewer model:`, `Consequence paths:` and `Fix bounds exclude:`
+  stay launch-time, since changing who judges or what is scrutinised mid-run
+  would rewrite the terms the sign-off set.
+
+- **An eighth preamble line, `Fix bounds exclude:`, lets an epic exempt
+  mechanical fan-out files from the run's fix-bounds gate**
+  (`scripts/tickets.mjs` preamble parse, doctor near-misses and both JSON
+  exposures; `workflows/run-epic.mjs` args validation and resolve step;
+  `skills/run/SKILL.md`; `skills/epic/SKILL.md`'s preamble template;
+  README's configuration table; two new tests in each suite). A live run
+  halted a green ticket whose review fix added a translation key: the
+  catalog fan-out — one key touching every locale file — blew the fix line
+  budget, which was measuring the catalog's width, not the fix's blast
+  radius. The epic may now declare comma-separated globs (e.g.
+  `src/messages/*.json`) that both of the resolve step's fix-diff commands
+  exclude the same way they already exclude `epics/`, so an excluded file
+  cannot reach `fixFiles` or `fixLines` and a pure fan-out neither halts nor
+  buys the bounded re-review a trip costs. Deliberately configuration, not a
+  hardcoded path: baking one project's i18n layout into the shared driver
+  would silently exempt translation-named paths in every installed project,
+  and per-project path policy belongs in the epic document, visible at
+  sign-off, like `Consequence paths:`. Validated on the same terms — an
+  unusable glob refuses the run before the first agent is spawned, because a
+  glob line that cannot be applied is fixed in the document, never silently
+  approximated. The narrowing is visible afterwards: the ticket record carries
+  `fixBoundsExclude` (`[]` when the gate measured the whole fix) and the run
+  logs the applied globs, so a retro can tell a gate that measured everything
+  from one a broad glob narrowed to nothing — legal by design, and the
+  human's call at sign-off, which is why it is recorded rather than inferred. **This line shipped once before and never arrived:** PR #42
+  merged on 2026-08-27 as `8ac3bef` into `addendum-gate-date`, a branch that
+  had already been merged, so the commit reached no release and no epic
+  could use the line it documented. Re-landed here against the current
+  driver — RUN-1's bounded re-review and HARD-1's `anchorHead` moved the
+  resolve step underneath it — rather than replayed as a cherry-pick.
+
+- **The unattended acceptance gate reads the ledger's verdict, and the review
+  anchor is the driver's own read** (`workflows/run-epic.mjs`
+  `ACCEPT_SCHEMA`, the acceptance prompt and its code gate; `TIER_FACTS_SCHEMA`
+  and the tier-facts prompt; the review packet and `REVIEW_SCHEMA`;
+  `skills/run/SKILL.md`; six new driver tests). Two holes in the merge gate.
+  **One:** the gate compared `passed !== total`, and a malformed CHECK line
+  runs nothing — so `passed === total` is trivially true on a criterion
+  nobody can satisfy, and the run merged it (RUN-2's reviewer found the
+  shape). The proxy now reports the ledger's own `allPassed` verdict and the
+  number of `problems` the script printed; the gate halts on
+  `STOP.acceptanceCheck` unless `allPassed === true`, halts on any malformed
+  line even when every runnable check passed, quotes the problem text, and
+  halts as unreadable evidence when either field is missing — a gate that
+  cannot read its own evidence merges nothing. The prompt's old sentence
+  "exits 0 when every check passed and 1 when any failed" was wrong about
+  exit 1 and is corrected. **Two:** `reviewedHead` — the anchor the
+  fix-bounds gate measures from — came back inside the reviewer's own report,
+  which is the party under review saying which commit was reviewed. The
+  driver now reads it itself in the read-only tier-facts step before the
+  reviewer is hired, hands the reviewer a SHA range
+  (`origin/epic/<name>...<sha>`), and keeps the reviewer's number only as a
+  cross-check: a disagreement is logged and the driver's anchor wins. The
+  re-review packet no longer asks for a field `RE_REVIEW_SCHEMA` cannot
+  carry, and gets its own range — `<reviewedHead>..origin/<branch>`, the fix
+  commits themselves — because the anchored range the first review read
+  predates them. No usable anchor still routes the fixes to the bounded
+  re-review — doubt raises scrutiny, never lowers it. The
+  `STOP.acceptanceCheck` sentence grows to name all three halts the gate now
+  fires on (a failing check, a CHECK too malformed to run, a report the gate
+  cannot read), with the run skill's step 5 copy and `check-invariants.mjs`
+  moving in the same commit; `PHRASES` pins the sentence whole.
+
 - **The retro asks what every halt bought** (`skills/retro/SKILL.md` step 4's
   question list and step 5's proposals, README, METHODOLOGY § "Why an epic
   ends with a retro"). Step 4 is seven questions now, not six: the seventh

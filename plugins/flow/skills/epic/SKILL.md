@@ -100,7 +100,10 @@ Outcome: <the problem and who has it, the observable change, the evidence
 that would show it worked, and what would make us reverse it. Falsifiable,
 or it is decoration — "improve UX" can never fail; "support requests about
 X stop arriving" can be checked at the retro. Name the observer for each
-piece of evidence and check it can distinguish success from failure.>
+piece of evidence and check it can distinguish success from failure — and
+name what will **produce** it, because a clause nothing collects is as empty
+as one that cannot fail: a check wired into two of nine page types, or an
+event two controls both fire, reads as falsifiable and never is.>
 
 Requirements: <OPTIONAL — the WHAT, apart from the HOW: a numbered list
 (R1, R2, …) of user-visible behaviours, each *when <condition> the system
@@ -166,15 +169,41 @@ paths the unattended driver always prices at the consequence review tier, a
 code floor under the worker's self-reported tier. Globs only on this line;
 `**` crosses directories, `*` stays within one.
 
+`Fix bounds exclude: <glob>[, <glob>]` — e.g. `src/messages/*.json`: files
+the unattended driver's fix-bounds gate leaves out of the review-fix diff,
+the way it already leaves out `epics/`. For files a fix fans out into
+mechanically — translation catalogs are the canonical case: one new key
+touches every locale file, and the line count measures the catalog's width,
+not the fix's blast radius, so without the line a clean fan-out buys a
+re-review or a halt. Same glob syntax as `Consequence paths:` — globs only on
+this line, `**` crossing directories and `*` staying within one — and
+declared here rather than built into the driver because per-project path
+policy belongs in the document a human signs off. An unusable glob refuses
+the run: a line that cannot be applied is fixed here, never silently
+approximated. Both glob lines split on commas, so a comma inside trailing
+prose makes that prose an entry and the run refuses to start — keep prose on
+these two lines comma-free, or leave it off.
+
 `Ticket budget: <n>` — e.g. `250k` or `1m`: a per-ticket output-token
 ceiling for unattended runs; the driver halts after any ticket that exceeds
-it (the ticket stays merged), so a runaway ticket is a signal, not a bill.>
+it (the ticket stays merged), so a runaway ticket is a signal, not a bill.
+Unlike every other line here, this one is re-read during a run: each ticket's
+resolve step fetches the epic branch and reads the signed-off document from
+it before the merge, so a raise you commit and push to the epic branch
+governs the ticket that is running.
+It is read from that ref and never from the ticket's own branch, so a branch
+cannot raise the ceiling that judges it. Removing the line mid-run does not
+lift the ceiling: the run keeps the last value and logs that it did.>
 
 Status log: `epics/<name>/status.md`. Run a ticket with `/flow:ticket <ID>`.
 
 ## Ground rules for every ticket in this epic
 
-- <the invariants an agent with no context would otherwise violate>
+- <the invariants an agent with no context would otherwise violate — and
+  where a rule needs someone to carry it out, name that actor and check the
+  delivery mode above gives you one: an unattended release worker spawns no
+  agents, holds no phone and drives no interactive tool, so a rule that
+  needs any of them is a rule every ticket will record a deviation against>
 
 ## Order
 
@@ -273,6 +302,14 @@ questions.
 tree, and which could not run in this session and why. A criterion whose
 CHECK nobody has seen fail is a criterion nobody has tested; the human
 signing off is the last reader before a worker builds against it.
+
+**Name what the lane cannot do, and what nobody will collect**: which ground
+rules and criteria need an actor the declared delivery mode does not provide
+and which human-owned ticket now carries each ahead of the release, and which
+Outcome evidence clause nothing will produce. A criterion parked as owed to
+the release pull request merges unperformed, and an observer with nothing to
+read reports nothing — the human is signing off on the lane as much as on the
+decomposition.
 
 **Bring the plan page to this gate too**: update step 3's JSON — `stage:
 "sign-off"`, the `alternative` with its rejection reason, the `planReview`
