@@ -73,3 +73,55 @@ records in weekendgoals. Bounded re-review of the fix commit: 0 Important,
 nothing from the first review unaddressed, reviewed head `9910b42`. Nothing
 deferred. Worker tokens (implementation leg): unknown; Reviewer tokens:
 252,343 (harness totals: first review 119,684, re-review 132,659).
+
+### RUN-1 — A fix-bounds trip buys a re-review, not a halt — 2026-09-14 — DONE
+
+**Built:** In `workflows/run-epic.mjs` the fix-bounds gate no longer halts the
+run: a fix diff that leaves its bounds now buys the bounded re-review the
+consequence tier already gets (same `hireReviewer`, `RE_REVIEW_SCHEMA`,
+`re-review:<ID>` label, priced at the consequence tier), merges on a clean
+one, and halts on `STOP.importantFinding` — one stop string for both doors —
+while `STOP.fixBounds` narrows to the fix nothing could measure. Files the
+review's own findings name are added to `reviewedFiles` in code before the
+bounds are measured, and the record carries `fixBoundsTripped`. Every copy of
+the below-consequence doctrine moved with it (`skills/run/SKILL.md` steps 4,
+5, 6 and 7, `README.md`, the driver's `meta.phases` and `RE_REVIEW_SCHEMA`
+comment), `check-invariants.mjs` now holds the fix-bounds sentence, and
+METHODOLOGY records the three trips, the reversal condition and PR #42's
+fate.
+
+**Mode:** autonomous — supervisor-spawned worker worker:RUN-1 (opus)
+
+**Tokens:** observed by the supervisor — see the review addendum
+
+**Verified:** `node --test` — tickets 56/56, session guard 14/14,
+check-invariants 12/12, board 9/9, plan-page 8/8, run-epic 92/92, codex 8/8,
+every suite `# fail 0`; `check-invariants.mjs` exit 0; `tickets.mjs doctor`
+exit 0 on this repository; `node --check plugins/flow/scripts/tickets.mjs`
+clean and the runtime-style parse of `run-epic.mjs` exits 0; `tickets.mjs
+check RUN-1` 2/2 (`--test-name-pattern 'bounds trip'` → `# pass 4`; `grep -c
+'fix-diff facts' check-invariants.mjs` → 1). Both CHECKs are red before the
+work: in a worktree at the base commit `8e1f17d`, `tickets.mjs check RUN-1`
+reports 0/2 — no test name matched `bounds trip` (the runner printed only the
+file wrapper, `# pass 1`) and the grep printed 0. run-epic went 91 → 92 (three fix-bounds cases consolidated into four
+`bounds trip` cases), check-invariants 11 → 12; root `CLAUDE.md`'s counts are
+refreshed to match.
+
+**Decisions:** (1) A numstat that prints `-` (a binary file, `fixLines: -1`)
+stays a `STOP.fixBounds` halt rather than becoming a trip — the scope keeps
+that condition for the unmeasurable fix, and a bounded re-review of a diff
+nothing measured proves nothing. Over-budget and outside-files trips are the
+two shapes that now buy the pass. (2) The three existing fix-bounds test
+cases were consolidated into the four `bounds trip` cases rather than left
+beside them: `--test-name-pattern 'bounds trip'` must print exactly `# pass
+4`, and a fifth matching name would break the criterion. Every assertion they
+carried survives inside the new cases (the outside file quoted and fenced,
+`61 lines against a budget of 60`, `no usable fix-diff facts`,
+`unmeasurable`, nothing merged). (3) The trip's re-review is priced with
+`priceReview('consequence', 'consequence')`, so an epic's `Reviewer model:`
+line still overrides the model exactly as it does for every other review.
+(4) PR #42's `Fix bounds exclude:` line is recorded in METHODOLOGY as
+unlanded and superseded for the halt, not re-landed here — sign-off decision
+2 gives it to the second batch.
+
+**Owed:** Nothing.
