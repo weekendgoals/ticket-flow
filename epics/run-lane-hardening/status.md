@@ -659,3 +659,26 @@ gains no fixture, so nothing in `epics/` or the plugin has to be maintained
 against it.
 
 **Owed:** Nothing.
+
+**Addendum — review — 2026-09-14 — sonnet/high:** 0 Important, 1 nit, nothing
+pre-existing, at the normal tier, reviewed head `a9df579`. The nit —
+`skills/epic/SKILL.md:305`, step 5's sign-off grown to a five-sentence
+paragraph where the scope committed to one clause each and the other two
+doors kept to one — was **fixed** in `71f8190` (review nit): the paragraph
+now matches its neighbour, the CHECK-ledger one, at one sentence naming what
+to say and one carrying both reasons, so the constraints keep their reasons
+without the door keeping its paragraph. Re-run after the fix:
+`check-invariants.mjs` exit 0, its suite 15/15, tickets 67/67, doctor exit 0,
+`check HARD-6` 2/2 — all `# fail 0`, no count moved. Checked and found sound:
+both questions are self-executing and carry the remedy verbatim (a criterion
+the lane cannot perform becomes its own ticket with a human owner, ordered
+before the release); every evidence citation verified line by line against
+`context/retro-groundhopper-log.md` and `context/retro-redesign-foundation.md`;
+RUN-2's additions to the agent intact; no write instruction added to the plan
+reviewer; the three epic-skill doors say what the agent definition says; both
+METHODOLOGY sections consistent with each other and with the agent; the
+demonstration's factual claims verified against the repository, with the
+spawn itself noted as unverifiable from the diff; no code touched; the
+CHANGELOG entry under `## Unreleased`; every count in the entry reproduced.
+**Nothing deferred.** Worker tokens (implementation leg): 120,147; Reviewer
+tokens: 116,090.
