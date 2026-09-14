@@ -789,6 +789,41 @@ test('no usable head from the tier-facts step sends fixes to the bounded re-revi
   assert.match(call(r, 'review:PAY-1').prompt, /Commit range: origin\/epic\/payments\.\.origin\/pay-1/)
 })
 
+test('re-review range covers the fix commits, and differs from the first review range', async () => {
+  // The first review is anchored on the pre-fix head; the fix commits are
+  // pushed after it. A re-review handed that same anchored range reads none
+  // of the commits it exists to judge and can return `important: []` on a
+  // range that cannot contain a fix — which merges them unreviewed.
+  const r = await drive(
+    oneTicket({
+      'worker:PAY-1': workerOk('PAY-1', { tier: 'consequence' }),
+      'review:PAY-1': reviewImportant,
+      'disposition:PAY-1': dispFixed,
+      're-review:PAY-1': { important: [] },
+    }),
+  )
+  const first = call(r, 'review:PAY-1').prompt
+  const again = call(r, 're-review:PAY-1').prompt
+  assert.match(first, /Commit range: origin\/epic\/payments\.\.\.abc1234def0/)
+  assert.match(again, /Commit range: abc1234def0\.\.origin\/pay-1/)
+  assert.doesNotMatch(again, /Commit range: origin\/epic\/payments\.\.\.abc1234def0/)
+  // And it must not carry the first review's "ignore the branch tip" line:
+  // the fixes ARE the tip.
+  assert.doesNotMatch(again, /review that commit, not whatever the branch name points at/)
+  assert.match(again, /Read the branch AS PUSHED/)
+  // Both doors into the bounded pass use the same packet builder, so a
+  // fix-bounds trip below the consequence tier gets the same covering range.
+  const tripped = await drive(
+    oneTicket({
+      'review:PAY-1': reviewImportant,
+      'disposition:PAY-1': dispFixed,
+      'resolve:PAY-1': { ...resolvedOk, ...resolvedOkBounds, fixFiles: ['a.ts', 'sneaky/new.ts'] },
+      're-review:PAY-1': { important: [] },
+    }),
+  )
+  assert.match(call(tripped, 're-review:PAY-1').prompt, /Commit range: abc1234def0\.\.origin\/pay-1/)
+})
+
 test('a re-review that finds an Important halts, with no second fix round', async () => {
   const r = await drive(
     oneTicket({
