@@ -591,3 +591,71 @@ discrepancy note was verified against the retro report and is correct: the
 two shipped fixes came from the diagnoses under halts 2 and 3, not 1 and 2.
 Nothing fixed, because nothing was found; **nothing deferred.** Worker
 tokens (implementation leg): 119,882; Reviewer tokens: 127,026.
+
+### HARD-6 — The plan reviewer asks what the lane can do and what the evidence can show — 2026-09-14 — DONE
+
+**Built:** `agents/plan-reviewer.md` carries two new questions under "What
+you are looking for": whether every ground rule and acceptance criterion has
+an actor that can execute it **in the declared delivery mode**, and whether
+every Outcome evidence clause is **collectable** — what will produce it, and
+whether the named observer could read success from failure with it. Each
+carries its evidence (groundhopper-log's seventeen per-language agents in an
+unattended epic, nine tickets shipping the deviation, ten phone checks
+deferred to a release pull request that merged unperformed;
+redesign-foundation's `h6count = 0` wired into two of nine page types and its
+GA4 event shared by two controls) and its remedy (a criterion the lane cannot
+perform becomes its own ticket with a human owner, ordered before the
+release). `skills/epic/SKILL.md` states each as one clause at three doors:
+the step 3 Outcome template now asks what will produce each piece of
+evidence, the ground-rule bullet asks the planner to name the executing actor
+and check the delivery mode provides one, and step 5's sign-off makes the
+human read both answers. METHODOLOGY § "Why the plan is reviewed before
+sign-off" records the evidence; one CHANGELOG entry under `## Unreleased`.
+
+**Mode:** autonomous — supervisor-spawned worker worker:HARD-6 (opus)
+
+**Tokens:** observed by the supervisor — see the review addendum
+
+**Verified:** `tickets.mjs check HARD-6` — **red before** on the base tree
+`b0fe149` (0/2: `asks-collectable` exit 1, `asks-executable` exit 1), 2/2
+passed on the committed branch, exit 0. `check-invariants.mjs` exit 0 (6/6
+couplings). `tickets.mjs doctor` exit 0. Suites, all `# fail 0`: tickets
+67/67, run-epic 107/107, session guard 14/14, check-invariants 15/15, board
+9/9, plan-page 8/8, codex 8/8. `node --check plugins/flow/scripts/tickets.mjs`
+exit 0; the driver's runtime-style parse exit 0. No code changed, so no suite
+could have been expected to move — they are the standing checks for the
+plugin these documents describe. **Demonstration** (actor: this worker, one
+general agent spawned for it, opus, given `agents/plan-reviewer.md` as its
+definition and a throwaway draft written in the scratchpad, never in the
+repository — a `Delivery: release` docs-localization epic whose ground rule
+routes every translated string through `.claude/agents/<code>-language-expert.md`):
+it reported the rule as Blocking, confirmed — "**The epic's central ground
+rule cannot be executed by the lane it declares.** … Two independent reasons
+it is unsatisfiable: the driver's worker prompt states 'you spawn no agents
+at all' (`workflows/run-epic.mjs:891`), and `.claude/agents/` does not exist
+in this repository … All four tickets in this plan inherit the rule, so all
+four will record a deviation and ship." It raised the second question
+unprompted as well — the draft's "adoption reading four weeks after release"
+flagged as an evidence clause with no producer ("Nothing in this repository
+collects adoption data of any kind") — and the draft's phone `demonstrate:`
+criterion as one the lane cannot perform, citing the new remedy. Both
+citations of `skills/epic/SKILL.md` in its report land on lines this ticket
+wrote.
+
+**Decisions:** (1) METHODOLOGY § "Why an epic states its outcome" gained one
+clause as well, though the ticket names only the plan-review section: that
+section enumerates what the plan reviewer flags about an Outcome ("an outcome
+that cannot fail"), so leaving it alone would have left two documents stating
+one rule differently — the root invariant that sent the grep. The reason
+travels with it: a clause whose evidence never arrives leaves the retro
+holding the same nothing as an unfalsifiable one. (2) No phrase was added to
+`check-invariants.mjs` `PHRASES`. The couplings it holds are strings copied
+verbatim between documents; these two questions are stated in the reviewer's
+voice in one document and the planner's in the other, so an equality check
+would hold the wording of a paraphrase — and the ticket's "Not in scope"
+forbids automating either question. Recorded here rather than acted on. (3)
+The demonstration draft lives only in the session scratchpad; the repository
+gains no fixture, so nothing in `epics/` or the plugin has to be maintained
+against it.
+
+**Owed:** Nothing.
