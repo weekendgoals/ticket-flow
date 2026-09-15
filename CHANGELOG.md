@@ -8,6 +8,29 @@ with one version and date.
 
 ## Unreleased
 
+- **A halt never leaves a Codex run editing the session's tree unseen**
+  (`workflows/run-epic.mjs` worker proxy prompt and its tests;
+  `skills/run/SKILL.md` step 3's worker-runner bullet and step 5;
+  README's `Worker runner:` row; `scripts/runners/codex.mjs` keys its state
+  by the repository's real path). The runner's own guards (the entry
+  below) are the floor; these are the doors in front of it. The worker
+  proxy now follows a cancel rule: before reporting anything other than a
+  report the wait command printed — its wait bound spent, a start or wait
+  that printed no JSON, unexpected output, a permission prompt — it runs
+  `codex.mjs … --cancel` (same arguments, 600000 ms shell timeout) and puts
+  the output in `detail`, because the detached run outlives the proxy and a
+  Codex left running keeps editing the tree the halted session goes on to
+  use. Step 5 gains a precondition for `Worker runner: codex`: before
+  checking out, editing or committing anything after a halt on a Codex
+  ticket, run that ticket's `--cancel` (the command is spelled out) and read
+  what it reports; uncommitted paths it names are the stopped run's
+  unreviewed work, named in the Diagnosis and never swept into the
+  run-record commit (stage `runs.md` by path). Step 3's warning now covers
+  the halt record as well as resuming. The state directory is keyed by the
+  repository's real path, so a cancel typed through a symlinked spelling of
+  the same repository still finds the run instead of reporting nothing to
+  cancel.
+
 - **A detached Codex run can be cancelled, and cannot commit anywhere but
   its ticket branch** (`scripts/runners/codex.mjs`; `codex.test.mjs` gains
   nine cases). A background run outlives the proxy that started it, so a

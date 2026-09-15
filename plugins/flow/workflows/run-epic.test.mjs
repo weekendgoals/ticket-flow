@@ -1653,7 +1653,7 @@ test("the codex proxy starts the runner once and waits in slices inside its shel
   assert.match(p, /If its "state" is "pending", the ticket is still running: run the SAME wait command again/)
   // ceil(3600000 / 540000) + 1 = 8 slices, and what exhausting them reports.
   assert.match(p, /Run the wait command at most 8 times: the runner's own 3600000 ms timeout ends every run within that many slices/)
-  assert.match(p, /If the 8th wait still prints "pending", stop and report result "halted", stopCondition "other", ticket PAY-1, branch pay-1, .*that last pending JSON in detail/)
+  assert.match(p, /If the 8th wait still prints "pending", stop: .*report result "halted", stopCondition "other", ticket PAY-1, branch pay-1, .*that last pending JSON/)
   assert.ok(p.indexOf('--start') < p.indexOf('--wait'), 'start comes before wait')
   // The relay contract is unchanged.
   assert.match(p, /Report its fields VERBATIM — ticket, result, stopCondition, tier, tierWhy, branch, built, verification, deployPreconditions, detail/)
@@ -1661,6 +1661,23 @@ test("the codex proxy starts the runner once and waits in slices inside its shel
   assert.match(p, /permission prompt/)
   assert.match(p, /HARD RULE: nothing you do merges, pushes, or retargets toward the default branch \(main\)/)
   assert.doesNotMatch(p, /wait for it to finish/, 'no single blocking command left in the prompt')
+})
+
+test('the codex proxy cancels the detached run before reporting anything the wait command did not print', async () => {
+  // The background run outlives the proxy; a proxy that returns without a
+  // delivered report and leaves Codex running leaves it editing the tree the
+  // halted session goes on to use. These assertions pin the cancel door.
+  const r = await drive(oneTicket(), { ...ARGS, workerRunner: 'codex', workerModel: 'gpt-5-codex' })
+  const p = call(r, 'worker:PAY-1').prompt
+  const args = (flag) => (p.match(new RegExp(`^node "/plugins/flow/scripts/runners/codex\\.mjs" (.*) ${flag}$`, 'm')) || [])[1]
+  assert.ok(args('--cancel'), 'the --cancel command, on its own line')
+  assert.equal(args('--cancel'), args('--start'), '--cancel carries the --start arguments, so it resolves the same run')
+  assert.equal(args('--cancel'), args('--wait --max-wait 540000'))
+  assert.match(p, /whenever you are about to report ANYTHING other than a report the wait command printed — the wait limit below spent, a start or wait command that exited without printing JSON, output you did not expect, a permission prompt, anything else that stops you — FIRST run this command once, with your shell tool's timeout at 600000 ms, and put its complete JSON output in detail/)
+  assert.match(p, /If the 8th wait still prints "pending", stop: apply THE CANCEL RULE, then report result "halted", stopCondition "other".*followed by the cancel output/)
+  assert.match(p, /exits nonzero AND prints no JSON, apply THE CANCEL RULE, then report result "halted"/)
+  assert.match(p, /"state": "failed" or "cancelled" .* is relayed the same way, with no cancel of your own/)
+  assert.match(p, /Before returning on a permission prompt, THE CANCEL RULE still applies/)
 })
 
 test('without a runner line the worker is the Claude subagent it always was, and the record says so', async () => {

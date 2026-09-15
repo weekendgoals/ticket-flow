@@ -6,14 +6,14 @@
 // report with what the repository actually shows. A stub `codex` binary
 // stands in for the real one — it reads the prompt, does (or fails to do)
 // the git work, and prints the JSONL events and final message the real CLI
-// prints — so the suite needs git and nothing else. What it cannot prove is
+// prints — so the suite needs git and POSIX sh, ps and sleep, nothing else. What it cannot prove is
 // that real Codex follows the ticket skill; that is a live run's job, and
 // the gates downstream are built for a worker that does not.
 
 import { test, after } from 'node:test'
 import assert from 'node:assert/strict'
 import { execFileSync, spawn } from 'node:child_process'
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, realpathSync, chmodSync, readFileSync, existsSync, utimesSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, realpathSync, chmodSync, readFileSync, existsSync, utimesSync, symlinkSync } from 'node:fs'
 import { createHash } from 'node:crypto'
 import { join, dirname } from 'node:path'
 import { tmpdir } from 'node:os'
@@ -490,7 +490,12 @@ test('--cancel stops the whole process group — runner and Codex — commits no
   const codexPid = Number(readFileSync(pidFile, 'utf8'))
   assert.ok(isAlive(codexPid) && isAlive(s.out.pid))
 
-  const c = runRunner('R-8', 'good', ['--cancel'])
+  // The cancel spells the repository through a symlink — a session after a
+  // halt need not type the path the driver used — and still finds the run.
+  const link = join(tmp, 'repo-link')
+  symlinkSync(repo, link)
+  const linked = runnerArgs('R-8').map((a) => (a === repo ? link : a))
+  const c = { status: 0, out: JSON.parse(sh(repo, process.execPath, [...linked, '--cancel'], stubEnv('good'))) }
   assert.equal(c.status, 0)
   assert.equal(c.out.state, 'cancelled')
   assert.equal(c.out.result, 'halted')

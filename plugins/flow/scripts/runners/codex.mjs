@@ -78,7 +78,7 @@
 // git, so none of them cares which runner produced the branch.
 
 import { spawnSync, spawn } from 'node:child_process'
-import { mkdtempSync, writeFileSync, readFileSync, rmSync, existsSync, mkdirSync, renameSync, openSync, closeSync, statSync, readdirSync } from 'node:fs'
+import { mkdtempSync, writeFileSync, readFileSync, rmSync, existsSync, mkdirSync, renameSync, openSync, closeSync, statSync, readdirSync, realpathSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { tmpdir } from 'node:os'
 import { createHash, randomBytes } from 'node:crypto'
@@ -234,14 +234,24 @@ const printReport = (r) => {
   }
 }
 
-// ---- the state directory: --start, --wait, and the background run ---------
-// Derived from the arguments alone, so the two commands the proxy runs agree
-// on it by construction. Label and ticket make it readable; the hash of the
-// repository and epic keeps two projects' `worker:R-1` runs apart.
+// ---- the state directory: --start, --wait, --cancel, the background run ----
+// Derived from the arguments alone, so the commands the proxy runs — and a
+// session's cancel after a halt — agree on it by construction. Label and
+// ticket make it readable; the hash of the repository and epic keeps two
+// projects' `worker:R-1` runs apart. The repository is hashed by its real
+// path: a cancel that spelled the same repository through a symlink would
+// otherwise find "nothing to cancel" while Codex kept editing the tree.
+const repoKey = (() => {
+  try {
+    return realpathSync(repoRoot)
+  } catch {
+    return repoRoot
+  }
+})()
 const stateDir = join(
   tmpdir(),
   'flow-codex-runs',
-  `${label.replace(/[^A-Za-z0-9._-]+/g, '_')}--${id}--${createHash('sha256').update(`${repoRoot}\n${epic}`).digest('hex').slice(0, 12)}`,
+  `${label.replace(/[^A-Za-z0-9._-]+/g, '_')}--${id}--${createHash('sha256').update(`${repoKey}\n${epic}`).digest('hex').slice(0, 12)}`,
 )
 // Every --start that launches opens a new ATTEMPT, numbered in order and
 // given a random nonce. Its files carry that key, so nothing one attempt
