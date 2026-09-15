@@ -8,6 +8,27 @@ with one version and date.
 
 ## Unreleased
 
+- **Trial: a Codex shadow review** (`scripts/runners/codex-review.mjs` and
+  its stub suite, `workflows/run-epic.mjs`'s `shadow:<ID>` step and
+  `shadowReviewer` arg, `Shadow reviewer:` parsed by `tickets.mjs`, the run
+  and epic skills, README). An epic declaring `Shadow reviewer: codex` gets,
+  on each consequence-tier ticket of an unattended run, one Codex review of
+  the Claude reviewer's packet — read-only, no network, its own worktree at
+  the reviewed head, answering in the reviewer's schema — right after the
+  first review. It is blind both ways and gates nothing: a failure (Codex
+  missing, signed out, over its 9-minute bound, no report) is recorded and
+  the ticket proceeds; its spend is left out of the ticket budget. The run
+  session writes the results to `epics/<name>/shadow-reviews.md`, a file no
+  script reads, and the retro compares them by hand. **Removing the trial:**
+  `git revert` the one commit that added it, or by hand delete the runner
+  and its suite; the `shadow:<ID>` block, `SHADOW_*`, `shadowReviewer` and
+  `shadowSpend` in the driver and its `shadow reviewer` tests; the
+  `shadowReviewer` grab and keys in `tickets.mjs`, its `declNear`/
+  `declStrict` alternatives and near-miss message, and in `tickets.test.mjs`
+  the fixture line, the `Shadow reviewer` test and the key in every `modes`
+  literal; the lines naming the trial in the run, epic and retro skills,
+  README, CLAUDE.md and CI.
+
 - **The plan reviewer asks what the lane can execute and what the evidence
   can show** (`agents/plan-reviewer.md` gains two questions; `skills/epic/SKILL.md`
   carries each as one clause — the step 3 Outcome template, the ground-rule
