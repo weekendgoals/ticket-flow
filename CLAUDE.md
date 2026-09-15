@@ -38,11 +38,13 @@ go through the flow, one-off work goes through `/flow:quick` into
   asserts the sequence, the gate branches and the halt mapping. It needs
   nothing but Node: no git, no network, no filesystem beyond the script.
   The Codex worker runner has
-  `node --test plugins/flow/scripts/runners/codex.test.mjs` (`# pass 12`) —
+  `node --test plugins/flow/scripts/runners/codex.test.mjs` (`# pass 21`) —
   a stub `codex` binary that speaks the real CLI's JSONL protocol drives
-  the runner through a throwaway git repo; it needs `git` (plus POSIX `sh`
-  and `ps`, which its detached `--start` case uses to kill a process group
-  and read one) and nothing else, and never calls the real Codex.
+  the runner through a throwaway git repo; it needs `git` plus POSIX `sh`,
+  `ps` and `sleep` (the detachment, cancel, hung-pid and hung-transport
+  cases kill process groups, read them, and stand in a live bystander or a
+  remote that never answers) and nothing else, and never calls the real
+  Codex.
 - **Doctrine invariants:** `node plugins/flow/scripts/check-invariants.mjs` —
   must exit 0 on this repo; mechanically verifies the string-checkable
   cross-document couplings (the status-log preamble's three copies, the run

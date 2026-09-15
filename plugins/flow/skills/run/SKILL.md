@@ -125,7 +125,7 @@ ticket one. Report what is missing and stop.
   before it halts as `other`. A session or proxy that ends mid-ticket
   therefore leaves that Codex run going to its own commit and push: before
   resuming a run halted on a Codex ticket, let it finish — its
-  `flow-codex-runs/worker_<ID>--…` state directory holds `result.json` once
+  `flow-codex-runs/worker_<ID>--…` state directory holds a `result-<nonce>.json` once
   it has — and then read the board as § Resuming after a halt says. A
   `--start` for a ticket whose run is still live, or finished with its
   report unread, attaches to it rather than launching a second Codex on the

@@ -6,32 +6,44 @@
 //   node codex.mjs <ID> --epic <name> --epic-branch epic/<name> \
 //     --default-branch main --repo <abs> --plugin <abs> --label worker:<ID> \
 //     [--model <m>] [--codex <bin>] [--timeout <ms>] [--network] [--json] \
-//     [--start | --wait [--max-wait <ms>]]
+//     [--git-timeout <ms>] [--start | --wait [--max-wait <ms>] | --cancel]
 //
-// Three ways to invoke it, over the same arguments:
-//   - neither flag: the single shot — run the ticket in this process and
+// Four ways to invoke it, over the same arguments:
+//   - no mode flag: the single shot — run the ticket in this process and
 //     print the report when it ends. What a human runs.
 //   - --start: launch that same single shot as a detached background process
 //     (its own session and process group, stdio on a log file) and return at
-//     once with {"state":"started","stateDir":…}. The report lands atomically
-//     in a state directory derived from the arguments alone — label, ticket,
-//     repository, epic — so --start and --wait agree on it without anyone
-//     passing a path. Idempotent: a run already launching, running, or
-//     finished and not yet delivered is attached to, never launched twice,
-//     because two Codex sessions on one working tree commit each other's
-//     edits.
+//     once with {"state":"started","stateDir":…,"attempt":n}. The report
+//     lands atomically in a state directory derived from the arguments
+//     alone — label, ticket, repository, epic — so --start, --wait and
+//     --cancel agree on it without anyone passing a path. Each launch is a
+//     numbered attempt with a random nonce, and every file it writes carries
+//     that key (see the state directory below). Idempotent: a run launching,
+//     running, or finished with its report unread for at most one wait slice
+//     plus a minute is attached to, never launched twice — two Codex
+//     sessions on one working tree commit each other's edits.
 //   - --wait: block at most --max-wait ms (default and ceiling 540000) for
-//     that report; print it verbatim when it exists, {"state":"pending",…}
-//     when the slice ends first, or a worker-shaped halted report carrying
-//     "state":"failed" when no run was started or the background process
-//     died without a report — a crashed run must never look pending forever.
+//     the current attempt's report; print it verbatim when it exists,
+//     {"state":"pending",…} when the slice ends first, or a worker-shaped
+//     halted report carrying "state":"failed" when no run was started or the
+//     background process died without a report — a crashed run must never
+//     look pending forever, and whatever it left running is stopped first.
+//   - --cancel: stop the current attempt — its whole process group, the
+//     runner and Codex — mark it consumed, and print a halted report with
+//     "state":"cancelled" naming what was stopped and what the working tree
+//     holds. Idempotent, and a no-op report when nothing is running. The
+//     driver's proxy runs it before reporting anything but a delivered
+//     report, and the run skill runs it before touching the tree after a
+//     halt: a detached run outlives the proxy that started it, and a Codex
+//     still editing the session's tree is how unreviewed work gets committed.
 // Why the split: the run driver reaches this script through an agent's shell
 // tool, which kills any command after at most 10 minutes (600000 ms), while
 // a full ticket routinely needs its hour. Shortening the ticket's budget to
 // fit the tool would break the work; slicing the wait does not. A report
-// --wait already delivered, or a run that died, is not attached to: the next
-// --start is a new attempt, because a resumed run re-working the ticket must
-// not be handed the previous attempt's answer.
+// that was delivered, cancelled, or left unread past that bound, and a run
+// that died, are not attached to: the next --start opens a new attempt,
+// because a later run re-working the ticket must not be handed an earlier
+// attempt's answer.
 //
 // What the runner owns, and Codex never does:
 //   - git, entirely: the fetch and the branch before the run, the commit and
@@ -56,20 +68,20 @@
 // get one (no codex binary, a timeout, no parseable final message); the JSON
 // is printed either way so the driver's proxy has something to relay.
 // --wait exits with the stored run's code when it prints the report, 0 on
-// pending, and 1 on a failure; --start exits 0 once a run is launched or
-// attached to. The JSON alone tells the three apart — `"state":"pending"`
-// means wait again, anything else is the answer — so a proxy never has to
-// interpret an exit code.
+// pending, and 1 on a failure or a cancelled attempt; --start exits 0 once a
+// run is launched or attached to, and --cancel exits 0. The JSON alone tells
+// them apart — `"state":"pending"` means wait again, anything else is the
+// answer — so a proxy never has to interpret an exit code.
 //
 // Zero dependencies. Every gate downstream — the review, the CHECK re-run,
 // the addendum check, the SHA merge, the board's integrated state — reads
 // git, so none of them cares which runner produced the branch.
 
 import { spawnSync, spawn } from 'node:child_process'
-import { mkdtempSync, writeFileSync, readFileSync, rmSync, existsSync, mkdirSync, renameSync, openSync, closeSync, statSync } from 'node:fs'
-import { join, resolve, dirname } from 'node:path'
+import { mkdtempSync, writeFileSync, readFileSync, rmSync, existsSync, mkdirSync, renameSync, openSync, closeSync, statSync, readdirSync } from 'node:fs'
+import { join, resolve } from 'node:path'
 import { tmpdir } from 'node:os'
-import { createHash } from 'node:crypto'
+import { createHash, randomBytes } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 
 const TICKET_ID = /^[A-Z][A-Z0-9]*-\d+$/
@@ -85,13 +97,13 @@ const flags = {}
 const positional = []
 for (let i = 0; i < argv.length; i++) {
   const a = argv[i]
-  if (a === '--json' || a === '--network' || a === '--start' || a === '--wait' || a === '--background') flags[a.slice(2)] = true
+  if (a === '--json' || a === '--network' || a === '--start' || a === '--wait' || a === '--cancel' || a === '--background') flags[a.slice(2)] = true
   else if (a.startsWith('--')) flags[a.slice(2)] = argv[++i]
   else positional.push(a)
 }
 const usage = () => {
   console.error(
-    'usage: codex.mjs <ID> --epic <name> --epic-branch epic/<name> --default-branch <b> --repo <abs> --plugin <abs> --label worker:<ID> [--model <m>] [--codex <bin>] [--timeout <ms>] [--network] [--json] [--start | --wait [--max-wait <ms>]]',
+    'usage: codex.mjs <ID> --epic <name> --epic-branch epic/<name> --default-branch <b> --repo <abs> --plugin <abs> --label worker:<ID> [--model <m>] [--codex <bin>] [--timeout <ms>] [--network] [--json] [--git-timeout <ms>] [--start | --wait [--max-wait <ms>] | --cancel]',
   )
   process.exit(2)
 }
@@ -107,16 +119,21 @@ if (!SAFE_NAME.test(epic) || epic.includes('..') || !SAFE_NAME.test(epicBranch) 
 if (!repo.startsWith('/') || !plugin.startsWith('/') || /["`\n\r$]/.test(repo + plugin)) usage()
 if (model && !MODEL.test(model)) usage()
 if (!Number.isInteger(timeoutMs) || timeoutMs <= 0) usage()
-// --background is internal: it is the process --start launches. One mode at
-// a time, and --max-wait only means something to --wait.
-if ([flags.start, flags.wait, flags.background].filter(Boolean).length > 1) usage()
+// Network git (fetch, push) gets a bound: a hung remote or a credential
+// prompt nobody can answer would otherwise hang a detached run with no one
+// watching it. Five minutes is generous for one ticket branch.
+const gitTimeoutMs = flags['git-timeout'] ? Number(flags['git-timeout']) : 5 * 60 * 1000
+if (!Number.isInteger(gitTimeoutMs) || gitTimeoutMs <= 0) usage()
+// --background (with --attempt) is internal: it is the process --start
+// launches. One mode at a time, and --max-wait only means something to --wait.
+if ([flags.start, flags.wait, flags.cancel, flags.background].filter(Boolean).length > 1) usage()
 // The wait slice's ceiling sits a minute under the proxy's 600000 ms shell
 // limit, leaving room for Node to start and the report to print inside it.
 const WAIT_CEILING_MS = 540000
 if ('max-wait' in flags && !flags.wait) usage()
 const maxWaitMs = 'max-wait' in flags ? Math.min(Number(flags['max-wait']), WAIT_CEILING_MS) : WAIT_CEILING_MS
 if (!Number.isInteger(maxWaitMs) || maxWaitMs <= 0) usage()
-const mode = flags.start ? 'start' : flags.wait ? 'wait' : flags.background ? 'background' : 'once'
+const mode = flags.start ? 'start' : flags.wait ? 'wait' : flags.cancel ? 'cancel' : flags.background ? 'background' : 'once'
 
 const branch = id.toLowerCase()
 const repoRoot = resolve(repo)
@@ -125,9 +142,16 @@ const started = Date.now()
 
 const git = (args, opts = {}) => {
   const r = spawnSync('git', ['-C', repoRoot, ...args], { encoding: 'utf8', ...opts })
-  return { status: r.status, out: (r.stdout || '').trim(), err: (r.stderr || '').trim() }
+  return { status: r.status, out: (r.stdout || '').trim(), err: (r.stderr || '').trim() || (r.error ? r.error.message : ''), timedOut: !!(r.error && r.error.code === 'ETIMEDOUT') }
 }
 const line = (s) => String(s == null ? '' : s).replace(/[\r\n\t]+/g, ' ').slice(0, 400)
+// Fetch and push, bounded by --git-timeout: a hung remote would otherwise
+// hang a detached run that nobody is watching. No terminal prompt either — a
+// credential prompt nobody can answer is the same hang.
+const gitNet = (args) => {
+  const r = git(args, { timeout: gitTimeoutMs, env: { ...process.env, GIT_TERMINAL_PROMPT: '0' } })
+  return r.timedOut ? { ...r, status: null, err: `timed out after ${gitTimeoutMs} ms (--git-timeout)${r.err ? ` — ${r.err}` : ''}` } : r
+}
 
 // ---- the worker schema, as the driver defines it ---------------------------
 // Kept in the same shape so the driver's proxy agent can relay the object
@@ -219,10 +243,25 @@ const stateDir = join(
   'flow-codex-runs',
   `${label.replace(/[^A-Za-z0-9._-]+/g, '_')}--${id}--${createHash('sha256').update(`${repoRoot}\n${epic}`).digest('hex').slice(0, 12)}`,
 )
-const RESULT = join(stateDir, 'result.json') // {exitCode, report}: the background run's answer
-const RUN = join(stateDir, 'run.json') // {pid, startedAt, timeoutMs}: written by --start
-const DELIVERED = join(stateDir, 'delivered') // marker: a --wait printed the answer
-const LOG = join(stateDir, 'runner.log') // the background run's stdout and stderr
+// Every --start that launches opens a new ATTEMPT, numbered in order and
+// given a random nonce. Its files carry that key, so nothing one attempt
+// writes can be read as another's answer — a run presumed dead that later
+// finishes writes a report no --wait for the new attempt ever opens:
+//   attempt-<n>.json  {n, nonce, pid, startedAt, timeoutMs}; created with
+//                     O_EXCL, which is what makes two racing --starts launch
+//                     one run: the second finds the file and attaches
+//   result-<nonce>.json   {exitCode, report} from that attempt's background run
+//   delivered-<n>     a --wait printed attempt n's report
+//   cancelled-<n>.json    attempt n was stopped (--cancel, or --wait reaping a
+//                     dead run) and its report is that stop; a background run
+//                     that finds it stands down before committing anything
+//   runner-<n>.log    the background run's stdout and stderr
+// The highest n present is the current attempt.
+const attemptFile = (n) => join(stateDir, `attempt-${n}.json`)
+const resultFile = (nonce) => join(stateDir, `result-${nonce}.json`)
+const deliveredFile = (n) => join(stateDir, `delivered-${n}`)
+const cancelledFile = (n) => join(stateDir, `cancelled-${n}.json`)
+const logFile = (n) => join(stateDir, `runner-${n}.log`)
 // A rename within one directory is atomic: a reader sees no file or the whole
 // file, never a half-written one that a JSON parse would misread as absent.
 const writeAtomic = (file, text) => {
@@ -230,10 +269,17 @@ const writeAtomic = (file, text) => {
   writeFileSync(part, text)
   renameSync(part, file)
 }
+// The background run's own key, passed by --start as --attempt <n>:<nonce>.
+let myAttempt = null
+if (mode === 'background') {
+  const m = /^(\d+):([0-9a-f]{16})$/.exec(flags.attempt || '')
+  if (!m) usage()
+  myAttempt = { n: Number(m[1]), nonce: m[2] }
+} else if ('attempt' in flags) usage()
 
 const finish = (code) => {
   out.runner.durationMs = Date.now() - started
-  if (mode === 'background') writeAtomic(RESULT, JSON.stringify({ exitCode: code, report: out }, null, 2))
+  if (mode === 'background') writeAtomic(resultFile(myAttempt.nonce), JSON.stringify({ exitCode: code, report: out }, null, 2))
   else printReport(out)
   process.exit(code)
 }
@@ -264,41 +310,70 @@ const alive = (pid) => {
     return e.code === 'EPERM'
   }
 }
-// LAUNCH_GRACE_MS: how long a state directory may lack its run.json before
-// the launch is presumed lost (--start writes it milliseconds after creating
-// the directory). LATE_GRACE_MS: how far past the runner's own timeout a
-// report may be late before a pid that still answers is presumed hung or
+const mtimeAge = (file) => {
+  try {
+    return Date.now() - statSync(file).mtimeMs
+  } catch {
+    return Infinity
+  }
+}
+// LAUNCH_GRACE_MS: how long an attempt record may lack its pid before the
+// launch is presumed lost (--start records the pid milliseconds after
+// creating the record). LATE_GRACE_MS: how far past the runner's own timeout
+// a report may be late before a pid that still answers is presumed hung or
 // reused — the backstop behind the liveness probe, so a dead run cannot read
-// as pending for the proxy's whole wait loop.
+// as pending for the proxy's whole wait loop. STALE_REPORT_MS: how old a
+// finished report nobody has read may be before --start stops attaching to
+// it and opens a new attempt — one wait slice plus a minute, the longest a
+// proxy following the start-then-wait contract can take to read its own
+// run's report, so an older one belongs to an attempt whose proxy is gone.
 const LAUNCH_GRACE_MS = 60 * 1000
 const LATE_GRACE_MS = 10 * 60 * 1000
-const inspect = () => {
-  if (!existsSync(stateDir)) return { state: 'absent', run: null }
-  const result = readJson(RESULT)
-  if (result) return { state: existsSync(DELIVERED) ? 'delivered' : 'finished', result, run: readJson(RUN) }
-  const run = readJson(RUN)
-  if (!run) {
-    let age = Infinity
-    try {
-      age = Date.now() - statSync(stateDir).mtimeMs
-    } catch {}
-    return age < LAUNCH_GRACE_MS ? { state: 'launching', run: null } : { state: 'dead', run: null, why: `the state directory ${stateDir} records no launched process` }
-  }
-  if (!alive(run.pid)) {
-    // It may have written its report and exited between the two reads.
-    const late = readJson(RESULT)
-    if (late) return { state: 'finished', result: late, run }
-    return { state: 'dead', run, why: `the background runner (pid ${run.pid}) exited without writing a report` }
-  }
-  const age = Date.now() - run.startedAt
-  if (age > run.timeoutMs + LATE_GRACE_MS) {
-    return { state: 'dead', run, why: `the background runner (pid ${run.pid}) has no report ${age} ms after it started — past its ${run.timeoutMs} ms timeout plus ${LATE_GRACE_MS} ms, so it is presumed hung (or its pid reused)` }
-  }
-  return { state: 'running', run }
-}
-const logTail = () => {
+const STALE_REPORT_MS = WAIT_CEILING_MS + 60 * 1000
+const currentAttempt = () => {
+  let names = []
   try {
-    const text = readFileSync(LOG, 'utf8').trim()
+    names = readdirSync(stateDir)
+  } catch {
+    return 0
+  }
+  return names.reduce((max, f) => {
+    const m = /^attempt-(\d+)\.json$/.exec(f)
+    return m ? Math.max(max, Number(m[1])) : max
+  }, 0)
+}
+const inspect = () => {
+  const n = currentAttempt()
+  if (n === 0) return { state: 'absent', n, attempt: null }
+  const cancelled = readJson(cancelledFile(n))
+  const attempt = readJson(attemptFile(n))
+  if (cancelled) return { state: 'cancelled', n, attempt, cancelled }
+  if (!attempt || !attempt.nonce) {
+    // Created but not yet readable in full — O_EXCL creation is not atomic.
+    return mtimeAge(attemptFile(n)) < LAUNCH_GRACE_MS ? { state: 'launching', n, attempt: null } : { state: 'dead', n, attempt: null, why: `attempt ${n}'s record in ${stateDir} is unreadable` }
+  }
+  const result = readJson(resultFile(attempt.nonce))
+  if (result) {
+    return { state: existsSync(deliveredFile(n)) ? 'delivered' : 'finished', n, attempt, result, resultAgeMs: mtimeAge(resultFile(attempt.nonce)) }
+  }
+  if (!Number.isInteger(attempt.pid)) {
+    return mtimeAge(attemptFile(n)) < LAUNCH_GRACE_MS ? { state: 'launching', n, attempt } : { state: 'dead', n, attempt, why: `attempt ${n} records no launched process ${LAUNCH_GRACE_MS} ms after it was opened` }
+  }
+  if (!alive(attempt.pid)) {
+    // It may have written its report and exited between the two reads.
+    const late = readJson(resultFile(attempt.nonce))
+    if (late) return { state: 'finished', n, attempt, result: late, resultAgeMs: 0 }
+    return { state: 'dead', n, attempt, why: `the background runner (pid ${attempt.pid}) exited without writing a report` }
+  }
+  const age = Date.now() - attempt.startedAt
+  if (age > attempt.timeoutMs + LATE_GRACE_MS) {
+    return { state: 'dead', n, attempt, why: `the background runner (pid ${attempt.pid}) has no report ${age} ms after it started — past its ${attempt.timeoutMs} ms timeout plus ${LATE_GRACE_MS} ms, so it is presumed hung (or its pid reused)` }
+  }
+  return { state: 'running', n, attempt }
+}
+const logTail = (n) => {
+  try {
+    const text = readFileSync(logFile(n), 'utf8').trim()
     return text ? ` — runner log tail: ${line(text.slice(-400))}` : ''
   } catch {
     return ''
@@ -309,58 +384,117 @@ const printState = (o) => {
   else console.log(`${id}: ${o.state} — state dir ${o.stateDir}`)
 }
 
-if (mode === 'start') {
-  mkdirSync(dirname(stateDir), { recursive: true })
-  let s = inspect()
-  // A delivered answer belongs to an attempt the driver already heard; a dead
-  // run has nothing left to wait for. Either way this --start is a new
-  // attempt, and the clean-tree refusal still stands between it and whatever
-  // a dead run left in the tree.
-  if (s.state === 'delivered' || s.state === 'dead') {
-    const stale = `${stateDir}.stale-${process.pid}-${Date.now()}`
-    try {
-      renameSync(stateDir, stale)
-    } catch (e) {
-      if (e.code !== 'ENOENT') throw e
-    }
-    rmSync(stale, { recursive: true, force: true })
-    s = { state: 'absent', run: null }
+// ---- stopping an attempt ------------------------------------------------------
+// The background run leads its own process group (detached = setsid), and
+// Codex, spawned from it without detaching, is a member — so one group signal
+// reaches both, and also a Codex left orphaned when its runner was killed.
+// A pid can be reused once its process is gone, so a live leader is
+// signalled only when `ps` shows it is this attempt's runner (its argv
+// carries the nonce); a group with no live leader cannot have had its id
+// reissued, because an id is not handed out while its group has members.
+const groupAlive = (pgid) => {
+  try {
+    process.kill(-pgid, 0)
+    return true
+  } catch (e) {
+    return e.code === 'EPERM'
   }
-  if (s.state === 'absent') {
-    let won = true
+}
+const sleepMs = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms)
+const killAttempt = (attempt) => {
+  if (!attempt || !Number.isInteger(attempt.pid)) return 'no process had been recorded for it'
+  const pgid = attempt.pid
+  if (alive(pgid)) {
+    const ps = spawnSync('ps', ['-o', 'command=', '-p', String(pgid)], { encoding: 'utf8' })
+    if (ps.status === 0 && !ps.stdout.includes(attempt.nonce)) return `pid ${pgid} is no longer this attempt's runner (the pid was reused), so nothing was signalled`
+  }
+  if (!groupAlive(pgid)) return `nothing of it was still running (process group ${pgid} is empty)`
+  for (const [sig, graceMs] of [['SIGTERM', 5000], ['SIGKILL', 2000]]) {
     try {
-      mkdirSync(stateDir) // not recursive: EEXIST means a concurrent --start won
-    } catch (e) {
-      if (e.code !== 'EEXIST') throw e
-      won = false
-    }
-    if (won) {
-      const childArgs = [id, '--epic', epic, '--epic-branch', epicBranch, '--default-branch', defaultBranch, '--repo', repo, '--plugin', plugin, '--label', label, '--timeout', String(timeoutMs), '--background']
-      if (model) childArgs.push('--model', model)
-      if (flags.codex) childArgs.push('--codex', codexBin)
-      if (flags.network) childArgs.push('--network')
-      // detached: a new session and process group, so neither this process
-      // exiting nor a kill aimed at the shell command's group reaches it.
-      // stdio on a log file, so no pipe the caller reads stays held open.
-      const logFd = openSync(LOG, 'a')
-      const child = spawn(process.execPath, [fileURLToPath(import.meta.url), ...childArgs], { detached: true, stdio: ['ignore', logFd, logFd] })
-      closeSync(logFd)
-      if (!child.pid) {
-        out.detail = `could not launch the background runner with ${line(process.execPath)}`
-        const failed = { state: 'failed', ...out }
-        writeAtomic(RESULT, JSON.stringify({ exitCode: 1, report: failed }, null, 2))
-        printReport(failed)
-        process.exit(1)
-      }
-      child.unref()
-      writeAtomic(RUN, JSON.stringify({ pid: child.pid, startedAt: Date.now(), timeoutMs, ticket: id, label, repo: repoRoot }, null, 2))
-      printState({ state: 'started', ticket: id, stateDir, pid: child.pid, attached: false })
+      process.kill(-pgid, sig)
+    } catch {}
+    for (let waited = 0; waited < graceMs && groupAlive(pgid); waited += 100) sleepMs(100)
+    if (!groupAlive(pgid)) return `stopped its process group ${pgid} (the runner and Codex) with ${sig}`
+  }
+  return `process group ${pgid} survived SIGKILL — check it by hand`
+}
+// What a stopped run leaves in the working tree is not the runner's to
+// discard — it may be the only copy of the work — so the report names it.
+const treeNote = () => {
+  const head = git(['rev-parse', '--abbrev-ref', 'HEAD'])
+  const dirty = git(['status', '--porcelain'])
+  const paths = dirty.status === 0 && dirty.out ? dirty.out.split('\n').length : 0
+  return `HEAD is ${head.status === 0 ? head.out : 'unreadable'}; ${paths} uncommitted path(s) in the working tree${paths ? ' — unreviewed edits of the stopped run: inspect or discard them before touching the tree' : ''}`
+}
+// Marks the attempt consumed FIRST — a background run reaching its commit
+// step between the mark and the signal stands down instead of committing —
+// then stops it, and stores the stop as that attempt's report.
+const stopAttempt = (s, why, reportState, tail = '') => {
+  const report = { state: reportState, ...out }
+  writeAtomic(cancelledFile(s.n), JSON.stringify({ report }, null, 2))
+  report.detail = `${line(why)}: ${killAttempt(s.attempt)}; ${treeNote()}${tail}`
+  writeAtomic(cancelledFile(s.n), JSON.stringify({ report }, null, 2))
+  return report
+}
+
+// The background run checks, before each step that touches the repository,
+// that it is still the current attempt and was not cancelled — the in-tree
+// half of the guarantee that a stopped or superseded run commits nothing.
+const standDown = () => {
+  if (mode !== 'background') return null
+  if (existsSync(cancelledFile(myAttempt.n))) return `attempt ${myAttempt.n} was cancelled`
+  const n = currentAttempt()
+  if (n !== myAttempt.n) return `attempt ${myAttempt.n} was superseded by attempt ${n}`
+  return null
+}
+
+if (mode === 'start') {
+  mkdirSync(stateDir, { recursive: true })
+  for (let tries = 0; ; tries++) {
+    const s = inspect()
+    // Attach to a run that is launching or running, or that finished with
+    // its report not yet read and not yet stale: that is this proxy's run.
+    if (s.state === 'launching' || s.state === 'running' || (s.state === 'finished' && s.resultAgeMs <= STALE_REPORT_MS) || tries >= 20) {
+      printState({ state: 'started', ticket: id, stateDir, attempt: s.n, pid: s.attempt ? s.attempt.pid : null, attached: true, finished: s.state === 'finished' })
       process.exit(0)
     }
-    s = inspect()
+    // Everything else opens a new attempt: nothing started yet; a report
+    // already delivered, cancelled, or stale belongs to an attempt the driver
+    // has finished with; a dead run has nothing left to wait for — and
+    // anything it orphaned is stopped first, so two Codex sessions never
+    // share the tree. The clean-tree refusal still stands between the new
+    // attempt and whatever the old one left.
+    if (s.state === 'dead') stopAttempt(s, `attempt ${s.n} was presumed dead (${s.why}) when attempt ${s.n + 1} opened`, 'failed')
+    const n = s.n + 1
+    const nonce = randomBytes(8).toString('hex')
+    try {
+      writeFileSync(attemptFile(n), JSON.stringify({ n, nonce, pid: null, startedAt: Date.now(), timeoutMs, ticket: id, label, repo: repoRoot }, null, 2), { flag: 'wx' })
+    } catch (e) {
+      if (e.code !== 'EEXIST') throw e
+      continue // a concurrent --start opened attempt n first: look again, and attach
+    }
+    const childArgs = [id, '--epic', epic, '--epic-branch', epicBranch, '--default-branch', defaultBranch, '--repo', repo, '--plugin', plugin, '--label', label, '--timeout', String(timeoutMs), '--git-timeout', String(gitTimeoutMs), '--background', '--attempt', `${n}:${nonce}`]
+    if (model) childArgs.push('--model', model)
+    if (flags.codex) childArgs.push('--codex', codexBin)
+    if (flags.network) childArgs.push('--network')
+    // detached: a new session and process group, so neither this process
+    // exiting nor a kill aimed at the shell command's group reaches it.
+    // stdio on a log file, so no pipe the caller reads stays held open.
+    const logFd = openSync(logFile(n), 'a')
+    const child = spawn(process.execPath, [fileURLToPath(import.meta.url), ...childArgs], { detached: true, stdio: ['ignore', logFd, logFd] })
+    closeSync(logFd)
+    if (!child.pid) {
+      out.detail = `could not launch the background runner with ${line(process.execPath)}`
+      const failed = { state: 'failed', ...out }
+      writeAtomic(resultFile(nonce), JSON.stringify({ exitCode: 1, report: failed }, null, 2))
+      printReport(failed)
+      process.exit(1)
+    }
+    child.unref()
+    writeAtomic(attemptFile(n), JSON.stringify({ n, nonce, pid: child.pid, startedAt: Date.now(), timeoutMs, ticket: id, label, repo: repoRoot }, null, 2))
+    printState({ state: 'started', ticket: id, stateDir, attempt: n, pid: child.pid, attached: false })
+    process.exit(0)
   }
-  printState({ state: 'started', ticket: id, stateDir, pid: s.run ? s.run.pid : null, attached: true, finished: s.state === 'finished' || s.state === 'delivered' })
-  process.exit(0)
 }
 
 if (mode === 'wait') {
@@ -370,22 +504,60 @@ if (mode === 'wait') {
     const s = inspect()
     if (s.state === 'finished' || s.state === 'delivered') {
       try {
-        writeFileSync(DELIVERED, '')
+        writeFileSync(deliveredFile(s.n), '')
       } catch {}
       printReport(s.result.report)
       process.exit(s.result.exitCode === 0 ? 0 : 1)
     }
-    if (s.state === 'absent' || s.state === 'dead') {
-      out.detail = s.state === 'absent' ? `no run was started for ${id} (${label}) — nothing to wait for; run the same command with --start first` : `${s.why}${logTail()}`
+    if (s.state === 'cancelled') {
+      printReport(s.cancelled.report)
+      process.exit(1)
+    }
+    if (s.state === 'absent') {
+      out.detail = `no run was started for ${id} (${label}) — nothing to wait for; run the same command with --start first`
       printReport({ state: 'failed', ...out })
+      process.exit(1)
+    }
+    if (s.state === 'dead') {
+      // A dead runner can leave Codex orphaned and still editing the tree:
+      // the wait that finds it stops what is left before it reports.
+      printReport(stopAttempt(s, s.why, 'failed', logTail(s.n)))
       process.exit(1)
     }
     const waited = Date.now() - waitStarted
     if (waited >= maxWaitMs) {
-      printState({ state: 'pending', ticket: id, stateDir, pid: s.run ? s.run.pid : null, runningMs: s.run ? Date.now() - s.run.startedAt : 0, waitedMs: waited })
+      printState({ state: 'pending', ticket: id, stateDir, attempt: s.n, pid: s.attempt ? s.attempt.pid : null, runningMs: s.attempt ? Date.now() - s.attempt.startedAt : 0, waitedMs: waited })
       process.exit(0)
     }
     await new Promise((r) => setTimeout(r, Math.min(POLL_MS, maxWaitMs - waited)))
+  }
+}
+
+if (mode === 'cancel') {
+  const s = inspect()
+  if (s.state === 'absent') {
+    out.detail = `no run was started for ${id} (${label}) — nothing to cancel`
+    printReport({ state: 'cancelled', ...out })
+  } else if (s.state === 'cancelled') {
+    printReport(s.cancelled.report)
+  } else if (s.state === 'delivered') {
+    out.detail = `attempt ${s.n} had already finished and its report was delivered — nothing to cancel; ${treeNote()}`
+    printReport({ state: 'cancelled', ...out })
+  } else if (s.state === 'finished') {
+    printReport(stopAttempt(s, `attempt ${s.n} had already finished (${line(s.result.report && s.result.report.result)}) before the cancel; its unread report is discarded`, 'cancelled'))
+  } else {
+    printReport(stopAttempt(s, `cancelled attempt ${s.n}${s.why ? ` (${s.why})` : ''}`, 'cancelled'))
+  }
+  process.exit(0)
+}
+
+// The background run may already have been cancelled or superseded while it
+// waited to be scheduled; it then touches nothing.
+{
+  const why = standDown()
+  if (why) {
+    out.detail = `${why} before it started — the runner touched nothing`
+    finish(1)
   }
 }
 
@@ -393,7 +565,7 @@ if (mode === 'wait') {
 // The tree must be clean first — every change left after Codex runs is
 // committed as the ticket's, which is only true if nothing else was there.
 {
-  const f = git(['fetch', 'origin', '--prune'])
+  const f = gitNet(['fetch', 'origin', '--prune'])
   if (f.status !== 0) {
     out.detail = `git fetch failed before the run: ${line(f.err)}`
     finish(1)
@@ -435,6 +607,15 @@ const codexArgs = [
 if (flags.network) codexArgs.push('-c', 'sandbox_workspace_write.network_access=true')
 if (model) codexArgs.push('-m', model)
 codexArgs.push('-')
+
+{
+  const why = standDown()
+  if (why) {
+    rmSync(tmp, { recursive: true, force: true })
+    out.detail = `${why} before Codex launched — the runner checked out ${branch} and launched nothing`
+    finish(1)
+  }
+}
 
 const run = spawnSync(codexBin, codexArgs, {
   cwd: repoRoot,
@@ -501,6 +682,25 @@ rmSync(tmp, { recursive: true, force: true })
 // The tree was clean when Codex started, so every change is the ticket's.
 // The subject is ID-prefixed because that prefix is how the board derives
 // shipped and integrated state — the one thing a commit must get right.
+//
+// Two guards come first, because `git add -A` and `git commit` land on
+// whatever is checked out. A run that outlived its proxy can find the
+// session standing on `epic/<name>` writing a halt record: committing there
+// would put an unreviewed `<ID>: …` commit on the epic branch, published by
+// its next push past review, the CHECK re-run and the SHA merge. So the
+// runner commits (and pushes) only on the ticket branch it checked out, and
+// only while its attempt is still current and not cancelled; otherwise it
+// commits nothing and says what it found.
+{
+  const head = git(['rev-parse', '--abbrev-ref', 'HEAD'])
+  const why = standDown() || (head.status !== 0 || head.out !== branch ? `HEAD is ${head.status === 0 ? head.out : 'unreadable'}, not the ticket branch ${branch} the runner checked out — something switched branches during the run` : null)
+  if (why) {
+    out.result = 'halted'
+    out.stopCondition = 'other'
+    out.detail = `${why}; the runner committed and pushed nothing — ${treeNote()}`
+    finish(1)
+  }
+}
 const changed = git(['status', '--porcelain']).out
 let committed = false
 if (changed) {
@@ -546,7 +746,7 @@ if (report.ticket && String(report.ticket).toUpperCase() !== id) {
 // the remote too — but `branch-pushed` is granted only to a work-done
 // claim whose push this script watched succeed.
 if (commitsAhead > 0) {
-  const p = git(['push', '-u', 'origin', branch])
+  const p = gitNet(['push', '-u', 'origin', branch])
   out.runner.pushed = p.status === 0
   if (p.status !== 0) {
     out.result = 'halted'

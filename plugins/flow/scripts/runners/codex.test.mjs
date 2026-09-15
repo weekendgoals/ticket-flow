@@ -13,7 +13,8 @@
 import { test, after } from 'node:test'
 import assert from 'node:assert/strict'
 import { execFileSync, spawn } from 'node:child_process'
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, realpathSync, chmodSync, readFileSync, existsSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, realpathSync, chmodSync, readFileSync, existsSync, utimesSync } from 'node:fs'
+import { createHash } from 'node:crypto'
 import { join, dirname } from 'node:path'
 import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
@@ -94,6 +95,7 @@ const branch = id.toLowerCase()
 const g = (...a) => execFileSync('git', ['-C', repo, ...a], { encoding: 'utf8' })
 // One line per launch, so a test can count how many Codex sessions ran.
 if (process.env.FAKE_CODEX_CALLS_FILE) fs.appendFileSync(process.env.FAKE_CODEX_CALLS_FILE, id + '\\n')
+if (process.env.FAKE_CODEX_PID_FILE) fs.writeFileSync(process.env.FAKE_CODEX_PID_FILE, String(process.pid))
 // The runner itself dies mid-run (its parent is the runner: spawnSync, no shell).
 if (mode === 'kill-runner') { process.kill(process.ppid, 'SIGKILL'); process.exit(0) }
 // A ticket that takes a while — long enough to outlive a short wait slice.
@@ -103,11 +105,14 @@ if (mode === 'crash') { console.log('not json at all'); process.exit(3) }
 // before launching — and it never writes to .git, which the real sandbox
 // keeps read-only: it edits files and appends the entry, nothing more.
 fs.writeFileSync(process.env.FAKE_CODEX_BRANCH_FILE, g('rev-parse', '--abbrev-ref', 'HEAD').trim())
-if (mode === 'good' || mode === 'blocked') {
+if (mode === 'good' || mode === 'blocked' || mode === 'switch-branch') {
   fs.writeFileSync(repo + '/built-' + branch + '.txt', 'built\\n')
-  const outcome = mode === 'good' ? 'DONE' : 'BLOCKED'
+  const outcome = mode === 'blocked' ? 'BLOCKED' : 'DONE'
   fs.appendFileSync(repo + '/epics/rho/status.md', '\\n### ' + id + ' — build it — 2026-09-13 — ' + outcome + '\\n\\n**Built:** it.\\n\\n**Owed:** Nothing.\\n')
 }
+// What a halted session does to a run that outlived its proxy: it checks out
+// the epic branch in the same tree while Codex's edits are still uncommitted.
+if (mode === 'switch-branch') g('checkout', '-q', 'epic/rho')
 const report = mode === 'blocked'
   ? { ticket: id, result: 'blocked', stopCondition: 'blocked-entry', tier: 'normal', tierWhy: 'code', branch, built: '', verification: '', deployPreconditions: [], detail: 'BLOCKED entry written' }
   : { ticket: id, result: 'work-done', stopCondition: 'none', tier: 'normal', tierWhy: 'touches code', branch, built: 'a file', verification: 'node -e 1 → ok 1/1', deployPreconditions: ['RHO_ENV'], detail: '' }
@@ -271,6 +276,34 @@ const isAlive = (pid) => {
     return e.code === 'EPERM'
   }
 }
+// The runner's state directory for a ticket, derived here the way the runner
+// derives it, so a test can read an attempt's record or fabricate one.
+const stateDirOf = (id, repoPath = repo) =>
+  join(tmp, 'flow-codex-runs', `worker_${id}--${id}--${createHash('sha256').update(`${repoPath}\nrho`).digest('hex').slice(0, 12)}`)
+const attemptRecord = (id, n) => JSON.parse(readFileSync(join(stateDirOf(id), `attempt-${n}.json`), 'utf8'))
+const fabricateAttempt = (id, n, record) => {
+  mkdirSync(stateDirOf(id), { recursive: true })
+  const file = join(stateDirOf(id), `attempt-${n}.json`)
+  writeFileSync(file, JSON.stringify({ n, nonce: 'a'.repeat(16), pid: null, startedAt: Date.now(), timeoutMs: 3600000, ...record }))
+  return file
+}
+// A pid that is certainly dead: a process that has already exited.
+const deadPid = () => Number(execFileSync(process.execPath, ['-e', 'console.log(process.pid)'], { encoding: 'utf8' }).trim())
+const until = async (cond, what, ms = 20000) => {
+  for (const t0 = Date.now(); Date.now() - t0 < ms; await pause(50)) if (cond()) return
+  assert.fail(`timed out waiting for ${what}`)
+}
+const runAsync = (id, mode, extra, more = {}) =>
+  new Promise((res) => {
+    const child = spawn(process.execPath, [...runnerArgs(id), ...extra], { cwd: repo, env: { ...ENV, ...stubEnv(mode, more) }, stdio: ['ignore', 'pipe', 'pipe'] })
+    let text = ''
+    child.stdout.on('data', (d) => (text += d))
+    child.on('exit', (status) => res({ status, out: JSON.parse(text) }))
+  })
+const resetTree = () => {
+  git(repo, 'checkout', '-q', '--', '.')
+  git(repo, 'clean', '-fdq')
+}
 const pgidOf = (pid) => {
   try {
     return Number(execFileSync('ps', ['-o', 'pgid=', '-p', String(pid)], { encoding: 'utf8' }).trim())
@@ -343,7 +376,8 @@ test("--start launches a detached run that outlives its command and a kill of th
 
   // Let it finish with nobody waiting, then --start once more: a finished
   // report no --wait has delivered is still this attempt's, so it attaches.
-  const result = join(started.out.stateDir, 'result.json')
+  assert.equal(started.out.attempt, 1)
+  const result = join(started.out.stateDir, `result-${attemptRecord('R-5', 1).nonce}.json`)
   for (let i = 0; i < 200 && !existsSync(result); i++) await pause(100)
   assert.ok(existsSync(result), 'the background run wrote its report')
   const finished = runRunner('R-5', 'good', ['--start'], env)
@@ -367,6 +401,7 @@ test("--start launches a detached run that outlives its command and a kill of th
   // re-working the ticket must not be handed the previous attempt's report.
   const retry = runRunner('R-5', 'good', ['--start'], { FAKE_CODEX_CALLS_FILE: callsFile })
   assert.equal(retry.out.attached, false)
+  assert.equal(retry.out.attempt, 2)
   const second = runRunner('R-5', 'good', ['--wait', '--max-wait', '30000'])
   assert.equal(second.out.result, 'branch-pushed')
   assert.equal(calls() - before, 2)
@@ -403,7 +438,18 @@ test('a background run that died without a report is a failure, not pending — 
 })
 
 test('the mode flags refuse nonsense combinations before touching git', () => {
-  for (const extra of [['--start', '--wait'], ['--max-wait', '1000'], ['--wait', '--max-wait', 'soon'], ['--start', '--background']]) {
+  const refused = [
+    ['--start', '--wait'],
+    ['--wait', '--cancel'],
+    ['--max-wait', '1000'],
+    ['--wait', '--max-wait', 'soon'],
+    ['--start', '--background'],
+    ['--background'], // the internal mode needs its attempt key
+    ['--background', '--attempt', '1:nothex'],
+    ['--start', '--attempt', `1:${'a'.repeat(16)}`],
+    ['--git-timeout', 'never'],
+  ]
+  for (const extra of refused) {
     let status = 0
     try {
       sh(repo, process.execPath, [...runnerArgs('R-1'), ...extra], { TMPDIR: tmp })
@@ -412,4 +458,201 @@ test('the mode flags refuse nonsense combinations before touching git', () => {
     }
     assert.equal(status, 2, `args ${JSON.stringify(extra)} must be refused`)
   }
+})
+
+// ---- a run that outlives its proxy must not reach anyone else's branch -----
+
+test('the runner commits only on the ticket branch it checked out: a tree switched to the epic branch mid-run gets no commit, and the report says so', () => {
+  resetTree()
+  git(repo, 'checkout', '-q', 'epic/rho')
+  const epicHead = git(repo, 'rev-parse', 'epic/rho').trim()
+  const r = runRunner('R-7', 'switch-branch')
+  assert.equal(r.status, 1)
+  assert.equal(r.out.result, 'halted')
+  assert.equal(r.out.stopCondition, 'other')
+  assert.match(r.out.detail, /HEAD is epic\/rho, not the ticket branch r-7 the runner checked out/)
+  assert.match(r.out.detail, /the runner committed and pushed nothing — HEAD is epic\/rho; 2 uncommitted path\(s\)/)
+  assert.equal(git(repo, 'rev-parse', 'epic/rho').trim(), epicHead, 'no commit landed on the epic branch')
+  assert.equal(git(repo, 'rev-list', '--count', 'origin/epic/rho..r-7').trim(), '0', 'none on the ticket branch either')
+  assert.ok(!onRemote('r-7'))
+  assert.equal(r.out.runner.pushed, false)
+  assert.match(git(repo, 'status', '--porcelain'), /built-r-7\.txt/, "Codex's edits are left in the tree for a human, not discarded")
+  resetTree()
+})
+
+test('--cancel stops the whole process group — runner and Codex — commits nothing, is idempotent, and a later --start is a fresh attempt', async () => {
+  resetTree()
+  const pidFile = join(tmp, 'codex-pid-r8')
+  const env = { FAKE_CODEX_SLEEP_MS: '8000', FAKE_CODEX_PID_FILE: pidFile }
+  const s = runRunner('R-8', 'good', ['--start'], env)
+  assert.equal(s.out.attached, false)
+  await until(() => existsSync(pidFile), 'the stub Codex to start')
+  const codexPid = Number(readFileSync(pidFile, 'utf8'))
+  assert.ok(isAlive(codexPid) && isAlive(s.out.pid))
+
+  const c = runRunner('R-8', 'good', ['--cancel'])
+  assert.equal(c.status, 0)
+  assert.equal(c.out.state, 'cancelled')
+  assert.equal(c.out.result, 'halted')
+  assert.equal(c.out.stopCondition, 'other')
+  assert.match(c.out.detail, new RegExp(`cancelled attempt 1: stopped its process group ${s.out.pid} \\(the runner and Codex\\) with SIG(TERM|KILL); HEAD is r-8; 0 uncommitted path\\(s\\)`))
+  await until(() => !isAlive(codexPid) && !isAlive(s.out.pid), 'the runner and Codex to be gone', 3000)
+  assert.equal(git(repo, 'rev-list', '--count', 'origin/epic/rho..r-8').trim(), '0')
+  assert.ok(!onRemote('r-8'))
+
+  assert.deepEqual(runRunner('R-8', 'good', ['--cancel']).out, c.out, 'a second cancel repeats the first')
+  const w = runRunner('R-8', 'good', ['--wait', '--max-wait', '300'])
+  assert.equal(w.status, 1)
+  assert.deepEqual(w.out, c.out, 'a wait after a cancel is the cancel, not pending')
+
+  const none = runRunner('R-10', 'good', ['--cancel'])
+  assert.equal(none.status, 0)
+  assert.equal(none.out.state, 'cancelled')
+  assert.match(none.out.detail, /no run was started for R-10 \(worker:R-10\) — nothing to cancel/)
+
+  const again = runRunner('R-8', 'good', ['--start'])
+  assert.equal(again.out.attached, false)
+  assert.equal(again.out.attempt, 2)
+  assert.equal(runRunner('R-8', 'good', ['--wait', '--max-wait', '30000']).out.result, 'branch-pushed')
+})
+
+test('a background run cancelled or superseded before its commit stands down and commits nothing', async () => {
+  // Each case interferes while attempt 1's Codex is still working: a newer
+  // attempt opens, or a cancel has marked the attempt but not yet signalled.
+  const cases = [
+    ['R-13', () => fabricateAttempt('R-13', 2, { nonce: 'b'.repeat(16) }), /attempt 1 was superseded by attempt 2; the runner committed and pushed nothing/],
+    ['R-18', () => writeFileSync(join(stateDirOf('R-18'), 'cancelled-1.json'), '{"report":{}}'), /attempt 1 was cancelled; the runner committed and pushed nothing/],
+  ]
+  for (const [id, interfere, expected] of cases) {
+    resetTree()
+    const pidFile = join(tmp, `codex-pid-${id}`)
+    runRunner(id, 'good', ['--start'], { FAKE_CODEX_SLEEP_MS: '1000', FAKE_CODEX_PID_FILE: pidFile })
+    await until(() => existsSync(pidFile), `${id}'s stub Codex to start`)
+    interfere()
+    const result = join(stateDirOf(id), `result-${attemptRecord(id, 1).nonce}.json`)
+    await until(() => existsSync(result), `${id} attempt 1's report`)
+    const { exitCode, report } = JSON.parse(readFileSync(result, 'utf8'))
+    assert.equal(exitCode, 1)
+    assert.equal(report.result, 'halted')
+    assert.match(report.detail, expected)
+    assert.equal(git(repo, 'rev-list', '--count', `origin/epic/rho..${id.toLowerCase()}`).trim(), '0', 'nothing committed')
+    assert.ok(!onRemote(id.toLowerCase()), 'nothing pushed')
+  }
+  resetTree()
+})
+
+// ---- attempts are keyed, so no attempt can be handed another's answer ------
+
+test('a finished report left unread past one wait slice plus a minute is not attached to: --start opens a new attempt', async () => {
+  resetTree()
+  const before = calls()
+  runRunner('R-11', 'good', ['--start'], { FAKE_CODEX_CALLS_FILE: callsFile })
+  const result = join(stateDirOf('R-11'), `result-${attemptRecord('R-11', 1).nonce}.json`)
+  await until(() => existsSync(result), "attempt 1's report")
+  const old = (Date.now() - 601000) / 1000
+  utimesSync(result, old, old)
+  const s = runRunner('R-11', 'good', ['--start'], { FAKE_CODEX_CALLS_FILE: callsFile })
+  assert.equal(s.out.attached, false, 'an unread report older than 600000 ms belongs to a proxy that is gone')
+  assert.equal(s.out.attempt, 2)
+  const done = runRunner('R-11', 'good', ['--wait', '--max-wait', '30000'])
+  assert.equal(done.out.result, 'branch-pushed')
+  assert.equal(calls() - before, 2)
+  assert.equal(git(repo, 'rev-list', '--count', 'origin/epic/rho..r-11').trim(), '2', "the new attempt's commit, on top of the first")
+})
+
+test("a run presumed dead that writes its report late cannot answer the new attempt's wait — and its orphan is reaped when the new one opens", async () => {
+  resetTree()
+  const oldNonce = 'c'.repeat(16)
+  fabricateAttempt('R-12', 1, { nonce: oldNonce, pid: deadPid() })
+  const s = runRunner('R-12', 'good', ['--start'], { FAKE_CODEX_SLEEP_MS: '1500' })
+  assert.equal(s.out.attached, false)
+  assert.equal(s.out.attempt, 2)
+  assert.ok(existsSync(join(stateDirOf('R-12'), 'cancelled-1.json')), 'the dead attempt was stopped and consumed first')
+  // The old attempt's writer comes back to life long enough to write its report.
+  writeFileSync(join(stateDirOf('R-12'), `result-${oldNonce}.json`), JSON.stringify({ exitCode: 0, report: { ticket: 'R-12', result: 'branch-pushed', detail: 'STALE ANSWER' } }))
+  const pending = runRunner('R-12', 'good', ['--wait', '--max-wait', '300'])
+  assert.equal(pending.out.state, 'pending')
+  assert.equal(pending.out.attempt, 2)
+  const done = runRunner('R-12', 'good', ['--wait', '--max-wait', '30000'])
+  assert.equal(done.out.result, 'branch-pushed')
+  assert.notEqual(done.out.detail, 'STALE ANSWER')
+  assert.equal(done.out.runner.name, 'codex')
+})
+
+test('two racing --starts over a dead attempt launch exactly one new run', async () => {
+  resetTree()
+  fabricateAttempt('R-14', 1, { pid: deadPid() })
+  const before = calls()
+  const more = { FAKE_CODEX_SLEEP_MS: '1000', FAKE_CODEX_CALLS_FILE: callsFile }
+  const [a, b] = await Promise.all([runAsync('R-14', 'good', ['--start'], more), runAsync('R-14', 'good', ['--start'], more)])
+  assert.deepEqual([a.out.attached, b.out.attached].sort(), [false, true], 'one launched, one attached')
+  assert.equal(a.out.attempt, 2)
+  assert.equal(b.out.attempt, 2)
+  assert.equal(runRunner('R-14', 'good', ['--wait', '--max-wait', '30000']).out.result, 'branch-pushed')
+  assert.equal(calls() - before, 1)
+})
+
+// ---- the liveness backstops, each driven by a fabricated state -------------
+
+test('an attempt that never recorded its pid is launching for a minute, then a failure — not pending forever', () => {
+  const file = fabricateAttempt('R-15', 1, {})
+  assert.equal(runRunner('R-15', 'good', ['--wait', '--max-wait', '300']).out.state, 'pending', 'a fresh launch is given its minute')
+  const old = (Date.now() - 120000) / 1000
+  utimesSync(file, old, old)
+  const r = runRunner('R-15', 'good', ['--wait', '--max-wait', '300'])
+  assert.equal(r.status, 1)
+  assert.equal(r.out.state, 'failed')
+  assert.match(r.out.detail, /attempt 1 records no launched process 60000 ms after it was opened: no process had been recorded for it/)
+})
+
+test("a live pid far past the run's timeout is presumed hung or reused — a failure, and a reused pid is never signalled", async () => {
+  const bystander = spawn('sleep', ['30'], { stdio: 'ignore' })
+  try {
+    fabricateAttempt('R-16', 1, { pid: bystander.pid, startedAt: Date.now() - (1000 + 11 * 60 * 1000), timeoutMs: 1000 })
+    const r = runRunner('R-16', 'good', ['--wait', '--max-wait', '300'])
+    assert.equal(r.status, 1)
+    assert.equal(r.out.state, 'failed')
+    assert.match(r.out.detail, new RegExp(`the background runner \\(pid ${bystander.pid}\\) has no report \\d+ ms after it started — past its 1000 ms timeout plus 600000 ms, so it is presumed hung`))
+    assert.match(r.out.detail, new RegExp(`pid ${bystander.pid} is no longer this attempt's runner \\(the pid was reused\\), so nothing was signalled`))
+    await pause(100)
+    assert.ok(isAlive(bystander.pid), 'the unrelated process that holds the pid is untouched')
+  } finally {
+    bystander.kill('SIGKILL')
+  }
+})
+
+// ---- network git is bounded ------------------------------------------------
+
+test('a hung git fetch or git push times out into a report instead of hanging a detached run', () => {
+  const repo2 = join(tmp, 'repo2')
+  git(tmp, 'clone', '-q', remote, repo2)
+  git(repo2, 'config', 'user.email', 'test@example.com')
+  git(repo2, 'config', 'user.name', 'Test')
+  git(repo2, 'config', 'commit.gpgsign', 'false')
+  // An ssh "remote" whose transport just sleeps: git waits on it forever.
+  const hang = { GIT_SSH_COMMAND: 'sleep 20;' }
+  const args = (id) => [RUNNER, id, '--epic', 'rho', '--epic-branch', 'epic/rho', '--default-branch', 'main', '--repo', repo2, '--plugin', PLUGIN, '--label', `worker:${id}`, '--codex', fakeCodex, '--json', '--git-timeout', '1000']
+  const run = (id) => {
+    const t0 = Date.now()
+    try {
+      return { status: 0, out: JSON.parse(sh(repo2, process.execPath, args(id), stubEnv('good', hang))), ms: Date.now() - t0 }
+    } catch (e) {
+      return { status: e.status, out: JSON.parse(String(e.stdout)), ms: Date.now() - t0 }
+    }
+  }
+
+  git(repo2, 'remote', 'set-url', 'origin', 'ssh://flow.invalid/remote.git')
+  const f = run('R-17')
+  assert.equal(f.status, 1)
+  assert.match(f.out.detail, /git fetch failed before the run: timed out after 1000 ms \(--git-timeout\)/)
+  assert.ok(f.ms < 10000, `returned in ${f.ms} ms, not after the transport's 20 s`)
+
+  git(repo2, 'remote', 'set-url', 'origin', remote)
+  git(repo2, 'config', 'remote.origin.pushurl', 'ssh://flow.invalid/remote.git')
+  const p = run('R-17')
+  assert.equal(p.out.result, 'halted')
+  assert.equal(p.out.stopCondition, 'other')
+  assert.match(p.out.detail, /git push -u origin r-17 failed: timed out after 1000 ms \(--git-timeout\)/)
+  assert.equal(p.out.runner.pushed, false)
+  assert.ok(p.ms < 10000, `returned in ${p.ms} ms, not after the transport's 20 s`)
 })

@@ -8,6 +8,44 @@ with one version and date.
 
 ## Unreleased
 
+- **A detached Codex run can be cancelled, and cannot commit anywhere but
+  its ticket branch** (`scripts/runners/codex.mjs`; `codex.test.mjs` gains
+  nine cases). A background run outlives the proxy that started it, so a
+  proxy that returns early — the wait bound spent, a `--wait` killed at a
+  forgotten 2-minute shell default, the agent dying — used to leave Codex
+  editing the session's tree while the driver halted. The halted session
+  then checks out `epic/<name>` to write the run record, and when Codex
+  stopped the runner ran `git add -A` and `git commit` on whatever was
+  checked out: an unreviewed `<ID>: …` commit on the epic branch, published
+  by its next push past review, the CHECK re-run and the SHA merge. Now, in
+  depth: (a) the runner commits and pushes only when HEAD is the ticket
+  branch it checked out, and otherwise commits nothing and reports
+  `halted` / `other` naming the branch it found and the uncommitted paths it
+  left; (b) `codex.mjs … --cancel --json` (same arguments) stops the
+  current attempt's whole process group — the background run leads it and
+  Codex is a member, so an orphaned Codex is reached too — marks the
+  attempt consumed first, and prints a halted `"state":"cancelled"` report
+  naming what it stopped and what the working tree holds; it is idempotent,
+  a no-op report when nothing was started, and a live pid is signalled only
+  when `ps` shows it is this attempt's runner, so a reused pid is never
+  hit; (c) `--wait` stops what a dead run left before reporting it failed,
+  and `--start` does the same before opening a new attempt, so two Codex
+  sessions never share a tree. **Attempts are keyed**: every launch is a
+  numbered attempt with a random nonce, its record created with O_EXCL (two
+  racing `--start`s launch one run) and its report written under its nonce,
+  so a run presumed dead that writes late cannot answer a newer attempt's
+  `--wait`; a background run that finds its attempt cancelled or superseded
+  stands down before launching Codex and again before committing. An
+  unread finished report is attached to only while it is at most one wait
+  slice plus a minute old (600000 ms) — the longest a proxy following the
+  start-then-wait contract takes to read its own run's report — so a later
+  run is handed an earlier attempt's answer only if it starts within that
+  window of the answer landing with the answer unread and uncancelled. And
+  `git fetch` and `git push` are bounded by `--git-timeout` (default five
+  minutes, with `GIT_TERMINAL_PROMPT=0`), mapping a hang to a `halted` /
+  `other` report rather than a detached run hung forever. The launch-grace
+  and hung-pid backstops are now tested on fabricated state.
+
 - **A Codex worker ticket no longer dies at its proxy's shell ceiling**
   (`workflows/run-epic.mjs` worker step and its tests; `skills/run/SKILL.md`
   step 3's worker-runner bullet and step 4's worker description; README's
@@ -44,10 +82,9 @@ with one version and date.
   `"state":"failed"` when no run was started or the background process died
   without a report (a dead pid, or no report ten minutes past the runner's
   timeout), so a crashed run never reads as pending. `--start` attaches to
-  a run that is live or finished-but-unread instead of launching a second
-  Codex on the same tree; once a `--wait` has delivered the report, or the
-  run died, the next `--start` is a new attempt, so a resumed run is never
-  handed an earlier attempt's answer. The single shot is unchanged. Why:
+  a run that is live, or finished with its report unread for at most
+  600000 ms (see the next entry), instead of launching a second Codex on
+  the same tree. The single shot is unchanged. Why:
   the run driver reaches the runner through an agent's shell tool, which
   kills any command after at most 600000 ms, and a ticket needs the
   runner's 60-minute timeout — shortening the ticket to fit the tool breaks
