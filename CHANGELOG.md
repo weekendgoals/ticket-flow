@@ -8,6 +8,28 @@ with one version and date.
 
 ## Unreleased
 
+- **A Codex worker ticket no longer dies at its proxy's shell ceiling**
+  (`workflows/run-epic.mjs` worker step and its tests; `skills/run/SKILL.md`
+  step 3's worker-runner bullet and step 4's worker description; README's
+  `Worker runner:` row). The fast-model proxy used to run the runner as one
+  blocking command, told to wait for it to finish; its shell tool kills any
+  command after at most 10 minutes (600000 ms), and a full ticket routinely
+  runs longer — so the command was killed mid-ticket, no JSON reached the
+  driver, the run halted as BLOCKED ("the worker returned no report"), and
+  the runner could die before its commit and push with Codex still editing
+  the tree. The Codex lane could not complete a real ticket as shipped. The
+  proxy now runs `codex.mjs … --start` exactly once, then `codex.mjs …
+  --wait --max-wait 540000` with its shell timeout set to 600000 ms each
+  time, until the output is not `"state":"pending"`, and relays that report
+  verbatim as before. The loop is bounded by the runner's own timeout, now
+  passed explicitly (`--timeout 3600000`) so bound and timeout cannot drift:
+  at most ceil(3600000 / 540000) + 1 = 8 waits, after which the proxy
+  reports `halted` / `other` with the last pending output in `detail`. The
+  schema, the verbatim relay, the no-main rule and the halt mapping are
+  unchanged. The skill now tells the operator that a session ending
+  mid-ticket leaves the Codex run going to its own commit and push, and to
+  let it finish before resuming.
+
 - **The Codex runner can be started once and waited on in slices**
   (`scripts/runners/codex.mjs` gains `--start` and `--wait [--max-wait
   <ms>]`; `codex.test.mjs` gains four cases). `--start` launches the

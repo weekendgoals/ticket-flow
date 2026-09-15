@@ -115,7 +115,21 @@ ticket one. Report what is missing and stop.
   subject and pushes after — so the model's write surface is the working
   tree, and `branch-pushed` is what the runner saw, never what the model
   claimed. The runner refuses to start over a dirty tree for the same
-  reason: it commits everything it finds.
+  reason: it commits everything it finds. The driver never runs a ticket as
+  one blocking command: its proxy's shell tool kills any command after 10
+  minutes, and a ticket gets the runner's 60-minute timeout. So the proxy
+  runs `codex.mjs … --start` once, which launches the run detached from the
+  shell (its own process group, its report written atomically to a state
+  directory under the OS temp dir), then `codex.mjs … --wait` in slices of
+  at most nine minutes until the report arrives, and at most eight times
+  before it halts as `other`. A session or proxy that ends mid-ticket
+  therefore leaves that Codex run going to its own commit and push: before
+  resuming a run halted on a Codex ticket, let it finish — its
+  `flow-codex-runs/worker_<ID>--…` state directory holds `result.json` once
+  it has — and then read the board as § Resuming after a halt says. A
+  `--start` for a ticket whose run is still live, or finished with its
+  report unread, attaches to it rather than launching a second Codex on the
+  same tree, because two sessions would each commit the other's edits.
 - **The automation's identity — recommended, not required.** The run acts as
   whoever `git` and `gh` are authenticated as; when that is the human's own
   account, protection cannot tell agent from human. For high-consequence
@@ -187,7 +201,9 @@ Everything else here (`reviewerModel`, `consequencePaths`,
   the **review tier** its diff earns (a missing or unrecognised tier prices
   as `consequence`) and writes its label (`worker:<ID>`) into the entry's
   **Mode** line. With `Worker runner: codex` the worker is the runner script
-  instead, driven by a fast-model shell proxy that relays its JSON verbatim;
+  instead, driven by a fast-model shell proxy that starts it once in the
+  background and waits in slices inside its shell tool's 10-minute ceiling
+  (step 3's worker-runner bullet says why), then relays its JSON verbatim;
   the runner reconciles the model's report with the repository (a claim of
   work over an empty branch is a contradiction, a failed push is a halt) and
   records Codex's own usage under `workerUsage`.
