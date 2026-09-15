@@ -123,7 +123,7 @@ const REVIEW_SCHEMA = {
   properties: {
     important: {
       type: 'array',
-      description: 'findings that would break behaviour, lose data, or widen an exposure. [] when there are none — an empty list is a normal and welcome result, never something to pad.',
+      description: "findings that would break behaviour, lose data, or widen an exposure — including any user-visible regression this change introduces, even outside the ticket's scope. [] when there are none — an empty list is a normal and welcome result, never something to pad.",
       items: {
         type: 'object',
         additionalProperties: false,
@@ -311,7 +311,7 @@ Report no token figure: you cannot see your own counter, and the session observe
 const REVIEWER_RULES = `- You REPORT. You NEVER fix: no edits, no commits, no pushes. An agent that can edit its own finding edits it into agreement.
 - A behaviour claim needs a \`file:line\` citation in the source you opened — not an inference from a name. If you could not point at the line, you do not have a finding.
 - Label every finding \`confirmed\` (you traced it) or \`plausible\` (say what would settle it). An unverified finding wastes more time than a missed one.
-- Severity: Important = would break behaviour, lose data, or widen an exposure. Nit = real but small, at most five, count the rest. Pre-existing = a real defect this change did not introduce; report it, never block on it.
+- Severity: Important = would break behaviour, lose data, or widen an exposure. A user-visible regression this change introduces is Important, even outside the ticket's scope: scope limits what the worker builds, not what the reviewer reports. Something that worked before and now visibly does not (a duplicated or missing control, a broken layout, a removed way to do something) is a regression, not a nit. Nit = real but small, at most five, count the rest. Pre-existing = a real defect this change did not introduce; report it, never block on it.
 - The highest-value defect in agent-written code is a test that executes code without checking it — the same session wrote both, so both encode the same misunderstanding. Look for assertions that only prove no exception was thrown, assertions on shape rather than value, and expected values copied from actual output.
 - Do not flag style a formatter owns, coverage as a number, speculative performance, or preferences that contradict the project's conventions. Bias toward approval; say the work is sound when it is.`
 

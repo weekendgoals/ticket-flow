@@ -650,6 +650,26 @@ claim needs a `file:line` citation, not an inference from a name), a cap on
 nits, and re-review convergence that suppresses new nits after the first round.
 Without the last one, a one-line fix reaches round seven on style.
 
+## Why a regression the change introduced is never a nit
+
+A nit is parked: fixed if trivial and in scope, otherwise recorded for the
+retro. That is right for small real defects and wrong for one class — a
+change that visibly breaks what worked. weekendgoals' redesign-foundation
+shipped a second hamburger button and a second logo on its entity pages
+though both of its reviews saw them: FND-1's addendum filed "two headers on
+entity pages" as a nit outside the ticket's scope, owner `retro`, and FND-2
+recorded the phone counterpart the same way. The retro runs after the
+release merges, so "owner: retro" for a regression the ticket itself
+caused means "ship it, discuss it later".
+
+So a user-visible regression the change introduces is Important however
+small the diff, and ticket scope does not excuse it: scope bounds what the
+worker may build, not what the reviewer may report. The rule needs no new
+gate — an unfixed Important finding already halts an unattended run and
+blocks the attended merge, so the regression is either fixed or put in
+front of a human before the release. Pre-existing defects keep their
+`retro` destination: those are not this change's to answer for.
+
 ## Why tests are reviewed as suspiciously as code
 
 One session writes the implementation and the tests. If it misunderstands

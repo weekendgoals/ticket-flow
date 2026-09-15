@@ -203,7 +203,9 @@ the reviewer stopped**, in the phrase `Reviewer tokens: <n>` (`unknown` when
 it exposed nothing; the reviewer is never asked — it cannot see its own
 counter) — the phrase `tickets.mjs spend` parses. **A nit does not become a
 ticket by default**: fix it here if trivial and in scope, otherwise note it
-in the addendum for the retro.
+in the addendum for the retro. **A regression this change introduced is not a
+nit**: A user-visible regression this change introduces is Important, even outside the ticket's scope: scope limits what the worker builds, not what the reviewer reports. Fix it before the pull request, or name it as unfixed
+in the pull request body so the human merging sees it.
 
 ## 7. Push, open the pull request, stop
 
