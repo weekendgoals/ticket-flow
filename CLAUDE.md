@@ -33,15 +33,18 @@ go through the flow, one-off work goes through `/flow:quick` into
   plan-page renderer `node --test plugins/flow/scripts/plan-page.test.mjs`
   (`# pass 8`) — both pure rendering tests over fixture JSON, no git
   needed. And the run driver has
-  `node --test plugins/flow/workflows/run-epic.test.mjs` (`# pass 117`) —
+  `node --test plugins/flow/workflows/run-epic.test.mjs` (`# pass 119`) —
   which evaluates `run-epic.mjs`'s module body with stubbed agents and
   asserts the sequence, the gate branches and the halt mapping. It needs
   nothing but Node: no git, no network, no filesystem beyond the script.
   The Codex worker runner has
-  `node --test plugins/flow/scripts/runners/codex.test.mjs` (`# pass 8`) —
+  `node --test plugins/flow/scripts/runners/codex.test.mjs` (`# pass 21`) —
   a stub `codex` binary that speaks the real CLI's JSONL protocol drives
-  the runner through a throwaway git repo; it needs `git` and nothing else,
-  and never calls the real Codex. The Codex shadow-review runner has
+  the runner through a throwaway git repo; it needs `git` plus POSIX `sh`,
+  `ps` and `sleep` (the detachment, cancel, hung-pid and hung-transport
+  cases kill process groups, read them, and stand in a live bystander or a
+  remote that never answers) and nothing else, and never calls the real
+  Codex. The Codex shadow-review runner has
   `node --test plugins/flow/scripts/runners/codex-review.test.mjs`
   (`# pass 19`) — the same kind of stub, including the schema-valid interim
   messages real Codex streams, drives every outcome through a throwaway git
