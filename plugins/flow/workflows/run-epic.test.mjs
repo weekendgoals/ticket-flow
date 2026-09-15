@@ -364,7 +364,13 @@ test('a reviewer that returns nothing is retried once with the sanctioned fallba
   assert.equal(fb.agentType, 'general-purpose')
   assert.match(fb.prompt, /You REPORT\. You NEVER fix/)
   assert.match(fb.prompt, /`confirmed` \(you traced it\) or `plausible`/)
+  assert.match(fb.prompt, /A user-visible regression this change introduces is Important, even outside the ticket's scope/)
   assert.equal(r.out.outcome, 'completed')
+})
+
+test('the disposition is told a regression the ticket introduced is never a nit for the retro', async () => {
+  const r = await drive(oneTicket({ 'review:PAY-1': reviewImportant, 'disposition:PAY-1': dispFixed }))
+  assert.match(call(r, 'disposition:PAY-1').prompt, /never hand it to the retro, which runs after the release/)
 })
 
 test('a reviewer that returns something which is not a review is a failed hire, not an approval', async () => {

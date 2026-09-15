@@ -72,6 +72,10 @@ An unverified finding wastes more time than a missed one.
 ## Severity
 
 **Important** — would break behaviour, lose data, or widen an exposure.
+A user-visible regression this change introduces is Important, even outside the ticket's scope: scope limits what the worker builds, not what the reviewer reports. Something that worked before and now visibly does not — a duplicated
+or missing control, a broken layout, a removed way to do something — is a
+regression, not a nit, however small the diff that caused it: a nit is left
+for later, and later is after the release.
 **Nit** — real but small, capped at five.
 **Pre-existing** — a genuine defect in surrounding code that this change did not
 introduce. Report it separately, name the ticket that should own it, and do not

@@ -8,6 +8,21 @@ with one version and date.
 
 ## Unreleased
 
+- **A user-visible regression the change introduces is Important, never a
+  nit parked for the retro** (`agents/ticket-reviewer.md`,
+  `skills/review/SKILL.md`, the driver's `REVIEWER_RULES`, `REVIEW_SCHEMA`
+  and disposition prompt, `skills/ticket/SKILL.md` step 8,
+  `skills/quick/SKILL.md` step 6; `check-invariants.mjs` holds the rule's
+  phrase in all five). Something that worked before and now visibly does not
+  — a duplicated or missing control, a broken layout, a removed way to do
+  something — is reported Important even outside the ticket's scope, and a
+  disposition may not relabel it a nit and hand it to the retro. The retro
+  runs after the release: weekendgoals' redesign-foundation shipped a double
+  hamburger button and double logo that both reviews had seen and filed as
+  "nit, owner retro". No new gate: an unfixed Important finding already
+  halts an unattended run and blocks the attended merge; the incremental and
+  quick lanes name it as unfixed in the pull request body.
+
 - **The plan reviewer asks what the lane can execute and what the evidence
   can show** (`agents/plan-reviewer.md` gains two questions; `skills/epic/SKILL.md`
   carries each as one clause — the step 3 Outcome template, the ground-rule

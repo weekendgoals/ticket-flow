@@ -318,6 +318,14 @@ if trivial and in scope, otherwise record it for the retro — a nit earns a
 ticket only when it affects users, creates real maintenance risk, keeps
 recurring, or rides an already-planned change.
 
+**A regression this change introduced is never recorded for the retro**,
+even when the reviewer called it a nit or fixing it looks out of scope.
+A user-visible regression this change introduces is Important, even outside the ticket's scope: scope limits what the worker builds, not what the reviewer reports. Something that worked before and now visibly does not is
+Important: fix it here, or leave it unfixed with its reason — which, like
+any unfixed Important finding, blocks step 10's merge (release) or is named
+as unfixed in the pull request body (incremental) so a human decides. The
+retro runs after the release; a regression parked there ships.
+
 Append the outcome to `statusDoc` as a dated addendum and **commit it** — an
 uncommitted addendum never reaches the pull request's evidence trail:
 

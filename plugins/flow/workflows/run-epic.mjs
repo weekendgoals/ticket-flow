@@ -341,7 +341,7 @@ const REVIEW_SCHEMA = {
   properties: {
     important: {
       type: 'array',
-      description: 'findings that would break behaviour, lose data, or widen an exposure. [] when there are none — an empty list is a normal and welcome result, never something to pad.',
+      description: "findings that would break behaviour, lose data, or widen an exposure — including any user-visible regression this change introduces, even outside the ticket's scope. [] when there are none — an empty list is a normal and welcome result, never something to pad.",
       items: {
         type: 'object',
         required: ['file', 'cite', 'summary', 'confirmedOrPlausible', 'failure'],
@@ -635,7 +635,7 @@ const priceReview = (reported, floor) => {
 const REVIEWER_RULES = `- You REPORT. You NEVER fix: no edits, no commits, no pushes. An agent that can edit its own finding edits it into agreement.
 - A behaviour claim needs a \`file:line\` citation in the source you opened — not an inference from a name. If you could not point at the line, you do not have a finding.
 - Label every finding \`confirmed\` (you traced it) or \`plausible\` (say what would settle it). An unverified finding wastes more time than a missed one.
-- Severity: Important = would break behaviour, lose data, or widen an exposure. Nit = real but small, at most five, count the rest. Pre-existing = a real defect this change did not introduce; report it, never block on it.
+- Severity: Important = would break behaviour, lose data, or widen an exposure. A user-visible regression this change introduces is Important, even outside the ticket's scope: scope limits what the worker builds, not what the reviewer reports. Something that worked before and now visibly does not (a duplicated or missing control, a broken layout, a removed way to do something) is a regression, not a nit. Nit = real but small, at most five, count the rest. Pre-existing = a real defect this change did not introduce; report it, never block on it.
 - The highest-value defect in agent-written code is a test that executes code without checking it — the same session wrote both, so both encode the same misunderstanding. Look for assertions that only prove no exception was thrown, assertions on shape rather than value, and expected values copied from actual output.
 - Do not flag style a formatter owns, coverage as a number, speculative performance, or preferences that contradict the project's conventions. Bias toward approval; say the work is sound when it is.`
 
@@ -1197,7 +1197,7 @@ Do, in order:
    Keep the addendum to the findings and their dispositions: each fix with its commit and the re-run counts, each not-fixed with its reason, each pre-existing with its owner. Do NOT reproduce verification transcripts, re-walk acceptance criteria, or narrate commands the entry's own Verified line already carries — the log is read by every later reviewer and the retro, and narration there is a cost every future ticket pays.
 3. **Commit the addendum** (with the fix commits, or on its own when nothing needed fixing) and \`git push\`. An uncommitted addendum never reaches the remote or the pull request's evidence trail, and the driver refuses to merge a branch whose review is not on the record.
 
-Nits: fix one only if it is trivial and in scope; otherwise record it in the addendum and let the retro decide. A nit never blocks.
+Nits: fix one only if it is trivial and in scope; otherwise record it in the addendum and let the retro decide. A nit never blocks. **Except a regression**: a "nit" that is really something this ticket broke for users (a duplicated or missing control, a broken layout, a removed way to do something) is an Important finding mislabelled — fix it, or report \`important-unfixed\` with the reason; never hand it to the retro, which runs after the release.
 
 **Pre-existing findings**: record EVERY one in the addendum, each with a **named owner** — an existing ticket that should inherit it, or \`retro\` when none fits (the retro skill mines these addenda, so \`retro\` is a real destination, not a shrug). Do not fix them here: they are outside this ticket's scope, and a defect that is neither fixed nor recorded is a defect the project has forgotten. Set \`preExistingRecorded\` to true only when every one of them is written down that way.
 
