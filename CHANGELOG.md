@@ -8,6 +8,32 @@ with one version and date.
 
 ## Unreleased
 
+- **The Codex runner can be started once and waited on in slices**
+  (`scripts/runners/codex.mjs` gains `--start` and `--wait [--max-wait
+  <ms>]`; `codex.test.mjs` gains four cases). `--start` launches the
+  ordinary single-shot run as a detached background process — its own
+  session and process group, stdio on a log file — and returns at once;
+  the run writes its report atomically (temp name, then rename) to a state
+  directory under the OS temp dir derived from the label, ticket,
+  repository and epic, so `--start` and `--wait` with the same arguments
+  find it without a path being passed. `--wait` blocks at most `--max-wait`
+  ms (default and ceiling 540000) and prints the report verbatim, or
+  `{"state":"pending"}`, or a halted worker report carrying
+  `"state":"failed"` when no run was started or the background process died
+  without a report (a dead pid, or no report ten minutes past the runner's
+  timeout), so a crashed run never reads as pending. `--start` attaches to
+  a run that is live or finished-but-unread instead of launching a second
+  Codex on the same tree; once a `--wait` has delivered the report, or the
+  run died, the next `--start` is a new attempt, so a resumed run is never
+  handed an earlier attempt's answer. The single shot is unchanged. Why:
+  the run driver reaches the runner through an agent's shell tool, which
+  kills any command after at most 600000 ms, and a ticket needs the
+  runner's 60-minute timeout — shortening the ticket to fit the tool breaks
+  the work, slicing the wait does not. The suite's evidence is empirical: a
+  `--start` run from a shell in its own process group outlives the
+  launching process and a SIGKILL of that whole group (with `detached`
+  switched off the same test fails), then finishes, commits and pushes.
+
 - **The plan reviewer asks what the lane can execute and what the evidence
   can show** (`agents/plan-reviewer.md` gains two questions; `skills/epic/SKILL.md`
   carries each as one clause — the step 3 Outcome template, the ground-rule

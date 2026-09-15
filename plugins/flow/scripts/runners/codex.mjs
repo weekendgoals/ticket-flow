@@ -5,7 +5,33 @@
 //
 //   node codex.mjs <ID> --epic <name> --epic-branch epic/<name> \
 //     --default-branch main --repo <abs> --plugin <abs> --label worker:<ID> \
-//     [--model <m>] [--codex <bin>] [--timeout <ms>] [--network] [--json]
+//     [--model <m>] [--codex <bin>] [--timeout <ms>] [--network] [--json] \
+//     [--start | --wait [--max-wait <ms>]]
+//
+// Three ways to invoke it, over the same arguments:
+//   - neither flag: the single shot — run the ticket in this process and
+//     print the report when it ends. What a human runs.
+//   - --start: launch that same single shot as a detached background process
+//     (its own session and process group, stdio on a log file) and return at
+//     once with {"state":"started","stateDir":…}. The report lands atomically
+//     in a state directory derived from the arguments alone — label, ticket,
+//     repository, epic — so --start and --wait agree on it without anyone
+//     passing a path. Idempotent: a run already launching, running, or
+//     finished and not yet delivered is attached to, never launched twice,
+//     because two Codex sessions on one working tree commit each other's
+//     edits.
+//   - --wait: block at most --max-wait ms (default and ceiling 540000) for
+//     that report; print it verbatim when it exists, {"state":"pending",…}
+//     when the slice ends first, or a worker-shaped halted report carrying
+//     "state":"failed" when no run was started or the background process
+//     died without a report — a crashed run must never look pending forever.
+// Why the split: the run driver reaches this script through an agent's shell
+// tool, which kills any command after at most 10 minutes (600000 ms), while
+// a full ticket routinely needs its hour. Shortening the ticket's budget to
+// fit the tool would break the work; slicing the wait does not. A report
+// --wait already delivered, or a run that died, is not attached to: the next
+// --start is a new attempt, because a resumed run re-working the ticket must
+// not be handed the previous attempt's answer.
 //
 // What the runner owns, and Codex never does:
 //   - git, entirely: the fetch and the branch before the run, the commit and
@@ -29,15 +55,22 @@
 // `halted` report is an answer. Exit 1 only when the runner itself could not
 // get one (no codex binary, a timeout, no parseable final message); the JSON
 // is printed either way so the driver's proxy has something to relay.
+// --wait exits with the stored run's code when it prints the report, 0 on
+// pending, and 1 on a failure; --start exits 0 once a run is launched or
+// attached to. The JSON alone tells the three apart — `"state":"pending"`
+// means wait again, anything else is the answer — so a proxy never has to
+// interpret an exit code.
 //
 // Zero dependencies. Every gate downstream — the review, the CHECK re-run,
 // the addendum check, the SHA merge, the board's integrated state — reads
 // git, so none of them cares which runner produced the branch.
 
-import { spawnSync } from 'node:child_process'
-import { mkdtempSync, writeFileSync, readFileSync, rmSync, existsSync } from 'node:fs'
-import { join, resolve } from 'node:path'
+import { spawnSync, spawn } from 'node:child_process'
+import { mkdtempSync, writeFileSync, readFileSync, rmSync, existsSync, mkdirSync, renameSync, openSync, closeSync, statSync } from 'node:fs'
+import { join, resolve, dirname } from 'node:path'
 import { tmpdir } from 'node:os'
+import { createHash } from 'node:crypto'
+import { fileURLToPath } from 'node:url'
 
 const TICKET_ID = /^[A-Z][A-Z0-9]*-\d+$/
 const SAFE_NAME = /^[A-Za-z0-9][A-Za-z0-9._\/-]*$/
@@ -52,13 +85,13 @@ const flags = {}
 const positional = []
 for (let i = 0; i < argv.length; i++) {
   const a = argv[i]
-  if (a === '--json' || a === '--network') flags[a.slice(2)] = true
+  if (a === '--json' || a === '--network' || a === '--start' || a === '--wait' || a === '--background') flags[a.slice(2)] = true
   else if (a.startsWith('--')) flags[a.slice(2)] = argv[++i]
   else positional.push(a)
 }
 const usage = () => {
   console.error(
-    'usage: codex.mjs <ID> --epic <name> --epic-branch epic/<name> --default-branch <b> --repo <abs> --plugin <abs> --label worker:<ID> [--model <m>] [--codex <bin>] [--timeout <ms>] [--network] [--json]',
+    'usage: codex.mjs <ID> --epic <name> --epic-branch epic/<name> --default-branch <b> --repo <abs> --plugin <abs> --label worker:<ID> [--model <m>] [--codex <bin>] [--timeout <ms>] [--network] [--json] [--start | --wait [--max-wait <ms>]]',
   )
   process.exit(2)
 }
@@ -74,6 +107,16 @@ if (!SAFE_NAME.test(epic) || epic.includes('..') || !SAFE_NAME.test(epicBranch) 
 if (!repo.startsWith('/') || !plugin.startsWith('/') || /["`\n\r$]/.test(repo + plugin)) usage()
 if (model && !MODEL.test(model)) usage()
 if (!Number.isInteger(timeoutMs) || timeoutMs <= 0) usage()
+// --background is internal: it is the process --start launches. One mode at
+// a time, and --max-wait only means something to --wait.
+if ([flags.start, flags.wait, flags.background].filter(Boolean).length > 1) usage()
+// The wait slice's ceiling sits a minute under the proxy's 600000 ms shell
+// limit, leaving room for Node to start and the report to print inside it.
+const WAIT_CEILING_MS = 540000
+if ('max-wait' in flags && !flags.wait) usage()
+const maxWaitMs = 'max-wait' in flags ? Math.min(Number(flags['max-wait']), WAIT_CEILING_MS) : WAIT_CEILING_MS
+if (!Number.isInteger(maxWaitMs) || maxWaitMs <= 0) usage()
+const mode = flags.start ? 'start' : flags.wait ? 'wait' : flags.background ? 'background' : 'once'
 
 const branch = id.toLowerCase()
 const repoRoot = resolve(repo)
@@ -158,15 +201,192 @@ const out = {
   detail: '',
   runner: { name: 'codex', model: model || 'default', exitCode: null, usage: null, threadId: null, pushed: false, durationMs: 0, events: 0 },
 }
+const printReport = (r) => {
+  if (flags.json) console.log(JSON.stringify(r, null, 2))
+  else {
+    console.log(`${r.ticket}: ${r.result}${r.stopCondition !== 'none' ? ` (${r.stopCondition})` : ''} — tier ${r.tier}`)
+    if (r.detail) console.log(`  ${r.detail}`)
+    if (r.runner && r.runner.usage) console.log(`  codex usage: ${JSON.stringify(r.runner.usage)}`)
+  }
+}
+
+// ---- the state directory: --start, --wait, and the background run ---------
+// Derived from the arguments alone, so the two commands the proxy runs agree
+// on it by construction. Label and ticket make it readable; the hash of the
+// repository and epic keeps two projects' `worker:R-1` runs apart.
+const stateDir = join(
+  tmpdir(),
+  'flow-codex-runs',
+  `${label.replace(/[^A-Za-z0-9._-]+/g, '_')}--${id}--${createHash('sha256').update(`${repoRoot}\n${epic}`).digest('hex').slice(0, 12)}`,
+)
+const RESULT = join(stateDir, 'result.json') // {exitCode, report}: the background run's answer
+const RUN = join(stateDir, 'run.json') // {pid, startedAt, timeoutMs}: written by --start
+const DELIVERED = join(stateDir, 'delivered') // marker: a --wait printed the answer
+const LOG = join(stateDir, 'runner.log') // the background run's stdout and stderr
+// A rename within one directory is atomic: a reader sees no file or the whole
+// file, never a half-written one that a JSON parse would misread as absent.
+const writeAtomic = (file, text) => {
+  const part = `${file}.part-${process.pid}`
+  writeFileSync(part, text)
+  renameSync(part, file)
+}
+
 const finish = (code) => {
   out.runner.durationMs = Date.now() - started
-  if (flags.json) console.log(JSON.stringify(out, null, 2))
-  else {
-    console.log(`${id}: ${out.result}${out.stopCondition !== 'none' ? ` (${out.stopCondition})` : ''} — tier ${out.tier}`)
-    if (out.detail) console.log(`  ${out.detail}`)
-    if (out.runner.usage) console.log(`  codex usage: ${JSON.stringify(out.runner.usage)}`)
-  }
+  if (mode === 'background') writeAtomic(RESULT, JSON.stringify({ exitCode: code, report: out }, null, 2))
+  else printReport(out)
   process.exit(code)
+}
+
+// The background run answers on every path, a crash included — a run whose
+// report never lands is one --wait can only call dead.
+if (mode === 'background') {
+  process.on('uncaughtException', (e) => {
+    out.detail = `the background runner crashed: ${line((e && e.stack) || e)}`
+    finish(1)
+  })
+}
+
+const readJson = (file) => {
+  try {
+    return JSON.parse(readFileSync(file, 'utf8'))
+  } catch {
+    return null
+  }
+}
+// Signal 0 probes without delivering anything; EPERM means alive, not ours.
+const alive = (pid) => {
+  if (!Number.isInteger(pid) || pid <= 0) return false
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch (e) {
+    return e.code === 'EPERM'
+  }
+}
+// LAUNCH_GRACE_MS: how long a state directory may lack its run.json before
+// the launch is presumed lost (--start writes it milliseconds after creating
+// the directory). LATE_GRACE_MS: how far past the runner's own timeout a
+// report may be late before a pid that still answers is presumed hung or
+// reused — the backstop behind the liveness probe, so a dead run cannot read
+// as pending for the proxy's whole wait loop.
+const LAUNCH_GRACE_MS = 60 * 1000
+const LATE_GRACE_MS = 10 * 60 * 1000
+const inspect = () => {
+  if (!existsSync(stateDir)) return { state: 'absent', run: null }
+  const result = readJson(RESULT)
+  if (result) return { state: existsSync(DELIVERED) ? 'delivered' : 'finished', result, run: readJson(RUN) }
+  const run = readJson(RUN)
+  if (!run) {
+    let age = Infinity
+    try {
+      age = Date.now() - statSync(stateDir).mtimeMs
+    } catch {}
+    return age < LAUNCH_GRACE_MS ? { state: 'launching', run: null } : { state: 'dead', run: null, why: `the state directory ${stateDir} records no launched process` }
+  }
+  if (!alive(run.pid)) {
+    // It may have written its report and exited between the two reads.
+    const late = readJson(RESULT)
+    if (late) return { state: 'finished', result: late, run }
+    return { state: 'dead', run, why: `the background runner (pid ${run.pid}) exited without writing a report` }
+  }
+  const age = Date.now() - run.startedAt
+  if (age > run.timeoutMs + LATE_GRACE_MS) {
+    return { state: 'dead', run, why: `the background runner (pid ${run.pid}) has no report ${age} ms after it started — past its ${run.timeoutMs} ms timeout plus ${LATE_GRACE_MS} ms, so it is presumed hung (or its pid reused)` }
+  }
+  return { state: 'running', run }
+}
+const logTail = () => {
+  try {
+    const text = readFileSync(LOG, 'utf8').trim()
+    return text ? ` — runner log tail: ${line(text.slice(-400))}` : ''
+  } catch {
+    return ''
+  }
+}
+const printState = (o) => {
+  if (flags.json) console.log(JSON.stringify(o, null, 2))
+  else console.log(`${id}: ${o.state} — state dir ${o.stateDir}`)
+}
+
+if (mode === 'start') {
+  mkdirSync(dirname(stateDir), { recursive: true })
+  let s = inspect()
+  // A delivered answer belongs to an attempt the driver already heard; a dead
+  // run has nothing left to wait for. Either way this --start is a new
+  // attempt, and the clean-tree refusal still stands between it and whatever
+  // a dead run left in the tree.
+  if (s.state === 'delivered' || s.state === 'dead') {
+    const stale = `${stateDir}.stale-${process.pid}-${Date.now()}`
+    try {
+      renameSync(stateDir, stale)
+    } catch (e) {
+      if (e.code !== 'ENOENT') throw e
+    }
+    rmSync(stale, { recursive: true, force: true })
+    s = { state: 'absent', run: null }
+  }
+  if (s.state === 'absent') {
+    let won = true
+    try {
+      mkdirSync(stateDir) // not recursive: EEXIST means a concurrent --start won
+    } catch (e) {
+      if (e.code !== 'EEXIST') throw e
+      won = false
+    }
+    if (won) {
+      const childArgs = [id, '--epic', epic, '--epic-branch', epicBranch, '--default-branch', defaultBranch, '--repo', repo, '--plugin', plugin, '--label', label, '--timeout', String(timeoutMs), '--background']
+      if (model) childArgs.push('--model', model)
+      if (flags.codex) childArgs.push('--codex', codexBin)
+      if (flags.network) childArgs.push('--network')
+      // detached: a new session and process group, so neither this process
+      // exiting nor a kill aimed at the shell command's group reaches it.
+      // stdio on a log file, so no pipe the caller reads stays held open.
+      const logFd = openSync(LOG, 'a')
+      const child = spawn(process.execPath, [fileURLToPath(import.meta.url), ...childArgs], { detached: true, stdio: ['ignore', logFd, logFd] })
+      closeSync(logFd)
+      if (!child.pid) {
+        out.detail = `could not launch the background runner with ${line(process.execPath)}`
+        const failed = { state: 'failed', ...out }
+        writeAtomic(RESULT, JSON.stringify({ exitCode: 1, report: failed }, null, 2))
+        printReport(failed)
+        process.exit(1)
+      }
+      child.unref()
+      writeAtomic(RUN, JSON.stringify({ pid: child.pid, startedAt: Date.now(), timeoutMs, ticket: id, label, repo: repoRoot }, null, 2))
+      printState({ state: 'started', ticket: id, stateDir, pid: child.pid, attached: false })
+      process.exit(0)
+    }
+    s = inspect()
+  }
+  printState({ state: 'started', ticket: id, stateDir, pid: s.run ? s.run.pid : null, attached: true, finished: s.state === 'finished' || s.state === 'delivered' })
+  process.exit(0)
+}
+
+if (mode === 'wait') {
+  const waitStarted = Date.now()
+  const POLL_MS = 250
+  for (;;) {
+    const s = inspect()
+    if (s.state === 'finished' || s.state === 'delivered') {
+      try {
+        writeFileSync(DELIVERED, '')
+      } catch {}
+      printReport(s.result.report)
+      process.exit(s.result.exitCode === 0 ? 0 : 1)
+    }
+    if (s.state === 'absent' || s.state === 'dead') {
+      out.detail = s.state === 'absent' ? `no run was started for ${id} (${label}) — nothing to wait for; run the same command with --start first` : `${s.why}${logTail()}`
+      printReport({ state: 'failed', ...out })
+      process.exit(1)
+    }
+    const waited = Date.now() - waitStarted
+    if (waited >= maxWaitMs) {
+      printState({ state: 'pending', ticket: id, stateDir, pid: s.run ? s.run.pid : null, runningMs: s.run ? Date.now() - s.run.startedAt : 0, waitedMs: waited })
+      process.exit(0)
+    }
+    await new Promise((r) => setTimeout(r, Math.min(POLL_MS, maxWaitMs - waited)))
+  }
 }
 
 // The runner owns git: fetch and branch now, commit and push at the end.
