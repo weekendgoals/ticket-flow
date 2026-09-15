@@ -120,7 +120,30 @@ ticket one. Report what is missing and stop.
   subject and pushes after — so the model's write surface is the working
   tree, and `branch-pushed` is what the runner saw, never what the model
   claimed. The runner refuses to start over a dirty tree for the same
-  reason: it commits everything it finds.
+  reason: it commits everything it finds. The driver never runs a ticket as
+  one blocking command: its proxy's shell tool kills any command after 10
+  minutes, and a ticket gets the runner's 60-minute timeout. So the proxy
+  runs `codex.mjs … --start` once, which launches the run detached from the
+  shell (its own process group, its report written atomically to a state
+  directory under the OS temp dir), then `codex.mjs … --wait` in slices of
+  at most nine minutes until the report arrives, and at most eight times
+  before it halts as `other`. The detached run outlives the proxy, so a
+  proxy that stops without a delivered report first runs `codex.mjs …
+  --cancel`, which stops the run's whole process group (runner and Codex)
+  and reports what the working tree holds. A session or proxy that ends
+  some other way can still leave that Codex run editing the repository's
+  working tree — the one the session writes its halt record in (step 5) and
+  resumes from — so **before touching the working tree after a halt on a
+  Codex ticket, for the halt record or for resuming**, run that ticket's
+  `--cancel` (the proxy's command with `--cancel` for its mode flag), or
+  its `--wait` until it prints something other than `pending`. The runner
+  refuses on its own to commit anywhere but its ticket branch, so a stray
+  run cannot land a commit on `epic/<name>` — but its uncommitted edits
+  would ride along into whatever the session commits next. A `--start` for
+  a ticket whose run is still live, or finished with its report unread for
+  at most ten minutes, attaches to it rather than launching a second Codex
+  on the same tree, because two sessions would each commit the other's
+  edits; anything older, delivered, cancelled or dead opens a new attempt.
 - **The shadow reviewer, when the epic declares one — never a refusal.**
   `Shadow reviewer: codex` is a trial: it gates nothing, so nothing about it
   stops the run from starting. A `codex` that is absent or signed out is
@@ -198,7 +221,9 @@ Everything else here (`reviewerModel`, `shadowReviewer`, `consequencePaths`,
   the **review tier** its diff earns (a missing or unrecognised tier prices
   as `consequence`) and writes its label (`worker:<ID>`) into the entry's
   **Mode** line. With `Worker runner: codex` the worker is the runner script
-  instead, driven by a fast-model shell proxy that relays its JSON verbatim;
+  instead, driven by a fast-model shell proxy that starts it once in the
+  background and waits in slices inside its shell tool's 10-minute ceiling
+  (step 3's worker-runner bullet says why), then relays its JSON verbatim;
   the runner reconciles the model's report with the repository (a claim of
   work over an empty branch is a contradiction, a failed push is a halt) and
   records Codex's own usage under `workerUsage`.
@@ -439,7 +464,35 @@ that resumes past one. The run halts:
   the script starts.
 
 **Nothing improvises past one.** Halting is the mechanism working; a run that
-pushes through is a run whose release pull request cannot be trusted. On a
+pushes through is a run whose release pull request cannot be trusted. **With
+`Worker runner: codex`, a precondition comes first:** when the halt fired on
+a ticket the Codex runner was working, or the Workflow call errored while
+one was, run that ticket's cancel before checking out, editing or committing
+anything, and read what it reports about the working tree:
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/runners/codex.mjs" <ID> --epic <name> \
+  --epic-branch epic/<name> --default-branch <default> --repo "<repoRoot>" \
+  --plugin "${CLAUDE_PLUGIN_ROOT}" --label worker:<ID> --cancel --json
+```
+
+These are the worker proxy's own arguments (the run's state is found by
+label, ID, repository and epic, so no other flag matters to the cancel). The
+runner is detached and outlives its proxy, so a halt can leave Codex still
+editing this very tree; the `epic/<name>` checkout below would carry those
+unreviewed edits into the run-record commit. A cancel on a run that already
+finished or was already stopped is a harmless no-op report. If the cancel
+names uncommitted paths, they are the stopped run's unreviewed work, and
+not yours to discard or to commit: name them in the **Diagnosis:**
+paragraph, and commit the run record by path alone — `git add
+epics/<name>/runs.md && git commit --only epics/<name>/runs.md`, naming
+`epics/<name>/shadow-reviews.md` in both too when the epic declares a
+shadow reviewer (step 6) — never
+`git add -A`, `git commit -a` or a plain `git commit`: a run stopped
+mid-commit leaves its edits **staged** (the cancel report counts them), a
+checkout carries a staged index across, and a plain `git commit` commits
+the whole index onto the epic branch. If they block the checkout of
+`epic/<name>`, stop and report that instead of forcing it. On a
 `halted` result, or a Workflow call that errored: append the run record
 (step 6) with `haltedOn.stopCondition` verbatim, the ticket it fired on, and
 the **Diagnosis:** paragraph step 6 requires of every halted record — the

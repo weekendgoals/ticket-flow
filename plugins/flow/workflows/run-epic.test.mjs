@@ -1625,9 +1625,9 @@ test('Worker runner: codex swaps the worker for a shell proxy that runs the runn
   assert.match(c.prompt, /shell proxy for the codex worker runner/)
   assert.match(
     c.prompt,
-    /node "\/plugins\/flow\/scripts\/runners\/codex\.mjs" PAY-1 --epic payments --epic-branch epic\/payments --default-branch main --repo "\/repo" --plugin "\/plugins\/flow" --label worker:PAY-1 --model gpt-5-codex --json/,
+    /node "\/plugins\/flow\/scripts\/runners\/codex\.mjs" PAY-1 --epic payments --epic-branch epic\/payments --default-branch main --repo "\/repo" --plugin "\/plugins\/flow" --label worker:PAY-1 --model gpt-5-codex --timeout 3600000 --json --start/,
   )
-  assert.match(c.prompt, /Report that object's fields VERBATIM/)
+  assert.match(c.prompt, /Report its fields VERBATIM/)
   assert.match(c.prompt, /toward the default branch/)
   assert.equal(c.model, 'haiku')
   assert.equal(c.effort, 'low')
@@ -1639,6 +1639,51 @@ test('Worker runner: codex swaps the worker for a shell proxy that runs the runn
   assert.deepEqual(rec.workerUsage, usage)
   // Everything after the worker is unchanged: the review, the gate, the merge.
   assert.deepEqual(r.labels.slice(1), ['worker:PAY-1', 'tier-facts:PAY-1', 'review:PAY-1', 'disposition:PAY-1', 'accept:PAY-1', 'resolve:PAY-1', 'merge:PAY-1', 'verify:PAY-1', 'refresh+select:2'])
+})
+
+test("the codex proxy starts the runner once and waits in slices inside its shell tool's 600000 ms ceiling, bounded by the runner's own timeout", async () => {
+  // One blocking command would be killed at the shell tool's ceiling long
+  // before a ticket's hour is up — no JSON, a BLOCKED halt, and possibly a
+  // runner killed before its commit and push. These assertions pin the split.
+  const r = await drive(oneTicket(), { ...ARGS, workerRunner: 'codex' })
+  const p = call(r, 'worker:PAY-1').prompt
+  const start = p.match(/^node "\/plugins\/flow\/scripts\/runners\/codex\.mjs" (.*) --start$/m)
+  const wait = p.match(/^node "\/plugins\/flow\/scripts\/runners\/codex\.mjs" (.*) --wait --max-wait 540000$/m)
+  assert.ok(start, 'the --start command, on its own line')
+  assert.ok(wait, 'the --wait command, on its own line, with its slice')
+  assert.equal(start[1], wait[1], '--start and --wait carry identical arguments, so they resolve the same state directory')
+  assert.equal(start[1], 'PAY-1 --epic payments --epic-branch epic/payments --default-branch main --repo "/repo" --plugin "/plugins/flow" --label worker:PAY-1 --timeout 3600000 --json')
+  assert.match(p, /Run this command EXACTLY ONCE/)
+  assert.match(p, /EVERY time set your shell tool's timeout to its maximum, 600000 ms/)
+  assert.match(p, /never as a background shell task/)
+  assert.match(p, /If its "state" is "pending", the ticket is still running: run the SAME wait command again/)
+  // ceil(3600000 / 540000) + 1 = 8 slices, and what exhausting them reports.
+  assert.match(p, /Run the wait command at most 8 times: the runner's own 3600000 ms timeout ends every run within that many slices/)
+  assert.match(p, /If the 8th wait still prints "pending", stop: .*report result "halted", stopCondition "other", ticket PAY-1, branch pay-1, .*that last pending JSON/)
+  assert.ok(p.indexOf('--start') < p.indexOf('--wait'), 'start comes before wait')
+  // The relay contract is unchanged.
+  assert.match(p, /Report its fields VERBATIM — ticket, result, stopCondition, tier, tierWhy, branch, built, verification, deployPreconditions, detail/)
+  assert.match(p, /"state": "failed" .* is relayed the same way/)
+  assert.match(p, /permission prompt/)
+  assert.match(p, /HARD RULE: nothing you do merges, pushes, or retargets toward the default branch \(main\)/)
+  assert.doesNotMatch(p, /wait for it to finish/, 'no single blocking command left in the prompt')
+})
+
+test('the codex proxy cancels the detached run before reporting anything the wait command did not print', async () => {
+  // The background run outlives the proxy; a proxy that returns without a
+  // delivered report and leaves Codex running leaves it editing the tree the
+  // halted session goes on to use. These assertions pin the cancel door.
+  const r = await drive(oneTicket(), { ...ARGS, workerRunner: 'codex', workerModel: 'gpt-5-codex' })
+  const p = call(r, 'worker:PAY-1').prompt
+  const args = (flag) => (p.match(new RegExp(`^node "/plugins/flow/scripts/runners/codex\\.mjs" (.*) ${flag}$`, 'm')) || [])[1]
+  assert.ok(args('--cancel'), 'the --cancel command, on its own line')
+  assert.equal(args('--cancel'), args('--start'), '--cancel carries the --start arguments, so it resolves the same run')
+  assert.equal(args('--cancel'), args('--wait --max-wait 540000'))
+  assert.match(p, /whenever you are about to report ANYTHING other than a report the wait command printed — the wait limit below spent, a start or wait command that exited without printing JSON, output you did not expect, a permission prompt, anything else that stops you — FIRST run this command once, with your shell tool's timeout at 600000 ms, and put its complete JSON output in detail/)
+  assert.match(p, /If the 8th wait still prints "pending", stop: apply THE CANCEL RULE, then report result "halted", stopCondition "other".*followed by the cancel output/)
+  assert.match(p, /exits nonzero AND prints no JSON, apply THE CANCEL RULE, then report result "halted"/)
+  assert.match(p, /"state": "failed" or "cancelled" .* is relayed the same way, with no cancel of your own/)
+  assert.match(p, /Before returning on a permission prompt, THE CANCEL RULE still applies/)
 })
 
 test('without a runner line the worker is the Claude subagent it always was, and the record says so', async () => {

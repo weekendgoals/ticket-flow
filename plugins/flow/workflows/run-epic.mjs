@@ -950,20 +950,60 @@ for (let i = 0; i < MAX_TICKETS && !halted; i++) {
   phase('Ticket')
   const workerLabel = `worker:${id}`
   // With `Worker runner: codex`, the worker is the plugin's Codex runner
-  // script, and this agent is only its shell proxy: it runs one command and
+  // script, and this agent is only its shell proxy: it starts the runner and
   // relays the JSON the runner printed. The runner owns the fetch and the
   // push (Codex runs sandboxed with no network), so `branch-pushed` in that
   // JSON is something the runner observed, not something a model claimed.
-  const runnerCommand = workerRunner === 'codex'
-    ? `node "${pluginRoot}/scripts/runners/codex.mjs" ${id} --epic ${epic} --epic-branch ${epicBranch} --default-branch ${defaultBranch} --repo "${repoRoot}" --plugin "${pluginRoot}" --label ${workerLabel}${workerModel ? ` --model ${workerModel}` : ''} --json`
+  //
+  // The proxy's shell tool kills any command after at most 600000 ms, and a
+  // ticket needs the runner's hour, so one blocking command cannot carry the
+  // run: killed mid-ticket, it left no JSON (a BLOCKED "no report" halt) and
+  // could take the runner down before its commit and push. So the proxy runs
+  // `--start` once — a detached background run the shell's end cannot reach —
+  // then `--wait` in slices of RUNNER_WAIT_SLICE_MS, each inside the ceiling.
+  // The loop bound follows from the runner's own timeout, passed explicitly so
+  // the bound and the timeout cannot drift apart: every run has answered by
+  // ceil(timeout / slice) slices, and the one extra covers the git work around
+  // Codex (the fetch and the push, each bounded by the runner's 5-minute
+  // --git-timeout, fit inside it).
+  //
+  // The background run outlives this proxy, so a proxy that stops without a
+  // delivered report — its wait bound spent, a wait killed at a forgotten
+  // shell timeout, anything unexpected — would leave Codex editing the tree
+  // the halted session goes on to use. So before any such report the proxy
+  // runs `--cancel`, which stops the run's process group and says what the
+  // tree holds. The runner also refuses to commit off its ticket branch; the
+  // cancel is the first layer, that refusal the floor.
+  const RUNNER_TIMEOUT_MS = 60 * 60 * 1000
+  const RUNNER_WAIT_SLICE_MS = 540000
+  const SHELL_CEILING_MS = 600000
+  const runnerWaits = Math.ceil(RUNNER_TIMEOUT_MS / RUNNER_WAIT_SLICE_MS) + 1
+  const runnerBase = workerRunner === 'codex'
+    ? `node "${pluginRoot}/scripts/runners/codex.mjs" ${id} --epic ${epic} --epic-branch ${epicBranch} --default-branch ${defaultBranch} --repo "${repoRoot}" --plugin "${pluginRoot}" --label ${workerLabel}${workerModel ? ` --model ${workerModel}` : ''} --timeout ${RUNNER_TIMEOUT_MS} --json`
     : null
-  const worker = runnerCommand
+  const worker = runnerBase
     ? await agent(
-        `You are a shell proxy for the ${workerRunner} worker runner. Run exactly this command from ${repoRoot}, wait for it to finish (it may take a long time — it runs a full ticket), and report what it printed:
+        `You are a shell proxy for the ${workerRunner} worker runner. The runner implements a full ticket, which can take up to an hour — longer than your shell tool lets any one command run (at most ${SHELL_CEILING_MS} ms, 10 minutes; a command still running then is killed, and its answer is lost). So the run is split: one command starts it in the background, another waits for it in slices that each end inside that limit, and a third stops it. Run them from ${repoRoot}, in the foreground — never as a background shell task — and nothing else.
 
-${runnerCommand}
+THE CANCEL RULE. The background run keeps going after you stop, and a Codex left running keeps editing a working tree the session uses after you report. So whenever you are about to report ANYTHING other than a report the wait command printed — the wait limit below spent, a start or wait command that exited without printing JSON, output you did not expect, a permission prompt, anything else that stops you — FIRST run this command once, with your shell tool's timeout at ${SHELL_CEILING_MS} ms, and put its complete JSON output in detail:
 
-It prints one JSON object on stdout. Report that object's fields VERBATIM — ticket, result, stopCondition, tier, tierWhy, branch, built, verification, deployPreconditions, detail — and its \`runner\` object under \`runner\`. Change nothing, infer nothing, add nothing: the runner already reconciled the model's report with the repository, and your only job is to carry its answer. If the command exits nonzero AND prints no JSON, report result "halted", stopCondition "other", and put the exit code and the first lines of stderr in detail. ${PROMPT_RULE}
+${runnerBase} --cancel
+
+(If the cancel command itself raises a permission prompt or prints no JSON, say so in detail instead.)
+
+STEP 1 — start the run. Run this command EXACTLY ONCE:
+
+${runnerBase} --start
+
+It returns within seconds with one JSON object whose "state" is "started". Do not run it again, whatever the wait below prints.
+
+STEP 2 — wait for the answer. Run this command, and EVERY time set your shell tool's timeout to its maximum, ${SHELL_CEILING_MS} ms:
+
+${runnerBase} --wait --max-wait ${RUNNER_WAIT_SLICE_MS}
+
+Each run blocks for at most ${RUNNER_WAIT_SLICE_MS} ms and prints one JSON object. If its "state" is "pending", the ticket is still running: run the SAME wait command again, with the same ${SHELL_CEILING_MS} ms timeout. Stop at the first object whose "state" is not "pending" — that object is the runner's report. Run the wait command at most ${runnerWaits} times: the runner's own ${RUNNER_TIMEOUT_MS} ms timeout ends every run within that many slices. If the ${runnerWaits}th wait still prints "pending", stop: apply THE CANCEL RULE, then report result "halted", stopCondition "other", ticket ${id}, branch ${branch}, tier "consequence", deployPreconditions [], empty strings for the other text fields, and in detail that last pending JSON followed by the cancel output.
+
+The report the wait command prints is one JSON object. Report its fields VERBATIM — ticket, result, stopCondition, tier, tierWhy, branch, built, verification, deployPreconditions, detail — and its \`runner\` object under \`runner\`. Change nothing, infer nothing, add nothing: the runner already reconciled the model's report with the repository, and your only job is to carry its answer — a report carrying "state": "failed" or "cancelled" (no run found, a background run that died and was stopped, a run cancelled) is relayed the same way, with no cancel of your own. If the start or wait command exits nonzero AND prints no JSON, apply THE CANCEL RULE, then report result "halted", stopCondition "other", and put which command, its exit code, the first lines of stderr and the cancel output in detail. ${PROMPT_RULE} (Before returning on a permission prompt, THE CANCEL RULE still applies.)
 
 ${NO_MAIN}`,
         {
