@@ -60,8 +60,8 @@ relative paths break there.
 
 The full `status.md` including every addendum, the full `runs.md` when it
 exists — the run records live there, and in `status.md` for epics that ran
-before the split — `tickets.md` as it ended up,
-anything in `context/`, and the shipped work itself:
+before the split — `tickets.md` as it ended up, `shadow-reviews.md` when the epic declared a
+shadow reviewer, anything in `context/`, and the shipped work itself:
 `git -C <repoRoot> log origin/<default> --oneline | grep <epic's IDs>`. The
 instruction files for the areas the epic touched, as they are **now**, read
 from under `repoRoot`.
@@ -84,7 +84,15 @@ from under `repoRoot`.
   that taught it.
 - **What did review keep finding?** The same defect class in more than one
   ticket is a missing invariant. Propose the one instruction-file line (or
-  ground-rule template line) that would have prevented the class.
+  ground-rule template line) that would have prevented the class. When
+  `shadow-reviews.md` exists (a trial), compare it per ticket against the
+  Claude review addenda: which findings both raised, which only Codex raised
+  — each checked at its `file:line` against the merged code and labelled
+  real, false or unsettled, never taken on Codex's word — which only the
+  Claude reviewer raised, how many shadows failed and why, and each side's
+  cost (Codex's usage from the file, the reviewer's from `tickets.mjs
+  spend`). End with a one-line verdict: does Codex review anything in the
+  next epic.
 - **What does the codebase owe the documents — and the documents the
   codebase?** Compare what shipped (the epic's ID-prefixed commits) against
   `tickets.md`'s promises, both ways: scope that quietly did not ship with

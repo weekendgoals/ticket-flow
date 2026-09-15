@@ -25,6 +25,7 @@ jobs:
         run: |
           node --check plugins/flow/scripts/tickets.mjs
           node --check plugins/flow/scripts/runners/codex.mjs
+          node --check plugins/flow/scripts/runners/codex-review.mjs
           node --check plugins/flow/scripts/board.mjs
           node --check plugins/flow/scripts/plan-page.mjs
           node --check plugins/flow/scripts/check-invariants.mjs
@@ -41,6 +42,7 @@ jobs:
           node --test plugins/flow/scripts/check-invariants.test.mjs
           node --test plugins/flow/workflows/run-epic.test.mjs
           node --test plugins/flow/scripts/runners/codex.test.mjs
+          node --test plugins/flow/scripts/runners/codex-review.test.mjs
       - name: doctrine invariants
         run: node plugins/flow/scripts/check-invariants.mjs
       - name: doctor
