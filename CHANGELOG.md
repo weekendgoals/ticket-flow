@@ -25,7 +25,11 @@ with one version and date.
   ticket, run that ticket's `--cancel` (the command is spelled out) and read
   what it reports; uncommitted paths it names are the stopped run's
   unreviewed work, named in the Diagnosis and never swept into the
-  run-record commit (stage `runs.md` by path). Step 3's warning now covers
+  run-record commit — committed with `git commit --only
+  epics/<name>/runs.md`, because a run stopped between `git add -A` and its
+  commit leaves its edits staged, a checkout carries a staged index across,
+  and a plain `git commit` commits the whole index (the cancel report counts
+  staged paths apart). Step 3's warning now covers
   the halt record as well as resuming. The state directory is keyed by the
   repository's real path, so a cancel typed through a symlinked spelling of
   the same repository still finds the run instead of reporting nothing to

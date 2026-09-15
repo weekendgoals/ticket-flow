@@ -451,9 +451,12 @@ unreviewed edits into the run-record commit. A cancel on a run that already
 finished or was already stopped is a harmless no-op report. If the cancel
 names uncommitted paths, they are the stopped run's unreviewed work, and
 not yours to discard or to commit: name them in the **Diagnosis:**
-paragraph, stage the run record by its path alone (`git add
-epics/<name>/runs.md`, never `git add -A` or `git commit -a`, which would
-sweep them onto the epic branch), and if they block the checkout of
+paragraph, and commit the run record by its path alone — `git add
+epics/<name>/runs.md && git commit --only epics/<name>/runs.md` — never
+`git add -A`, `git commit -a` or a plain `git commit`: a run stopped
+mid-commit leaves its edits **staged** (the cancel report counts them), a
+checkout carries a staged index across, and a plain `git commit` commits
+the whole index onto the epic branch. If they block the checkout of
 `epic/<name>`, stop and report that instead of forcing it. On a
 `halted` result, or a Workflow call that errored: append the run record
 (step 6) with `haltedOn.stopCondition` verbatim, the ticket it fired on, and

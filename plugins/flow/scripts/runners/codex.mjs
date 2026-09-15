@@ -433,8 +433,14 @@ const killAttempt = (attempt) => {
 const treeNote = () => {
   const head = git(['rev-parse', '--abbrev-ref', 'HEAD'])
   const dirty = git(['status', '--porcelain'])
-  const paths = dirty.status === 0 && dirty.out ? dirty.out.split('\n').length : 0
-  return `HEAD is ${head.status === 0 ? head.out : 'unreadable'}; ${paths} uncommitted path(s) in the working tree${paths ? ' — unreviewed edits of the stopped run: inspect or discard them before touching the tree' : ''}`
+  const lines = dirty.status === 0 && dirty.out ? dirty.out.split('\n') : []
+  // A run stopped between `git add -A` and a finished commit leaves its edits
+  // STAGED, and a later plain `git commit` commits the whole index — so staged
+  // paths are named apart: they are the ones that would ride into someone
+  // else's commit.
+  const cached = git(['diff', '--cached', '--name-only'])
+  const staged = cached.status === 0 && cached.out ? cached.out.split('\n').length : 0
+  return `HEAD is ${head.status === 0 ? head.out : 'unreadable'}; ${lines.length} uncommitted path(s) in the working tree, ${staged} of them staged${lines.length ? ' — unreviewed edits of the stopped run: inspect or discard them before touching the tree' : ''}`
 }
 // Marks the attempt consumed FIRST — a background run reaching its commit
 // step between the mark and the signal stands down instead of committing —

@@ -471,7 +471,7 @@ test('the runner commits only on the ticket branch it checked out: a tree switch
   assert.equal(r.out.result, 'halted')
   assert.equal(r.out.stopCondition, 'other')
   assert.match(r.out.detail, /HEAD is epic\/rho, not the ticket branch r-7 the runner checked out/)
-  assert.match(r.out.detail, /the runner committed and pushed nothing — HEAD is epic\/rho; 2 uncommitted path\(s\)/)
+  assert.match(r.out.detail, /the runner committed and pushed nothing — HEAD is epic\/rho; 2 uncommitted path\(s\) in the working tree, 0 of them staged/)
   assert.equal(git(repo, 'rev-parse', 'epic/rho').trim(), epicHead, 'no commit landed on the epic branch')
   assert.equal(git(repo, 'rev-list', '--count', 'origin/epic/rho..r-7').trim(), '0', 'none on the ticket branch either')
   assert.ok(!onRemote('r-7'))
@@ -519,6 +519,17 @@ test('--cancel stops the whole process group — runner and Codex — commits no
   assert.equal(again.out.attached, false)
   assert.equal(again.out.attempt, 2)
   assert.equal(runRunner('R-8', 'good', ['--wait', '--max-wait', '30000']).out.result, 'branch-pushed')
+
+  // A run stopped between `git add -A` and its commit leaves edits STAGED,
+  // which a later plain `git commit` would sweep into someone else's commit —
+  // so the report counts staged paths apart from the rest.
+  writeFileSync(join(repo, 'staged-by-a-stopped-run.txt'), 'x\n')
+  writeFileSync(join(repo, 'unstaged-by-a-stopped-run.txt'), 'y\n')
+  git(repo, 'add', 'staged-by-a-stopped-run.txt')
+  const late = runRunner('R-8', 'good', ['--cancel'])
+  assert.match(late.out.detail, /2 uncommitted path\(s\) in the working tree, 1 of them staged/)
+  git(repo, 'reset', '-q')
+  resetTree()
 })
 
 test('a background run cancelled or superseded before its commit stands down and commits nothing', async () => {
