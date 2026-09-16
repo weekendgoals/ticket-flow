@@ -156,6 +156,14 @@ test('a reviewer document dropping the introduced-regression rule fails', () => 
   assert.match(r.out, /review\/SKILL\.md.*regression the change introduced/s)
 })
 
+test('a lane dropping the revert check fails', () => {
+  const root = copyRepo()
+  mutate(root, 'plugins/flow/skills/quick/SKILL.md', 'fails with the source change reverted', 'fails without the change')
+  const r = run(root)
+  assert.equal(r.status, 1, r.out)
+  assert.match(r.out, /quick\/SKILL\.md.*revert check/s)
+})
+
 test('the workflow script losing the merge-direction rule fails', () => {
   const root = copyRepo()
   mutate(root, 'plugins/flow/workflows/run-epic.mjs', 'toward the default branch', 'toward main')

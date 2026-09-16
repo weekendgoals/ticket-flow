@@ -8,6 +8,38 @@ with one version and date.
 
 ## Unreleased
 
+- **The revert check: a ticket names the test that fails with its source
+  change reverted, and the reviewer opens that test** (`skills/ticket/SKILL.md`
+  step 5 and its Verified field, `skills/quick/SKILL.md` step 5,
+  `agents/ticket-reviewer.md`, `skills/review/SKILL.md`, the driver's
+  `REVIEWER_RULES` and the Codex shadow reviewer's copy;
+  `check-invariants.mjs` holds the phrase in all five documents). Before a
+  ticket is called done the worker commits, reverts the ticket's own
+  commits (`git revert --no-commit $(git rev-list --no-merges
+  <base>..HEAD)` — by SHA, because a merge commit in the range stops a
+  plain range revert), checks the tests back out of HEAD and removes any
+  the ticket had deleted, runs, restores with `git revert --abort`, and
+  writes on the Verified line which test went red. Two diffs name none and
+  say why, because the reason is what the reviewer checks: `revert check:
+  n/a, prose-only` for a diff that is prose by the review tier table
+  (documentation and code comments only; skill and agent Markdown is not
+  prose), and `revert check: nothing to pin — <reason>` for behaviour no
+  assertion can hold — a tests-only ticket, a *demonstrate:*-verified
+  change, a project with no test runner (owed). Nothing going red otherwise
+  means the tests pin nothing and the ticket is not done. Each new guard,
+  branch and error path is flipped in turn on the same terms. The reviewer
+  does not take the line: it opens the named test and confirms it depends
+  on the change, and a test that would pass without the change, or an
+  `n/a` whose reason does not hold, is **Important** — in the severity
+  tables and in every disposition door (ticket step 8, quick step 6, the
+  driver's disposition prompt) beside the regression as a nit that never
+  is, so an unattended run halts on it rather than merging a ticket with
+  no evidence behind it. This replaces
+  the dormant "if mutation testing is configured" sentence with the
+  one-mutant version that needs no tool; a configured mutation tester
+  remains the same check at scale. Taken from adk-go's PR template and
+  self-review skill.
+
 - **A user-visible regression the change introduces is Important, never a
   nit parked for the retro** (`agents/ticket-reviewer.md`,
   `skills/review/SKILL.md`, the driver's `REVIEWER_RULES`, `REVIEW_SCHEMA`
