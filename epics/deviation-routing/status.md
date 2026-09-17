@@ -283,3 +283,77 @@ no `find` field, which its test still checks at any depth. CLAUDE.md's
 counts were already current on this branch.
 
 **Owed:** Nothing.
+
+**Addendum — review — 2026-09-17 — opus/default effort:** one Important, four
+nits, one pre-existing. The reviewer was a general agent standing in for
+`flow:ticket-reviewer`, which this session has not registered; the hiring tool
+exposes no effort setting.
+
+Important, fixed in `22bddc0`. The paragraph terminator this range added was
+`/^\*\*/` — any line starting in bold — while the ticket, the comment beside
+it, README and METHODOLOGY all say the next bolded **field**. Reproduced both
+ways before the fix: a wrapped sentence whose second line began with a bold
+phrase was cut at the break ("… built without it, because"), and a
+`**Deviation:**` label whose text began on the next line in bold left the
+paragraph empty, which the empty-text filter drops — `deviations P-1 --json`
+reported `count: 0` where the same fixture against `9270f36` reported
+`count: 1` with the full text. A departure reported as none is the failure the
+line exists to end, so this was a regression of the record itself. The
+terminator is now `BOLD_FIELD = /^\*\*[^*]+:\*\*/`; both fixtures report
+`count: 1` with the text whole. The new test walks every label the entry
+template puts under a departure — Owed, Decisions, the owed marker, the
+closing line, a dated review addendum — plus a heading, each with no blank
+line between, and both regressions. It fails with the fix reverted, and the
+terminator flipped back to the broad regex turns it red on its own.
+
+Nit, fixed in `5d7651e`. A departure closed twice kept the later line as
+`closedBy`; the first stands now, because the decision a reader wants is the
+one that was made.
+
+Nit, fixed in `5d7651e`. The three notes reconstructed a closing line naming
+one entry, even when the line as written named several, so the quoted text was
+not what the reader would find in the log. Each note now names the reference it
+read, quoted as the writer spelled it — the reference grammar matches
+case-insensitively and only a reference that closes is normalised, so a
+mistyped `E-1oops` is reported as `E-1oops`. The notes' wording therefore
+differs from the outputs quoted in the entry above, which were recorded before
+this fix.
+
+Nit, fixed in `5d7651e`. `brief` no longer prints "none outstanding" above a
+note reporting that a closing line closed nothing.
+
+Nit, **not fixed, recorded for the retro.** A bare closing line standing above
+the entry's only departure closes nothing and says nothing, while a numbered
+reference in that position earns a note. The departure stays open, which is the
+safe direction this whole ticket argues for — silence, not loss. It is not
+fixed here because the note it would need cannot be cleared by the repair the
+other three name: the same silent case covers a line re-naming an entry whose
+departures are already closed, where a note would be permanent and unfixable,
+and the behaviour is byte-identical to `parseOwed`, so changing one ledger and
+not the other creates exactly the drift between two statements of one rule that
+this epic exists to end. It belongs with the pre-existing item below, in one
+hardening ticket against both parsers.
+
+Pre-existing, not this range's, recorded with an owner. A closing line or an
+owed marker written inside a fenced code block in a status log is parsed as a
+real line and closes or retires; neither parser is fence-aware. The deviation
+half arrived with DEV-1, the owed half with PR #51, and the ticket skill's own
+template shows the line inside a fence, so a worker pasting it into an entry
+would trip it. Owner: the retro, as one hardening ticket over both parsers,
+together with the unfixed nit above.
+
+Re-run after both fixes, on `5d7651e`: `tickets.test.mjs` 101/101 (99 before
+the review, two new tests), `check-invariants.test.mjs` 19/19,
+`run-epic.test.mjs` 123/123, `check-invariants.mjs` exit 0,
+`tickets.mjs doctor` exit 0, `node --check tickets.mjs` exit 0,
+`tickets.mjs check DEV-4` 5/5. CLAUDE.md's suite count moved 99 → 101 in
+`5d7651e`. Revert check over the two fix commits, tests kept at HEAD: 97 pass,
+4 fail, including "a bolded FIELD ends the paragraph; a sentence that merely
+begins in bold does not". Each fix was also flipped on its own — the
+terminator, the first-closure rule, the note wording, the reference's case, and
+the brief's heading — and the suite went red for every one.
+
+One finding deferred: the nit recorded for the retro above, with the
+pre-existing item it belongs with. Nothing else deferred.
+
+Worker tokens (implementation leg): 209,716; Reviewer tokens: 153,568
