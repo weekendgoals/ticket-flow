@@ -335,7 +335,7 @@ const PHRASES = [
   },
   {
     why: "the acceptance-check stop condition is one sentence in the skill and the script — a halt the run record quotes verbatim. Pinned whole, like the fix-bounds sentence: the gate halts on a malformed CHECK and on a report it cannot read as well as on a failing one, and a retro that reads only the first clause files those halts as something else",
-    re: /a failed acceptance CHECK — a machine-runnable criterion whose command did not produce its expected result on the pushed branch, a CHECK line too malformed to run at all, or an acceptance report the gate could not read/,
+    re: /a failed acceptance CHECK — a machine-runnable criterion whose command did not produce its expected result on the pushed branch, a criterion whose evidence is a skip, a CHECK line too malformed to run at all, or an acceptance report the gate could not read/,
     files: ['run', 'workflow'],
   },
   {
@@ -360,6 +360,16 @@ const PHRASES = [
     // "`CHECK:` / `EXPECT:`" — presence of the format, not one spelling.
     re: /CHECK: |CHECK.{0,8}EXPECT/,
     files: ['epic', 'ticket', 'quick', 'run', 'script', 'workflow'],
+  },
+  {
+    why: "the ledger's third verdict — a check whose evidence is a skip is not passed, so it cannot green a merge gate. The script decides it, the planning skill writes EXPECTs a skip cannot satisfy, both execution lanes read the ledger, the driver halts on it, and README documents it; a document that keeps only the two-verdict story teaches a worker to report a ↓ line as a pass",
+    re: /skipped check is not a passed one/i,
+    files: ['script', 'epic', 'ticket', 'quick', 'run', 'workflow', 'readme'],
+  },
+  {
+    why: "the owed marker's granularity — an entry that owed several things is retired item by item, and a bare entry ID against it retires nothing. The script derives it, both lanes write the markers, and README documents the brief; a skill that keeps the old whole-entry story teaches a worker to write a line that silently retires items nobody discharged",
+    re: /retires \*{0,2}nothing/i,
+    files: ['script', 'ticket', 'quick', 'readme'],
   },
 ]
 

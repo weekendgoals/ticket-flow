@@ -258,7 +258,14 @@ Rules that matter:
   must contain>` (exit 0 alone decides when EXPECT is absent).
   `tickets.mjs check <ID>` runs them, and the unattended driver re-runs them
   from the signed-off document as a merge gate — a CHECK criterion is one no
-  worker can satisfy by narration; keep the commands idempotent. If
+  worker can satisfy by narration; keep the commands idempotent. **Write the
+  EXPECT so a skip cannot satisfy it**: a suite that skips itself (no
+  `DATABASE_URL`, no Docker) exits 0 and a verbose reporter still prints the
+  test titles, so an EXPECT naming a title matches the line that says it
+  skipped. Name a line that proves the run — a pass count (`Tests 12
+  passed`), a computed value — because **a skipped check is not a passed
+  one**. The ledger marks such a criterion `↓ skipped` and it does not green
+  the gate, so an EXPECT a skip can match costs the run a halt. If
   verification needs something a session may not have (Docker, credentials,
   a browser), give the fallback: *"or flag it as owed to ticket X"*.
 - **Every CHECK you write must fail on the tree before the ticket exists,

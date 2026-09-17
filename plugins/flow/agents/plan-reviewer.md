@@ -91,7 +91,13 @@ quoted.
     — is a finding: FND-6's `\|` reached grep as a literal and its `grep -rc`
     printed `file:0`, a shape no comparison against `1` can ever match;
   - a CHECK the ledger claims failing that you find passing, or claims
-    runnable that will not run, is a finding against the ledger itself.
+    runnable that will not run, is a finding against the ledger itself;
+  - a CHECK the ledger marks `↓ skipped`, or whose EXPECT a skip could
+    satisfy, is a finding. A criterion red only because its suite skipped
+    itself has not been proven red **for the reason the criterion states** —
+    the suite may be green or broken underneath, and nobody knows which. Name
+    what the EXPECT should point at instead: a line that proves the run,
+    such as a pass count, rather than a test title a skipped run still prints.
   Report each with the command and the output you saw, never a verdict alone.
 - **A missing or hollow "Not in scope"** where the adjacent temptation is
   obvious — especially one that fails to name which ticket owns the deferred

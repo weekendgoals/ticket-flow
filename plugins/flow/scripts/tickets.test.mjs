@@ -398,14 +398,15 @@ test('Next up suggests the installed, namespaced command', () => {
 test('brief prints a ticket\'s full section plus the derived facts find reports', () => {
   // The brief exists so a session can read the next ticket's scope and
   // acceptance criteria from one command instead of opening the ticket doc
-  // (BOARD-3). --json is the find payload plus preamble, owed and body —
-  // the whole required reading for a fresh worker, O(epic) not O(history).
+  // (BOARD-3). --json is the find payload plus preamble, owed, notes and
+  // body — the whole required reading for a fresh worker, O(epic) not
+  // O(history).
   const briefed = JSON.parse(run(repo, 'brief', 'a-2', '--json'))
   const found = JSON.parse(run(repo, 'find', 'a-2', '--json'))
   assert.deepEqual(
     briefed,
-    { ...found, preamble: briefed.preamble, owed: briefed.owed, body: briefed.body },
-    'the brief payload is the find payload plus preamble, owed and body',
+    { ...found, preamble: briefed.preamble, owed: briefed.owed, notes: briefed.notes, body: briefed.body },
+    'the brief payload is the find payload plus preamble, owed, notes and body',
   )
   assert.match(briefed.body, /\*\*Scope\.\*\* Persistence\./, 'the body carries the section content')
 
@@ -477,6 +478,311 @@ work is unrelated and unaffected.
   const out = run(ledger, 'brief', 'O-4')
   assert.ok(!out.includes('backfill'), 'a resolved item never renders')
   assert.match(out, /O-3 \(2026-08-03\): the load test still needs a second region\./)
+})
+
+// An entry that owes several things, which is what the Owed field invites —
+// "anything deferred". One marker used to retire the lot: downstream, four
+// items recorded as one paragraph were closed by a marker naming one of them,
+// and the item that had to survive was a production-database hazard.
+const ledger2 = join(tmp, 'ledger2')
+git(tmp, 'init', '--initial-branch=main', ledger2)
+mkdirSync(join(ledger2, 'epics/delta'), { recursive: true })
+writeFileSync(
+  join(ledger2, 'epics/delta/tickets.md'),
+  '# Delta\n\n## D-1 — first\n\n**Scope.** One.\n\n## D-2 — second\n\n**Scope.** Two.\n\n## D-3 — third\n\n**Scope.** Three.\n\n## D-4 — next up\n\n**Scope.** Four.\n',
+)
+writeFileSync(
+  join(ledger2, 'epics/delta/status.md'),
+  `# Delta epic — status log
+
+### D-1 — first — 2026-08-01 — DONE
+
+**Owed:** four items, D-2 inherits them:
+- the seed script still points at the production database — D-3 must repoint
+  it before anyone runs the seed
+- the retry budget is unbounded
+  - and the backoff is untested, which is part of the same item
+- the docs still describe the old flag name
+- the parity test for the copied helper is missing
+
+### D-2 — second — 2026-08-02 — DONE
+
+**Owed:**
+
+- the browser demonstration is unperformed; no browser binary exists here
+
+**Resolves owed:** D-1 — the retry budget is bounded now.
+
+### D-3 — third — 2026-08-03 — DONE
+
+**Owed:** Nothing.
+
+**Resolves owed:** D-1.3 — the flag name is documented.
+`,
+)
+
+test('an entry recording several owed items numbers them, and only the named item is retired', () => {
+  const owed = JSON.parse(run(ledger2, 'brief', 'D-4', '--json')).owed
+  assert.deepEqual(
+    owed.map((o) => o.id),
+    ['D-1.1', 'D-1.2', 'D-1.4', 'D-2'],
+    'D-3 retired D-1.3 by name; the bare D-1 marker retired nothing, and D-1.1 — the production-database hazard — survives',
+  )
+  assert.match(owed[0].text, /production database — D-3 must repoint it before anyone runs the seed$/, 'a wrapped bullet arrives joined')
+  // A sub-bullet belongs to the item above it: the numbering counts what a
+  // reader counts, or a marker names the wrong thing.
+  assert.match(owed[1].text, /the retry budget is unbounded - and the backoff is untested/)
+  assert.equal(owed[0].lead, 'four items, D-2 inherits them:', 'the lead-in that names the carrier is kept, not dropped')
+  assert.equal(owed[3].id, 'D-2', 'an entry recording one item keeps the entry ID as its identity')
+})
+
+test('a bullet list separated from **Owed:** by a blank line is still recorded', () => {
+  // The idiomatic markdown shape. Read as "the paragraph ends at the blank
+  // line", every bullet vanished from the brief — the items lost silently,
+  // before any marker was written.
+  const owed = JSON.parse(run(ledger2, 'brief', 'D-4', '--json')).owed
+  const d2 = owed.find((o) => o.id === 'D-2')
+  assert.ok(d2, 'D-2 owes something')
+  assert.match(d2.text, /browser demonstration is unperformed/)
+})
+
+test('a bare Resolves owed on a multi-item entry retires nothing, and the partial repair the note names clears it', () => {
+  // The safe direction: an item wrongly kept costs a reread, an item wrongly
+  // retired is gone from an append-only log with nothing left to report it.
+  // D-2's bare marker retires none of D-1's four items; D-3 then does what the
+  // note instructs and names the ONE item it discharged. That is the repair,
+  // and it has to clear the note — the only other way to silence it would be
+  // to name items that are still open, which is the silent retirement this
+  // whole rule exists to prevent.
+  const briefed = JSON.parse(run(ledger2, 'brief', 'D-4', '--json'))
+  assert.deepEqual(briefed.notes, [], 'a dotted resolution for D-1 supersedes the bare line')
+
+  const out = run(ledger2, 'brief', 'D-4')
+  assert.match(out, /D-1\.1 \(2026-08-01\): the seed script still points at the production database/)
+  assert.match(out, /four items, D-2 inherits them:/)
+  assert.ok(!out.includes('the docs still describe the old flag name'), 'the item named by D-1.3 is retired')
+  assert.ok(!out.includes('retires nothing'), 'and the note is gone, not carried forever')
+})
+
+// Two shapes taken from live downstream logs: an ID that heads more than one
+// Owed block (an append-only log lets a ticket record again), and a bullet
+// that opens with the word "Nothing" while owing something real.
+mkdirSync(join(ledger2, 'epics/epsilon'), { recursive: true })
+writeFileSync(
+  join(ledger2, 'epics/epsilon/tickets.md'),
+  '# Epsilon\n\n## E-1 — first\n\n**Scope.** One.\n\n## E-2 — second\n\n**Scope.** Two.\n\n## E-3 — next up\n\n**Scope.** Three.\n',
+)
+writeFileSync(
+  join(ledger2, 'epics/epsilon/status.md'),
+  `# Epsilon epic — status log
+
+### E-1 — first — 2026-08-01 — DONE
+
+**Owed:**
+- Nothing in this ticket has met Postgres; no integration suite has seen it
+- the parity test for the copied helper is missing
+
+### E-2 — second — 2026-08-02 — DONE
+
+**Owed:** Nothing.
+
+### E-1 — first, corrected — 2026-08-03 — DONE
+
+**Owed:** the retry budget is still unbounded.
+`,
+)
+
+test('an ID heading more than one Owed block numbers across them, so no two items share an identity', () => {
+  // Two obligations answering to one ID is the collision the numbering exists
+  // to prevent — one marker would retire both.
+  const owed = JSON.parse(run(ledger2, 'brief', 'E-3', '--json')).owed
+  assert.deepEqual(
+    owed.map((o) => o.id),
+    ['E-1.1', 'E-1.2', 'E-1.3'],
+    "E-1's later entry continues its numbering; E-2 owed Nothing and is filtered",
+  )
+  assert.match(owed[2].text, /retry budget is still unbounded/)
+})
+
+test('"Nothing" empties a block that has no bullets, never a bullet that owes something real', () => {
+  // Live downstream: a first bullet opening "Nothing in this ticket has met
+  // Postgres" dropped all five of its entry's items, because the block was
+  // read as one paragraph beginning with the word.
+  const owed = JSON.parse(run(ledger2, 'brief', 'E-3', '--json')).owed
+  assert.match(owed[0].text, /^Nothing in this ticket has met Postgres/)
+  assert.ok(!owed.some((o) => /^E-2/.test(o.id)), 'an entry that owes Nothing records nothing')
+})
+
+// A bare marker with no itemised resolution anywhere — the state the note is
+// actually for — plus the two shapes a hand-written item reference gets wrong.
+mkdirSync(join(ledger2, 'epics/zeta'), { recursive: true })
+writeFileSync(
+  join(ledger2, 'epics/zeta/tickets.md'),
+  '# Zeta\n\n## F-1 — first\n\n**Scope.** One.\n\n## F-2 — second\n\n**Scope.** Two.\n\n## F-3 — third\n\n**Scope.** Three.\n\n## F-4 — next up\n\n**Scope.** Four.\n',
+)
+writeFileSync(
+  join(ledger2, 'epics/zeta/status.md'),
+  `# Zeta epic — status log
+
+### F-1 — first — 2026-08-01 — DONE
+
+**Owed:** the seed still points at staging — F-2 inherits it.
+
+### F-2 — second — 2026-08-02 — DONE
+
+**Owed:**
+- the docs are stale
+- the flag is undocumented
+
+**Resolves owed:** F-1 — the seed points at the local stack now.
+
+### F-1 — first, continued — 2026-08-05 — DONE
+
+**Owed:**
+- the retry budget is still unbounded
+- the parity test is still missing
+
+### F-3 — third — 2026-08-06 — DONE
+
+**Owed:** Nothing.
+
+**Resolves owed:** F-2 — the docs are current.
+
+**Resolves owed:** F-2.7 — and the flag is documented.
+`,
+)
+
+test('a bare marker retires what the entry owed when it was written, and a later block never resurrects it', () => {
+  // Append-only makes a marker's position its time. F-1 owed exactly one thing
+  // when F-2 discharged it; F-1's later entry records two more. Without the
+  // positional read the entry renumbers, the bare marker matches nothing, and
+  // an item closed months ago returns to every brief forever.
+  const briefed = JSON.parse(run(ledger2, 'brief', 'F-4', '--json'))
+  const f1 = briefed.owed.filter((o) => o.id.startsWith('F-1'))
+  assert.deepEqual(f1.map((o) => o.id), ['F-1.2', 'F-1.3'], 'the discharged first item stays discharged')
+  assert.ok(!briefed.notes.some((n) => /\*\*Resolves owed:\*\* F-1\b/.test(n)), 'and a marker that did its job earns no note')
+})
+
+test('a bare marker facing several open items retires nothing and says so, with the form that works', () => {
+  const briefed = JSON.parse(run(ledger2, 'brief', 'F-4', '--json'))
+  const note = briefed.notes.find((n) => /\*\*Resolves owed:\*\* F-2`/.test(n))
+  assert.ok(note, 'F-2 owed two things when F-3 named the entry')
+  assert.match(note, /2 open items/)
+  assert.match(note, /F-2\.1/, 'the note names the form that would work')
+  assert.match(run(ledger2, 'brief', 'F-4'), /retires nothing/)
+})
+
+test('an item reference that matches no item is reported, not silently ignored', () => {
+  // The skills now ask workers to hand-write these, so a miscount is the
+  // expected error — and it was the one error with no feedback anywhere.
+  const briefed = JSON.parse(run(ledger2, 'brief', 'F-4', '--json'))
+  const note = briefed.notes.find((n) => /F-2\.7/.test(n))
+  assert.ok(note, 'a dotted reference past the end of the entry is named')
+  assert.match(note, /names no item/)
+  assert.match(note, /F-2 records 2/)
+})
+
+test('the note clears once the entry\'s items are closed by name — a warning that can be cleared', () => {
+  // The recovery the note advertises has to work from the state it is
+  // reported in, and leave nothing behind: a warning nobody can clear is one
+  // readers learn to skip past.
+  const doc = join(ledger2, 'epics/delta/status.md')
+  const original = readFileSync(doc, 'utf8')
+  try {
+    writeFileSync(doc, `${original}\n**2026-08-04 addendum.** Correcting D-2's marker.\n\n**Resolves owed:** D-1.1, D-1.2, D-1.4 — all three landed.\n`)
+    const briefed = JSON.parse(run(ledger2, 'brief', 'D-4', '--json'))
+    assert.deepEqual(briefed.owed.map((o) => o.id), ['D-2'])
+    assert.deepEqual(briefed.notes, [])
+  } finally {
+    writeFileSync(doc, original)
+  }
+})
+
+test('doctor flags a Resolves owed line that retires nothing, at the door its writer walks through', () => {
+  // The reader's door is the brief; the writer's door is doctor. Without
+  // both, a marker that discharged nothing is silent in one direction: the
+  // author believes the item closed, and the brief they never run says
+  // otherwise.
+  const res = runFail(ledger2, 'doctor', '--json')
+  const rows = JSON.parse(res ? res.stdout : run(ledger2, 'doctor', '--json'))
+  const row = rows.find((r) => /Resolves owed/.test(r.msg) && /F-2`/.test(r.msg))
+  assert.ok(row, 'doctor reports the marker that retired nothing')
+  assert.equal(row.level, 'warn')
+  assert.match(row.msg, /2 open items/)
+  assert.ok(
+    rows.some((r) => /F-2\.7/.test(r.msg)),
+    'and the item reference that matched nothing, which is the error the skills now invite',
+  )
+})
+
+// A ledger for the two ways a reference can name something it does not mean:
+// one that points at an item the entry had not recorded yet, and one that
+// starts with a valid ID and goes on. Both used to retire a real item.
+const ledger3 = join(tmp, 'ledger3')
+git(tmp, 'init', '--initial-branch=main', ledger3)
+mkdirSync(join(ledger3, 'epics/eta'), { recursive: true })
+writeFileSync(
+  join(ledger3, 'epics/eta/tickets.md'),
+  '# Eta\n\n## G-1 — first\n\n**Scope.** One.\n\n## G-2 — second\n\n**Scope.** Two.\n\n## G-3 — third\n\n**Scope.** Three.\n\n## G-4 — next up\n\n**Scope.** Four.\n',
+)
+writeFileSync(
+  join(ledger3, 'epics/eta/status.md'),
+  `# Eta epic — status log
+
+### G-1 — first — 2026-08-01 — DONE
+
+**Owed:**
+- the retry budget is unbounded
+- the parity test is missing
+
+### G-2 — second — 2026-08-02 — DONE
+
+**Owed:** the browser demonstration is unperformed; no browser binary exists here.
+
+**Resolves owed:** G-1.3 — miscounted; G-1 had recorded two items when this was written.
+
+### G-3 — third — 2026-08-03 — DONE
+
+**Owed:** Nothing.
+
+**Resolves owed:** G-2oops — the browser run is recorded.
+
+### G-1 — first, continued — 2026-08-04 — DONE
+
+**Owed:**
+- the seed script still points at the production database
+`,
+)
+
+test('a dotted reference pointing past what the entry had recorded retires nothing, then or later', () => {
+  // Position is time for a dotted marker too. G-2's `G-1.3` named nothing on
+  // the day it was written; two days later G-1 records a third item, and
+  // resolving the marker against it retires the production-database hazard
+  // nobody discharged — the silent retirement the bare-marker rule already
+  // refuses, arriving through the numbered form instead.
+  const briefed = JSON.parse(run(ledger3, 'brief', 'G-4', '--json'))
+  assert.deepEqual(
+    briefed.owed.map((o) => o.id),
+    ['G-1.1', 'G-1.2', 'G-1.3', 'G-2'],
+    'the later item survives the marker written above it',
+  )
+  const note = briefed.notes.find((n) => /G-1\.3/.test(n))
+  assert.ok(note, 'and the marker that retired nothing says so')
+  assert.match(note, /names no item/)
+  assert.match(note, /G-1 records 2 .* above that line/, 'counted as of the marker, not as of today')
+})
+
+test('a reference that only starts with a valid ID is not read as that ID', () => {
+  // `G-2oops` is not `G-2`. Anchoring at the start alone made the prefix win,
+  // and G-2 owed exactly one item — so a typo silently discharged it, with
+  // no note anywhere, which is the failure the whole owed gate exists to
+  // prevent. Refusing to parse it keeps the item listed until someone writes
+  // the reference again: unreadable and refused beats readable and wrong.
+  const briefed = JSON.parse(run(ledger3, 'brief', 'G-4', '--json'))
+  assert.ok(
+    briefed.owed.some((o) => o.id === 'G-2'),
+    'the item the typo appeared to discharge is still owed',
+  )
 })
 
 test('brief with no argument briefs the first startable ticket and names its epic', () => {
@@ -1042,6 +1348,85 @@ halted a live run on correct code.
 - GHF-1's single-file count is sound and passed live — it must not be flagged
   CHECK: grep -c "Me and the log" api-gateway/CLAUDE.md
   EXPECT: 1
+
+## K-8 — a suite that skipped itself
+
+The output is console-foundations CF-3's, measured: a Postgres-backed vitest
+file under \`describe.skipIf(!DATABASE_URL)\` skips whole, vitest exits 0, and
+the EXPECT string still appears — on the line that says it skipped.
+
+**Acceptance criteria.**
+- the tenant-scoping suite passes
+  CHECK: node -e "console.log(' ↓ src/db/tenant.int.test.ts (12 tests | 12 skipped)'); console.log(' Test Files  1 skipped (1)'); console.log(' Tests  12 skipped (12)')"
+  EXPECT: src/db/tenant.int.test.ts
+
+## K-9 — the named test skipped while its neighbours passed
+
+**Acceptance criteria.**
+- the route refuses a foreign tenant
+  CHECK: node -e "console.log(' ✓ contracts > digest round trip 3ms'); console.log(' ↓ routes > refuses a foreign tenant'); console.log(' Tests  1 passed | 1 skipped (2)')"
+  EXPECT: refuses a foreign tenant
+
+## K-10 — a skipped suite with no EXPECT to point at
+
+**Acceptance criteria.**
+- the integration suite runs
+  CHECK: node -e "console.log(' Test Files  1 skipped (1)'); console.log(' Tests  12 skipped (12)')"
+
+## K-11 — runs that did happen, which a skip rule must not touch
+
+**Acceptance criteria.**
+- the suite passes with a couple of tests skipped
+  CHECK: node -e "console.log(' Tests  246 passed | 2 skipped (248)')"
+  EXPECT: 246 passed
+- the migration is skipped when the table already exists
+  CHECK: node -e "console.log('the migration is skipped when the table already exists')"
+  EXPECT: migration is skipped
+- node --test counts its skips beside its passes
+  CHECK: node -e "console.log('# pass 56'); console.log('# fail 0'); console.log('# skipped 2')"
+  EXPECT: # fail 0
+
+## K-12 — a runner that echoes its argv above the skip it reports
+
+\`npm test -- <file>\` echoes the command before running it, so an EXPECT
+naming a test FILE matches the echo as well as the line saying it skipped.
+The echo is not evidence that anything ran.
+
+**Acceptance criteria.**
+- the tenant-scoping suite passes
+  CHECK: node -e "console.log(''); console.log('> backend@1.0.0 test'); console.log('> vitest run src/db/tenant.int.test.ts'); console.log(''); console.log(' ↓ src/db/tenant.int.test.ts (12 tests | 12 skipped)'); console.log(' Tests  12 skipped (12)')"
+  EXPECT: src/db/tenant.int.test.ts
+
+## K-13 — one file skipped while the suite ran
+
+**Acceptance criteria.**
+- the database tests pass
+  CHECK: node -e "console.log(' ↓ src/db/legacy.test.ts (2 tests | 2 skipped)'); console.log(' Tests  12 passed (12) in src/db')"
+  EXPECT: src/db
+
+## K-14 — the runner names the file while starting, and not when it reports the skip
+
+The echo's other shape. K-12's skip line repeated the file name, so the EXPECT
+still reached it; here the summary counts files instead, the EXPECT matches
+only the line that announced the run, and nothing among the matching lines
+says whether anything happened.
+
+**Acceptance criteria.**
+- the tenant-scoping suite passes
+  CHECK: node -e "console.log('> vitest run src/db/tenant.int.test.ts'); console.log(''); console.log(' Test Files  1 skipped (1)'); console.log(' Tests  12 skipped (12)')"
+  EXPECT: src/db/tenant.int.test.ts
+
+## K-15 — TAP that ran one test and skipped another, with no summary line
+
+**Acceptance criteria.**
+- the digest round trip holds
+  CHECK: node -e "console.log('TAP version 13'); console.log('1..2'); console.log('ok 1 - the digest round trips'); console.log('ok 2 - the integration case # SKIP no DATABASE_URL')"
+
+## K-16 — TAP in which everything skipped
+
+**Acceptance criteria.**
+- the integration cases hold
+  CHECK: node -e "console.log('TAP version 13'); console.log('1..2'); console.log('ok 1 - the integration case # SKIP no DATABASE_URL'); console.log('not ok 2 - the write fence # SKIP no DATABASE_URL')"
 `,
 )
 git(crepo, 'add', '.')
@@ -1224,6 +1609,111 @@ test('a passing check is not killed by more than 1 MB of output noise', () => {
   } finally {
     writeFileSync(checksDoc, original)
   }
+})
+
+test('a criterion whose evidence is a skip is recorded skipped, and a skip does not pass the gate', () => {
+  // Measured downstream before it was fixed: console-foundations CF-3 reported
+  // `4/4 checks passed` while every evidence line read `↓`. The suite skipped
+  // itself for want of DATABASE_URL, vitest exited 0, and the EXPECT string
+  // matched the line that said so. Skipped is its own verdict — not passed,
+  // because it proves nothing; not failed, because the code is not what is
+  // wrong — and it never greens the gate.
+  const fail = runFail(crepo, 'check', 'K-8', '--json')
+  assert.equal(fail.status, 1, 'a skip exits nonzero like any ungreen gate')
+  const out = JSON.parse(fail.stdout)
+  assert.equal(out.allPassed, false)
+  assert.equal(out.passed, 0)
+  assert.equal(out.skipped, 1)
+  assert.equal(out.checks[0].status, 'skipped')
+  assert.equal(out.checks[0].passed, false)
+  assert.match(out.checks[0].evidence, /12 skipped/, 'the deciding line is still the evidence')
+
+  const text = runFail(crepo, 'check', 'K-8').stdout
+  assert.match(text, /↓ 1\/1 the tenant-scoping suite passes/, 'the ledger marks it ↓, not ✓ and not ✗')
+  assert.match(text, /did not run/, 'and says what a skip means, so nobody debugs working code')
+  assert.match(text, /0\/1 checks passed.*1 skipped/s)
+})
+
+test('a skip is judged on the deciding line, so a skipped test among passing ones is caught', () => {
+  // The criterion names one test. Its neighbours passing is not evidence for
+  // it, so the whole-output counts cannot be what decides — the line that
+  // carried the EXPECT text is.
+  const fail = runFail(crepo, 'check', 'K-9', '--json')
+  assert.equal(fail.status, 1)
+  const out = JSON.parse(fail.stdout)
+  assert.equal(out.checks[0].status, 'skipped')
+  assert.match(out.checks[0].evidence, /↓ routes > refuses a foreign tenant/)
+})
+
+test('with no EXPECT to point at, a run that reports only skips is skipped too', () => {
+  // Exit 0 is the whole evidence here, and a run in which nothing ran is not
+  // a run that passed. The recovery works from the refused state: an EXPECT
+  // naming a line that proves the run moves the verdict back to the line.
+  const fail = runFail(crepo, 'check', 'K-10', '--json')
+  assert.equal(fail.status, 1)
+  const out = JSON.parse(fail.stdout)
+  assert.equal(out.checks[0].status, 'skipped')
+  assert.equal(out.skipped, 1)
+})
+
+test('a command echo repeating the EXPECT string does not outvote the skip it sits above', () => {
+  // The hole the deciding-line rule left: the echo `npm test -- <file>` prints
+  // is not skip evidence, so it won the verdict and a suite in which nothing
+  // ran greened the gate. A skip on ANY matching line decides now, unless
+  // another matching line shows something having run.
+  const fail = runFail(crepo, 'check', 'K-12', '--json')
+  assert.equal(fail.status, 1)
+  const out = JSON.parse(fail.stdout)
+  assert.equal(out.checks[0].status, 'skipped')
+  assert.match(out.checks[0].evidence, /12 skipped/, 'the skip is the evidence, not the echo')
+})
+
+test('a file skipped inside a suite that ran still passes — the run line outvotes the skip line', () => {
+  // The other polarity: over-firing costs a halted run on correct code, so a
+  // matching line showing a run is what the verdict follows.
+  const out = JSON.parse(run(crepo, 'check', 'K-13', '--json'))
+  assert.equal(out.allPassed, true)
+  assert.equal(out.checks[0].status, 'passed')
+  assert.match(out.checks[0].evidence, /12 passed/)
+})
+
+test('an EXPECT that matches only the line announcing the run does not green a suite that skipped', () => {
+  // K-12 closed the echo's first shape, where the skip line happened to carry
+  // the EXPECT text too. When it does not, narrowing the question to the
+  // matching lines leaves a verdict with no evidence either way, and "no skip
+  // among the matching lines" used to mean pass — the same suite in which
+  // nothing ran, green again one step along. The question widens to the whole
+  // output exactly when the matching lines decide nothing.
+  const fail = runFail(crepo, 'check', 'K-14', '--json')
+  assert.equal(fail.status, 1)
+  const out = JSON.parse(fail.stdout)
+  assert.equal(out.checks[0].status, 'skipped')
+  assert.match(out.checks[0].evidence, /1 skipped/, 'the evidence is the skip the output does carry, not the announcement')
+})
+
+test('a TAP run is read by its own per-test lines, so a skip beside a pass is not "nothing ran"', () => {
+  // TAP producers need print no summary at all, and `ok 1 - <name>` is the
+  // only record that test ran. Without it one `# SKIP` decided the whole run,
+  // which contradicts the documented TAP coverage and halts a run on working
+  // code. `not ok` and an `ok` carrying `# SKIP` are not runs — over-firing
+  // the other way would green a suite that did nothing.
+  const mixed = JSON.parse(run(crepo, 'check', 'K-15', '--json'))
+  assert.equal(mixed.allPassed, true)
+  assert.equal(mixed.checks[0].status, 'passed')
+
+  const fail = runFail(crepo, 'check', 'K-16', '--json')
+  assert.equal(fail.status, 1)
+  assert.equal(JSON.parse(fail.stdout).checks[0].status, 'skipped')
+})
+
+test('a run that did happen still passes — skipped neighbours, the word "skipped", node --test counts', () => {
+  // The cost of a false skip is a halted run on correct code, so the marker
+  // must fire on a runner's skip shape and nothing else.
+  const out = JSON.parse(run(crepo, 'check', 'K-11', '--json'))
+  assert.equal(out.allPassed, true)
+  assert.equal(out.passed, 3)
+  assert.equal(out.skipped, 0)
+  assert.deepEqual(out.checks.map((c) => c.status), ['passed', 'passed', 'passed'])
 })
 
 // ── spend: the recorded token ledger ─────────────────────────────────────────

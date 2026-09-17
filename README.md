@@ -325,16 +325,27 @@ Before starting a ticket, the board script's `brief [ID]` subcommand prints
 everything in one place: the ticket's full section from its epic's
 `tickets.md` — Scope, Not in scope, Acceptance criteria — plus the **epic
 preamble** (ground rules, ordering, delivery), the status log's **owed items
-not yet marked resolved** (every non-Nothing `**Owed:**` paragraph,
-attributed to its entry, until a later `**Resolves owed:** <ID>` line closes
-it — recorded state, so an item may already be discharged unmarked; the
-brief says so in its heading), and the derived facts the board knows (state,
+not yet marked resolved** (every non-Nothing obligation an `**Owed:**` block
+records, attributed to its entry — an entry that owed one thing is addressed
+by its own ID, one that owed several numbers its bullets `<ID>.1`, `<ID>.2` …
+in document order — until a later `**Resolves owed:** <ID>` line closes it.
+A bare entry ID is read against what the entry owed **when that line was
+written** — the items recorded above it, since an append-only log makes
+position time — so an old marker keeps closing what it closed even after the
+entry records again. Facing more than one open item it retires **nothing**
+and the brief says what to write instead: a marker naming one item once
+closed four, including a production-database hazard, and an item wrongly
+retired is gone from an append-only log with nothing left to report it.
+Naming any item the itemised way clears that note, and a reference matching
+no item is reported too. Recorded state, so an
+item may already be discharged unmarked; the brief says so in its heading),
+and the derived facts the board knows (state,
 branch, epic, modes, pull request). This is a worker's whole required reading — O(epic), not
 O(history): the status log grows without bound, and the brief is what keeps
 each new ticket from paying to reread all of it. With no ID it briefs the
 first startable ticket, naming the epic it came from; `--json` returns the
-`find` payload with `preamble`, `owed` and the section text as a `body`
-field. The script ships inside the plugin, so it runs the same way every
+`find` payload with `preamble`, `owed`, `notes` (what a `**Resolves owed:**`
+line could not retire) and the section text as a `body` field. The script ships inside the plugin, so it runs the same way every
 skill runs it: `node "${CLAUDE_PLUGIN_ROOT}/scripts/tickets.mjs" brief [ID]`
 — there is no `/flow:brief` slash command.
 
@@ -342,7 +353,13 @@ A criterion can also be **machine-runnable**: an indented `CHECK: <command>`
 line under the criterion bullet, with an optional `EXPECT: <text the output
 must contain>` — exit 0 alone decides when EXPECT is absent. The script's
 `check <ID>` subcommand runs them from the repository root and reports a
-pass/fail ledger whose evidence is the deciding output line; a malformed
+ledger whose evidence is the deciding output line, with three verdicts: `✓`
+passed, `✗` failed, and `↓` **skipped** — the command exited 0 but the
+deciding line is a test runner's skip (a suite that skips itself without
+`DATABASE_URL` exits 0, and a verbose reporter still prints the titles an
+EXPECT matches). **A skipped check is not a passed one**: it proves nothing,
+so it never greens the gate, and it is not called failed either, because the
+repair is the missing prerequisite rather than the code. A malformed
 CHECK **fails** the gate rather than silently never running, and `doctor`
 flags the near-miss shapes — including two that parse and run yet can never
 pass: `\\|` inside a quoted `node -e` / `sh -c` string (the quoting layer

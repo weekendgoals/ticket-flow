@@ -371,6 +371,22 @@ all. The admission test: this reduces uncertainty (a criterion nobody has
 seen fail is a criterion nobody has tested) and provides decision evidence at
 the sign-off gate, where the ledger is shown.
 
+The third correction came from console-foundations, and it is about what
+"green" means. A criterion's command can exit 0 while the work it names never
+ran: the house convention for a Postgres suite is to skip itself without
+`DATABASE_URL`, and a verbose reporter still prints the test titles an EXPECT
+matches — on the line that says they skipped. CF-3 measured it: `4/4 checks
+passed` with every evidence line reading `↓`, and every ticket in that epic
+needed a human to eyeball the markers, which is precisely the check the gate
+exists to perform. So the ledger has three verdicts rather than two. A skip is
+not a pass, because a run that did not happen is not evidence; and it is not a
+failure either, because calling it one sends a reader to debug code that is
+not wrong, and a gate whose red means two unrelated things is a gate people
+learn to argue with. Naming the third state is what makes the repair
+legible — supply the prerequisite, or point the EXPECT at a line that proves
+the run — and it keeps the gate's own contract: only checks the ledger counts
+as passed green a merge.
+
 Two deliberate limits. CHECK is optional, because most criteria are not
 mechanizable and forcing them into commands is ceremony — prose criteria and
 runtime demonstrations remain first-class, verified by the worker and held by
@@ -420,6 +436,23 @@ retro and the archaeologist, the readers it was always really for. The same pres
 entry itself: Built, Mode, Tokens, Verified, Decisions-that-deviate, Owed —
 git already records the files and commits, and narration a future reader
 must wade through is a cost, not a record.
+
+A debt ledger with repayment syntax needs its repayments to be as granular as
+its debts, and for a while this one was not. The entry ID was the item's
+identity, so an entry that deferred four things could only be repaid whole:
+downstream, a marker naming one of them retired all four, and the item that
+had to survive was a production-database hazard. Two console-foundations
+workers had already seen the trap and written the marker's absence into their
+entries as a deliberate decision — paying permanent noise in every future
+brief to avoid a silent loss — which is the shape of a format forcing a bad
+choice on the people it serves. So an entry that owes several things numbers
+them and a marker names the item; a bare entry ID is read against what the
+entry owed when that line was written, and facing more than one open item it
+retires nothing and says what to write instead. The direction is decided by
+the asymmetry, not by taste: an item wrongly kept costs one reread, while an
+item wrongly retired is gone from an append-only log with nothing left to
+report that it ever existed. The admission test: it preserves necessary
+knowledge, and it constrains the blast radius of one line of markup.
 
 ## Why a nit is not automatically a ticket
 
