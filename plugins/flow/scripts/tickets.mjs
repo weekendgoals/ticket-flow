@@ -756,17 +756,33 @@ function parseOwed(epic) {
 // field's own instructions used to send it — it reached no command and no
 // later gate, and the thing that was not built shipped as though it had been.
 //
-// The line is optional and its paragraph runs to the first blank line, exactly
-// as **Owed:** does, so no log written before it needs an edit to stay valid.
-// One entry may carry several, one per departure.
+// The line is optional, so no log written before it needs an edit to stay
+// valid, and one entry may carry several — one per departure. Its paragraph
+// ends at the first blank line **or at the next bolded field or heading**: a
+// `**Deviation:**` written directly above `**Owed:**` with no blank line
+// between them would otherwise swallow the next field's markup into the text a
+// brief shows and a door gates on, and a worker who writes two fields without a
+// blank line has done nothing wrong.
 //
 // A `**Deviations closed:** <ID>[, <ID>] — <each deviation named as accepted or
-// as fixed in <sha>; who; when>` line, in any entry or addendum, closes every
-// deviation recorded by entry <ID> **above it in the file**. Only the leading
-// ID list closes, as **Resolves owed:** does — an ID cited later in the prose
-// is a citation, not a target. Order matters here as it does not for owed
-// items: an ID can head more than one entry (a BLOCKED ticket redone), and a
-// deviation recorded after a closing line must not be born closed.
+// as fixed in <sha>; who; when>` line, in any entry or addendum, closes the
+// deviations its **leading** reference list names, and only ones recorded
+// **above it in the file** — an ID cited later in the prose is a citation, not
+// a target. Position is what a line can close: an ID can head more than one
+// entry (a BLOCKED ticket redone), and a deviation recorded after a closing
+// line must not be born closed.
+//
+// Identity is per entry ID, on the reference grammar the owed ledger already
+// uses (OWED_REF): an ID that recorded one deviation is closed by its bare ID,
+// an ID that recorded several numbers them `<ID>.1`, `<ID>.2` … in document
+// order across every entry it heads, and the closing line names the items. **A
+// bare closing line** facing more than one open deviation closes NOTHING and
+// says so. The asymmetry decides the direction, as it did for owed items: a
+// deviation wrongly left open costs a human one reread, while one wrongly
+// closed is a departure nobody decided on, gone from every brief and every
+// attended door. The owed ledger learned this downstream, where a marker naming
+// one of an entry's four items retired all four — among them a
+// production-database hazard.
 //
 // This parser reports closure; it never judges who wrote it. The closing line
 // is a human's — no worker and no agent writes one — and the two readers
@@ -793,58 +809,195 @@ const closesSomething = (line) => {
 }
 const DEVIATION_STRICT = (line) => DEVIATION_LINE.test(line) || closesSomething(line)
 
+// The notes a closing line earns when it closes nothing — written once each, so
+// the brief a worker reads, the subcommand a door reads and the doctor row the
+// line's own author sees cannot drift into three accounts of one line. Each
+// states the repair that clears it, and each is cleared by exactly that repair:
+// a note whose only exit was naming deviations that are still open would push a
+// writer toward closing a departure nobody decided on.
+// Each names the reference it read rather than quoting a line back: the line as
+// written may have named several entries, so a reconstructed `**Deviations
+// closed:** <id>` is text the reader will not find when they go looking. The
+// reference is quoted exactly as the writer spelled it, for the same reason.
+const deviationBareLineNote = (id, count) =>
+  `A \`**Deviations closed:**\` line names \`${id}\` with no item number, but ${id} had ${count} open deviations when that line was written, so it closes nothing: ` +
+  `a bare closing line closes an entry's deviation only when exactly one was open above it, because "accepted" or "fixed" is a decision per departure. ` +
+  `Name the ones it decided — \`${id}.1\`, \`${id}.2\` … in the order the entries record them, each as accepted or as fixed in <sha> — in a new dated line; the rest stay open, and naming any of them that way clears this note.`
+
+const deviationUnknownItemNote = (ref, id, items) =>
+  `A \`**Deviations closed:**\` line whose reference \`${ref}\` names no deviation: ${id} records ${items.length}${
+    items.length ? ` (\`${items.map((d) => d.item).join('`, `')}\`)` : ''
+  } above that line, so nothing was closed. ` +
+  `Correct the number in a new dated line — the log is append-only, so the wrong line stays and the right one goes underneath it.`
+
+const deviationBadRefNote = (ref, id) =>
+  `A \`**Deviations closed:**\` line names \`${ref}\`, and an ID has to end where the reference ends: \`${id}\` and \`${ref}\` are different names, so it closes nothing. ` +
+  `Reading the prefix instead would close a deviation nobody named — the same silent discharge the owed ledger's \`F-2oops\` taught. ` +
+  `Write the reference again correctly in a new dated line.`
+
+// The next bolded FIELD — `**Owed:**`, `**Decisions:**`, a dated
+// `**Addendum — … :**` — which is where a deviation paragraph stops when no
+// blank line separates them. A label, not merely bold: a wrapped sentence that
+// happens to BEGIN in bold ("… because / **the asset pipeline** cannot resize
+// it") is the paragraph continuing, and ending it there cut the record at
+// "because" — or, when the label's text began on the next line, dropped the
+// paragraph as empty and reported the departure as none at all. The record must
+// never be the thing an ambiguity is resolved against: a deviation nobody can
+// read is the failure this whole line exists to end.
+const BOLD_FIELD = /^\*\*[^*]+:\*\*/
+
+// A closing line's LEADING reference list, split into what closes and what only
+// looks like it does. The list is walked token by token rather than matched
+// whole so that a malformed reference is reported instead of silently ending
+// the list: `**Deviations closed:** D-1oops` reads like a closure to everyone
+// but the parser, which is the shape that must never be quiet.
+// Matched case-insensitively against the payload as written: a reference that
+// closes is normalised to upper case, and one that only looks like a reference
+// is kept as the writer spelled it, because a note quoting `E-1OOPS` at someone
+// who wrote `E-1oops` sends them looking for a line that is not there.
+const DEVIATION_REF = new RegExp(`^${OWED_REF_BOUNDED}`, 'i')
+const DEVIATION_REF_NEAR = new RegExp(`^${TICKET_ID}[A-Za-z0-9.-]*`, 'i')
+function closingRefs(payload) {
+  const ok = []
+  const bad = []
+  let rest = payload
+  for (;;) {
+    const m = rest.match(DEVIATION_REF)
+    const n = m || rest.match(DEVIATION_REF_NEAR)
+    if (!n) break
+    ;(m ? ok : bad).push(m ? n[0].toUpperCase() : n[0])
+    rest = rest.slice(n[0].length)
+    const comma = rest.match(/^\s*,\s*/)
+    if (!comma) break
+    rest = rest.slice(comma[0].length)
+  }
+  return { ok, bad }
+}
+
+// { deviations, notes } — every deviation the text records, each with its item
+// ID and whether a closing line closed it, plus what no closing line could
+// close. The notes are attributed to the entry they are about, so the
+// per-ticket subcommand can show a ticket its own.
 function parseDeviationsText(text) {
-  const found = []
+  const found = [] // deviation paragraphs, document order
+  const closings = [] // closing lines, document order
   let entry = null // the last parsed "### <ID> — … — <date> — <outcome>" heading
   let collecting = null
-  for (const line of text.split('\n')) {
+  text.split('\n').forEach((line, i) => {
+    const lineNo = i + 1
     const h = line.match(STATUS_HEADING)
     if (h) {
       entry = { entry: h[1], recorded: h[3] }
       collecting = null
-      continue
+      return
     }
     const c = line.match(DEVIATIONS_CLOSED_LINE)
     if (c) {
       // The closing line is collected as a paragraph too: its shape names each
       // deviation, who decided and when, which wraps past one line in any
       // document written at 80 columns.
-      const closing = { text: c[1].trim() }
-      collecting = closing
-      const lead = c[1].toUpperCase().match(new RegExp(`^${TICKET_ID}(\\s*,\\s*${TICKET_ID})*`))
-      if (lead) {
-        const ids = new Set(lead[0].match(new RegExp(TICKET_ID, 'g')))
-        // Above it in the file only — `found` holds exactly those so far.
-        for (const d of found) if (ids.has(d.entry)) d.closing = closing
-      }
-      continue
+      collecting = { text: c[1].trim(), line: lineNo }
+      closings.push(collecting)
+      return
     }
     const m = line.match(DEVIATION_LINE)
     if (m) {
       // A deviation above the first parsed entry heading belongs to no entry
       // and is dropped, like an **Owed:** paragraph in the same position.
-      collecting = entry ? { ...entry, text: m[1].trim(), closing: null } : null
+      collecting = entry ? { ...entry, text: m[1].trim(), line: lineNo } : null
       if (collecting) found.push(collecting)
-      continue
+      return
     }
     if (collecting) {
-      if (line.trim() === '') collecting = null
+      // The paragraph ends at a blank line, at the next bolded FIELD, or at the
+      // next heading — never by swallowing them, and never by cutting prose.
+      if (line.trim() === '' || BOLD_FIELD.test(line) || /^#{1,6}\s/.test(line)) collecting = null
       else collecting.text = `${collecting.text} ${line.trim()}`.trim()
     }
+  })
+
+  // Identity per entry ID, across every entry that ID heads: an ID recording one
+  // departure keeps its bare ID, one recording several numbers them in document
+  // order, stable because the log is append-only.
+  const kept = found.filter((d) => d.text)
+  const byEntry = new Map()
+  for (const d of kept) {
+    if (!byEntry.has(d.entry)) byEntry.set(d.entry, [])
+    byEntry.get(d.entry).push(d)
   }
-  return found
-    .filter((d) => d.text)
-    .map((d) => ({
+  for (const [id, items] of byEntry) items.forEach((d, i) => (d.item = items.length > 1 ? `${id}.${i + 1}` : id))
+
+  const refs = closings.flatMap((cl) => closingRefs(cl.text).ok.map((ref) => ({ ref, line: cl.line })))
+  // An entry someone has already closed item by item: that writer has moved to
+  // the form the note asks for, so it supersedes any bare line above it, and the
+  // note it earned is cleared by exactly the repair the note names. Only a
+  // reference that MATCHES a deviation recorded above it counts — a mistyped
+  // `<ID>.7` closed nothing, and letting it clear the note would trade one
+  // silent line for another.
+  const itemAbove = (r) => (byEntry.get(r.ref.split('.')[0]) || []).some((d) => d.item === r.ref && d.line < r.line)
+  const itemised = new Set(refs.filter((r) => r.ref.includes('.') && itemAbove(r)).map((r) => r.ref.split('.')[0]))
+  const closed = new Map()
+  const notes = []
+  const noted = new Set()
+  // Document order, because a closing line is read against the state above it.
+  for (const cl of closings) {
+    const { ok, bad } = closingRefs(cl.text)
+    for (const ref of bad) {
+      // Reported only when the ID it starts with heads deviations in this log,
+      // for the reason a cross-epic reference is not flagged: a note on a line
+      // this log cannot judge would be permanent and unfixable here.
+      const id = ref.match(new RegExp(`^${TICKET_ID}`, 'i'))[0].toUpperCase()
+      if (!byEntry.has(id) || noted.has(ref)) continue
+      noted.add(ref)
+      notes.push({ entry: id, note: deviationBadRefNote(ref, id) })
+    }
+    for (const ref of ok) {
+      const id = ref.split('.')[0]
+      const items = byEntry.get(id)
+      // A line naming an entry that recorded no deviation closes nothing and
+      // says nothing: a closing line may name several entries, and an ID with
+      // no departure to close is a legal thing to write.
+      if (!items) continue
+      if (ref.includes('.')) {
+        const above = items.filter((d) => d.line < cl.line)
+        // The FIRST line that closed it is the decision: a later line naming the
+        // same departure again — a human confirming, or a second entry's line
+        // repeating the list — must not overwrite who decided and when.
+        if (above.some((d) => d.item === ref)) {
+          if (!closed.has(ref)) closed.set(ref, cl.text)
+        }
+        else if (!noted.has(ref)) {
+          noted.add(ref)
+          notes.push({ entry: id, note: deviationUnknownItemNote(ref, id, above) })
+        }
+        continue
+      }
+      // What the entry still had open above this line. Deviations recorded
+      // after it were not what its writer decided, and ones already closed are
+      // not what it could have meant.
+      const open = items.filter((d) => d.line < cl.line && !closed.has(d.item))
+      if (open.length === 1) closed.set(open[0].item, cl.text)
+      else if (open.length > 1 && !itemised.has(id) && !noted.has(id)) {
+        noted.add(id)
+        notes.push({ entry: id, note: deviationBareLineNote(id, open.length) })
+      }
+    }
+  }
+  return {
+    deviations: kept.map((d) => ({
       entry: d.entry,
       recorded: d.recorded,
+      item: d.item,
       text: d.text,
-      closed: Boolean(d.closing),
-      closedBy: d.closing ? d.closing.text : null,
-    }))
+      closed: closed.has(d.item),
+      closedBy: closed.has(d.item) ? closed.get(d.item) : null,
+    })),
+    notes,
+  }
 }
 
 function parseDeviations(epic) {
-  if (!epic.statusDoc) return []
+  if (!epic.statusDoc) return { deviations: [], notes: [] }
   return parseDeviationsText(readFileSync(epic.statusDoc, 'utf8'))
 }
 
@@ -1433,6 +1586,10 @@ function doctor() {
       // brief that would say so is read by the next worker, not by the
       // session that wrote the line. Flagged here, where the writer looks.
       for (const n of parseOwed(epic).notes) add('warn', `${epic.epic}/status.md — ${n}`)
+      // And a closing line that closed nothing, flagged at the same door for
+      // the same reason: the brief that reports it is read by the next worker,
+      // not by the human who wrote the line, and only that human can repair it.
+      for (const n of parseDeviations(epic).notes) add('warn', `${epic.epic}/status.md — ${n.note}`)
     }
     // The run-record scans below run whether or not status.md exists — an epic
     // whose records are split out has a runs.md to check either way, and the
@@ -1685,6 +1842,7 @@ switch (cmd) {
     }
     const epic = data.epics.find((e) => e.epic === t.epic)
     const { owed, notes } = parseOwed(epic)
+    const dev = parseDeviations(epic)
     const out = {
       ...ticketFacts(data, t),
       preamble: readFileSync(epic.ticketsDoc, 'utf8').split(/^##\s/m)[0].trim(),
@@ -1694,8 +1852,12 @@ switch (cmd) {
       // human has closed is a decision still outstanding, and the next worker
       // is who would otherwise build on it unknowingly. A closed one is
       // settled and stops travelling — `deviations <ID>` is where every one of
-      // a ticket's own, closed or not, is read.
-      deviations: parseDeviations(epic).filter((d) => !d.closed),
+      // a ticket's own, closed or not, is read. The notes ride beside them for
+      // the same reason the owed notes ride beside the owed items: a closing
+      // line that closed nothing leaves a departure open, and the worker
+      // reading this brief is who would otherwise build on it unknowingly.
+      deviations: dev.deviations.filter((d) => !d.closed),
+      deviationNotes: dev.notes.map((n) => n.note),
       body: t.body,
     }
     if (json) emit(out)
@@ -1725,8 +1887,11 @@ switch (cmd) {
       for (const n of out.notes) console.log(`  ${C.yellow}note:${C.off} ${n}`)
       console.log()
       console.log(`${C.bold}Deviations — recorded, not yet closed by a human${C.off}`)
-      if (!out.deviations.length) console.log(`${C.dim}none outstanding${C.off}`)
-      else for (const d of out.deviations) console.log(`  ${d.entry} (${d.recorded}): ${d.text}`)
+      // "none outstanding" means nothing is outstanding, so it is not printed
+      // above a note saying a closing line closed nothing.
+      if (!out.deviations.length && !out.deviationNotes.length) console.log(`${C.dim}none outstanding${C.off}`)
+      else for (const d of out.deviations) console.log(`  ${d.item} (${d.recorded}): ${d.text}`)
+      for (const n of out.deviationNotes) console.log(`  ${C.yellow}note:${C.off} ${n}`)
       console.log()
       console.log(`${C.bold}Ticket${C.off}`)
       console.log(out.body)
@@ -1783,8 +1948,12 @@ switch (cmd) {
       text = readFileSync(epic.statusDoc, 'utf8')
     }
     // This ticket's own entries only — an ID heads its entry, and a departure
-    // another ticket recorded is that ticket's to answer for.
-    const found = parseDeviationsText(text).filter((d) => d.entry === t.id)
+    // another ticket recorded is that ticket's to answer for. The notes are
+    // filtered the same way and for the same reason: a closing line that closed
+    // nothing is this ticket's to repair.
+    const parsed = parseDeviationsText(text)
+    const found = parsed.deviations.filter((d) => d.entry === t.id)
+    const deviationNotes = parsed.notes.filter((n) => n.entry === t.id).map((n) => n.note)
     const open = found.filter((d) => !d.closed)
     // No field name here is one `find --json` emits. The two payloads describe
     // different refs and different questions, and a reader that mistook one for
@@ -1798,6 +1967,7 @@ switch (cmd) {
         count: found.length,
         open: open.length,
         deviations: found,
+        notes: deviationNotes,
       })
     else {
       const where = logFromRef ? `${rel} at ${logFromRef}` : epic.statusDoc
@@ -1806,9 +1976,10 @@ switch (cmd) {
           `${found.length} recorded, ${open.length} not yet closed by a human`,
       )
       for (const d of found) {
-        console.log(`${d.closed ? `${C.green}closed${C.off}` : `${C.yellow}open  ${C.off}`}  ${d.entry} (${d.recorded}): ${d.text}`)
+        console.log(`${d.closed ? `${C.green}closed${C.off}` : `${C.yellow}open  ${C.off}`}  ${d.item} (${d.recorded}): ${d.text}`)
         if (d.closed) console.log(`        ${C.dim}closed by: ${d.closedBy}${C.off}`)
       }
+      for (const n of deviationNotes) console.log(`${C.yellow}note:${C.off} ${n}`)
     }
     break
   }

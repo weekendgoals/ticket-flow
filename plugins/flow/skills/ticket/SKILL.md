@@ -305,7 +305,9 @@ show goes on its own **Deviation:** line below, never in here>
 
 **Deviation:** <one line per departure: what the ticket's documents or its
 design showed → what was built instead, and why. Optional; omitted when there
-is none. Several departures are several lines>
+is none. Several departures are several lines, and `deviations <ID>` numbers
+them `<ID>.1`, `<ID>.2` … in document order across every entry this ID heads —
+that is how a human closes them one at a time. Write each to be read alone>
 
 **Owed:** <anything deferred and which ticket inherits it — "Nothing" if
 genuinely nothing, never omitted. **One obligation per bullet** when there
@@ -334,16 +336,28 @@ agent's.** A dated line, in an entry or an addendum, naming each deviation as
 **accepted** or as **fixed in `<sha>`**, with who decided and when:
 
 ```markdown
-**Deviations closed:** <ID>[, <ID>] — <each deviation named as accepted or as
-fixed in <sha>; who; when>
+**Deviations closed:** <the departure's ID — the entry ID when that ID recorded
+one, `<ID>.<n>` when it recorded several>[, <ID>.<n>] — <each named as accepted
+or as fixed in <sha>; who; when>
 ```
 
-It closes every deviation the named entries recorded **above it in the file**,
-by the leading ID list only, exactly as `**Resolves owed:**` resolves. Do not
-write one, even for a departure you fixed yourself in this same ticket: a
-closing line the reviewed party could have written clears nothing, and "which
-of the two happened" is what the human reading it needs to know. Record the fix
-as a deviation like any other and leave the line to whoever decides.
+It closes what its **leading** reference list names, and only departures
+recorded **above it in the file**: an ID further along, inside the prose, is a
+citation, and a departure recorded after the line must not be born closed. **A
+bare closing line** — `**Deviations closed:** <ID>` — closes an entry's one
+departure, and facing more than one open it closes **nothing** and says so,
+because "accepted" and "fixed in `<sha>`" are decisions per departure: a
+deviation wrongly left open costs a human one reread, while one wrongly closed
+is a decision nobody made, gone from every brief and every attended door.
+`brief`, `deviations <ID>` and `doctor` each report a line that closed nothing,
+name the repair — a new dated line naming the items — and stop reporting it
+once any item of that entry is named that way. A reference naming no departure
+(`<ID>.7` against two) and an ID a reference ends inside (`<ID>oops`) close
+nothing and are reported the same way. Do not write one, even for a departure
+you fixed yourself in this same ticket: a closing line the reviewed party could
+have written clears nothing, and "which of the two happened" is what the human
+reading it needs to know. Record the fix as a deviation like any other and
+leave the line to whoever decides.
 `node "${CLAUDE_PLUGIN_ROOT}/scripts/tickets.mjs" deviations <ID>` reads all of
 a ticket's own — closed or not, each with its closing line.
 

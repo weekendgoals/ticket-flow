@@ -339,13 +339,15 @@ retired is gone from an append-only log with nothing left to report it.
 Naming any item the itemised way clears that note, and a reference matching
 no item is reported too. Recorded state, so an
 item may already be discharged unmarked; the brief says so in its heading),
-the **deviations no human has closed**, and the derived facts the board knows (state,
+the **deviations no human has closed** (with a note beside them for anything a
+`**Deviations closed:**` line could not close), and the derived facts the board knows (state,
 branch, epic, modes, pull request). This is a worker's whole required reading — O(epic), not
 O(history): the status log grows without bound, and the brief is what keeps
 each new ticket from paying to reread all of it. With no ID it briefs the
 first startable ticket, naming the epic it came from; `--json` returns the
 `find` payload with `preamble`, `owed`, `notes` (what a `**Resolves owed:**`
-line could not retire), `deviations` and the section text as a `body` field.
+line could not retire), `deviations`, `deviationNotes` and the section text as
+a `body` field.
 The script ships inside the plugin, so it runs the same way every
 skill runs it: `node "${CLAUDE_PLUGIN_ROOT}/scripts/tickets.mjs" brief [ID]`
 — there is no `/flow:brief` slash command.
@@ -356,13 +358,24 @@ was not built, or was built differently. It is not owed work and not a
 judgment call the documents left open (that stays in `**Decisions:**`): an
 owed item is work someone will do, a deviation is a decision someone must
 see, and it has its own line because the Decisions prose it used to live in is
-read by no command. A dated `**Deviations closed:** <ID>[, <ID>] — <each
-deviation named as accepted or as fixed in <sha>; who; when>` line closes every
-deviation the named entries recorded **above it in the file**, by its leading
-ID list only — and it is **a human's line, written by no agent**, because a
-closure the reviewed party could have written clears nothing. The script's
+read by no command. An ID that recorded one departure is addressed by its own
+ID; one that recorded several numbers them `<ID>.1`, `<ID>.2` … in document
+order across every entry it heads. A dated `**Deviations closed:** <ID>[,
+<ID>.<n>] — <each deviation named as accepted or as fixed in <sha>; who; when>`
+line closes what its **leading** reference list names, and only departures
+recorded **above it in the file** — and it is **a human's line, written by no
+agent**, because a closure the reviewed party could have written clears
+nothing. **A bare closing line** closes an entry's one departure, and facing
+more than one open it closes **nothing** and says so: accepted and fixed are
+decisions per departure, and while a deviation wrongly left open costs a human
+one reread, one wrongly closed is a decision nobody made, gone from every brief
+and every attended door — the same asymmetry, and the same incident, behind the
+owed ledger's item numbering. A reference naming no departure, and an ID a
+reference ends inside (`<ID>oops`), are reported the same way; naming any item
+of that entry clears the note. The script's
 `deviations <ID>` subcommand reads every one a ticket's own entries recorded,
-closed or not, each with its closing line; `--log-from <ref>` reads the status
+closed or not, each with its closing line, and `notes` for what a closing line
+could not close; `--log-from <ref>` reads the status
 log from a git ref — a pushed ticket branch, where the worker wrote its entry
 — instead of the checkout, and a log it cannot read is a nonzero exit naming
 the reason, never an empty list.

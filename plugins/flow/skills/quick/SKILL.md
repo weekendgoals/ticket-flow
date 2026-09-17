@@ -157,8 +157,9 @@ required even when empty.
 
 The **entry** heading is parsed — match it exactly — then keep the body to
 the ticket skill's step 6 fields: **Built / Mode / Tokens / Verified /
-Decisions / Owed**, with `Mode:` = `quick — in-session (/flow:quick)` and
-Decisions recording judgment calls, not narration:
+Decisions / Deviation (optional, one per departure) / Owed**, with `Mode:` =
+`quick — in-session (/flow:quick)` and Decisions recording judgment calls, not
+narration:
 
 ```markdown
 ### Q-<n> — <name> — <YYYY-MM-DD> — DONE
@@ -171,7 +172,9 @@ built differently; a judgment call the documents left open is not one and stays
 in Decisions. A deviation is **never owed work**: an owed item is work someone
 will do, a deviation is a decision someone must see. Inside Decisions prose it
 is read by no command, which is how a design's hero band once went unbuilt and
-shipped anyway.
+shipped anyway. Several departures are several lines, and `deviations Q-<n>`
+numbers them `Q-<n>.1`, `Q-<n>.2` … in document order — that is how a human
+closes them one at a time, so write each to be read alone.
 
 ```markdown
 **Deviation:** <what the documents or the design showed> → <what was built
@@ -180,12 +183,17 @@ instead, and why>
 
 **`**Deviations closed:**` is the human's line, never yours.** A dated line
 naming each deviation as **accepted** or as **fixed in `<sha>`**, with who
-decided and when, closing by its leading ID list every deviation the named
+decided and when, closing by its leading reference list the departures the named
 entries recorded above it in the file — the shape the ticket skill's step 6
-carries. Do not write one, even for a departure you fixed in this same ticket:
-a closing line the party that made the departure could have written clears
-nothing. `node "${CLAUDE_PLUGIN_ROOT}/scripts/tickets.mjs" deviations Q-<n>`
-reads every one this ticket recorded, closed or not.
+carries. **A bare closing line** — `**Deviations closed:** Q-<n>` — closes an
+entry's one departure; facing more than one open it closes **nothing** and says
+so, because accepted and fixed are decisions per departure and one wrongly
+closed is gone from every brief with nobody having decided it. Do not write
+one, even for a departure you fixed in this same ticket: a closing line the
+party that made the departure could have written clears nothing.
+`node "${CLAUDE_PLUGIN_ROOT}/scripts/tickets.mjs" deviations Q-<n>` reads every
+one this ticket recorded, closed or not, and reports any closing line that
+closed nothing.
 
 If this ticket discharges an owed item an earlier entry recorded, add
 `**Resolves owed:** <ID> — <how>` on its own line — that marker removes the

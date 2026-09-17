@@ -212,3 +212,185 @@ deviation rules by comparison with owed rules are rewritten. Vadim approved
 DEV-4's text before any worker saw it. DEV-1's third CHECK was corrected to
 test the exit code it was written for; it passes. The remaining tickets run
 attended, through `/flow:ticket` in supervisor mode.
+
+### DEV-4 — A deviation is closed item by item — 2026-09-17 — DONE
+
+**Built:** An ID that recorded several departures now numbers them `<ID>.1`,
+`<ID>.2` … in document order across every entry it heads, and a
+`**Deviations closed:**` line closes what its leading reference list names —
+on the owed ledger's own grammar (`OWED_REF`/`OWED_REF_END`), reused rather
+than re-invented. A bare closing line still closes an entry's one departure
+and, facing more than one open, closes nothing and says so; the same note
+reaches `brief` (beside the open deviations, `deviationNotes` in `--json`),
+`deviations <ID>` (`notes`, beside each deviation's `item`) and `doctor`, and
+is cleared by exactly the repair it names. A reference naming no departure and
+an ID a reference ends inside are reported the same way. A `**Deviation:**`
+paragraph now ends at the next bolded field or heading as well as at a blank
+line, and the five sentences that defined a deviation rule by what an owed
+rule does state the rule in their own words, with their own reason, in the
+ticket skill, `tickets.mjs`, METHODOLOGY and CHANGELOG.
+
+**Mode:** supervisor — worker worker:DEV-4 (opus), reviewer hired by the
+supervisor
+
+**Tokens:** observed by the supervisor — see the review addendum
+
+**Verified:** `node plugins/flow/scripts/tickets.mjs check DEV-4` 5/5 (0/5 on
+the base tree at `9270f36`, every criterion failing as planned).
+`node --test plugins/flow/scripts/tickets.test.mjs` 99/99 (94 before, five new
+tests). Unchanged suites, all passing: `ticket-session-guard.test.mjs` 14/14,
+`check-invariants.test.mjs` 19/19, `board.test.mjs` 9/9,
+`plan-page.test.mjs` 8/8, `run-epic.test.mjs` 123/123,
+`runners/codex.test.mjs` 21/21, `runners/codex-review.test.mjs` 19/19.
+`node plugins/flow/scripts/check-invariants.mjs` exit 0,
+`node plugins/flow/scripts/tickets.mjs doctor` exit 0,
+`node --check plugins/flow/scripts/tickets.mjs` exit 0, and the run-epic
+module-body parse exit 0. The *demonstrate* criterion was run in a throwaway
+`zeta` epic: an entry with three `**Deviation:**` lines, the third written
+directly above `**Owed:**`, plus `**Deviations closed:** Z-1` — observed
+`deviations Z-1` printing `3 recorded, 3 not yet closed`, items `Z-1.1`,
+`Z-1.2`, `Z-1.3`, the third's text ending at "built with one." with no owed
+markup, one note; `brief Z-2` printing that note under the deviations
+heading; `doctor` warning with the same sentence. Appending
+`**Deviations closed:** Z-1.2 — accepted …` then observed `2 not yet closed`,
+`Z-1.2` closed with its closing line, and zero doctor rows. Revert check,
+`git revert --no-commit $(git rev-list --no-merges epic/deviation-routing..HEAD)`
+with the test file checked back out of HEAD: **"a bare closing line closes a
+lone deviation, and against several closes nothing" fails**, with six others
+(99 → 92 pass, 7 fail); `git revert --abort` left the tree exactly HEAD. Then
+each new guard flipped in turn, suite red for every one: the bare-line arity
+(closing all open instead of one, 4 fail), the itemisation that supersedes a
+bare line's note (1), the malformed-reference report (2), the unknown-item
+note (6), the paragraph's new end at a bolded field (1), the item numbering
+(6), the guard for an ID this log records no departure for (5), the position
+guard on a dotted reference (4) and on a bare one (2), doctor's warning (1),
+`brief`'s notes (1), the subcommand's notes (3). The new invariant phrase was
+flipped at two of its four doors — removed from README, then from the quick
+skill — and `check-invariants.mjs` exited 1 each time.
+
+**Decisions:** DEV-1's `DELTA_STATUS` fixture keeps its shape but its closing
+line becomes the item form (`D-1.1, D-1.2`), because under the new rule its
+bare line would close nothing and the fixture would stop demonstrating what it
+was written to demonstrate — a closure travelling with its line, and a later
+departure not born closed. A malformed reference is reported only when the ID
+it starts with heads deviations in this log, exactly as an unknown item is: a
+note on a reference this log cannot judge would be permanent and unfixable
+here. The `brief --json` payload carries the notes as `deviationNotes`, a new
+field, rather than folding them into `notes`, which is the owed ledger's; the
+subcommand's field is `notes` as the criterion requires, and it collides with
+no `find` field, which its test still checks at any depth. CLAUDE.md's
+`tickets.test.mjs` count moves 94 → 99 in this commit; the other recorded
+counts were already current on this branch.
+
+**Owed:** Nothing.
+
+**Addendum — review — 2026-09-17 — opus/default effort:** one Important, four
+nits, one pre-existing. The reviewer was a general agent standing in for
+`flow:ticket-reviewer`, which this session has not registered; the hiring tool
+exposes no effort setting.
+
+Important, fixed in `22bddc0`. The paragraph terminator this range added was
+`/^\*\*/` — any line starting in bold — while the ticket, the comment beside
+it, README and METHODOLOGY all say the next bolded **field**. Reproduced both
+ways before the fix: a wrapped sentence whose second line began with a bold
+phrase was cut at the break ("… built without it, because"), and a
+`**Deviation:**` label whose text began on the next line in bold left the
+paragraph empty, which the empty-text filter drops — `deviations P-1 --json`
+reported `count: 0` where the same fixture against `9270f36` reported
+`count: 1` with the full text. A departure reported as none is the failure the
+line exists to end, so this was a regression of the record itself. The
+terminator is now `BOLD_FIELD = /^\*\*[^*]+:\*\*/`; both fixtures report
+`count: 1` with the text whole. The new test walks every label the entry
+template puts under a departure — Owed, Decisions, the owed marker, the
+closing line, a dated review addendum — plus a heading, each with no blank
+line between, and both regressions. It fails with the fix reverted, and the
+terminator flipped back to the broad regex turns it red on its own.
+
+Nit, fixed in `5d7651e`. A departure closed twice kept the later line as
+`closedBy`; the first stands now, because the decision a reader wants is the
+one that was made.
+
+Nit, fixed in `5d7651e`. The three notes reconstructed a closing line naming
+one entry, even when the line as written named several, so the quoted text was
+not what the reader would find in the log. Each note now names the reference it
+read, quoted as the writer spelled it — the reference grammar matches
+case-insensitively and only a reference that closes is normalised, so a
+mistyped `E-1oops` is reported as `E-1oops`. The notes' wording therefore
+differs from the outputs quoted in the entry above, which were recorded before
+this fix.
+
+Nit, fixed in `5d7651e`. `brief` no longer prints "none outstanding" above a
+note reporting that a closing line closed nothing.
+
+Nit, **not fixed, recorded for the retro.** A bare closing line standing above
+the entry's only departure closes nothing and says nothing, while a numbered
+reference in that position earns a note. The departure stays open, which is the
+safe direction this whole ticket argues for — silence, not loss. It is not
+fixed here because the note it would need cannot be cleared by the repair the
+other three name: the same silent case covers a line re-naming an entry whose
+departures are already closed, where a note would be permanent and unfixable,
+and the behaviour is byte-identical to `parseOwed`, so changing one ledger and
+not the other creates exactly the drift between two statements of one rule that
+this epic exists to end. It belongs with the pre-existing item below, in one
+hardening ticket against both parsers.
+
+Pre-existing, not this range's, recorded with an owner. A closing line or an
+owed marker written inside a fenced code block in a status log is parsed as a
+real line and closes or retires; neither parser is fence-aware. The deviation
+half arrived with DEV-1, the owed half with PR #51, and the ticket skill's own
+template shows the line inside a fence, so a worker pasting it into an entry
+would trip it. Owner: the retro, as one hardening ticket over both parsers,
+together with the unfixed nit above.
+
+Re-run after both fixes, on `5d7651e`: `tickets.test.mjs` 101/101 (99 before
+the review, two new tests), `check-invariants.test.mjs` 19/19,
+`run-epic.test.mjs` 123/123, `check-invariants.mjs` exit 0,
+`tickets.mjs doctor` exit 0, `node --check tickets.mjs` exit 0,
+`tickets.mjs check DEV-4` 5/5. CLAUDE.md's suite count moved 99 → 101 in
+`5d7651e`. Revert check over the two fix commits, tests kept at HEAD: 97 pass,
+4 fail, including "a bolded FIELD ends the paragraph; a sentence that merely
+begins in bold does not". Each fix was also flipped on its own — the
+terminator, the first-closure rule, the note wording, the reference's case, and
+the brief's heading — and the suite went red for every one.
+
+One finding deferred: the nit recorded for the retro above, with the
+pre-existing item it belongs with. Nothing else deferred.
+
+Worker tokens (implementation leg): 209,716; Reviewer tokens: 153,568
+
+**Addendum — re-review — 2026-09-17 — opus/default effort:** bounded re-review
+of the three fix commits by the same reviewer. **0 Important**, and nothing
+raised in the first review left unaddressed.
+
+It re-ran both original reproductions against the new head — each reports one
+departure with its text whole, where `010548a` reported none — and re-ran the
+mixed-list, two-entry, closed-twice and closing-line-above fixtures: a
+departure closed twice now keeps the first line and stays closed. It confirmed
+the three notes byte-identical across `deviations --json`, `brief --json` and
+`doctor`, and that a quoted reference cannot carry harmful input, the echoed
+token's character class being `[A-Za-z0-9.-]`. It hashed the owed region
+identical at `9270f36` and at `1b238a6`. It reproduced the fix's revert check
+in a clone — 97 pass, 4 fail, the named test among them — and flipped each fix
+alone, with the suite red for every one.
+
+It judged the deferral of the silent bare-line case sound on the facts, having
+reproduced it: a note there would have no exit, because naming the item of a
+lone-departure entry (`P-1.1`) earns the unknown-item note instead, which never
+clears.
+
+Two edges it recorded so they are not re-found, both for the same hardening
+ticket the retro already owns — the one carrying the fenced-block item and the
+deferred nit. First: `BOLD_FIELD` requires a colon, so a period-form bold label
+— a dated addendum heading ending in a period, `**Nothing deferred.**`,
+`**Rules.**` — written with no blank line above it is still absorbed into a
+departure's text; 12 of 119 bold-start lines in this repository's status logs
+are period-form. No record is lost and nothing closes wrongly, and `9270f36`
+absorbed all of these, so this range is a strict improvement. **Correction to
+the review addendum above:** its sentence that a dated review addendum heading
+ends the paragraph is true of the colon form only, which is the only form the
+new test loop exercises. Second: a bare label with no text at all, directly
+above another field, reports no departure, with no note and no `doctor` row —
+not a lost record, since there is no text to lose, and the empty-text filter
+predates this ticket, but a silent drop all the same.
+
+Re-review tokens: 191,972
