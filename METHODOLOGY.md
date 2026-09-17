@@ -429,9 +429,13 @@ A worker that builds something other than what its documents show was told to
 record it under `**Decisions:**` — "judgment calls and deviations from the
 documents, each with the why". In a page epic in an installed project a worker
 did exactly that, honestly and in the right field: it wrote that it had not
-built the design's hero band. Nothing read the field. `tickets.mjs` does not
-contain the string `Decisions`; no brief carried the sentence to the next
-ticket, no gate saw it, and the page shipped without the band. The record was
+built the design's hero band. Nothing read the field. No parser in
+`tickets.mjs` touches `**Decisions:**` — the only mentions of the field in that
+file are comments explaining why it needed none; no brief carried the sentence
+to the next ticket, no gate saw it, and the page shipped without the band. The
+claim is about code paths, not about the string: stated as "the file does not
+contain the word", it is refuted by a grep and invites a reader to correct the
+passage in the wrong direction. The record was
 perfect and the mechanism was absent — which is the failure mode this whole
 methodology is built to make impossible, arriving through the one field that
 had no reader.
