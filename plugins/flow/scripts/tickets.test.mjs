@@ -404,8 +404,8 @@ test('brief prints a ticket\'s full section plus the derived facts find reports'
   const found = JSON.parse(run(repo, 'find', 'a-2', '--json'))
   assert.deepEqual(
     briefed,
-    { ...found, preamble: briefed.preamble, owed: briefed.owed, body: briefed.body },
-    'the brief payload is the find payload plus preamble, owed and body',
+    { ...found, preamble: briefed.preamble, owed: briefed.owed, deviations: briefed.deviations, body: briefed.body },
+    'the brief payload is the find payload plus preamble, owed, deviations and body',
   )
   assert.match(briefed.body, /\*\*Scope\.\*\* Persistence\./, 'the body carries the section content')
 
@@ -477,6 +477,245 @@ work is unrelated and unaffected.
   const out = run(ledger, 'brief', 'O-4')
   assert.ok(!out.includes('backfill'), 'a resolved item never renders')
   assert.match(out, /O-3 \(2026-08-03\): the load test still needs a second region\./)
+})
+
+// ── deviations ───────────────────────────────────────────────────────────────
+// A deviation is what a ticket's documents or design showed and the ticket did
+// not build, or built differently. Recorded inside the **Decisions:** prose it
+// used to be sent to, it reached no command and no human; on its own line it is
+// parsed, carried into every later brief until a human closes it, and readable
+// per ticket — closed or not — through its own subcommand.
+
+const DELTA_TICKETS =
+  '# Delta epic — tickets\n\nDelivery: release\n\n' +
+  '## D-1 — the landing page\n\n**Scope.** The page.\n\n' +
+  '## D-2 — the results list\n\n**Scope.** The list.\n\n' +
+  '## D-3 — next up\n\n**Scope.** Three.\n'
+
+// One log exercising every branch of the parse at once: several deviations
+// under one entry; a Decisions paragraph that talks about a deviation in prose
+// and must stay prose; a closing line whose LEADING ID list is what closes,
+// with another ID cited in its note; and a deviation recorded BELOW that line
+// under a second entry with the same ID — a BLOCKED ticket redone — which must
+// not be born closed.
+const DELTA_STATUS = `# Delta epic — status log
+
+Append-only record of finished tickets. Tickets: \`epics/delta/tickets.md\`.
+
+### D-1 — the landing page — 2026-09-01 — DONE
+
+**Built:** the page.
+
+**Deviation:** the design showed a hero band above the fold → built without
+it, because the asset pipeline cannot resize the source image yet.
+
+**Deviation:** the design showed a sticky nav → built as a static header,
+because sticky positioning fought the existing scroll container.
+
+**Decisions:** the copy deck left the subtitle open and we picked the shorter
+one; every deviation from the design is on its own line above, and this
+paragraph's mention of one is prose.
+
+**Owed:** Nothing.
+
+### D-2 — the results list — 2026-09-02 — DONE
+
+**Built:** the list.
+
+**Deviation:** the spec showed server-side paging → built client-side,
+because the endpoint has no cursor.
+
+**Owed:** Nothing.
+
+**Addendum — 2026-09-03 — deviations decided.**
+
+**Deviations closed:** D-1 — the hero band accepted as not built; the sticky
+nav fixed in 9f3a21c; Vadim; 2026-09-03. D-2's paging departure is a separate
+decision and is untouched here.
+
+### D-1 — the landing page, redone — 2026-09-04 — DONE
+
+**Built:** the redo.
+
+**Deviation:** the design showed three footer links → built with one,
+because two of the three have no destination yet.
+
+**Owed:** Nothing.
+`
+
+function deltaRepo(name, status = DELTA_STATUS) {
+  const dir = join(tmp, name)
+  git(tmp, 'init', '--initial-branch=main', dir)
+  mkdirSync(join(dir, 'epics/delta'), { recursive: true })
+  writeFileSync(join(dir, 'epics/delta/tickets.md'), DELTA_TICKETS)
+  writeFileSync(join(dir, 'epics/delta/status.md'), status)
+  return dir
+}
+
+test('deviations reports every one a ticket recorded, with its closure and the closing line', () => {
+  const dir = deltaRepo('deviations')
+  const d1 = JSON.parse(run(dir, 'deviations', 'd-1', '--json'))
+  assert.equal(d1.ticket, 'D-1')
+  assert.equal(d1.count, 3, "D-1's two entries record three departures between them")
+  assert.equal(d1.open, 1)
+  assert.deepEqual(
+    d1.deviations.map((d) => [d.entry, d.recorded, d.closed]),
+    [
+      ['D-1', '2026-09-01', true],
+      ['D-1', '2026-09-01', true],
+      ['D-1', '2026-09-04', false],
+    ],
+    'both 09-01 departures are closed by the line beneath them; the 09-04 one, recorded below that line, is not born closed',
+  )
+  assert.match(d1.deviations[0].text, /hero band above the fold → built without it, because the asset pipeline/,
+    'the paragraph runs to the first blank line, wrapped lines joined')
+  assert.match(d1.deviations[0].closedBy, /9f3a21c; Vadim; 2026-09-03/, 'the closing line travels with what it closed')
+  assert.equal(d1.deviations[2].closedBy, null)
+  assert.ok(
+    !d1.deviations.some((d) => /subtitle/.test(d.text)),
+    'a Decisions paragraph that discusses a deviation in prose is prose, and parses as nothing',
+  )
+
+  const d2 = JSON.parse(run(dir, 'deviations', 'D-2', '--json'))
+  assert.equal(d2.count, 1)
+  assert.equal(d2.open, 1, "only the closing line's LEADING ID list closes — D-2 cited in its note is a citation")
+  assert.deepEqual(JSON.parse(run(dir, 'deviations', 'D-3', '--json')).deviations, [],
+    'a ticket that recorded none answers with an empty list, exit 0')
+
+  const plain = run(dir, 'deviations', 'D-1')
+  assert.match(plain, /3 recorded, 1 not yet closed by a human/)
+  assert.match(plain, /closed  D-1 \(2026-09-01\)/)
+  assert.match(plain, /open\s+D-1 \(2026-09-04\)/)
+  assert.match(plain, /closed by: D-1 — the hero band accepted/)
+})
+
+test('the deviations payload shares no field name with find\'s, at any depth', () => {
+  // Two reads, two refs, two questions: `find --from` reports the epic's
+  // declarations as signed off, `deviations --log-from` reports a pushed
+  // branch's status log. A reader that mistook one payload for the other would
+  // answer a gate from the wrong document, so they share no key to confuse.
+  const dir = deltaRepo('deviations-fields')
+  const found = JSON.parse(run(dir, 'find', 'D-1', '--json'))
+  assert.ok(!('deviations' in found), 'find --json carries no deviations key')
+  const keys = (o) =>
+    new Set(Object.entries(o).flatMap(([k, v]) => [k, ...(Array.isArray(v) ? v.flatMap((x) => (x && typeof x === 'object' ? Object.keys(x) : [])) : [])]))
+  const findKeys = keys(found)
+  for (const k of keys(JSON.parse(run(dir, 'deviations', 'D-1', '--json'))))
+    assert.ok(!findKeys.has(k), `"${k}" appears in both payloads — one field name, two meanings`)
+})
+
+test('brief carries the open deviations, epic-wide, and never a closed one', () => {
+  const dir = deltaRepo('deviations-brief')
+  const briefed = JSON.parse(run(dir, 'brief', 'D-3', '--json'))
+  assert.deepEqual(
+    briefed.deviations.map((d) => [d.entry, d.recorded]),
+    [['D-2', '2026-09-02'], ['D-1', '2026-09-04']],
+    'what no human has closed travels to the next worker; what one has closed is settled and stops travelling',
+  )
+  const out = run(dir, 'brief', 'D-3')
+  assert.match(out, /Deviations — recorded, not yet closed by a human/)
+  assert.match(out, /D-2 \(2026-09-02\): the spec showed server-side paging/)
+  assert.ok(!out.includes('hero band'), 'a closed deviation never renders in a brief')
+  // An epic with no status log yet has no deviations — never an error, exactly
+  // as it has no owed items.
+  assert.deepEqual(JSON.parse(run(repo, 'brief', 'G-1', '--json')).deviations, [])
+  assert.match(run(repo, 'brief', 'G-1'), /Deviations — recorded, not yet closed by a human\nnone outstanding/)
+})
+
+test('deviations --log-from reads the pushed branch, not the checkout', () => {
+  // The driver reads a ticket branch that was pushed, where the worker wrote
+  // its entry; the checkout it runs in has not moved.
+  const dir = deltaRepo('deviations-ref', '# Delta epic — status log\n')
+  git(dir, 'config', 'user.email', 'test@example.com')
+  git(dir, 'config', 'user.name', 'Test')
+  git(dir, 'config', 'commit.gpgsign', 'false')
+  git(dir, 'add', '.')
+  git(dir, 'commit', '-m', 'D-1: start the epic')
+  git(dir, 'checkout', '-b', 'd-1')
+  writeFileSync(join(dir, 'epics/delta/status.md'), DELTA_STATUS)
+  git(dir, 'add', '.')
+  git(dir, 'commit', '-m', 'D-1: the landing page')
+  git(dir, 'checkout', 'main')
+
+  assert.equal(JSON.parse(run(dir, 'deviations', 'D-1', '--json')).count, 0, 'the checkout records none')
+  const fromRef = JSON.parse(run(dir, 'deviations', 'D-1', '--log-from', 'd-1', '--json'))
+  assert.equal(fromRef.count, 3, 'the pushed branch records three')
+  assert.equal(fromRef.logFrom, 'd-1')
+  assert.equal(fromRef.logPath, 'epics/delta/status.md', 'the path is the ref-relative one, not a checkout path')
+  assert.match(run(dir, 'deviations', 'D-1', '--log-from', 'd-1'), /epics\/delta\/status\.md at d-1/)
+})
+
+test('an unreadable status log is a nonzero exit naming it, never an empty list', () => {
+  // The one direction this report can lie in: "no deviations" from a log
+  // nobody could read would clear a gate that exists to stop exactly that.
+  const dir = deltaRepo('deviations-unreadable')
+  const badRef = runFail(dir, 'deviations', 'D-1', '--log-from', 'no-such-ref', '--json')
+  assert.equal(badRef.status, 1)
+  assert.match(badRef.stderr, /no-such-ref/, 'the refusal names the ref so the reader can fetch or fix it')
+  assert.match(badRef.stderr, /not "no deviations"/)
+  assert.equal(badRef.stdout, '', 'no payload at all — an empty deviations list would read as a clean ticket')
+
+  const noLog = runFail(repo, 'deviations', 'G-1', '--json')
+  assert.equal(noLog.status, 1, 'an absent log is unread, not read-as-none')
+  assert.match(noLog.stderr, /no status log at .*epics\/gamma\/status\.md/)
+  assert.match(noLog.stderr, /--log-from <ref>/, 'the refusal names the flag that reads a log living only on a branch')
+
+  const noValue = runFail(dir, 'deviations', 'D-1', '--log-from', '--json')
+  assert.equal(noValue.status, 2)
+  assert.match(noValue.stderr, /--log-from needs a git ref/, 'a following flag is a missing value, not a ref named --json')
+
+  const noId = runFail(dir, 'deviations')
+  assert.equal(noId.status, 2)
+  assert.match(noId.stderr, /usage: tickets\.mjs deviations <ID>/)
+})
+
+test('doctor flags a deviation line that will not parse, inside an entry only', () => {
+  // A near-miss reads as absent, and the departure stays prose no command sees
+  // — the exact failure the line exists to end, reintroduced one typo at a
+  // time. The singular opener and plural closer make "**Deviation closed:**"
+  // the likeliest slip.
+  const dir = deltaRepo(
+    'deviations-doctor',
+    `# Delta epic — status log
+
+**Deviations:** a preamble or a baseline note may discuss this field in prose,
+outside any entry; a warning that fired there could never be cleared.
+
+### D-1 — the landing page — 2026-09-01 — DONE
+
+**Deviation:** the design showed a hero band → built without it.
+
+**Deviations:** the nav was shown → built flat.
+
+Deviation: the footer was shown → built empty.
+
+**Not replicated:** the spec's empty state.
+
+**Deviation accepted:** the hero band, by nobody.
+
+**Deviation closed:** D-1 — the nav, accepted; Vadim; 2026-09-02.
+
+**Deviations closed:** the nav, accepted; Vadim; 2026-09-02.
+
+**Deviations closed:** D-1 — the hero band, accepted; Vadim; 2026-09-02.
+
+**Owed:** Nothing.
+`,
+  )
+  // This fixture has no origin remote, so doctor fails on that and exits 1;
+  // the rows are on stdout either way, and what is under test is which lines
+  // it flagged.
+  const failed = runFail(dir, 'doctor', '--json')
+  const rows = JSON.parse(failed ? failed.stdout : run(dir, 'doctor', '--json'))
+    .filter((r) => /will not parse, so the departure/.test(r.msg))
+  assert.deepEqual(
+    rows.map((r) => r.msg.match(/status\.md:(\d+)/)[1]),
+    ['10', '12', '14', '16', '18', '20'],
+    'every near-miss inside the entry is flagged; the two strict lines, and the same label in the preamble outside any entry, are not',
+  )
+  assert.ok(rows.every((r) => r.level === 'warn'), 'a near-miss is a warning — it never turns doctor itself red')
+  assert.match(rows[0].msg, /\*\*Deviation:\*\* <what the documents showed/, 'the warning names the shape that parses')
+  assert.match(rows[5].msg, /LEADING IDs/, 'a closing line with no leading ID closes nothing while reading like a closure')
 })
 
 test('brief with no argument briefs the first startable ticket and names its epic', () => {

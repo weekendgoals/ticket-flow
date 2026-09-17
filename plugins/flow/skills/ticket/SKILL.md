@@ -294,8 +294,13 @@ Driver-spawned: `recorded in the run record`. In-session: `unknown`.>
 test that fails with the source change reverted, or `revert check: n/a,
 prose-only`>
 
-**Decisions:** <judgment calls and deviations from the documents, each with
-the why — "none" when the ticket went as written>
+**Decisions:** <judgment calls the documents left open, each with the why —
+"none" when the ticket went as written. A departure from what the documents
+show goes on its own **Deviation:** line below, never in here>
+
+**Deviation:** <one line per departure: what the ticket's documents or its
+design showed → what was built instead, and why. Optional; omitted when there
+is none. Several departures are several lines>
 
 **Owed:** <anything deferred and which ticket inherits it — "Nothing" if
 genuinely nothing, never omitted. `brief` hands every non-Nothing line to
@@ -304,6 +309,36 @@ be read alone, and check the named carrier can structurally reach the thing
 — an owed check was once handed to a lane that never touches the step it
 was meant to verify>
 ```
+
+**What counts as a deviation:** anything the ticket's documents or its design
+showed that you did not build, or built differently. A judgment call the
+documents left open is not one and stays in `**Decisions:**`. A deviation is
+**never owed work**, and the two are not interchangeable: an owed item is work
+someone will do, a deviation is a decision someone must see. It gets its own
+line because the field that used to hold it — `**Decisions:**` prose — is read
+by no command: a worker once recorded there, honestly, that it had not built a
+design's hero band, and the page shipped without it because nothing carried the
+sentence any further. On its own line it is parsed, and
+`node "${CLAUDE_PLUGIN_ROOT}/scripts/tickets.mjs" brief <ID>` hands every one
+no human has closed to every later ticket in this epic.
+
+**`**Deviations closed:**` is the human's line — never yours, and never any
+agent's.** A dated line, in an entry or an addendum, naming each deviation as
+**accepted** or as **fixed in `<sha>`**, with who decided and when:
+
+```markdown
+**Deviations closed:** <ID>[, <ID>] — <each deviation named as accepted or as
+fixed in <sha>; who; when>
+```
+
+It closes every deviation the named entries recorded **above it in the file**,
+by the leading ID list only, exactly as `**Resolves owed:**` resolves. Do not
+write one, even for a departure you fixed yourself in this same ticket: a
+closing line the reviewed party could have written clears nothing, and "which
+of the two happened" is what the human reading it needs to know. Record the fix
+as a deviation like any other and leave the line to whoever decides.
+`node "${CLAUDE_PLUGIN_ROOT}/scripts/tickets.mjs" deviations <ID>` reads all of
+a ticket's own — closed or not, each with its closing line.
 
 When this ticket discharges an owed item from an earlier entry, say so on its
 own line in this entry, or in a dated addendum beneath it (the shape the

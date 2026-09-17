@@ -461,6 +461,110 @@ function parseOwed(epic) {
   return owed.filter((o) => o.text && !/^nothing\b/i.test(o.text) && !resolved.has(o.id))
 }
 
+// ── deviations ───────────────────────────────────────────────────────────────
+
+// The `**Deviation:**` paragraphs of a status log: what a ticket's documents or
+// design showed that was not built, or was built differently. Attributed to the
+// entry they sit under, each carrying whether a human has closed it.
+//
+// A deviation is not owed work, and that is why it is parsed and surfaced
+// separately: an owed item is work someone will do, a deviation is a decision
+// someone must see. Recorded inside an entry's **Decisions:** prose — where the
+// field's own instructions used to send it — it reached no command and no
+// later gate, and the thing that was not built shipped as though it had been.
+//
+// The line is optional and its paragraph runs to the first blank line, exactly
+// as **Owed:** does, so no log written before it needs an edit to stay valid.
+// One entry may carry several, one per departure.
+//
+// A `**Deviations closed:** <ID>[, <ID>] — <each deviation named as accepted or
+// as fixed in <sha>; who; when>` line, in any entry or addendum, closes every
+// deviation recorded by entry <ID> **above it in the file**. Only the leading
+// ID list closes, as **Resolves owed:** does — an ID cited later in the prose
+// is a citation, not a target. Order matters here as it does not for owed
+// items: an ID can head more than one entry (a BLOCKED ticket redone), and a
+// deviation recorded after a closing line must not be born closed.
+//
+// This parser reports closure; it never judges who wrote it. The closing line
+// is a human's — no worker and no agent writes one — and the two readers
+// differ deliberately: the attended doors honour it and show it, because a
+// human is present to have written it, while an unattended gate counts every
+// recorded deviation and ignores closure entirely.
+// The two parsed line shapes, shared with doctor's near-miss scan the way the
+// heading regexes are: the scan flags what looks like one of these and is not,
+// so a slip is loud instead of silent, and one definition keeps the flag and
+// the parser from drifting into disagreeing about what parses.
+const DEVIATION_LINE = /^\*\*Deviation:\*\*\s*(.*)$/
+const DEVIATIONS_CLOSED_LINE = /^\*\*Deviations closed:\*\*\s*(.*)$/
+// Deviation-shaped labels a writer reaches for that this parser reads as
+// nothing: the plural opener, the singular closer, an unbolded or bulleted
+// line, "accepted" in place of "closed", and the source epic's own wording
+// ("Not replicated"). Bare prose that merely uses the word is not in the set —
+// a Decisions paragraph discussing a deviation must stay prose.
+const DEVIATION_NEAR = /^\s*(?:[-*]\s+)?\*{0,2}\s*(?:deviations?(?:\s+(?:closed|accepted))?|not replicated)\s*:/i
+// A `**Deviations closed:**` line closes by its LEADING ID list only, so one
+// without an ID parses as a closure of nothing — near-miss, not a strict line.
+const closesSomething = (line) => {
+  const c = line.match(DEVIATIONS_CLOSED_LINE)
+  return Boolean(c && new RegExp(`^${TICKET_ID}`).test(c[1].toUpperCase()))
+}
+const DEVIATION_STRICT = (line) => DEVIATION_LINE.test(line) || closesSomething(line)
+
+function parseDeviationsText(text) {
+  const found = []
+  let entry = null // the last parsed "### <ID> — … — <date> — <outcome>" heading
+  let collecting = null
+  for (const line of text.split('\n')) {
+    const h = line.match(STATUS_HEADING)
+    if (h) {
+      entry = { entry: h[1], recorded: h[3] }
+      collecting = null
+      continue
+    }
+    const c = line.match(DEVIATIONS_CLOSED_LINE)
+    if (c) {
+      // The closing line is collected as a paragraph too: its shape names each
+      // deviation, who decided and when, which wraps past one line in any
+      // document written at 80 columns.
+      const closing = { text: c[1].trim() }
+      collecting = closing
+      const lead = c[1].toUpperCase().match(new RegExp(`^${TICKET_ID}(\\s*,\\s*${TICKET_ID})*`))
+      if (lead) {
+        const ids = new Set(lead[0].match(new RegExp(TICKET_ID, 'g')))
+        // Above it in the file only — `found` holds exactly those so far.
+        for (const d of found) if (ids.has(d.entry)) d.closing = closing
+      }
+      continue
+    }
+    const m = line.match(DEVIATION_LINE)
+    if (m) {
+      // A deviation above the first parsed entry heading belongs to no entry
+      // and is dropped, like an **Owed:** paragraph in the same position.
+      collecting = entry ? { ...entry, text: m[1].trim(), closing: null } : null
+      if (collecting) found.push(collecting)
+      continue
+    }
+    if (collecting) {
+      if (line.trim() === '') collecting = null
+      else collecting.text = `${collecting.text} ${line.trim()}`.trim()
+    }
+  }
+  return found
+    .filter((d) => d.text)
+    .map((d) => ({
+      entry: d.entry,
+      recorded: d.recorded,
+      text: d.text,
+      closed: Boolean(d.closing),
+      closedBy: d.closing ? d.closing.text : null,
+    }))
+}
+
+function parseDeviations(epic) {
+  if (!epic.statusDoc) return []
+  return parseDeviationsText(readFileSync(epic.statusDoc, 'utf8'))
+}
+
 // ── token spend ──────────────────────────────────────────────────────────────
 // The status log records spend in three places, and this derives one ledger
 // from all of them so nobody sums by hand: a ticket entry's **Tokens** line,
@@ -1028,6 +1132,20 @@ function doctor() {
         else if (!KNOWN_OUTCOMES.has(m[4]))
           add('warn', `${epic.epic}/status.md:${i + 1} — unknown outcome "${m[4]}" is ignored by the board (known: DONE, BLOCKED, ABANDONED)`)
       })
+      // A deviation line that almost parses reads as absent, and the departure
+      // stays prose no command sees — which is the exact failure the field
+      // exists to end, reintroduced one typo at a time. The singular opener
+      // and the plural closer make `**Deviation closed:**` the likeliest slip,
+      // and a closing line with no leading ID closes nothing while reading
+      // like a closure. Scanned only inside a parsed entry: a log's preamble
+      // and its baseline notes discuss these labels in prose, and a warning
+      // that fires on prose about the field can never be cleared.
+      let inEntry = false
+      readFileSync(epic.statusDoc, 'utf8').split('\n').forEach((line, i) => {
+        if (line.startsWith('#')) inEntry = STATUS_HEADING.test(line)
+        if (!inEntry || !DEVIATION_NEAR.test(line) || DEVIATION_STRICT(line)) return
+        add('warn', `${epic.epic}/status.md:${i + 1} — looks like a deviation line but will not parse, so the departure it records reaches no brief and no gate (needs "**Deviation:** <what the documents showed → what was built, and why>" at line start, or "**Deviations closed:** <ID>[, <ID>] — <each named as accepted or as fixed>" whose LEADING IDs name the entries it closes): ${line.trim()}`)
+      })
     }
     // The run-record scans below run whether or not status.md exists — an epic
     // whose records are split out has a runs.md to check either way, and the
@@ -1108,6 +1226,20 @@ const argv = process.argv.slice(2)
 const fromIdx = argv.indexOf('--from')
 const fromRef = fromIdx !== -1 ? argv[fromIdx + 1] ?? null : null
 if (fromIdx !== -1) argv.splice(fromIdx, 2)
+// `--log-from <ref>` is deliberately a different flag on a different command:
+// `--from` reads the epic's DECLARATIONS as signed off, `--log-from` reads the
+// STATUS LOG off a pushed ticket branch, and the two answer opposite questions
+// about opposite refs. One flag serving both would hand a low-effort reader two
+// payloads with the same field names — and swapped, either a deviation gate
+// reads a document that records none, or a ticket branch sets the budget
+// ceiling that judges it. Extracted after --from so the index is fresh.
+// A following flag is not a ref: `--log-from --json` is a missing value, which
+// the subcommand refuses with its usage, rather than a ref named "--json" whose
+// unreadable-ref error would send the reader hunting for a branch.
+const logFromIdx = argv.indexOf('--log-from')
+const logFromNext = logFromIdx === -1 ? undefined : argv[logFromIdx + 1]
+const logFromRef = logFromNext && !logFromNext.startsWith('--') ? logFromNext : null
+if (logFromIdx !== -1) argv.splice(logFromIdx, logFromRef ? 2 : 1)
 const json = argv.includes('--json')
 const [cmd, arg] = argv.filter((a) => !a.startsWith('--'))
 const emit = (o) => console.log(JSON.stringify(o, null, 2))
@@ -1269,6 +1401,12 @@ switch (cmd) {
       ...ticketFacts(data, t),
       preamble: readFileSync(epic.ticketsDoc, 'utf8').split(/^##\s/m)[0].trim(),
       owed: parseOwed(epic),
+      // Open deviations only, epic-wide, beside the owed items: a departure no
+      // human has closed is a decision still outstanding, and the next worker
+      // is who would otherwise build on it unknowingly. A closed one is
+      // settled and stops travelling — `deviations <ID>` is where every one of
+      // a ticket's own, closed or not, is read.
+      deviations: parseDeviations(epic).filter((d) => !d.closed),
       body: t.body,
     }
     if (json) emit(out)
@@ -1287,8 +1425,91 @@ switch (cmd) {
       if (!out.owed.length) console.log(`${C.dim}none outstanding${C.off}`)
       else for (const o of out.owed) console.log(`  ${o.id} (${o.date}): ${o.text}`)
       console.log()
+      console.log(`${C.bold}Deviations — recorded, not yet closed by a human${C.off}`)
+      if (!out.deviations.length) console.log(`${C.dim}none outstanding${C.off}`)
+      else for (const d of out.deviations) console.log(`  ${d.entry} (${d.recorded}): ${d.text}`)
+      console.log()
       console.log(`${C.bold}Ticket${C.off}`)
       console.log(out.body)
+    }
+    break
+  }
+
+  case 'deviations': {
+    // Every deviation one ticket's own entries recorded — closed or not, each
+    // with its closing line when it has one. Two readers, one read: an
+    // unattended gate counts them all and ignores `closed`, because nobody
+    // present in such a run could have written a closing line; an attended
+    // door filters on `closed` and shows the rest with their line, so a
+    // closure the party under review could have written is seen rather than
+    // trusted.
+    //
+    // `--log-from <ref>` reads the status log from that ref instead of the
+    // working tree — the pushed ticket branch is where a worker writes its
+    // entry, and a driver reading the checkout would read a log that has not
+    // moved. A log that cannot be read is a nonzero exit naming the reason,
+    // never an empty list: an unreadable fact must not read as "no
+    // deviations", which is the one direction this report can lie in.
+    if (!arg) {
+      console.error('usage: tickets.mjs deviations <ID> [--json] [--log-from <ref>]')
+      process.exit(2)
+    }
+    if (logFromIdx !== -1 && !logFromRef) {
+      console.error('tickets: --log-from needs a git ref (e.g. --log-from origin/<ticket-branch>)')
+      process.exit(2)
+    }
+    const data = board(null)
+    const t = resolveTicket(data, arg.toUpperCase())
+    const epic = data.epics.find((e) => e.epic === t.epic)
+    const rel = `epics/${t.epic}/status.md`
+    let text
+    if (logFromRef) {
+      const shown = git(['show', `${logFromRef}:${rel}`], { allowFail: true })
+      if (shown === null) {
+        console.error(
+          `tickets: cannot read ${rel} from ref "${logFromRef}" — fetch the ref, or check its name. ` +
+            'An unreadable status log is not "no deviations".',
+        )
+        process.exit(1)
+      }
+      text = shown
+    } else if (!epic.statusDoc) {
+      console.error(
+        `tickets: no status log at ${join(epic.dir, 'status.md')} — an absent log is not "no deviations". ` +
+          "It is created at sign-off by /flow:epic, or by the first ticket's status entry; " +
+          'to read a log that exists only on a pushed branch, pass --log-from <ref>.',
+      )
+      process.exit(1)
+    } else {
+      text = readFileSync(epic.statusDoc, 'utf8')
+    }
+    // This ticket's own entries only — an ID heads its entry, and a departure
+    // another ticket recorded is that ticket's to answer for.
+    const found = parseDeviationsText(text).filter((d) => d.entry === t.id)
+    const open = found.filter((d) => !d.closed)
+    // No field name here is one `find --json` emits. The two payloads describe
+    // different refs and different questions, and a reader that mistook one for
+    // the other would report a gate's answer from the wrong document.
+    if (json)
+      emit({
+        ticket: t.id,
+        epicName: t.epic,
+        logPath: logFromRef ? rel : epic.statusDoc,
+        logFrom: logFromRef,
+        count: found.length,
+        open: open.length,
+        deviations: found,
+      })
+    else {
+      const where = logFromRef ? `${rel} at ${logFromRef}` : epic.statusDoc
+      console.log(
+        `${C.bold}${t.id}${C.off} ${C.dim}— ${t.epic} — ${where}${C.off}\n` +
+          `${found.length} recorded, ${open.length} not yet closed by a human`,
+      )
+      for (const d of found) {
+        console.log(`${d.closed ? `${C.green}closed${C.off}` : `${C.yellow}open  ${C.off}`}  ${d.entry} (${d.recorded}): ${d.text}`)
+        if (d.closed) console.log(`        ${C.dim}closed by: ${d.closedBy}${C.off}`)
+      }
     }
     break
   }
@@ -1426,6 +1647,6 @@ switch (cmd) {
   }
 
   default:
-    console.error(`tickets: unknown command "${cmd}" (try: list, find, brief, next, check, spend, epics, current, doctor)`)
+    console.error(`tickets: unknown command "${cmd}" (try: list, find, brief, next, check, deviations, spend, epics, current, doctor)`)
     process.exit(2)
 }

@@ -155,11 +155,34 @@ required even when empty.
 The **entry** heading is parsed — match it exactly — then keep the body to
 the ticket skill's step 6 fields: **Built / Mode / Tokens / Verified /
 Decisions / Owed**, with `Mode:` = `quick — in-session (/flow:quick)` and
-Decisions recording only deviations, not narration:
+Decisions recording judgment calls, not narration:
 
 ```markdown
 ### Q-<n> — <name> — <YYYY-MM-DD> — DONE
 ```
+
+**A departure gets its own `**Deviation:**` line**, one per departure, between
+Decisions and Owed — optional, omitted when there is none. What counts:
+anything the ticket's documents or its design showed that you did not build, or
+built differently; a judgment call the documents left open is not one and stays
+in Decisions. A deviation is **never owed work**: an owed item is work someone
+will do, a deviation is a decision someone must see. Inside Decisions prose it
+is read by no command, which is how a design's hero band once went unbuilt and
+shipped anyway.
+
+```markdown
+**Deviation:** <what the documents or the design showed> → <what was built
+instead, and why>
+```
+
+**`**Deviations closed:**` is the human's line, never yours.** A dated line
+naming each deviation as **accepted** or as **fixed in `<sha>`**, with who
+decided and when, closing by its leading ID list every deviation the named
+entries recorded above it in the file — the shape the ticket skill's step 6
+carries. Do not write one, even for a departure you fixed in this same ticket:
+a closing line the party that made the departure could have written clears
+nothing. `node "${CLAUDE_PLUGIN_ROOT}/scripts/tickets.mjs" deviations Q-<n>`
+reads every one this ticket recorded, closed or not.
 
 If this ticket discharges an owed item an earlier entry recorded, add
 `**Resolves owed:** <ID> — <how>` on its own line — that marker removes the

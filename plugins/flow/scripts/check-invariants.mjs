@@ -354,6 +354,11 @@ const PHRASES = [
     files: ['run', 'retro', 'workflow', 'readme', 'script'],
   },
   {
+    why: "the deviation closing line is one label in both lanes that write a status entry, in the parser that reads it and in README's account of the fields — and each says it is a human's line. A lane that stops teaching it sends the next departure back into Decisions prose, where nothing reads it; a document that keeps the label but drops the owner lets the reviewed party close its own record",
+    re: /\*\*Deviations closed:\*\*/,
+    files: ['ticket', 'quick', 'script', 'readme'],
+  },
+  {
     why: 'machine-runnable acceptance criteria — the CHECK/EXPECT format is parsed and executed by tickets.mjs, taught by the planning skill, and run by both execution lanes and the driver',
     // Absorbs the deliberate wording variants: a literal "CHECK: <command>"
     // template line, the prose "CHECK/EXPECT", and the backticked
