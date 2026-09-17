@@ -650,3 +650,80 @@ the planner is proposing over both parsers' notes, since it rewrites what a note
 means — or the retro if that ticket does not happen.
 
 Re-review tokens: 176,250
+
+### DEV-3 — An unattended run halts on a deviation — 2026-09-17 — DONE
+
+**Built:** The unattended driver's resolve step reads one more read-only fact —
+`tickets.mjs deviations <ID> --log-from origin/<branch> --json` on the branch it
+would merge, under its own `deviations` schema field — and halts on a new stop
+condition when that count is above zero, before any agent that could merge
+exists. The gate counts every `**Deviation:**` line the entry records, closed or
+not, and refuses a fact that is missing, mistyped, negative or about another
+ticket on the contradiction condition; a nonzero exit is never read as zero. The
+stop sentence is one sentence in `run-epic.mjs` and the run skill's step 5,
+pinned whole by `check-invariants.mjs` and quoted by both suites; the worker and
+disposition prompts (the driver's and the Codex runner's) say the closing line
+is not theirs to write and that a departure they fix still halts; the run skill
+carries the recovery, the retro asks what the release pull request caught that
+no gate did, and README, METHODOLOGY and CHANGELOG carry the rule and its
+reason.
+
+**Mode:** supervisor — worker worker:DEV-3 (opus), reviewer hired by the supervisor
+
+**Tokens:** observed by the supervisor — see the review addendum
+
+**Verified:** `tickets.mjs check DEV-3` 5/5 passed (0/5 on the base tree).
+Suites: `run-epic.test.mjs` 131/131 (was 123 — eight new tests: the halt on its
+own stop string; the gate firing after review, addendum and acceptance; a
+closing line not clearing it; a clean ticket passing untouched; eight unreadable
+or mistyped facts each halting on contradiction; a failed command quoted fenced;
+the resolve prompt's own subcommand and flag; the worker and disposition
+prompts), `check-invariants.test.mjs` 23/23 (was 21 — the script losing the stop
+sentence, and the skill drifting from it including its "closed or not" clause),
+`tickets.test.mjs` 101/101, `codex.test.mjs` 21/21, `codex-review.test.mjs`
+19/19, `ticket-session-guard.test.mjs` 14/14, `board.test.mjs` 9/9,
+`plan-page.test.mjs` 8/8. `check-invariants.mjs` exit 0, `tickets.mjs doctor`
+exit 0, `run-epic.mjs` parses under CLAUDE.md's `node -e` command, `node --check`
+clean on the three scripts. Revert check: with the source reverted and the tests
+kept, `run-epic.test.mjs` 121/131 — **"a deviation recorded on the pushed branch
+halts before any merge agent exists, on its own stop string"** fails — plus
+`check-invariants.test.mjs` 21/23, `codex.test.mjs` 20/21 and `check DEV-3` 0/5.
+Each new guard flipped in turn and the suite confirmed red for every one: the
+gate itself (`deviationCount > 0` → `false`, 3 red); the gate reading `open`
+instead of `count` (2 red); an unreadable fact defaulting to 0 (2 red); the
+ticket-identity refusal dropped (1 red); the `commandSucceeded` refusal dropped
+(2 red); the halt detail's closing-line clause (1 red); the `open` figure not
+recorded (3 red); the stop sentence losing "closed or not" (3 red, and the
+invariant checker exits 1); the worker prompt's two sentences (1 red each); the
+disposition paragraph (1 red); the schema's required `deviations` (1 red); FACT 4
+dropped from the resolve prompt (2 red); the Codex worker prompt's sentence (1
+red in `codex.test.mjs`). Recovery walked by hand in a throwaway repository
+against real `deviations` output: a pushed entry recording two departures reads
+`count 2, open 2`; a bare `**Deviations closed:** W-1` closes nothing and earns
+the note naming `W-1.1`, `W-1.2` as the repair; the itemised line closes both,
+leaving `count 2, open 0` — and the driver, driven against that real JSON, still
+halts, naming the two closing lines it does not honour. An unreadable ref exits 1
+with "An unreadable status log is not 'no deviations'", never an empty list.
+
+**Decisions:** The resolve prompt's fix-bounds block moved from FACT 4 to FACT 5
+so the new fact could be FACT 4 and the numbering stays contiguous whether or
+not the bounds gate is armed; two existing assertions moved with it. The
+report carries `open` beside `count` — recorded in the run record and in the
+halt's wording, read by no gate — because a halt that could not say "two of
+these already carry a closing line I do not honour" tells the human less than
+the log does. The Codex runner builds its own worker prompt, so it got the same
+sentence: it is the same actor at the same door, and `codex-review.test.mjs`
+pins only `packetBody`, `REVIEWER_RULES` and `REVIEW_SCHEMA`, none of which this
+ticket touches. The eighth retro question reads the human's answer out of the
+dated addendum the release pull request body asks for, rather than asking the
+user: the miner is a fresh agent that asks nothing, so the answer has to be in
+the record by the time it runs, and "no addendum exists" is reported as itself
+rather than as a zero.
+
+**Deviation:** the ticket showed the retro skill getting "two lines" → it got a
+sentence added to the halt question and a new eight-line eighth question, plus
+the section heading's question count, because the same bullet specifies content
+(the plan/work classification, what the human decided, a question that must be
+answered "none found" in writing) that does not fit two lines.
+
+**Owed:** Nothing
