@@ -192,3 +192,23 @@ addendum and the merge, by a supervisor-spawned worker on the pushed branch,
 which rebuilt nothing.
 
 Worker tokens (implementation leg): 228,721; Reviewer tokens: 121,853
+
+**Addendum — 2026-09-17 — re-planned mid-epic: DEV-4 added, delivery attended.**
+Three things happened after DEV-1's worker pushed. The unattended run errored
+at DEV-1's review hire (`runs.md` has the record and the diagnosis), and
+DEV-1 was finished attended. PR #51 landed on `main` from another session
+and conflicted with this branch in five files; the refresh was resolved on a
+side branch, reviewed in a fresh context with no findings (it verified by
+line multiset that `tickets.mjs` carries both parents' contributions
+exactly, and by test name that the suite is their exact union, 94), and
+fast-forwarded here as `a5964da`. And that same PR retired the model this
+epic's Decision 2 had copied — per-entry retirement of owed items, after a
+marker naming one item of four retired all four — so `tickets.md` now
+carries Decision 2a and a fourth ticket, DEV-4, ordered before DEV-2:
+deviations close item by item on `main`'s grammar, a bare closing line
+facing more than one open deviation closes nothing and says so, a deviation
+paragraph ends at the next bolded field, and five sentences that defined
+deviation rules by comparison with owed rules are rewritten. Vadim approved
+DEV-4's text before any worker saw it. DEV-1's third CHECK was corrected to
+test the exit code it was written for; it passes. The remaining tickets run
+attended, through `/flow:ticket` in supervisor mode.

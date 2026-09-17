@@ -74,6 +74,16 @@ driver's sanctioned fallback, a general agent given the reviewer's rules —
 a cost in spend, not in safety. And DEV-3 edits `run-epic.mjs` while a run
 is in flight: harmless, because a workflow script is read once at launch,
 and it means this run is not governed by the halt it builds.
+**Re-planned again the same day, after that run errored at DEV-1's review
+hire: four tickets, finished attended** — each through `/flow:ticket <ID>`
+in supervisor mode, merged into `epic/deviation-routing` by verified SHA;
+Vadim chose this over waiting for a driver fix. The sentence above about
+the sanctioned fallback was the planner's prediction and was **false**: for
+an agent type the session has not registered the Workflow runtime throws
+rather than returning nothing, so the fallback was never reached and the
+whole run ended (`runs.md`, 2026-09-17, has the diagnosis; PR #52 makes a
+throwing hire a failed hire). It failed closed — nothing unreviewed merged.
+The fourth ticket, DEV-4, came from Decision 2a.
 
 Environment probes, 2026-09-17: branch protection on `main` —
 `gh api repos/weekendgoals/ticket-flow/branches/main/protection` answers 404
@@ -108,6 +118,24 @@ Decisions at planning, 2026-09-17:
    paragraph still parses in an append-only log — a line that could only
    mean "accepted" left the fix recovery unable to clear the gate, or
    recorded a fix as an acceptance.
+   **2a. Superseded 2026-09-17, mid-epic, by evidence that landed on `main`
+   while DEV-1 was being built** (PR #51, `c557f8b`; Vadim approved the
+   re-plan the same day). Decision 2 chose per-entry closure because "the
+   entry ID is the only identity a paragraph has" and numbering would add "a
+   second identity scheme for a rare case" — and modelled it on
+   `**Resolves owed:**`, which closed a whole entry. That model is the one
+   `main` has just retired, on a real loss: a marker naming one of an
+   entry's four owed items retired all four, among them a
+   production-database hazard. `main` now numbers an entry's items `<ID>.1`,
+   `<ID>.2` … and a bare marker facing more than one open item retires
+   nothing and says so. Both of Decision 2's reasons are gone — the identity
+   scheme exists, and the rare case has an incident behind it — and DEV-1's
+   `**Deviations closed:** <ID>` has exactly the shape that was fixed: a
+   human accepting one deviation of three closes all three. The first plan
+   review asked this very question; the planner recommended per entry, and
+   was wrong. DEV-4 closes deviations item by item, on `main`'s model rather
+   than a parallel one. What does not change: only a human writes the line,
+   and the unattended gate honours none (Decision 5).
 3. **Deviations are read through their own subcommand, never `find
    --from`.** `find --from` means "the epic's declarations as signed off",
    and the driver's resolve step already calls it with the epic ref to read
@@ -142,7 +170,13 @@ as it must before its ticket exists; none was unrunnable here. The second
 plan review re-ran them and found the same, and named three whose phrase an
 earlier ticket's text could have turned green; those phrases are now
 reserved to their ticket under **Not in scope**. The figures are in the
-sign-off record.
+sign-off record. **Re-run 2026-09-17 on the refreshed tree at `a5964da`**
+(`epic/deviation-routing` with `main`'s PR #51 merged in and the resolution
+reviewed): DEV-4 0/5, DEV-2 0/3, DEV-3 0/5 — every one failing, none
+malformed; DEV-1, integrated, 5/5 including its corrected third CHECK.
+DEV-4's phrase, "bare closing line", was checked against both `main` and
+the epic branch before it was chosen, so neither the refresh nor an earlier
+ticket could have turned it green.
 
 Status log: `epics/deviation-routing/status.md`. Run a ticket with `/flow:ticket <ID>`.
 
@@ -187,7 +221,11 @@ Status log: `epics/deviation-routing/status.md`. Run a ticket with `/flow:ticket
 
 DEV-1 first: both doors read what it parses, and its two contracts — the
 line's shape and the `deviations` subcommand's JSON — are what DEV-2 and
-DEV-3 are written against. DEV-2 before DEV-3 because an unattended halt's
+DEV-3 are written against. **DEV-4 second, though it was planned last**
+(re-plan of 2026-09-17, Decision 2a): it sits between DEV-1 and DEV-2 in
+this document because document order is the intended order, and DEV-2 and
+DEV-3 build doors that key on "closed" — what "closed" means has to be
+right before a door is built on it. DEV-2 before DEV-3 because an unattended halt's
 recovery finishes the ticket by hand through the ticket skill's step 10, the
 attended door; a halt that lands before that door knows about deviations
 advertises a recovery that lets the deviation through. If DEV-1's parser
@@ -255,8 +293,13 @@ preamble.
 - The subcommand exists and answers for a ticket with none.
   CHECK: node plugins/flow/scripts/tickets.mjs deviations HARD-1 --json
   EXPECT: "deviations"
-- An unreadable ref is a failure, not an empty list.
-  CHECK: node plugins/flow/scripts/tickets.mjs deviations HARD-1 --log-from no-such-ref --json 2>&1 | grep -c "no-such-ref"
+- An unreadable ref is a failure, not an empty list. (Corrected 2026-09-17,
+  after this criterion had already passed: as signed off it piped into
+  `grep -c`, so it asserted only that the message names the ref — the
+  ticket reviewer found the gap, and DEV-1's own test, not this line, was
+  what pinned the nonzero exit. It now tests what it was written to test.)
+  CHECK: out=$(node plugins/flow/scripts/tickets.mjs deviations HARD-1 --log-from no-such-ref --json 2>&1); code=$?; echo "$out" | grep "no-such-ref" && test $code -ne 0
+  EXPECT: no-such-ref
 - Both lanes teach the closing line and whose it is.
   CHECK: grep -c "Deviations closed" plugins/flow/skills/ticket/SKILL.md
 - The quick lane points at it.
@@ -272,6 +315,88 @@ preamble.
   CLAUDE.md names, `check-invariants.mjs`, `doctor`, and the revert check's
   named test.
 
+## DEV-4 — A deviation is closed item by item
+
+**Scope.**
+- `tickets.mjs`: deviations take `main`'s item model, reusing its reference
+  grammar (`OWED_REF`, `OWED_REF_END`) rather than a second one. An entry
+  that records one deviation is addressed by its own ID; one that records
+  several numbers them `<ID>.1`, `<ID>.2` … in document order across every
+  entry that ID heads — the log is append-only, so a number never moves.
+  `**Deviations closed:** <ID>.1, <ID>.3 — …` closes the items it names. **A
+  bare closing line** — `**Deviations closed:** <ID>` — closes what the entry
+  recorded **above that line** only when that is exactly one open deviation;
+  facing more than one it closes nothing and says so, because a deviation
+  wrongly left open costs a human one reread, and one wrongly closed is a
+  departure nobody decided on, gone from every brief and every attended
+  door. A reference naming no item (`<ID>.7` against two), and an ID that
+  does not end where the reference ends (`<ID>oops`), close nothing and are
+  reported the same way.
+- The note a line earns when it closes nothing is written once and carried
+  everywhere a reader meets the line: `brief` prints it beside the open
+  deviations, `deviations <ID> --json` carries it as `notes` with each
+  deviation's item ID, and `doctor` warns at the writer's door. Each note
+  states the repair — a new dated line naming the items — and is cleared by
+  exactly that repair.
+- A `**Deviation:**` paragraph ends where `main`'s owed block ends: at a
+  blank line, **or at the next bolded field or heading**. Today it ends only
+  at a blank line, so `**Deviation:** …` written directly above `**Owed:**`
+  with no blank between absorbs the next field's markup into the deviation
+  text a brief shows and a door gates on — reproduced by the refresh's
+  reviewer in a fixture neither parent of that merge could have tested.
+- Five sentences DEV-1 wrote define deviation rules by comparison with owed
+  rules that `main` has since changed, and are now untrue: the closing line
+  resolving "exactly as `**Resolves owed:**` resolves"
+  (`skills/ticket/SKILL.md`, `CHANGELOG.md`), "order matters here as it does
+  not for owed items" and an extent "exactly as `**Owed:**` does" (two
+  comments in `tickets.mjs`), and "`**Deviation:**` parses exactly as
+  `**Owed:**` does" (`METHODOLOGY.md`). Each is rewritten to state the
+  deviation rule in its own words, with its own reason — a rule defined by
+  reference to another rule drifts the moment the other one moves, which is
+  how these five went stale within hours of being written.
+- Ticket skill step 6 and quick skill step 5: one departure per
+  `**Deviation:**` line, and the item form of the closing line, still named
+  as the human's; the quick skill's enumeration of the entry's fields names
+  `Deviation`, which it omits today. README and METHODOLOGY carry the rule
+  and the reason, citing the owed incident as the evidence;
+  `check-invariants.mjs` pins the phrase across the two skills, the script
+  and README.
+- Tests: a bare line against two open deviations closing nothing and earning
+  the note; the item form closing one and leaving the other; a bare line
+  still closing a one-deviation entry; an unknown item; a malformed
+  reference; a deviation recorded below a closing line staying open; the
+  note clearing once any item is named; a deviation directly above a bolded
+  field, with and without a blank line; and DEV-1's existing fixtures still
+  meaning what they meant.
+
+**Not in scope.** What any door does with a deviation — DEV-2's and DEV-3's,
+whose two reserved phrases, "with an unclosed deviation" and "a deviation is
+named in the pull request body", appear nowhere in this ticket's text. Owed
+items, which `main` already fixed: this ticket reads that code and changes
+none of it. Who may write the closing line, which Decision 5 settled.
+
+**Acceptance criteria.**
+- The subcommand reports what a closing line could not close.
+  CHECK: node plugins/flow/scripts/tickets.mjs deviations HARD-1 --json | grep -o '"notes"' | head -1
+  EXPECT: "notes"
+- The ticket lane teaches the rule in the words the checker pins.
+  CHECK: grep -c "bare closing line" plugins/flow/skills/ticket/SKILL.md
+- So does the quick lane.
+  CHECK: grep -c "bare closing line" plugins/flow/skills/quick/SKILL.md
+- `check-invariants.mjs` holds the lanes, the script and README together.
+  CHECK: grep -c "bare closing line" plugins/flow/scripts/check-invariants.mjs
+- No deviation rule is still defined by what an owed rule does. (A grep
+  sees the three of the five that sit on one line; the two wrapped comments
+  in `tickets.mjs` are named in Scope and are the reviewer's to open.)
+  CHECK: ! grep -nE "as .\*\*Resolves owed:\*\*. (does|resolves)|exactly as .?\*\*Owed:\*\*.? does" plugins/flow/skills/ticket/SKILL.md plugins/flow/scripts/tickets.mjs METHODOLOGY.md CHANGELOG.md
+- demonstrate: in a throwaway epic, an entry with three `**Deviation:**`
+  lines, the last written directly above `**Owed:**`; append `**Deviations
+  closed:** <ID>` → `deviations` lists three open and one note, the third's
+  text carries no owed markup, `brief` prints the note, `doctor` warns;
+  append `**Deviations closed:** <ID>.2 — accepted …` → item 2 alone is
+  closed and the note is gone. Record the outputs.
+- Standing checks with counts, as DEV-1.
+
 ## DEV-2 — A deviation stops an attended merge
 
 **Scope.**
@@ -284,9 +409,9 @@ preamble.
 - Ticket skill step 10: a supervisor or session **does not integrate a
   ticket with an unclosed deviation** into the epic branch. It stops, shows
   the deviation, and resumes only when the human has decided and the dated
-  `**Deviations closed:**` line is on the ticket branch — naming each
-  deviation as accepted or as fixed in a commit, written on the human's
-  word, quoted. Both recoveries are spelled out, and the step says why it
+  `**Deviations closed:**` line is on the ticket branch — naming the items
+  by their `<ID>.<n>` references (DEV-4), each as accepted or as fixed in a
+  commit, written on the human's word, quoted. Both recoveries are spelled out, and the step says why it
   refuses: in a release epic this merge is the last point before the release
   pull request at which one ticket's departure is still one decision rather
   than part of a nine-ticket diff.
@@ -337,7 +462,8 @@ suggests an answer.
   and still halts — a halt is the mechanism working.
 - Run skill: the stop condition in step 5; the recovery in the after-a-halt
   procedure — decide; have it fixed, or accept it; append the dated
-  `**Deviations closed:**` line on the ticket branch; finish the ticket by
+  `**Deviations closed:**` line on the ticket branch, naming the items it
+  closes (DEV-4); finish the ticket by
   hand through the ticket skill's step 10, which DEV-2 made refuse until
   that line exists; resume. README's `/flow:run` row names the condition.
 - Retro skill, two lines. The halt-classification question files a deviation
