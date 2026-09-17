@@ -657,7 +657,13 @@ test("a failed deviations command is quoted fenced, and the agent's words never 
 })
 
 test('the resolve prompt reads the departures through their own subcommand and flag, never through find --from', async () => {
-  const p = call(await drive(oneTicket()), 'resolve:PAY-1').prompt
+  const c = call(await drive(oneTicket()), 'resolve:PAY-1')
+  const p = c.prompt
+  // Required, like the ceiling and for the same reason: a fact the gate needs
+  // is not an optional extra, and a schema that lets it go missing invites a
+  // report the gate then has to refuse.
+  assert.ok(c.schema.required.includes('deviations'), 'the resolve schema requires the deviations fact')
+  assert.deepEqual(c.schema.properties.deviations.required, ['commandSucceeded', 'ticket', 'count'])
   assert.match(p, /FACT 4 — the departures PAY-1's own entries record/)
   assert.match(p, /tickets\.mjs" deviations PAY-1 --log-from origin\/pay-1 --json/)
   // Two reads, two commands, two flags: `--from` is the epic's declarations
