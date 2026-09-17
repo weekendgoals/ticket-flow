@@ -8,6 +8,44 @@ with one version and date.
 
 ## Unreleased
 
+- **An entry that owes several things is retired item by item: `brief`
+  numbers an `**Owed:**` block's bullets `<ID>.1`, `<ID>.2` …, and a bare
+  `**Resolves owed:** <ID>` against a multi-item entry retires nothing**
+  (`scripts/tickets.mjs`: `parseOwed` splits the block, numbers the items and
+  reports what a bare marker could not retire, `brief` prints the note beside
+  the items and `--json` carries it as `notes`, `doctor` warns at the writer's
+  door; `skills/ticket/SKILL.md` step 6 asks for one obligation per bullet and
+  teaches the item form of the marker, `skills/quick/SKILL.md` step 5 the
+  same; README and METHODOLOGY § "Why a worker reads a brief, not the whole
+  log" carry the rule and its reason; `check-invariants.mjs` pins the phrase).
+  The entry ID was the item's identity, so an entry deferring four things
+  could only be repaid whole: downstream, a marker naming one of them retired
+  all four, including a production-database hazard that had to survive, caught
+  only because a worker had been warned to check. Two other workers had
+  already seen the trap and recorded the marker's **absence** as a deliberate
+  decision, paying permanent noise in every future brief to avoid the silent
+  loss — a format forcing a bad choice on the people it serves. An item
+  wrongly kept costs one reread; an item wrongly retired is gone from an
+  append-only log with nothing left to report that it existed, so the bare
+  marker now retires nothing and `brief` names the form that works. The note
+  clears once the entry's items are closed by name, because a warning nobody
+  can clear is one readers learn to skip past. **Existing bare markers against
+  multi-item entries stop resolving** — those items reappear in the brief,
+  which is the safe direction; repair by appending a dated addendum naming the
+  items, never by editing the entry. Same commit fixes three further losses
+  in the same parser, each found by running it over live downstream logs:
+  a bullet list separated from `**Owed:**` by a blank line — the idiomatic
+  markdown shape — was dropped whole, because the block was read as ending at
+  the first blank line (it now runs to the entry's next field, heading or
+  prose paragraph, and a wrapped bullet still arrives joined, while a
+  sub-bullet stays part of the item above it so the numbering counts what a
+  reader counts); an ID heading more than one `**Owed:**` block, which an
+  append-only log allows, gave two obligations one identity, so numbering is
+  now per entry across its blocks; and "Nothing" empties only a block with no
+  bullets — the convention is how an entry declares the field empty, and
+  applied to a bullet it dropped all five items of an entry whose first
+  bullet opened "Nothing in this ticket has met Postgres".
+
 - **The acceptance ledger has a third verdict: a check whose evidence is a
   skip is `↓ skipped`, and a skipped check is not a passed one**
   (`scripts/tickets.mjs`: `runChecks` decides it and `check` prints and

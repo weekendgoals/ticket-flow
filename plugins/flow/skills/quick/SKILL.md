@@ -157,7 +157,12 @@ Decisions recording only deviations, not narration:
 
 If this ticket discharges an owed item an earlier entry recorded, add
 `**Resolves owed:** <ID> — <how>` on its own line — that marker removes the
-item from every future brief. Commit the entry with the work.
+item from every future brief. Use the entry ID when that entry owed one
+thing and `<ID>.<n>` when it owed several (`brief` numbers an entry's
+bullets in document order): a bare entry ID against a multi-item entry
+retires **nothing**, because a marker naming one item once closed four.
+Write this entry's own **Owed** with one obligation per bullet, for the same
+reason. Commit the entry with the work.
 
 **If the log now runs past roughly 25 entries (or ~1,000 lines), say so to
 the user**: the quick epic is due an **era rollover**, which `/flow:retro

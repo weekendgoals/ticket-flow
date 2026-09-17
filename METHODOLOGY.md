@@ -437,6 +437,22 @@ entry itself: Built, Mode, Tokens, Verified, Decisions-that-deviate, Owed —
 git already records the files and commits, and narration a future reader
 must wade through is a cost, not a record.
 
+A debt ledger with repayment syntax needs its repayments to be as granular as
+its debts, and for a while this one was not. The entry ID was the item's
+identity, so an entry that deferred four things could only be repaid whole:
+downstream, a marker naming one of them retired all four, and the item that
+had to survive was a production-database hazard. Two console-foundations
+workers had already seen the trap and written the marker's absence into their
+entries as a deliberate decision — paying permanent noise in every future
+brief to avoid a silent loss — which is the shape of a format forcing a bad
+choice on the people it serves. So an entry that owes several things numbers
+them and a marker names the item; a bare entry ID against a multi-item entry
+retires nothing and says what to write instead. The direction is decided by
+the asymmetry, not by taste: an item wrongly kept costs one reread, while an
+item wrongly retired is gone from an append-only log with nothing left to
+report that it ever existed. The admission test: it preserves necessary
+knowledge, and it constrains the blast radius of one line of markup.
+
 ## Why a nit is not automatically a ticket
 
 Reviews reliably produce nits; for a stretch each nit became a ticket, and

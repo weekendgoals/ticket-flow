@@ -255,11 +255,13 @@ Driver-spawned: `recorded in the run record`. In-session: `unknown`.>
 the why — "none" when the ticket went as written>
 
 **Owed:** <anything deferred and which ticket inherits it — "Nothing" if
-genuinely nothing, never omitted. `brief` hands every non-Nothing line to
-future workers until a `**Resolves owed:**` line closes it, so write it to
-be read alone, and check the named carrier can structurally reach the thing
-— an owed check was once handed to a lane that never touches the step it
-was meant to verify>
+genuinely nothing, never omitted. **One obligation per bullet** when there
+is more than one: `brief` numbers an entry's bullets `<ID>.1`, `<ID>.2` … in
+document order, and that is how a later ticket retires them one at a time.
+`brief` hands every non-Nothing item to future workers until a
+`**Resolves owed:**` line closes it, so write each to be read alone, and
+check the named carrier can structurally reach the thing — an owed check was
+once handed to a lane that never touches the step it was meant to verify>
 ```
 
 When this ticket discharges an owed item from an earlier entry, say so on its
@@ -268,8 +270,15 @@ own line in this entry, or in a dated addendum beneath it (the shape the
 removes it from every future brief:
 
 ```markdown
-**Resolves owed:** <ID of the entry that recorded it> — <how it was discharged>
+**Resolves owed:** <the item's ID — the entry ID when that entry owed one
+thing, `<ID>.<n>` when it owed several> — <how it was discharged>
 ```
+
+**Name the item, not the entry, when the entry recorded several.** A bare
+entry ID against a multi-item entry retires **nothing** — it used to retire
+all of them, and a marker naming one item once closed four, including a
+production-database hazard that had to survive. `brief` and `doctor` both
+report the marker that retired nothing, and name the form that works.
 
 Keep the entry short and written for someone who was not there. **Commit
 before the review runs** — the reviewer reads a commit range.

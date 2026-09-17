@@ -453,57 +453,196 @@ function parseStatus(epic) {
   return byId
 }
 
-// The **Owed:** paragraphs of a status log, attributed to the parsed entry
-// they sit under, minus the ones a later line has explicitly resolved. This
-// is what lets `brief` hand a fresh worker the epic's outstanding
-// obligations without the worker rereading the whole log — the log grows
-// without bound, and "preserve everything" must not mean "reread everything
-// before every edit".
+// The **Owed:** blocks of a status log, split into the obligations they
+// record, attributed to the parsed entry they sit under, minus the ones a
+// later line has explicitly resolved. This is what lets `brief` hand a fresh
+// worker the epic's outstanding obligations without the worker rereading the
+// whole log — the log grows without bound, and "preserve everything" must not
+// mean "reread everything before every edit".
 //
-// Resolution is explicit, never inferred: a `**Resolves owed:** <ID> …`
-// line (in the discharging ticket's entry or a dated addendum) closes the
-// owed item recorded by entry <ID> — one Owed paragraph per entry, so the
-// entry ID is the item's identity. Entries owing "Nothing" are dropped.
-// What survives is labelled honestly: recorded and not marked resolved. A
-// ticket may have discharged an item without writing the marker — this
-// script derives, it does not investigate — so the reader checks the named
-// carrier before re-doing work, and writes the marker the log was owed.
-function parseOwed(epic) {
-  if (!epic.statusDoc) return []
-  const owed = []
-  const resolved = new Set()
+// Resolution is explicit, never inferred: a `**Resolves owed:** <ID> …` line
+// (in the discharging ticket's entry or a dated addendum) closes what <ID>
+// recorded. An entry that owes one thing is addressed by its own ID; an entry
+// that owes several — the Owed field invites exactly that, "anything
+// deferred" — numbers them `<ID>.1`, `<ID>.2`, … in document order, and the
+// marker names the item. The numbering is positional because the log is
+// append-only: an entry's bullets never move once written.
+//
+// A bare `<ID>` against a multi-item entry therefore retires NOTHING, and
+// says so rather than guessing. It used to retire the lot: downstream, four
+// items recorded as one paragraph were closed by a marker naming one of them,
+// and the item that had to survive was a production-database hazard, caught
+// only because a worker had been warned to look. The asymmetry decides the
+// direction — an item wrongly kept costs one reread, an item wrongly retired
+// is gone from an append-only log with nothing left to report it — and the
+// recovery is one appended line naming the items, which the brief spells out.
+//
+// Entries owing "Nothing" are dropped. What survives is labelled honestly:
+// recorded and not marked resolved. A ticket may have discharged an item
+// without writing the marker — this script derives, it does not investigate —
+// so the reader checks the named carrier before re-doing work, and writes the
+// marker the log was owed.
+const OWED_REF = `${TICKET_ID}(?:\\.\\d+)?`
+const RESOLVES_LINE = /^\*\*Resolves owed:\*\*\s*(.*)$/
+const OWED_LINE = /^\*\*Owed:\*\*\s*(.*)$/
+const OWED_BULLET = /^(\s*)[-*]\s+(\S.*)$/
+
+// The note a bare marker earns when it names a multi-item entry — written
+// once, so the brief a worker reads and the doctor row its author sees cannot
+// drift into two different accounts of the same line.
+const owedBareMarkerNote = (id, count) =>
+  `\`**Resolves owed:** ${id}\` names the entry, but ${id} records ${count} items, so it retires nothing. ` +
+  `Name the items it discharged — \`${id}.1\`, \`${id}.2\` … in the order the entry lists them — in a new dated addendum; the rest stay listed.`
+
+// Every **Owed:** block in a status log, whether or not anything resolved it:
+// { id, date, lead, items: [text] } per block, in document order.
+function owedBlocks(statusDoc) {
+  const blocks = []
   let entry = null // the last parsed "### <ID> — … — <date> — <outcome>" heading
-  let collecting = null
-  for (const line of readFileSync(epic.statusDoc, 'utf8').split('\n')) {
+  let block = null
+  let item = null // the open bullet, for wrapped continuation lines
+  let leadOpen = false // the lead text can be continued until a bullet or a blank
+  let blank = false
+  let indent = null // the block's top level: the indentation of its first bullet
+  for (const line of readFileSync(statusDoc, 'utf8').split('\n')) {
     const h = line.match(STATUS_HEADING)
     if (h) {
       entry = { id: h[1], date: h[3] }
-      collecting = null
+      block = null
       continue
     }
-    const r = line.match(/^\*\*Resolves owed:\*\*\s*(.*)$/)
-    if (r) {
-      // Only the leading ID list resolves — "**Resolves owed:** A-1, A-2 —
-      // note". An ID mentioned later, inside the note's prose ("landed by
-      // A-3"), is a citation, not a target.
-      const lead = r[1].toUpperCase().match(new RegExp(`^${TICKET_ID}(\\s*,\\s*${TICKET_ID})*`))
-      if (lead) for (const id of lead[0].match(new RegExp(TICKET_ID, 'g'))) resolved.add(id)
-      collecting = null
-      continue
-    }
-    const m = line.match(/^\*\*Owed:\*\*\s*(.*)$/)
+    const m = line.match(OWED_LINE)
     if (m && entry) {
-      collecting = { ...entry, text: m[1].trim() }
-      owed.push(collecting)
+      block = { ...entry, lead: m[1].trim(), items: [] }
+      blocks.push(block)
+      item = null
+      leadOpen = true
+      blank = false
+      indent = null
       continue
     }
-    if (collecting) {
-      // An Owed paragraph runs to the first blank line, like any paragraph.
-      if (line.trim() === '') collecting = null
-      else collecting.text = `${collecting.text} ${line.trim()}`.trim()
+    if (!block) continue
+    const b = line.match(OWED_BULLET)
+    if (b) {
+      // A bullet continues the block even across a blank line: a list set off
+      // from its lead-in is the idiomatic markdown shape, and reading the
+      // block as "ends at the first blank line" dropped every item silently.
+      // The first bullet sets the block's top level; a deeper one is part of
+      // the item above it, so the numbering counts what a reader counts.
+      if (indent === null) indent = b[1].length
+      if (b[1].length > indent && item) {
+        item.text = `${item.text} ${line.trim()}`.trim()
+        blank = false
+        continue
+      }
+      item = { text: b[2].trim() }
+      block.items.push(item)
+      leadOpen = false
+      blank = false
+      continue
     }
+    if (/^#{1,6}\s/.test(line) || /^\*\*/.test(line)) {
+      // The next field, addendum or heading — the block is over.
+      block = null
+      continue
+    }
+    if (line.trim() === '') {
+      item = null
+      leadOpen = false
+      blank = true
+      continue
+    }
+    if (blank) {
+      // Prose after a blank line is the entry continuing, not the owed block.
+      block = null
+      continue
+    }
+    if (item) item.text = `${item.text} ${line.trim()}`.trim()
+    else if (leadOpen) block.lead = `${block.lead} ${line.trim()}`.trim()
   }
-  return owed.filter((o) => o.text && !/^nothing\b/i.test(o.text) && !resolved.has(o.id))
+  return blocks
+}
+
+// The obligations one block records. A block with bullets records its bullets
+// — the lead-in is context for all of them, kept because it is where the
+// carrier is usually named. A block without bullets records one: the
+// paragraph itself.
+//
+// "Nothing" only empties a block that has no bullets, because that is what
+// the convention is for — an entry declaring the field empty. Applied to a
+// bullet it drops a real obligation: console-foundations CF-1's first bullet
+// opens "Nothing in this ticket has met Postgres", and when the whole block
+// was read as one paragraph that phrase dropped all five items from every
+// brief it should have appeared in.
+function owedItems(block) {
+  const bulleted = block.items.length > 0
+  const texts = bulleted ? block.items.map((i) => i.text) : [block.lead]
+  return texts
+    .map((text) => ({
+      entry: block.id,
+      date: block.date,
+      ...(bulleted && block.lead ? { lead: block.lead } : {}),
+      text,
+    }))
+    .filter((o) => Boolean(o.text) && (bulleted || !/^nothing\b/i.test(o.text)))
+}
+
+// Identity, assigned per ENTRY rather than per block: an ID can head more than
+// one block — a second entry under the same ticket, an addendum that records
+// more — and two obligations sharing one ID is the collision this numbering
+// exists to prevent. An entry owing one thing keeps its bare ID; an entry
+// owing several numbers them in document order, stable because the log is
+// append-only.
+function owedByEntry(blocks) {
+  const byEntry = new Map()
+  for (const block of blocks)
+    for (const item of owedItems(block)) {
+      if (!byEntry.has(item.entry)) byEntry.set(item.entry, [])
+      byEntry.get(item.entry).push(item)
+    }
+  for (const [id, items] of byEntry)
+    items.forEach((item, i) => {
+      item.id = items.length > 1 ? `${id}.${i + 1}` : id
+    })
+  return byEntry
+}
+
+// Every `**Resolves owed:**` line's targets. Only the leading ID list
+// resolves — "**Resolves owed:** A-1, A-2.3 — note". An ID mentioned later,
+// inside the note's prose ("landed by A-3"), is a citation, not a target.
+function owedResolutions(statusDoc) {
+  const refs = []
+  for (const line of readFileSync(statusDoc, 'utf8').split('\n')) {
+    const r = line.match(RESOLVES_LINE)
+    if (!r) continue
+    const lead = r[1].toUpperCase().match(new RegExp(`^${OWED_REF}(\\s*,\\s*${OWED_REF})*`))
+    if (lead) refs.push(...lead[0].match(new RegExp(OWED_REF, 'g')))
+  }
+  return refs
+}
+
+function parseOwed(epic) {
+  if (!epic.statusDoc) return { owed: [], notes: [] }
+  const byEntry = owedByEntry(owedBlocks(epic.statusDoc))
+  const resolved = new Set(owedResolutions(epic.statusDoc))
+  const owed = [...byEntry.values()]
+    .flat()
+    .filter((o) => !resolved.has(o.id))
+    .map(({ entry, ...o }) => o)
+  // A bare marker that could not retire what it named is reported, not
+  // silently ignored: its author believes the item closed, and the brief they
+  // will never run again is the only thing that would say otherwise.
+  // It stands while any of the items it failed to close is still listed, and
+  // quotes what the entry recorded: once every item has been closed by name
+  // there is nothing left to warn about, and a warning that cannot be cleared
+  // is one readers learn to skip past.
+  const notes = []
+  for (const ref of new Set(resolved)) {
+    if (ref.includes('.')) continue
+    const items = byEntry.get(ref)
+    if (items && items.length > 1 && items.some((o) => !resolved.has(o.id))) notes.push(owedBareMarkerNote(ref, items.length))
+  }
+  return { owed, notes }
 }
 
 // ── token spend ──────────────────────────────────────────────────────────────
@@ -1073,6 +1212,10 @@ function doctor() {
         else if (!KNOWN_OUTCOMES.has(m[4]))
           add('warn', `${epic.epic}/status.md:${i + 1} — unknown outcome "${m[4]}" is ignored by the board (known: DONE, BLOCKED, ABANDONED)`)
       })
+      // A marker that retired nothing is silent at its author's door: the
+      // brief that would say so is read by the next worker, not by the
+      // session that wrote the line. Flagged here, where the writer looks.
+      for (const n of parseOwed(epic).notes) add('warn', `${epic.epic}/status.md — ${n}`)
     }
     // The run-record scans below run whether or not status.md exists — an epic
     // whose records are split out has a runs.md to check either way, and the
@@ -1309,10 +1452,12 @@ switch (cmd) {
       }
     }
     const epic = data.epics.find((e) => e.epic === t.epic)
+    const { owed, notes } = parseOwed(epic)
     const out = {
       ...ticketFacts(data, t),
       preamble: readFileSync(epic.ticketsDoc, 'utf8').split(/^##\s/m)[0].trim(),
-      owed: parseOwed(epic),
+      owed,
+      notes,
       body: t.body,
     }
     if (json) emit(out)
@@ -1329,7 +1474,17 @@ switch (cmd) {
       console.log()
       console.log(`${C.bold}Owed items — recorded, not marked resolved${C.off}`)
       if (!out.owed.length) console.log(`${C.dim}none outstanding${C.off}`)
-      else for (const o of out.owed) console.log(`  ${o.id} (${o.date}): ${o.text}`)
+      else {
+        let lead = null
+        for (const o of out.owed) {
+          // The lead-in prints once above the items it introduces — it is
+          // usually where the entry named the carrier.
+          if (o.lead && o.lead !== lead) console.log(`  ${C.dim}${o.lead}${C.off}`)
+          lead = o.lead || null
+          console.log(`  ${o.id} (${o.date}): ${o.text}`)
+        }
+      }
+      for (const n of out.notes) console.log(`  ${C.yellow}note:${C.off} ${n}`)
       console.log()
       console.log(`${C.bold}Ticket${C.off}`)
       console.log(out.body)

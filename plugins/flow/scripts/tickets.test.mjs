@@ -396,14 +396,15 @@ test('Next up suggests the installed, namespaced command', () => {
 test('brief prints a ticket\'s full section plus the derived facts find reports', () => {
   // The brief exists so a session can read the next ticket's scope and
   // acceptance criteria from one command instead of opening the ticket doc
-  // (BOARD-3). --json is the find payload plus preamble, owed and body —
-  // the whole required reading for a fresh worker, O(epic) not O(history).
+  // (BOARD-3). --json is the find payload plus preamble, owed, notes and
+  // body — the whole required reading for a fresh worker, O(epic) not
+  // O(history).
   const briefed = JSON.parse(run(repo, 'brief', 'a-2', '--json'))
   const found = JSON.parse(run(repo, 'find', 'a-2', '--json'))
   assert.deepEqual(
     briefed,
-    { ...found, preamble: briefed.preamble, owed: briefed.owed, body: briefed.body },
-    'the brief payload is the find payload plus preamble, owed and body',
+    { ...found, preamble: briefed.preamble, owed: briefed.owed, notes: briefed.notes, body: briefed.body },
+    'the brief payload is the find payload plus preamble, owed, notes and body',
   )
   assert.match(briefed.body, /\*\*Scope\.\*\* Persistence\./, 'the body carries the section content')
 
@@ -475,6 +476,166 @@ work is unrelated and unaffected.
   const out = run(ledger, 'brief', 'O-4')
   assert.ok(!out.includes('backfill'), 'a resolved item never renders')
   assert.match(out, /O-3 \(2026-08-03\): the load test still needs a second region\./)
+})
+
+// An entry that owes several things, which is what the Owed field invites —
+// "anything deferred". One marker used to retire the lot: downstream, four
+// items recorded as one paragraph were closed by a marker naming one of them,
+// and the item that had to survive was a production-database hazard.
+const ledger2 = join(tmp, 'ledger2')
+git(tmp, 'init', '--initial-branch=main', ledger2)
+mkdirSync(join(ledger2, 'epics/delta'), { recursive: true })
+writeFileSync(
+  join(ledger2, 'epics/delta/tickets.md'),
+  '# Delta\n\n## D-1 — first\n\n**Scope.** One.\n\n## D-2 — second\n\n**Scope.** Two.\n\n## D-3 — third\n\n**Scope.** Three.\n\n## D-4 — next up\n\n**Scope.** Four.\n',
+)
+writeFileSync(
+  join(ledger2, 'epics/delta/status.md'),
+  `# Delta epic — status log
+
+### D-1 — first — 2026-08-01 — DONE
+
+**Owed:** four items, D-2 inherits them:
+- the seed script still points at the production database — D-3 must repoint
+  it before anyone runs the seed
+- the retry budget is unbounded
+  - and the backoff is untested, which is part of the same item
+- the docs still describe the old flag name
+- the parity test for the copied helper is missing
+
+### D-2 — second — 2026-08-02 — DONE
+
+**Owed:**
+
+- the browser demonstration is unperformed; no browser binary exists here
+
+**Resolves owed:** D-1 — the retry budget is bounded now.
+
+### D-3 — third — 2026-08-03 — DONE
+
+**Owed:** Nothing.
+
+**Resolves owed:** D-1.3 — the flag name is documented.
+`,
+)
+
+test('an entry recording several owed items numbers them, and only the named item is retired', () => {
+  const owed = JSON.parse(run(ledger2, 'brief', 'D-4', '--json')).owed
+  assert.deepEqual(
+    owed.map((o) => o.id),
+    ['D-1.1', 'D-1.2', 'D-1.4', 'D-2'],
+    'D-3 retired D-1.3 by name; the bare D-1 marker retired nothing, and D-1.1 — the production-database hazard — survives',
+  )
+  assert.match(owed[0].text, /production database — D-3 must repoint it before anyone runs the seed$/, 'a wrapped bullet arrives joined')
+  // A sub-bullet belongs to the item above it: the numbering counts what a
+  // reader counts, or a marker names the wrong thing.
+  assert.match(owed[1].text, /the retry budget is unbounded - and the backoff is untested/)
+  assert.equal(owed[0].lead, 'four items, D-2 inherits them:', 'the lead-in that names the carrier is kept, not dropped')
+  assert.equal(owed[3].id, 'D-2', 'an entry recording one item keeps the entry ID as its identity')
+})
+
+test('a bullet list separated from **Owed:** by a blank line is still recorded', () => {
+  // The idiomatic markdown shape. Read as "the paragraph ends at the blank
+  // line", every bullet vanished from the brief — the items lost silently,
+  // before any marker was written.
+  const owed = JSON.parse(run(ledger2, 'brief', 'D-4', '--json')).owed
+  const d2 = owed.find((o) => o.id === 'D-2')
+  assert.ok(d2, 'D-2 owes something')
+  assert.match(d2.text, /browser demonstration is unperformed/)
+})
+
+test('a bare Resolves owed on a multi-item entry retires nothing, and the brief says how to name them', () => {
+  // The safe direction: an item wrongly kept costs a reread, an item wrongly
+  // retired is gone from an append-only log with nothing left to report it.
+  const briefed = JSON.parse(run(ledger2, 'brief', 'D-4', '--json'))
+  assert.equal(briefed.notes.length, 1)
+  assert.match(briefed.notes[0], /\*\*Resolves owed:\*\* D-1/)
+  assert.match(briefed.notes[0], /4 items/)
+  assert.match(briefed.notes[0], /D-1\.1/, 'the note names the form that would work')
+
+  const out = run(ledger2, 'brief', 'D-4')
+  assert.match(out, /D-1\.1 \(2026-08-01\): the seed script still points at the production database/)
+  assert.match(out, /four items, D-2 inherits them:/)
+  assert.ok(!out.includes('the docs still describe the old flag name'), 'the item named by D-1.3 is retired')
+  assert.match(out, /retires nothing/)
+})
+
+// Two shapes taken from live downstream logs: an ID that heads more than one
+// Owed block (an append-only log lets a ticket record again), and a bullet
+// that opens with the word "Nothing" while owing something real.
+mkdirSync(join(ledger2, 'epics/epsilon'), { recursive: true })
+writeFileSync(
+  join(ledger2, 'epics/epsilon/tickets.md'),
+  '# Epsilon\n\n## E-1 — first\n\n**Scope.** One.\n\n## E-2 — second\n\n**Scope.** Two.\n\n## E-3 — next up\n\n**Scope.** Three.\n',
+)
+writeFileSync(
+  join(ledger2, 'epics/epsilon/status.md'),
+  `# Epsilon epic — status log
+
+### E-1 — first — 2026-08-01 — DONE
+
+**Owed:**
+- Nothing in this ticket has met Postgres; no integration suite has seen it
+- the parity test for the copied helper is missing
+
+### E-2 — second — 2026-08-02 — DONE
+
+**Owed:** Nothing.
+
+### E-1 — first, corrected — 2026-08-03 — DONE
+
+**Owed:** the retry budget is still unbounded.
+`,
+)
+
+test('an ID heading more than one Owed block numbers across them, so no two items share an identity', () => {
+  // Two obligations answering to one ID is the collision the numbering exists
+  // to prevent — one marker would retire both.
+  const owed = JSON.parse(run(ledger2, 'brief', 'E-3', '--json')).owed
+  assert.deepEqual(
+    owed.map((o) => o.id),
+    ['E-1.1', 'E-1.2', 'E-1.3'],
+    "E-1's later entry continues its numbering; E-2 owed Nothing and is filtered",
+  )
+  assert.match(owed[2].text, /retry budget is still unbounded/)
+})
+
+test('"Nothing" empties a block that has no bullets, never a bullet that owes something real', () => {
+  // Live downstream: a first bullet opening "Nothing in this ticket has met
+  // Postgres" dropped all five of its entry's items, because the block was
+  // read as one paragraph beginning with the word.
+  const owed = JSON.parse(run(ledger2, 'brief', 'E-3', '--json')).owed
+  assert.match(owed[0].text, /^Nothing in this ticket has met Postgres/)
+  assert.ok(!owed.some((o) => /^E-2/.test(o.id)), 'an entry that owes Nothing records nothing')
+})
+
+test('the note clears once the entry\'s items are closed by name — a warning that can be cleared', () => {
+  // The recovery the note advertises has to work from the state it is
+  // reported in, and leave nothing behind: a warning nobody can clear is one
+  // readers learn to skip past.
+  const doc = join(ledger2, 'epics/delta/status.md')
+  const original = readFileSync(doc, 'utf8')
+  try {
+    writeFileSync(doc, `${original}\n**2026-08-04 addendum.** Correcting D-2's marker.\n\n**Resolves owed:** D-1.1, D-1.2, D-1.4 — all three landed.\n`)
+    const briefed = JSON.parse(run(ledger2, 'brief', 'D-4', '--json'))
+    assert.deepEqual(briefed.owed.map((o) => o.id), ['D-2'])
+    assert.deepEqual(briefed.notes, [])
+  } finally {
+    writeFileSync(doc, original)
+  }
+})
+
+test('doctor flags a Resolves owed line that retires nothing, at the door its writer walks through', () => {
+  // The reader's door is the brief; the writer's door is doctor. Without
+  // both, a marker that discharged nothing is silent in one direction: the
+  // author believes the item closed, and the brief they never run says
+  // otherwise.
+  const res = runFail(ledger2, 'doctor', '--json')
+  const rows = JSON.parse(res ? res.stdout : run(ledger2, 'doctor', '--json'))
+  const row = rows.find((r) => /Resolves owed/.test(r.msg) && /D-1\b/.test(r.msg))
+  assert.ok(row, 'doctor reports the marker that retired nothing')
+  assert.equal(row.level, 'warn')
+  assert.match(row.msg, /4 items/)
 })
 
 test('brief with no argument briefs the first startable ticket and names its epic', () => {

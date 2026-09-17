@@ -355,6 +355,11 @@ const PHRASES = [
     re: /skipped check is not a passed one/i,
     files: ['script', 'epic', 'ticket', 'quick', 'workflow', 'readme'],
   },
+  {
+    why: "the owed marker's granularity — an entry that owed several things is retired item by item, and a bare entry ID against it retires nothing. The script derives it, both lanes write the markers, and README documents the brief; a skill that keeps the old whole-entry story teaches a worker to write a line that silently retires items nobody discharged",
+    re: /retires \*{0,2}nothing/i,
+    files: ['script', 'ticket', 'quick', 'readme'],
+  },
 ]
 
 function checkPhrases() {
