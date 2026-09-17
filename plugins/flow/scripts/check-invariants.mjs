@@ -319,6 +319,11 @@ const PHRASES = [
     files: ['reviewer', 'review', 'ticket', 'quick', 'workflow'],
   },
   {
+    why: 'the revert check is one rule at two doors — the lanes that write the Verified line name the test that fails with the source reverted, and the reviewer, the review skill and the driver open that test rather than take the claim',
+    re: /fails with the source change reverted/i,
+    files: ['ticket', 'quick', 'reviewer', 'review', 'workflow'],
+  },
+  {
     why: "the review addendum's token phrase is what `tickets.mjs spend` parses — the ticket and quick skills must keep writing it in that shape",
     re: /Reviewer tokens: /,
     files: ['ticket', 'quick', 'script', 'readme'],

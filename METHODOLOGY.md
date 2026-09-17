@@ -683,6 +683,20 @@ nothing about it. That is why the reviewer is pointed at assertion quality
 specifically, and why the ticket skill treats a surviving mutant in changed code
 as an unfinished acceptance criterion rather than a separate concern.
 
+Mutation testing needs a tool, and almost no project has one configured, so
+for a long time that sentence was dormant. The revert check (2026-09-16,
+taken from adk-go's PR template and self-review skill) is the one-mutant
+version that needs nothing: revert the source, keep the tests, run, and
+name the test that went red. It costs one test run and answers the exact
+question coverage cannot — would this suite notice if the change were
+missing? It is required at two doors rather than one because the worker's
+account of the check is the thing being checked: the lanes name the test,
+and the reviewer opens it and confirms it depends on the change. The
+per-guard refinement — flip each new branch on its own — exists because a
+whole-change revert stays red on the headline fix while a half of a
+compound condition, or a fixture sized from the constant under test, is
+never exercised.
+
 ## Why tickets go one at a time
 
 Working an epic by stacking each ticket on the last is tempting: nothing waits.
