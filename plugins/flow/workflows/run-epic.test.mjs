@@ -1066,6 +1066,31 @@ test('the acceptance gate runs after the disposition and re-review, so fix commi
 })
 
 
+test('the acceptance gate halts on a skipped check and names the skip, so the repair is the missing prerequisite', async () => {
+  // A skipped check is already outside `passed`, so the counts halt the run;
+  // the figure is read to say which repair the halt needs. Calling it a
+  // failure would send a human to debug code that is not wrong.
+  const r = await drive(
+    oneTicket({
+      'accept:PAY-1': {
+        outcome: 'ran',
+        total: 2,
+        passed: 1,
+        skipped: 1,
+        allPassed: false,
+        problems: 0,
+        failures: [{ criterion: 'the ledger rejects a foreign tenant', evidence: '↓ src/db/tenant.int.test.ts (12 tests | 12 skipped)' }],
+        detail: '',
+      },
+    }),
+  )
+  assert.match(r.out.haltedOn.stopCondition, /^a failed acceptance CHECK/)
+  assert.match(r.out.haltedOn.detail, /1 of them skipped/)
+  assert.match(r.out.haltedOn.detail, /a skipped check is not a passed one/)
+  assert.equal(r.out.ticketRecords[0].acceptanceChecksSkipped, 1)
+  assert.ok(!r.labels.some(l => l.startsWith('resolve:') || l.startsWith('merge:')))
+})
+
 test('the acceptance gate halts when the ledger says allPassed false though passed equals total', async () => {
   // The shape a malformed criterion produces: nothing ran, so the counts
   // agree with themselves. The script's own verdict is what the gate reads.

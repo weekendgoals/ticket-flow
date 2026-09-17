@@ -371,6 +371,22 @@ all. The admission test: this reduces uncertainty (a criterion nobody has
 seen fail is a criterion nobody has tested) and provides decision evidence at
 the sign-off gate, where the ledger is shown.
 
+The third correction came from console-foundations, and it is about what
+"green" means. A criterion's command can exit 0 while the work it names never
+ran: the house convention for a Postgres suite is to skip itself without
+`DATABASE_URL`, and a verbose reporter still prints the test titles an EXPECT
+matches — on the line that says they skipped. CF-3 measured it: `4/4 checks
+passed` with every evidence line reading `↓`, and every ticket in that epic
+needed a human to eyeball the markers, which is precisely the check the gate
+exists to perform. So the ledger has three verdicts rather than two. A skip is
+not a pass, because a run that did not happen is not evidence; and it is not a
+failure either, because calling it one sends a reader to debug code that is
+not wrong, and a gate whose red means two unrelated things is a gate people
+learn to argue with. Naming the third state is what makes the repair
+legible — supply the prerequisite, or point the EXPECT at a line that proves
+the run — and it keeps the gate's own contract: only checks the ledger counts
+as passed green a merge.
+
 Two deliberate limits. CHECK is optional, because most criteria are not
 mechanizable and forcing them into commands is ceremony — prose criteria and
 runtime demonstrations remain first-class, verified by the worker and held by

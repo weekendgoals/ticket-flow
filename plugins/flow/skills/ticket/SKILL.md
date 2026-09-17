@@ -197,9 +197,14 @@ never an invented test command.
   node "${CLAUDE_PLUGIN_ROOT}/scripts/tickets.mjs" check $ARGUMENTS
   ```
 
-  A failing check is a ticket that is not done. In an unattended run the
-  driver re-runs it with `--from origin/epic/<name>` — the criteria as signed
-  off — and gates the merge in code.
+  A failing check is a ticket that is not done. So is a skipped one: the
+  ledger marks `↓ skipped` when a command exits 0 while the work it names
+  never ran — the suite that skips itself without `DATABASE_URL` is the
+  common shape — and **a skipped check is not a passed one**. Give the
+  command what the run needed and re-run it, or record the criterion as owed
+  with the reason; never report it among the counts as passed. In an
+  unattended run the driver re-runs it with `--from origin/epic/<name>` —
+  the criteria as signed off — and gates the merge in code.
 
 Report **counts** — "api-gateway 217/217 passed", never "tests pass". A check
 that cannot run here is recorded as owed; never imply it passed. If mutation

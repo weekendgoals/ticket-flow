@@ -127,7 +127,9 @@ driven for real, the observed screen or output recorded as evidence. A
 criterion with `CHECK:` / `EXPECT:` lines runs through
 `node "${CLAUDE_PLUGIN_ROOT}/scripts/tickets.mjs" check Q-<n>`, its ledger
 pasted as the counts. A check that cannot run here is said so and recorded
-as owed; never imply it passed.
+as owed; never imply it passed. A ledger line reading `↓ skipped` is one of
+those: the command exited 0 and the work it names never ran, and **a skipped
+check is not a passed one**.
 
 Append the status entry to `epics/quick/status.md`. If the file does not
 exist, open it with this exact preamble — the block the epic skill's

@@ -8,6 +8,38 @@ with one version and date.
 
 ## Unreleased
 
+- **The acceptance ledger has a third verdict: a check whose evidence is a
+  skip is `↓ skipped`, and a skipped check is not a passed one**
+  (`scripts/tickets.mjs`: `runChecks` decides it and `check` prints and
+  counts it, with a `skipped` count and a per-check `status` in `--json`;
+  `workflows/run-epic.mjs` reads the count and names the skip in the halt;
+  `skills/epic/SKILL.md` requires an EXPECT a skip cannot satisfy;
+  `skills/ticket/SKILL.md` and `skills/quick/SKILL.md` say a `↓` line is not
+  a count you may report as passed; README and METHODOLOGY § "Why acceptance
+  criteria can be machine-runnable" carry the rule and its reason;
+  `check-invariants.mjs` pins the phrase across the six documents). Measured
+  downstream: console-foundations CF-3 reported `4/4 checks passed` while
+  every evidence line read `↓` — its Postgres suites skipped themselves for
+  want of `DATABASE_URL` (the house `describe.skipIf(...)` convention),
+  vitest exited 0, and the verbose reporter still printed the titles the
+  EXPECT strings matched. Every ticket in that epic then needed a human to
+  eyeball the markers, which is the check the gate exists to perform.
+  **Skipped is not passed**, because a run that did not happen proves
+  nothing and must never green a merge gate; it is **not failed** either,
+  because the code is not what is wrong and a red verdict sends a reader to
+  debug working code instead of supplying what the run needed. With an
+  EXPECT the verdict is read off the deciding line — the criterion names one
+  test, and its neighbours passing is not evidence for it; with no EXPECT,
+  where exit 0 is the whole evidence, off the whole output (some line reports
+  a skip, no line reports anything having run). Detection is shape, not
+  meaning: a runner's skip glyph starting a line (`↓`, `○`) or a skip
+  **count** (`12 skipped`, `skipped (12)`, TAP's `# SKIP`) — the count is
+  what keeps the bare word out, so a criterion may still assert that
+  something "is skipped". The recovery works from the refused state either
+  way: supply what the run needed, or point EXPECT at a line that proves it
+  ran. Exit codes are unchanged — a skip exits 1 like any ungreen gate, so
+  the driver's acceptance step still reports it as "ran".
+
 - **The plan reviewer asks what the lane can execute and what the evidence
   can show** (`agents/plan-reviewer.md` gains two questions; `skills/epic/SKILL.md`
   carries each as one clause — the step 3 Outcome template, the ground-rule

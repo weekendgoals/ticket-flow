@@ -350,6 +350,11 @@ const PHRASES = [
     re: /CHECK: |CHECK.{0,8}EXPECT/,
     files: ['epic', 'ticket', 'quick', 'run', 'script', 'workflow'],
   },
+  {
+    why: "the ledger's third verdict — a check whose evidence is a skip is not passed, so it cannot green a merge gate. The script decides it, the planning skill writes EXPECTs a skip cannot satisfy, both execution lanes read the ledger, the driver halts on it, and README documents it; a document that keeps only the two-verdict story teaches a worker to report a ↓ line as a pass",
+    re: /skipped check is not a passed one/i,
+    files: ['script', 'epic', 'ticket', 'quick', 'workflow', 'readme'],
+  },
 ]
 
 function checkPhrases() {

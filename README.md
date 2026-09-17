@@ -341,7 +341,13 @@ A criterion can also be **machine-runnable**: an indented `CHECK: <command>`
 line under the criterion bullet, with an optional `EXPECT: <text the output
 must contain>` — exit 0 alone decides when EXPECT is absent. The script's
 `check <ID>` subcommand runs them from the repository root and reports a
-pass/fail ledger whose evidence is the deciding output line; a malformed
+ledger whose evidence is the deciding output line, with three verdicts: `✓`
+passed, `✗` failed, and `↓` **skipped** — the command exited 0 but the
+deciding line is a test runner's skip (a suite that skips itself without
+`DATABASE_URL` exits 0, and a verbose reporter still prints the titles an
+EXPECT matches). **A skipped check is not a passed one**: it proves nothing,
+so it never greens the gate, and it is not called failed either, because the
+repair is the missing prerequisite rather than the code. A malformed
 CHECK **fails** the gate rather than silently never running, and `doctor`
 flags the near-miss shapes — including two that parse and run yet can never
 pass: `\\|` inside a quoted `node -e` / `sh -c` string (the quoting layer

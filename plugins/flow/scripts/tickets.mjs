@@ -363,14 +363,60 @@ const CHECK_TIMEOUT_MS = 600_000
 // eating the machine's memory before the timeout fires.
 const CHECK_MAX_BUFFER = 64 * 1024 * 1024
 
+// A skipped check is not a passed one, and a gate that cannot tell a skip from
+// a pass is worse than either verdict. Measured downstream before this existed:
+// console-foundations CF-3 reported `4/4 checks passed` while every evidence
+// line read `↓` — the Postgres-backed suites skipped themselves for want of
+// `DATABASE_URL` (the house `describe.skipIf(...)` convention), vitest exited
+// 0, and the verbose reporter still printed the titles the EXPECT strings
+// matched. Every ticket in that epic then needed a human to eyeball the
+// markers, which is the check the gate exists to perform.
+//
+// So the ledger carries a third verdict, `skipped`: not passed, because a run
+// that did not happen proves nothing and must never green a merge gate; not
+// failed, because the code is not what is wrong and a red verdict sends a
+// reader to debug working code instead of supplying what the run needed.
+//
+// Detection is shape, not meaning, like everything else here: a runner's skip
+// glyph at the start of a line (vitest's `↓`, jest's `○`), or a skip **count**
+// (`12 skipped`, `skipped (12)`, TAP's `# SKIP`). The count is what keeps the
+// bare word out: a criterion may legitimately assert that something was
+// skipped ("the migration is skipped when the table exists"), and a marker
+// that fired on the word would leave its author no way to write it.
+const CHECK_SKIP_MARK = /^[\s│|>]*[↓○]|(?<![\w-])\d+\s+skipped\b|\bskipped\s*\(\s*\d+\s*\)|#\s*skip(ped)?\b/i
+// Its counterpart: a line showing that something actually ran. `0 passed` is
+// not evidence of a run, so the zero is excluded — vitest prints
+// `Tests  0 passed | 12 skipped` for a suite that did nothing.
+const CHECK_RAN_MARK = /\b(?!0+\b)\d+\s+(?:passed|passing|ok)\b|\bpass(?:ed)?[:\s]+(?!0+\b)\d+\b/i
+// A line is skip evidence when it marks a skip and shows nothing having run.
+const skipEvidence = (line) => CHECK_SKIP_MARK.test(line) && !CHECK_RAN_MARK.test(line)
+
 function runChecks(checks) {
   return checks.map((c, idx) => {
     const r = spawnSync(c.check, { cwd: repoRoot, shell: true, encoding: 'utf8', timeout: CHECK_TIMEOUT_MS, maxBuffer: CHECK_MAX_BUFFER })
     const output = `${r.stdout || ''}${r.stderr || ''}`
+    const lines = output.split('\n')
     const exitCode = r.status === null ? -1 : r.status
     const okExit = exitCode === 0 && !r.error
-    const okExpect = c.expect === null || output.includes(c.expect)
-    const passed = okExit && okExpect
+    const matching = c.expect === null ? [] : lines.filter((l) => l.includes(c.expect))
+    const okExpect = c.expect === null || matching.length > 0
+    // The deciding line: the first match that is not a skip, because that is
+    // the line that decided a pass; otherwise the first match, which is then
+    // what decided the skip. The evidence reported is always the line the
+    // verdict came from.
+    const deciding = matching.find((l) => !skipEvidence(l)) ?? matching[0]
+    // With an EXPECT, the deciding line is the evidence and the skip is read
+    // off it — the criterion names one test, and its neighbours passing is not
+    // evidence for it. With no EXPECT, exit 0 is the whole evidence, so the
+    // question widens to the whole output: some line reports a skip and no
+    // line reports anything having run. The recovery works from the refused
+    // state either way — point EXPECT at a line that proves the run.
+    const skipped =
+      okExit &&
+      okExpect &&
+      (c.expect === null ? lines.some((l) => CHECK_SKIP_MARK.test(l)) && !lines.some((l) => CHECK_RAN_MARK.test(l)) : skipEvidence(deciding))
+    const passed = okExit && okExpect && !skipped
+    const status = passed ? 'passed' : skipped ? 'skipped' : 'failed'
     // The evidence line is what the ledger records — the deciding output,
     // never a feeling of completion.
     let evidence
@@ -382,10 +428,14 @@ function runChecks(checks) {
             ? `printed more than ${CHECK_MAX_BUFFER / 1024 / 1024} MB of output and was killed — quieten the command (e.g. drop debug logging, or pipe through tail) so the ledger can read its result`
             : r.error.message
       }`
-    else if (passed) evidence = c.expect ? (output.split('\n').find((l) => l.includes(c.expect)) || c.expect).trim().slice(0, 300) : 'exit 0'
+    else if (skipped)
+      evidence = c.expect
+        ? deciding.trim().slice(0, 300)
+        : (lines.find((l) => CHECK_SKIP_MARK.test(l)) || 'exit 0').trim().slice(0, 300)
+    else if (passed) evidence = c.expect ? (deciding || c.expect).trim().slice(0, 300) : 'exit 0'
     else if (!okExit) evidence = `exit ${exitCode}${output.trim() ? ` — ${output.trim().split('\n').slice(-3).join(' / ').slice(0, 300)}` : ''}`
     else evidence = `exit 0, but the output does not contain ${JSON.stringify(c.expect)}`
-    return { n: idx + 1, criterion: c.criterion, check: c.check, expect: c.expect, exitCode, passed, evidence }
+    return { n: idx + 1, criterion: c.criterion, check: c.check, expect: c.expect, exitCode, passed, status, evidence }
   })
 }
 
@@ -1325,20 +1375,33 @@ switch (cmd) {
     const { checks, problems } = parseChecks(body)
     const results = runChecks(checks)
     const passed = results.filter((r) => r.passed).length
+    const skipped = results.filter((r) => r.status === 'skipped').length
     const allPassed = passed === results.length && !problems.length
     if (json) {
-      emit({ id: t.id, epic: t.epic, from: fromRef, total: results.length, passed, allPassed, checks: results, problems })
+      emit({ id: t.id, epic: t.epic, from: fromRef, total: results.length, passed, skipped, allPassed, checks: results, problems })
     } else {
       if (fromRef) console.log(`${C.dim}criteria read from ${fromRef}${C.off}`)
       if (!results.length && !problems.length) console.log(`no CHECK criteria in ${t.id} — nothing to run`)
+      const MARK = { passed: `${C.green}✓${C.off}`, skipped: `${C.yellow}↓${C.off}`, failed: `${C.red}✗${C.off}` }
       for (const r of results) {
-        console.log(`${r.passed ? `${C.green}✓${C.off}` : `${C.red}✗${C.off}`} ${r.n}/${results.length} ${r.criterion || '(no criterion bullet above the CHECK line)'}`)
+        console.log(`${MARK[r.status]} ${r.n}/${results.length} ${r.criterion || '(no criterion bullet above the CHECK line)'}`)
         console.log(`    $ ${r.check}`)
         console.log(`    ${r.evidence}`)
+        // A skip is named where it is read, not left to a reader who knows the
+        // runner's glyphs — and the line says which of the two repairs it is,
+        // so nobody debugs working code.
+        if (r.status === 'skipped')
+          console.log(
+            `    ${C.yellow}the evidence is a skip: the named work did not run, so this criterion is not passed. Give the command what the run needed (a database, a credential, a service), or point EXPECT at a line that proves it ran.${C.off}`,
+          )
       }
       for (const p of problems) console.log(`${C.red}!${C.off} line ${p.line}: ${p.why}: ${p.text}`)
       if (results.length || problems.length)
-        console.log(`${passed}/${results.length} checks passed${problems.length ? ` — ${problems.length} malformed line(s), which fail the gate` : ''}`)
+        console.log(
+          `${passed}/${results.length} checks passed` +
+            (skipped ? ` — ${skipped} skipped, which does not pass the gate` : '') +
+            (problems.length ? ` — ${problems.length} malformed line(s), which fail the gate` : ''),
+        )
     }
     process.exit(allPassed ? 0 : 1)
   }

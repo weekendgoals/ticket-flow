@@ -1019,6 +1019,43 @@ halted a live run on correct code.
 - GHF-1's single-file count is sound and passed live — it must not be flagged
   CHECK: grep -c "Me and the log" api-gateway/CLAUDE.md
   EXPECT: 1
+
+## K-8 — a suite that skipped itself
+
+The output is console-foundations CF-3's, measured: a Postgres-backed vitest
+file under \`describe.skipIf(!DATABASE_URL)\` skips whole, vitest exits 0, and
+the EXPECT string still appears — on the line that says it skipped.
+
+**Acceptance criteria.**
+- the tenant-scoping suite passes
+  CHECK: node -e "console.log(' ↓ src/db/tenant.int.test.ts (12 tests | 12 skipped)'); console.log(' Test Files  1 skipped (1)'); console.log(' Tests  12 skipped (12)')"
+  EXPECT: src/db/tenant.int.test.ts
+
+## K-9 — the named test skipped while its neighbours passed
+
+**Acceptance criteria.**
+- the route refuses a foreign tenant
+  CHECK: node -e "console.log(' ✓ contracts > digest round trip 3ms'); console.log(' ↓ routes > refuses a foreign tenant'); console.log(' Tests  1 passed | 1 skipped (2)')"
+  EXPECT: refuses a foreign tenant
+
+## K-10 — a skipped suite with no EXPECT to point at
+
+**Acceptance criteria.**
+- the integration suite runs
+  CHECK: node -e "console.log(' Test Files  1 skipped (1)'); console.log(' Tests  12 skipped (12)')"
+
+## K-11 — runs that did happen, which a skip rule must not touch
+
+**Acceptance criteria.**
+- the suite passes with a couple of tests skipped
+  CHECK: node -e "console.log(' Tests  246 passed | 2 skipped (248)')"
+  EXPECT: 246 passed
+- the migration is skipped when the table already exists
+  CHECK: node -e "console.log('the migration is skipped when the table already exists')"
+  EXPECT: migration is skipped
+- node --test counts its skips beside its passes
+  CHECK: node -e "console.log('# pass 56'); console.log('# fail 0'); console.log('# skipped 2')"
+  EXPECT: # fail 0
 `,
 )
 git(crepo, 'add', '.')
@@ -1201,6 +1238,61 @@ test('a passing check is not killed by more than 1 MB of output noise', () => {
   } finally {
     writeFileSync(checksDoc, original)
   }
+})
+
+test('a criterion whose evidence is a skip is recorded skipped, and a skip does not pass the gate', () => {
+  // Measured downstream before it was fixed: console-foundations CF-3 reported
+  // `4/4 checks passed` while every evidence line read `↓`. The suite skipped
+  // itself for want of DATABASE_URL, vitest exited 0, and the EXPECT string
+  // matched the line that said so. Skipped is its own verdict — not passed,
+  // because it proves nothing; not failed, because the code is not what is
+  // wrong — and it never greens the gate.
+  const fail = runFail(crepo, 'check', 'K-8', '--json')
+  assert.equal(fail.status, 1, 'a skip exits nonzero like any ungreen gate')
+  const out = JSON.parse(fail.stdout)
+  assert.equal(out.allPassed, false)
+  assert.equal(out.passed, 0)
+  assert.equal(out.skipped, 1)
+  assert.equal(out.checks[0].status, 'skipped')
+  assert.equal(out.checks[0].passed, false)
+  assert.match(out.checks[0].evidence, /12 skipped/, 'the deciding line is still the evidence')
+
+  const text = runFail(crepo, 'check', 'K-8').stdout
+  assert.match(text, /↓ 1\/1 the tenant-scoping suite passes/, 'the ledger marks it ↓, not ✓ and not ✗')
+  assert.match(text, /did not run/, 'and says what a skip means, so nobody debugs working code')
+  assert.match(text, /0\/1 checks passed.*1 skipped/s)
+})
+
+test('a skip is judged on the deciding line, so a skipped test among passing ones is caught', () => {
+  // The criterion names one test. Its neighbours passing is not evidence for
+  // it, so the whole-output counts cannot be what decides — the line that
+  // carried the EXPECT text is.
+  const fail = runFail(crepo, 'check', 'K-9', '--json')
+  assert.equal(fail.status, 1)
+  const out = JSON.parse(fail.stdout)
+  assert.equal(out.checks[0].status, 'skipped')
+  assert.match(out.checks[0].evidence, /↓ routes > refuses a foreign tenant/)
+})
+
+test('with no EXPECT to point at, a run that reports only skips is skipped too', () => {
+  // Exit 0 is the whole evidence here, and a run in which nothing ran is not
+  // a run that passed. The recovery works from the refused state: an EXPECT
+  // naming a line that proves the run moves the verdict back to the line.
+  const fail = runFail(crepo, 'check', 'K-10', '--json')
+  assert.equal(fail.status, 1)
+  const out = JSON.parse(fail.stdout)
+  assert.equal(out.checks[0].status, 'skipped')
+  assert.equal(out.skipped, 1)
+})
+
+test('a run that did happen still passes — skipped neighbours, the word "skipped", node --test counts', () => {
+  // The cost of a false skip is a halted run on correct code, so the marker
+  // must fire on a runner's skip shape and nothing else.
+  const out = JSON.parse(run(crepo, 'check', 'K-11', '--json'))
+  assert.equal(out.allPassed, true)
+  assert.equal(out.passed, 3)
+  assert.equal(out.skipped, 0)
+  assert.deepEqual(out.checks.map((c) => c.status), ['passed', 'passed', 'passed'])
 })
 
 // ── spend: the recorded token ledger ─────────────────────────────────────────
