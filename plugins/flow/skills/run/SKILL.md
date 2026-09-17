@@ -367,7 +367,8 @@ enters your context from the loop:
                      reviewerReportedHead, fixBoundsGated,
                      fixBoundsTripped, fixBoundsExclude,
                      fixLines, acceptanceOutcome, acceptanceChecks,
-                     acceptanceChecksPassed, acceptanceAllPassed,
+                     acceptanceChecksPassed, acceptanceChecksSkipped,
+                     acceptanceAllPassed,
                      acceptanceProblems, resolveOutcome, mergeOutcome,
                      addendumMatches, headSha,
                      built, verification, workerReported,
@@ -441,14 +442,17 @@ that resumes past one. The run halts:
   What it measures is the fix diff minus `epics/` and the epic's `Fix bounds
   exclude:` globs, which sign-off approved as mechanical fan-out;
 - on **a failed acceptance CHECK — a machine-runnable criterion whose
-  command did not produce its expected result on the pushed branch, a CHECK
-  line too malformed to run at all, or an acceptance report the gate could
-  not read** — the gate reads the ledger's `allPassed` verdict, so a
-  malformed CHECK line halts even when every runnable check passed (it never
-  ran: a criterion nobody can satisfy is failed, not skipped), and an
-  unreadable report — missing counts, missing verdict, missing problem count
-  — halts on the same string. All three are one class, so a retro reading the
-  stop string alone files the halt correctly;
+  command did not produce its expected result on the pushed branch, a
+  criterion whose evidence is a skip, a CHECK line too malformed to run at
+  all, or an acceptance report the gate could not read** — the gate reads the
+  ledger's `allPassed` verdict, so a malformed CHECK line halts even when
+  every runnable check passed (it never ran, and a criterion nobody can
+  satisfy is a failed one), and a criterion the ledger marked `↓ skipped`
+  halts for the neighbouring reason: its command exited 0 while the work it
+  names never ran, and **a skipped check is not a passed one**. An unreadable
+  report — missing counts, missing verdict, missing problem count — halts on
+  the same string. All four are one class, so a retro reading the stop string
+  alone files the halt correctly;
 - on **a document/code contradiction — reported by a worker, or met by the
   script's own checks**: a ticket ID off the plugin's shape, a board that
   hands out the same ticket twice, a board reporting success without a
@@ -581,8 +585,10 @@ after fixes: `<reReviewImportantCount>` Important" when `reReviewRan`
 without a trip, or "fixes bounds-checked in code: `<fixLines>` lines inside
 the reviewed diff" when `fixBoundsGated` and nothing tripped — "acceptance:
 `<acceptanceChecksPassed>/<acceptanceChecks>` CHECKs" when any ran, plus
-"`<acceptanceProblems>` malformed" whenever that count is above zero,
-because a malformed CHECK is why an acceptance halt can read as all-green —
+"`<acceptanceChecksSkipped>` skipped" and "`<acceptanceProblems>` malformed"
+whenever either count is above zero, because a skipped check is not a passed
+one and a malformed CHECK never ran at all — either is why an acceptance halt
+can read as all-green, and `1/2` alone says which neither —
 integrated | halted. A record that omits the fix gate reads as though the
 fixes were never looked at.>
 

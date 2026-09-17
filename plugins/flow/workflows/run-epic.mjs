@@ -201,7 +201,7 @@ const STOP = {
   nonzeroExit: 'a nonzero exit from any command the run issues as a step, except those this skill explicitly marks tolerated',
   fixBounds: 'a review-fix diff the run could not measure — no usable fix-diff facts from the resolve step, or a fix whose changed lines cannot be counted; an unmeasurable fix is never merged',
   acceptanceCheck:
-    'a failed acceptance CHECK — a machine-runnable criterion whose command did not produce its expected result on the pushed branch, a CHECK line too malformed to run at all, or an acceptance report the gate could not read',
+    'a failed acceptance CHECK — a machine-runnable criterion whose command did not produce its expected result on the pushed branch, a criterion whose evidence is a skip, a CHECK line too malformed to run at all, or an acceptance report the gate could not read',
   ticketBudget: "a ticket's pass exceeding the epic's per-ticket token budget",
 }
 
@@ -520,7 +520,11 @@ const RE_REVIEW_SCHEMA = {
 // `allPassed` verdict and its count of malformed CHECK lines, because counts
 // alone cannot see a criterion that never ran. A CHECK the parser rejects
 // runs nothing, so `passed === total` is trivially true on it — that is the
-// shape that once merged a criterion nobody could satisfy.
+// shape that once merged a criterion nobody could satisfy. A criterion whose
+// evidence is a skip is the same shape one layer in: the command ran, exited
+// 0, and the named work did not happen. The ledger records those `skipped`
+// and keeps them out of `passed`, so a skipped check reaches this gate as
+// `passed < total` and halts the run — a skipped check is not a passed one.
 const ACCEPT_SCHEMA = {
   type: 'object',
   required: ['outcome'],
@@ -529,10 +533,15 @@ const ACCEPT_SCHEMA = {
       type: 'string',
       enum: ['ran', 'command-failed', 'permission-prompt'],
       description:
-        '"ran" once the check command itself executed and printed its JSON — exit 0 (every check passed and every criterion parsed) and exit 1 (a check failed, or a CHECK line is malformed) are BOTH "ran"; report what it printed either way. "command-failed" only when a git command failed, the check command exited 2, or it printed no parseable JSON.',
+        '"ran" once the check command itself executed and printed its JSON — exit 0 (every check passed and every criterion parsed) and exit 1 (a check failed, a check was skipped, or a CHECK line is malformed) are BOTH "ran"; report what it printed either way. "command-failed" only when a git command failed, the check command exited 2, or it printed no parseable JSON.',
     },
     total: { type: 'integer', description: 'the `total` field of the printed JSON, verbatim — 0 when the ticket has no CHECK criteria, which is an answer, not a failure' },
     passed: { type: 'integer', description: 'the `passed` field of the printed JSON, verbatim' },
+    skipped: {
+      type: 'integer',
+      description:
+        'the `skipped` field of the printed JSON, verbatim (0 when absent) — checks whose evidence is a skip: the command exited 0 and the work it names never ran. They are not counted in `passed`. Report the 0 rather than leaving the field out: the driver halts on a report that does not carry it.',
+    },
     allPassed: {
       type: 'boolean',
       description:
@@ -551,7 +560,7 @@ const ACCEPT_SCHEMA = {
         properties: { criterion: { type: 'string' }, evidence: { type: 'string' } },
       },
       description:
-        'one entry per failed check AND one per entry of `problems`: for a failed check the criterion text and its evidence; for a problem the `text` and the `why`, both verbatim from the JSON. [] only when the ledger holds neither. The driver quotes these in the halt.',
+        'one entry per check the ledger does not count as passed — `status` of "failed" or "skipped" — AND one per entry of `problems`: for a check the criterion text and its evidence (for a skipped one, say in the evidence that it skipped); for a problem the `text` and the `why`, both verbatim from the JSON. [] only when the ledger holds neither. The driver quotes these in the halt.',
     },
     detail: { type: 'string', description: 'first lines of any error output, verbatim, credentials masked' },
   },
@@ -1130,6 +1139,7 @@ Report honestly: \`branch-pushed\` ONLY if you saw the push of \`${branch}\` suc
     acceptanceOutcome: 'not reached',
     acceptanceChecks: null,
     acceptanceChecksPassed: null,
+    acceptanceChecksSkipped: null,
     acceptanceAllPassed: null,
     acceptanceProblems: null,
     resolveOutcome: 'not reached',
@@ -1749,7 +1759,7 @@ node "${pluginRoot}/scripts/tickets.mjs" check ${id} --from origin/${epicBranch}
 
 The first three commands bring the local branch to its pushed state — the state the checks must judge. The \`--from\` ref reads the CHECK/EXPECT criteria from the signed-off document on ${epicBranch}, never from this branch's own copy.
 
-The check command exits 0 when every check passed AND every criterion parsed; it exits 1 when any check failed **or any CHECK/EXPECT line is malformed** — a malformed line is a criterion that never ran, which is why it fails the gate rather than being skipped. BOTH exit codes are outcome "ran": report the JSON it printed verbatim — \`total\`, \`passed\`, \`allPassed\` exactly as the JSON prints it, \`problems\` as the LENGTH of the JSON's \`problems\` array, and one \`failures\` entry per failed check (criterion and evidence) and per problem (its \`text\` and \`why\`). Never infer \`allPassed\` from the counts and never leave it out: the driver halts on a report missing it. A \`total\` of 0 — no CHECK criteria — is an answer, not a failure. Report "command-failed" only when a git command failed, the check command exited 2, or it printed no parseable JSON. You judge nothing; the driver reads the ledger in code.
+The check command exits 0 when every check passed AND every criterion parsed; it exits 1 when any check failed, **any check was skipped**, **or any CHECK/EXPECT line is malformed** — a malformed line is a criterion that never ran, and a skipped check is a criterion whose command exited 0 while the work it names never ran (its \`status\` is \`"skipped"\`), which is why neither greens the gate. ALL of those exit codes are outcome "ran": report the JSON it printed verbatim — \`total\`, \`passed\`, \`skipped\`, \`allPassed\` exactly as the JSON prints it, \`problems\` as the LENGTH of the JSON's \`problems\` array, and one \`failures\` entry per check whose \`status\` is not \`"passed"\` (criterion and evidence) and per problem (its \`text\` and \`why\`). Never infer \`allPassed\` from the counts, and leave out neither it nor \`skipped\` — report \`skipped\` as 0 when the JSON prints none: the driver halts on a report missing either. A \`total\` of 0 — no CHECK criteria — is an answer, not a failure. Report "command-failed" only when a git command failed, the check command exited 2, or it printed no parseable JSON. You judge nothing; the driver reads the ledger in code.
 
 ${PROMPT_RULE}
 
@@ -1785,12 +1795,25 @@ ${NO_MAIN} The checkout and fast-forward only move the local branch to where the
     const passed = Number.isInteger(accept.passed) ? accept.passed : null
     const allPassed = typeof accept.allPassed === 'boolean' ? accept.allPassed : null
     const problems = Number.isInteger(accept.problems) && accept.problems >= 0 ? accept.problems : null
+    // Skipped checks are already outside `passed`, so the gate below catches
+    // them with or without this figure; it is read to say WHICH repair the
+    // halt needs — a missing database is not a broken clamp. It is still
+    // refused like every other count rather than defaulted to 0: the one
+    // field that names skips cannot be the one field allowed to go missing,
+    // and a schema the prompt tells the reporter to fill with 0 when the JSON
+    // has none leaves nothing legitimate for a default to rescue.
+    const skipped = Number.isInteger(accept.skipped) && accept.skipped >= 0 ? accept.skipped : null
     record.acceptanceChecks = total
     record.acceptanceChecksPassed = passed
+    record.acceptanceChecksSkipped = skipped
     record.acceptanceAllPassed = allPassed
     record.acceptanceProblems = problems
-    const unreadable = total === null || passed === null || allPassed === null || problems === null
-    if (unreadable || allPassed !== true || problems > 0 || passed !== total) {
+    const unreadable = total === null || passed === null || skipped === null || allPassed === null || problems === null
+    // `skipped > 0` is its own condition rather than something the counts are
+    // trusted to carry: the ledger keeps skips out of `passed`, so a report
+    // that claims both is self-contradictory, and re-deriving it here is the
+    // same defence in depth `problems > 0` and `passed !== total` already are.
+    if (unreadable || allPassed !== true || problems > 0 || passed !== total || skipped > 0) {
       const failures = Array.isArray(accept.failures) ? accept.failures : []
       const quoted = fence(
         failures.map(f => `${line(f.criterion)} — ${line(f.evidence || '(no evidence quoted)')}`).join('; ') || '(no failures quoted)',
@@ -1798,15 +1821,24 @@ ${NO_MAIN} The checkout and fast-forward only move the local branch to where the
       // More than one reason can be true at once; the halt says all of them,
       // because the human reading the run record fixes what it names.
       const why = []
-      if (passed !== null && total !== null && passed !== total) why.push(`${total - passed} of ${total} CHECK criteria failed on the pushed branch`)
+      if (passed !== null && total !== null && passed !== total)
+        why.push(
+          skipped > 0
+            ? `${total - passed} of ${total} CHECK criteria did not pass on the pushed branch, ${skipped} of them skipped — a command that exited 0 while the work it names never ran proves nothing, so a skipped check is not a passed one`
+            : `${total - passed} of ${total} CHECK criteria failed on the pushed branch`,
+        )
       if (problems > 0) why.push(`${problems} malformed CHECK line(s) never ran — a criterion nobody can satisfy is a failed criterion, not a skipped one`)
+      if (skipped > 0 && passed === total)
+        why.push(
+          `the ledger reports ${skipped} skipped though its counts read ${passed}/${total} — a skipped check is not a passed one, so the counts and the skip cannot both be right`,
+        )
       if (!why.length) why.push(`the ledger's own verdict is \`allPassed: false\` though its counts read ${passed}/${total} with no malformed line — the verdict is what the gate trusts`)
       halted = {
         ticket: id,
         stopCondition: STOP.acceptanceCheck,
         where: `the acceptance checks of ${id}`,
         detail: unreadable
-          ? `the acceptance-check step reported "ran" but no usable counts or verdict (total, passed, allPassed, problems) — a gate that cannot read its own evidence merges nothing; doubt goes up`
+          ? `the acceptance-check step reported "ran" but no usable counts or verdict (total, passed, skipped, allPassed, problems) — a gate that cannot read its own evidence merges nothing; doubt goes up`
           : `${why.join('; and ')}, judged against the signed-off document on ${epicBranch}: ${quoted}`,
       }
       break
@@ -1814,7 +1846,7 @@ ${NO_MAIN} The checkout and fast-forward only move the local branch to where the
     log(
       total === 0
         ? `${id}: no machine-runnable acceptance criteria — nothing to gate here; prose and demonstrate criteria remain the worker's verified obligations.`
-        : `${id}: acceptance checks ${passed}/${total} passed against the signed-off criteria, with no malformed CHECK line (the ledger's own \`allPassed\`).`,
+        : `${id}: acceptance checks ${passed}/${total} passed against the signed-off criteria, none skipped, with no malformed CHECK line (the ledger's own \`allPassed\`).`,
     )
   }
 

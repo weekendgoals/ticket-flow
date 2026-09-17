@@ -272,7 +272,10 @@ function parseTickets(epic) {
 // gate files, 2026-08-20): an indented `CHECK: <command>` line under the
 // bullet, optionally followed by `EXPECT: <text>`. The criterion passes when
 // the command exits 0 AND its output contains the EXPECT text (exit 0 alone
-// decides when EXPECT is absent). These regexes are load-bearing the same way
+// decides when EXPECT is absent) AND that evidence is not a skip — see
+// `runChecks` for the third verdict, because a command can satisfy both of
+// the first two while the work it names never ran. These regexes are
+// load-bearing the same way
 // the heading regexes are: doctor's near-miss scan is built against them, and
 // the skills' templates must match them — a CHECK that almost parses silently
 // never runs, which is the one way a machine-checked criterion can lie.
@@ -368,14 +371,85 @@ const CHECK_TIMEOUT_MS = 600_000
 // eating the machine's memory before the timeout fires.
 const CHECK_MAX_BUFFER = 64 * 1024 * 1024
 
+// A skipped check is not a passed one, and a gate that cannot tell a skip from
+// a pass is worse than either verdict. Measured downstream before this existed:
+// console-foundations CF-3 reported `4/4 checks passed` while every evidence
+// line read `↓` — the Postgres-backed suites skipped themselves for want of
+// `DATABASE_URL` (the house `describe.skipIf(...)` convention), vitest exited
+// 0, and the verbose reporter still printed the titles the EXPECT strings
+// matched. Every ticket in that epic then needed a human to eyeball the
+// markers, which is the check the gate exists to perform.
+//
+// So the ledger carries a third verdict, `skipped`: not passed, because a run
+// that did not happen proves nothing and must never green a merge gate; not
+// failed, because the code is not what is wrong and a red verdict sends a
+// reader to debug working code instead of supplying what the run needed.
+//
+// Detection is shape, not meaning, like everything else here: a runner's skip
+// glyph at the start of a line (vitest's `↓`, jest's `○`), or a skip **count**
+// (`12 skipped`, `skipped (12)`, TAP's `# SKIP`). The count is what keeps the
+// bare word out: a criterion may legitimately assert that something was
+// skipped ("the migration is skipped when the table exists"), and a marker
+// that fired on the word would leave its author no way to write it.
+//
+// Coverage is bounded and known, not universal: vitest, jest, node --test and
+// anything speaking TAP are matched; mocha's `N pending` and `go test`'s
+// `--- SKIP:` are not. Widening it is cheap when a project needs it, but a
+// detector that guesses at every runner's vocabulary would start failing
+// correct runs, and a false red halts a run on working code. What backstops
+// the gap is the same rule everywhere else: a criterion should point EXPECT
+// at a line that proves the run, not at one a skipped run also prints.
+const CHECK_SKIP_MARK = /^[\s│|>]*[↓○]|(?<![\w-])\d+\s+skipped\b|\bskipped\s*\(\s*\d+\s*\)|#\s*skip(ped)?\b/i
+// Its counterpart: a line showing that something actually ran. `0 passed` is
+// not evidence of a run, so the zero is excluded — vitest prints
+// `Tests  0 passed | 12 skipped` for a suite that did nothing. TAP's own
+// per-test line counts as well: a producer that prints `ok 1 - built` and no
+// summary at all still ran that test, and without this one `# SKIP` beside
+// it would read as a suite in which nothing happened — the opposite of what
+// the output says. `not ok` never matches, because the prefix class holds
+// whitespace and the decoration a reporter draws, never letters; and an
+// `ok N` carrying `# SKIP` is the skip it says it is, not a run.
+const CHECK_RAN_MARK =
+  /\b(?!0+\b)\d+\s+(?:passed|passing|ok)\b|\bpass(?:ed)?[:\s]+(?!0+\b)\d+\b|^[\s│|>]*ok\s+\d+\b(?!.*#\s*skip)/i
+// A line is skip evidence when it marks a skip and shows nothing having run.
+const skipEvidence = (line) => CHECK_SKIP_MARK.test(line) && !CHECK_RAN_MARK.test(line)
+
 function runChecks(checks) {
   return checks.map((c, idx) => {
     const r = spawnSync(c.check, { cwd: repoRoot, shell: true, encoding: 'utf8', timeout: CHECK_TIMEOUT_MS, maxBuffer: CHECK_MAX_BUFFER })
     const output = `${r.stdout || ''}${r.stderr || ''}`
+    const lines = output.split('\n')
     const exitCode = r.status === null ? -1 : r.status
     const okExit = exitCode === 0 && !r.error
-    const okExpect = c.expect === null || output.includes(c.expect)
-    const passed = okExit && okExpect
+    const matching = c.expect === null ? [] : lines.filter((l) => l.includes(c.expect))
+    const okExpect = c.expect === null || matching.length > 0
+    // Among the lines carrying the EXPECT text, a skip decides unless another
+    // of them shows something having run. Not "the first match that is not a
+    // skip": a runner that echoes its argv (`npm test -- <file>`) prints the
+    // EXPECT string on a line that is not skip evidence and proves nothing,
+    // and that echo used to outvote the `↓` two lines below it — a suite in
+    // which nothing ran, green. The opposite polarity is what a gate needs:
+    // the run line has to be there for the pass, not merely the absence of a
+    // skip. A line showing a run still wins, so one skipped file inside a
+    // suite that ran does not turn the ledger red.
+    const skipHit = matching.find(skipEvidence)
+    const ranHit = matching.find((l) => CHECK_RAN_MARK.test(l))
+    // The same question asked of the whole output, for the two cases where
+    // the EXPECT cannot answer it. With no EXPECT, exit 0 is the only other
+    // evidence there is. With an EXPECT whose own matches decide nothing
+    // either way, it is the argv echo again in its second shape: the runner
+    // repeats the file name while starting (`EXPECT: src/foo.test.js`) and
+    // its skip summary does not (`Tests: 1 skipped`), so narrowing the
+    // question to the matching lines greens a suite in which nothing ran —
+    // the hole this polarity exists to close. The recovery works from the
+    // refused state either way: point EXPECT at a line that proves the run.
+    const wholeSkip = lines.find((l) => CHECK_SKIP_MARK.test(l))
+    const wholeRan = lines.find((l) => CHECK_RAN_MARK.test(l))
+    const skipped = okExit && okExpect && (skipHit || ranHit ? Boolean(skipHit) && !ranHit : Boolean(wholeSkip) && !wholeRan)
+    // The evidence reported is always the line the verdict came from.
+    const deciding = skipped ? (skipHit ?? wholeSkip) : (ranHit ?? matching.find((l) => !skipEvidence(l)) ?? matching[0])
+    const passed = okExit && okExpect && !skipped
+    const status = passed ? 'passed' : skipped ? 'skipped' : 'failed'
     // The evidence line is what the ledger records — the deciding output,
     // never a feeling of completion.
     let evidence
@@ -387,10 +461,13 @@ function runChecks(checks) {
             ? `printed more than ${CHECK_MAX_BUFFER / 1024 / 1024} MB of output and was killed — quieten the command (e.g. drop debug logging, or pipe through tail) so the ledger can read its result`
             : r.error.message
       }`
-    else if (passed) evidence = c.expect ? (output.split('\n').find((l) => l.includes(c.expect)) || c.expect).trim().slice(0, 300) : 'exit 0'
+    // A skipped verdict always has its line — the EXPECT's skip or, when the
+    // question widened, the output's — so the evidence is never a bare exit.
+    else if (skipped) evidence = deciding.trim().slice(0, 300)
+    else if (passed) evidence = c.expect ? (deciding || c.expect).trim().slice(0, 300) : 'exit 0'
     else if (!okExit) evidence = `exit ${exitCode}${output.trim() ? ` — ${output.trim().split('\n').slice(-3).join(' / ').slice(0, 300)}` : ''}`
     else evidence = `exit 0, but the output does not contain ${JSON.stringify(c.expect)}`
-    return { n: idx + 1, criterion: c.criterion, check: c.check, expect: c.expect, exitCode, passed, evidence }
+    return { n: idx + 1, criterion: c.criterion, check: c.check, expect: c.expect, exitCode, passed, status, evidence }
   })
 }
 
@@ -408,57 +485,263 @@ function parseStatus(epic) {
   return byId
 }
 
-// The **Owed:** paragraphs of a status log, attributed to the parsed entry
-// they sit under, minus the ones a later line has explicitly resolved. This
-// is what lets `brief` hand a fresh worker the epic's outstanding
-// obligations without the worker rereading the whole log — the log grows
-// without bound, and "preserve everything" must not mean "reread everything
-// before every edit".
+// The **Owed:** blocks of a status log, split into the obligations they
+// record, attributed to the parsed entry they sit under, minus the ones a
+// later line has explicitly resolved. This is what lets `brief` hand a fresh
+// worker the epic's outstanding obligations without the worker rereading the
+// whole log — the log grows without bound, and "preserve everything" must not
+// mean "reread everything before every edit".
 //
-// Resolution is explicit, never inferred: a `**Resolves owed:** <ID> …`
-// line (in the discharging ticket's entry or a dated addendum) closes the
-// owed item recorded by entry <ID> — one Owed paragraph per entry, so the
-// entry ID is the item's identity. Entries owing "Nothing" are dropped.
-// What survives is labelled honestly: recorded and not marked resolved. A
-// ticket may have discharged an item without writing the marker — this
-// script derives, it does not investigate — so the reader checks the named
-// carrier before re-doing work, and writes the marker the log was owed.
-function parseOwed(epic) {
-  if (!epic.statusDoc) return []
-  const owed = []
-  const resolved = new Set()
+// Resolution is explicit, never inferred: a `**Resolves owed:** <ID> …` line
+// (in the discharging ticket's entry or a dated addendum) closes what <ID>
+// recorded. An entry that owes one thing is addressed by its own ID; an entry
+// that owes several — the Owed field invites exactly that, "anything
+// deferred" — numbers them `<ID>.1`, `<ID>.2`, … in document order, and the
+// marker names the item. Numbers only ever get appended, never reshuffled,
+// because the log is append-only: an entry's bullets never move once written.
+//
+// A bare `<ID>` retires what the entry owed WHEN THE MARKER WAS WRITTEN — the
+// items recorded above that line. Append-only makes a marker's position its
+// time, and that is what keeps an old bare marker meaning what it meant: an
+// entry that records again later would otherwise renumber a discharged item
+// back into every brief, forever. Facing more than one open item, a bare
+// marker retires NOTHING and says so rather than guessing. It used to retire
+// the lot: downstream, four items recorded as one paragraph were closed by a
+// marker naming one of them, and the item that had to survive was a
+// production-database hazard, caught only because a worker had been warned to
+// look. The asymmetry decides the direction — an item wrongly kept costs one
+// reread, an item wrongly retired is gone from an append-only log with nothing
+// left to report it — and the recovery is one appended line naming the items,
+// which the brief spells out and which clears the note.
+//
+// Entries owing "Nothing" are dropped. What survives is labelled honestly:
+// recorded and not marked resolved. A ticket may have discharged an item
+// without writing the marker — this script derives, it does not investigate —
+// so the reader checks the named carrier before re-doing work, and writes the
+// marker the log was owed.
+const OWED_REF = `${TICKET_ID}(?:\\.\\d+)?`
+// An ID has to end where the reference ends. Anchoring at the start alone
+// accepted a valid ID as the prefix of a malformed one — `F-2oops` yielded
+// `F-2` and retired that item — which is the silent discharge this whole
+// rule exists to prevent. A following letter, digit, hyphen or `.<digit>`
+// means the writer wrote something else, and the line then retires nothing:
+// unreadable and refused beats readable and wrong, because the item stays in
+// every brief until someone writes the reference again correctly.
+const OWED_REF_END = '(?![A-Za-z0-9-]|\\.\\d)'
+const OWED_REF_BOUNDED = `${OWED_REF}${OWED_REF_END}`
+const RESOLVES_LINE = /^\*\*Resolves owed:\*\*\s*(.*)$/
+const OWED_LINE = /^\*\*Owed:\*\*\s*(.*)$/
+const OWED_BULLET = /^(\s*)[-*]\s+(\S.*)$/
+
+// The notes a marker earns when it retires nothing — written once each, so the
+// brief a worker reads and the doctor row its author sees cannot drift into
+// two different accounts of the same line. Each states the repair that clears
+// it, and each is cleared by exactly that repair: a note whose only exit is
+// naming items that are still open would push a writer toward the silent
+// retirement this whole rule exists to prevent.
+const owedBareMarkerNote = (id, count) =>
+  `\`**Resolves owed:** ${id}\` names the entry, but ${id} had ${count} open items when that line was written, so it retires nothing. ` +
+  `Name the ones it discharged — \`${id}.1\`, \`${id}.2\` … in the order the entry lists them — in a new dated addendum; the rest stay listed, and naming any of them that way clears this note.`
+
+const owedUnknownItemNote = (ref, id, items) =>
+  `\`**Resolves owed:** ${ref}\` names no item: ${id} records ${items.length}${
+    items.length ? ` (\`${items.map((o) => o.id).join('`, `')}\`)` : ''
+  } above that line, so nothing was retired. ` +
+  `Correct the number in a new dated addendum — the log is append-only, so the wrong line stays and the right one goes underneath it.`
+
+// Every **Owed:** block in a status log, whether or not anything resolved it:
+// { id, date, line, lead, items: [{ text, line }] } per block, in document
+// order. The line numbers are what make a bare marker's position readable as
+// its time — see parseOwed.
+function owedBlocks(statusDoc) {
+  const blocks = []
   let entry = null // the last parsed "### <ID> — … — <date> — <outcome>" heading
-  let collecting = null
-  for (const line of readFileSync(epic.statusDoc, 'utf8').split('\n')) {
+  let block = null
+  let item = null // the open bullet, for wrapped continuation lines
+  let leadOpen = false // the lead text can be continued until a bullet or a blank
+  let blank = false
+  let indent = null // the block's top level: the indentation of its first bullet
+  readFileSync(statusDoc, 'utf8').split('\n').forEach((line, i) => {
+    const lineNo = i + 1
     const h = line.match(STATUS_HEADING)
     if (h) {
       entry = { id: h[1], date: h[3] }
-      collecting = null
-      continue
+      block = null
+      return
     }
-    const r = line.match(/^\*\*Resolves owed:\*\*\s*(.*)$/)
-    if (r) {
-      // Only the leading ID list resolves — "**Resolves owed:** A-1, A-2 —
-      // note". An ID mentioned later, inside the note's prose ("landed by
-      // A-3"), is a citation, not a target.
-      const lead = r[1].toUpperCase().match(new RegExp(`^${TICKET_ID}(\\s*,\\s*${TICKET_ID})*`))
-      if (lead) for (const id of lead[0].match(new RegExp(TICKET_ID, 'g'))) resolved.add(id)
-      collecting = null
-      continue
-    }
-    const m = line.match(/^\*\*Owed:\*\*\s*(.*)$/)
+    const m = line.match(OWED_LINE)
     if (m && entry) {
-      collecting = { ...entry, text: m[1].trim() }
-      owed.push(collecting)
+      block = { ...entry, line: lineNo, lead: m[1].trim(), items: [] }
+      blocks.push(block)
+      item = null
+      leadOpen = true
+      blank = false
+      indent = null
+      return
+    }
+    if (!block) return
+    const b = line.match(OWED_BULLET)
+    if (b) {
+      // A bullet continues the block even across a blank line: a list set off
+      // from its lead-in is the idiomatic markdown shape, and reading the
+      // block as "ends at the first blank line" dropped every item silently.
+      // The first bullet sets the block's top level; a deeper one is part of
+      // the item above it, so the numbering counts what a reader counts.
+      if (indent === null) indent = b[1].length
+      if (b[1].length > indent && item) {
+        item.text = `${item.text} ${line.trim()}`.trim()
+        blank = false
+        return
+      }
+      item = { text: b[2].trim(), line: lineNo }
+      block.items.push(item)
+      leadOpen = false
+      blank = false
+      return
+    }
+    if (/^#{1,6}\s/.test(line) || /^\*\*/.test(line)) {
+      // The next field, addendum or heading — the block is over.
+      block = null
+      return
+    }
+    if (line.trim() === '') {
+      item = null
+      leadOpen = false
+      blank = true
+      return
+    }
+    if (blank) {
+      // Prose after a blank line is the entry continuing, not the owed block.
+      block = null
+      return
+    }
+    if (item) item.text = `${item.text} ${line.trim()}`.trim()
+    else if (leadOpen) block.lead = `${block.lead} ${line.trim()}`.trim()
+  })
+  return blocks
+}
+
+// The obligations one block records. A block with bullets records its bullets
+// — the lead-in is context for all of them, kept because it is where the
+// carrier is usually named. A block without bullets records one: the
+// paragraph itself.
+//
+// "Nothing" only empties a block that has no bullets, because that is what
+// the convention is for — an entry declaring the field empty. Applied to a
+// bullet it drops a real obligation: console-foundations CF-1's first bullet
+// opens "Nothing in this ticket has met Postgres", and when the whole block
+// was read as one paragraph that phrase dropped all five items from every
+// brief it should have appeared in.
+function owedItems(block) {
+  const bulleted = block.items.length > 0
+  const raw = bulleted ? block.items : [{ text: block.lead, line: block.line }]
+  return raw
+    .map(({ text, line }) => ({
+      entry: block.id,
+      date: block.date,
+      line,
+      ...(bulleted && block.lead ? { lead: block.lead } : {}),
+      text,
+    }))
+    .filter((o) => Boolean(o.text) && (bulleted || !/^nothing\b/i.test(o.text)))
+}
+
+// Identity, assigned per ENTRY rather than per block: an ID can head more than
+// one block — a second entry under the same ticket, an addendum that records
+// more — and two obligations sharing one ID is the collision this numbering
+// exists to prevent. An entry owing one thing keeps its bare ID; an entry
+// owing several numbers them in document order, stable because the log is
+// append-only.
+function owedByEntry(blocks) {
+  const byEntry = new Map()
+  for (const block of blocks)
+    for (const item of owedItems(block)) {
+      if (!byEntry.has(item.entry)) byEntry.set(item.entry, [])
+      byEntry.get(item.entry).push(item)
+    }
+  for (const [id, items] of byEntry)
+    items.forEach((item, i) => {
+      item.id = items.length > 1 ? `${id}.${i + 1}` : id
+    })
+  return byEntry
+}
+
+// Every `**Resolves owed:**` line's targets, each with the line it was written
+// on — position is time in an append-only log, and a bare marker is read
+// against what the entry owed above it. Only the leading ID list resolves —
+// "**Resolves owed:** A-1, A-2.3 — note". An ID mentioned later, inside the
+// note's prose ("landed by A-3"), is a citation, not a target.
+function owedResolutions(statusDoc) {
+  const refs = []
+  readFileSync(statusDoc, 'utf8')
+    .split('\n')
+    .forEach((line, i) => {
+      const r = line.match(RESOLVES_LINE)
+      if (!r) return
+      const lead = r[1].toUpperCase().match(new RegExp(`^${OWED_REF_BOUNDED}(\\s*,\\s*${OWED_REF_BOUNDED})*`))
+      if (lead) for (const ref of lead[0].match(new RegExp(OWED_REF_BOUNDED, 'g'))) refs.push({ ref, line: i + 1 })
+    })
+  return refs
+}
+
+function parseOwed(epic) {
+  if (!epic.statusDoc) return { owed: [], notes: [] }
+  const byEntry = owedByEntry(owedBlocks(epic.statusDoc))
+  const refs = owedResolutions(epic.statusDoc)
+  // An entry someone has already addressed item by item: that writer has moved
+  // to the form the note asks for, so it supersedes any bare line above it.
+  // This is what makes the note clearable by the repair it names — the only
+  // other exit would be naming items that are still open, which is exactly the
+  // silent retirement the bare-marker rule exists to prevent. Only a reference
+  // that MATCHES an item counts: a mistyped `<ID>.7` retired nothing, so
+  // letting it clear the note would trade one silent line for another.
+  // Position is time for a dotted reference too: an item recorded BELOW it
+  // was not what its writer discharged, so it neither resolves nor counts as
+  // the itemisation that supersedes a bare marker. Membership is tested
+  // against the entry's own items rather than a scan of every reference, so
+  // this stays linear as the append-only log grows.
+  const itemAbove = (r) => (byEntry.get(r.ref.split('.')[0]) || []).some((o) => o.id === r.ref && o.line < r.line)
+  const itemised = new Set(refs.filter((r) => r.ref.includes('.') && itemAbove(r)).map((r) => r.ref.split('.')[0]))
+  const resolved = new Set()
+  const notes = []
+  const noted = new Set()
+  // Document order, because a marker is read against the state above it.
+  for (const { ref, line } of refs) {
+    const entry = ref.split('.')[0]
+    const items = byEntry.get(entry)
+    // A marker naming an entry this log does not record retires nothing and
+    // says nothing: `**Resolves owed:**` never crosses epics — this reads one
+    // status log — and a cross-epic marker is a legal thing to write, so
+    // flagging it would put a permanent note on a correct line.
+    if (!items) continue
+    // Read against the items the entry had recorded above this line, for the
+    // same reason the bare marker is: a reference that points into the future
+    // named nothing when it was written, and retiring a later item on it is
+    // the silent discharge in its subtlest shape.
+    if (ref.includes('.')) {
+      const above = items.filter((o) => o.line < line)
+      if (above.some((o) => o.id === ref)) resolved.add(ref)
+      else if (!noted.has(ref)) {
+        noted.add(ref)
+        notes.push(owedUnknownItemNote(ref, entry, above))
+      }
       continue
     }
-    if (collecting) {
-      // An Owed paragraph runs to the first blank line, like any paragraph.
-      if (line.trim() === '') collecting = null
-      else collecting.text = `${collecting.text} ${line.trim()}`.trim()
+    // What the entry still owed above this line. Items recorded after it were
+    // not what its author discharged, and items already retired are not what
+    // it could have meant.
+    const open = items.filter((o) => o.line < line && !resolved.has(o.id))
+    if (open.length === 1) resolved.add(open[0].id)
+    else if (open.length > 1 && !itemised.has(entry) && !noted.has(entry)) {
+      noted.add(entry)
+      notes.push(owedBareMarkerNote(entry, open.length))
     }
   }
-  return owed.filter((o) => o.text && !/^nothing\b/i.test(o.text) && !resolved.has(o.id))
+  const owed = [...byEntry.values()]
+    .flat()
+    .filter((o) => !resolved.has(o.id))
+    .map(({ entry, line, ...o }) => o)
+  return { owed, notes }
 }
 
 // ── token spend ──────────────────────────────────────────────────────────────
@@ -1028,6 +1311,10 @@ function doctor() {
         else if (!KNOWN_OUTCOMES.has(m[4]))
           add('warn', `${epic.epic}/status.md:${i + 1} — unknown outcome "${m[4]}" is ignored by the board (known: DONE, BLOCKED, ABANDONED)`)
       })
+      // A marker that retired nothing is silent at its author's door: the
+      // brief that would say so is read by the next worker, not by the
+      // session that wrote the line. Flagged here, where the writer looks.
+      for (const n of parseOwed(epic).notes) add('warn', `${epic.epic}/status.md — ${n}`)
     }
     // The run-record scans below run whether or not status.md exists — an epic
     // whose records are split out has a runs.md to check either way, and the
@@ -1265,10 +1552,12 @@ switch (cmd) {
       }
     }
     const epic = data.epics.find((e) => e.epic === t.epic)
+    const { owed, notes } = parseOwed(epic)
     const out = {
       ...ticketFacts(data, t),
       preamble: readFileSync(epic.ticketsDoc, 'utf8').split(/^##\s/m)[0].trim(),
-      owed: parseOwed(epic),
+      owed,
+      notes,
       body: t.body,
     }
     if (json) emit(out)
@@ -1285,7 +1574,17 @@ switch (cmd) {
       console.log()
       console.log(`${C.bold}Owed items — recorded, not marked resolved${C.off}`)
       if (!out.owed.length) console.log(`${C.dim}none outstanding${C.off}`)
-      else for (const o of out.owed) console.log(`  ${o.id} (${o.date}): ${o.text}`)
+      else {
+        let lead = null
+        for (const o of out.owed) {
+          // The lead-in prints once above the items it introduces — it is
+          // usually where the entry named the carrier.
+          if (o.lead && o.lead !== lead) console.log(`  ${C.dim}${o.lead}${C.off}`)
+          lead = o.lead || null
+          console.log(`  ${o.id} (${o.date}): ${o.text}`)
+        }
+      }
+      for (const n of out.notes) console.log(`  ${C.yellow}note:${C.off} ${n}`)
       console.log()
       console.log(`${C.bold}Ticket${C.off}`)
       console.log(out.body)
@@ -1331,20 +1630,33 @@ switch (cmd) {
     const { checks, problems } = parseChecks(body)
     const results = runChecks(checks)
     const passed = results.filter((r) => r.passed).length
+    const skipped = results.filter((r) => r.status === 'skipped').length
     const allPassed = passed === results.length && !problems.length
     if (json) {
-      emit({ id: t.id, epic: t.epic, from: fromRef, total: results.length, passed, allPassed, checks: results, problems })
+      emit({ id: t.id, epic: t.epic, from: fromRef, total: results.length, passed, skipped, allPassed, checks: results, problems })
     } else {
       if (fromRef) console.log(`${C.dim}criteria read from ${fromRef}${C.off}`)
       if (!results.length && !problems.length) console.log(`no CHECK criteria in ${t.id} — nothing to run`)
+      const MARK = { passed: `${C.green}✓${C.off}`, skipped: `${C.yellow}↓${C.off}`, failed: `${C.red}✗${C.off}` }
       for (const r of results) {
-        console.log(`${r.passed ? `${C.green}✓${C.off}` : `${C.red}✗${C.off}`} ${r.n}/${results.length} ${r.criterion || '(no criterion bullet above the CHECK line)'}`)
+        console.log(`${MARK[r.status]} ${r.n}/${results.length} ${r.criterion || '(no criterion bullet above the CHECK line)'}`)
         console.log(`    $ ${r.check}`)
         console.log(`    ${r.evidence}`)
+        // A skip is named where it is read, not left to a reader who knows the
+        // runner's glyphs — and the line says which of the two repairs it is,
+        // so nobody debugs working code.
+        if (r.status === 'skipped')
+          console.log(
+            `    ${C.yellow}the evidence is a skip: the named work did not run, so this criterion is not passed. Give the command what the run needed (a database, a credential, a service), or point EXPECT at a line that proves it ran.${C.off}`,
+          )
       }
       for (const p of problems) console.log(`${C.red}!${C.off} line ${p.line}: ${p.why}: ${p.text}`)
       if (results.length || problems.length)
-        console.log(`${passed}/${results.length} checks passed${problems.length ? ` — ${problems.length} malformed line(s), which fail the gate` : ''}`)
+        console.log(
+          `${passed}/${results.length} checks passed` +
+            (skipped ? ` — ${skipped} skipped, which does not pass the gate` : '') +
+            (problems.length ? ` — ${problems.length} malformed line(s), which fail the gate` : ''),
+        )
     }
     process.exit(allPassed ? 0 : 1)
   }
