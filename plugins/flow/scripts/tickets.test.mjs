@@ -769,6 +769,58 @@ test('a deviation paragraph ends at the next bolded field, blank line or not', (
     'the blank-line case still ends where it always did')
 })
 
+test('a bolded FIELD ends the paragraph; a sentence that merely begins in bold does not', () => {
+  // Review finding, DEV-4: ending the paragraph at any line starting with `**`
+  // cut a wrapped sentence at the line break, and — when the label's text began
+  // on the next line in bold — left the paragraph empty, which drops the
+  // departure entirely and reports the ticket as having recorded none. A record
+  // that reads as absent is the failure the line exists to end, so the
+  // terminator is a bolded field label, not bold text.
+  const dir = join(tmp, 'deviations-bold')
+  git(tmp, 'init', '--initial-branch=main', dir)
+  mkdirSync(join(dir, 'epics/echo'), { recursive: true })
+  writeFileSync(join(dir, 'epics/echo/tickets.md'), ECHO_TICKETS)
+  const status = (body) => {
+    writeFileSync(join(dir, 'epics/echo/status.md'), `# Echo epic — status log\n\n### E-1 — the landing page — 2026-09-07 — DONE\n\n${body}`)
+    return JSON.parse(run(dir, 'deviations', 'E-1', '--json'))
+  }
+
+  const wrapped = status(
+    '**Deviation:** the design showed a hero band → built without it, because\n' +
+      '**the asset pipeline** cannot resize the source image yet.\n' +
+      '**Owed:** Nothing.\n',
+  )
+  assert.equal(wrapped.count, 1)
+  assert.equal(
+    wrapped.deviations[0].text,
+    'the design showed a hero band → built without it, because **the asset pipeline** cannot resize the source image yet.',
+    'the wrapped sentence survives whole — a departure cut at "because" is what a brief and every door would gate on',
+  )
+
+  const labelOnly = status('**Deviation:**\n**the spec\'s cursor API** was never built, so paging stayed client-side.\n\n**Owed:** Nothing.\n')
+  assert.equal(labelOnly.count, 1, 'a departure whose text begins on the next line in bold is still a departure, not none')
+  assert.match(labelOnly.deviations[0].text, /^\*\*the spec's cursor API\*\* was never built/)
+
+  // Every label the entry template puts beneath a deviation, plus a heading:
+  // each must still end the paragraph with no blank line between them.
+  for (const terminator of [
+    '**Owed:** Nothing.',
+    '**Decisions:** none.',
+    '**Resolves owed:** E-0 — the backfill ran.',
+    '**Deviations closed:** E-1 — accepted; Vadim; 2026-09-07.',
+    '**Addendum — review — 2026-09-07 — opus/xhigh:** one nit, fixed.',
+    '### E-2 — the results list — 2026-09-07 — DONE',
+  ]) {
+    const out = status(`**Deviation:** the design showed three footer links → built with one.\n${terminator}\n`)
+    assert.equal(out.count, 1, `${terminator} — the departure above it is still recorded`)
+    assert.equal(
+      out.deviations[0].text,
+      'the design showed three footer links → built with one.',
+      `${terminator} ends the paragraph rather than being swallowed into it`,
+    )
+  }
+})
+
 test('brief and doctor carry the deviation notes to the two readers who can act on them', () => {
   const dir = echoRepo('deviations-notes-doors')
   const briefed = JSON.parse(run(dir, 'brief', 'E-4', '--json'))

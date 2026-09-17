@@ -831,6 +831,17 @@ const deviationBadRefNote = (ref, id) =>
   `Reading the prefix instead would close a deviation nobody named — the same silent discharge the owed ledger's \`F-2oops\` taught. ` +
   `Write the reference again correctly in a new dated line.`
 
+// The next bolded FIELD — `**Owed:**`, `**Decisions:**`, a dated
+// `**Addendum — … :**` — which is where a deviation paragraph stops when no
+// blank line separates them. A label, not merely bold: a wrapped sentence that
+// happens to BEGIN in bold ("… because / **the asset pipeline** cannot resize
+// it") is the paragraph continuing, and ending it there cut the record at
+// "because" — or, when the label's text began on the next line, dropped the
+// paragraph as empty and reported the departure as none at all. The record must
+// never be the thing an ambiguity is resolved against: a deviation nobody can
+// read is the failure this whole line exists to end.
+const BOLD_FIELD = /^\*\*[^*]+:\*\*/
+
 // A closing line's LEADING reference list, split into what closes and what only
 // looks like it does. The list is walked token by token rather than matched
 // whole so that a malformed reference is reported instead of silently ending
@@ -890,9 +901,9 @@ function parseDeviationsText(text) {
       return
     }
     if (collecting) {
-      // The paragraph ends at a blank line, at the next bolded field, or at the
-      // next heading — never by swallowing them.
-      if (line.trim() === '' || /^\*\*/.test(line) || /^#{1,6}\s/.test(line)) collecting = null
+      // The paragraph ends at a blank line, at the next bolded FIELD, or at the
+      // next heading — never by swallowing them, and never by cutting prose.
+      if (line.trim() === '' || BOLD_FIELD.test(line) || /^#{1,6}\s/.test(line)) collecting = null
       else collecting.text = `${collecting.text} ${line.trim()}`.trim()
     }
   })
