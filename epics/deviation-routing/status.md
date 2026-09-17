@@ -394,3 +394,106 @@ not a lost record, since there is no text to lose, and the empty-text filter
 predates this ticket, but a silent drop all the same.
 
 Re-review tokens: 191,972
+
+### DEV-2 — A deviation stops an attended merge — 2026-09-17 — DONE
+
+**Built:** the two attended doors now carry a departure to the human who
+decides it. Ticket skill step 9 runs `deviations <ID>` before the summary and
+shows **every** one the ticket recorded — a closed one with its closing line,
+and the note a closing line that closed nothing earns — then names them in the
+incremental pull request body under their own heading. Step 10 does not
+integrate a ticket **with an unclosed deviation** into its epic branch: it
+reads the departures off `origin/<branch>` with `--log-from`, because that is
+the SHA it merges, stops before the merge commands on `open` above zero or on
+any note, and spells out both recoveries — the human accepts it, or the worker
+fixes it on the branch as new commits with a dated addendum and the human then
+accepts it as fixed in a commit — each ending in a closing line no agent
+composes and naming the `<ID>.<n>` references, because a bare line facing
+several closes nothing and would leave the gate refusing. The quick skill's
+step 7 names a deviation in its pull request body in the same words; with no
+agent merge to refuse, that body is its only door. `check-invariants.mjs` pins
+the pull-request-body sentence across the two lanes, with a test that flips it
+at each door; README, METHODOLOGY and the CHANGELOG carry the doors and the
+reason for them.
+
+**Mode:** supervisor — worker worker:DEV-2 (opus), reviewer hired by the
+supervisor
+
+**Tokens:** observed by the supervisor — see the review addendum
+
+**Verified:** `node plugins/flow/scripts/tickets.mjs check DEV-2` 3/3, exit 0
+(0/3 on the base tree at `b5d02ce`, every criterion failing before the work).
+`node --test plugins/flow/scripts/check-invariants.test.mjs` 20/20 (19 before;
+one new test). Unchanged suites, all passing: `tickets.test.mjs` 101/101,
+`ticket-session-guard.test.mjs` 14/14, `board.test.mjs` 9/9,
+`plan-page.test.mjs` 8/8, `run-epic.test.mjs` 123/123,
+`runners/codex.test.mjs` 21/21, `runners/codex-review.test.mjs` 19/19.
+`node plugins/flow/scripts/check-invariants.mjs` exit 0,
+`node plugins/flow/scripts/tickets.mjs doctor` exit 0,
+`node --check plugins/flow/scripts/tickets.mjs` exit 0, and the run-epic
+module-body parse exit 0 (both scripts untouched here). CLAUDE.md's two
+invariant-suite counts move 19 → 20 in the same commit as the test.
+demonstrate, read as a supervisor against real output from a throwaway
+`throwaway` epic in a temp git repo, one entry recording a hero band that was
+not built. **One open item** — `deviations TW-1` printed `1 recorded, 1 not
+yet closed by a human`, `open TW-1: …`; `--json` `open: 1`, `notes: []`. The
+sentence that decided it: step 10's "`open` above zero stops this step before
+the merge commands below" — the reading stops at the refusal, never reaching
+`git rev-parse origin/<branch>`. **Closed as fixed** — the fix committed on
+branch `tw-1` and a dated `**Deviations closed:** TW-1 — fixed in <sha>;
+Vadim; 2026-09-17.` beneath it, read the way the step reads it
+(`deviations TW-1 --log-from tw-1 --json`): `open: 0`, `notes: []`, the
+deviation `closed` with `closedBy` carrying the line. Decided by the same
+bullet's other half, "`open: 0` with an empty `notes` is what resumes this
+step, and nothing else is" — the reading reaches the merge. **Closed by a line
+the supervisor did not write** — branch `tw-1-selfclosed` carrying
+`**Deviations closed:** TW-1 — accepted; the implementing worker;
+2026-09-17.`: `open: 0`, so the same sentence reaches the merge, and step 9's
+"A closed one is shown **with its closing line**, because only a human may
+write that line and no command can say who did" is what puts
+`closed by: TW-1 — accepted; the implementing worker; 2026-09-17.` in front of
+the human. The refusal's recovery was read from inside the refused state too:
+on a two-departure entry a bare `**Deviations closed:** TW-1` left
+`2 recorded, 2 not yet closed` plus the bare-line note, so the step still
+refuses — which is why the step names the references — and appending
+`**Deviations closed:** TW-1.1, TW-1.2 — …` then gave `open: 0`, zero notes,
+both closed with that line. revert check: `git revert --no-commit $(git
+rev-list --no-merges b5d02ce..HEAD)` with
+`plugins/flow/scripts/check-invariants.test.mjs` checked back out of HEAD —
+**"either lane that stops naming a deviation in the pull request body fails"
+fails**, 19 pass / 1 fail; `git revert --abort` left the tree exactly HEAD
+(`git diff HEAD` empty). The new invariant was then flipped at each of its two
+doors in turn — the sentence replaced in the ticket skill, then in the quick
+skill — and `check-invariants.mjs` exited 1 each time, naming the file and the
+coupling.
+
+**Decisions:** six judgment calls the documents left open. (1) Step 10's gate
+reads `origin/<branch>` through `--log-from`, not the checkout: the step merges
+a verified SHA, so a closing line present only in the working tree would clear
+a gate on a commit that does not carry it — DEV-1 built the flag for exactly
+this ref, and a gate is verified at the door its actor walks through. (2) Both
+doors show the `notes` DEV-4 added, not only the deviations. A note is not a
+departure, so nothing required it; but a bare closing line facing several
+closes nothing, and a reader who counted only `closed` flags would see the
+departure still open with no sign that anyone had tried to close it — the same
+"seen rather than trusted" the epic's Decision 5 asks of a closing line. It is
+also what makes the refusal's recovery legible, since the note states the
+repair. (3) Who physically writes the closing line: the human, in every path.
+Step 6, README and METHODOLOGY all say no agent writes one, and the ticket's
+"written on the human's word, quoted" is rendered as a boundary rather than a
+permission — dictating the sentence for the worker to commit verbatim is the
+human writing it; inferring it from a "yes", or drafting it for them to
+approve, is not. That keeps the recovery workable in a terminal session without
+letting the party under review compose its own closure. (4) The refusal names
+the `<ID>.<n>` references and says why, rather than telling anyone to "write
+the closing line": observed above, a bare line against several departures
+leaves the gate refusing, so the unqualified advice would have been a recovery
+that does not work in the refused state. (5) One `PHRASES` entry, on the
+pull-request-body sentence across both lanes — the checker's own rule is to
+keep the list short, and the refusal sentence is single-document and already
+pinned by this ticket's first CHECK. (6) Step 10's incremental half gained one
+sentence saying there is no agent merge there to refuse and that the departure's
+door was step 9's body; without it the asymmetry between the two deliveries
+reads as an omission a later session would "fix".
+
+**Owed:** Nothing.
