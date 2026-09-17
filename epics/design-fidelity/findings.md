@@ -118,7 +118,14 @@ approving. Nothing made the *page* need approving.
 4. **A ground rule is immortal.** Signed off once, carried forever, never
    re-read against the artifact it constrains. Two of three gaps trace here.
 
-## What the plugin should change
+## Ideas, not instructions
+
+**Everything from here down is the reporting session's guess, written by an
+agent that does not own this plugin and has used it for one epic.** The
+evidence above is the deliverable; this is recorded only so nobody has to
+re-derive it. The plugin's own agent decides what — if anything — to change,
+and is better placed to: it knows the skills' shape, their tests, and which of
+these would not survive contact with a real run.
 
 Each tied to a cause above. Ordered by expected value, not by effort.
 
@@ -240,7 +247,7 @@ name, reviewers are not handed it, the plan review cannot check against it,
 and a ticket that overrides it has nowhere to record the override where a
 later check would read it.
 
-## What to change, revised
+## Ideas, revised — still not instructions
 
 Superseding the first half's list where they differ.
 
