@@ -618,12 +618,15 @@ const ECHO_TICKETS =
   '## E-3 — the footer\n\n**Scope.** The footer.\n\n' +
   '## E-4 — next up\n\n**Scope.** Four.\n'
 
-// E-1 records two departures — the second written directly above `**Owed:**`
-// with no blank line between them, which must not swallow the next field's
-// markup. E-2 records one, so a bare line still closes it. The addendum then
-// tries every way a closing line can name nothing: a bare ID against E-1's two,
-// a number past the end, an ID a reference ends inside, and an ID this log
-// records no departure for. E-3's departure sits below every one of them.
+// E-1 records two departures in its first entry — the second written directly
+// above `**Owed:**` with no blank line between them, which must not swallow the
+// next field's markup — and a third in a later entry, because an ID can head
+// more than one. E-2 records one, so a bare line still closes it. The addendum
+// then tries every way a closing line can name nothing: a bare ID against
+// E-1's two, a number past the end, an ID a reference ends inside, an ID this
+// log records no departure for, and two references — `E-1.3` and a bare `E-3`
+// — that point at departures recorded BELOW them, which position is what
+// refuses: a line closed what was written above it, never what came later.
 const ECHO_STATUS = `# Echo epic — status log
 
 Append-only record of finished tickets. Tickets: \`epics/echo/tickets.md\`.
@@ -660,10 +663,21 @@ the endpoint has no cursor.
 
 **Deviations closed:** E-9 — accepted; Vadim; 2026-09-03.
 
+**Deviations closed:** E-1.3 — accepted; Vadim; 2026-09-03.
+
+**Deviations closed:** E-3 — accepted; Vadim; 2026-09-03.
+
 ### E-3 — the footer — 2026-09-04 — DONE
 
 **Deviation:** the design showed three footer links → built with one, because
 two of the three have no destination yet.
+
+**Owed:** Nothing.
+
+### E-1 — the landing page, redone — 2026-09-05 — DONE
+
+**Deviation:** the design showed a search field in the header → built without
+one, because there is nothing to search yet.
 
 **Owed:** Nothing.
 `
@@ -684,10 +698,10 @@ test('a bare closing line closes a lone deviation, and against several closes no
   const e1 = JSON.parse(run(dir, 'deviations', 'E-1', '--json'))
   assert.deepEqual(
     e1.deviations.map((d) => [d.item, d.closed]),
-    [['E-1.1', false], ['E-1.2', false]],
-    'the bare line faced two open departures, so it closed neither — one wrongly closed is a decision nobody made',
+    [['E-1.1', false], ['E-1.2', false], ['E-1.3', false]],
+    'the bare line faced two open departures, so it closed neither — one wrongly closed is a decision nobody made; the third, recorded below every closing line, was never the line\'s to close',
   )
-  assert.equal(e1.open, 2)
+  assert.equal(e1.open, 3)
   assert.equal(noteOf(e1, /had 2 open deviations/).length, 1, 'the line that closed nothing says so, once')
   assert.match(e1.notes[0], /bare closing line closes an entry's deviation only when exactly one was open above it/)
   assert.match(e1.notes[0], /`E-1\.1`, `E-1\.2`/, 'the note names the repair in the form that works')
@@ -698,8 +712,9 @@ test('a bare closing line closes a lone deviation, and against several closes no
   assert.deepEqual(e2.notes, [], 'a bare line that closed its one departure earns no note')
 
   const e3 = JSON.parse(run(dir, 'deviations', 'E-3', '--json'))
-  assert.deepEqual(e3.deviations.map((d) => d.closed), [false],
-    'a departure recorded below every closing line is not born closed')
+  assert.deepEqual(e3.deviations.map((d) => [d.item, d.closed]), [['E-3', false]],
+    'a bare line naming E-3 stood above E-3\'s only departure, so it closed nothing — a departure is never born closed')
+  assert.deepEqual(e3.notes, [], 'and a line that named nothing open above it is silent, not noisy')
 
   assert.match(run(dir, 'deviations', 'E-1'), /note:.*had 2 open deviations/, 'the note reaches the plain reader too')
 })
@@ -710,9 +725,11 @@ test('a reference naming no deviation, and an ID a reference ends inside, close 
   assert.equal(noteOf(e1, /`\*\*Deviations closed:\*\* E-1\.7` names no deviation/).length, 1,
     'a number past the end of the entry is reported, not silently read as a closure')
   assert.match(e1.notes.join('\n'), /E-1 records 2 \(`E-1\.1`, `E-1\.2`\) above that line/)
+  assert.equal(noteOf(e1, /`\*\*Deviations closed:\*\* E-1\.3` names no deviation/).length, 1,
+    'a reference to a departure recorded BELOW it named nothing when it was written, and is reported as the mistyped number it cannot be told apart from')
   assert.equal(noteOf(e1, /E-1OOPS` is not a reference an ID ends inside/).length, 1,
     'an ID that does not end where the reference ends closes nothing — reading the prefix is the silent discharge')
-  assert.equal(e1.open, 2, 'neither malformed line closed anything')
+  assert.equal(e1.open, 3, 'no malformed or premature line closed anything')
   assert.ok(!JSON.stringify(e1.notes).includes('E-9'),
     'an ID this log records no departure for is a legal thing to write, and earns no permanent note')
 })
@@ -728,14 +745,14 @@ test('naming an item closes that one, leaves the rest open, and clears the note'
   const e1 = JSON.parse(run(dir, 'deviations', 'E-1', '--json'))
   assert.deepEqual(
     e1.deviations.map((d) => [d.item, d.closed]),
-    [['E-1.1', false], ['E-1.2', true]],
-    'the item form closes the one it names and leaves the other open',
+    [['E-1.1', false], ['E-1.2', true], ['E-1.3', false]],
+    'the item form closes the one it names and leaves the others open',
   )
   assert.match(e1.deviations[1].closedBy, /the sticky nav, fixed in 9f3a21c; Vadim; 2026-09-05/)
   assert.equal(e1.deviations[0].closedBy, null)
   assert.equal(noteOf(e1, /had 2 open deviations/).length, 0,
     'the bare line above it is superseded by the itemisation, so its note is cleared')
-  assert.equal(noteOf(e1, /names no deviation/).length, 1, 'the mistyped reference still closed nothing and still says so')
+  assert.equal(noteOf(e1, /names no deviation/).length, 2, 'the references that named nothing still closed nothing and still say so')
 })
 
 test('a deviation paragraph ends at the next bolded field, blank line or not', () => {
@@ -757,10 +774,10 @@ test('brief and doctor carry the deviation notes to the two readers who can act 
   const briefed = JSON.parse(run(dir, 'brief', 'E-4', '--json'))
   assert.deepEqual(
     briefed.deviations.map((d) => d.item),
-    ['E-1.1', 'E-1.2', 'E-3'],
-    "every departure no human has closed travels epic-wide; E-2's, closed by a line that could close it, does not",
+    ['E-1.1', 'E-1.2', 'E-3', 'E-1.3'],
+    "every departure no human has closed travels epic-wide, in document order; E-2's, closed by a line that could close it, does not",
   )
-  assert.equal(briefed.deviationNotes.length, 3, 'the brief carries what the three closing lines could not close')
+  assert.equal(briefed.deviationNotes.length, 4, 'the brief carries what the four closing lines could not close')
   const out = run(dir, 'brief', 'E-4')
   assert.match(out, /E-1\.1 \(2026-09-01\): the design showed a hero band/, 'the brief prints the item ID a closing line would name')
   assert.match(out, /note:.*had 2 open deviations/, 'the note prints beside the open deviations')
@@ -769,7 +786,7 @@ test('brief and doctor carry the deviation notes to the two readers who can act 
   const failed = runFail(dir, 'doctor', '--json')
   const rows = JSON.parse(failed ? failed.stdout : run(dir, 'doctor', '--json'))
     .filter((r) => /Deviations closed:/.test(r.msg))
-  assert.equal(rows.length, 3, "doctor warns at the writer's door, where the human who can repair the line is looking")
+  assert.equal(rows.length, 4, "doctor warns at the writer's door, where the human who can repair the line is looking")
   assert.ok(rows.every((r) => r.level === 'warn'), 'a line that closed nothing is a warning — it never turns doctor itself red')
 })
 
