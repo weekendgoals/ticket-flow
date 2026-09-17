@@ -733,29 +733,62 @@ const REVIEWER_RULES = `- You REPORT. You NEVER fix: no edits, no commits, no pu
 // the array counts as a failed hire and takes the fallback path.
 const isReview = r => r != null && typeof r === 'object' && Array.isArray(r.important)
 
+// A hire fails in three shapes, and all three are the same failure: the agent
+// returns nothing, it returns something that is not a review, or the spawn
+// THROWS. The third is not hypothetical — when the launching session has not
+// registered the plugin's agent types, the Workflow runtime does not return a
+// null, it throws `agent type 'flow:ticket-reviewer' not found`, and an
+// uncaught throw in this module body ends the whole workflow. That is how a
+// live run died at its first review hire (Workflow run `wf_2e558dac-83d`,
+// 2026-09-17): the fallback below was unreachable in exactly the situation it
+// is written for, a session without the plugin installed. So the throw is
+// caught here and routed to the same one retry. Only the hires are wrapped,
+// and only in this function: every other throw in this script still ends the
+// run, which is the behaviour that keeps an unhandled surprise from being
+// mistaken for a handled one.
+const spawnError = e => line(String((e && e.message) || e).split('\n')[0])
+
 // One hiring path, used by the review and by the re-review: the plugin's
 // reviewer agent first, then exactly one fallback, then nothing. Returns null
 // when both fail — the caller halts, because an unreviewed ticket is never
 // merged, anywhere.
 const hireReviewer = async ({ label, phaseName, task, packet, schema, priced, id }) => {
   const opts = { phase: phaseName, schema, effort: priced.effort, ...(priced.model ? { model: priced.model } : {}) }
-  const first = await agent(`${task}\n\n${packet}`, { ...opts, label, agentType: 'flow:ticket-reviewer' })
+  let first = null
+  let threw = ''
+  try {
+    first = await agent(`${task}\n\n${packet}`, { ...opts, label, agentType: 'flow:ticket-reviewer' })
+  } catch (e) {
+    // The error's first line, logged verbatim, so the run record can quote why
+    // the hire failed instead of reporting an unexplained fallback.
+    threw = spawnError(e)
+  }
   if (isReview(first)) return first
   log(
-    first
-      ? `${id}: the ticket-reviewer agent returned something that is not a review (no findings array) — treating it as a failed hire and retrying once with the sanctioned fallback.`
-      : `${id}: the ticket-reviewer agent returned nothing — retrying once with the sanctioned fallback (a general agent given the reviewer's rules).`,
+    threw
+      ? `${id}: the ticket-reviewer agent could not be spawned (${threw}) — treating it as a failed hire and retrying once with the sanctioned fallback (a general agent given the reviewer's rules).`
+      : first
+        ? `${id}: the ticket-reviewer agent returned something that is not a review (no findings array) — treating it as a failed hire and retrying once with the sanctioned fallback.`
+        : `${id}: the ticket-reviewer agent returned nothing — retrying once with the sanctioned fallback (a general agent given the reviewer's rules).`,
   )
-  const second = await agent(
-    `${task}
+  let second = null
+  try {
+    second = await agent(
+      `${task}
 
 You are standing in for the \`flow:ticket-reviewer\` agent, which could not be spawned. Follow the \`/flow:review\` skill for the procedure, and these core rules of the reviewer definition, which are not optional:
 
 ${REVIEWER_RULES}
 
 ${packet}`,
-    { ...opts, label: `${label}:fallback`, agentType: 'general-purpose' },
-  )
+      { ...opts, label: `${label}:fallback`, agentType: 'general-purpose' },
+    )
+  } catch (e) {
+    // One retry, not a loop: a fallback that also throws is the end of the
+    // hiring path, and the caller halts on the reviewer-spawn stop condition.
+    log(`${id}: the sanctioned fallback reviewer could not be spawned either (${spawnError(e)}) — no review was obtained.`)
+    return null
+  }
   if (isReview(second)) return second
   if (second) log(`${id}: the fallback reviewer also returned something that is not a review — no review was obtained.`)
   return null
@@ -1261,7 +1294,7 @@ Report \`reviewedHead\`: what \`git rev-parse origin/${branch}\` prints when you
       ticket: id,
       stopCondition: STOP.reviewerSpawn,
       where: `hiring the reviewer for ${id}`,
-      detail: `both the \`flow:ticket-reviewer\` agent and the sanctioned general-agent fallback returned no review. The branch ${branch} stays pushed and unmerged: an unreviewed ticket is never merged, anywhere.`,
+      detail: `both the \`flow:ticket-reviewer\` agent and the sanctioned general-agent fallback produced no review — each either could not be spawned or returned nothing usable, and the run log's hire lines name which. The branch ${branch} stays pushed and unmerged: an unreviewed ticket is never merged, anywhere.`,
     }
     break
   }
@@ -1638,7 +1671,7 @@ Read them in the context of the whole ticket, but judge them: does each fix do w
         ticket: id,
         stopCondition: STOP.reviewerSpawn,
         where: `hiring the re-reviewer for ${id}`,
-        detail: `both the \`flow:ticket-reviewer\` agent and the sanctioned general-agent fallback returned no re-review of the fix commits. The pull request stays open and unmerged: the merged diff has to be a reviewed diff, and these commits were written after the review that approved the rest.`,
+        detail: `both the \`flow:ticket-reviewer\` agent and the sanctioned general-agent fallback produced no re-review of the fix commits — each either could not be spawned or returned nothing usable, and the run log's hire lines name which. The pull request stays open and unmerged: the merged diff has to be a reviewed diff, and these commits were written after the review that approved the rest.`,
       }
     }
     const reImportant = Array.isArray(reReview.important) ? reReview.important : []
