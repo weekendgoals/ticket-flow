@@ -51,3 +51,14 @@ subcommand reads the log through the reader DEV-1 adds; FID-1 and FID-2 do
 not depend on it. Run attended through `/flow:ticket <ID>` in supervisor
 mode — the plugin is not installed in the planning session, and FID-4
 changes the driver.
+
+**Addendum — 2026-09-17 — delivery re-planned after sign-off.** The baseline
+above says this epic runs attended. Vadim re-planned it the same day ("do
+all unattended"): FID-1 runs attended, because its smoke test needs a
+browser that no unattended worker holds, and `/flow:run design-fidelity`
+takes FID-2 to FID-6. `main` is unprotected (404 from the protection probe,
+`[]` from the rulesets probe; the repository is public, so protection is
+available and not enabled), and Vadim waived the hard floor in so many
+words — "i waive the protection". `tickets.md` carries the decision on its
+`Delivery:` and probes paragraphs, which is where the run skill's step 3
+reads it. Nothing here starts until `deviation-routing` has reached `main`.

@@ -76,19 +76,37 @@ pinned packet copy, `scripts/check-invariants.mjs` and its suite, the epic,
 ticket, quick, review and run skills, the two reviewer agents, README,
 METHODOLOGY, CHANGELOG, `CLAUDE.md` itself, `.github/workflows/tests.yml`).
 
-Delivery: release — six tickets, one release pull request. Run **attended,
-in this session, never by `/flow:run`**, for the reason the earlier plugin
-epics recorded: the plugin is not installed in the planning session
-(`flow:epic` was not registered on 2026-09-17 and was executed from its
-source), and FID-4 changes the driver itself. Each ticket goes through
-`/flow:ticket <ID>` in supervisor mode, merged into `epic/design-fidelity`
-by verified SHA. After sign-off nothing runs without a human in the session;
-the next decision point is the release pull request.
+Delivery: release — six tickets, one release pull request. **Re-planned
+2026-09-17, after sign-off, on Vadim's instruction ("do all unattended"):
+FID-1 is run attended, then `/flow:run design-fidelity` takes FID-2 to
+FID-6.** FID-1 stays attended for one reason: its smoke test needs a real
+browser, an unattended worker holds none, and its stated fallback — owed to
+FID-3 — would land on a worker that holds none either, which is a criterion
+that merges unperformed. The launching session has a browser pane, a run
+resumes cleanly after an integrated ticket, and so the one criterion the
+unattended lane cannot perform is performed before that lane starts. From
+FID-2 on nothing waits for a human between tickets: a fresh worker
+implements each one, the driver hires its reviewer, and it merges into
+`epic/design-fidelity` by verified SHA; the next human decision is the
+release pull request. The two reasons the plan first gave for an attended
+run still hold, and are accepted knowingly. The plugin is not installed in
+the launching session (`flow:epic` was not registered on 2026-09-17 and was
+executed from its source), so each reviewer hire fails once and takes the
+driver's sanctioned fallback, a general agent given the reviewer's rules —
+a cost in spend, not in safety. And FID-4 edits `run-epic.mjs` while a run
+is in flight: harmless, because a workflow script is read once at launch,
+and it means this run is not governed by the gate it builds.
 
 Environment probes, 2026-09-17: branch protection on `main` —
 `gh api repos/weekendgoals/ticket-flow/branches/main/protection` answers 404
-"Branch not protected" (the two earlier epics recorded a 403 on the free
-plan). Attended run, no unattended merge, no waiver relied on.
+"Branch not protected", and `…/rules/branches/main` answers `[]`:
+unprotected. The two earlier epics recorded a 403 on a private repository
+under the free plan; the repository is public now, so protection is
+available and simply not enabled. **Waived 2026-09-17: Vadim chose to run
+without the hard floor** — "i waive the protection" — having been told that
+protection could be switched on instead. The probes are re-run when this
+epic's run is launched, which is after `deviation-routing` has reached
+`main`; a changed answer is reported before anything starts.
 
 Worker model: opus
 
@@ -160,9 +178,11 @@ Status log: `epics/design-fidelity/status.md`. Run a ticket with `/flow:ticket <
   `package.json`, an npm dependency, a cache or a state file;
   `fidelity.mjs` never launches or drives a browser; no **test** needs one —
   the extractor is tested against a stub `document` / `getComputedStyle`.
-  The actor for every ticket is an attended supervisor-mode worker with a
-  shell. The one criterion that wants a browser is FID-1's smoke test, which
-  the attended session has and which states its fallback.
+  The actor for FID-2 to FID-6 is an unattended, driver-spawned worker with
+  a shell — it spawns no agents, holds no browser and drives no interactive
+  tool — and every criterion of those five is executable by that actor. The
+  one criterion that wants a browser is FID-1's smoke test, which is why
+  FID-1 alone is run attended, in a session that has one.
 - **A design source is whatever a browser can render and `getComputedStyle`
   can read.** Where a project's design is not renderable (an image, a PDF),
   `COMPARE` degrades to a table written by hand and labelled as one — every
@@ -282,9 +302,11 @@ contract second.
   commit the two reports it returns as `design.json` and `page.json` → the
   suite runs against values a real `getComputedStyle` produced; record the
   browser used and whether `width`/`height` within 0.5px read as signal or
-  as noise. No browser in the session: hand-build the two reports, say so in
-  the entry, and record the smoke test as **owed** to FID-3, whose verify
-  step is the next place a real page meets the extractor.
+  as noise. This ticket is run attended precisely so that a browser is there
+  (see `Delivery:`). If the session turns out to have none, the ticket is
+  **BLOCKED**, not owed: every later ticket is built by an unattended worker
+  that holds no browser either, so an owed smoke test would merge
+  unperformed.
 - Standing checks, reported with counts under **Verified**: the new suite,
   every suite CLAUDE.md names, `check-invariants.mjs`, `doctor`, and the
   revert check's named test.
