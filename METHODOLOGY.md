@@ -683,6 +683,26 @@ claim needs a `file:line` citation, not an inference from a name), a cap on
 nits, and re-review convergence that suppresses new nits after the first round.
 Without the last one, a one-line fix reaches round seven on style.
 
+## Why a regression the change introduced is never a nit
+
+A nit is parked: fixed if trivial and in scope, otherwise recorded for the
+retro. That is right for small real defects and wrong for one class — a
+change that visibly breaks what worked. weekendgoals' redesign-foundation
+shipped a second hamburger button and a second logo on its entity pages
+though both of its reviews saw them: FND-1's addendum filed "two headers on
+entity pages" as a nit outside the ticket's scope, owner `retro`, and FND-2
+recorded the phone counterpart the same way. The retro runs after the
+release merges, so "owner: retro" for a regression the ticket itself
+caused means "ship it, discuss it later".
+
+So a user-visible regression the change introduces is Important however
+small the diff, and ticket scope does not excuse it: scope bounds what the
+worker may build, not what the reviewer may report. The rule needs no new
+gate — an unfixed Important finding already halts an unattended run and
+blocks the attended merge, so the regression is either fixed or put in
+front of a human before the release. Pre-existing defects keep their
+`retro` destination: those are not this change's to answer for.
+
 ## Why tests are reviewed as suspiciously as code
 
 One session writes the implementation and the tests. If it misunderstands
@@ -695,6 +715,20 @@ Coverage cannot see this — a line can be fully covered by a test that asserts
 nothing about it. That is why the reviewer is pointed at assertion quality
 specifically, and why the ticket skill treats a surviving mutant in changed code
 as an unfinished acceptance criterion rather than a separate concern.
+
+Mutation testing needs a tool, and almost no project has one configured, so
+for a long time that sentence was dormant. The revert check (2026-09-16,
+taken from adk-go's PR template and self-review skill) is the one-mutant
+version that needs nothing: revert the source, keep the tests, run, and
+name the test that went red. It costs one test run and answers the exact
+question coverage cannot — would this suite notice if the change were
+missing? It is required at two doors rather than one because the worker's
+account of the check is the thing being checked: the lanes name the test,
+and the reviewer opens it and confirms it depends on the change. The
+per-guard refinement — flip each new branch on its own — exists because a
+whole-change revert stays red on the headline fix while a half of a
+compound condition, or a fixture sized from the constant under test, is
+never exercised.
 
 ## Why tickets go one at a time
 

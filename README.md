@@ -292,7 +292,7 @@ records' evidence — Important findings per ticket and observed spend —
 and never cheapen the *plan* side to match: a weak plan produces tickets
 that are confidently, reviewably wrong.
 
-**The whole configuration surface is eight optional preamble lines** in the
+**The whole configuration surface is nine optional preamble lines** in the
 epic's `tickets.md` — one place, one syntax (label at line start, value
 first after the colon, prose after it ignored), every near-miss flagged by
 `/flow:doctor`:
@@ -301,12 +301,13 @@ first after the colon, prose after it ignored), every near-miss flagged by
 |---|---|---|---|
 | `Delivery:` | `release` | how work reaches main: unattended into `epic/<name>` with one release PR, or one human-gated PR per ticket | `incremental` |
 | `Worker model:` | `opus` | the implementing workers | workers inherit the spawning session's model |
-| `Worker runner:` | `codex` | who implements in an unattended run: a Claude subagent, or OpenAI's Codex CLI through `scripts/runners/codex.mjs` — sandboxed with `.git` read-only and no network; the runner branches, commits, pushes, and reconciles the model's report with git | `claude` |
+| `Worker runner:` | `codex` | who implements in an unattended run: a Claude subagent, or OpenAI's Codex CLI through `scripts/runners/codex.mjs` — sandboxed with `.git` read-only and no network; the runner branches, commits, pushes, and reconciles the model's report with git. The run starts it detached (`--start`) and polls it (`--wait`) in slices under the agent shell tool's 10-minute limit, so a ticket keeps its 60-minute timeout; the proxy stops it (`--cancel`) before any report the runner did not give, the run skill does before touching the tree after a halt, and the runner commits only on its ticket branch | `claude` |
+| `Shadow reviewer:` | `codex` | a trial: in an unattended run, consequence-tier tickets also get a read-only Codex review of the same packet through `scripts/runners/codex-review.mjs`, recorded in `epics/<name>/shadow-reviews.md` and compared at the retro — it gates nothing | none |
 | `Reviewer model:` | `opus` | the ticket reviewer, overriding the tier table | the consequence tiers pick (haiku/sonnet/opus) |
 | `Planner model:` | `fable` | the plan reviewer for this epic | the agent definition's pinned strongest |
 | `Consequence paths:` | `src/auth/**, migrations/**` | globs that force the consequence review tier in a run — the code floor under the worker's self-reported tier | tier floor still applies (docs-only vs code), globs add nothing |
 | `Fix bounds exclude:` | `src/messages/*.json` | globs the run's fix-bounds gate leaves out of the review-fix diff (as it already leaves out `epics/`) — for files a fix fans out into mechanically, translation catalogs being the canonical case | every fixed file counts toward the bounds |
-| `Ticket budget:` | `250k` | per-ticket output-token ceiling in a run; an over-budget ticket stays merged and the run halts before the next. The only line a run re-reads: each ticket's resolve step fetches the epic branch and reads the signed-off document from it before the merge, so raising it mid-run (committed and pushed) governs the running ticket, and a ticket branch cannot raise its own ceiling; removing the line keeps the last ceiling and logs that it did | no ceiling; per-ticket spend still recorded when the runtime meters it |
+| `Ticket budget:` | `250k` | per-ticket output-token ceiling in a run (a shadow review's spend is left out); an over-budget ticket stays merged and the run halts before the next. The only line a run re-reads: each ticket's resolve step fetches the epic branch and reads the signed-off document from it before the merge, so raising it mid-run (committed and pushed) governs the running ticket, and a ticket branch cannot raise its own ceiling; removing the line keeps the last ceiling and logs that it did | no ceiling; per-ticket spend still recorded when the runtime meters it |
 
 ## Reading the board
 

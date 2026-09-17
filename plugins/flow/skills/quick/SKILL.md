@@ -130,6 +130,15 @@ pasted as the counts. A check that cannot run here is said so and recorded
 as owed; never imply it passed. A ledger line reading `↓ skipped` is one of
 those: the command exited 0 and the work it names never ran, and **a skipped
 check is not a passed one**.
+Then the **revert check**: set the source
+change aside, keep the tests, run — and name on the Verified line the test
+that **fails with the source change reverted** (`revert check: n/a,
+prose-only` for step 6's no-behaviour-change diff — documentation prose and
+code comments, only). Nothing failing means the tests pin nothing, and the
+ticket is not done until one does. The ticket skill's step 5 carries the
+full procedure — the revert mechanism and flipping each new guard in turn
+— and it binds here, along with the reason: the session that wrote the
+code wrote the tests.
 
 Append the status entry to `epics/quick/status.md`. If the file does not
 exist, open it with this exact preamble — the block the epic skill's
@@ -210,7 +219,12 @@ the reviewer stopped**, in the phrase `Reviewer tokens: <n>` (`unknown` when
 it exposed nothing; the reviewer is never asked — it cannot see its own
 counter) — the phrase `tickets.mjs spend` parses. **A nit does not become a
 ticket by default**: fix it here if trivial and in scope, otherwise note it
-in the addendum for the retro.
+in the addendum for the retro. **A regression this change introduced is not a
+nit**: A user-visible regression this change introduces is Important, even outside the ticket's scope: scope limits what the worker builds, not what the reviewer reports. Fix it before the pull request, or name it as unfixed
+in the pull request body so the human merging sees it. **Nor is a revert
+check that does not hold**: a named test that passes without the change,
+or an `n/a` whose reason does not hold, is Important on the same terms —
+fix the tests so one pins the change, or name it as unfixed in the body.
 
 ## 7. Push, open the pull request, stop
 

@@ -207,9 +207,55 @@ never an invented test command.
   the criteria as signed off — and gates the merge in code.
 
 Report **counts** — "api-gateway 217/217 passed", never "tests pass". A check
-that cannot run here is recorded as owed; never imply it passed. If mutation
-testing is configured, run it scoped to the changed files: a surviving mutant
-in changed code is an unfinished acceptance criterion.
+that cannot run here is recorded as owed; never imply it passed.
+
+Then **the revert check**, before the ticket is called done. Commit
+everything first — step 4 already has you committing in increments, and
+the check relies on HEAD holding the work, so nothing it undoes can be
+lost. Then revert the whole ticket and bring the tests back:
+
+```bash
+git revert --no-commit $(git rev-list --no-merges <base>..HEAD)  # the ticket's own commits; <base>: the branch step 3 cut from
+git checkout HEAD -- <test paths at HEAD>   # the tests stay as the ticket wrote them
+git rm -qf <test paths the ticket deleted>  # a deleted test comes back with the revert; it is not one you can name
+<run the suite>
+git revert --abort                          # the tree is exactly HEAD again
+```
+
+Name on the Verified line the test that **fails with the source change
+reverted**. The commits are listed by SHA with merges excluded because a
+merge commit in the range (a branch a human refreshed from its base) stops
+a plain range revert. Not `git stash` and not a checkout from the base: a
+stash of committed work is a no-op that leaves the change in place and
+reads as "nothing fails", and a checkout from the base over uncommitted
+work destroys it — while a revert handles new and deleted files that a
+path-based revert leaves half-done. A revert that conflicts is aborted and
+the check recorded as owed with that reason. If nothing fails,
+the tests pass with or without the change and pin nothing, and the ticket
+is not done until one does. Do the same to each new guard, branch and error
+path in turn — delete or invert it, confirm the suite goes red, put it
+back: a whole-change revert stays red on the headline fix while the `&& b`
+you added is still unpinned, and a fixture sized from the constant under
+test can never fire. The reason it is required rather than advised: the
+same session wrote the code and the tests, so both can encode one
+misunderstanding while the suite goes green, and this is the cheapest
+moment to find that out — the reviewer opens the named test and checks it
+depends on the change, so the claim is not the evidence. A configured
+mutation tester is the same check at scale: run it scoped to the changed
+files, and a surviving mutant in changed code is an unfinished acceptance
+criterion. Two diffs have no test to name, and each says why on the
+Verified line, because the reason is what the reviewer checks. A prose diff
+by step 7's tier table — documentation and code comments only, nothing any
+runtime, parser, test or agent reads — is `revert check: n/a, prose-only`;
+skill and agent Markdown is not prose: in a plugin it is the program, and a
+test can pin it. A diff with behaviour that no assertion can hold is
+`revert check: nothing to pin — <reason>`: a tests-only ticket (the tests
+are the change — run them and report counts), a change whose evidence is
+the *demonstrate:* criterion the epic wrote for it (name it and record the
+observation), or a project with no test runner (owed, like any check that
+cannot run here). A reason that does not hold — the project has a suite,
+and the change has behaviour a test could assert — is an Important finding
+for the reviewer, not a wording choice.
 
 ## 6. Log what was done, then commit
 
@@ -249,7 +295,9 @@ records the files>
 Supervisor mode: `observed by the supervisor — see the review addendum`.
 Driver-spawned: `recorded in the run record`. In-session: `unknown`.>
 
-**Verified:** <exact commands and counts; manual checks with evidence>
+**Verified:** <exact commands and counts; manual checks with evidence; the
+test that fails with the source change reverted, or `revert check: n/a,
+prose-only`>
 
 **Decisions:** <judgment calls and deviations from the documents, each with
 the why — "none" when the ticket went as written>
@@ -334,7 +382,20 @@ recorded and handed to a named ticket, never dropped. Every disposition needs
 a written reason. **A nit does not become a ticket by default**: fix it here
 if trivial and in scope, otherwise record it for the retro — a nit earns a
 ticket only when it affects users, creates real maintenance risk, keeps
-recurring, or rides an already-planned change.
+recurring, or rides an already-planned change. **A revert check that does
+not hold is not a nit either**: a named test that passes without the
+change, or an `n/a` whose reason does not hold, is Important — fix the
+tests so one pins the change, or name it as unfixed in the pull request
+body; a merge with no evidence behind it is not something the retro can
+repair.
+
+**A regression this change introduced is never recorded for the retro**,
+even when the reviewer called it a nit or fixing it looks out of scope.
+A user-visible regression this change introduces is Important, even outside the ticket's scope: scope limits what the worker builds, not what the reviewer reports. Something that worked before and now visibly does not is
+Important: fix it here, or leave it unfixed with its reason — which, like
+any unfixed Important finding, blocks step 10's merge (release) or is named
+as unfixed in the pull request body (incremental) so a human decides. The
+retro runs after the release; a regression parked there ships.
 
 Append the outcome to `statusDoc` as a dated addendum and **commit it** — an
 uncommitted addendum never reaches the pull request's evidence trail:

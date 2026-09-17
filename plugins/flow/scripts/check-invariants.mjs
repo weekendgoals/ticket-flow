@@ -39,6 +39,7 @@ const FILES = {
   run: 'plugins/flow/skills/run/SKILL.md',
   retro: 'plugins/flow/skills/retro/SKILL.md',
   reviewer: 'plugins/flow/agents/ticket-reviewer.md',
+  review: 'plugins/flow/skills/review/SKILL.md',
   script: 'plugins/flow/scripts/tickets.mjs',
   hook: 'plugins/flow/hooks/ticket-session-guard.mjs',
   workflow: 'plugins/flow/workflows/run-epic.mjs',
@@ -311,6 +312,16 @@ const PHRASES = [
     why: 'reviewers report and never fix',
     re: /(reports?; it does not fix|report and never fix|report\. You never fix|reports without fixing)/i,
     files: ['ticket', 'quick', 'reviewer', 'readme', 'claudemd'],
+  },
+  {
+    why: 'a regression the change introduced is Important, never a nit parked for the retro — the reviewer, the review skill, the lanes that disposition findings and the driver carry one rule',
+    re: /scope limits what the worker builds, not what the reviewer reports/i,
+    files: ['reviewer', 'review', 'ticket', 'quick', 'workflow'],
+  },
+  {
+    why: 'the revert check is one rule at two doors — the lanes that write the Verified line name the test that fails with the source reverted, and the reviewer, the review skill and the driver open that test rather than take the claim',
+    re: /fails with the source change reverted/i,
+    files: ['ticket', 'quick', 'reviewer', 'review', 'workflow'],
   },
   {
     why: "the review addendum's token phrase is what `tickets.mjs spend` parses — the ticket and quick skills must keep writing it in that shape",

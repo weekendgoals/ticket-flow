@@ -26,6 +26,7 @@ const FILES = [
   'plugins/flow/scripts/tickets.mjs',
   'plugins/flow/hooks/ticket-session-guard.mjs',
   'plugins/flow/workflows/run-epic.mjs',
+  'plugins/flow/skills/review/SKILL.md',
   'README.md',
   'CLAUDE.md',
   'METHODOLOGY.md',
@@ -145,6 +146,22 @@ test('the workflow script losing the driver handshake fails', () => {
   const r = run(root)
   assert.equal(r.status, 1, r.out)
   assert.match(r.out, /run-epic\.mjs.*driver handshake/s)
+})
+
+test('a reviewer document dropping the introduced-regression rule fails', () => {
+  const root = copyRepo()
+  mutate(root, 'plugins/flow/skills/review/SKILL.md', 'scope limits what the worker builds, not what the reviewer reports', 'scope limits the review')
+  const r = run(root)
+  assert.equal(r.status, 1, r.out)
+  assert.match(r.out, /review\/SKILL\.md.*regression the change introduced/s)
+})
+
+test('a lane dropping the revert check fails', () => {
+  const root = copyRepo()
+  mutate(root, 'plugins/flow/skills/quick/SKILL.md', 'fails with the source change reverted', 'fails without the change')
+  const r = run(root)
+  assert.equal(r.status, 1, r.out)
+  assert.match(r.out, /quick\/SKILL\.md.*revert check/s)
 })
 
 test('the workflow script losing the merge-direction rule fails', () => {

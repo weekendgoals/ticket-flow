@@ -164,6 +164,13 @@ merge are unchanged; declaring it obligates the plan to run `/flow:doctor`,
 which probes that `codex` is installed and signed in, and to record the
 result here like the protection probe.
 
+`Shadow reviewer: codex` — a **trial**, optional: in an unattended run,
+every consequence-tier ticket also gets one Codex review of the same packet
+beside the Claude reviewer, read-only, blind both ways, recorded in
+`epics/<name>/shadow-reviews.md` and compared by hand at the retro. It gates
+nothing — a shadow failure is never a stop condition, and a missing or
+signed-out `codex` just records one per ticket.
+
 `Consequence paths: <glob>[, <glob>]` — e.g. `src/auth/**, migrations/**`:
 paths the unattended driver always prices at the consequence review tier, a
 code floor under the worker's self-reported tier. Globs only on this line;

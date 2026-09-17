@@ -3,11 +3,11 @@ export const meta = {
   description:
     "The /flow:run driver loop as code — code-controlled, agent-executed: refresh epic/<name> and take the next ticket in document order, spawn a worker that stops at its pushed branch, read the diff's file list and floor the review tier in code, hire the reviewer, gate on its findings, re-review any fix commits, re-run the ticket's CHECK/EXPECT acceptance criteria from the signed-off document and gate on the counts in code, resolve the pushed branch's verified head and merge exactly that commit into epic/<name> — release tickets open no pull request of their own — confirm the merge landed — and halt on any stop condition instead of improvising past it",
   whenToUse:
-    'Invoked by the flow:run skill AFTER it has resolved the epic, refused anything but Delivery: release, verified the sign-off traces on origin/epic/<name>, and checked the permission surface and branch protection (or its recorded waiver). Requires args {epic, defaultBranch, repoRoot, pluginRoot, today, workerModel?, workerRunner?, reviewerModel?, consequencePaths?, fixBoundsExclude?, ticketBudget?}. Returns {outcome: "completed"|"halted", haltedOn, ticketRecords, ...}; the calling session writes the run record and opens the release pull request. The driver hires the reviewer — the party under review never picks its judge — and the merge gate is a code check on the reviewer\'s structured findings. The script never merges, pushes, or retargets toward the default branch, and never opens or merges the release pull request.',
+    'Invoked by the flow:run skill AFTER it has resolved the epic, refused anything but Delivery: release, verified the sign-off traces on origin/epic/<name>, and checked the permission surface and branch protection (or its recorded waiver). Requires args {epic, defaultBranch, repoRoot, pluginRoot, today, workerModel?, workerRunner?, reviewerModel?, shadowReviewer?, consequencePaths?, fixBoundsExclude?, ticketBudget?}. Returns {outcome: "completed"|"halted", haltedOn, ticketRecords, ...}; the calling session writes the run record and opens the release pull request. The driver hires the reviewer — the party under review never picks its judge — and the merge gate is a code check on the reviewer\'s structured findings. The script never merges, pushes, or retargets toward the default branch, and never opens or merges the release pull request.',
   phases: [
     { title: 'Refresh + select', detail: 'merge the default branch into epic/<name>, then read the next startable ticket — one agent, one command sequence' },
     { title: 'Ticket', detail: 'one fresh-context worker per ticket, stopping at its pushed branch — release tickets open no pull request of their own' },
-    { title: 'Review', detail: "the driver hires the judge, priced by the worker's reported tier floored in code by the diff's own file list" },
+    { title: 'Review', detail: "the driver hires the judge, priced by the worker's reported tier floored in code by the diff's own file list — and, at the consequence tier of an epic that declares a shadow reviewer, one blind Codex review of the same packet that gates nothing" },
     { title: 'Disposition', detail: 'fix Important findings, record pre-existing ones, commit the addendum — a merge precondition' },
     { title: 'Re-review', detail: 'one bounded pass over the fix commits — at the consequence tier, when the fix-bounds gate has no anchor, or when that gate trips; below the consequence tier the fixes are bounds-checked in code at the resolve step, and a trip buys this same pass at the consequence tier instead of halting — that one runs out of order, after the resolve step measured the bounds and just before the merge, so acceptance has already run' },
     { title: 'Acceptance', detail: "run the ticket's CHECK/EXPECT criteria from the signed-off document against the pushed branch — the counts judged in code before anything can merge" },
@@ -34,7 +34,7 @@ const today = ARGS && ARGS.today
 
 if (!epic || !defaultBranch || !repoRoot || !pluginRoot || !today) {
   throw new Error(
-    'flow-run-epic requires args: {epic, defaultBranch, repoRoot, pluginRoot, today, workerModel?, workerRunner?, reviewerModel?, consequencePaths?, fixBoundsExclude?, ticketBudget?} — e.g. {epic:"payments", defaultBranch:"main", repoRoot:"/Users/x/proj", pluginRoot:"/Users/x/.claude/plugins/.../flow", today:"2026-08-11"}. The flow:run skill supplies all of them from its steps 1-3; run it only after those steps have passed.',
+    'flow-run-epic requires args: {epic, defaultBranch, repoRoot, pluginRoot, today, workerModel?, workerRunner?, reviewerModel?, shadowReviewer?, consequencePaths?, fixBoundsExclude?, ticketBudget?} — e.g. {epic:"payments", defaultBranch:"main", repoRoot:"/Users/x/proj", pluginRoot:"/Users/x/.claude/plugins/.../flow", today:"2026-08-11"}. The flow:run skill supplies all of them from its steps 1-3; run it only after those steps have passed.',
   )
 }
 
@@ -74,6 +74,22 @@ if (workerRunner && !RUNNERS.has(workerRunner)) {
   throw new Error(`Unknown workerRunner ${JSON.stringify(ARGS.workerRunner)} — known: claude (default), codex. Fix the epic's \`Worker runner:\` line; the driver does not substitute an implementer the sign-off did not name.`)
 }
 if (ARGS.reviewerModel && !reviewerModel) log(`ignoring unusable reviewerModel ${JSON.stringify(ARGS.reviewerModel)} — the tier table prices the reviewer instead`)
+
+// The epic's optional `Shadow reviewer:` line — a trial instrument, not a
+// gate: every consequence-tier ticket gets one extra review of the identical
+// packet by another vendor's model, recorded beside the Claude review and
+// read by nothing that decides anything. Unlike an unknown `Worker runner:`,
+// an unknown value is logged and the run goes ahead without a shadow, never
+// refused: refusing would make a line that gates nothing gate the whole run.
+// The known-values set is also the reversal switch — emptied, the driver
+// stops acting on the line.
+const SHADOW_REVIEWERS = new Set(['codex'])
+const shadowReviewer = ARGS.shadowReviewer != null && SHADOW_REVIEWERS.has(ARGS.shadowReviewer) ? ARGS.shadowReviewer : null
+if (ARGS.shadowReviewer != null && !shadowReviewer) {
+  log(
+    `unknown shadowReviewer ${JSON.stringify(String(ARGS.shadowReviewer).slice(0, 80))} — known: codex. Running without a shadow review; the line gates nothing, so it refuses nothing. Fix the epic's \`Shadow reviewer:\` line to collect one.`,
+  )
+}
 
 // The epic's optional `Consequence paths:` globs — file paths whose changes
 // always price review at the consequence tier. Unlike an unusable model (which
@@ -341,7 +357,7 @@ const REVIEW_SCHEMA = {
   properties: {
     important: {
       type: 'array',
-      description: 'findings that would break behaviour, lose data, or widen an exposure. [] when there are none — an empty list is a normal and welcome result, never something to pad.',
+      description: "findings that would break behaviour, lose data, or widen an exposure — including any user-visible regression this change introduces, even outside the ticket's scope. [] when there are none — an empty list is a normal and welcome result, never something to pad.",
       items: {
         type: 'object',
         required: ['file', 'cite', 'summary', 'confirmedOrPlausible', 'failure'],
@@ -379,6 +395,76 @@ const REVIEW_SCHEMA = {
       type: 'string',
       description:
         'the commit you reviewed: what `git rev-parse origin/<the ticket branch>` printed when you read the range, 7-40 hex characters, verbatim — never reconstructed from memory. The driver read that commit itself before hiring you and anchors on its own read; this is the cross-check against it.',
+    },
+  },
+}
+
+// The shadow review's proxy report: the JSON `scripts/runners/codex-review.mjs`
+// printed, relayed verbatim. Every field is a recorded fact about a trial
+// instrument, and none is a gate input — a missing or malformed report is a
+// recorded shadow failure (`no-proxy-report`), never a halt. The runner's own
+// failure reasons are a closed set, so a reason outside it is a malformed
+// report too: a proxy-invented reason is not the runner's account.
+const SHADOW_RUNNER_REASONS = ['codex-missing', 'signed-out', 'head-not-found', 'timeout', 'no-report', 'head-mismatch', 'codex-exit']
+// The shadow review's time bound. The proxy runs the runner through its shell
+// tool, whose hard ceiling is 600000 ms (10 minutes); a command still running
+// at that ceiling is killed with no JSON printed and no worktree removed. So
+// the runner is handed its own, lower timeout — the ceiling less a minute of
+// headroom for the worktree's setup and cleanup and the report's output — and
+// a review that outruns it ends on the runner's clean `timeout` path: a
+// recorded shadow failure with the worktree removed, never a halt. Live
+// reviews took 192 s and 275 s in the two probes.
+const SHADOW_SHELL_CEILING_MS = 600000
+const SHADOW_TIMEOUT_MS = 540000
+const SHADOW_SCHEMA = {
+  type: 'object',
+  required: ['outcome'],
+  properties: {
+    ticket: { type: 'string', description: "the runner JSON's `ticket`, verbatim" },
+    outcome: {
+      type: 'string',
+      enum: ['reviewed', 'failed'],
+      description: 'the runner JSON\'s `outcome`, verbatim. "failed" with reason "no-proxy-report" only when the command printed no JSON at all, or would have raised a permission prompt.',
+    },
+    reason: {
+      type: ['string', 'null'],
+      description: `the runner JSON's \`reason\`, verbatim — null when outcome is "reviewed", else one of ${SHADOW_RUNNER_REASONS.join(', ')}; "no-proxy-report" only when the command printed no JSON`,
+    },
+    detail: { type: 'string', description: "the runner JSON's `detail`, verbatim — or, when it printed no JSON, the exit code and the first lines of stderr" },
+    // The runner answers in a strict variant of REVIEW_SCHEMA, where
+    // `preExisting[].owner` is required and nullable; a verbatim relay of
+    // `owner: null` must validate here, so the shadow's copy — and only the
+    // shadow's copy — declares it nullable. REVIEW_SCHEMA itself is untouched.
+    review: {
+      ...REVIEW_SCHEMA,
+      type: ['object', 'null'],
+      description: "the runner JSON's `review` object, verbatim, every field as printed — null when it printed null",
+      properties: {
+        ...REVIEW_SCHEMA.properties,
+        preExisting: {
+          ...REVIEW_SCHEMA.properties.preExisting,
+          items: {
+            ...REVIEW_SCHEMA.properties.preExisting.items,
+            properties: { ...REVIEW_SCHEMA.properties.preExisting.items.properties, owner: { type: ['string', 'null'], description: 'as printed — null when the runner printed null' } },
+          },
+        },
+      },
+    },
+    head: { type: 'string', description: "the runner JSON's `head`, verbatim" },
+    headVerified: { type: 'boolean', description: "the runner JSON's `headVerified`, verbatim" },
+    runner: {
+      type: ['object', 'null'],
+      description: "the runner JSON's `runner` object, verbatim: name, model, effort, exitCode, usage {input, cached, cacheWrite, output, reasoning} or null, durationMs, threadId, events",
+      properties: {
+        name: { type: 'string' },
+        model: { type: ['string', 'null'] },
+        effort: { type: ['string', 'null'] },
+        exitCode: { type: ['integer', 'null'] },
+        usage: { type: ['object', 'null'] },
+        durationMs: { type: ['integer', 'null'] },
+        threadId: { type: ['string', 'null'] },
+        events: { type: ['integer', 'null'] },
+      },
     },
   },
 }
@@ -644,8 +730,9 @@ const priceReview = (reported, floor) => {
 const REVIEWER_RULES = `- You REPORT. You NEVER fix: no edits, no commits, no pushes. An agent that can edit its own finding edits it into agreement.
 - A behaviour claim needs a \`file:line\` citation in the source you opened — not an inference from a name. If you could not point at the line, you do not have a finding.
 - Label every finding \`confirmed\` (you traced it) or \`plausible\` (say what would settle it). An unverified finding wastes more time than a missed one.
-- Severity: Important = would break behaviour, lose data, or widen an exposure. Nit = real but small, at most five, count the rest. Pre-existing = a real defect this change did not introduce; report it, never block on it.
+- Severity: Important = would break behaviour, lose data, or widen an exposure. A user-visible regression this change introduces is Important, even outside the ticket's scope: scope limits what the worker builds, not what the reviewer reports. Something that worked before and now visibly does not (a duplicated or missing control, a broken layout, a removed way to do something) is a regression, not a nit. Nit = real but small, at most five, count the rest. Pre-existing = a real defect this change did not introduce; report it, never block on it.
 - The highest-value defect in agent-written code is a test that executes code without checking it — the same session wrote both, so both encode the same misunderstanding. Look for assertions that only prove no exception was thrown, assertions on shape rather than value, and expected values copied from actual output.
+- The Verified line names the test that fails with the source change reverted. Open it and confirm it depends on the change: a named test that would pass without the change, or an \`n/a\` whose reason does not hold (the diff is not prose — documentation and code comments only, nothing any runtime, parser, test or agent reads — and the project has a suite that could pin it), is Important — a suite that cannot tell whether the change is present leaves the merge with no evidence behind it, and the claim is not the evidence.
 - Do not flag style a formatter owns, coverage as a number, speculative performance, or preferences that contradict the project's conventions. Bias toward approval; say the work is sound when it is.`
 
 // A review that did not come back as a review is not an approval. Every other
@@ -786,10 +873,15 @@ for (let i = 0; i < MAX_TICKETS && !halted; i++) {
     // the meter delta is the runtime's own count of this ticket's output
     // tokens across every agent it spawned, and a runner's usage (Codex's
     // event stream) is the one figure the worker's side can add.
+    // The shadow's share is reported on its own: it is inside the meter delta,
+    // and outside what the ticket budget judges (see the budget check).
     const wu = record.workerUsage
+    const su = record.shadow && record.shadow.usage
     log(
       `${id}: spend — ${spent} output tokens by the runtime meter` +
+        (record.shadowSpend != null ? `, ${record.shadowSpend} of them across the shadow review (outside the ticket budget)` : '') +
         (wu ? `; ${record.workerRunner} worker in=${wu.input ?? '?'} cached=${wu.cached ?? '?'} out=${wu.output ?? '?'} by its own meter` : '') +
+        (su ? `; ${record.shadow.reviewer} shadow in=${su.input ?? '?'} cached=${su.cached ?? '?'} out=${su.output ?? '?'} by its own meter` : '') +
         (ticketBudget ? ` (budget ${ticketBudget})` : ''),
     )
     return spent
@@ -868,20 +960,60 @@ for (let i = 0; i < MAX_TICKETS && !halted; i++) {
   phase('Ticket')
   const workerLabel = `worker:${id}`
   // With `Worker runner: codex`, the worker is the plugin's Codex runner
-  // script, and this agent is only its shell proxy: it runs one command and
+  // script, and this agent is only its shell proxy: it starts the runner and
   // relays the JSON the runner printed. The runner owns the fetch and the
   // push (Codex runs sandboxed with no network), so `branch-pushed` in that
   // JSON is something the runner observed, not something a model claimed.
-  const runnerCommand = workerRunner === 'codex'
-    ? `node "${pluginRoot}/scripts/runners/codex.mjs" ${id} --epic ${epic} --epic-branch ${epicBranch} --default-branch ${defaultBranch} --repo "${repoRoot}" --plugin "${pluginRoot}" --label ${workerLabel}${workerModel ? ` --model ${workerModel}` : ''} --json`
+  //
+  // The proxy's shell tool kills any command after at most 600000 ms, and a
+  // ticket needs the runner's hour, so one blocking command cannot carry the
+  // run: killed mid-ticket, it left no JSON (a BLOCKED "no report" halt) and
+  // could take the runner down before its commit and push. So the proxy runs
+  // `--start` once — a detached background run the shell's end cannot reach —
+  // then `--wait` in slices of RUNNER_WAIT_SLICE_MS, each inside the ceiling.
+  // The loop bound follows from the runner's own timeout, passed explicitly so
+  // the bound and the timeout cannot drift apart: every run has answered by
+  // ceil(timeout / slice) slices, and the one extra covers the git work around
+  // Codex (the fetch and the push, each bounded by the runner's 5-minute
+  // --git-timeout, fit inside it).
+  //
+  // The background run outlives this proxy, so a proxy that stops without a
+  // delivered report — its wait bound spent, a wait killed at a forgotten
+  // shell timeout, anything unexpected — would leave Codex editing the tree
+  // the halted session goes on to use. So before any such report the proxy
+  // runs `--cancel`, which stops the run's process group and says what the
+  // tree holds. The runner also refuses to commit off its ticket branch; the
+  // cancel is the first layer, that refusal the floor.
+  const RUNNER_TIMEOUT_MS = 60 * 60 * 1000
+  const RUNNER_WAIT_SLICE_MS = 540000
+  const SHELL_CEILING_MS = 600000
+  const runnerWaits = Math.ceil(RUNNER_TIMEOUT_MS / RUNNER_WAIT_SLICE_MS) + 1
+  const runnerBase = workerRunner === 'codex'
+    ? `node "${pluginRoot}/scripts/runners/codex.mjs" ${id} --epic ${epic} --epic-branch ${epicBranch} --default-branch ${defaultBranch} --repo "${repoRoot}" --plugin "${pluginRoot}" --label ${workerLabel}${workerModel ? ` --model ${workerModel}` : ''} --timeout ${RUNNER_TIMEOUT_MS} --json`
     : null
-  const worker = runnerCommand
+  const worker = runnerBase
     ? await agent(
-        `You are a shell proxy for the ${workerRunner} worker runner. Run exactly this command from ${repoRoot}, wait for it to finish (it may take a long time — it runs a full ticket), and report what it printed:
+        `You are a shell proxy for the ${workerRunner} worker runner. The runner implements a full ticket, which can take up to an hour — longer than your shell tool lets any one command run (at most ${SHELL_CEILING_MS} ms, 10 minutes; a command still running then is killed, and its answer is lost). So the run is split: one command starts it in the background, another waits for it in slices that each end inside that limit, and a third stops it. Run them from ${repoRoot}, in the foreground — never as a background shell task — and nothing else.
 
-${runnerCommand}
+THE CANCEL RULE. The background run keeps going after you stop, and a Codex left running keeps editing a working tree the session uses after you report. So whenever you are about to report ANYTHING other than a report the wait command printed — the wait limit below spent, a start or wait command that exited without printing JSON, output you did not expect, a permission prompt, anything else that stops you — FIRST run this command once, with your shell tool's timeout at ${SHELL_CEILING_MS} ms, and put its complete JSON output in detail:
 
-It prints one JSON object on stdout. Report that object's fields VERBATIM — ticket, result, stopCondition, tier, tierWhy, branch, built, verification, deployPreconditions, detail — and its \`runner\` object under \`runner\`. Change nothing, infer nothing, add nothing: the runner already reconciled the model's report with the repository, and your only job is to carry its answer. If the command exits nonzero AND prints no JSON, report result "halted", stopCondition "other", and put the exit code and the first lines of stderr in detail. ${PROMPT_RULE}
+${runnerBase} --cancel
+
+(If the cancel command itself raises a permission prompt or prints no JSON, say so in detail instead.)
+
+STEP 1 — start the run. Run this command EXACTLY ONCE:
+
+${runnerBase} --start
+
+It returns within seconds with one JSON object whose "state" is "started". Do not run it again, whatever the wait below prints.
+
+STEP 2 — wait for the answer. Run this command, and EVERY time set your shell tool's timeout to its maximum, ${SHELL_CEILING_MS} ms:
+
+${runnerBase} --wait --max-wait ${RUNNER_WAIT_SLICE_MS}
+
+Each run blocks for at most ${RUNNER_WAIT_SLICE_MS} ms and prints one JSON object. If its "state" is "pending", the ticket is still running: run the SAME wait command again, with the same ${SHELL_CEILING_MS} ms timeout. Stop at the first object whose "state" is not "pending" — that object is the runner's report. Run the wait command at most ${runnerWaits} times: the runner's own ${RUNNER_TIMEOUT_MS} ms timeout ends every run within that many slices. If the ${runnerWaits}th wait still prints "pending", stop: apply THE CANCEL RULE, then report result "halted", stopCondition "other", ticket ${id}, branch ${branch}, tier "consequence", deployPreconditions [], empty strings for the other text fields, and in detail that last pending JSON followed by the cancel output.
+
+The report the wait command prints is one JSON object. Report its fields VERBATIM — ticket, result, stopCondition, tier, tierWhy, branch, built, verification, deployPreconditions, detail — and its \`runner\` object under \`runner\`. Change nothing, infer nothing, add nothing: the runner already reconciled the model's report with the repository, and your only job is to carry its answer — a report carrying "state": "failed" or "cancelled" (no run found, a background run that died and was stopped, a run cancelled) is relayed the same way, with no cancel of your own. If the start or wait command exits nonzero AND prints no JSON, apply THE CANCEL RULE, then report result "halted", stopCondition "other", and put which command, its exit code, the first lines of stderr and the cancel output in detail. ${PROMPT_RULE} (Before returning on a permission prompt, THE CANCEL RULE still applies.)
 
 ${NO_MAIN}`,
         {
@@ -976,6 +1108,13 @@ Report honestly: \`branch-pushed\` ONLY if you saw the push of \`${branch}\` suc
     deployPreconditions: worker && Array.isArray(worker.deployPreconditions) ? worker.deployPreconditions.map(line) : [],
     workerReported: worker ? worker.result : 'no report',
     outputTokensObserved: null,
+    // The shadow review, when one applies (a declared shadow reviewer and a
+    // consequence-tier ticket) — null otherwise. A recorded fact, never a
+    // gate input. `shadowSpend` is the runtime meter's delta across the
+    // shadow's own step: part of `outputTokensObserved`, left out of the
+    // figure the `Ticket budget` judges.
+    shadow: null,
+    shadowSpend: null,
     result: 'halted',
   }
   ticketRecords.push(record)
@@ -1171,6 +1310,128 @@ Report \`reviewedHead\`: what \`git rev-parse origin/${branch}\` prints when you
   }
   log(`${id}: review returned ${important.length} Important, ${nits.length} nit(s)${record.nitOverflowCount ? ` (+${record.nitOverflowCount} unlisted)` : ''}, ${record.preExistingCount} pre-existing.`)
 
+  // e1. The shadow review — a trial instrument, and it gates nothing.
+  //     A shadow failure is never a stop condition.
+  //     It runs only when the epic declares a known shadow reviewer and the ticket is priced at the
+  //     consequence tier (after the floor), once, right after the first
+  //     review and before the disposition; never on either kind of
+  //     re-review. It is blind both ways: the runner builds its packet from
+  //     the same inputs as the Claude reviewer's (the first review's own
+  //     range and the driver's anchor), and nothing it returns is quoted
+  //     into any later prompt — the disposition, re-review, acceptance,
+  //     resolve and merge prompts below are built exactly as they are
+  //     without it. Nothing below reads `record.shadow`; no branch of this
+  //     block calls a halt, and every outcome only lands in the record.
+  //     Codex's free text is another vendor's agent-authored prose, so every
+  //     piece of it is fenced before it reaches the record or the result.
+  if (shadowReviewer && priced.tier === 'consequence') {
+    const shadow = {
+      reviewer: shadowReviewer,
+      ran: false,
+      outcome: 'failed',
+      reason: null,
+      detail: '',
+      review: null,
+      headVerified: false,
+      model: null,
+      effort: null,
+      usage: null,
+      durationMs: null,
+    }
+    record.shadow = shadow
+    if (!anchorHead) {
+      // The shadow reviews a detached worktree at a verified commit; without
+      // the driver's anchor there is no commit to name, and a shadow of a
+      // branch name that can move reviews nothing the Claude reviewer read.
+      shadow.reason = 'no-anchor'
+      shadow.detail = 'the tier-facts step reported no usable head SHA, so there was no verified commit to review'
+      log(`${id}: shadow review not run — no verified review anchor (recorded as a shadow failure: no-anchor). It gates nothing; the ticket goes on.`)
+    } else {
+      const shadowCommand = `node "${pluginRoot}/scripts/runners/codex-review.mjs" ${id} --epic ${epic} --branch ${branch} --range ${range} --head ${anchorHead} --repo "${repoRoot}" --plugin "${pluginRoot}" --timeout ${SHADOW_TIMEOUT_MS} --json`
+      const spentBeforeShadow = METER ? METER.spent() : null
+      const report = await agent(
+        `You are a shell proxy for the ${shadowReviewer} shadow-review runner. Run exactly this command from ${repoRoot}, wait for it to finish, and report what it printed:
+
+${shadowCommand}
+
+It runs a full review and can take up to ${SHADOW_TIMEOUT_MS / 60000} minutes. Call your shell tool for this command with its MAXIMUM timeout — ${SHADOW_SHELL_CEILING_MS} ms — never the default, which is far shorter: the runner's own \`--timeout ${SHADOW_TIMEOUT_MS}\` is set below that ceiling so it always stops Codex cleanly, removes its worktree and prints its JSON before your shell would kill it.
+
+It prints one JSON object on stdout. Report that object's fields VERBATIM — ticket, outcome, reason, detail, review (every field of it, as printed), head, headVerified — and its \`runner\` object under \`runner\`. Change nothing, infer nothing, add nothing, summarize nothing: the runner already judged its own run, and your only job is to carry its answer. If the command exits nonzero AND prints no JSON, report outcome "failed", reason "no-proxy-report", and put the exit code and the first lines of stderr in detail. If running it would raise a permission prompt, do NOT wait on it: report outcome "failed", reason "no-proxy-report", and name the command in detail.
+
+${NO_MAIN} You are read-only here: the runner reviews a detached worktree of its own and removes it; you change no file, commit nothing and push nothing.`,
+        { label: `shadow:${id}`, phase: 'Review', schema: SHADOW_SCHEMA, effort: 'low', model: 'haiku' },
+      )
+      if (METER) record.shadowSpend = METER.spent() - spentBeforeShadow
+      shadow.ran = true
+      const runnerInfo = report && report.runner && typeof report.runner === 'object' ? report.runner : null
+      const count = n => (Number.isInteger(n) && n >= 0 ? n : null)
+      if (runnerInfo) {
+        shadow.model = runnerInfo.model ? line(runnerInfo.model) : null
+        shadow.effort = runnerInfo.effort ? line(runnerInfo.effort) : null
+        const u = runnerInfo.usage && typeof runnerInfo.usage === 'object' ? runnerInfo.usage : null
+        shadow.usage = u
+          ? { input: count(u.input), cached: count(u.cached), cacheWrite: count(u.cacheWrite), output: count(u.output), reasoning: count(u.reasoning) }
+          : null
+        shadow.durationMs = count(runnerInfo.durationMs)
+      }
+      const shadowReview =
+        report && isReview(report.review)
+          ? {
+              important: report.review.important.map(f => ({
+                file: line((f && f.file) || ''),
+                cite: line((f && (f.cite || f.file)) || ''),
+                confirmedOrPlausible: line((f && f.confirmedOrPlausible) || ''),
+                summary: fence(f && f.summary),
+                failure: fence(f && f.failure),
+              })),
+              nits: (Array.isArray(report.review.nits) ? report.review.nits : []).map(f => ({ cite: line((f && f.cite) || ''), summary: fence(f && f.summary) })),
+              nitOverflowCount: count(report.review.nitOverflowCount) ?? 0,
+              preExisting: (Array.isArray(report.review.preExisting) ? report.review.preExisting : []).map(f => ({
+                cite: line((f && f.cite) || ''),
+                owner: line((f && f.owner) || ''),
+                summary: fence(f && f.summary),
+              })),
+              checkedAndSound: report.review.checkedAndSound ? fence(report.review.checkedAndSound) : '',
+              reviewedHead: line(report.review.reviewedHead || ''),
+            }
+          : null
+      shadow.review = shadowReview
+      shadow.headVerified = !!report && report.headVerified === true
+      // What counts as the runner's own account: a reviewed outcome carrying a
+      // review of the verified head, or a failed outcome naming one of the
+      // runner's reasons. Anything else — no report, an unknown outcome, a
+      // reviewed claim without a review or a verified head, a reason the
+      // runner never prints — is the proxy's report failing, recorded as such.
+      const wellFormed =
+        report &&
+        ((report.outcome === 'reviewed' && shadowReview && shadow.headVerified) ||
+          (report.outcome === 'failed' && typeof report.reason === 'string' && SHADOW_RUNNER_REASONS.includes(report.reason)))
+      if (wellFormed) {
+        shadow.outcome = report.outcome
+        shadow.reason = report.outcome === 'failed' ? report.reason : null
+        shadow.detail = report.detail ? fence(line(report.detail)) : ''
+      } else {
+        shadow.outcome = 'failed'
+        shadow.reason = 'no-proxy-report'
+        // The script's own words stay plain; whatever the proxy wrote is
+        // quoted inside a fence, as every halt detail does it.
+        const said = line(report && report.detail)
+        shadow.detail = !report
+          ? 'the shadow proxy returned no report'
+          : report.outcome === 'failed' && report.reason === 'no-proxy-report'
+            ? `the shadow proxy reported that the runner printed no JSON:${said ? ` ${fence(said)}` : ' (no detail quoted)'}`
+            : `the shadow proxy's report is not the runner's account — ${shadowReview ? 'a review' : 'no review'}, headVerified ${report.headVerified === true}; what it reported as outcome, reason and detail: ${fence(
+                `${line(JSON.stringify(report.outcome ?? null))} / ${line(JSON.stringify(report.reason ?? null))} / ${said || '(no detail)'}`,
+              )}`
+      }
+      log(
+        shadow.outcome === 'reviewed'
+          ? `${id}: shadow review (${shadowReviewer}${shadow.model ? `, ${shadow.model}` : ''}${shadow.effort ? `/${shadow.effort}` : ''}) returned ${shadowReview.important.length} Important, ${shadowReview.nits.length} nit(s) — recorded, gates nothing.`
+          : `${id}: shadow review failed (${shadow.reason}) — recorded, gates nothing; the ticket goes on.`,
+      )
+    }
+  }
+
   // e. Disposition — always, even on zero findings: the committed addendum is
   //    a merge precondition, not a formality. It is what makes the ticket
   //    reviewed *on the record* rather than merely reviewed.
@@ -1206,7 +1467,7 @@ Do, in order:
    Keep the addendum to the findings and their dispositions: each fix with its commit and the re-run counts, each not-fixed with its reason, each pre-existing with its owner. Do NOT reproduce verification transcripts, re-walk acceptance criteria, or narrate commands the entry's own Verified line already carries — the log is read by every later reviewer and the retro, and narration there is a cost every future ticket pays.
 3. **Commit the addendum** (with the fix commits, or on its own when nothing needed fixing) and \`git push\`. An uncommitted addendum never reaches the remote or the pull request's evidence trail, and the driver refuses to merge a branch whose review is not on the record.
 
-Nits: fix one only if it is trivial and in scope; otherwise record it in the addendum and let the retro decide. A nit never blocks.
+Nits: fix one only if it is trivial and in scope; otherwise record it in the addendum and let the retro decide. A nit never blocks. **Except a regression**: a "nit" that is really something this ticket broke for users (a duplicated or missing control, a broken layout, a removed way to do something) is an Important finding mislabelled — fix it, or report \`important-unfixed\` with the reason; never hand it to the retro, which runs after the release. **And except a revert check that does not hold**: a Verified line naming a test that passes without the change, or an \`n/a\` whose reason does not hold, is Important mislabelled — fix the tests so one pins the change, or report \`important-unfixed\`; a merge with no evidence behind it is not a nit.
 
 **Pre-existing findings**: record EVERY one in the addendum, each with a **named owner** — an existing ticket that should inherit it, or \`retro\` when none fits (the retro skill mines these addenda, so \`retro\` is a real destination, not a shrug). Do not fix them here: they are outside this ticket's scope, and a defect that is neither fixed nor recorded is a defect the project has forgotten. Set \`preExistingRecorded\` to true only when every one of them is written down that way.
 
@@ -1859,14 +2120,19 @@ ${PROMPT_RULE}`,
   // The delta is meter-observed, never any agent's report; the ceiling it is
   // measured against came from the resolve step's read of the signed-off epic
   // ref, never from the tree this merge just produced.
+  // The shadow review's meter delta is taken out of the figure the ceiling
+  // judges: a trial instrument that could push a ticket over its budget could
+  // halt a run, and a shadow gates nothing. `outputTokensObserved` stays the
+  // whole pass; only the comparison leaves the shadow out.
   if (METER) {
-    const spent = recordSpend()
+    const spentWhole = recordSpend()
+    const spent = spentWhole - (record.shadowSpend || 0)
     if (ticketBudget && spent > ticketBudget) {
       halted = {
         ticket: id,
         stopCondition: STOP.ticketBudget,
         where: 'the per-ticket token budget, after the merge was confirmed',
-        detail: `${id} integrated, but its pass spent ${spent} output tokens against the epic's budget of ${ticketBudget}. The work is merged and stays merged; the run stops before the next ticket so a human can decide whether this class of spend is expected — raise the epic's Ticket budget line on ${epicBranch} and push it (every later ticket reads that line off \`origin/${epicBranch}\` before its own merge, so a raise that lands while a ticket is still running governs that ticket's own check), or look at why the ticket outgrew its plan.`,
+        detail: `${id} integrated, but its pass spent ${spent} output tokens${record.shadowSpend ? ` (${spentWhole} including the shadow review's ${record.shadowSpend}, which the budget leaves out)` : ''} against the epic's budget of ${ticketBudget}. The work is merged and stays merged; the run stops before the next ticket so a human can decide whether this class of spend is expected — raise the epic's Ticket budget line on ${epicBranch} and push it (every later ticket reads that line off \`origin/${epicBranch}\` before its own merge, so a raise that lands while a ticket is still running governs that ticket's own check), or look at why the ticket outgrew its plan.`,
       }
       break
     }
@@ -1915,6 +2181,14 @@ return {
     nits: ticketRecords.reduce((n, r) => n + r.nitCount + r.nitOverflowCount, 0),
     reReviews: ticketRecords.filter(r => r.reReviewRan).length,
     preExisting: ticketRecords.reduce((n, r) => n + r.preExistingCount, 0),
+    // `ran`: tickets whose shadow step ran — its proxy was spawned, whatever
+    // it then reported. `failed`: tickets whose
+    // shadow is recorded as a failure, including one that never ran
+    // (`no-anchor`) — so a failure is counted whether or not Codex started.
+    shadowReviews: {
+      ran: ticketRecords.filter(r => r.shadow && r.shadow.ran).length,
+      failed: ticketRecords.filter(r => r.shadow && r.shadow.outcome === 'failed').length,
+    },
   },
   // Every pre-existing finding either lands in a ticket's addendum with a
   // named owner or shows up here: recorded and handed on, never dropped.

@@ -60,6 +60,14 @@ Beyond correctness, look specifically for:
   is not coverage. This is the most common defect in agent-written code: the
   session that wrote the implementation wrote the test, so both encode the same
   misunderstanding.
+- **A revert check that does not hold.** The Verified line names the test
+  that fails with the source change reverted; open it and confirm it depends
+  on the change. A named test that would pass without the change, or an
+  `n/a` whose reason does not hold — the diff is not prose (documentation
+  and code comments only, nothing any runtime, parser, test or agent reads)
+  and the project has a suite that could pin it — is Important: a suite
+  that cannot tell whether the change is present leaves the merge with no
+  evidence behind it.
 - Missing negative tests — the error path, the empty input, the boundary.
 - Error paths that leak internals.
 - A guard that fails open.
@@ -103,7 +111,7 @@ An unverified finding wastes more time than a missed one.
 
 | | |
 |---|---|
-| **Important** | Would break behaviour, lose data, or widen an exposure. Fix before merge. |
+| **Important** | Would break behaviour, lose data, or widen an exposure. Fix before merge. A user-visible regression this change introduces is Important, even outside the ticket's scope: scope limits what the worker builds, not what the reviewer reports. Something that worked before and now visibly does not (a duplicated or missing control, a broken layout, a removed way to do something) is a regression, not a nit — a nit is left for later, and later is after the release. A revert check that does not hold is Important on the same terms — a merge with no evidence behind it. |
 | **Nit** | Real but small. Capped at five. |
 | **Pre-existing** | A genuine defect in the surrounding code that this change did **not** introduce. Report it separately, name the ticket or epic that should own it, and do not treat it as a reason to block this one. |
 
