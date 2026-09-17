@@ -60,19 +60,32 @@ Areas in scope: `plugins/flow` (root `CLAUDE.md` binds all of it —
 its suite, `scripts/check-invariants.mjs` and its suite, the ticket, quick,
 run and retro skills, README, METHODOLOGY, CHANGELOG).
 
-Delivery: release — three tickets, one release pull request. Run
-**attended, in this session, never by `/flow:run`**, for the reason both
-earlier plugin epics recorded: the plugin is not installed in the planning
-session (`flow:epic` was not registered on 2026-09-17 and was executed from
-its source), and DEV-3 changes the driver itself. Each ticket goes through
-`/flow:ticket <ID>` in supervisor mode, merged into `epic/deviation-routing`
-by verified SHA. After sign-off nothing runs without a human in the session;
-the next decision point is the release pull request.
+Delivery: release — three tickets, one release pull request. **Re-planned
+2026-09-17, after sign-off, on Vadim's instruction ("do all unattended"):
+run by `/flow:run deviation-routing`**, not attended as first signed off.
+Nothing now waits for a human between tickets: a fresh worker implements
+each one, the driver hires its reviewer, and it merges into
+`epic/deviation-routing` by verified SHA; the next human decision is the
+release pull request. The two reasons the plan first gave for an attended
+run still hold, and are accepted knowingly. The plugin is not installed in
+the launching session (`flow:epic` was not registered on 2026-09-17 and was
+executed from its source), so each reviewer hire fails once and takes the
+driver's sanctioned fallback, a general agent given the reviewer's rules —
+a cost in spend, not in safety. And DEV-3 edits `run-epic.mjs` while a run
+is in flight: harmless, because a workflow script is read once at launch,
+and it means this run is not governed by the halt it builds.
 
 Environment probes, 2026-09-17: branch protection on `main` —
 `gh api repos/weekendgoals/ticket-flow/branches/main/protection` answers 404
-"Branch not protected" (the two earlier epics recorded a 403 on the free
-plan). Attended run, no unattended merge, no waiver relied on.
+"Branch not protected", and `…/rules/branches/main` answers `[]`:
+unprotected. The two earlier epics recorded a 403 on a private repository
+under the free plan; the repository is public now, so protection is
+available and simply not enabled. **Waived 2026-09-17: Vadim chose to run
+without the hard floor** — "i waive the protection" — having been told that
+protection could be switched on instead. The permission surface: the
+launching session runs in auto mode, where a classifier once refused a
+force push this session; nothing in a run force-pushes, and a prompt
+mid-run is a stop condition by design.
 
 Worker model: opus
 
@@ -142,8 +155,9 @@ Status log: `epics/deviation-routing/status.md`. Run a ticket with `/flow:ticket
 - **Zero dependencies, nothing stored.** No `package.json`, no npm
   dependency, no cache, no state file: a deviation is read from the status
   log every time, exactly as an owed item is. The actor for every ticket is
-  an attended supervisor-mode worker with a shell, and every criterion below
-  is executable by that actor.
+  an unattended, driver-spawned worker with a shell — it spawns no agents,
+  holds no browser and drives no interactive tool — and every criterion
+  below is executable by that actor.
 - **The status log's shape does not change.** The preamble's three pinned
   copies, the entry heading, and the rule that `**Owed:**` is the one
   required line all stay as they are; `**Deviation:**` and `**Deviations

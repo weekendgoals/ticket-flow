@@ -44,3 +44,12 @@ blocking findings between them, all accepted). Signed off by Vadim
 through `/flow:ticket <ID>` in supervisor mode — the plugin is not installed
 in the planning session, and DEV-3 changes the driver. `epics/design-fidelity/`
 waits on this epic reaching `main`.
+
+**Addendum — 2026-09-17 — delivery re-planned after sign-off.** The baseline
+above says this epic runs attended. Vadim re-planned it the same day ("do
+all unattended"): it runs by `/flow:run deviation-routing`. `main` is
+unprotected (404 from the protection probe, `[]` from the rulesets probe;
+the repository is public, so protection is available and not enabled), and
+Vadim waived the hard floor in so many words — "i waive the protection".
+`tickets.md` carries the decision on its `Delivery:` and probes paragraphs,
+which is where the run skill's step 3 reads it.
