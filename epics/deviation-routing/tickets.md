@@ -425,6 +425,23 @@ none of it. Who may write the closing line, which Decision 5 settled.
 whether a deviation is acceptable: that is the human's, and the skill never
 suggests an answer.
 
+**Re-planned 2026-09-17, from this ticket's review — two corrections to the
+scope above, by the planner.** (1) **The gate stops on open deviations, not
+on notes.** The scope did not say what step 10 reads, and the worker gated
+on `notes` as well as `open`. The reviewer showed that two of the parser's
+three notes never clear — an unknown item (`<ID>.3` against two) and a
+malformed reference survive exactly the repair they prescribe, and `main`'s
+owed ledger behaves identically — so in an append-only log one mistyped
+digit would make a ticket unmergeable forever, a refusal with no recovery.
+A closing line that closes nothing leaves its departure open, so `open`
+already stops every case a note reports; notes are **shown** at both doors
+and gate nothing. That notes should be clearable at all is a defect of both
+parsers, not of this door, and is not this ticket's. (2) **One sentence of
+the run skill is in scope after all**: § "Resuming after a halt" says an
+unfixed Important finding is "the one case" step 10 refuses, which this
+ticket makes untrue. DEV-2 corrects that inventory and nothing else in the
+run skill; the stop condition and its recovery remain DEV-3's.
+
 **Acceptance criteria.**
 - The release integration refuses.
   CHECK: grep -c "with an unclosed deviation" plugins/flow/skills/ticket/SKILL.md
