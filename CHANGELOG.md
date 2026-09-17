@@ -8,6 +8,32 @@ with one version and date.
 
 ## Unreleased
 
+- **A reviewer hire that throws is a failed hire, not the end of the run**
+  (`workflows/run-epic.mjs` `hireReviewer` and the two reviewer-spawn halt
+  details, `skills/run/SKILL.md` steps 3 and 4). The driver's sanctioned
+  fallback — one retry with a general agent given the reviewer's rules —
+  was reached only when the first hire *returned* nothing or returned
+  something that is not a review. But for an agent type the launching
+  session never registered, the Workflow runtime does not return: it throws
+  `agent type 'flow:ticket-reviewer' not found`, and an uncaught throw in
+  the script's module body ends the whole workflow — so the fallback was
+  unreachable in exactly the situation it was written for. A live run died
+  this way at its first review hire (Workflow run `wf_2e558dac-83d`,
+  2026-09-17, the deviation-routing epic): it failed closed, nothing
+  unreviewed merged, and the run was lost. A throwing hire is now caught and
+  logged with the error's first line — so a run record can quote why rather
+  than report an unexplained fallback — and takes the same one retry, for
+  the review and the re-review alike. A fallback that also throws returns no
+  review exactly as one that returns nothing does, and the run halts on
+  **reviewer-spawn failure after the sanctioned fallback also fails** with
+  the branch pushed and unmerged: an unreviewed ticket is still never
+  merged, anywhere. Nothing else in the script catches a throw, and a test
+  pins that — an unhandled surprise must not look like a handled one. Step
+  3 now names the cost of running without the plugin installed (a failed
+  hire per review, and reviews by the fallback rather than by the reviewer
+  agent with its Edit and Write removed), which is a price and not a
+  refusal.
+
 - **The revert check: a ticket names the test that fails with its source
   change reverted, and the reviewer opens that test** (`skills/ticket/SKILL.md`
   step 5 and its Verified field, `skills/quick/SKILL.md` step 5,

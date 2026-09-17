@@ -82,6 +82,19 @@ ticket one. Report what is missing and stop.
   exactly like a run making progress. (The one exception is the shadow
   review's proxy, which records a prompt as a shadow failure — the trial
   gates nothing.)
+- **The plugin's agent types — never a refusal.** The driver hires the
+  reviewer by agent type (`flow:ticket-reviewer`), and only a session that
+  has the plugin installed can spawn one. A session running this skill from
+  its source — the plugin's own repository, or any session where
+  `/reload-plugins` has not run — has no such type, and the runtime answers
+  every review hire by throwing `agent type 'flow:ticket-reviewer' not
+  found`. The driver treats that as a failed hire and takes the sanctioned
+  fallback (step 4), so the run continues; the cost is **one failed hire per
+  review and per re-review**, and reviews done by a general agent given the
+  reviewer's rules rather than by the reviewer agent, whose Edit and Write
+  are structurally removed. That is a price, not a refusal: report it before
+  ticket one so the run record can say whose reviews these were, and install
+  the plugin first when you want the reviewer agent itself.
 - **Branch protection on the default branch** — pull requests required, no
   force pushes, human-only merge. Probe it: `gh api
   "repos/{owner}/{repo}/branches/<default-branch>/protection"` succeeding
@@ -246,7 +259,13 @@ Everything else here (`reviewerModel`, `shadowReviewer`, `consequencePaths`,
   it distinct from the driver's `reviewedHead` anchor) — a **cross-check**,
   logged when it disagrees, never the anchor itself: the party under review
   does not name the commit that was reviewed. A failed spawn gets one retry
-  with the sanctioned fallback, then halts.
+  with the sanctioned fallback, then halts — and **a spawn that throws is a
+  failed spawn too**: for an agent type the launching session never
+  registered, the runtime does not return nothing, it throws `agent type
+  'flow:ticket-reviewer' not found`, so a hire that throws is caught, logged
+  with the error's first line, and takes the same one retry. Nothing else in
+  the script catches a throw; an unhandled surprise must not look like a
+  handled one.
 - **Runs the shadow review, when the epic declares `Shadow reviewer: codex`
   and the ticket is priced at the consequence tier** (after the floor) — a
   trial that gates nothing. Right after the first review and before the
