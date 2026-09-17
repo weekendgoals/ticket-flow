@@ -13,7 +13,9 @@ with one version and date.
   `deviations <ID> [--log-from <ref>]` subcommand, `brief`'s new section and
   its `deviations` payload field, six new `doctor` near-misses;
   `skills/ticket/SKILL.md` step 6, `skills/quick/SKILL.md` step 5, README;
-  `check-invariants.mjs` holds the label in all four documents). A status
+  `check-invariants.mjs` holds both labels — the `**Deviation:**` opener the
+  parser reads and the `**Deviations closed:**` closer — across all four
+  documents). A status
   entry may carry one optional `**Deviation:**` line per departure — what the
   ticket's documents or its design showed that was not built, or was built
   differently — beside the `**Decisions:**` field that keeps the judgment

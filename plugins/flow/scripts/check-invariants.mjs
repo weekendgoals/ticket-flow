@@ -354,6 +354,11 @@ const PHRASES = [
     files: ['run', 'retro', 'workflow', 'readme', 'script'],
   },
   {
+    why: "the deviation opener — `**Deviation:**` is the exact label the parser reads, so the two lanes that teach a worker to write one, the parser itself and README's account of the fields must spell it identically. A lane renamed to any other word teaches entries that parse as nothing, silently: doctor's near-miss scan catches a deviation-shaped slip like `**Deviations:**`, but a rename to an unrelated label looks like ordinary prose to it, and the departure goes back to reaching nobody",
+    re: /\*\*Deviation:\*\*/,
+    files: ['ticket', 'quick', 'script', 'readme'],
+  },
+  {
     why: "the deviation closing line is one label in both lanes that write a status entry, in the parser that reads it and in README's account of the fields — and each says it is a human's line. A lane that stops teaching it sends the next departure back into Decisions prose, where nothing reads it; a document that keeps the label but drops the owner lets the reviewed party close its own record",
     re: /\*\*Deviations closed:\*\*/,
     files: ['ticket', 'quick', 'script', 'readme'],
