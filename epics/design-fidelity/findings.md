@@ -167,3 +167,112 @@ accepted each ticket's criteria as written and never opened the artboard until
 the user did. A plugin change makes that failure less likely; it does not make
 it impossible, and a document claiming otherwise would be the same kind of
 error as the ground rule above.
+
+---
+
+# Round two — the fixes above were in force, and five more differences shipped
+
+Appended 2026-09-17, the same day. This half matters more than the first,
+because it is evidence about the *fixes*, not about the original failure.
+
+## What happened
+
+The epic gained the artboard-comparison ground rule. CITY-13 was written
+under it, carried a visual criterion, and its reviewer was given a browser and
+both artboards — the first two remedies in this document, applied. That
+reviewer earned its keep: it measured `getComputedStyle(h1).fontSize === "24px"`
+against the artboard's 38px and found an inline style beating a media query,
+an Important finding no diff review would have produced.
+
+Then Vadim looked at the page again and found **five more differences**, all
+in sections CITY-13 had not been about:
+
+| | artboard | built |
+|---|---|---|
+| two-track columns | `702px / 502px`, gap 32 | `960px / 340px`, gap 0 |
+| weekend cards | 2 per row, 369.6px | **3** per row, 302.7px |
+| "Clubs and grounds" | first section of the rail | full-width band below both tracks |
+| "The one to be at" label | monospace 11px/600, tracking 0.88px | system sans 11px/700, tracking 0.7px |
+| long lists | bounded, toggled | one-way disclosure (clubs), unbounded (transport) |
+
+## Why the round-one fixes did not catch them
+
+**1. A visual criterion scoped to the ticket's own section leaves the rest of
+the page unchecked forever.** CITY-13's criterion was "at 1440px and 393px the
+hero renders as the artboard draws it". The worker compared the hero. The
+reviewer reviewed the hero. Both did it well. Nothing in the epic ever owned
+"the whole page", so the grid proportions, the card count, the rail's contents
+and a label's font face were checked by no ticket at any point — and never
+would have been, because every ticket's scope is a section and the differences
+live between them. **Per-section fidelity checks distributed across tickets do
+not sum to a page that matches the design.**
+
+**2. "Renders as the artboard draws it" is not a checkable criterion.** It was
+satisfied by a page whose H1 was the mobile size. The new Cypress spec written
+under it asserted `display: grid`, the column ratio and the stat tiles' left
+edge — and was green with the defect present. A fidelity criterion has to name
+the properties it is about, or a worker will assert the ones it happens to
+think of, which are the ones it already believes are right.
+
+**3. Every difference across both rounds is a computed-style value.** Grid
+columns, font family, font size, weight, letter-spacing, padding, border
+radius, section order. Both reviewers that found any of them found them with
+`getComputedStyle`; every one that was missed was missed by eye. This is not a
+judgment problem and it should not be given to judgment: it is a diff between
+two property maps, and no tool in the plugin produces one.
+
+**4. Two of the narrowings were introduced at planning time, by the ticket
+author, and no gate looks there.** CITY-5's scope line says "The grounds table
+gains its full-width layout" — a deliberate override of what the artboard
+draws, written before any code existed. The static-map ground rule is the
+same shape. `/flow:epic` runs a fresh-context plan review, and it checks
+sizing, ordering, uncheckable criteria, hidden dependencies and contradictions
+with the code. **It is never given the design.** The cheapest possible catch —
+before a line is written — is the one gate that structurally cannot make it.
+
+## The finding under all of it
+
+The methodology knows about three kinds of artifact: documents (tickets,
+status logs, instruction files), a diff, and tests. **A design is a fourth
+kind, and the plugin has no slot for it.** Every failure in this document
+follows from that absence: criteria cannot reference what the plugin cannot
+name, reviewers are not handed it, the plan review cannot check against it,
+and a ticket that overrides it has nowhere to record the override where a
+later check would read it.
+
+## What to change, revised
+
+Superseding the first half's list where they differ.
+
+- **An epic with a design source gets one whole-page fidelity ticket, run
+  last, scoped to the entire artboard** — not a visual criterion per ticket.
+  Per-ticket checks stay useful for the section being built; they are not a
+  substitute, and this document is the evidence.
+- **Ship a fidelity differ.** Given two URLs and a landmark selector list, it
+  extracts a fixed property set (`grid-template-columns`, `gap`, font family /
+  size / weight / letter-spacing, colours, radius, padding, heading order,
+  child counts) from both and prints the differences. Every one of the eight
+  differences found across both rounds is in that set. A `COMPARE:` criterion
+  then has something to run, and the result is a table rather than an opinion.
+- **The plan reviewer is given the design sources** when the epic has them,
+  and is asked one question the current review never asks: *does any ticket
+  narrow what the design draws, and does it say so?* Both planning-time
+  narrowings would have been caught here, for the price of one extra input.
+- **A sanctioned deviation is declared where the fidelity check reads it**,
+  not in ticket prose — so the whole-page comparison can mark an element
+  "removed by <decision>, <date>" instead of silently not appearing, and a
+  reader can see the list of everything the build deliberately does not draw.
+- Unchanged from the first half, and reinforced: **`brief` must propagate
+  `Decisions` that record something not built**, and the reviewer's packet must
+  carry the design source. The second is now positively evidenced — the one
+  reviewer given a browser and an artboard produced the only Important finding
+  of the two rounds.
+
+## What this round says about the first round's diagnosis
+
+One correction. The first half ranked "the checkable crowds out the important"
+first. Round two shows that is incomplete: CITY-13 *had* a visual criterion
+and still shipped five differences, because the criterion was **scoped to a
+section** and **written as prose**. The cause is better stated as: *the plugin
+has no artifact-level check, only ticket-level ones, and no way to express a
+visual property as a check.* Scope and checkability, not checkability alone.
