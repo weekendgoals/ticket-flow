@@ -600,3 +600,53 @@ gives `open: 0`, zero notes; and `open: 0` with a lingering unknown-item note �
 Nothing deferred.
 
 Worker tokens (implementation leg): 182,077; Reviewer tokens: 136,121
+
+**Addendum — re-review — 2026-09-17 — opus/default effort:** bounded re-review
+of the fix commits (`ed54638..57c1a2a`) by the same reviewer. **0 Important**,
+and nothing raised in the first review left unaddressed.
+
+It verified the first Important against the exact fixture that broke it — two
+departures, a closing line naming `TW-1.1, TW-1.3`, then the repair the note
+prescribes, giving `open: 0, notes: 1` — and the step now reaches the merge and
+shows the note; the malformed-reference and lone-departure fixtures behave the
+same way. It verified the second at the run skill's rewritten resume paragraph.
+
+It attacked the re-plan's premise — that a closing line which closes nothing
+always leaves its departure open — and could not construct a sequence in which
+a ticket has an undecided departure while `open` reads 0. A departure becomes
+closed only through an itemised reference exactly matching one recorded above
+the line, or through a bare line where exactly one was open
+(`tickets.mjs:961-983`); a departure recorded after the last closing line reads
+open even when one ID heads both entries; a line under another ticket's
+addendum closes exactly what it names. A human who means `.2` and writes `.1`
+is an error no gate can see, and the other departure still stops the step.
+
+It found the new invariant load-bearing: the phrase occurs exactly once in each
+of its two files, and rewriting either sentence away makes
+`check-invariants.mjs` exit 1 naming that file. The run-skill edit stayed inside
+the ticket's carve-out — one hunk, the inventory paragraph. The fetch sits
+before the re-read rather than the first read on purpose: the agent's own step 9
+push updates the tracking ref, and the only out-of-band push in this flow is the
+human's closing line. It reproduced the revert check in a copy: 20 pass, 1 fail,
+the named test.
+
+Two facts recorded, neither a defect of this range. `--log-from <ref>` at a ref
+whose log holds no entry for the ticket returns `count: 0, open: 0`, exit 0 —
+indistinguishable from a ticket that recorded no departure — and the attended
+step 10 does not itself verify that the entry exists on the pushed ref; judged
+unreachable in the step's own order, since the entry is committed at step 6 and
+the agent pushes at step 9. And on this range's `nothing to pin`: narrowly true
+— no parser or test reads the step's prose, and the checker's ledger carries no
+single-file entries — though an entry spanning the ticket skill and METHODOLOGY
+was available, which is a judgment about the ledger's size rather than a defect.
+
+One wording observation, suppressed as a new nit under the re-review rule and
+recorded here so it is not re-found: step 9 of the ticket skill and step 7 of
+the quick skill still say a note means a departure someone tried to close "is
+still open", which the lingering-note state — `open: 0` with a note —
+contradicts; step 10's own wording is the right one ("someone having tried to
+close a departure and failed"). Neither site gates anything. Owner: the ticket
+the planner is proposing over both parsers' notes, since it rewrites what a note
+means — or the retro if that ticket does not happen.
+
+Re-review tokens: 176,250
