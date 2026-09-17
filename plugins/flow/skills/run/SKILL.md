@@ -345,7 +345,8 @@ enters your context from the loop:
                      reviewerReportedHead, fixBoundsGated,
                      fixBoundsTripped, fixBoundsExclude,
                      fixLines, acceptanceOutcome, acceptanceChecks,
-                     acceptanceChecksPassed, acceptanceAllPassed,
+                     acceptanceChecksPassed, acceptanceChecksSkipped,
+                     acceptanceAllPassed,
                      acceptanceProblems, resolveOutcome, mergeOutcome,
                      addendumMatches, headSha,
                      built, verification, workerReported,
@@ -562,8 +563,10 @@ after fixes: `<reReviewImportantCount>` Important" when `reReviewRan`
 without a trip, or "fixes bounds-checked in code: `<fixLines>` lines inside
 the reviewed diff" when `fixBoundsGated` and nothing tripped — "acceptance:
 `<acceptanceChecksPassed>/<acceptanceChecks>` CHECKs" when any ran, plus
-"`<acceptanceProblems>` malformed" whenever that count is above zero,
-because a malformed CHECK is why an acceptance halt can read as all-green —
+"`<acceptanceChecksSkipped>` skipped" and "`<acceptanceProblems>` malformed"
+whenever either count is above zero, because a skipped check is not a passed
+one and a malformed CHECK never ran at all — either is why an acceptance halt
+can read as all-green, and `1/2` alone says which neither —
 integrated | halted. A record that omits the fix gate reads as though the
 fixes were never looked at.>
 

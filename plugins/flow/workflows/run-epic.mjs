@@ -540,7 +540,7 @@ const ACCEPT_SCHEMA = {
     skipped: {
       type: 'integer',
       description:
-        'the `skipped` field of the printed JSON, verbatim (0 when absent) — checks whose evidence is a skip: the command exited 0 and the work it names never ran. They are not counted in `passed`.',
+        'the `skipped` field of the printed JSON, verbatim (0 when absent) — checks whose evidence is a skip: the command exited 0 and the work it names never ran. They are not counted in `passed`. Report the 0 rather than leaving the field out: the driver halts on a report that does not carry it.',
     },
     allPassed: {
       type: 'boolean',
@@ -1097,6 +1097,7 @@ Report honestly: \`branch-pushed\` ONLY if you saw the push of \`${branch}\` suc
     acceptanceOutcome: 'not reached',
     acceptanceChecks: null,
     acceptanceChecksPassed: null,
+    acceptanceChecksSkipped: null,
     acceptanceAllPassed: null,
     acceptanceProblems: null,
     resolveOutcome: 'not reached',
@@ -1716,7 +1717,7 @@ node "${pluginRoot}/scripts/tickets.mjs" check ${id} --from origin/${epicBranch}
 
 The first three commands bring the local branch to its pushed state — the state the checks must judge. The \`--from\` ref reads the CHECK/EXPECT criteria from the signed-off document on ${epicBranch}, never from this branch's own copy.
 
-The check command exits 0 when every check passed AND every criterion parsed; it exits 1 when any check failed, **any check was skipped**, **or any CHECK/EXPECT line is malformed** — a malformed line is a criterion that never ran, and a skipped check is a criterion whose command exited 0 while the work it names never ran (its \`status\` is \`"skipped"\`), which is why neither greens the gate. ALL of those exit codes are outcome "ran": report the JSON it printed verbatim — \`total\`, \`passed\`, \`skipped\`, \`allPassed\` exactly as the JSON prints it, \`problems\` as the LENGTH of the JSON's \`problems\` array, and one \`failures\` entry per check whose \`status\` is not \`"passed"\` (criterion and evidence) and per problem (its \`text\` and \`why\`). Never infer \`allPassed\` from the counts and never leave it out: the driver halts on a report missing it. A \`total\` of 0 — no CHECK criteria — is an answer, not a failure. Report "command-failed" only when a git command failed, the check command exited 2, or it printed no parseable JSON. You judge nothing; the driver reads the ledger in code.
+The check command exits 0 when every check passed AND every criterion parsed; it exits 1 when any check failed, **any check was skipped**, **or any CHECK/EXPECT line is malformed** — a malformed line is a criterion that never ran, and a skipped check is a criterion whose command exited 0 while the work it names never ran (its \`status\` is \`"skipped"\`), which is why neither greens the gate. ALL of those exit codes are outcome "ran": report the JSON it printed verbatim — \`total\`, \`passed\`, \`skipped\`, \`allPassed\` exactly as the JSON prints it, \`problems\` as the LENGTH of the JSON's \`problems\` array, and one \`failures\` entry per check whose \`status\` is not \`"passed"\` (criterion and evidence) and per problem (its \`text\` and \`why\`). Never infer \`allPassed\` from the counts, and leave out neither it nor \`skipped\` — report \`skipped\` as 0 when the JSON prints none: the driver halts on a report missing either. A \`total\` of 0 — no CHECK criteria — is an answer, not a failure. Report "command-failed" only when a git command failed, the check command exited 2, or it printed no parseable JSON. You judge nothing; the driver reads the ledger in code.
 
 ${PROMPT_RULE}
 
@@ -1754,14 +1755,18 @@ ${NO_MAIN} The checkout and fast-forward only move the local branch to where the
     const problems = Number.isInteger(accept.problems) && accept.problems >= 0 ? accept.problems : null
     // Skipped checks are already outside `passed`, so the gate below catches
     // them with or without this figure; it is read to say WHICH repair the
-    // halt needs — a missing database is not a broken clamp.
-    const skipped = Number.isInteger(accept.skipped) && accept.skipped >= 0 ? accept.skipped : 0
+    // halt needs — a missing database is not a broken clamp. It is still
+    // refused like every other count rather than defaulted to 0: the one
+    // field that names skips cannot be the one field allowed to go missing,
+    // and a schema the prompt tells the reporter to fill with 0 when the JSON
+    // has none leaves nothing legitimate for a default to rescue.
+    const skipped = Number.isInteger(accept.skipped) && accept.skipped >= 0 ? accept.skipped : null
     record.acceptanceChecks = total
     record.acceptanceChecksPassed = passed
     record.acceptanceChecksSkipped = skipped
     record.acceptanceAllPassed = allPassed
     record.acceptanceProblems = problems
-    const unreadable = total === null || passed === null || allPassed === null || problems === null
+    const unreadable = total === null || passed === null || skipped === null || allPassed === null || problems === null
     // `skipped > 0` is its own condition rather than something the counts are
     // trusted to carry: the ledger keeps skips out of `passed`, so a report
     // that claims both is self-contradictory, and re-deriving it here is the
@@ -1791,7 +1796,7 @@ ${NO_MAIN} The checkout and fast-forward only move the local branch to where the
         stopCondition: STOP.acceptanceCheck,
         where: `the acceptance checks of ${id}`,
         detail: unreadable
-          ? `the acceptance-check step reported "ran" but no usable counts or verdict (total, passed, allPassed, problems) — a gate that cannot read its own evidence merges nothing; doubt goes up`
+          ? `the acceptance-check step reported "ran" but no usable counts or verdict (total, passed, skipped, allPassed, problems) — a gate that cannot read its own evidence merges nothing; doubt goes up`
           : `${why.join('; and ')}, judged against the signed-off document on ${epicBranch}: ${quoted}`,
       }
       break

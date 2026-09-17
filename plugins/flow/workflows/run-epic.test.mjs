@@ -124,8 +124,8 @@ const resolvedOk = {
   detail: '',
 }
 const resolvedWithBudget = n => ({ ...resolvedOk, ticketBudget: n })
-const acceptOk = { outcome: 'ran', total: 2, passed: 2, allPassed: true, problems: 0, failures: [], detail: '' }
-const acceptNone = { outcome: 'ran', total: 0, passed: 0, allPassed: true, problems: 0, failures: [], detail: '' }
+const acceptOk = { outcome: 'ran', total: 2, passed: 2, skipped: 0, allPassed: true, problems: 0, failures: [], detail: '' }
+const acceptNone = { outcome: 'ran', total: 0, passed: 0, skipped: 0, allPassed: true, problems: 0, failures: [], detail: '' }
 const mergedOk = { outcome: 'merged', detail: '' }
 const integratedOk = { commandSucceeded: true, state: 'integrated', prUrl: '' }
 
@@ -1008,6 +1008,7 @@ test('a failed acceptance check halts before any merge agent exists, quoting the
         outcome: 'ran',
         total: 2,
         passed: 1,
+        skipped: 0,
         allPassed: false,
         problems: 0,
         failures: [{ criterion: 'the limit clamps to 50', evidence: 'exit 1 — AssertionError' }],
@@ -1062,7 +1063,7 @@ test('the acceptance gate runs after the disposition and re-review, so fix commi
       'review:PAY-1': reviewImportant,
       'disposition:PAY-1': dispFixed,
       're-review:PAY-1': { important: [] },
-      'accept:PAY-1': { outcome: 'ran', total: 1, passed: 0, failures: [{ criterion: 'clamps', evidence: 'exit 1' }], detail: '' },
+      'accept:PAY-1': { outcome: 'ran', total: 1, passed: 0, skipped: 0, failures: [{ criterion: 'clamps', evidence: 'exit 1' }], detail: '' },
     }),
   )
   assert.match(r.out.haltedOn.stopCondition, /^a failed acceptance CHECK/)
@@ -1116,7 +1117,7 @@ test('the acceptance gate halts when the ledger says allPassed false though pass
   // The shape a malformed criterion produces: nothing ran, so the counts
   // agree with themselves. The script's own verdict is what the gate reads.
   const r = await drive(
-    oneTicket({ 'accept:PAY-1': { outcome: 'ran', total: 1, passed: 1, allPassed: false, problems: 0, failures: [], detail: '' } }),
+    oneTicket({ 'accept:PAY-1': { outcome: 'ran', total: 1, passed: 1, skipped: 0, allPassed: false, problems: 0, failures: [], detail: '' } }),
   )
   assert.match(r.out.haltedOn.stopCondition, /^a failed acceptance CHECK/)
   assert.match(r.out.haltedOn.detail, /allPassed: false/)
@@ -1131,6 +1132,7 @@ test('the acceptance gate halts on a malformed CHECK even when every runnable ch
         outcome: 'ran',
         total: 2,
         passed: 2,
+        skipped: 0,
         allPassed: false,
         problems: 1,
         failures: [{ criterion: 'CHECK npm test', evidence: 'looks like a CHECK/EXPECT line but will not parse, so it silently never runs' }],
@@ -1147,7 +1149,7 @@ test('the acceptance gate halts on a malformed CHECK even when every runnable ch
 })
 
 test('the acceptance gate treats a report missing allPassed as unreadable evidence and halts', async () => {
-  const r = await drive(oneTicket({ 'accept:PAY-1': { outcome: 'ran', total: 2, passed: 2, problems: 0, failures: [], detail: '' } }))
+  const r = await drive(oneTicket({ 'accept:PAY-1': { outcome: 'ran', total: 2, passed: 2, skipped: 0, problems: 0, failures: [], detail: '' } }))
   assert.match(r.out.haltedOn.stopCondition, /^a failed acceptance CHECK/)
   assert.match(r.out.haltedOn.detail, /no usable counts or verdict/)
   assert.equal(r.out.ticketRecords[0].acceptanceAllPassed, null)
@@ -1155,10 +1157,30 @@ test('the acceptance gate treats a report missing allPassed as unreadable eviden
   // The same for a problems count the code cannot read: the gate never
   // assumes zero, because assuming zero is exactly the merge this fixes.
   const noProblems = await drive(
-    oneTicket({ 'accept:PAY-1': { outcome: 'ran', total: 2, passed: 2, allPassed: true, failures: [], detail: '' } }),
+    oneTicket({ 'accept:PAY-1': { outcome: 'ran', total: 2, passed: 2, skipped: 0, allPassed: true, failures: [], detail: '' } }),
   )
   assert.match(noProblems.out.haltedOn.stopCondition, /^a failed acceptance CHECK/)
   assert.ok(!noProblems.labels.some(l => l.startsWith('merge:')))
+})
+
+test('a report that does not carry its skip count is unreadable, and the record carries the field either way', async () => {
+  // The one figure that names skips cannot be the one figure allowed to go
+  // missing: defaulting it to 0 let a report arrive with no skip evidence at
+  // all and still green the gate the skip rule exists to hold. The prompt
+  // tells the reporter to send 0 when the JSON prints none, so a report
+  // without it is a report the gate cannot read.
+  const r = await drive(oneTicket({ 'accept:PAY-1': { outcome: 'ran', total: 2, passed: 2, allPassed: true, problems: 0, failures: [], detail: '' } }))
+  assert.match(r.out.haltedOn.stopCondition, /^a failed acceptance CHECK/)
+  assert.match(r.out.haltedOn.detail, /no usable counts or verdict/)
+  assert.match(r.out.haltedOn.detail, /skipped/, 'the halt names the field that was missing among the others')
+  assert.equal(r.out.ticketRecords[0].acceptanceChecksSkipped, null)
+  assert.ok(!r.labels.some(l => l.startsWith('merge:')))
+
+  // A ticket that halts before acceptance carries the same shape as one that
+  // reaches it — a record whose fields appear and disappear cannot be read by
+  // the summary that prints them.
+  const early = await drive(oneTicket({ 'accept:PAY-1': { outcome: 'command-failed', detail: 'git failed' } }))
+  assert.equal(early.out.ticketRecords[0].acceptanceChecksSkipped, null)
 })
 
 // ---- pre-existing findings --------------------------------------------------

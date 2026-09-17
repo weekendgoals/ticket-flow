@@ -40,7 +40,12 @@ with one version and date.
   two-item entry) is reported the same way — the skills now ask workers to
   hand-write these, so a miscount is the expected error, and it was the one
   error with no feedback anywhere; a mistyped reference does not clear the
-  note either, since it retired nothing. A marker naming an entry the log
+  note either, since it retired nothing. A reference must also END where its
+  ID ends — `<ID>oops` is not `<ID>`, and anchoring at the start alone let a
+  typo's prefix silently discharge a one-item entry — and a dotted reference
+  is read against the items recorded ABOVE it, the way a bare marker already
+  is, so a number that pointed past the end of the entry when it was written
+  cannot retire an item that entry records days later. A marker naming an entry the log
   does not record stays silent, because `**Resolves owed:**` does not cross
   epics and a cross-epic marker is a legal thing to write. **Existing bare
   markers against multi-item entries stop resolving** — those items reappear
@@ -88,7 +93,15 @@ with one version and date.
   proves nothing. A line showing a run still wins, so one skipped file inside
   a suite that ran does not turn the ledger red. With no EXPECT, where exit 0
   is the whole evidence, the question widens to the whole output (some line
-  reports a skip, no line reports anything having run). Detection is shape,
+  reports a skip, no line reports anything having run) — and so it does when
+  an EXPECT's own matching lines show neither, which is the argv echo's
+  second shape: the runner names the file while starting and counts files
+  when it reports the skip, so narrowing the question to the matching lines
+  greened a suite in which nothing ran. TAP is read by its per-test lines as
+  well as its summary — `ok N` is a run, while `not ok` and an `ok N`
+  carrying `# SKIP` are not — because a TAP producer need print no summary at
+  all, and without that one `# SKIP` beside a real pass read as a run in
+  which nothing happened, halting a run on working code. Detection is shape,
   not meaning: a runner's skip glyph starting a line (`↓`, `○`) or a skip
   **count** (`12 skipped`, `skipped (12)`, TAP's `# SKIP`) — the count is
   what keeps the bare word out, so a criterion may still assert that
@@ -103,7 +116,12 @@ with one version and date.
   exits 1 like any ungreen gate, so the driver's acceptance step still
   reports it as "ran" — and the driver halts on the skip count as its own
   condition, the way it already re-derives `problems > 0` and
-  `passed !== total`, so a self-contradictory report merges nothing. The
+  `passed !== total`, so a self-contradictory report merges nothing. The skip
+  count is refused like every other count rather than defaulted to 0 — the
+  one figure that names skips cannot be the one figure a report is allowed to
+  omit — and the ticket record carries `acceptanceChecksSkipped` whether or
+  not acceptance was reached, so a halted record and a merged one have the
+  same shape and the run summary prints the skips beside the counts. The
   acceptance stop condition names the skipped criterion as a fourth member in
   all four documents that state it, because a retro files halts by that
   string and a skip filed as "did not produce its expected result" is the
