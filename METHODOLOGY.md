@@ -528,6 +528,46 @@ deviation regardless, is a judgment about who was in the room when the line was
 written; a parser that had already dropped the closed ones would have made that
 judgment for every reader at once, in the direction that trusts.
 
+**A record with no door is the same failure again.** The hero band was written
+down perfectly; what was missing was a reader. So the line is read wherever the
+next human decision happens — every later brief, the summary the lane prints,
+the pull request body, and, in a release epic, the integration merge — and each
+of those doors shows *every* departure the ticket recorded, not only the open
+ones. A closed one is shown with its closing line because the parser cannot say
+who wrote it: displaying the line is what turns "trusted" into "seen". The
+integration merge is the one door that refuses rather than reports, and the
+reason is position. It is the last moment at which one ticket's departure is
+still one decision; after it, the departure is a paragraph inside an epic-wide
+diff, and the evidence that the release pull request gets a paragraph-level
+reading is exactly the evidence this epic does not have. The cost of refusing is
+one pause on something an agent may already have fixed; the cost of not
+refusing is the shipped page with no hero band, which is what this section is
+about.
+
+**A refusal that cannot be cleared teaches people to route around it.** Both
+recoveries are therefore written into the step itself — accept it, or fix it on
+the branch and have the fix accepted — and both end in a human's line, because
+a gate the guarded party can clear is not a gate. Which makes one detail
+load-bearing rather than pedantic: the closing line must name the departures it
+decides, since a bare line facing several closes nothing. A step that told a
+human to "write the closing line" would be advertising a recovery that leaves
+the gate refusing, and a worker watching that happen twice learns that the gate
+is noise. The rule generalises: a refusal's advertised recovery has to work in
+the refused state, which is only knowable by reading the refusal from inside
+it.
+
+The same test decides **what a gate may read**. The parser reports both the
+departures and the notes a closing line earns when it closes nothing, and the
+attended doors show both — a note is how a human learns that someone tried to
+close a departure and failed. But the gate stops on the open departures alone,
+because a line that closed nothing leaves its departure open anyway, so the
+notes add no case, and a note is not something a writer can be promised will
+clear: some survive the exact repair they name, and an append-only log cannot
+take the wrong line back. A gate on one would refuse forever on a mistyped
+digit. Show what informs, stop on what clears — a condition nobody can
+discharge is not a gate, it is a wall, and the first person who meets one
+learns to go around gates in general.
+
 ## Why a nit is not automatically a ticket
 
 Reviews reliably produce nits; for a stretch each nit became a ticket, and

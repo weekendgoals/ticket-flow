@@ -260,11 +260,28 @@ fix the tests so one pins the change, or name it as unfixed in the body.
 ## 7. Push, open the pull request, stop
 
 ```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/tickets.mjs" deviations Q-<n>
 git push -u origin q-<n>
 gh pr create --base <default-branch> --title "Q-<n>: <title>" --body "<body>"
 ```
 
 The body carries: what changed and why, the acceptance criteria with counts,
 the review outcome (or "prose-only; no separate review"), and any deploy
-precondition. Print the URL and stop — a human merges, and nothing runs
-after the merge.
+precondition. And **a deviation is named in the pull request body** — the same
+words the ticket lane's step 9 uses, because it is one rule at both doors:
+under its own `## Deviations` heading, every departure the command above
+reported, closed or not, each by **the reference the command printed** — a
+bare `Q-<n>` when the entry recorded one departure, `Q-<n>.<n>` when it
+recorded several, never a number invented for a lone one, which a closing line
+copying it could not close — with its text, a closed one **with its closing
+line**, and any `note:` line verbatim. A closed one is shown because only a
+human may write that line and no command can say who did; a note is shown
+because it means a closing line closed nothing, so a departure someone tried
+to close is still open. Write the heading even when there is nothing to name,
+with "none recorded" under it: this lane has no agent merge to refuse, so the
+body is the only door a departure passes through — the person reading the pull
+request is the gate, and an absent heading reads to them as an omission rather
+than an answer. Say what departed and leave it there —
+whether it is acceptable is their call, and this skill never suggests an
+answer. Print the URL and stop — a human merges, and nothing runs after the
+merge.

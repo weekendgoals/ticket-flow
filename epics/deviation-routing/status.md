@@ -394,3 +394,259 @@ not a lost record, since there is no text to lose, and the empty-text filter
 predates this ticket, but a silent drop all the same.
 
 Re-review tokens: 191,972
+
+### DEV-2 — A deviation stops an attended merge — 2026-09-17 — DONE
+
+**Built:** the two attended doors now carry a departure to the human who
+decides it. Ticket skill step 9 runs `deviations <ID>` before the summary and
+shows **every** one the ticket recorded — a closed one with its closing line,
+and the note a closing line that closed nothing earns — then names them in the
+incremental pull request body under their own heading. Step 10 does not
+integrate a ticket **with an unclosed deviation** into its epic branch: it
+reads the departures off `origin/<branch>` with `--log-from`, because that is
+the SHA it merges, stops before the merge commands on `open` above zero or on
+any note, and spells out both recoveries — the human accepts it, or the worker
+fixes it on the branch as new commits with a dated addendum and the human then
+accepts it as fixed in a commit — each ending in a closing line no agent
+composes and naming the `<ID>.<n>` references, because a bare line facing
+several closes nothing and would leave the gate refusing. The quick skill's
+step 7 names a deviation in its pull request body in the same words; with no
+agent merge to refuse, that body is its only door. `check-invariants.mjs` pins
+the pull-request-body sentence across the two lanes, with a test that flips it
+at each door; README, METHODOLOGY and the CHANGELOG carry the doors and the
+reason for them.
+
+**Mode:** supervisor — worker worker:DEV-2 (opus), reviewer hired by the
+supervisor
+
+**Tokens:** observed by the supervisor — see the review addendum
+
+**Verified:** `node plugins/flow/scripts/tickets.mjs check DEV-2` 3/3, exit 0
+(0/3 on the base tree at `b5d02ce`, every criterion failing before the work).
+`node --test plugins/flow/scripts/check-invariants.test.mjs` 20/20 (19 before;
+one new test). Unchanged suites, all passing: `tickets.test.mjs` 101/101,
+`ticket-session-guard.test.mjs` 14/14, `board.test.mjs` 9/9,
+`plan-page.test.mjs` 8/8, `run-epic.test.mjs` 123/123,
+`runners/codex.test.mjs` 21/21, `runners/codex-review.test.mjs` 19/19.
+`node plugins/flow/scripts/check-invariants.mjs` exit 0,
+`node plugins/flow/scripts/tickets.mjs doctor` exit 0,
+`node --check plugins/flow/scripts/tickets.mjs` exit 0, and the run-epic
+module-body parse exit 0 (both scripts untouched here). CLAUDE.md's two
+invariant-suite counts move 19 → 20 in the same commit as the test.
+demonstrate, read as a supervisor against real output from a throwaway
+`throwaway` epic in a temp git repo, one entry recording a hero band that was
+not built. **One open item** — `deviations TW-1` printed `1 recorded, 1 not
+yet closed by a human`, `open TW-1: …`; `--json` `open: 1`, `notes: []`. The
+sentence that decided it: step 10's "`open` above zero stops this step before
+the merge commands below" — the reading stops at the refusal, never reaching
+`git rev-parse origin/<branch>`. **Closed as fixed** — the fix committed on
+branch `tw-1` and a dated `**Deviations closed:** TW-1 — fixed in <sha>;
+Vadim; 2026-09-17.` beneath it, read the way the step reads it
+(`deviations TW-1 --log-from tw-1 --json`): `open: 0`, `notes: []`, the
+deviation `closed` with `closedBy` carrying the line. Decided by the same
+bullet's other half, "`open: 0` with an empty `notes` is what resumes this
+step, and nothing else is" — the reading reaches the merge. **Closed by a line
+the supervisor did not write** — branch `tw-1-selfclosed` carrying
+`**Deviations closed:** TW-1 — accepted; the implementing worker;
+2026-09-17.`: `open: 0`, so the same sentence reaches the merge, and step 9's
+"A closed one is shown **with its closing line**, because only a human may
+write that line and no command can say who did" is what puts
+`closed by: TW-1 — accepted; the implementing worker; 2026-09-17.` in front of
+the human. The refusal's recovery was read from inside the refused state too:
+on a two-departure entry a bare `**Deviations closed:** TW-1` left
+`2 recorded, 2 not yet closed` plus the bare-line note, so the step still
+refuses — which is why the step names the references — and appending
+`**Deviations closed:** TW-1.1, TW-1.2 — …` then gave `open: 0`, zero notes,
+both closed with that line. revert check: `git revert --no-commit $(git
+rev-list --no-merges b5d02ce..HEAD)` with
+`plugins/flow/scripts/check-invariants.test.mjs` checked back out of HEAD —
+**"either lane that stops naming a deviation in the pull request body fails"
+fails**, 19 pass / 1 fail; `git revert --abort` left the tree exactly HEAD
+(`git diff HEAD` empty). The new invariant was then flipped at each of its two
+doors in turn — the sentence replaced in the ticket skill, then in the quick
+skill — and `check-invariants.mjs` exited 1 each time, naming the file and the
+coupling.
+
+**Decisions:** six judgment calls the documents left open. (1) Step 10's gate
+reads `origin/<branch>` through `--log-from`, not the checkout: the step merges
+a verified SHA, so a closing line present only in the working tree would clear
+a gate on a commit that does not carry it — DEV-1 built the flag for exactly
+this ref, and a gate is verified at the door its actor walks through. (2) Both
+doors show the `notes` DEV-4 added, not only the deviations. A note is not a
+departure, so nothing required it; but a bare closing line facing several
+closes nothing, and a reader who counted only `closed` flags would see the
+departure still open with no sign that anyone had tried to close it — the same
+"seen rather than trusted" the epic's Decision 5 asks of a closing line. It is
+also what makes the refusal's recovery legible, since the note states the
+repair. (3) Who physically writes the closing line: the human, in every path.
+Step 6, README and METHODOLOGY all say no agent writes one, and the ticket's
+"written on the human's word, quoted" is rendered as a boundary rather than a
+permission — dictating the sentence for the worker to commit verbatim is the
+human writing it; inferring it from a "yes", or drafting it for them to
+approve, is not. That keeps the recovery workable in a terminal session without
+letting the party under review compose its own closure. (4) The refusal names
+the `<ID>.<n>` references and says why, rather than telling anyone to "write
+the closing line": observed above, a bare line against several departures
+leaves the gate refusing, so the unqualified advice would have been a recovery
+that does not work in the refused state. (5) One `PHRASES` entry, on the
+pull-request-body sentence across both lanes — the checker's own rule is to
+keep the list short, and the refusal sentence is single-document and already
+pinned by this ticket's first CHECK. (6) Step 10's incremental half gained one
+sentence saying there is no agent merge there to refuse and that the departure's
+door was step 9's body; without it the asymmetry between the two deliveries
+reads as an omission a later session would "fix".
+
+**Owed:** Nothing.
+
+**Addendum — review — 2026-09-17 — opus/default effort:** two Important, five
+nits, one pre-existing, reviewed at `ed54638` by a fresh-context general agent
+standing in for `flow:ticket-reviewer`, which this session has not registered;
+the hiring tool exposes no effort setting. Every disposition landed in one
+commit, `ff8cc7a`. The planner re-planned this ticket from the review
+(`bfb7ba6` on the epic branch) with two corrections to scope, and both are
+built here.
+
+Important, fixed in `ff8cc7a`. Step 10 stopped on `open` above zero "and so
+does any entry in `notes`", and resumed only on "`open: 0` with an empty
+`notes`". Of the parser's three notes only the bare-line note ever clears
+(`tickets.mjs:938, :980`); the unknown-item and malformed-reference notes have
+no suppression path. Reproduced on a throwaway epic: two departures, a closing
+line naming `TW-1.1, TW-1.3` — one digit wrong — gives `open: 1, notes: 1`;
+doing exactly what that note prescribes, a new dated line naming `TW-1.2`,
+gives `open: 0, notes: 1`, and the note is still there, because the log is
+append-only. The gate as written would have refused that ticket forever. It now
+stops on `open` above zero **and nothing else**; notes are shown at every door
+— summary, both pull request bodies, and the stop itself — and gate nothing.
+The step carries the reason: a closing line that closed nothing leaves its
+departure open, so `open` already stops every case a note reports, while a note
+cannot be relied on to clear, so a gate on one would be a refusal with no
+recovery. That notes are unclearable at all is a defect of both parsers, which
+this ticket does not touch — see the pre-existing item below. This corrects the
+**Built** field above, which the append-only rule leaves standing as written.
+
+Important, fixed in `ff8cc7a`. The run skill's § "Resuming after a halt" said
+an unfixed Important finding "is the one case that does not end in a merge",
+which this range made false, in the paragraph that routes a halted ticket
+through `/flow:ticket <ID>` to step 10 — so a session reading the run skill as
+authority would have met the deviation refusal as a bug to route around. That
+one inventory sentence, the only part of the run skill in this ticket's scope,
+now names both refusals and where each is recovered, and the sentence above it
+names step 10's **two gates**. Judgment call in the fix: the pair is pinned by
+a new `PHRASES` entry, `/unclosed deviation/i` across the ticket and run
+skills, because one document correct alone and wrong beside its pair is exactly
+what that ledger exists to catch, and the drift had already happened once
+within this epic. DEV-3's territory — the unattended stop condition, its
+recovery procedure and the driver — is untouched.
+
+Nit, fixed in `ff8cc7a`. The re-run after a closing line said nothing about
+fetching, while `--log-from origin/<branch>` reads a remote-tracking ref that a
+human pushing from their own checkout leaves stale; the step now fetches first,
+with the reason.
+
+Nit, fixed in `ff8cc7a`. The step gave no instruction for a `deviations` read
+that fails. A nonzero exit or an absent payload is now a stop, never "none
+recorded", quoting the script's own refusal.
+
+Nit, fixed in `ff8cc7a`. "no deviations recorded" was required in the printed
+summary only. Both pull request bodies now write the heading even when there is
+nothing to name — an absent heading reads as an omission, which is the
+summary's own reasoning, and in the quick lane that body is the only door.
+
+Nit, fixed in `ff8cc7a`. Both body sentences said "each by its `<ID>.<n>`
+reference", which tells a reader to invent `Q-3.1` for an entry that recorded
+one departure and keeps its bare ID (`tickets.mjs:928`) — a reference that,
+copied into a closing line, earns the permanent unknown-item note. Both now say
+to use the reference the command printed, and say why.
+
+Nit, fixed in `ff8cc7a`. Step 6 read absolutely — the closing line is "never
+yours, and never any agent's" — with no pointer to the one boundary step 10
+draws at the attended door. It now carries the cross-reference: a sentence the
+human dictates for verbatim commit is theirs, one inferred from a "yes" or
+drafted for approval is not.
+
+Pre-existing, not this range's, recorded with its owner. The ticket skill
+(`:352-356`) and README (`:374-375`), both unchanged since `b5d02ce`, say a
+reference naming no departure and a malformed one are reported "the same way"
+and that naming any item of that entry clears the note; the parser clears only
+the bare-line note, and the note strings themselves name repairs that do not
+clear them. `main`'s owed ledger behaves identically, so it is one defect over
+two parsers. Owner: the planner, who is putting a ticket over both parsers to
+the human. Neither claim was edited here, and nothing written in this range
+repeats it.
+
+Re-run after the fixes, on `ff8cc7a`: `tickets.mjs check DEV-2` 3/3, exit 0;
+`check-invariants.test.mjs` 21/21 (20 before the review fix, one new test);
+`tickets.test.mjs` 101/101; `ticket-session-guard.test.mjs` 14/14;
+`board.test.mjs` 9/9; `plan-page.test.mjs` 8/8; `run-epic.test.mjs` 123/123;
+`runners/codex.test.mjs` 21/21; `runners/codex-review.test.mjs` 19/19;
+`check-invariants.mjs` exit 0; `doctor` exit 0; `node --check tickets.mjs` exit
+0. CLAUDE.md's two invariant-suite counts moved 20 → 21 in the same commit.
+`git diff b5d02ce..HEAD` touches neither `tickets.mjs` nor `run-epic.mjs`.
+Revert check over `ff8cc7a` with the test file kept at HEAD: **"either
+document losing step 10's second refusal fails"** fails, 20 pass / 1 fail; the
+new phrase was then flipped at each of its two doors and `check-invariants.mjs`
+exited 1 each time, naming the file. The other fixes in that commit are
+sentences an agent executes and no runtime reads — `nothing to pin — the gate's
+wording has no parser, test or ledger entry that could assert it; what holds it
+is the acceptance CHECK on the refusal's existence, still 3/3, and the
+demonstrate readings, re-run below`. The five readings, on the same throwaway
+epic: one open item `open: 1` → stops; closed as fixed `open: 0` → reaches the
+merge; closed by a line the supervisor did not write `open: 0`, `closedBy`
+shown → reaches the merge and shows the line; a bare line against two
+departures `open: 2` with the bare-line note → stops, and the itemised repair
+gives `open: 0`, zero notes; and `open: 0` with a lingering unknown-item note →
+**reaches the merge and shows the note**, which is the fix.
+
+Nothing deferred.
+
+Worker tokens (implementation leg): 182,077; Reviewer tokens: 136,121
+
+**Addendum — re-review — 2026-09-17 — opus/default effort:** bounded re-review
+of the fix commits (`ed54638..57c1a2a`) by the same reviewer. **0 Important**,
+and nothing raised in the first review left unaddressed.
+
+It verified the first Important against the exact fixture that broke it — two
+departures, a closing line naming `TW-1.1, TW-1.3`, then the repair the note
+prescribes, giving `open: 0, notes: 1` — and the step now reaches the merge and
+shows the note; the malformed-reference and lone-departure fixtures behave the
+same way. It verified the second at the run skill's rewritten resume paragraph.
+
+It attacked the re-plan's premise — that a closing line which closes nothing
+always leaves its departure open — and could not construct a sequence in which
+a ticket has an undecided departure while `open` reads 0. A departure becomes
+closed only through an itemised reference exactly matching one recorded above
+the line, or through a bare line where exactly one was open
+(`tickets.mjs:961-983`); a departure recorded after the last closing line reads
+open even when one ID heads both entries; a line under another ticket's
+addendum closes exactly what it names. A human who means `.2` and writes `.1`
+is an error no gate can see, and the other departure still stops the step.
+
+It found the new invariant load-bearing: the phrase occurs exactly once in each
+of its two files, and rewriting either sentence away makes
+`check-invariants.mjs` exit 1 naming that file. The run-skill edit stayed inside
+the ticket's carve-out — one hunk, the inventory paragraph. The fetch sits
+before the re-read rather than the first read on purpose: the agent's own step 9
+push updates the tracking ref, and the only out-of-band push in this flow is the
+human's closing line. It reproduced the revert check in a copy: 20 pass, 1 fail,
+the named test.
+
+Two facts recorded, neither a defect of this range. `--log-from <ref>` at a ref
+whose log holds no entry for the ticket returns `count: 0, open: 0`, exit 0 —
+indistinguishable from a ticket that recorded no departure — and the attended
+step 10 does not itself verify that the entry exists on the pushed ref; judged
+unreachable in the step's own order, since the entry is committed at step 6 and
+the agent pushes at step 9. And on this range's `nothing to pin`: narrowly true
+— no parser or test reads the step's prose, and the checker's ledger carries no
+single-file entries — though an entry spanning the ticket skill and METHODOLOGY
+was available, which is a judgment about the ledger's size rather than a defect.
+
+One wording observation, suppressed as a new nit under the re-review rule and
+recorded here so it is not re-found: step 9 of the ticket skill and step 7 of
+the quick skill still say a note means a departure someone tried to close "is
+still open", which the lingering-note state — `open: 0` with a note —
+contradicts; step 10's own wording is the right one ("someone having tried to
+close a departure and failed"). Neither site gates anything. Owner: the ticket
+the planner is proposing over both parsers' notes, since it rewrites what a note
+means — or the retro if that ticket does not happen.
+
+Re-review tokens: 176,250

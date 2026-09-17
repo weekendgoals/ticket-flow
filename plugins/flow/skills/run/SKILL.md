@@ -725,12 +725,20 @@ Its supervisor-spawned worker checks out the pushed branch and builds
 nothing — the ticket skill's step 0 and step 3 carry that exception — and the
 supervisor picks the leg up where the run dropped it: step 7's review when
 the entry carries no `Addendum — review —` line, step 8 when it does and
-findings are still open, step 10's gate and merge by verified SHA when the
-addendum is committed. Rebuilding instead would throw away work the run
-already paid for, and skipping the ticket would build its successors on
-unreviewed work. An Important finding nobody could fix is the one case that
-does not end in a merge: step 10 refuses it, and a human decides. Once the
-board reads `integrated`, re-run `/flow:run <epic>`.
+findings are still open, step 10's **two gates** and the merge by verified SHA
+when the addendum is committed. Rebuilding instead would throw away work the
+run already paid for, and skipping the ticket would build its successors on
+unreviewed work. **Two cases do not end in a merge, and step 10 refuses
+both.** An Important finding nobody could fix: it is not the worker's to
+accept, so the recovery is a BLOCKED entry naming it and a human deciding what
+happens to the ticket. And **an unclosed deviation** — a departure the entry
+recorded that no human has closed: the step shows it and holds the merge until
+the human has accepted it, or had it fixed on the branch and accepted it as
+fixed, in a dated `**Deviations closed:**` line on the pushed branch that no
+agent may write. That second refusal is why a halted ticket carrying a
+departure comes back here at all: nobody in an unattended run could have
+written that line. Once the board reads `integrated`, re-run
+`/flow:run <epic>`.
 
 **3. A BLOCKED or ABANDONED entry** — the ticket reads `blocked`, which step
 1 refuses for its own reason: `next` never hands out a blocked ticket, so a

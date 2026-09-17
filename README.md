@@ -380,6 +380,20 @@ log from a git ref — a pushed ticket branch, where the worker wrote its entry
 — instead of the checkout, and a log it cannot read is a nonzero exit naming
 the reason, never an empty list.
 
+**Where a deviation is read.** Every later brief in the epic carries the ones
+no human has closed. In an attended lane the ticket's own summary names
+**every** one it recorded — a closed one with its closing line, because no
+command can say who wrote that line — and **a deviation is named in the pull
+request body**, under its own heading, in both lanes that open one
+(`/flow:ticket`'s incremental pull request, `/flow:quick`'s). And a release
+epic's integration merge **refuses a ticket with an unclosed deviation**: the
+gate reads the departures off the pushed branch it is about to merge, stops
+before the merge, and resumes only once a human has decided — accepted, or
+fixed on the branch and then accepted as fixed — in the `**Deviations
+closed:**` line that no agent may write. That merge is the last point at which
+one ticket's departure is still one decision rather than a paragraph inside a
+whole epic's diff.
+
 A criterion can also be **machine-runnable**: an indented `CHECK: <command>`
 line under the criterion bullet, with an optional `EXPECT: <text the output
 must contain>` — exit 0 alone decides when EXPECT is absent. The script's
