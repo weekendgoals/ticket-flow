@@ -773,3 +773,35 @@ mechanically — this fix pins the one that was lost, and the general coupling i
 owner `retro`. The entry's recorded departure stays open: a
 `**Deviations closed:**` line is a human's, and no agent writes one.
 Worker tokens (implementation leg): 318,314; Reviewer tokens: 181,257
+
+**Addendum — re-review — 2026-09-18 — opus/default effort:** Bounded re-review
+of the fix commits (`8217d87..bd4072d`) by the same reviewer: **0 Important**,
+nothing from the first pass left unaddressed — all six first-pass findings
+verified fixed, both pre-existing items verified recorded with their owners. It
+reproduced the stop-list audit against the script's `STOP` object in both
+directions — 11 of 11 present, 0 missing, 0 orphans — and found the restored
+merge-conflict bullet byte-identical to `936d8a6`'s; deleting it again in a copy
+makes `check-invariants.mjs` exit 1. It re-drove 39 adversarial resolve reports
+through the real module body in a copy (its 26 from the first pass plus 13 more
+from the supervisor): `{count:0, open:0}` completes and merges; `{2,0}`, `{2,2}`
+and `{2,1}` halt on the deviation string; `{0,2}`, `{1,2}`, an `open` that is a
+string, negative, null, absent, fractional or NaN, and a `count` that is a
+string, all halt on the contradiction string; nothing merged and both record
+fields were null on every halt. It also fed the real command's JSON through for
+four log shapes — zero departures, one open, one closed by a bare line, and
+three with two itemised-closed — and no legitimate output is refused: `open <=
+count` holds by construction (`tickets.mjs:1968-1969`), so the cross-check can
+only refuse a report the command could not have printed. The order pin holds:
+moving the two deviation branches below the fix-bounds branch in a copy now
+turns the suite red (132/133) on the new test, where it stayed 131/131 green
+before the fix. The release-review wording is sound against "no skill gains a
+post-merge step" — it is content the driver writes into the pull request body,
+addressed to the human, with the primary instruction inside the release and the
+fallback a separate human-initiated `/flow:quick` that itself ends at a pull
+request. The clause the review addendum declared unpinned is behaviour-neutral
+as stated (`devRead` versus `dev` is unreachable by construction, since `devOpen`
+reaches nothing except through the agreement check), but not wholly unpinned:
+replacing it with `true &&` goes 130/133 red. Acceptable as it stands. Both
+reverted-fix results were reproduced in copies, and every count matches CLAUDE.md
+in every place it appears.
+Re-review tokens: 228,274
