@@ -654,7 +654,7 @@ const RESOLVE_SCHEMA = {
     },
     deviations: {
       type: 'object',
-      required: ['commandSucceeded', 'ticket', 'count'],
+      required: ['commandSucceeded', 'ticket', 'count', 'open'],
       description:
         "FACT 4: what the `deviations <ID> --log-from origin/<the ticket branch> --json` command printed, verbatim. Its own command and its own field — nothing here comes from `find`.",
       properties: {
@@ -669,7 +669,11 @@ const RESOLVE_SCHEMA = {
           description:
             "the JSON's `count` field, verbatim: every `**Deviation:**` line under this ticket's own entries, closed or not. 0 is a real answer. Never recompute it, never leave it out, and never fill in a number from earlier in this run.",
         },
-        open: { type: 'integer', description: "the JSON's `open` field, verbatim — recorded for the human who reads the halt; the gate counts `count`" },
+        open: {
+          type: 'integer',
+          description:
+            "the JSON's `open` field, verbatim: how many of those departures no closing line closed. The gate counts `count`, never this — but it CHECKS this against `count` and halts when the two disagree, so report it as printed and never leave it out. The command prints it every time, and transposing the two numbers is the mistake this cross-check exists to catch.",
+        },
         failure: { type: 'string', description: 'when commandSucceeded is false: the exit code and the first lines of stderr, verbatim, credentials masked' },
       },
     },
@@ -1934,7 +1938,7 @@ ${TICKETS} deviations ${id} --log-from origin/${branch} --json
 
 A different command from FACT 3's, with a different flag, and its JSON shares no field name with FACT 3's: \`--from\` reads the epic's DECLARATIONS as signed off, \`--log-from\` reads a STATUS LOG off a pushed branch. Do not mix the two reports, and do not answer this fact from that one. FACT 1 already fetched \`${branch}\`, so the ref is current; \`--log-from\` reads the log at exactly the commit this run would merge, never the checkout, where a line nobody pushed would answer for a commit that does not carry it.
 
-Report what it printed under \`deviations\`: \`commandSucceeded\` true only when the command exited 0 AND printed parseable JSON, and the JSON's \`ticket\`, \`count\` and \`open\` fields exactly as printed. A \`count\` of 0 is a real answer. When the command exits nonzero — it refuses a status log it cannot read from that ref, in those words — report \`commandSucceeded\` false with its exit code and the first lines of stderr in \`failure\`, and report it that way rather than as the step's outcome: the step ran, and the driver reads this failure here. **Never report a failure as a count of 0**: an unreadable status log is not "no deviations", and that is the one direction this report can lie in. Never recompute the numbers, never leave \`count\` out because \`open\` is 0, and never fill in a figure you saw earlier in this run.${fixBoundsFacts}
+Report what it printed under \`deviations\`: \`commandSucceeded\` true only when the command exited 0 AND printed parseable JSON, and the JSON's \`ticket\`, \`count\` and \`open\` fields exactly as printed. A \`count\` of 0 is a real answer. When the command exits nonzero — it refuses a status log it cannot read from that ref, in those words — report \`commandSucceeded\` false with its exit code and the first lines of stderr in \`failure\`, and report it that way rather than as the step's outcome: the step ran, and the driver reads this failure here. **Never report a failure as a count of 0**: an unreadable status log is not "no deviations", and that is the one direction this report can lie in. Never recompute the numbers, never leave either of them out, and never fill in a figure you saw earlier in this run. The two are checked against each other: \`open\` counts the subset of \`count\` that no closing line closed, so it can never exceed \`count\` — reporting them the wrong way round, or dropping one, is a halt rather than a merge.${fixBoundsFacts}
 
 Report outcome "resolved" once every command above has run, whatever it printed. "command-failed" is for a command that failed for some other reason (the fetch could not reach the remote, \`gh\` is not authenticated) — never for a count of 0 or an empty listing, which are answers.
 
@@ -1970,13 +1974,29 @@ ${NO_MAIN} You are read-only here in any case: the two fetches update remote-tra
     // written a closing line on that branch are the worker and the
     // disposition agent — the party under review. Honouring `open` would let
     // it clear its own gate, and "accepted" versus "fixed in <sha>" is prose
-    // no parser can police. `open` is recorded beside the count and decides
-    // nothing; the attended doors, where a human is present to have written
-    // the line, are the ones that honour it.
+    // no parser can police. `open` decides nothing; the attended doors, where
+    // a human is present to have written the line, are the ones that honour
+    // it.
+    //
+    // But `open` is still EVIDENCE, and it is checked as such. The subcommand
+    // builds `open` as the subset of what `count` counts that no closing line
+    // closed, so `open <= count` holds in every report the real command can
+    // print. A report where it does not — or where `open` is absent or is not
+    // a count, which the command always prints — is a report contradicting
+    // itself, and the likeliest shape of it is the two adjacent integers
+    // transposed: `count 2, open 0` arriving as `count 0, open 2` merges a
+    // ticket whose own fact says two departures exist. So both numbers are
+    // refused together, and neither reaches the record alone: a run record
+    // showing a count beside a figure from a refused command is what the
+    // retro would later mine.
     const dev = resolved && resolved.deviations && typeof resolved.deviations === 'object' ? resolved.deviations : null
     const devTicketOk = dev && typeof dev.ticket === 'string' && dev.ticket.trim().toUpperCase() === id
-    const deviationCount = dev && dev.commandSucceeded === true && devTicketOk && Number.isInteger(dev.count) && dev.count >= 0 ? dev.count : null
-    const deviationOpen = dev && Number.isInteger(dev.open) && dev.open >= 0 ? dev.open : null
+    const devRead = dev && dev.commandSucceeded === true && devTicketOk
+    const devCount = devRead && Number.isInteger(dev.count) && dev.count >= 0 ? dev.count : null
+    const devOpen = devRead && Number.isInteger(dev.open) && dev.open >= 0 ? dev.open : null
+    const devAgrees = devCount !== null && devOpen !== null && devOpen <= devCount
+    const deviationCount = devAgrees ? devCount : null
+    const deviationOpen = devAgrees ? devOpen : null
     record.deviationsRecorded = deviationCount
     record.deviationsOpen = deviationOpen
     const deviationProblem = !dev
@@ -1985,7 +2005,11 @@ ${NO_MAIN} You are read-only here in any case: the two fetches update remote-tra
         ? `the \`deviations ${id} --log-from origin/${branch} --json\` command did not succeed:${line(dev.failure) ? ` ${fence(line(dev.failure))}` : ' (no failure quoted)'}`
         : !devTicketOk
           ? `the deviations report names ticket ${fence(line(String(dev.ticket ?? '(nothing)')))} rather than ${id} — a departure count read off another ticket's entries answers a question this gate did not ask`
-          : `the deviations report's \`count\` is not a count: ${fence(line(JSON.stringify(dev.count ?? null)))}`
+          : devCount === null
+            ? `the deviations report's \`count\` is not a count: ${fence(line(JSON.stringify(dev.count ?? null)))}`
+            : devOpen === null
+              ? `the deviations report's \`open\` is not a count: ${fence(line(JSON.stringify(dev.open ?? null)))} — the command prints it beside \`count\` every time, and a gate holding one of the two numbers cannot tell a dropped field from a zero`
+              : `the deviations report contradicts itself: \`open\` ${devOpen} against \`count\` ${devCount}. \`open\` is the subset of \`count\` no closing line closed, so it can never exceed it — and the likeliest shape of this is the two adjacent numbers transposed, which would merge a ticket whose own fact says ${devOpen} departure(s) exist`
     if (!resolved) {
       stop(STOP.nonzeroExit, `the resolve agent returned no report — nothing is known about ${id}'s pull request, and nothing is merged on a guess`)
     } else if (resolved.outcome === 'permission-prompt') {

@@ -344,6 +344,11 @@ const PHRASES = [
     files: ['run', 'workflow'],
   },
   {
+    why: "the merge-conflict stop condition is one sentence in the skill and the script — pinned because it was deleted from the skill's list by an edit that meant to add a bullet beside it (DEV-3's review), leaving `STOP.mergeConflict` live at three call sites and a human looking up a halt string the skill no longer carried. The general gap this one exposed — only some of the STOP sentences are pinned — is recorded for the retro; this entry holds the one that was actually lost",
+    re: /a merge conflict — refreshing the epic branch, or anywhere else, including a ticket branch that will not merge into the epic branch/,
+    files: ['run', 'workflow'],
+  },
+  {
     why: "the deviation stop condition is one sentence in the skill and the script — the halt a run record quotes verbatim. Pinned whole, like the acceptance-check and fix-bounds sentences: \"closed or not\" is what makes this gate different from the attended one, and a copy that kept only the opening would describe a gate that honours a closing line this one ignores — which is the fail-open the halt exists to prevent",
     re: /a recorded deviation — the ticket's pushed status entry carries a `\*\*Deviation:\*\*` line, closed or not, because nobody present in an unattended run could have closed it; the run asks rather than records/,
     files: ['run', 'workflow'],

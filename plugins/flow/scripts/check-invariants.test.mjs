@@ -264,6 +264,17 @@ test('the run skill drifting from the fix-bounds stop condition fails', () => {
   assert.match(t.out, /run\/SKILL\.md.*fix-bounds stop condition/s)
 })
 
+test('the run skill losing the merge-conflict stop condition fails', () => {
+  // Deleted once for real: an edit adding a bullet beside it replaced it
+  // instead, while `STOP.mergeConflict` stayed live at three call sites — so
+  // a halt quoted a string the skill's list no longer carried.
+  const skill = copyRepo()
+  mutate(skill, 'plugins/flow/skills/run/SKILL.md', '- on **a merge conflict — refreshing the epic branch, or anywhere else,\n  including a ticket branch that will not merge into the epic branch**;\n', '')
+  const s = run(skill)
+  assert.equal(s.status, 1, s.out)
+  assert.match(s.out, /run\/SKILL\.md.*merge-conflict stop condition/s)
+})
+
 test('the workflow script losing the deviation stop condition fails', () => {
   const root = copyRepo()
   mutate(root, 'plugins/flow/workflows/run-epic.mjs', 'a recorded deviation — the ticket', 'a recorded departure — the ticket')

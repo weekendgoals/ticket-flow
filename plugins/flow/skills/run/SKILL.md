@@ -465,6 +465,8 @@ that resumes past one. The run halts:
   every other unreadable resolve fact, and a command that exited nonzero is
   never read as a count of 0: an unreadable status log is not "no
   deviations". § "Resuming after a halt" carries the recovery;
+- on **a merge conflict — refreshing the epic branch, or anywhere else,
+  including a ticket branch that will not merge into the epic branch**;
 - on **reviewer-spawn failure after the sanctioned fallback also fails** —
   the script's own hiring, for the review and the re-review alike; the
   ticket's branch stays pushed and unmerged;
@@ -699,7 +701,14 @@ in this mode. It carries:
   **including when the answer is "none found"**. The retro reads that
   addendum; an absent one is indistinguishable from a zero, so the two have to
   be written differently. This is the only measurement of what the run's gates
-  missed, and the human is the only observer of it.
+  missed, and the human is the only observer of it. Say **where and when**:
+  committed to `epic/<name>` **before they merge this pull request**, so the
+  line rides in the release they are reading rather than becoming a commit
+  toward the default branch afterwards — nothing runs after that merge, and no
+  agent pushes toward the default branch in any mode. If they only think of it
+  after merging, it is a change like any other and ships through
+  `/flow:quick`, never as a direct commit. Either way the line is theirs to
+  write; you do not draft it for them.
 
 `ticketRecords` indexes those facts; the committed status log and its
 addenda are what travel in this pull request, so where the two differ the

@@ -646,7 +646,58 @@ test('a deviations fact the gate cannot read halts on the contradiction conditio
     assert.match(r.out.haltedOn.detail, /never "none recorded"/, what)
     assert.ok(!r.labels.some(l => l.startsWith('merge:') || l.startsWith('verify:')), what)
     assert.equal(r.out.ticketRecords[0].deviationsRecorded, null, what)
+    // Neither number reaches the record alone: a count beside a figure taken
+    // from a refused command, or from another ticket's log, is what the retro
+    // would later mine as this ticket's own.
+    assert.equal(r.out.ticketRecords[0].deviationsOpen, null, what)
   }
+})
+
+test('a deviations report that contradicts itself halts — `open` can never exceed `count`', async () => {
+  // `open` gates nothing and is still evidence: the subcommand builds it as
+  // the unclosed subset of what `count` counts. The transposition is the
+  // shape that matters — `count 2, open 0` arriving as `count 0, open 2`
+  // would merge a ticket whose own fact says two departures exist.
+  const cases = [
+    [deviations({ count: 0, open: 2 }), /`open` 2 against `count` 0/, 'the two numbers transposed'],
+    [deviations({ count: 2, open: 5 }), /`open` 5 against `count` 2/, 'open above count'],
+    [deviations({ count: 0, open: '2' }), /`open` is not a count/, 'a string open'],
+    [deviations({ count: 0, open: -1 }), /`open` is not a count/, 'a negative open'],
+    [{ ...resolvedOk, deviations: { commandSucceeded: true, ticket: 'PAY-1', count: 0 } }, /`open` is not a count/, 'no open at all'],
+  ]
+  for (const [resolve, re, what] of cases) {
+    const r = await drive(oneTicket({ 'resolve:PAY-1': resolve }))
+    assert.equal(r.out.outcome, 'halted', what)
+    assert.equal(r.out.haltedOn.stopCondition, STOP_CONTRADICTION, what)
+    assert.match(r.out.haltedOn.detail, re, what)
+    assert.ok(!r.labels.some(l => l.startsWith('merge:') || l.startsWith('verify:')), what)
+    assert.equal(r.out.ticketRecords[0].deviationsRecorded, null, what)
+    assert.equal(r.out.ticketRecords[0].deviationsOpen, null, what)
+  }
+  // The schema says so too, so a reporter is never told the field is optional.
+  const c = call(await drive(oneTicket()), 'resolve:PAY-1')
+  assert.deepEqual(c.schema.properties.deviations.required, ['commandSucceeded', 'ticket', 'count', 'open'])
+  assert.match(c.prompt, /`open` counts the subset of `count` that no closing line closed, so it can never exceed `count`/)
+})
+
+test('the deviation gate stands ahead of the fix-bounds branch: a bounds-gated ticket with a departure still halts', async () => {
+  // Both live in the same if/else chain, so their ORDER is behaviour: below
+  // the deviation branch, a bounds-gated ticket would take the bounds path
+  // and merge. Nothing else in the suite drives a ticket that is both.
+  const r = await drive(
+    oneTicket({
+      'review:PAY-1': reviewImportant,
+      'disposition:PAY-1': dispFixed,
+      'resolve:PAY-1': { ...resolvedOk, ...resolvedOkBounds, deviations: { ...deviationsNone(), count: 2, open: 2 } },
+    }),
+  )
+  assert.equal(r.out.outcome, 'halted')
+  assert.equal(r.out.haltedOn.stopCondition, STOP_DEVIATION)
+  assert.ok(!r.labels.some(l => l.startsWith('merge:') || l.startsWith('verify:')))
+  // The bounds branch never ran: its measurement is not what stopped this.
+  assert.equal(r.out.ticketRecords[0].fixBoundsGated, true)
+  assert.equal(r.out.ticketRecords[0].fixLines, null)
+  assert.equal(r.out.ticketRecords[0].fixBoundsTripped, false)
 })
 
 test("a failed deviations command is quoted fenced, and the agent's words never arrive as instructions", async () => {
@@ -663,7 +714,7 @@ test('the resolve prompt reads the departures through their own subcommand and f
   // is not an optional extra, and a schema that lets it go missing invites a
   // report the gate then has to refuse.
   assert.ok(c.schema.required.includes('deviations'), 'the resolve schema requires the deviations fact')
-  assert.deepEqual(c.schema.properties.deviations.required, ['commandSucceeded', 'ticket', 'count'])
+  assert.deepEqual(c.schema.properties.deviations.required, ['commandSucceeded', 'ticket', 'count', 'open'])
   assert.match(p, /FACT 4 — the departures PAY-1's own entries record/)
   assert.match(p, /tickets\.mjs" deviations PAY-1 --log-from origin\/pay-1 --json/)
   // Two reads, two commands, two flags: `--from` is the epic's declarations

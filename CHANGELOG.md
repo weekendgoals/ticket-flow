@@ -14,7 +14,8 @@ with one version and date.
   README, METHODOLOGY; `check-invariants.mjs` pins the stop sentence whole
   across the skill and the script). The driver's resolve step — read-only,
   after the review and before any agent that could merge exists — now reads a
-  fifth fact: `tickets.mjs deviations <ID> --log-from origin/<branch> --json`
+  fourth fact (a fifth when the fix-bounds gate is armed):
+  `tickets.mjs deviations <ID> --log-from origin/<branch> --json`
   on the branch it would merge. Its own subcommand and its own flag,
   deliberately: `find --from` means "the epic's declarations as signed off"
   and is already read beside it for the ticket budget, so one low-effort
