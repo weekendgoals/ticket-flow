@@ -529,9 +529,8 @@ because the endpoint has no cursor.
 
 **Addendum — 2026-09-03 — deviations decided.**
 
-**Deviations closed:** D-1 — the hero band accepted as not built; the sticky
-nav fixed in 9f3a21c; Vadim; 2026-09-03. D-2's paging departure is a separate
-decision and is untouched here.
+**Deviations closed:** D-1 — accepted; D-2's paging is a separate decision and
+is untouched here; the sticky nav fixed in 9f3a21c; Vadim; 2026-09-03.
 
 ### D-1 — the landing page, redone — 2026-09-04 — DONE
 
@@ -569,7 +568,8 @@ test('deviations reports every one a ticket recorded, with its closure and the c
   )
   assert.match(d1.deviations[0].text, /hero band above the fold → built without it, because the asset pipeline/,
     'the paragraph runs to the first blank line, wrapped lines joined')
-  assert.match(d1.deviations[0].closedBy, /9f3a21c; Vadim; 2026-09-03/, 'the closing line travels with what it closed')
+  assert.match(d1.deviations[0].closedBy, /D-1 — accepted;.*9f3a21c; Vadim; 2026-09-03/,
+    'the closing line travels with what it closed, wrapped lines joined')
   assert.equal(d1.deviations[2].closedBy, null)
   assert.ok(
     !d1.deviations.some((d) => /subtitle/.test(d.text)),
@@ -586,7 +586,7 @@ test('deviations reports every one a ticket recorded, with its closure and the c
   assert.match(plain, /3 recorded, 1 not yet closed by a human/)
   assert.match(plain, /closed  D-1 \(2026-09-01\)/)
   assert.match(plain, /open\s+D-1 \(2026-09-04\)/)
-  assert.match(plain, /closed by: D-1 — the hero band accepted/)
+  assert.match(plain, /closed by: D-1 — accepted;/)
 })
 
 test('the deviations payload shares no field name with find\'s, at any depth', () => {
