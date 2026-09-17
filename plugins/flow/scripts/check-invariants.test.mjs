@@ -165,6 +165,26 @@ test('a lane that stops teaching the deviation closing line fails', () => {
   assert.match(r.out, /doctrine phrase missing/)
 })
 
+test("either document losing step 10's second refusal fails", () => {
+  // The ticket skill refuses an unclosed deviation at the integration merge;
+  // the run skill's "Resuming after a halt" tells the session finishing a
+  // halted ticket what step 10 will refuse. While that inventory named only
+  // the unfixed Important finding it read as permission to route around the
+  // other refusal — a document that is correct alone and wrong beside its
+  // pair, which is the drift this ledger exists to catch.
+  const ticket = copyRepo()
+  mutate(ticket, 'plugins/flow/skills/ticket/SKILL.md', 'unclosed deviation', 'open departure')
+  const t = run(ticket)
+  assert.equal(t.status, 1, t.out)
+  assert.match(t.out, /ticket\/SKILL\.md.*second refusal/s)
+
+  const runSkill = copyRepo()
+  mutate(runSkill, 'plugins/flow/skills/run/SKILL.md', 'unclosed deviation', 'open departure')
+  const r = run(runSkill)
+  assert.equal(r.status, 1, r.out)
+  assert.match(r.out, /run\/SKILL\.md.*second refusal/s)
+})
+
 test('either lane that stops naming a deviation in the pull request body fails', () => {
   // The attended doors are one rule in two lanes: the ticket lane's step 9
   // writes the body for an incremental pull request, the quick lane's step 7

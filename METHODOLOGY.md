@@ -556,6 +556,18 @@ is noise. The rule generalises: a refusal's advertised recovery has to work in
 the refused state, which is only knowable by reading the refusal from inside
 it.
 
+The same test decides **what a gate may read**. The parser reports both the
+departures and the notes a closing line earns when it closes nothing, and the
+attended doors show both — a note is how a human learns that someone tried to
+close a departure and failed. But the gate stops on the open departures alone,
+because a line that closed nothing leaves its departure open anyway, so the
+notes add no case, and a note is not something a writer can be promised will
+clear: some survive the exact repair they name, and an append-only log cannot
+take the wrong line back. A gate on one would refuse forever on a mistyped
+digit. Show what informs, stop on what clears — a condition nobody can
+discharge is not a gate, it is a wall, and the first person who meets one
+learns to go around gates in general.
+
 ## Why a nit is not automatically a ticket
 
 Reviews reliably produce nits; for a stretch each nit became a ticket, and

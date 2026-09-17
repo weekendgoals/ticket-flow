@@ -24,8 +24,16 @@ with one version and date.
   deviation** into its epic branch: it reads the departures off
   `origin/<branch>` with `--log-from`, because that is the SHA it merges and a
   closing line sitting only in the checkout would clear a gate on a commit
-  that does not carry it; `open` above zero, or any note, stops the step
-  before the merge commands. The step spells out both recoveries — the human
+  that does not carry it; `open` above zero stops the step before the merge
+  commands, and nothing else does. Notes are shown at every door and gate
+  nothing, deliberately: a closing line that closed nothing leaves its
+  departure open, so `open` already stops every case a note reports, while a
+  note cannot be relied on to clear — some survive the repair they prescribe,
+  in a log that is append-only — so a gate on one would be a refusal with no
+  recovery. A read that fails is a stop too, never "none recorded". The run
+  skill's account of what a halted ticket meets at step 10 now names both
+  refusals, the unfixed Important finding and the unclosed deviation, and
+  `check-invariants.mjs` pins that pair as well. The step spells out both recoveries — the human
   accepts it, or the worker fixes it on the branch as new commits with a dated
   addendum and the human then accepts it as fixed in a commit — and both end
   in the `**Deviations closed:**` line, which no agent composes: dictating the

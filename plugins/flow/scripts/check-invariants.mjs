@@ -364,6 +364,11 @@ const PHRASES = [
     files: ['ticket', 'quick', 'script', 'readme'],
   },
   {
+    why: "the attended merge's second refusal — an unclosed deviation holds a release integration, and the run skill's account of what a halted ticket meets at step 10 must name it beside the unfixed Important finding. That inventory is read by the session finishing a halted ticket by hand, and while it named one refusal it was an instruction to route around the other",
+    re: /unclosed deviation/i,
+    files: ['ticket', 'run'],
+  },
+  {
     why: "the attended doors — a deviation is named in the pull request body, in both lanes that open one: the ticket lane's step 9 and the quick lane's step 7. That body is where the human who merges actually reads, and in the quick lane it is a departure's only door, there being no agent merge to refuse. A lane that drops the sentence keeps the record and loses the reader — the departure sits parsed in a status log nobody opens while the pull request that decides it says nothing",
     re: /a deviation is named in the pull request body/i,
     files: ['ticket', 'quick'],
