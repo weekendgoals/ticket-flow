@@ -727,3 +727,49 @@ the section heading's question count, because the same bullet specifies content
 answered "none found" in writing) that does not fit two lines.
 
 **Owed:** Nothing
+
+**Addendum — review — 2026-09-18 — opus/default effort:** 2 Important, 4 nits,
+2 pre-existing; every Important and every nit fixed in `25b5b8f`, nothing
+deferred. **Important 1** — the new stop-condition bullet had replaced the
+merge-conflict bullet in the run skill's step 5 list instead of sitting beside
+it, while `STOP.mergeConflict` stayed live at three call sites, so a halt would
+have quoted a sentence the list no longer carried and the retro's halt question,
+which files halts by stop string, would not have found it. The bullet is
+restored exactly as it stood at `936d8a6`, and `check-invariants.mjs` now pins
+that sentence across the skill and the script. All eleven `STOP` sentences were
+then checked against the list entry by entry (`blocked`, `importantFinding`,
+`contradiction`, `mergeConflict`, `reviewerSpawn`, `permissionPrompt`,
+`nonzeroExit`, `fixBounds`, `acceptanceCheck`, `deviation`, `ticketBudget`):
+the other ten were present, verbatim. Reverted, the fix fails "the run skill
+losing the merge-conflict stop condition fails" (and "the intact repo passes
+every check"); `check-invariants.test.mjs` 24/24, checker exit 0.
+**Important 2** — a resolve report of `count: 0` with `open: 2` merged: `open`
+was validated, recorded and discarded. The gate now refuses both numbers
+together on the contradiction condition when `open` exceeds `count`, is absent,
+or is not a non-negative integer, naming both numbers; `open` is required in the
+schema for the reason the acceptance report requires `skipped` — the command
+prints it every time, so nothing legitimate needs a default — and the prompt
+says the two are cross-checked. Reverted, the fix fails "a deviations report
+that contradicts itself halts — `open` can never exceed `count`"; the same test
+is red when the comparison, `open`'s type check, or the schema's requirement is
+flipped. `run-epic.test.mjs` 133/133. **Nit 3** (the gate's position ahead of
+the fix-bounds branch unpinned) fixed: a test now drives a ticket that is both
+bounds-gated and carries a departure, and the deviation halt fires with
+`fixLines` unmeasured. **Nit 4** (`deviationsOpen` recorded without the
+read guards) fixed by the same change — neither number reaches the run record
+alone, pinned by the `deviationsOpen` assertions in both refusal tests; the
+`devRead` clause on `open`'s own derivation is defence in depth and behaviour-
+neutral today, because the agreement check already nulls both, so no test names
+that clause. **Nit 5** (the CHANGELOG's "fifth fact") fixed: the fourth, and the
+fifth only when the fix-bounds gate is armed. **Nit 6** (where the human's
+release-review addendum goes) fixed: committed to `epic/<name>` before they
+merge the release pull request, or through `/flow:quick` afterwards, never a
+commit toward the default branch. **Pre-existing, recorded, not fixed:** (a) a
+halt from the resolve if-chain never calls `recordSpend()`, so the deviation
+halt reports `outputTokensObserved: null` exactly as the addendum and head-SHA
+halts already did — owner `retro`; (b) `check-invariants.mjs` pins only some of
+the eleven `STOP` sentences, which is why Important 1 was not caught
+mechanically — this fix pins the one that was lost, and the general coupling is
+owner `retro`. The entry's recorded departure stays open: a
+`**Deviations closed:**` line is a human's, and no agent writes one.
+Worker tokens (implementation leg): 318,314; Reviewer tokens: 181,257
