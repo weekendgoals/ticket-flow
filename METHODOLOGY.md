@@ -417,9 +417,62 @@ compiled list can shrink; an unmarked discharge is repaid by appending the
 marker, not by rereading), the ticket's own section, the derived facts —
 making required reading O(epic) while the log stays O(history) for the
 retro and the archaeologist, the readers it was always really for. The same pressure shortened the status
-entry itself: Built, Mode, Tokens, Verified, Decisions-that-deviate, Owed —
+entry itself: Built, Mode, Tokens, Verified, Decisions, Deviation, Owed —
 git already records the files and commits, and narration a future reader
-must wade through is a cost, not a record.
+must wade through is a cost, not a record. The brief compiles the deviations
+for the same reason it compiles the owed items, and with the same honesty about
+what it is reporting: not what is true, but what someone wrote down.
+
+## Why a deviation has its own line
+
+A worker that builds something other than what its documents show was told to
+record it under `**Decisions:**` — "judgment calls and deviations from the
+documents, each with the why". In a page epic in an installed project a worker
+did exactly that, honestly and in the right field: it wrote that it had not
+built the design's hero band. Nothing read the field. No parser in
+`tickets.mjs` touches `**Decisions:**` — the only mentions of the field in that
+file are comments explaining why it needed none; no brief carried the sentence
+to the next ticket, no gate saw it, and the page shipped without the band. The
+claim is about code paths, not about the string: stated as "the file does not
+contain the word", it is refuted by a grep and invites a reader to correct the
+passage in the wrong direction. The record was
+perfect and the mechanism was absent — which is the failure mode this whole
+methodology is built to make impossible, arriving through the one field that
+had no reader.
+
+Three properties of the fix are load-bearing, and each was argued for.
+
+**It is a line, not a marker in prose.** The real Decisions field that held
+that deviation was a sixty-line paragraph of six numbered items with the
+departure third. A marker inside prose like that is not reliably parseable,
+and surfacing the whole field buries the departure again in the noise it was
+already buried in. `**Deviation:**` parses exactly as `**Owed:**` does, and
+changes no existing log: it is optional, and `**Owed:**` remains the one
+required line, so the status log's shape — the preamble's three pinned copies,
+the entry heading — is untouched.
+
+**It is not owed work.** The debt ledger already existed and the temptation was
+to reuse it. But an owed item is *work someone will do*, and the ledger's whole
+grammar is about who inherits it; a deviation is *a decision someone must
+see*, and the only question it raises is accept or fix. Filing one as the
+other either converts a decision into a task nobody has agreed to, or lets a
+departure be discharged by whoever inherits it — the party under review
+closing its own record, one indirection away.
+
+**Only a human closes it.** The closing line names each deviation as *accepted*
+or as *fixed in a commit*, because a fixed deviation's paragraph still parses
+in an append-only log: a line that could only mean "accepted" would either
+leave a fix unable to clear a gate or record a fix as an acceptance. It closes
+by its leading ID list and only above itself in the file, because an ID can
+head more than one entry and a departure recorded later must not be born
+closed. No worker and no agent writes one, even for a departure it fixed
+itself — a closure the reviewed party could have written clears nothing.
+
+That last property is why the parser *reports* closure instead of filtering on
+it. Which readers honour a closing line, and which count every recorded
+deviation regardless, is a judgment about who was in the room when the line was
+written; a parser that had already dropped the closed ones would have made that
+judgment for every reader at once, in the direction that trusts.
 
 ## Why a nit is not automatically a ticket
 

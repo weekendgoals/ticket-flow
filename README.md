@@ -328,15 +328,33 @@ preamble** (ground rules, ordering, delivery), the status log's **owed items
 not yet marked resolved** (every non-Nothing `**Owed:**` paragraph,
 attributed to its entry, until a later `**Resolves owed:** <ID>` line closes
 it — recorded state, so an item may already be discharged unmarked; the
-brief says so in its heading), and the derived facts the board knows (state,
+brief says so in its heading), the **deviations no human has closed**, and the
+derived facts the board knows (state,
 branch, epic, modes, pull request). This is a worker's whole required reading — O(epic), not
 O(history): the status log grows without bound, and the brief is what keeps
 each new ticket from paying to reread all of it. With no ID it briefs the
 first startable ticket, naming the epic it came from; `--json` returns the
-`find` payload with `preamble`, `owed` and the section text as a `body`
-field. The script ships inside the plugin, so it runs the same way every
+`find` payload with `preamble`, `owed`, `deviations` and the section text as a
+`body` field. The script ships inside the plugin, so it runs the same way every
 skill runs it: `node "${CLAUDE_PLUGIN_ROOT}/scripts/tickets.mjs" brief [ID]`
 — there is no `/flow:brief` slash command.
+
+**The two deviation lines.** A status entry's optional `**Deviation:**` line —
+one per departure — records what the ticket's documents or design showed that
+was not built, or was built differently. It is not owed work and not a
+judgment call the documents left open (that stays in `**Decisions:**`): an
+owed item is work someone will do, a deviation is a decision someone must
+see, and it has its own line because the Decisions prose it used to live in is
+read by no command. A dated `**Deviations closed:** <ID>[, <ID>] — <each
+deviation named as accepted or as fixed in <sha>; who; when>` line closes every
+deviation the named entries recorded **above it in the file**, by its leading
+ID list only — and it is **a human's line, written by no agent**, because a
+closure the reviewed party could have written clears nothing. The script's
+`deviations <ID>` subcommand reads every one a ticket's own entries recorded,
+closed or not, each with its closing line; `--log-from <ref>` reads the status
+log from a git ref — a pushed ticket branch, where the worker wrote its entry
+— instead of the checkout, and a log it cannot read is a nonzero exit naming
+the reason, never an empty list.
 
 A criterion can also be **machine-runnable**: an indented `CHECK: <command>`
 line under the criterion bullet, with an optional `EXPECT: <text the output

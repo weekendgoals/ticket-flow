@@ -8,6 +8,43 @@ with one version and date.
 
 ## Unreleased
 
+- **A deviation is parsed and surfaced: the `**Deviation:**` line**
+  (`scripts/tickets.mjs` — a new `parseDeviations` beside `parseOwed`, a new
+  `deviations <ID> [--log-from <ref>]` subcommand, `brief`'s new section and
+  its `deviations` payload field, six new `doctor` near-misses;
+  `skills/ticket/SKILL.md` step 6, `skills/quick/SKILL.md` step 5, README;
+  `check-invariants.mjs` holds both labels — the `**Deviation:**` opener the
+  parser reads and the `**Deviations closed:**` closer — across all four
+  documents). A status
+  entry may carry one optional `**Deviation:**` line per departure — what the
+  ticket's documents or its design showed that was not built, or was built
+  differently — beside the `**Decisions:**` field that keeps the judgment
+  calls the documents left open. The line exists because Decisions prose is
+  read by no command: a worker recorded there, honestly, that it had not built
+  a design's hero band, the sentence reached no human and no later gate, and
+  the page shipped without it. A deviation is never owed work — an owed item
+  is work someone will do, a deviation is a decision someone must see — so it
+  is parsed and surfaced separately: `brief` now carries every deviation no
+  human has closed into every later ticket of the epic, under its own heading.
+  A dated `**Deviations closed:** <ID>[, <ID>] — <each deviation named as
+  accepted or as fixed in <sha>; who; when>` line closes every deviation the
+  named entries recorded **above it in the file**, by its leading ID list only
+  (as `**Resolves owed:**` resolves); order matters here because an ID can head
+  more than one entry and a departure recorded after a closing line must not be
+  born closed. Both skills say the closing line is **a human's, never a
+  worker's or any agent's**, because a closure the reviewed party could have
+  written clears nothing. `deviations <ID>` reports **every** deviation a
+  ticket's own entries recorded, closed or not, each with its closing line —
+  its `--log-from <ref>` reads the status log off a pushed ticket branch rather
+  than the checkout, and a log it cannot read is a nonzero exit naming the
+  reason, never an empty list, because an unreadable fact must not read as "no
+  deviations". It is deliberately a separate command with a separate flag from
+  `find --from`, and its payload shares no field name with `find`'s: the two
+  answer opposite questions about opposite refs, and swapped they would read a
+  gate's answer from the wrong document. Nothing stops yet — what the doors do
+  with a deviation is the rest of the `deviation-routing` epic. The status
+  log's shape is unchanged: both lines are optional, `**Owed:**` is still the
+  one required line, and no existing log needs an edit.
 - **The revert check: a ticket names the test that fails with its source
   change reverted, and the reviewer opens that test** (`skills/ticket/SKILL.md`
   step 5 and its Verified field, `skills/quick/SKILL.md` step 5,

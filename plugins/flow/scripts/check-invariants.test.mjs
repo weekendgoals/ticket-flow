@@ -140,6 +140,31 @@ test('a dropped doctrine phrase fails', () => {
   assert.match(r.out, /doctrine phrase missing/)
 })
 
+test('a lane that renames the deviation opener fails', () => {
+  // `**Deviation:**` is the exact label the parser reads. A lane that teaches
+  // any other word produces entries that parse as nothing — and doctor's
+  // near-miss scan covers a deviation-shaped slip like `**Deviations:**`, not
+  // a rename to an unrelated label, so without this phrase nothing catches it:
+  // every suite stays green while the epic's whole mechanism goes silent.
+  const root = copyRepo()
+  mutate(root, 'plugins/flow/skills/quick/SKILL.md', '**Deviation:**', '**Departure:**')
+  const r = run(root)
+  assert.equal(r.status, 1, r.out)
+  assert.match(r.out, /doctrine phrase missing/)
+})
+
+test('a lane that stops teaching the deviation closing line fails', () => {
+  // The label is one rule in four documents: both lanes that write a status
+  // entry teach it, the script parses it, README accounts for it. A lane that
+  // drops it sends the next departure back into Decisions prose, which no
+  // command reads — the failure the field exists to end.
+  const root = copyRepo()
+  mutate(root, 'plugins/flow/skills/quick/SKILL.md', '**Deviations closed:**', '**Deviation settled:**')
+  const r = run(root)
+  assert.equal(r.status, 1, r.out)
+  assert.match(r.out, /doctrine phrase missing/)
+})
+
 test('the workflow script losing the driver handshake fails', () => {
   const root = copyRepo()
   mutate(root, 'plugins/flow/workflows/run-epic.mjs', 'A driver spawned you', 'You were spawned')
