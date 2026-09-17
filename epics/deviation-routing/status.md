@@ -497,3 +497,106 @@ door was step 9's body; without it the asymmetry between the two deliveries
 reads as an omission a later session would "fix".
 
 **Owed:** Nothing.
+
+**Addendum — review — 2026-09-17 — opus/default effort:** two Important, five
+nits, one pre-existing, reviewed at `ed54638` by a fresh-context general agent
+standing in for `flow:ticket-reviewer`, which this session has not registered;
+the hiring tool exposes no effort setting. Every disposition landed in one
+commit, `ff8cc7a`. The planner re-planned this ticket from the review
+(`bfb7ba6` on the epic branch) with two corrections to scope, and both are
+built here.
+
+Important, fixed in `ff8cc7a`. Step 10 stopped on `open` above zero "and so
+does any entry in `notes`", and resumed only on "`open: 0` with an empty
+`notes`". Of the parser's three notes only the bare-line note ever clears
+(`tickets.mjs:938, :980`); the unknown-item and malformed-reference notes have
+no suppression path. Reproduced on a throwaway epic: two departures, a closing
+line naming `TW-1.1, TW-1.3` — one digit wrong — gives `open: 1, notes: 1`;
+doing exactly what that note prescribes, a new dated line naming `TW-1.2`,
+gives `open: 0, notes: 1`, and the note is still there, because the log is
+append-only. The gate as written would have refused that ticket forever. It now
+stops on `open` above zero **and nothing else**; notes are shown at every door
+— summary, both pull request bodies, and the stop itself — and gate nothing.
+The step carries the reason: a closing line that closed nothing leaves its
+departure open, so `open` already stops every case a note reports, while a note
+cannot be relied on to clear, so a gate on one would be a refusal with no
+recovery. That notes are unclearable at all is a defect of both parsers, which
+this ticket does not touch — see the pre-existing item below. This corrects the
+**Built** field above, which the append-only rule leaves standing as written.
+
+Important, fixed in `ff8cc7a`. The run skill's § "Resuming after a halt" said
+an unfixed Important finding "is the one case that does not end in a merge",
+which this range made false, in the paragraph that routes a halted ticket
+through `/flow:ticket <ID>` to step 10 — so a session reading the run skill as
+authority would have met the deviation refusal as a bug to route around. That
+one inventory sentence, the only part of the run skill in this ticket's scope,
+now names both refusals and where each is recovered, and the sentence above it
+names step 10's **two gates**. Judgment call in the fix: the pair is pinned by
+a new `PHRASES` entry, `/unclosed deviation/i` across the ticket and run
+skills, because one document correct alone and wrong beside its pair is exactly
+what that ledger exists to catch, and the drift had already happened once
+within this epic. DEV-3's territory — the unattended stop condition, its
+recovery procedure and the driver — is untouched.
+
+Nit, fixed in `ff8cc7a`. The re-run after a closing line said nothing about
+fetching, while `--log-from origin/<branch>` reads a remote-tracking ref that a
+human pushing from their own checkout leaves stale; the step now fetches first,
+with the reason.
+
+Nit, fixed in `ff8cc7a`. The step gave no instruction for a `deviations` read
+that fails. A nonzero exit or an absent payload is now a stop, never "none
+recorded", quoting the script's own refusal.
+
+Nit, fixed in `ff8cc7a`. "no deviations recorded" was required in the printed
+summary only. Both pull request bodies now write the heading even when there is
+nothing to name — an absent heading reads as an omission, which is the
+summary's own reasoning, and in the quick lane that body is the only door.
+
+Nit, fixed in `ff8cc7a`. Both body sentences said "each by its `<ID>.<n>`
+reference", which tells a reader to invent `Q-3.1` for an entry that recorded
+one departure and keeps its bare ID (`tickets.mjs:928`) — a reference that,
+copied into a closing line, earns the permanent unknown-item note. Both now say
+to use the reference the command printed, and say why.
+
+Nit, fixed in `ff8cc7a`. Step 6 read absolutely — the closing line is "never
+yours, and never any agent's" — with no pointer to the one boundary step 10
+draws at the attended door. It now carries the cross-reference: a sentence the
+human dictates for verbatim commit is theirs, one inferred from a "yes" or
+drafted for approval is not.
+
+Pre-existing, not this range's, recorded with its owner. The ticket skill
+(`:352-356`) and README (`:374-375`), both unchanged since `b5d02ce`, say a
+reference naming no departure and a malformed one are reported "the same way"
+and that naming any item of that entry clears the note; the parser clears only
+the bare-line note, and the note strings themselves name repairs that do not
+clear them. `main`'s owed ledger behaves identically, so it is one defect over
+two parsers. Owner: the planner, who is putting a ticket over both parsers to
+the human. Neither claim was edited here, and nothing written in this range
+repeats it.
+
+Re-run after the fixes, on `ff8cc7a`: `tickets.mjs check DEV-2` 3/3, exit 0;
+`check-invariants.test.mjs` 21/21 (20 before the review fix, one new test);
+`tickets.test.mjs` 101/101; `ticket-session-guard.test.mjs` 14/14;
+`board.test.mjs` 9/9; `plan-page.test.mjs` 8/8; `run-epic.test.mjs` 123/123;
+`runners/codex.test.mjs` 21/21; `runners/codex-review.test.mjs` 19/19;
+`check-invariants.mjs` exit 0; `doctor` exit 0; `node --check tickets.mjs` exit
+0. CLAUDE.md's two invariant-suite counts moved 20 → 21 in the same commit.
+`git diff b5d02ce..HEAD` touches neither `tickets.mjs` nor `run-epic.mjs`.
+Revert check over `ff8cc7a` with the test file kept at HEAD: **"either
+document losing step 10's second refusal fails"** fails, 20 pass / 1 fail; the
+new phrase was then flipped at each of its two doors and `check-invariants.mjs`
+exited 1 each time, naming the file. The other fixes in that commit are
+sentences an agent executes and no runtime reads — `nothing to pin — the gate's
+wording has no parser, test or ledger entry that could assert it; what holds it
+is the acceptance CHECK on the refusal's existence, still 3/3, and the
+demonstrate readings, re-run below`. The five readings, on the same throwaway
+epic: one open item `open: 1` → stops; closed as fixed `open: 0` → reaches the
+merge; closed by a line the supervisor did not write `open: 0`, `closedBy`
+shown → reaches the merge and shows the line; a bare line against two
+departures `open: 2` with the bare-line note → stops, and the itemised repair
+gives `open: 0`, zero notes; and `open: 0` with a lingering unknown-item note →
+**reaches the merge and shows the note**, which is the fix.
+
+Nothing deferred.
+
+Worker tokens (implementation leg): 182,077; Reviewer tokens: 136,121
