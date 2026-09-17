@@ -622,8 +622,9 @@ const ECHO_TICKETS =
 // above `**Owed:**` with no blank line between them, which must not swallow the
 // next field's markup — and a third in a later entry, because an ID can head
 // more than one. E-2 records one, so a bare line still closes it. The addendum
-// then tries every way a closing line can name nothing: a bare ID against
-// E-1's two, a number past the end, an ID a reference ends inside, an ID this
+// then tries every way a closing line can name nothing: one line naming E-1 and
+// E-2 together — bare against E-1's two, and the one form that still closes
+// E-2's only departure — a number past the end, an ID a reference ends inside, an ID this
 // log records no departure for, and two references — `E-1.3` and a bare `E-3`
 // — that point at departures recorded BELOW them, which position is what
 // refuses: a line closed what was written above it, never what came later.
@@ -653,9 +654,7 @@ the endpoint has no cursor.
 
 **Addendum — 2026-09-03 — deviations decided.**
 
-**Deviations closed:** E-1 — all of them, accepted; Vadim; 2026-09-03.
-
-**Deviations closed:** E-2 — accepted; Vadim; 2026-09-03.
+**Deviations closed:** E-1, E-2 — all of them, accepted; Vadim; 2026-09-03.
 
 **Deviations closed:** E-1.7 — accepted; Vadim; 2026-09-03.
 
@@ -722,13 +721,17 @@ test('a bare closing line closes a lone deviation, and against several closes no
 test('a reference naming no deviation, and an ID a reference ends inside, close nothing and say so', () => {
   const dir = echoRepo('deviations-badrefs')
   const e1 = JSON.parse(run(dir, 'deviations', 'E-1', '--json'))
-  assert.equal(noteOf(e1, /`\*\*Deviations closed:\*\* E-1\.7` names no deviation/).length, 1,
+  assert.equal(noteOf(e1, /reference `E-1\.7` names no deviation/).length, 1,
     'a number past the end of the entry is reported, not silently read as a closure')
+  assert.ok(
+    e1.notes.every((n) => !/\*\*Deviations closed:\*\* E-1\b/.test(n)),
+    'no note quotes a closing line back: the line above named E-1 and E-2 together, so a reconstructed one-ID line is text the reader will not find',
+  )
   assert.match(e1.notes.join('\n'), /E-1 records 2 \(`E-1\.1`, `E-1\.2`\) above that line/)
-  assert.equal(noteOf(e1, /`\*\*Deviations closed:\*\* E-1\.3` names no deviation/).length, 1,
+  assert.equal(noteOf(e1, /reference `E-1\.3` names no deviation/).length, 1,
     'a reference to a departure recorded BELOW it named nothing when it was written, and is reported as the mistyped number it cannot be told apart from')
-  assert.equal(noteOf(e1, /E-1OOPS` is not a reference an ID ends inside/).length, 1,
-    'an ID that does not end where the reference ends closes nothing — reading the prefix is the silent discharge')
+  assert.equal(noteOf(e1, /names `E-1oops`, and an ID has to end where the reference ends/).length, 1,
+    'an ID that does not end where the reference ends closes nothing — reading the prefix is the silent discharge — and the note quotes it as the writer spelled it')
   assert.equal(e1.open, 3, 'no malformed or premature line closed anything')
   assert.ok(!JSON.stringify(e1.notes).includes('E-9'),
     'an ID this log records no departure for is a legal thing to write, and earns no permanent note')
@@ -753,6 +756,33 @@ test('naming an item closes that one, leaves the rest open, and clears the note'
   assert.equal(noteOf(e1, /had 2 open deviations/).length, 0,
     'the bare line above it is superseded by the itemisation, so its note is cleared')
   assert.equal(noteOf(e1, /names no deviation/).length, 2, 'the references that named nothing still closed nothing and still say so')
+
+  // Closed twice: the decision a reader wants is the one that was made, not the
+  // last line to mention it.
+  const twice = echoRepo(
+    'deviations-closed-twice',
+    '\n**Deviations closed:** E-1.2 — the sticky nav, fixed in 9f3a21c; Vadim; 2026-09-05.\n' +
+      '\n**Deviations closed:** E-1.2 — still fine; Vadim; 2026-09-06.\n',
+  )
+  const again = JSON.parse(run(twice, 'deviations', 'E-1', '--json'))
+  assert.match(again.deviations[1].closedBy, /fixed in 9f3a21c; Vadim; 2026-09-05/,
+    'the first closing line stands; a later one naming the same departure does not overwrite who decided and when')
+})
+
+test('brief never says none outstanding above a note about a line that closed nothing', () => {
+  // Cosmetic, from the same review: the heading's "none outstanding" is a claim
+  // about the epic, and a note underneath it contradicts the claim.
+  const dir = echoRepo(
+    'deviations-brief-none',
+    '\n**Deviations closed:** E-1.1, E-1.2, E-1.3 — accepted; Vadim; 2026-09-06.\n' +
+      '\n**Deviations closed:** E-3 — accepted; Vadim; 2026-09-06.\n',
+  )
+  const briefed = JSON.parse(run(dir, 'brief', 'E-4', '--json'))
+  assert.deepEqual(briefed.deviations, [], 'every departure is closed')
+  assert.equal(briefed.deviationNotes.length, 3, 'and three closing lines still closed nothing')
+  const section = run(dir, 'brief', 'E-4').split('Deviations — recorded, not yet closed by a human')[1].split('\nTicket')[0]
+  assert.ok(!section.includes('none outstanding'), 'the notes print without the claim that nothing is outstanding')
+  assert.match(section, /note:.*names `E-1oops`/)
 })
 
 test('a deviation paragraph ends at the next bolded field, blank line or not', () => {

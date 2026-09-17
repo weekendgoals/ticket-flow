@@ -815,19 +815,23 @@ const DEVIATION_STRICT = (line) => DEVIATION_LINE.test(line) || closesSomething(
 // states the repair that clears it, and each is cleared by exactly that repair:
 // a note whose only exit was naming deviations that are still open would push a
 // writer toward closing a departure nobody decided on.
+// Each names the reference it read rather than quoting a line back: the line as
+// written may have named several entries, so a reconstructed `**Deviations
+// closed:** <id>` is text the reader will not find when they go looking. The
+// reference is quoted exactly as the writer spelled it, for the same reason.
 const deviationBareLineNote = (id, count) =>
-  `\`**Deviations closed:** ${id}\` names the entry, but ${id} had ${count} open deviations when that line was written, so it closes nothing: ` +
+  `A \`**Deviations closed:**\` line names \`${id}\` with no item number, but ${id} had ${count} open deviations when that line was written, so it closes nothing: ` +
   `a bare closing line closes an entry's deviation only when exactly one was open above it, because "accepted" or "fixed" is a decision per departure. ` +
   `Name the ones it decided — \`${id}.1\`, \`${id}.2\` … in the order the entries record them, each as accepted or as fixed in <sha> — in a new dated line; the rest stay open, and naming any of them that way clears this note.`
 
 const deviationUnknownItemNote = (ref, id, items) =>
-  `\`**Deviations closed:** ${ref}\` names no deviation: ${id} records ${items.length}${
+  `A \`**Deviations closed:**\` line whose reference \`${ref}\` names no deviation: ${id} records ${items.length}${
     items.length ? ` (\`${items.map((d) => d.item).join('`, `')}\`)` : ''
   } above that line, so nothing was closed. ` +
   `Correct the number in a new dated line — the log is append-only, so the wrong line stays and the right one goes underneath it.`
 
 const deviationBadRefNote = (ref, id) =>
-  `\`**Deviations closed:** ${ref}\` is not a reference an ID ends inside: \`${id}\` and \`${ref}\` are different names, so it closes nothing. ` +
+  `A \`**Deviations closed:**\` line names \`${ref}\`, and an ID has to end where the reference ends: \`${id}\` and \`${ref}\` are different names, so it closes nothing. ` +
   `Reading the prefix instead would close a deviation nobody named — the same silent discharge the owed ledger's \`F-2oops\` taught. ` +
   `Write the reference again correctly in a new dated line.`
 
@@ -847,17 +851,21 @@ const BOLD_FIELD = /^\*\*[^*]+:\*\*/
 // whole so that a malformed reference is reported instead of silently ending
 // the list: `**Deviations closed:** D-1oops` reads like a closure to everyone
 // but the parser, which is the shape that must never be quiet.
-const DEVIATION_REF = new RegExp(`^${OWED_REF_BOUNDED}`)
-const DEVIATION_REF_NEAR = new RegExp(`^${TICKET_ID}[A-Za-z0-9.-]*`)
+// Matched case-insensitively against the payload as written: a reference that
+// closes is normalised to upper case, and one that only looks like a reference
+// is kept as the writer spelled it, because a note quoting `E-1OOPS` at someone
+// who wrote `E-1oops` sends them looking for a line that is not there.
+const DEVIATION_REF = new RegExp(`^${OWED_REF_BOUNDED}`, 'i')
+const DEVIATION_REF_NEAR = new RegExp(`^${TICKET_ID}[A-Za-z0-9.-]*`, 'i')
 function closingRefs(payload) {
   const ok = []
   const bad = []
-  let rest = payload.toUpperCase()
+  let rest = payload
   for (;;) {
     const m = rest.match(DEVIATION_REF)
     const n = m || rest.match(DEVIATION_REF_NEAR)
     if (!n) break
-    ;(m ? ok : bad).push(n[0])
+    ;(m ? ok : bad).push(m ? n[0].toUpperCase() : n[0])
     rest = rest.slice(n[0].length)
     const comma = rest.match(/^\s*,\s*/)
     if (!comma) break
@@ -938,7 +946,7 @@ function parseDeviationsText(text) {
       // Reported only when the ID it starts with heads deviations in this log,
       // for the reason a cross-epic reference is not flagged: a note on a line
       // this log cannot judge would be permanent and unfixable here.
-      const id = ref.match(new RegExp(`^${TICKET_ID}`))[0]
+      const id = ref.match(new RegExp(`^${TICKET_ID}`, 'i'))[0].toUpperCase()
       if (!byEntry.has(id) || noted.has(ref)) continue
       noted.add(ref)
       notes.push({ entry: id, note: deviationBadRefNote(ref, id) })
@@ -952,7 +960,12 @@ function parseDeviationsText(text) {
       if (!items) continue
       if (ref.includes('.')) {
         const above = items.filter((d) => d.line < cl.line)
-        if (above.some((d) => d.item === ref)) closed.set(ref, cl.text)
+        // The FIRST line that closed it is the decision: a later line naming the
+        // same departure again — a human confirming, or a second entry's line
+        // repeating the list — must not overwrite who decided and when.
+        if (above.some((d) => d.item === ref)) {
+          if (!closed.has(ref)) closed.set(ref, cl.text)
+        }
         else if (!noted.has(ref)) {
           noted.add(ref)
           notes.push({ entry: id, note: deviationUnknownItemNote(ref, id, above) })
@@ -1874,7 +1887,9 @@ switch (cmd) {
       for (const n of out.notes) console.log(`  ${C.yellow}note:${C.off} ${n}`)
       console.log()
       console.log(`${C.bold}Deviations — recorded, not yet closed by a human${C.off}`)
-      if (!out.deviations.length) console.log(`${C.dim}none outstanding${C.off}`)
+      // "none outstanding" means nothing is outstanding, so it is not printed
+      // above a note saying a closing line closed nothing.
+      if (!out.deviations.length && !out.deviationNotes.length) console.log(`${C.dim}none outstanding${C.off}`)
       else for (const d of out.deviations) console.log(`  ${d.item} (${d.recorded}): ${d.text}`)
       for (const n of out.deviationNotes) console.log(`  ${C.yellow}note:${C.off} ${n}`)
       console.log()
