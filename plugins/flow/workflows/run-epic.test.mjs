@@ -433,9 +433,13 @@ test('a review hire that throws is a failed hire: the fallback is hired and its 
   assert.equal(r.out.ticketRecords[0].importantCount, 0)
   // The log says WHY, quoting the error's first line, so a run record can
   // quote it back instead of reporting an unexplained fallback.
-  const why = r.logs.find(l => /could not be spawned/.test(l))
+  const why = r.logs.find(l => /could not be hired/.test(l))
   assert.ok(why, 'the failed hire is logged')
-  assert.match(why, /PAY-1: the ticket-reviewer agent could not be spawned/)
+  // "could not be hired", not "could not be spawned": the catch wraps the
+  // whole awaited call, so a rejection that is not a missing agent type at
+  // all lands here too, and the log must not name a diagnosis it does not
+  // have. The quoted first line is what actually says why.
+  assert.match(why, /PAY-1: the ticket-reviewer agent could not be hired/)
   assert.ok(why.includes(NOT_FOUND), 'the log quotes the runtime error')
   assert.doesNotMatch(why, /workflow-runtime\.js/, 'only the error\'s first line, not its stack')
 })
@@ -448,7 +452,7 @@ test('a review hire that throws with a fallback that also throws halts, with not
   // dying mid-ticket with nothing reported.
   assert.ok(!('threw' in r.out))
   assert.ok(!r.labels.some(l => l.startsWith('disposition:') || l.startsWith('merge:')))
-  assert.ok(r.logs.some(l => /the sanctioned fallback reviewer could not be spawned either/.test(l)))
+  assert.ok(r.logs.some(l => /the sanctioned fallback reviewer could not be hired either/.test(l)))
 })
 
 test('a re-review hire that throws takes the same fallback, and both throwing halts before the merge', async () => {
@@ -461,7 +465,7 @@ test('a re-review hire that throws takes the same fallback, and both throwing ha
   assert.equal(recovered.out.outcome, 'completed')
   assert.equal(call(recovered, 're-review:PAY-1:fallback').agentType, 'general-purpose')
   assert.equal(recovered.out.ticketRecords[0].reReviewRan, true)
-  assert.ok(recovered.logs.some(l => /PAY-1: the ticket-reviewer agent could not be spawned/.test(l)))
+  assert.ok(recovered.logs.some(l => /PAY-1: the ticket-reviewer agent could not be hired/.test(l)))
 
   const halted = await drive(throwingAt(['re-review:PAY-1', 're-review:PAY-1:fallback'], fixed))
   assert.equal(halted.out.haltedOn.stopCondition, 'reviewer-spawn failure after the sanctioned fallback also fails')
@@ -470,11 +474,13 @@ test('a re-review hire that throws takes the same fallback, and both throwing ha
   assert.ok(!halted.labels.some(l => l.startsWith('merge:')))
 })
 
-test('the catch is the reviewer hire and nothing else: any other spawn that throws still ends the run', async () => {
+test('the catch is the reviewer hire and nothing else: any other agent spawn that throws still ends the run', async () => {
   // Widening the catch would turn an unhandled surprise into a handled one.
   // Only the two hires inside hireReviewer are wrapped, so a worker that
   // throws still ends the workflow rather than being mistaken for a stop
-  // condition the run knows how to report.
+  // condition the run knows how to report. Scoped to agent SPAWNS: the
+  // script's `args` JSON.parse has a try/catch of its own, which catches no
+  // spawn, and an absolute a grep falsifies gets "corrected" the wrong way.
   const r = await drive(throwingAt(['worker:PAY-1']))
   assert.match(r.out.threw, /agent type 'flow:ticket-reviewer' not found/)
   assert.equal(r.out.haltedOn, undefined)

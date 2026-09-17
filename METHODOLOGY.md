@@ -779,19 +779,23 @@ groundhopper-foundation on 2026-08-24 both spawns hit the same session limit
 milliseconds apart and the run halted, which was the correct outcome and the
 one halt of that epic that retired real risk — the review the human resumed
 into found two Important findings that would otherwise have merged unseen.
-*Cannot be spawned* turned out to have two shapes, and the code read only
-one: an agent that returns nothing, and — when the launching session never
-registered the plugin's agent types — a runtime that throws instead of
-returning. The throw went uncaught until a run died on it on 2026-09-17,
-with the fallback unreachable in exactly the case it was written for. Both
-are failed hires: the line the fallback draws is between a failed hire and
-an exhausted environment, not between two ways a spawn reports its failure.
 That closes the last place where the party under review still picked
 its own judge, and it makes the merge gate mechanical: the reviewer returns
 findings as structured data, and code, not prose, decides that an Important
 finding left unfixed or a review addendum left uncommitted stops the run. A
 gate written as a sentence is obeyed by a reader; a gate written as a branch
 is obeyed by the machine.
+
+That fallback had a second hole, and it was in the word *cannot*. "The
+reviewer agent cannot be spawned" turned out to have two shapes and the code
+read only one: an agent that returns nothing, and — when the launching
+session never registered the plugin's agent types — a runtime that throws
+instead of returning. The throw went uncaught until a run died on it on
+2026-09-17, with the fallback unreachable in exactly the case it was written
+for. Both are failed hires. The line the fallback draws is between a failed
+hire and an exhausted environment, not between two ways a spawn reports its
+failure — and a distinction that lives only in how an error arrives is one
+the code will get wrong.
 
 The trade is honest, and its name is **code-controlled, agent-executed**: the
 script cannot touch a file or run a command itself, so every mechanical fact

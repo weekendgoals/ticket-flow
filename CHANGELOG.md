@@ -23,12 +23,16 @@ with one version and date.
   unreviewed merged, and the run was lost. A throwing hire is now caught and
   logged with the error's first line — so a run record can quote why rather
   than report an unexplained fallback — and takes the same one retry, for
-  the review and the re-review alike. A fallback that also throws returns no
-  review exactly as one that returns nothing does, and the run halts on
-  **reviewer-spawn failure after the sanctioned fallback also fails** with
-  the branch pushed and unmerged: an unreviewed ticket is still never
-  merged, anywhere. Nothing else in the script catches a throw, and a test
-  pins that — an unhandled surprise must not look like a handled one. Step
+  the review and the re-review alike. The catch wraps the whole call, so any
+  other rejection lands there too and is reported the same way — the
+  reviewer **could not be hired**, with the error quoted, rather than a
+  spawn failure the driver has not diagnosed. A fallback that also throws
+  returns no review exactly as one that returns nothing does, and the run
+  halts on **reviewer-spawn failure after the sanctioned fallback also
+  fails** with the branch pushed and unmerged: an unreviewed ticket is still
+  never merged, anywhere. No other agent spawn in the script catches a
+  throw, and a test pins that — an unhandled surprise must not look like a
+  handled one. Step
   3 now names the cost of running without the plugin installed (a failed
   hire per review, and reviews by the fallback rather than by the reviewer
   agent with its Edit and Write removed), which is a price and not a

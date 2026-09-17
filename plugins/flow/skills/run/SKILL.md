@@ -84,11 +84,11 @@ ticket one. Report what is missing and stop.
   gates nothing.)
 - **The plugin's agent types — never a refusal.** The driver hires the
   reviewer by agent type (`flow:ticket-reviewer`), and only a session that
-  has the plugin installed can spawn one. A session running this skill from
-  its source — the plugin's own repository, or any session where
-  `/reload-plugins` has not run — has no such type, and the runtime answers
-  every review hire by throwing `agent type 'flow:ticket-reviewer' not
-  found`. The driver treats that as a failed hire and takes the sanctioned
+  has the plugin installed can spawn one. A session in which the plugin is
+  **not installed** — the usual case being the plugin's own repository, with
+  this skill executed from its source — has no such type, and the runtime
+  answers every review hire by throwing `agent type 'flow:ticket-reviewer'
+  not found`. The driver treats that as a failed hire and takes the sanctioned
   fallback (step 4), so the run continues; the cost is **one failed hire per
   review and per re-review**, and reviews done by a general agent given the
   reviewer's rules rather than by the reviewer agent, whose Edit and Write
@@ -263,9 +263,12 @@ Everything else here (`reviewerModel`, `shadowReviewer`, `consequencePaths`,
   failed spawn too**: for an agent type the launching session never
   registered, the runtime does not return nothing, it throws `agent type
   'flow:ticket-reviewer' not found`, so a hire that throws is caught, logged
-  with the error's first line, and takes the same one retry. Nothing else in
-  the script catches a throw; an unhandled surprise must not look like a
-  handled one.
+  with the error's first line, and takes the same one retry. The catch wraps
+  the whole call, so any other rejection lands there too and is reported the
+  same way — the reviewer **could not be hired**, with the error quoted,
+  rather than a spawn failure the driver has not actually diagnosed. Nothing
+  else in the script catches a throw from an agent spawn; an unhandled
+  surprise must not look like a handled one.
 - **Runs the shadow review, when the epic declares `Shadow reviewer: codex`
   and the ticket is priced at the consequence tier** (after the floor) — a
   trial that gates nothing. Right after the first review and before the
