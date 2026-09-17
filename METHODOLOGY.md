@@ -479,10 +479,12 @@ Three properties of the fix are load-bearing, and each was argued for.
 that deviation was a sixty-line paragraph of six numbered items with the
 departure third. A marker inside prose like that is not reliably parseable,
 and surfacing the whole field buries the departure again in the noise it was
-already buried in. `**Deviation:**` parses exactly as `**Owed:**` does, and
-changes no existing log: it is optional, and `**Owed:**` remains the one
-required line, so the status log's shape — the preamble's three pinned copies,
-the entry heading — is untouched.
+already buried in. `**Deviation:**` is an optional line whose paragraph ends at
+the first blank line, or at the next bolded field or heading — so a worker who
+writes one directly above `**Owed:**` records a departure, not a departure with
+the next field's markup glued to it — and it changes no existing log:
+`**Owed:**` remains the one required line, so the status log's shape — the
+preamble's three pinned copies, the entry heading — is untouched.
 
 **It is not owed work.** The debt ledger already existed and the temptation was
 to reuse it. But an owed item is *work someone will do*, and the ledger's whole
@@ -496,10 +498,29 @@ closing its own record, one indirection away.
 or as *fixed in a commit*, because a fixed deviation's paragraph still parses
 in an append-only log: a line that could only mean "accepted" would either
 leave a fix unable to clear a gate or record a fix as an acceptance. It closes
-by its leading ID list and only above itself in the file, because an ID can
-head more than one entry and a departure recorded later must not be born
+by its leading reference list and only above itself in the file, because an ID
+can head more than one entry and a departure recorded later must not be born
 closed. No worker and no agent writes one, even for a departure it fixed
 itself — a closure the reviewed party could have written clears nothing.
+
+**And it closes them one at a time.** Closure was first designed per entry, on
+the argument that the entry ID is the only identity a paragraph has and that
+numbering would add a second identity scheme for a rare case. It was modelled on
+`**Resolves owed:**` as that marker then worked — and that model was retired
+days later, on a real loss: a marker naming one of an entry's four owed items
+retired all four, among them a production-database hazard. Both arguments died
+with it. The identity scheme exists, because the owed ledger now numbers an
+entry's items; and the rare case has an incident behind it. So an entry that
+records several departures numbers them, a closing line names the items, and a
+bare closing line facing more than one open departure closes nothing and says
+what to write instead. The direction is the same asymmetry, measured on the same
+two costs: a deviation wrongly left open costs a human one reread, while one
+wrongly closed is a decision nobody made, gone from every brief and every
+attended door in a log that cannot be edited to say so. The lesson generalises
+past both ledgers — **a rule defined as "like that other rule" drifts the moment
+the other one moves.** Five sentences written in this epic defined deviation
+behaviour by comparison with owed behaviour, and were untrue within hours of
+being written, in documents that each read correctly alone.
 
 That last property is why the parser *reports* closure instead of filtering on
 it. Which readers honour a closing line, and which count every recorded

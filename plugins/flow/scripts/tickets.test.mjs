@@ -405,8 +405,16 @@ test('brief prints a ticket\'s full section plus the derived facts find reports'
   const found = JSON.parse(run(repo, 'find', 'a-2', '--json'))
   assert.deepEqual(
     briefed,
-    { ...found, preamble: briefed.preamble, owed: briefed.owed, notes: briefed.notes, deviations: briefed.deviations, body: briefed.body },
-    'the brief payload is the find payload plus preamble, owed, notes, deviations and body',
+    {
+      ...found,
+      preamble: briefed.preamble,
+      owed: briefed.owed,
+      notes: briefed.notes,
+      deviations: briefed.deviations,
+      deviationNotes: briefed.deviationNotes,
+      body: briefed.body,
+    },
+    'the brief payload is the find payload plus preamble, owed, notes, deviations, deviationNotes and body',
   )
   assert.match(briefed.body, /\*\*Scope\.\*\* Persistence\./, 'the body carries the section content')
 
@@ -494,9 +502,10 @@ const DELTA_TICKETS =
   '## D-3 — next up\n\n**Scope.** Three.\n'
 
 // One log exercising every branch of the parse at once: several deviations
-// under one entry; a Decisions paragraph that talks about a deviation in prose
-// and must stay prose; a closing line whose LEADING ID list is what closes,
-// with another ID cited in its note; and a deviation recorded BELOW that line
+// under one entry, closed item by item; a Decisions paragraph that talks about
+// a deviation in prose and must stay prose; a closing line whose LEADING
+// reference list is what closes, with another ID cited in its note; and a
+// deviation recorded BELOW that line
 // under a second entry with the same ID — a BLOCKED ticket redone — which must
 // not be born closed.
 const DELTA_STATUS = `# Delta epic — status log
@@ -530,8 +539,9 @@ because the endpoint has no cursor.
 
 **Addendum — 2026-09-03 — deviations decided.**
 
-**Deviations closed:** D-1 — accepted; D-2's paging is a separate decision and
-is untouched here; the sticky nav fixed in 9f3a21c; Vadim; 2026-09-03.
+**Deviations closed:** D-1.1, D-1.2 — the hero band accepted; D-2's paging is a
+separate decision and is untouched here; the sticky nav fixed in 9f3a21c;
+Vadim; 2026-09-03.
 
 ### D-1 — the landing page, redone — 2026-09-04 — DONE
 
@@ -559,17 +569,18 @@ test('deviations reports every one a ticket recorded, with its closure and the c
   assert.equal(d1.count, 3, "D-1's two entries record three departures between them")
   assert.equal(d1.open, 1)
   assert.deepEqual(
-    d1.deviations.map((d) => [d.entry, d.recorded, d.closed]),
+    d1.deviations.map((d) => [d.item, d.recorded, d.closed]),
     [
-      ['D-1', '2026-09-01', true],
-      ['D-1', '2026-09-01', true],
-      ['D-1', '2026-09-04', false],
+      ['D-1.1', '2026-09-01', true],
+      ['D-1.2', '2026-09-01', true],
+      ['D-1.3', '2026-09-04', false],
     ],
-    'both 09-01 departures are closed by the line beneath them; the 09-04 one, recorded below that line, is not born closed',
+    'both 09-01 departures are closed by the line beneath them, item by item; the 09-04 one, recorded below that line, is not born closed',
   )
+  assert.deepEqual(d1.notes, [], 'a line that named its items closed them, so it earns no note')
   assert.match(d1.deviations[0].text, /hero band above the fold → built without it, because the asset pipeline/,
     'the paragraph runs to the first blank line, wrapped lines joined')
-  assert.match(d1.deviations[0].closedBy, /D-1 — accepted;.*9f3a21c; Vadim; 2026-09-03/,
+  assert.match(d1.deviations[0].closedBy, /D-1\.1, D-1\.2 — the hero band accepted;.*9f3a21c; Vadim; 2026-09-03/,
     'the closing line travels with what it closed, wrapped lines joined')
   assert.equal(d1.deviations[2].closedBy, null)
   assert.ok(
@@ -579,15 +590,187 @@ test('deviations reports every one a ticket recorded, with its closure and the c
 
   const d2 = JSON.parse(run(dir, 'deviations', 'D-2', '--json'))
   assert.equal(d2.count, 1)
-  assert.equal(d2.open, 1, "only the closing line's LEADING ID list closes — D-2 cited in its note is a citation")
+  assert.equal(d2.open, 1, "only the closing line's LEADING reference list closes — D-2 cited in its note is a citation")
+  assert.equal(d2.deviations[0].item, 'D-2', 'an ID that recorded one departure keeps its bare ID')
   assert.deepEqual(JSON.parse(run(dir, 'deviations', 'D-3', '--json')).deviations, [],
     'a ticket that recorded none answers with an empty list, exit 0')
 
   const plain = run(dir, 'deviations', 'D-1')
   assert.match(plain, /3 recorded, 1 not yet closed by a human/)
-  assert.match(plain, /closed  D-1 \(2026-09-01\)/)
-  assert.match(plain, /open\s+D-1 \(2026-09-04\)/)
-  assert.match(plain, /closed by: D-1 — accepted;/)
+  assert.match(plain, /closed  D-1\.1 \(2026-09-01\)/)
+  assert.match(plain, /open\s+D-1\.3 \(2026-09-04\)/)
+  assert.match(plain, /closed by: D-1\.1, D-1\.2 — the hero band accepted;/)
+})
+
+// ── deviations, item by item ─────────────────────────────────────────────────
+// An ID that recorded several departures numbers them across every entry it
+// heads, and a closing line names the items. A BARE closing line facing more
+// than one open deviation closes NOTHING: "accepted" and "fixed in <sha>" are
+// decisions per departure, and the asymmetry is the same one the owed ledger
+// learned downstream — a deviation wrongly left open costs a human one reread,
+// while one wrongly closed is gone from every brief and every attended door
+// with nobody having decided it.
+
+const ECHO_TICKETS =
+  '# Echo epic — tickets\n\nDelivery: release\n\n' +
+  '## E-1 — the landing page\n\n**Scope.** The page.\n\n' +
+  '## E-2 — the results list\n\n**Scope.** The list.\n\n' +
+  '## E-3 — the footer\n\n**Scope.** The footer.\n\n' +
+  '## E-4 — next up\n\n**Scope.** Four.\n'
+
+// E-1 records two departures — the second written directly above `**Owed:**`
+// with no blank line between them, which must not swallow the next field's
+// markup. E-2 records one, so a bare line still closes it. The addendum then
+// tries every way a closing line can name nothing: a bare ID against E-1's two,
+// a number past the end, an ID a reference ends inside, and an ID this log
+// records no departure for. E-3's departure sits below every one of them.
+const ECHO_STATUS = `# Echo epic — status log
+
+Append-only record of finished tickets. Tickets: \`epics/echo/tickets.md\`.
+
+### E-1 — the landing page — 2026-09-01 — DONE
+
+**Built:** the page.
+
+**Deviation:** the design showed a hero band above the fold → built without it,
+because the asset pipeline cannot resize the source image yet.
+
+**Deviation:** the design showed a sticky nav → built as a static header,
+because sticky positioning fought the existing scroll container.
+**Owed:** Nothing.
+
+### E-2 — the results list — 2026-09-02 — DONE
+
+**Built:** the list.
+
+**Deviation:** the spec showed server-side paging → built client-side, because
+the endpoint has no cursor.
+
+**Owed:** Nothing.
+
+**Addendum — 2026-09-03 — deviations decided.**
+
+**Deviations closed:** E-1 — all of them, accepted; Vadim; 2026-09-03.
+
+**Deviations closed:** E-2 — accepted; Vadim; 2026-09-03.
+
+**Deviations closed:** E-1.7 — accepted; Vadim; 2026-09-03.
+
+**Deviations closed:** E-1oops — accepted; Vadim; 2026-09-03.
+
+**Deviations closed:** E-9 — accepted; Vadim; 2026-09-03.
+
+### E-3 — the footer — 2026-09-04 — DONE
+
+**Deviation:** the design showed three footer links → built with one, because
+two of the three have no destination yet.
+
+**Owed:** Nothing.
+`
+
+function echoRepo(name, extra = '') {
+  const dir = join(tmp, name)
+  git(tmp, 'init', '--initial-branch=main', dir)
+  mkdirSync(join(dir, 'epics/echo'), { recursive: true })
+  writeFileSync(join(dir, 'epics/echo/tickets.md'), ECHO_TICKETS)
+  writeFileSync(join(dir, 'epics/echo/status.md'), ECHO_STATUS + extra)
+  return dir
+}
+
+const noteOf = (payload, re) => payload.notes.filter((n) => re.test(n))
+
+test('a bare closing line closes a lone deviation, and against several closes nothing', () => {
+  const dir = echoRepo('deviations-bare')
+  const e1 = JSON.parse(run(dir, 'deviations', 'E-1', '--json'))
+  assert.deepEqual(
+    e1.deviations.map((d) => [d.item, d.closed]),
+    [['E-1.1', false], ['E-1.2', false]],
+    'the bare line faced two open departures, so it closed neither — one wrongly closed is a decision nobody made',
+  )
+  assert.equal(e1.open, 2)
+  assert.equal(noteOf(e1, /had 2 open deviations/).length, 1, 'the line that closed nothing says so, once')
+  assert.match(e1.notes[0], /bare closing line closes an entry's deviation only when exactly one was open above it/)
+  assert.match(e1.notes[0], /`E-1\.1`, `E-1\.2`/, 'the note names the repair in the form that works')
+
+  const e2 = JSON.parse(run(dir, 'deviations', 'E-2', '--json'))
+  assert.deepEqual(e2.deviations.map((d) => [d.item, d.closed]), [['E-2', true]],
+    'an entry that recorded one departure is still closed by its bare ID — the form every log written before this used')
+  assert.deepEqual(e2.notes, [], 'a bare line that closed its one departure earns no note')
+
+  const e3 = JSON.parse(run(dir, 'deviations', 'E-3', '--json'))
+  assert.deepEqual(e3.deviations.map((d) => d.closed), [false],
+    'a departure recorded below every closing line is not born closed')
+
+  assert.match(run(dir, 'deviations', 'E-1'), /note:.*had 2 open deviations/, 'the note reaches the plain reader too')
+})
+
+test('a reference naming no deviation, and an ID a reference ends inside, close nothing and say so', () => {
+  const dir = echoRepo('deviations-badrefs')
+  const e1 = JSON.parse(run(dir, 'deviations', 'E-1', '--json'))
+  assert.equal(noteOf(e1, /`\*\*Deviations closed:\*\* E-1\.7` names no deviation/).length, 1,
+    'a number past the end of the entry is reported, not silently read as a closure')
+  assert.match(e1.notes.join('\n'), /E-1 records 2 \(`E-1\.1`, `E-1\.2`\) above that line/)
+  assert.equal(noteOf(e1, /E-1OOPS` is not a reference an ID ends inside/).length, 1,
+    'an ID that does not end where the reference ends closes nothing — reading the prefix is the silent discharge')
+  assert.equal(e1.open, 2, 'neither malformed line closed anything')
+  assert.ok(!JSON.stringify(e1.notes).includes('E-9'),
+    'an ID this log records no departure for is a legal thing to write, and earns no permanent note')
+})
+
+test('naming an item closes that one, leaves the rest open, and clears the note', () => {
+  // The repair the note asks for is the only thing that clears it: a note whose
+  // exit was naming deviations that are still open would push a writer toward
+  // closing a departure nobody decided on.
+  const dir = echoRepo(
+    'deviations-itemised',
+    '\n**Deviations closed:** E-1.2 — the sticky nav, fixed in 9f3a21c; Vadim; 2026-09-05.\n',
+  )
+  const e1 = JSON.parse(run(dir, 'deviations', 'E-1', '--json'))
+  assert.deepEqual(
+    e1.deviations.map((d) => [d.item, d.closed]),
+    [['E-1.1', false], ['E-1.2', true]],
+    'the item form closes the one it names and leaves the other open',
+  )
+  assert.match(e1.deviations[1].closedBy, /the sticky nav, fixed in 9f3a21c; Vadim; 2026-09-05/)
+  assert.equal(e1.deviations[0].closedBy, null)
+  assert.equal(noteOf(e1, /had 2 open deviations/).length, 0,
+    'the bare line above it is superseded by the itemisation, so its note is cleared')
+  assert.equal(noteOf(e1, /names no deviation/).length, 1, 'the mistyped reference still closed nothing and still says so')
+})
+
+test('a deviation paragraph ends at the next bolded field, blank line or not', () => {
+  // Reproduced by the epic-branch refresh's reviewer: `**Deviation:**` written
+  // directly above `**Owed:**` used to absorb the next field's markup into the
+  // text a brief shows and a door gates on.
+  const dir = echoRepo('deviations-extent')
+  const e1 = JSON.parse(run(dir, 'deviations', 'E-1', '--json'))
+  assert.match(e1.deviations[1].text, /static header, because sticky positioning fought the existing scroll container\.$/,
+    'the wrapped paragraph joins its own lines and stops at the bolded field beneath it, with no blank line between')
+  assert.ok(!/Owed|Nothing/.test(e1.deviations[1].text), 'the next field is never swallowed')
+  const e2 = JSON.parse(run(dir, 'deviations', 'E-2', '--json'))
+  assert.match(e2.deviations[0].text, /built client-side, because the endpoint has no cursor\.$/,
+    'the blank-line case still ends where it always did')
+})
+
+test('brief and doctor carry the deviation notes to the two readers who can act on them', () => {
+  const dir = echoRepo('deviations-notes-doors')
+  const briefed = JSON.parse(run(dir, 'brief', 'E-4', '--json'))
+  assert.deepEqual(
+    briefed.deviations.map((d) => d.item),
+    ['E-1.1', 'E-1.2', 'E-3'],
+    "every departure no human has closed travels epic-wide; E-2's, closed by a line that could close it, does not",
+  )
+  assert.equal(briefed.deviationNotes.length, 3, 'the brief carries what the three closing lines could not close')
+  const out = run(dir, 'brief', 'E-4')
+  assert.match(out, /E-1\.1 \(2026-09-01\): the design showed a hero band/, 'the brief prints the item ID a closing line would name')
+  assert.match(out, /note:.*had 2 open deviations/, 'the note prints beside the open deviations')
+  // This fixture has no origin remote, so doctor fails on that and exits 1; the
+  // rows are on stdout either way.
+  const failed = runFail(dir, 'doctor', '--json')
+  const rows = JSON.parse(failed ? failed.stdout : run(dir, 'doctor', '--json'))
+    .filter((r) => /Deviations closed:/.test(r.msg))
+  assert.equal(rows.length, 3, "doctor warns at the writer's door, where the human who can repair the line is looking")
+  assert.ok(rows.every((r) => r.level === 'warn'), 'a line that closed nothing is a warning — it never turns doctor itself red')
 })
 
 test('the deviations payload shares no field name with find\'s, at any depth', () => {

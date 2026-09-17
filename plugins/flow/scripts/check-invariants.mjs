@@ -364,6 +364,11 @@ const PHRASES = [
     files: ['ticket', 'quick', 'script', 'readme'],
   },
   {
+    why: "the closing line's granularity — a bare closing line closes an entry's one departure and closes nothing against several, so both lanes that teach a human the line, the parser that reads it and README's account of it must carry the same rule. A document that keeps the whole-entry story teaches a human to write a line that silently closes departures nobody decided on — which is the loss the owed ledger already took, one indirection away",
+    re: /bare closing line/i,
+    files: ['script', 'ticket', 'quick', 'readme'],
+  },
+  {
     why: 'machine-runnable acceptance criteria — the CHECK/EXPECT format is parsed and executed by tickets.mjs, taught by the planning skill, and run by both execution lanes and the driver',
     // Absorbs the deliberate wording variants: a literal "CHECK: <command>"
     // template line, the prose "CHECK/EXPECT", and the backticked

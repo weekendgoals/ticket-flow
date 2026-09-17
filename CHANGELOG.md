@@ -8,6 +8,34 @@ with one version and date.
 
 ## Unreleased
 
+- **A deviation is closed item by item: an entry's departures are numbered
+  `<ID>.1`, `<ID>.2` …, and a bare `**Deviations closed:** <ID>` against more
+  than one open departure closes nothing** (`scripts/tickets.mjs`:
+  `parseDeviationsText` numbers an ID's departures across every entry it heads,
+  closes by the same reference grammar the owed ledger uses, and reports what a
+  closing line could not close — `brief` prints those notes beside the open
+  deviations and carries them as `deviationNotes`, `deviations <ID> --json`
+  carries them as `notes` beside each deviation's `item` ID, `doctor` warns at the
+  writer's door; both lanes, README and METHODOLOGY carry the rule and its
+  reason; `check-invariants.mjs` pins the phrase across the two lanes, the
+  script and README). Closure was per entry for one day: a human accepting one
+  departure of three closed all three — exactly the shape that had just been
+  retired from `**Resolves owed:**` after a marker naming one of an entry's four
+  owed items retired all four, including a production-database hazard. The
+  asymmetry is the same and so is the direction: a deviation wrongly left open
+  costs a human one reread, while one wrongly closed is a decision nobody made,
+  gone from every brief and every attended door in a log that cannot be edited
+  to say so. A bare line still closes an entry that recorded one departure, so
+  no log written before this needs an edit. A reference naming no departure
+  (`<ID>.7` against two) and an ID a reference ends inside (`<ID>oops`) close
+  nothing and are reported the same way; naming any item of that entry clears
+  the note. Also: a `**Deviation:**` paragraph now ends at the next **bolded
+  field or heading** as well as at a blank line — written directly above
+  `**Owed:**` it used to swallow the next field's markup into the text a brief
+  shows and a door gates on — and five sentences that defined a deviation rule
+  by what an owed rule does, untrue within hours of being written because the
+  owed rule moved, now state the deviation rule in their own words with their
+  own reason.
 - **A deviation is parsed and surfaced: the `**Deviation:**` line**
   (`scripts/tickets.mjs` — a new `parseDeviations` beside `parseOwed`, a new
   `deviations <ID> [--log-from <ref>]` subcommand, `brief`'s new section and
@@ -28,10 +56,11 @@ with one version and date.
   human has closed into every later ticket of the epic, under its own heading.
   A dated `**Deviations closed:** <ID>[, <ID>] — <each deviation named as
   accepted or as fixed in <sha>; who; when>` line closes every deviation the
-  named entries recorded **above it in the file**, by its leading ID list only
-  (as `**Resolves owed:**` resolves); order matters here because an ID can head
-  more than one entry and a departure recorded after a closing line must not be
-  born closed. Both skills say the closing line is **a human's, never a
+  named entries recorded **above it in the file**, by its leading reference
+  list only — an ID cited further along, inside the note's prose, is a
+  citation, not a target. Position is what a line can close: an ID can head
+  more than one entry, and a departure recorded after a closing line must not
+  be born closed. Both skills say the closing line is **a human's, never a
   worker's or any agent's**, because a closure the reviewed party could have
   written clears nothing. `deviations <ID>` reports **every** deviation a
   ticket's own entries recorded, closed or not, each with its closing line —
