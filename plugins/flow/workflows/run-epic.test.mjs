@@ -1013,7 +1013,7 @@ test('a failed acceptance check halts before any merge agent exists, quoting the
   // an unreadable report are what make a retro file those halts correctly.
   assert.equal(
     r.out.haltedOn.stopCondition,
-    'a failed acceptance CHECK — a machine-runnable criterion whose command did not produce its expected result on the pushed branch, a CHECK line too malformed to run at all, or an acceptance report the gate could not read',
+    'a failed acceptance CHECK — a machine-runnable criterion whose command did not produce its expected result on the pushed branch, a criterion whose evidence is a skip, a CHECK line too malformed to run at all, or an acceptance report the gate could not read',
   )
   assert.match(r.out.haltedOn.detail, /1 of 2 CHECK criteria failed/)
   assert.match(r.out.haltedOn.detail, /<<<UNTRUSTED[\s\S]*the limit clamps to 50 — exit 1 — AssertionError/)
@@ -1088,6 +1088,21 @@ test('the acceptance gate halts on a skipped check and names the skip, so the re
   assert.match(r.out.haltedOn.detail, /1 of them skipped/)
   assert.match(r.out.haltedOn.detail, /a skipped check is not a passed one/)
   assert.equal(r.out.ticketRecords[0].acceptanceChecksSkipped, 1)
+  assert.ok(!r.labels.some(l => l.startsWith('resolve:') || l.startsWith('merge:')))
+})
+
+test('a report claiming every check passed while reporting a skip halts — the two cannot both be true', async () => {
+  // Defence in depth, the way `problems > 0` and `passed !== total` already
+  // are: a skipped check is not a passed one, so a report where the counts and
+  // the skip contradict each other is a gate that cannot read its own
+  // evidence, and nothing merges on it.
+  const r = await drive(
+    oneTicket({
+      'accept:PAY-1': { outcome: 'ran', total: 2, passed: 2, skipped: 1, allPassed: true, problems: 0, failures: [], detail: '' },
+    }),
+  )
+  assert.match(r.out.haltedOn.stopCondition, /^a failed acceptance CHECK/)
+  assert.match(r.out.haltedOn.detail, /1 skipped/)
   assert.ok(!r.labels.some(l => l.startsWith('resolve:') || l.startsWith('merge:')))
 })
 

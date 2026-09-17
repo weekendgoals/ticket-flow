@@ -275,10 +275,14 @@ thing, `<ID>.<n>` when it owed several> — <how it was discharged>
 ```
 
 **Name the item, not the entry, when the entry recorded several.** A bare
-entry ID against a multi-item entry retires **nothing** — it used to retire
-all of them, and a marker naming one item once closed four, including a
-production-database hazard that had to survive. `brief` and `doctor` both
-report the marker that retired nothing, and name the form that works.
+entry ID is read against what that entry owed when your line was written, so
+it closes a one-item entry and retires **nothing** when it faces more than
+one — it used to retire all of them, and a marker naming one item once closed
+four, including a production-database hazard that had to survive. `brief` and
+`doctor` both report a marker that retired nothing, name the form that works,
+and stop reporting it once any item of that entry is named that way. A
+number past the end of the entry (`<ID>.7` of two) is reported the same way:
+check the count against the entry before you write it.
 
 Keep the entry short and written for someone who was not there. **Commit
 before the review runs** — the reviewer reads a commit range.

@@ -26,13 +26,28 @@ with one version and date.
   decision, paying permanent noise in every future brief to avoid the silent
   loss — a format forcing a bad choice on the people it serves. An item
   wrongly kept costs one reread; an item wrongly retired is gone from an
-  append-only log with nothing left to report that it existed, so the bare
-  marker now retires nothing and `brief` names the form that works. The note
-  clears once the entry's items are closed by name, because a warning nobody
-  can clear is one readers learn to skip past. **Existing bare markers against
-  multi-item entries stop resolving** — those items reappear in the brief,
-  which is the safe direction; repair by appending a dated addendum naming the
-  items, never by editing the entry. Same commit fixes three further losses
+  append-only log with nothing left to report that it existed, so a bare
+  marker facing more than one open item retires nothing and `brief` names the
+  form that works. A bare marker is read against **what the entry owed when
+  the line was written** — the items recorded above it, since append-only
+  makes position time — so a marker that correctly closed a one-item entry
+  keeps working when that entry records again later, instead of renumbering a
+  discharged item back into every brief forever. The note clears as soon as
+  any item of that entry is named the itemised way, which is exactly the
+  repair the note prescribes: a warning whose only exit was naming items that
+  are still open would push writers toward the silent retirement this rule
+  exists to prevent. A reference matching no item (`<ID>.7` against a
+  two-item entry) is reported the same way — the skills now ask workers to
+  hand-write these, so a miscount is the expected error, and it was the one
+  error with no feedback anywhere; a mistyped reference does not clear the
+  note either, since it retired nothing. A marker naming an entry the log
+  does not record stays silent, because `**Resolves owed:**` does not cross
+  epics and a cross-epic marker is a legal thing to write. **Existing bare
+  markers against multi-item entries stop resolving** — those items reappear
+  in the brief, which is the safe direction; repair by appending a dated
+  addendum naming the items, never by editing the entry. Measured on the live
+  downstream logs: nine items reappear across three epics, three of them
+  genuinely open obligations a bare marker had silently retired. Same commit fixes three further losses
   in the same parser, each found by running it over live downstream logs:
   a bullet list separated from `**Owed:**` by a blank line — the idiomatic
   markdown shape — was dropped whole, because the block was read as ending at
@@ -66,17 +81,33 @@ with one version and date.
   nothing and must never green a merge gate; it is **not failed** either,
   because the code is not what is wrong and a red verdict sends a reader to
   debug working code instead of supplying what the run needed. With an
-  EXPECT the verdict is read off the deciding line — the criterion names one
-  test, and its neighbours passing is not evidence for it; with no EXPECT,
-  where exit 0 is the whole evidence, off the whole output (some line reports
-  a skip, no line reports anything having run). Detection is shape, not
-  meaning: a runner's skip glyph starting a line (`↓`, `○`) or a skip
+  EXPECT, a skip on **any** line carrying the EXPECT text decides unless
+  another of them shows something having run — the criterion names one test,
+  so its neighbours passing is not evidence for it, and a runner that echoes
+  its argv (`npm test -- <file>`) prints the EXPECT string on a line that
+  proves nothing. A line showing a run still wins, so one skipped file inside
+  a suite that ran does not turn the ledger red. With no EXPECT, where exit 0
+  is the whole evidence, the question widens to the whole output (some line
+  reports a skip, no line reports anything having run). Detection is shape,
+  not meaning: a runner's skip glyph starting a line (`↓`, `○`) or a skip
   **count** (`12 skipped`, `skipped (12)`, TAP's `# SKIP`) — the count is
   what keeps the bare word out, so a criterion may still assert that
-  something "is skipped". The recovery works from the refused state either
-  way: supply what the run needed, or point EXPECT at a line that proves it
-  ran. Exit codes are unchanged — a skip exits 1 like any ungreen gate, so
-  the driver's acceptance step still reports it as "ran".
+  something "is skipped". Coverage is bounded and named: vitest, jest,
+  `node --test` and TAP are matched; mocha's `N pending` and `go test`'s
+  `--- SKIP:` are not, because a detector guessing at every runner's
+  vocabulary starts failing correct runs. The recovery works from the refused
+  state either way: supply what the run needed, or point EXPECT at a line
+  that proves it ran — which is also what `agents/plan-reviewer.md` now asks
+  for, so a criterion red only because its suite skipped itself is a finding
+  at the door where CHECKs are proven red. Exit codes are unchanged — a skip
+  exits 1 like any ungreen gate, so the driver's acceptance step still
+  reports it as "ran" — and the driver halts on the skip count as its own
+  condition, the way it already re-derives `problems > 0` and
+  `passed !== total`, so a self-contradictory report merges nothing. The
+  acceptance stop condition names the skipped criterion as a fourth member in
+  all four documents that state it, because a retro files halts by that
+  string and a skip filed as "did not produce its expected result" is the
+  conflation the third verdict exists to end.
 
 - **The plan reviewer asks what the lane can execute and what the evidence
   can show** (`agents/plan-reviewer.md` gains two questions; `skills/epic/SKILL.md`

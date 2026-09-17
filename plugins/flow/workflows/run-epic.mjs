@@ -185,7 +185,7 @@ const STOP = {
   nonzeroExit: 'a nonzero exit from any command the run issues as a step, except those this skill explicitly marks tolerated',
   fixBounds: 'a review-fix diff the run could not measure — no usable fix-diff facts from the resolve step, or a fix whose changed lines cannot be counted; an unmeasurable fix is never merged',
   acceptanceCheck:
-    'a failed acceptance CHECK — a machine-runnable criterion whose command did not produce its expected result on the pushed branch, a CHECK line too malformed to run at all, or an acceptance report the gate could not read',
+    'a failed acceptance CHECK — a machine-runnable criterion whose command did not produce its expected result on the pushed branch, a criterion whose evidence is a skip, a CHECK line too malformed to run at all, or an acceptance report the gate could not read',
   ticketBudget: "a ticket's pass exceeding the epic's per-ticket token budget",
 }
 
@@ -1501,7 +1501,11 @@ ${NO_MAIN} The checkout and fast-forward only move the local branch to where the
     record.acceptanceAllPassed = allPassed
     record.acceptanceProblems = problems
     const unreadable = total === null || passed === null || allPassed === null || problems === null
-    if (unreadable || allPassed !== true || problems > 0 || passed !== total) {
+    // `skipped > 0` is its own condition rather than something the counts are
+    // trusted to carry: the ledger keeps skips out of `passed`, so a report
+    // that claims both is self-contradictory, and re-deriving it here is the
+    // same defence in depth `problems > 0` and `passed !== total` already are.
+    if (unreadable || allPassed !== true || problems > 0 || passed !== total || skipped > 0) {
       const failures = Array.isArray(accept.failures) ? accept.failures : []
       const quoted = fence(
         failures.map(f => `${line(f.criterion)} — ${line(f.evidence || '(no evidence quoted)')}`).join('; ') || '(no failures quoted)',
@@ -1516,6 +1520,10 @@ ${NO_MAIN} The checkout and fast-forward only move the local branch to where the
             : `${total - passed} of ${total} CHECK criteria failed on the pushed branch`,
         )
       if (problems > 0) why.push(`${problems} malformed CHECK line(s) never ran — a criterion nobody can satisfy is a failed criterion, not a skipped one`)
+      if (skipped > 0 && passed === total)
+        why.push(
+          `the ledger reports ${skipped} skipped though its counts read ${passed}/${total} — a skipped check is not a passed one, so the counts and the skip cannot both be right`,
+        )
       if (!why.length) why.push(`the ledger's own verdict is \`allPassed: false\` though its counts read ${passed}/${total} with no malformed line — the verdict is what the gate trusts`)
       halted = {
         ticket: id,

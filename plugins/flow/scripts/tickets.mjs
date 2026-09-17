@@ -267,7 +267,10 @@ function parseTickets(epic) {
 // gate files, 2026-08-20): an indented `CHECK: <command>` line under the
 // bullet, optionally followed by `EXPECT: <text>`. The criterion passes when
 // the command exits 0 AND its output contains the EXPECT text (exit 0 alone
-// decides when EXPECT is absent). These regexes are load-bearing the same way
+// decides when EXPECT is absent) AND that evidence is not a skip — see
+// `runChecks` for the third verdict, because a command can satisfy both of
+// the first two while the work it names never ran. These regexes are
+// load-bearing the same way
 // the heading regexes are: doctor's near-miss scan is built against them, and
 // the skills' templates must match them — a CHECK that almost parses silently
 // never runs, which is the one way a machine-checked criterion can lie.
@@ -383,6 +386,14 @@ const CHECK_MAX_BUFFER = 64 * 1024 * 1024
 // bare word out: a criterion may legitimately assert that something was
 // skipped ("the migration is skipped when the table exists"), and a marker
 // that fired on the word would leave its author no way to write it.
+//
+// Coverage is bounded and known, not universal: vitest, jest, node --test and
+// anything speaking TAP are matched; mocha's `N pending` and `go test`'s
+// `--- SKIP:` are not. Widening it is cheap when a project needs it, but a
+// detector that guesses at every runner's vocabulary would start failing
+// correct runs, and a false red halts a run on working code. What backstops
+// the gap is the same rule everywhere else: a criterion should point EXPECT
+// at a line that proves the run, not at one a skipped run also prints.
 const CHECK_SKIP_MARK = /^[\s│|>]*[↓○]|(?<![\w-])\d+\s+skipped\b|\bskipped\s*\(\s*\d+\s*\)|#\s*skip(ped)?\b/i
 // Its counterpart: a line showing that something actually ran. `0 passed` is
 // not evidence of a run, so the zero is excluded — vitest prints
@@ -400,21 +411,29 @@ function runChecks(checks) {
     const okExit = exitCode === 0 && !r.error
     const matching = c.expect === null ? [] : lines.filter((l) => l.includes(c.expect))
     const okExpect = c.expect === null || matching.length > 0
-    // The deciding line: the first match that is not a skip, because that is
-    // the line that decided a pass; otherwise the first match, which is then
-    // what decided the skip. The evidence reported is always the line the
-    // verdict came from.
-    const deciding = matching.find((l) => !skipEvidence(l)) ?? matching[0]
-    // With an EXPECT, the deciding line is the evidence and the skip is read
-    // off it — the criterion names one test, and its neighbours passing is not
-    // evidence for it. With no EXPECT, exit 0 is the whole evidence, so the
-    // question widens to the whole output: some line reports a skip and no
-    // line reports anything having run. The recovery works from the refused
-    // state either way — point EXPECT at a line that proves the run.
+    // Among the lines carrying the EXPECT text, a skip decides unless another
+    // of them shows something having run. Not "the first match that is not a
+    // skip": a runner that echoes its argv (`npm test -- <file>`) prints the
+    // EXPECT string on a line that is not skip evidence and proves nothing,
+    // and that echo used to outvote the `↓` two lines below it — a suite in
+    // which nothing ran, green. The opposite polarity is what a gate needs:
+    // the run line has to be there for the pass, not merely the absence of a
+    // skip. A line showing a run still wins, so one skipped file inside a
+    // suite that ran does not turn the ledger red.
+    const skipHit = matching.find(skipEvidence)
+    const ranHit = matching.find((l) => CHECK_RAN_MARK.test(l))
+    // With no EXPECT, exit 0 is the whole evidence, so the question widens to
+    // the whole output: some line reports a skip and no line reports anything
+    // having run. The recovery works from the refused state either way —
+    // point EXPECT at a line that proves the run.
     const skipped =
       okExit &&
       okExpect &&
-      (c.expect === null ? lines.some((l) => CHECK_SKIP_MARK.test(l)) && !lines.some((l) => CHECK_RAN_MARK.test(l)) : skipEvidence(deciding))
+      (c.expect === null
+        ? lines.some((l) => CHECK_SKIP_MARK.test(l)) && !lines.some((l) => CHECK_RAN_MARK.test(l))
+        : Boolean(skipHit) && !ranHit)
+    // The evidence reported is always the line the verdict came from.
+    const deciding = skipped ? skipHit : (ranHit ?? matching.find((l) => !skipEvidence(l)) ?? matching[0])
     const passed = okExit && okExpect && !skipped
     const status = passed ? 'passed' : skipped ? 'skipped' : 'failed'
     // The evidence line is what the ledger records — the deciding output,
@@ -465,17 +484,22 @@ function parseStatus(epic) {
 // recorded. An entry that owes one thing is addressed by its own ID; an entry
 // that owes several — the Owed field invites exactly that, "anything
 // deferred" — numbers them `<ID>.1`, `<ID>.2`, … in document order, and the
-// marker names the item. The numbering is positional because the log is
-// append-only: an entry's bullets never move once written.
+// marker names the item. Numbers only ever get appended, never reshuffled,
+// because the log is append-only: an entry's bullets never move once written.
 //
-// A bare `<ID>` against a multi-item entry therefore retires NOTHING, and
-// says so rather than guessing. It used to retire the lot: downstream, four
-// items recorded as one paragraph were closed by a marker naming one of them,
-// and the item that had to survive was a production-database hazard, caught
-// only because a worker had been warned to look. The asymmetry decides the
-// direction — an item wrongly kept costs one reread, an item wrongly retired
-// is gone from an append-only log with nothing left to report it — and the
-// recovery is one appended line naming the items, which the brief spells out.
+// A bare `<ID>` retires what the entry owed WHEN THE MARKER WAS WRITTEN — the
+// items recorded above that line. Append-only makes a marker's position its
+// time, and that is what keeps an old bare marker meaning what it meant: an
+// entry that records again later would otherwise renumber a discharged item
+// back into every brief, forever. Facing more than one open item, a bare
+// marker retires NOTHING and says so rather than guessing. It used to retire
+// the lot: downstream, four items recorded as one paragraph were closed by a
+// marker naming one of them, and the item that had to survive was a
+// production-database hazard, caught only because a worker had been warned to
+// look. The asymmetry decides the direction — an item wrongly kept costs one
+// reread, an item wrongly retired is gone from an append-only log with nothing
+// left to report it — and the recovery is one appended line naming the items,
+// which the brief spells out and which clears the note.
 //
 // Entries owing "Nothing" are dropped. What survives is labelled honestly:
 // recorded and not marked resolved. A ticket may have discharged an item
@@ -487,15 +511,24 @@ const RESOLVES_LINE = /^\*\*Resolves owed:\*\*\s*(.*)$/
 const OWED_LINE = /^\*\*Owed:\*\*\s*(.*)$/
 const OWED_BULLET = /^(\s*)[-*]\s+(\S.*)$/
 
-// The note a bare marker earns when it names a multi-item entry — written
-// once, so the brief a worker reads and the doctor row its author sees cannot
-// drift into two different accounts of the same line.
+// The notes a marker earns when it retires nothing — written once each, so the
+// brief a worker reads and the doctor row its author sees cannot drift into
+// two different accounts of the same line. Each states the repair that clears
+// it, and each is cleared by exactly that repair: a note whose only exit is
+// naming items that are still open would push a writer toward the silent
+// retirement this whole rule exists to prevent.
 const owedBareMarkerNote = (id, count) =>
-  `\`**Resolves owed:** ${id}\` names the entry, but ${id} records ${count} items, so it retires nothing. ` +
-  `Name the items it discharged — \`${id}.1\`, \`${id}.2\` … in the order the entry lists them — in a new dated addendum; the rest stay listed.`
+  `\`**Resolves owed:** ${id}\` names the entry, but ${id} had ${count} open items when that line was written, so it retires nothing. ` +
+  `Name the ones it discharged — \`${id}.1\`, \`${id}.2\` … in the order the entry lists them — in a new dated addendum; the rest stay listed, and naming any of them that way clears this note.`
+
+const owedUnknownItemNote = (ref, id, items) =>
+  `\`**Resolves owed:** ${ref}\` names no item: ${id} records ${items.length} (\`${items.map((o) => o.id).join('`, `')}\`), so nothing was retired. ` +
+  `Correct the number in a new dated addendum — the log is append-only, so the wrong line stays and the right one goes underneath it.`
 
 // Every **Owed:** block in a status log, whether or not anything resolved it:
-// { id, date, lead, items: [text] } per block, in document order.
+// { id, date, line, lead, items: [{ text, line }] } per block, in document
+// order. The line numbers are what make a bare marker's position readable as
+// its time — see parseOwed.
 function owedBlocks(statusDoc) {
   const blocks = []
   let entry = null // the last parsed "### <ID> — … — <date> — <outcome>" heading
@@ -504,24 +537,25 @@ function owedBlocks(statusDoc) {
   let leadOpen = false // the lead text can be continued until a bullet or a blank
   let blank = false
   let indent = null // the block's top level: the indentation of its first bullet
-  for (const line of readFileSync(statusDoc, 'utf8').split('\n')) {
+  readFileSync(statusDoc, 'utf8').split('\n').forEach((line, i) => {
+    const lineNo = i + 1
     const h = line.match(STATUS_HEADING)
     if (h) {
       entry = { id: h[1], date: h[3] }
       block = null
-      continue
+      return
     }
     const m = line.match(OWED_LINE)
     if (m && entry) {
-      block = { ...entry, lead: m[1].trim(), items: [] }
+      block = { ...entry, line: lineNo, lead: m[1].trim(), items: [] }
       blocks.push(block)
       item = null
       leadOpen = true
       blank = false
       indent = null
-      continue
+      return
     }
-    if (!block) continue
+    if (!block) return
     const b = line.match(OWED_BULLET)
     if (b) {
       // A bullet continues the block even across a blank line: a list set off
@@ -533,33 +567,33 @@ function owedBlocks(statusDoc) {
       if (b[1].length > indent && item) {
         item.text = `${item.text} ${line.trim()}`.trim()
         blank = false
-        continue
+        return
       }
-      item = { text: b[2].trim() }
+      item = { text: b[2].trim(), line: lineNo }
       block.items.push(item)
       leadOpen = false
       blank = false
-      continue
+      return
     }
     if (/^#{1,6}\s/.test(line) || /^\*\*/.test(line)) {
       // The next field, addendum or heading — the block is over.
       block = null
-      continue
+      return
     }
     if (line.trim() === '') {
       item = null
       leadOpen = false
       blank = true
-      continue
+      return
     }
     if (blank) {
       // Prose after a blank line is the entry continuing, not the owed block.
       block = null
-      continue
+      return
     }
     if (item) item.text = `${item.text} ${line.trim()}`.trim()
     else if (leadOpen) block.lead = `${block.lead} ${line.trim()}`.trim()
-  }
+  })
   return blocks
 }
 
@@ -576,11 +610,12 @@ function owedBlocks(statusDoc) {
 // brief it should have appeared in.
 function owedItems(block) {
   const bulleted = block.items.length > 0
-  const texts = bulleted ? block.items.map((i) => i.text) : [block.lead]
-  return texts
-    .map((text) => ({
+  const raw = bulleted ? block.items : [{ text: block.lead, line: block.line }]
+  return raw
+    .map(({ text, line }) => ({
       entry: block.id,
       date: block.date,
+      line,
       ...(bulleted && block.lead ? { lead: block.lead } : {}),
       text,
     }))
@@ -607,41 +642,75 @@ function owedByEntry(blocks) {
   return byEntry
 }
 
-// Every `**Resolves owed:**` line's targets. Only the leading ID list
-// resolves — "**Resolves owed:** A-1, A-2.3 — note". An ID mentioned later,
-// inside the note's prose ("landed by A-3"), is a citation, not a target.
+// Every `**Resolves owed:**` line's targets, each with the line it was written
+// on — position is time in an append-only log, and a bare marker is read
+// against what the entry owed above it. Only the leading ID list resolves —
+// "**Resolves owed:** A-1, A-2.3 — note". An ID mentioned later, inside the
+// note's prose ("landed by A-3"), is a citation, not a target.
 function owedResolutions(statusDoc) {
   const refs = []
-  for (const line of readFileSync(statusDoc, 'utf8').split('\n')) {
-    const r = line.match(RESOLVES_LINE)
-    if (!r) continue
-    const lead = r[1].toUpperCase().match(new RegExp(`^${OWED_REF}(\\s*,\\s*${OWED_REF})*`))
-    if (lead) refs.push(...lead[0].match(new RegExp(OWED_REF, 'g')))
-  }
+  readFileSync(statusDoc, 'utf8')
+    .split('\n')
+    .forEach((line, i) => {
+      const r = line.match(RESOLVES_LINE)
+      if (!r) return
+      const lead = r[1].toUpperCase().match(new RegExp(`^${OWED_REF}(\\s*,\\s*${OWED_REF})*`))
+      if (lead) for (const ref of lead[0].match(new RegExp(OWED_REF, 'g'))) refs.push({ ref, line: i + 1 })
+    })
   return refs
 }
 
 function parseOwed(epic) {
   if (!epic.statusDoc) return { owed: [], notes: [] }
   const byEntry = owedByEntry(owedBlocks(epic.statusDoc))
-  const resolved = new Set(owedResolutions(epic.statusDoc))
+  const refs = owedResolutions(epic.statusDoc)
+  // An entry someone has already addressed item by item: that writer has moved
+  // to the form the note asks for, so it supersedes any bare line above it.
+  // This is what makes the note clearable by the repair it names — the only
+  // other exit would be naming items that are still open, which is exactly the
+  // silent retirement the bare-marker rule exists to prevent. Only a reference
+  // that MATCHES an item counts: a mistyped `<ID>.7` retired nothing, so
+  // letting it clear the note would trade one silent line for another.
+  const itemised = new Set(
+    refs
+      .filter((r) => r.ref.includes('.'))
+      .map((r) => r.ref.split('.')[0])
+      .filter((entry) => (byEntry.get(entry) || []).some((o) => refs.some((r) => r.ref === o.id))),
+  )
+  const resolved = new Set()
+  const notes = []
+  const noted = new Set()
+  // Document order, because a marker is read against the state above it.
+  for (const { ref, line } of refs) {
+    const entry = ref.split('.')[0]
+    const items = byEntry.get(entry)
+    // A marker naming an entry this log does not record retires nothing and
+    // says nothing: `**Resolves owed:**` never crosses epics — this reads one
+    // status log — and a cross-epic marker is a legal thing to write, so
+    // flagging it would put a permanent note on a correct line.
+    if (!items) continue
+    if (ref.includes('.')) {
+      if (items.some((o) => o.id === ref)) resolved.add(ref)
+      else if (!noted.has(ref)) {
+        noted.add(ref)
+        notes.push(owedUnknownItemNote(ref, entry, items))
+      }
+      continue
+    }
+    // What the entry still owed above this line. Items recorded after it were
+    // not what its author discharged, and items already retired are not what
+    // it could have meant.
+    const open = items.filter((o) => o.line < line && !resolved.has(o.id))
+    if (open.length === 1) resolved.add(open[0].id)
+    else if (open.length > 1 && !itemised.has(entry) && !noted.has(entry)) {
+      noted.add(entry)
+      notes.push(owedBareMarkerNote(entry, open.length))
+    }
+  }
   const owed = [...byEntry.values()]
     .flat()
     .filter((o) => !resolved.has(o.id))
-    .map(({ entry, ...o }) => o)
-  // A bare marker that could not retire what it named is reported, not
-  // silently ignored: its author believes the item closed, and the brief they
-  // will never run again is the only thing that would say otherwise.
-  // It stands while any of the items it failed to close is still listed, and
-  // quotes what the entry recorded: once every item has been closed by name
-  // there is nothing left to warn about, and a warning that cannot be cleared
-  // is one readers learn to skip past.
-  const notes = []
-  for (const ref of new Set(resolved)) {
-    if (ref.includes('.')) continue
-    const items = byEntry.get(ref)
-    if (items && items.length > 1 && items.some((o) => !resolved.has(o.id))) notes.push(owedBareMarkerNote(ref, items.length))
-  }
+    .map(({ entry, line, ...o }) => o)
   return { owed, notes }
 }
 

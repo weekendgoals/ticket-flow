@@ -544,20 +544,22 @@ test('a bullet list separated from **Owed:** by a blank line is still recorded',
   assert.match(d2.text, /browser demonstration is unperformed/)
 })
 
-test('a bare Resolves owed on a multi-item entry retires nothing, and the brief says how to name them', () => {
+test('a bare Resolves owed on a multi-item entry retires nothing, and the partial repair the note names clears it', () => {
   // The safe direction: an item wrongly kept costs a reread, an item wrongly
   // retired is gone from an append-only log with nothing left to report it.
+  // D-2's bare marker retires none of D-1's four items; D-3 then does what the
+  // note instructs and names the ONE item it discharged. That is the repair,
+  // and it has to clear the note — the only other way to silence it would be
+  // to name items that are still open, which is the silent retirement this
+  // whole rule exists to prevent.
   const briefed = JSON.parse(run(ledger2, 'brief', 'D-4', '--json'))
-  assert.equal(briefed.notes.length, 1)
-  assert.match(briefed.notes[0], /\*\*Resolves owed:\*\* D-1/)
-  assert.match(briefed.notes[0], /4 items/)
-  assert.match(briefed.notes[0], /D-1\.1/, 'the note names the form that would work')
+  assert.deepEqual(briefed.notes, [], 'a dotted resolution for D-1 supersedes the bare line')
 
   const out = run(ledger2, 'brief', 'D-4')
   assert.match(out, /D-1\.1 \(2026-08-01\): the seed script still points at the production database/)
   assert.match(out, /four items, D-2 inherits them:/)
   assert.ok(!out.includes('the docs still describe the old flag name'), 'the item named by D-1.3 is retired')
-  assert.match(out, /retires nothing/)
+  assert.ok(!out.includes('retires nothing'), 'and the note is gone, not carried forever')
 })
 
 // Two shapes taken from live downstream logs: an ID that heads more than one
@@ -609,6 +611,75 @@ test('"Nothing" empties a block that has no bullets, never a bullet that owes so
   assert.ok(!owed.some((o) => /^E-2/.test(o.id)), 'an entry that owes Nothing records nothing')
 })
 
+// A bare marker with no itemised resolution anywhere — the state the note is
+// actually for — plus the two shapes a hand-written item reference gets wrong.
+mkdirSync(join(ledger2, 'epics/zeta'), { recursive: true })
+writeFileSync(
+  join(ledger2, 'epics/zeta/tickets.md'),
+  '# Zeta\n\n## F-1 — first\n\n**Scope.** One.\n\n## F-2 — second\n\n**Scope.** Two.\n\n## F-3 — third\n\n**Scope.** Three.\n\n## F-4 — next up\n\n**Scope.** Four.\n',
+)
+writeFileSync(
+  join(ledger2, 'epics/zeta/status.md'),
+  `# Zeta epic — status log
+
+### F-1 — first — 2026-08-01 — DONE
+
+**Owed:** the seed still points at staging — F-2 inherits it.
+
+### F-2 — second — 2026-08-02 — DONE
+
+**Owed:**
+- the docs are stale
+- the flag is undocumented
+
+**Resolves owed:** F-1 — the seed points at the local stack now.
+
+### F-1 — first, continued — 2026-08-05 — DONE
+
+**Owed:**
+- the retry budget is still unbounded
+- the parity test is still missing
+
+### F-3 — third — 2026-08-06 — DONE
+
+**Owed:** Nothing.
+
+**Resolves owed:** F-2 — the docs are current.
+
+**Resolves owed:** F-2.7 — and the flag is documented.
+`,
+)
+
+test('a bare marker retires what the entry owed when it was written, and a later block never resurrects it', () => {
+  // Append-only makes a marker's position its time. F-1 owed exactly one thing
+  // when F-2 discharged it; F-1's later entry records two more. Without the
+  // positional read the entry renumbers, the bare marker matches nothing, and
+  // an item closed months ago returns to every brief forever.
+  const briefed = JSON.parse(run(ledger2, 'brief', 'F-4', '--json'))
+  const f1 = briefed.owed.filter((o) => o.id.startsWith('F-1'))
+  assert.deepEqual(f1.map((o) => o.id), ['F-1.2', 'F-1.3'], 'the discharged first item stays discharged')
+  assert.ok(!briefed.notes.some((n) => /\*\*Resolves owed:\*\* F-1\b/.test(n)), 'and a marker that did its job earns no note')
+})
+
+test('a bare marker facing several open items retires nothing and says so, with the form that works', () => {
+  const briefed = JSON.parse(run(ledger2, 'brief', 'F-4', '--json'))
+  const note = briefed.notes.find((n) => /\*\*Resolves owed:\*\* F-2`/.test(n))
+  assert.ok(note, 'F-2 owed two things when F-3 named the entry')
+  assert.match(note, /2 open items/)
+  assert.match(note, /F-2\.1/, 'the note names the form that would work')
+  assert.match(run(ledger2, 'brief', 'F-4'), /retires nothing/)
+})
+
+test('an item reference that matches no item is reported, not silently ignored', () => {
+  // The skills now ask workers to hand-write these, so a miscount is the
+  // expected error — and it was the one error with no feedback anywhere.
+  const briefed = JSON.parse(run(ledger2, 'brief', 'F-4', '--json'))
+  const note = briefed.notes.find((n) => /F-2\.7/.test(n))
+  assert.ok(note, 'a dotted reference past the end of the entry is named')
+  assert.match(note, /names no item/)
+  assert.match(note, /F-2 records 2/)
+})
+
 test('the note clears once the entry\'s items are closed by name — a warning that can be cleared', () => {
   // The recovery the note advertises has to work from the state it is
   // reported in, and leave nothing behind: a warning nobody can clear is one
@@ -632,10 +703,14 @@ test('doctor flags a Resolves owed line that retires nothing, at the door its wr
   // otherwise.
   const res = runFail(ledger2, 'doctor', '--json')
   const rows = JSON.parse(res ? res.stdout : run(ledger2, 'doctor', '--json'))
-  const row = rows.find((r) => /Resolves owed/.test(r.msg) && /D-1\b/.test(r.msg))
+  const row = rows.find((r) => /Resolves owed/.test(r.msg) && /F-2`/.test(r.msg))
   assert.ok(row, 'doctor reports the marker that retired nothing')
   assert.equal(row.level, 'warn')
-  assert.match(row.msg, /4 items/)
+  assert.match(row.msg, /2 open items/)
+  assert.ok(
+    rows.some((r) => /F-2\.7/.test(r.msg)),
+    'and the item reference that matched nothing, which is the error the skills now invite',
+  )
 })
 
 test('brief with no argument briefs the first startable ticket and names its epic', () => {
@@ -1217,6 +1292,24 @@ the EXPECT string still appears — on the line that says it skipped.
 - node --test counts its skips beside its passes
   CHECK: node -e "console.log('# pass 56'); console.log('# fail 0'); console.log('# skipped 2')"
   EXPECT: # fail 0
+
+## K-12 — a runner that echoes its argv above the skip it reports
+
+\`npm test -- <file>\` echoes the command before running it, so an EXPECT
+naming a test FILE matches the echo as well as the line saying it skipped.
+The echo is not evidence that anything ran.
+
+**Acceptance criteria.**
+- the tenant-scoping suite passes
+  CHECK: node -e "console.log(''); console.log('> backend@1.0.0 test'); console.log('> vitest run src/db/tenant.int.test.ts'); console.log(''); console.log(' ↓ src/db/tenant.int.test.ts (12 tests | 12 skipped)'); console.log(' Tests  12 skipped (12)')"
+  EXPECT: src/db/tenant.int.test.ts
+
+## K-13 — one file skipped while the suite ran
+
+**Acceptance criteria.**
+- the database tests pass
+  CHECK: node -e "console.log(' ↓ src/db/legacy.test.ts (2 tests | 2 skipped)'); console.log(' Tests  12 passed (12) in src/db')"
+  EXPECT: src/db
 `,
 )
 git(crepo, 'add', '.')
@@ -1444,6 +1537,27 @@ test('with no EXPECT to point at, a run that reports only skips is skipped too',
   const out = JSON.parse(fail.stdout)
   assert.equal(out.checks[0].status, 'skipped')
   assert.equal(out.skipped, 1)
+})
+
+test('a command echo repeating the EXPECT string does not outvote the skip it sits above', () => {
+  // The hole the deciding-line rule left: the echo `npm test -- <file>` prints
+  // is not skip evidence, so it won the verdict and a suite in which nothing
+  // ran greened the gate. A skip on ANY matching line decides now, unless
+  // another matching line shows something having run.
+  const fail = runFail(crepo, 'check', 'K-12', '--json')
+  assert.equal(fail.status, 1)
+  const out = JSON.parse(fail.stdout)
+  assert.equal(out.checks[0].status, 'skipped')
+  assert.match(out.checks[0].evidence, /12 skipped/, 'the skip is the evidence, not the echo')
+})
+
+test('a file skipped inside a suite that ran still passes — the run line outvotes the skip line', () => {
+  // The other polarity: over-firing costs a halted run on correct code, so a
+  // matching line showing a run is what the verdict follows.
+  const out = JSON.parse(run(crepo, 'check', 'K-13', '--json'))
+  assert.equal(out.allPassed, true)
+  assert.equal(out.checks[0].status, 'passed')
+  assert.match(out.checks[0].evidence, /12 passed/)
 })
 
 test('a run that did happen still passes — skipped neighbours, the word "skipped", node --test counts', () => {

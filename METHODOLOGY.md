@@ -446,7 +446,8 @@ workers had already seen the trap and written the marker's absence into their
 entries as a deliberate decision — paying permanent noise in every future
 brief to avoid a silent loss — which is the shape of a format forcing a bad
 choice on the people it serves. So an entry that owes several things numbers
-them and a marker names the item; a bare entry ID against a multi-item entry
+them and a marker names the item; a bare entry ID is read against what the
+entry owed when that line was written, and facing more than one open item it
 retires nothing and says what to write instead. The direction is decided by
 the asymmetry, not by taste: an item wrongly kept costs one reread, while an
 item wrongly retired is gone from an append-only log with nothing left to

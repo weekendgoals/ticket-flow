@@ -328,10 +328,15 @@ not yet marked resolved** (every non-Nothing obligation an `**Owed:**` block
 records, attributed to its entry — an entry that owed one thing is addressed
 by its own ID, one that owed several numbers its bullets `<ID>.1`, `<ID>.2` …
 in document order — until a later `**Resolves owed:** <ID>` line closes it.
-A bare entry ID against a multi-item entry retires **nothing** and the brief
-says what to write instead: a marker naming one item once closed four,
-including a production-database hazard, and an item wrongly retired is gone
-from an append-only log with nothing left to report it. Recorded state, so an
+A bare entry ID is read against what the entry owed **when that line was
+written** — the items recorded above it, since an append-only log makes
+position time — so an old marker keeps closing what it closed even after the
+entry records again. Facing more than one open item it retires **nothing**
+and the brief says what to write instead: a marker naming one item once
+closed four, including a production-database hazard, and an item wrongly
+retired is gone from an append-only log with nothing left to report it.
+Naming any item the itemised way clears that note, and a reference matching
+no item is reported too. Recorded state, so an
 item may already be discharged unmarked; the brief says so in its heading),
 and the derived facts the board knows (state,
 branch, epic, modes, pull request). This is a worker's whole required reading — O(epic), not
