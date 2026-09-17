@@ -125,3 +125,70 @@ line's label is the coupling that matters — the shorter list is the one that
 does not become its own drift surface.
 
 **Owed:** Nothing.
+
+**Addendum — review — 2026-09-17 — opus/default effort:** reviewed at
+fd4ad39 (equal to `origin/dev-1`) by a fresh-context general agent standing in
+for `flow:ticket-reviewer`, which is not registered in this session; it was
+given the reviewer definition and the review skill, and the hiring tool
+exposed no effort setting. It independently reproduced the revert check
+(74 → 67 pass / 7 fail, and 18 → 17/1) and seven guard flips in a scratch
+copy. Result: 0 Important, 3 nits, 0 withheld, plus one observation filed as
+pre-existing.
+
+Nit 1, fixed in `fe38f52`. METHODOLOGY.md's new section asserted as evidence
+that "`tickets.mjs` does not contain the string `Decisions`"; this ticket made
+that false — the file now carries two comments naming the field
+(`tickets.mjs:472` and `:503`) — so a reader who greps to confirm finds two
+hits and may correct the passage the wrong way. The real claim, that no code
+path reads the field, is untouched and is now what the passage says, with a
+sentence on why the wording matters. Prose only, no behaviour change, so no
+CHANGELOG entry.
+
+Nit 2, fixed in `1ffc4e3`. The PHRASES ledger in `check-invariants.mjs` held
+the closing label across the two skills, the parser and README, but nothing
+held the opener — the label the parser actually reads (`tickets.mjs:505`). The
+reviewer renamed every opener in the quick skill to `**Departure:**` in a
+scratch copy and every gate stayed green: `check-invariants.mjs` exit 0, its
+suite 18/18, `tickets.test.mjs` 74/74, `check DEV-1` 5/5. A quick-lane worker
+would then write a label that parses as nothing — the silent failure this epic
+exists to end, and one `doctor` does not cover, since its near-miss scan flags
+a deviation-shaped slip and not a rename to an unrelated word. My predecessor
+weighed one ledger entry against two and chose the shorter list on the
+checker's own "keep PHRASES short" rule (its Decisions note 3); the
+demonstration turns that trade, because of the two labels the opener is the
+load-bearing one. Revert check on the fix: with the new entry removed and the
+test kept at HEAD, `check-invariants.test.mjs` goes red 18/19 on "a lane that
+renames the deviation opener fails"; restored, 19/19. CLAUDE.md's two pass
+counts moved 18 → 19 and the CHANGELOG entry now names both labels, in the
+same commit.
+
+Nit 3, corrected here rather than fixed: the log is append-only, so the entry
+above stands as written. Its Decisions note 2 cites "this epic's own log does,
+on line 43" as an instance of preamble prose that would trip `doctor`'s
+near-miss scan. That instance is wrong — line 43's label is backtick-quoted,
+so `DEVIATION_NEAR` (`tickets.mjs:507`) does not match it, and with the
+entry-scoping guard removed in a scratch copy the reviewer saw `doctor` fire
+zero near-miss rows on any log in this repository. The scoping decision itself
+stands and is unchanged: the test fixture's preamble line does fire, and a
+test pins the guard. Only the cited instance was false.
+
+Pre-existing, recorded and not this range's to fix: acceptance criterion 3's
+planned CHECK line in `epics/deviation-routing/tickets.md`
+(`… --log-from no-such-ref --json 2>&1 | grep -c "no-such-ref"`) verifies only
+that the message names the ref, not that the exit is nonzero. Coverage is not
+the gap — this ticket's own test pins both the nonzero exit and the empty
+stdout — the planned CHECK line is. Owner: the planner, at the next edit of
+that document. `tickets.md` is deliberately untouched here, because the
+reviewed party does not edit its own gate.
+
+Re-run after both fixes, on `1ffc4e3`: `tickets.test.mjs` 74/74,
+`check-invariants.test.mjs` 19/19, `check-invariants.mjs` exit 0,
+`tickets.mjs doctor` exit 0, `tickets.mjs check DEV-1` 5/5, exit 0.
+
+Nothing deferred. The ticket was implemented by a driver-spawned worker whose
+run errored at the reviewer hire — the run record in `runs.md` on the epic
+branch carries the diagnosis — and was finished, from disposition through this
+addendum and the merge, by a supervisor-spawned worker on the pushed branch,
+which rebuilt nothing.
+
+Worker tokens (implementation leg): 228,721; Reviewer tokens: 121,853
