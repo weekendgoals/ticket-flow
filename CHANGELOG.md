@@ -8,6 +8,34 @@ with one version and date.
 
 ## Unreleased
 
+- **A deviation reaches the human at every attended door, and an unclosed one
+  stops a release integration** (`skills/ticket/SKILL.md` steps 9 and 10,
+  `skills/quick/SKILL.md` step 7, README, METHODOLOGY;
+  `check-invariants.mjs` pins the pull-request-body sentence across the two
+  lanes). Both lanes now run `deviations <ID>` before they show the ticket,
+  and the summary names **every** departure the ticket recorded — a closed one
+  **with its closing line**, because only a human may write that line and no
+  command can say who did, so showing it is how a self-closure is seen rather
+  than trusted; a note reporting a closing line that closed nothing is shown
+  for the same reason. **A deviation is named in the pull request body** in
+  both lanes that open one, under its own heading — in the quick lane that
+  body is a departure's only door, there being no agent merge to refuse. And
+  the ticket lane's step 10 **does not integrate a ticket with an unclosed
+  deviation** into its epic branch: it reads the departures off
+  `origin/<branch>` with `--log-from`, because that is the SHA it merges and a
+  closing line sitting only in the checkout would clear a gate on a commit
+  that does not carry it; `open` above zero, or any note, stops the step
+  before the merge commands. The step spells out both recoveries — the human
+  accepts it, or the worker fixes it on the branch as new commits with a dated
+  addendum and the human then accepts it as fixed in a commit — and both end
+  in the `**Deviations closed:**` line, which no agent composes: dictating the
+  sentence for a worker to commit verbatim is the human writing it, inferring
+  it from a "yes" is not. The step also tells the human why the `<ID>.<n>`
+  references matter, because a bare closing line facing more than one open
+  departure closes nothing and would leave the gate still refusing — a
+  recovery that does not work in the refused state is not one. Why this door:
+  it is the last point at which one ticket's departure is still one decision
+  rather than a paragraph inside a whole epic's release diff.
 - **A deviation is closed item by item: an entry's departures are numbered
   `<ID>.1`, `<ID>.2` …, and a bare `**Deviations closed:** <ID>` against more
   than one open departure closes nothing** (`scripts/tickets.mjs`:

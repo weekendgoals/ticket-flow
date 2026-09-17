@@ -460,9 +460,27 @@ nothing — or, driver-spawned, `Tokens: recorded in the run record`.>
 
 ## 9. Show the user, then push and open the pull request
 
+First read what this ticket departed from — the entry is committed, so the
+log holds every one:
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/tickets.mjs" deviations $ARGUMENTS
+```
+
 Print, concisely: **Built** (what exists, and the files), **Verified**
 (commands, counts, anything that could not run), **Review** (effort, findings
-found, fixed, not fixed with reasons). Then:
+found, fixed, not fixed with reasons), and **Deviations** — **every** one the
+command reports, closed or not, never only the open ones. A closed one is
+shown **with its closing line**, because only a human may write that line and
+no command can say who did: showing the line is how a closure the reviewed
+party could have written is seen rather than trusted. Show the command's
+`note:` lines in the same field — a note says a closing line closed nothing,
+so a departure someone tried to close is still open, and a reader who counted
+only the closed ones would never learn that the attempt happened. When the
+command reports none, say "no deviations recorded" rather than dropping the
+field, so an empty one reads as an answer and not as an omission. Name what
+departed and stop there: whether a departure is acceptable is the human's
+judgment, and this skill never suggests an answer. Then:
 
 ```bash
 git push -u origin <branch>
@@ -478,10 +496,18 @@ The first ticket cuts from `epic/<epic-name>` but still targets the default
 branch — that is how the documents ship. The body carries what changed and
 why, the acceptance criteria with counts, the review summary, and any deploy
 precondition (an environment variable, a migration, a script that runs after).
+And **a deviation is named in the pull request body**, under its own
+`## Deviations` heading: every one the command above reported, each by its
+`<ID>.<n>` reference with its text, and a closed one with its closing line —
+plus any note, verbatim. Here the pull request *is* the human gate, so a
+departure left out of the body is a departure the person merging never sees;
+the status log is the record, and the body is where they read.
 
 **Release delivery — no pull request.** The human's gate is the release pull
 request; the pushed branch and the committed entry with its addendum are the
-ticket's record and travel inside it.
+ticket's record and travel inside it. A departure travels with them, and its
+door is step 10's merge, which is nearer: the release pull request shows one
+ticket's departure inside a whole epic's diff.
 
 Do not add Claude as a co-author. **No agent ever merges toward the default
 branch, in any mode** — a human merges in the GitHub UI. A single-ticket pull
@@ -495,7 +521,9 @@ step 10.
 
 **Incremental:** print the pull request URL and
 `node "${CLAUDE_PLUGIN_ROOT}/scripts/tickets.mjs" next`. Then stop; nothing
-runs after the merge.
+runs after the merge. No agent merge happens here, so there is none to refuse:
+a departure's door was step 9's pull request body, where the human who merges
+reads it.
 
 **Release:**
 
@@ -505,6 +533,48 @@ runs after the merge.
   naming it, merge nothing. If the reviewer agent could not be spawned, the
   fallback is a general agent given the reviewer definition plus the review
   skill; if that fails too, BLOCKED entry, no merge.
+- **A ticket with an unclosed deviation is not integrated.** Read the
+  departures off the ref this step is about to merge, never off the checkout:
+
+  ```bash
+  node "${CLAUDE_PLUGIN_ROOT}/scripts/tickets.mjs" deviations $ARGUMENTS --log-from origin/<branch> --json
+  ```
+
+  `open` above zero stops this step before the merge commands below, and so
+  does any entry in `notes` — a note reports a closing line that closed
+  nothing, which leaves its departure open while the log looks settled. Show
+  the human every departure the command reports, closed or not, each with its
+  closing line where it has one, and merge nothing until they have decided.
+  The gate reads `origin/<branch>` because that is the SHA this step merges: a
+  closing line sitting only in the checkout would clear a gate on a commit
+  that does not carry it. Why this door, when the ticket already passed a
+  review: a reviewer judges the work against the documents, while a departure
+  is a decision only the person who owns the outcome can make — and this merge
+  is the last point at which one ticket's departure is still one decision
+  rather than one paragraph inside the nine-ticket diff the release pull
+  request shows.
+
+  **Two ways out, and both end in a line you do not compose.** *Accepted* —
+  the human puts the dated `**Deviations closed:**` line into the status log
+  on the ticket branch, and it is committed and pushed. *Fixed* — you build
+  the missing thing as new commits on this branch (`<ID>: … (deviation fix)`),
+  re-run the affected checks, report the counts, append a dated addendum
+  saying what you built and where, and push; then the human's line names that
+  departure as **fixed in `<sha>`**. Either way, re-run the command above
+  against the re-pushed branch: `open: 0` with an empty `notes` is what
+  resumes this step, and nothing else is. **Never write that line yourself,
+  for any departure, including one you just fixed** — a closure the party that
+  made the departure could have written clears nothing, which is the whole
+  reason this gate is worth stopping at. Dictating the sentence for you to
+  commit verbatim is the human writing it; inferring it from a "yes", or
+  drafting it for them to approve, is not. Show them the shape step 6 carries
+  and the `<ID>.<n>` references this command printed, and say why the
+  references matter: a bare `**Deviations closed:** <ID>` facing more than one
+  open departure closes **nothing**, the command still reports those
+  departures open with a note saying so, and this step still refuses — so a
+  recovery that ends in a bare line is not a recovery. Judging whether a
+  departure is acceptable is theirs alone: show it, and say nothing about
+  which way to decide.
 - Merge **by verified SHA, with a merge commit** — the SHA is what makes the
   merged diff exactly the reviewed one; never squash, because the ID-prefixed
   subjects reaching `epic/<epic-name>` are how the board derives `integrated`:

@@ -165,6 +165,27 @@ test('a lane that stops teaching the deviation closing line fails', () => {
   assert.match(r.out, /doctrine phrase missing/)
 })
 
+test('either lane that stops naming a deviation in the pull request body fails', () => {
+  // The attended doors are one rule in two lanes: the ticket lane's step 9
+  // writes the body for an incremental pull request, the quick lane's step 7
+  // for its own — and in the quick lane that body is a departure's only door,
+  // since nothing there merges for an agent to refuse. A lane that drops the
+  // sentence still parses and still logs; it just stops telling the person who
+  // merges, which is the failure the whole line exists to end. Flipped at both
+  // doors, because a phrase held at one of two is held nowhere.
+  const quick = copyRepo()
+  mutate(quick, 'plugins/flow/skills/quick/SKILL.md', 'a deviation is named in the pull request body', 'departures are listed somewhere')
+  const q = run(quick)
+  assert.equal(q.status, 1, q.out)
+  assert.match(q.out, /quick\/SKILL\.md.*attended doors/s)
+
+  const ticket = copyRepo()
+  mutate(ticket, 'plugins/flow/skills/ticket/SKILL.md', 'a deviation is named in the pull request body', 'departures are listed somewhere')
+  const t = run(ticket)
+  assert.equal(t.status, 1, t.out)
+  assert.match(t.out, /ticket\/SKILL\.md.*attended doors/s)
+})
+
 test('the workflow script losing the driver handshake fails', () => {
   const root = copyRepo()
   mutate(root, 'plugins/flow/workflows/run-epic.mjs', 'A driver spawned you', 'You were spawned')
