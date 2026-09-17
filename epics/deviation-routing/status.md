@@ -357,3 +357,40 @@ One finding deferred: the nit recorded for the retro above, with the
 pre-existing item it belongs with. Nothing else deferred.
 
 Worker tokens (implementation leg): 209,716; Reviewer tokens: 153,568
+
+**Addendum — re-review — 2026-09-17 — opus/default effort:** bounded re-review
+of the three fix commits by the same reviewer. **0 Important**, and nothing
+raised in the first review left unaddressed.
+
+It re-ran both original reproductions against the new head — each reports one
+departure with its text whole, where `010548a` reported none — and re-ran the
+mixed-list, two-entry, closed-twice and closing-line-above fixtures: a
+departure closed twice now keeps the first line and stays closed. It confirmed
+the three notes byte-identical across `deviations --json`, `brief --json` and
+`doctor`, and that a quoted reference cannot carry harmful input, the echoed
+token's character class being `[A-Za-z0-9.-]`. It hashed the owed region
+identical at `9270f36` and at `1b238a6`. It reproduced the fix's revert check
+in a clone — 97 pass, 4 fail, the named test among them — and flipped each fix
+alone, with the suite red for every one.
+
+It judged the deferral of the silent bare-line case sound on the facts, having
+reproduced it: a note there would have no exit, because naming the item of a
+lone-departure entry (`P-1.1`) earns the unknown-item note instead, which never
+clears.
+
+Two edges it recorded so they are not re-found, both for the same hardening
+ticket the retro already owns — the one carrying the fenced-block item and the
+deferred nit. First: `BOLD_FIELD` requires a colon, so a period-form bold label
+— a dated addendum heading ending in a period, `**Nothing deferred.**`,
+`**Rules.**` — written with no blank line above it is still absorbed into a
+departure's text; 12 of 119 bold-start lines in this repository's status logs
+are period-form. No record is lost and nothing closes wrongly, and `9270f36`
+absorbed all of these, so this range is a strict improvement. **Correction to
+the review addendum above:** its sentence that a dated review addendum heading
+ends the paragraph is true of the colon form only, which is the only form the
+new test loop exercises. Second: a bare label with no text at all, directly
+above another field, reports no departure, with no note and no `doctor` row —
+not a lost record, since there is no text to lose, and the empty-text filter
+predates this ticket, but a silent drop all the same.
+
+Re-review tokens: 191,972
