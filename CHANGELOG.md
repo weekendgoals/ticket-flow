@@ -45,6 +45,124 @@ with one version and date.
   with a deviation is the rest of the `deviation-routing` epic. The status
   log's shape is unchanged: both lines are optional, `**Owed:**` is still the
   one required line, and no existing log needs an edit.
+- **An entry that owes several things is retired item by item: `brief`
+  numbers an `**Owed:**` block's bullets `<ID>.1`, `<ID>.2` …, and a bare
+  `**Resolves owed:** <ID>` against a multi-item entry retires nothing**
+  (`scripts/tickets.mjs`: `parseOwed` splits the block, numbers the items and
+  reports what a bare marker could not retire, `brief` prints the note beside
+  the items and `--json` carries it as `notes`, `doctor` warns at the writer's
+  door; `skills/ticket/SKILL.md` step 6 asks for one obligation per bullet and
+  teaches the item form of the marker, `skills/quick/SKILL.md` step 5 the
+  same; README and METHODOLOGY § "Why a worker reads a brief, not the whole
+  log" carry the rule and its reason; `check-invariants.mjs` pins the phrase).
+  The entry ID was the item's identity, so an entry deferring four things
+  could only be repaid whole: downstream, a marker naming one of them retired
+  all four, including a production-database hazard that had to survive, caught
+  only because a worker had been warned to check. Two other workers had
+  already seen the trap and recorded the marker's **absence** as a deliberate
+  decision, paying permanent noise in every future brief to avoid the silent
+  loss — a format forcing a bad choice on the people it serves. An item
+  wrongly kept costs one reread; an item wrongly retired is gone from an
+  append-only log with nothing left to report that it existed, so a bare
+  marker facing more than one open item retires nothing and `brief` names the
+  form that works. A bare marker is read against **what the entry owed when
+  the line was written** — the items recorded above it, since append-only
+  makes position time — so a marker that correctly closed a one-item entry
+  keeps working when that entry records again later, instead of renumbering a
+  discharged item back into every brief forever. The note clears as soon as
+  any item of that entry is named the itemised way, which is exactly the
+  repair the note prescribes: a warning whose only exit was naming items that
+  are still open would push writers toward the silent retirement this rule
+  exists to prevent. A reference matching no item (`<ID>.7` against a
+  two-item entry) is reported the same way — the skills now ask workers to
+  hand-write these, so a miscount is the expected error, and it was the one
+  error with no feedback anywhere; a mistyped reference does not clear the
+  note either, since it retired nothing. A reference must also END where its
+  ID ends — `<ID>oops` is not `<ID>`, and anchoring at the start alone let a
+  typo's prefix silently discharge a one-item entry — and a dotted reference
+  is read against the items recorded ABOVE it, the way a bare marker already
+  is, so a number that pointed past the end of the entry when it was written
+  cannot retire an item that entry records days later. A marker naming an entry the log
+  does not record stays silent, because `**Resolves owed:**` does not cross
+  epics and a cross-epic marker is a legal thing to write. **Existing bare
+  markers against multi-item entries stop resolving** — those items reappear
+  in the brief, which is the safe direction; repair by appending a dated
+  addendum naming the items, never by editing the entry. Measured on the live
+  downstream logs: nine items reappear across three epics, three of them
+  genuinely open obligations a bare marker had silently retired. Same commit fixes three further losses
+  in the same parser, each found by running it over live downstream logs:
+  a bullet list separated from `**Owed:**` by a blank line — the idiomatic
+  markdown shape — was dropped whole, because the block was read as ending at
+  the first blank line (it now runs to the entry's next field, heading or
+  prose paragraph, and a wrapped bullet still arrives joined, while a
+  sub-bullet stays part of the item above it so the numbering counts what a
+  reader counts); an ID heading more than one `**Owed:**` block, which an
+  append-only log allows, gave two obligations one identity, so numbering is
+  now per entry across its blocks; and "Nothing" empties only a block with no
+  bullets — the convention is how an entry declares the field empty, and
+  applied to a bullet it dropped all five items of an entry whose first
+  bullet opened "Nothing in this ticket has met Postgres".
+
+- **The acceptance ledger has a third verdict: a check whose evidence is a
+  skip is `↓ skipped`, and a skipped check is not a passed one**
+  (`scripts/tickets.mjs`: `runChecks` decides it and `check` prints and
+  counts it, with a `skipped` count and a per-check `status` in `--json`;
+  `workflows/run-epic.mjs` reads the count and names the skip in the halt;
+  `skills/epic/SKILL.md` requires an EXPECT a skip cannot satisfy;
+  `skills/ticket/SKILL.md` and `skills/quick/SKILL.md` say a `↓` line is not
+  a count you may report as passed; README and METHODOLOGY § "Why acceptance
+  criteria can be machine-runnable" carry the rule and its reason;
+  `check-invariants.mjs` pins the phrase across the six documents). Measured
+  downstream: console-foundations CF-3 reported `4/4 checks passed` while
+  every evidence line read `↓` — its Postgres suites skipped themselves for
+  want of `DATABASE_URL` (the house `describe.skipIf(...)` convention),
+  vitest exited 0, and the verbose reporter still printed the titles the
+  EXPECT strings matched. Every ticket in that epic then needed a human to
+  eyeball the markers, which is the check the gate exists to perform.
+  **Skipped is not passed**, because a run that did not happen proves
+  nothing and must never green a merge gate; it is **not failed** either,
+  because the code is not what is wrong and a red verdict sends a reader to
+  debug working code instead of supplying what the run needed. With an
+  EXPECT, a skip on **any** line carrying the EXPECT text decides unless
+  another of them shows something having run — the criterion names one test,
+  so its neighbours passing is not evidence for it, and a runner that echoes
+  its argv (`npm test -- <file>`) prints the EXPECT string on a line that
+  proves nothing. A line showing a run still wins, so one skipped file inside
+  a suite that ran does not turn the ledger red. With no EXPECT, where exit 0
+  is the whole evidence, the question widens to the whole output (some line
+  reports a skip, no line reports anything having run) — and so it does when
+  an EXPECT's own matching lines show neither, which is the argv echo's
+  second shape: the runner names the file while starting and counts files
+  when it reports the skip, so narrowing the question to the matching lines
+  greened a suite in which nothing ran. TAP is read by its per-test lines as
+  well as its summary — `ok N` is a run, while `not ok` and an `ok N`
+  carrying `# SKIP` are not — because a TAP producer need print no summary at
+  all, and without that one `# SKIP` beside a real pass read as a run in
+  which nothing happened, halting a run on working code. Detection is shape,
+  not meaning: a runner's skip glyph starting a line (`↓`, `○`) or a skip
+  **count** (`12 skipped`, `skipped (12)`, TAP's `# SKIP`) — the count is
+  what keeps the bare word out, so a criterion may still assert that
+  something "is skipped". Coverage is bounded and named: vitest, jest,
+  `node --test` and TAP are matched; mocha's `N pending` and `go test`'s
+  `--- SKIP:` are not, because a detector guessing at every runner's
+  vocabulary starts failing correct runs. The recovery works from the refused
+  state either way: supply what the run needed, or point EXPECT at a line
+  that proves it ran — which is also what `agents/plan-reviewer.md` now asks
+  for, so a criterion red only because its suite skipped itself is a finding
+  at the door where CHECKs are proven red. Exit codes are unchanged — a skip
+  exits 1 like any ungreen gate, so the driver's acceptance step still
+  reports it as "ran" — and the driver halts on the skip count as its own
+  condition, the way it already re-derives `problems > 0` and
+  `passed !== total`, so a self-contradictory report merges nothing. The skip
+  count is refused like every other count rather than defaulted to 0 — the
+  one figure that names skips cannot be the one figure a report is allowed to
+  omit — and the ticket record carries `acceptanceChecksSkipped` whether or
+  not acceptance was reached, so a halted record and a merged one have the
+  same shape and the run summary prints the skips beside the counts. The
+  acceptance stop condition names the skipped criterion as a fourth member in
+  all four documents that state it, because a retro files halts by that
+  string and a skip filed as "did not produce its expected result" is the
+  conflation the third verdict exists to end.
 - **The revert check: a ticket names the test that fails with its source
   change reverted, and the reviewer opens that test** (`skills/ticket/SKILL.md`
   step 5 and its Verified field, `skills/quick/SKILL.md` step 5,

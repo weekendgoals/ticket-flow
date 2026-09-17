@@ -197,9 +197,14 @@ never an invented test command.
   node "${CLAUDE_PLUGIN_ROOT}/scripts/tickets.mjs" check $ARGUMENTS
   ```
 
-  A failing check is a ticket that is not done. In an unattended run the
-  driver re-runs it with `--from origin/epic/<name>` — the criteria as signed
-  off — and gates the merge in code.
+  A failing check is a ticket that is not done. So is a skipped one: the
+  ledger marks `↓ skipped` when a command exits 0 while the work it names
+  never ran — the suite that skips itself without `DATABASE_URL` is the
+  common shape — and **a skipped check is not a passed one**. Give the
+  command what the run needed and re-run it, or record the criterion as owed
+  with the reason; never report it among the counts as passed. In an
+  unattended run the driver re-runs it with `--from origin/epic/<name>` —
+  the criteria as signed off — and gates the merge in code.
 
 Report **counts** — "api-gateway 217/217 passed", never "tests pass". A check
 that cannot run here is recorded as owed; never imply it passed.
@@ -303,11 +308,13 @@ design showed → what was built instead, and why. Optional; omitted when there
 is none. Several departures are several lines>
 
 **Owed:** <anything deferred and which ticket inherits it — "Nothing" if
-genuinely nothing, never omitted. `brief` hands every non-Nothing line to
-future workers until a `**Resolves owed:**` line closes it, so write it to
-be read alone, and check the named carrier can structurally reach the thing
-— an owed check was once handed to a lane that never touches the step it
-was meant to verify>
+genuinely nothing, never omitted. **One obligation per bullet** when there
+is more than one: `brief` numbers an entry's bullets `<ID>.1`, `<ID>.2` … in
+document order, and that is how a later ticket retires them one at a time.
+`brief` hands every non-Nothing item to future workers until a
+`**Resolves owed:**` line closes it, so write each to be read alone, and
+check the named carrier can structurally reach the thing — an owed check was
+once handed to a lane that never touches the step it was meant to verify>
 ```
 
 **What counts as a deviation:** anything the ticket's documents or its design
@@ -346,8 +353,19 @@ own line in this entry, or in a dated addendum beneath it (the shape the
 removes it from every future brief:
 
 ```markdown
-**Resolves owed:** <ID of the entry that recorded it> — <how it was discharged>
+**Resolves owed:** <the item's ID — the entry ID when that entry owed one
+thing, `<ID>.<n>` when it owed several> — <how it was discharged>
 ```
+
+**Name the item, not the entry, when the entry recorded several.** A bare
+entry ID is read against what that entry owed when your line was written, so
+it closes a one-item entry and retires **nothing** when it faces more than
+one — it used to retire all of them, and a marker naming one item once closed
+four, including a production-database hazard that had to survive. `brief` and
+`doctor` both report a marker that retired nothing, name the form that works,
+and stop reporting it once any item of that entry is named that way. A
+number past the end of the entry (`<ID>.7` of two) is reported the same way:
+check the count against the entry before you write it.
 
 Keep the entry short and written for someone who was not there. **Commit
 before the review runs** — the reviewer reads a commit range.
