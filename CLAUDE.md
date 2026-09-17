@@ -27,13 +27,13 @@ go through the flow, one-off work goes through `/flow:quick` into
   has its own suite:
   `node --test plugins/flow/hooks/ticket-session-guard.test.mjs` (`# pass 14`
   on the same terms). The invariant checker has
-  `node --test plugins/flow/scripts/check-invariants.test.mjs` (`# pass 21`),
+  `node --test plugins/flow/scripts/check-invariants.test.mjs` (`# pass 23`),
   The board renderer has
   `node --test plugins/flow/scripts/board.test.mjs` (`# pass 9`) and the
   plan-page renderer `node --test plugins/flow/scripts/plan-page.test.mjs`
   (`# pass 8`) — both pure rendering tests over fixture JSON, no git
   needed. And the run driver has
-  `node --test plugins/flow/workflows/run-epic.test.mjs` (`# pass 123`) —
+  `node --test plugins/flow/workflows/run-epic.test.mjs` (`# pass 131`) —
   which evaluates `run-epic.mjs`'s module body with stubbed agents and
   asserts the sequence, the gate branches and the halt mapping. It needs
   nothing but Node: no git, no network, no filesystem beyond the script.
@@ -61,7 +61,7 @@ go through the flow, one-off work goes through `/flow:quick` into
   phrases). Run it whenever a skill, agent, hook or doctrine document changes —
   it is presence and equality only, so contradictions in meaning still need
   review. Its suite: `node --test plugins/flow/scripts/check-invariants.test.mjs`
-  (`# pass 21` on the same terms).
+  (`# pass 23` on the same terms).
 - **Smoke:** `node plugins/flow/scripts/tickets.mjs doctor` — must exit 0 on
   this repo. `… list` shows the board.
 - **Syntax check:** `node --check plugins/flow/scripts/tickets.mjs`. This does

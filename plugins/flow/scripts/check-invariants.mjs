@@ -344,6 +344,11 @@ const PHRASES = [
     files: ['run', 'workflow'],
   },
   {
+    why: "the deviation stop condition is one sentence in the skill and the script — the halt a run record quotes verbatim. Pinned whole, like the acceptance-check and fix-bounds sentences: \"closed or not\" is what makes this gate different from the attended one, and a copy that kept only the opening would describe a gate that honours a closing line this one ignores — which is the fail-open the halt exists to prevent",
+    re: /a recorded deviation — the ticket's pushed status entry carries a `\*\*Deviation:\*\*` line, closed or not, because nobody present in an unattended run could have closed it; the run asks rather than records/,
+    files: ['run', 'workflow'],
+  },
+  {
     why: 'the never-resume-by-id rule — a halted run is re-run, not resumed, because the runtime replays the recorded failure from the prefix cache; the run skill states the rule where the halt is met and METHODOLOGY carries its reason, and a document that keeps only one of the two turns the rule back into folklore',
     re: /never `resumeFromRunId`/i,
     files: ['run', 'methodology'],

@@ -311,7 +311,13 @@ Everything else here (`reviewerModel`, `shadowReviewer`, `consequencePaths`,
   so the party under review cannot raise the ceiling it is judged by, and
   fetched first because the local ref is otherwise as old as the ticket. A
   fetch writes refs and nothing else, so the step stays read-only in the
-  sense that matters: no merge, no checkout, no file changed. A reported value that is not a positive
+  sense that matters: no merge, no checkout, no file changed. It also reads
+  **the departures the pushed entry records** (`tickets.mjs deviations <ID>
+  --log-from origin/<branch> --json`) — its own subcommand and its own flag,
+  never `find --from`, so the one proxy reading both facts cannot answer
+  either from the other's JSON; `--log-from` reads the log at the commit this
+  run would merge, not the checkout, and **a count above zero halts**,
+  whatever closure the entry claims. A reported ceiling that is not a positive
   integer, or missing altogether, halts on the contradiction condition; a
   reported `null` **keeps the last ceiling in force and logs it**, because a
   line that stopped parsing (`**Ticket budget:** 600k` parses as null, and
@@ -348,7 +354,8 @@ enters your context from the loop:
                      acceptanceChecksPassed, acceptanceChecksSkipped,
                      acceptanceAllPassed,
                      acceptanceProblems, resolveOutcome, mergeOutcome,
-                     addendumMatches, headSha,
+                     addendumMatches, deviationsRecorded, deviationsOpen,
+                     headSha,
                      built, verification, workerReported,
                      outputTokensObserved, shadow, shadowSpend,
                      dispositionCounts, dispositionDetail,
@@ -442,8 +449,22 @@ that resumes past one. The run halts:
   tickets in one epic, past any release epic's size) fires between tickets,
   after the ones before it have merged, and they stay merged — nothing
   un-merges, here or anywhere;
-- on **a merge conflict — refreshing the epic branch, or anywhere else,
-  including a ticket branch that will not merge into the epic branch**;
+- on **a recorded deviation — the ticket's pushed status entry carries a
+  `**Deviation:**` line, closed or not, because nobody present in an
+  unattended run could have closed it; the run asks rather than records** —
+  read at the resolve step, after the review and before any merge agent
+  exists, with `tickets.mjs deviations <ID> --log-from origin/<branch>
+  --json` on the branch the run would merge. The gate counts **every**
+  departure the entry records and honours no closing line: only a human
+  closes a deviation, and the only parties who could have written one on that
+  branch are the worker and the disposition agent, both under review. So a
+  departure an agent already fixed halts too, recorded as fixed in the
+  addendum — the halt is what hands the accept-or-fix decision to the person
+  who owns the outcome. A deviations fact that is missing, the wrong type,
+  negative or about another ticket halts on the contradiction condition like
+  every other unreadable resolve fact, and a command that exited nonzero is
+  never read as a count of 0: an unreadable status log is not "no
+  deviations". § "Resuming after a halt" carries the recovery;
 - on **reviewer-spawn failure after the sanctioned fallback also fails** —
   the script's own hiring, for the review and the re-review alike; the
   ticket's branch stays pushed and unmerged;
@@ -671,7 +692,14 @@ in this mode. It carries:
   names) — a defect neither fixed nor handed to someone is one the project
   has forgotten, and this is the last place a human sees it;
 - when step 3 proceeded on a protection waiver, that fact, right under the
-  never-squash line.
+  never-squash line;
+- **a closing request to the human, under its own heading**: *what did you
+  find here that no gate had surfaced?* — and the ask to record the answer as
+  a dated addendum beneath this run's record in `epics/<name>/runs.md`,
+  **including when the answer is "none found"**. The retro reads that
+  addendum; an absent one is indistinguishable from a zero, so the two have to
+  be written differently. This is the only measurement of what the run's gates
+  missed, and the human is the only observer of it.
 
 `ticketRecords` indexes those facts; the committed status log and its
 addenda are what travel in this pull request, so where the two differ the
@@ -739,6 +767,38 @@ agent may write. That second refusal is why a halted ticket carrying a
 departure comes back here at all: nobody in an unattended run could have
 written that line. Once the board reads `integrated`, re-run
 `/flow:run <epic>`.
+
+**A halt on a recorded deviation** is that shape with the decision named up
+front: the ticket is `done`, its branch is pushed with its entry and its
+committed addendum, and the run stopped at the resolve step because the entry
+records a departure. Read them off the branch the run would have merged —
+the checkout is not the evidence, and the fetch is what makes the
+remote-tracking ref current:
+
+```bash
+git fetch origin --prune
+node "${CLAUDE_PLUGIN_ROOT}/scripts/tickets.mjs" deviations <ID> --log-from origin/<id lowercased>
+```
+
+It prints every departure the ticket's own entries record with its reference
+(`<ID>` when that entry recorded one, `<ID>.1`, `<ID>.2` … when it recorded
+several), each closed one with its closing line, and a `note:` for any
+closing line that closed nothing. **Decide each one: accept it, or have it
+fixed.** Then finish that one ticket by hand — `/flow:ticket <ID>`, exactly
+as shape 2 says — and its step 10 is where both recoveries land: it shows
+every departure and refuses the merge until `open` is 0, and a worker fixing
+one builds it as new commits on the branch with a dated addendum saying what
+it built and where. Either way it ends in a line **you** write: a dated
+`**Deviations closed:**` line in the status log on the ticket branch,
+committed and pushed, **naming the items by the references that command
+printed** and each as accepted or as fixed in `<sha>`. A bare
+`**Deviations closed:** <ID>` facing more than one open departure closes
+nothing, the command reports those departures open with a note saying so, and
+step 10 still refuses — so a recovery that ends in a bare line is not a
+recovery. No agent composes that line, not even for a departure it fixed
+itself: dictating the sentence for a worker to commit verbatim is you writing
+it; a draft handed to you for a "yes" is not. Once the line is pushed and the
+board reads `integrated`, re-run `/flow:run <epic>`.
 
 **3. A BLOCKED or ABANDONED entry** — the ticket reads `blocked`, which step
 1 refuses for its own reason: `next` never hands out a blocked ticket, so a

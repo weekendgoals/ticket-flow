@@ -186,6 +186,11 @@ test('a good run: the runner branches, Codex edits the tree, the runner commits 
   assert.match(p, /do NOT run `git checkout`, `git add`, `git commit` or `git push`/)
   assert.match(p, /DO NOT run step 7 \(review\), step 8 \(fix and addendum\) or step 10/)
   assert.match(p, /REPORT THE REVIEW TIER/)
+  // The same sentence the driver's Claude worker gets: this runner builds its
+  // own prompt, and a worker that closed its own departure would clear the
+  // one gate nobody in an unattended run can stand in for.
+  assert.match(p, /`\*\*Deviations closed:\*\*` line that closes one is never yours to write/)
+  assert.match(p, /halts before the merge on every `\*\*Deviation:\*\*` line your entry carries, closed or not/)
   assert.match(p, /worker:R-1/)
   assert.match(p, /toward the default branch \(main\)/)
 })

@@ -556,6 +556,39 @@ is noise. The rule generalises: a refusal's advertised recovery has to work in
 the refused state, which is only knowable by reading the refusal from inside
 it.
 
+**The unattended run does not read the closing line at all.** The attended
+doors honour it; the driver's gate counts every `**Deviation:**` line the
+pushed entry carries and ignores closure entirely. That is not two rules, it
+is one rule applied to two rooms. A closing line is a human's, and the
+question a gate can actually answer is *could a human have written this one?*
+At an attended door the answer is yes by construction — a human is in the
+room. In an unattended run the only parties with commit access to that branch
+between the worker's first commit and the merge are the worker and the
+disposition agent, both of them the party under review; a gate that honoured
+their line would let the reviewed party clear its own gate, and "accepted"
+versus "fixed in `<sha>`" is prose no parser can police. The driver also only
+ever gates a ticket it started in the same pass — it refuses an epic holding
+an in-progress ticket, and a halted ticket is finished by hand and never
+re-gated — so there is no case where a legitimately human line is sitting on
+that branch at resolve time and being ignored.
+
+The price is exact and worth naming: a run halts on a departure an agent has
+already fixed. That is the reversal clause's subject rather than a defect —
+if every such halt is closed as "accepted" with nothing changed, the halt
+bought nothing and goes. What the halt is not allowed to be is quiet: a
+deviations fact the gate cannot read halts on the contradiction condition,
+like every other unreadable fact at that step, because the one direction this
+report can lie in is "none recorded", and a gate that read a failed command as
+zero would merge precisely the ticket it exists to hold.
+
+Its position follows from the recovery rather than from the risk. The halt
+fires at the resolve step — after the review, after the disposition's
+addendum, before any agent that could merge exists — because recovery from
+any halt runs through the ticket skill's step 10, which needs the review on
+the record; halting before the reviewer was hired would leave a human hiring
+one by hand. The cost of waiting is one review the human may end up
+discarding; the cost of halting early is a recovery that does not work.
+
 The same test decides **what a gate may read**. The parser reports both the
 departures and the notes a closing line earns when it closes nothing, and the
 attended doors show both — a note is how a human learns that someone tried to
@@ -772,6 +805,19 @@ project's defect at all; it is a ticket for the plugin's own repository.
 Both are flagged transferable for the same reason the transferable planning
 lessons are: the epic that paid for the lesson is rarely the one that can
 act on it.
+
+The eighth question asks the only thing no gate can observe: what the human
+found at the release pull request that nothing upstream had surfaced. Every
+other question mines a record some agent wrote; this one has a single
+observer, and they see it at the one moment the whole epic is in front of
+them. So the run skill's pull request body asks for the answer as a dated
+addendum beneath the run's record, and the question insists it be written
+down **even when it is "none found"** — because an absent record and a zero
+are the same silence, and a measure that cannot distinguish them measures
+nothing. This is how the deviation routing's own Outcome is read: departures
+found at that pull request which were written anywhere but a `**Deviation:**`
+line are the number the epic said it would move, and nobody but the human at
+that gate can count them.
 
 Three constraints keep it honest. The mining runs in a fresh-context agent
 (user request at the autonomous epic's retro, 2026-08-08): the invoking

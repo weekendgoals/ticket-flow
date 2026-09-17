@@ -8,6 +8,47 @@ with one version and date.
 
 ## Unreleased
 
+- **An unattended run halts on a recorded deviation, and honours no closing
+  line** (`workflows/run-epic.mjs`, `skills/run/SKILL.md` step 5 and its
+  after-a-halt procedure, `skills/retro/SKILL.md`, `scripts/runners/codex.mjs`,
+  README, METHODOLOGY; `check-invariants.mjs` pins the stop sentence whole
+  across the skill and the script). The driver's resolve step — read-only,
+  after the review and before any agent that could merge exists — now reads a
+  fifth fact: `tickets.mjs deviations <ID> --log-from origin/<branch> --json`
+  on the branch it would merge. Its own subcommand and its own flag,
+  deliberately: `find --from` means "the epic's declarations as signed off"
+  and is already read beside it for the ticket budget, so one low-effort
+  proxy holding two JSONs with shared field names is exactly how a deviation
+  gate ends up reading a budget document as "no deviations". The gate counts
+  `count` — **every `**Deviation:**` line the entry records, closed or not** —
+  and never `open`: in an unattended run the only parties who could have
+  written a closing line on that branch are the worker and the disposition
+  agent, both the party under review, and "accepted" versus "fixed in `<sha>`"
+  is prose no parser can police. So a departure an agent already fixed halts
+  too, recorded as fixed in its addendum; the halt is the mechanism working,
+  and its cost is what this epic's reversal clause measures. A deviations fact
+  that is missing, the wrong type, negative or about another ticket halts on
+  the contradiction condition like every other unreadable resolve fact, and a
+  command that exited nonzero is never read as a count of 0 — an unreadable
+  status log is not "no deviations", the one direction this report can lie in.
+  The worker and disposition prompts (the driver's, and the Codex runner's own
+  worker prompt) now say the closing line is not theirs to write, for any
+  departure including one they fixed. The run skill carries the stop sentence
+  word for word and the recovery that works in the refused state: read the
+  departures off the pushed branch, decide each, finish the ticket by hand
+  through `/flow:ticket <ID>` — whose step 10 refuses until `open` is 0 — with
+  a dated `**Deviations closed:**` line **naming the items** by the references
+  the command printed, then re-run `/flow:run <epic>`. The run record carries
+  `deviationsRecorded` and `deviationsOpen` per ticket.
+- **The retro asks what the release pull request caught that no gate did**
+  (`skills/retro/SKILL.md`, now eight questions; `skills/run/SKILL.md` step
+  7). The release pull request body asks the human to record what they found
+  that nothing upstream had surfaced, as a dated addendum beneath the run's
+  record in `runs.md`, **including when the answer is "none found"** — an
+  absent record and a zero are the same silence, and this is the only
+  measurement of what the gates missed. The halt question also files a
+  deviation halt under **plan** when the ticket's documents could not be built
+  as written and **work** otherwise, and records what the human decided.
 - **A deviation reaches the human at every attended door, and an unclosed one
   stops a release integration** (`skills/ticket/SKILL.md` steps 9 and 10,
   `skills/quick/SKILL.md` step 7, README, METHODOLOGY;
