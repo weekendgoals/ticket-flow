@@ -384,6 +384,11 @@ const PHRASES = [
     files: ['ticket', 'quick'],
   },
   {
+    why: "every note either ledger emits is cleared by the repair it names — the parser that emits them, the lane that teaches a worker to write the lines that earn them, and README's account of both ledgers. The rule is only worth anything if all three agree: a document that keeps the old story ('any item of that entry clears it') sends a human to a repair that leaves the warning standing, and an append-only log cannot take the wrong line back, so the next reader learns to skip warnings instead",
+    re: /cleared by the repair it names/i,
+    files: ['script', 'ticket', 'readme'],
+  },
+  {
     why: "the closing line's granularity — a bare closing line closes an entry's one departure and closes nothing against several, so both lanes that teach a human the line, the parser that reads it and README's account of it must carry the same rule. A document that keeps the whole-entry story teaches a human to write a line that silently closes departures nobody decided on — which is the loss the owed ledger already took, one indirection away",
     re: /bare closing line/i,
     files: ['script', 'ticket', 'quick', 'readme'],

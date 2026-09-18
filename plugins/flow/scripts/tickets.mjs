@@ -547,7 +547,7 @@ const owedUnknownItemNote = (ref, id, items) =>
   `\`**Resolves owed:** ${ref}\` names no item: ${id} records ${items.length}${
     items.length ? ` (\`${items.map((o) => o.id).join('`, `')}\`)` : ''
   } above that line, so nothing was retired. ` +
-  `Correct the number in a new dated addendum — the log is append-only, so the wrong line stays and the right one goes underneath it.`
+  `Write the reference again correctly in a new dated addendum — the log is append-only, so the wrong line stays and the right one goes underneath it, and a line below it naming one of ${id}'s items clears this note.`
 
 // Every **Owed:** block in a status log, whether or not anything resolved it:
 // { id, date, line, lead, items: [{ text, line }] } per block, in document
@@ -688,20 +688,36 @@ function parseOwed(epic) {
   if (!epic.statusDoc) return { owed: [], notes: [] }
   const byEntry = owedByEntry(owedBlocks(epic.statusDoc))
   const refs = owedResolutions(epic.statusDoc)
+  // A reference that names one of the entry's items, recorded ABOVE the line
+  // the reference sits on. Position is time for a dotted reference too: an item
+  // recorded BELOW it was not what its writer discharged. The bare ID of an
+  // entry that recorded a single item is that item's identity, so it matches
+  // here too — that is what gives a lone item's miscount an exit at all.
+  // Membership is tested against the entry's own items rather than a scan of
+  // every reference, so this stays linear as the append-only log grows.
+  const namesItemAbove = (r) => (byEntry.get(r.ref.split('.')[0]) || []).some((o) => o.id === r.ref && o.line < r.line)
   // An entry someone has already addressed item by item: that writer has moved
   // to the form the note asks for, so it supersedes any bare line above it.
-  // This is what makes the note clearable by the repair it names — the only
-  // other exit would be naming items that are still open, which is exactly the
-  // silent retirement the bare-marker rule exists to prevent. Only a reference
-  // that MATCHES an item counts: a mistyped `<ID>.7` retired nothing, so
-  // letting it clear the note would trade one silent line for another.
-  // Position is time for a dotted reference too: an item recorded BELOW it
-  // was not what its writer discharged, so it neither resolves nor counts as
-  // the itemisation that supersedes a bare marker. Membership is tested
-  // against the entry's own items rather than a scan of every reference, so
-  // this stays linear as the append-only log grows.
-  const itemAbove = (r) => (byEntry.get(r.ref.split('.')[0]) || []).some((o) => o.id === r.ref && o.line < r.line)
-  const itemised = new Set(refs.filter((r) => r.ref.includes('.') && itemAbove(r)).map((r) => r.ref.split('.')[0]))
+  // Only a reference that MATCHES an item counts: a mistyped `<ID>.7` retired
+  // nothing, so letting it clear the note would trade one silent line for
+  // another.
+  const itemised = new Set(refs.filter((r) => r.ref.includes('.') && namesItemAbove(r)).map((r) => r.ref.split('.')[0]))
+  // The last line on which a reference named one of an entry's items correctly.
+  // Every note here is cleared by the repair it names, and this is the repair
+  // the wrong-reference note names: write the reference again correctly,
+  // underneath. BELOW the faulty line, because the log is append-only and
+  // position is time — a correct reference written earlier is not a correction
+  // of a later mistake, and clearing on one would take away the only feedback a
+  // miscount gets while the item it meant is still open. The two rules differ on
+  // purpose: a BARE marker is ambiguous about *which* items it discharged, so
+  // any itemised line for that entry answers it wherever it sits (`itemised`
+  // above), while a wrong reference is one specific mistake, so only a later
+  // line can be its correction. An item already retired still counts — the
+  // writer's correction may name the very one they meant.
+  const correctedAt = new Map()
+  for (const r of refs)
+    if (namesItemAbove(r)) correctedAt.set(r.ref.split('.')[0], Math.max(correctedAt.get(r.ref.split('.')[0]) ?? 0, r.line))
+  const corrected = (entry, line) => (correctedAt.get(entry) ?? 0) > line
   const resolved = new Set()
   const notes = []
   const noted = new Set()
@@ -721,7 +737,7 @@ function parseOwed(epic) {
     if (ref.includes('.')) {
       const above = items.filter((o) => o.line < line)
       if (above.some((o) => o.id === ref)) resolved.add(ref)
-      else if (!noted.has(ref)) {
+      else if (!noted.has(ref) && !corrected(entry, line)) {
         noted.add(ref)
         notes.push(owedUnknownItemNote(ref, entry, above))
       }
@@ -828,12 +844,12 @@ const deviationUnknownItemNote = (ref, id, items) =>
   `A \`**Deviations closed:**\` line whose reference \`${ref}\` names no deviation: ${id} records ${items.length}${
     items.length ? ` (\`${items.map((d) => d.item).join('`, `')}\`)` : ''
   } above that line, so nothing was closed. ` +
-  `Correct the number in a new dated line — the log is append-only, so the wrong line stays and the right one goes underneath it.`
+  `Write the reference again correctly in a new dated line — the log is append-only, so the wrong line stays and the right one goes underneath it, and a line below it naming one of ${id}'s deviations clears this note.`
 
 const deviationBadRefNote = (ref, id) =>
   `A \`**Deviations closed:**\` line names \`${ref}\`, and an ID has to end where the reference ends: \`${id}\` and \`${ref}\` are different names, so it closes nothing. ` +
   `Reading the prefix instead would close a deviation nobody named — the same silent discharge the owed ledger's \`F-2oops\` taught. ` +
-  `Write the reference again correctly in a new dated line.`
+  `Write the reference again correctly in a new dated line; a line below it naming one of ${id}'s deviations clears this note.`
 
 // The next bolded FIELD — `**Owed:**`, `**Decisions:**`, a dated
 // `**Addendum — … :**` — which is where a deviation paragraph stops when no
@@ -928,14 +944,34 @@ function parseDeviationsText(text) {
   for (const [id, items] of byEntry) items.forEach((d, i) => (d.item = items.length > 1 ? `${id}.${i + 1}` : id))
 
   const refs = closings.flatMap((cl) => closingRefs(cl.text).ok.map((ref) => ({ ref, line: cl.line })))
+  // A reference that names one of the entry's deviations, recorded ABOVE the
+  // closing line it sits on. The bare ID of an entry that recorded a single
+  // departure is that departure's identity, so it matches here too — which is
+  // what gives a lone departure's miscount an exit at all: no dotted reference
+  // can ever be valid for such an entry.
+  const namesItemAbove = (r) => (byEntry.get(r.ref.split('.')[0]) || []).some((d) => d.item === r.ref && d.line < r.line)
   // An entry someone has already closed item by item: that writer has moved to
-  // the form the note asks for, so it supersedes any bare line above it, and the
-  // note it earned is cleared by exactly the repair the note names. Only a
+  // the form the note asks for, so it supersedes any bare line above it. Only a
   // reference that MATCHES a deviation recorded above it counts — a mistyped
   // `<ID>.7` closed nothing, and letting it clear the note would trade one
   // silent line for another.
-  const itemAbove = (r) => (byEntry.get(r.ref.split('.')[0]) || []).some((d) => d.item === r.ref && d.line < r.line)
-  const itemised = new Set(refs.filter((r) => r.ref.includes('.') && itemAbove(r)).map((r) => r.ref.split('.')[0]))
+  const itemised = new Set(refs.filter((r) => r.ref.includes('.') && namesItemAbove(r)).map((r) => r.ref.split('.')[0]))
+  // The last line on which a reference named one of an entry's deviations
+  // correctly — the same ledger `parseOwed` keeps, for the same reason. Every
+  // note is cleared by the repair it names, and the repair the wrong-reference
+  // and malformed-reference notes name is "write the reference again correctly,
+  // underneath": BELOW the faulty line, because the log is append-only and
+  // position is time, so a correct reference written earlier is not a correction
+  // of a later mistake. The bare-line note's rule differs on purpose and is
+  // unchanged: a bare line is ambiguous about *which* departures it decided, so
+  // any itemised line for that entry answers it wherever it sits, while a wrong
+  // reference is one specific mistake and only a later line can be its
+  // correction. A deviation already closed still counts — the writer's
+  // correction may name the very one they meant.
+  const correctedAt = new Map()
+  for (const r of refs)
+    if (namesItemAbove(r)) correctedAt.set(r.ref.split('.')[0], Math.max(correctedAt.get(r.ref.split('.')[0]) ?? 0, r.line))
+  const corrected = (entry, line) => (correctedAt.get(entry) ?? 0) > line
   const closed = new Map()
   const notes = []
   const noted = new Set()
@@ -947,7 +983,7 @@ function parseDeviationsText(text) {
       // for the reason a cross-epic reference is not flagged: a note on a line
       // this log cannot judge would be permanent and unfixable here.
       const id = ref.match(new RegExp(`^${TICKET_ID}`, 'i'))[0].toUpperCase()
-      if (!byEntry.has(id) || noted.has(ref)) continue
+      if (!byEntry.has(id) || noted.has(ref) || corrected(id, cl.line)) continue
       noted.add(ref)
       notes.push({ entry: id, note: deviationBadRefNote(ref, id) })
     }
@@ -966,7 +1002,7 @@ function parseDeviationsText(text) {
         if (above.some((d) => d.item === ref)) {
           if (!closed.has(ref)) closed.set(ref, cl.text)
         }
-        else if (!noted.has(ref)) {
+        else if (!noted.has(ref) && !corrected(id, cl.line)) {
           noted.add(ref)
           notes.push({ entry: id, note: deviationUnknownItemNote(ref, id, above) })
         }
