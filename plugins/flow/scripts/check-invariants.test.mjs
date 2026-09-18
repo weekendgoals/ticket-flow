@@ -264,6 +264,43 @@ test('the run skill drifting from the fix-bounds stop condition fails', () => {
   assert.match(t.out, /run\/SKILL\.md.*fix-bounds stop condition/s)
 })
 
+test('the run skill losing the merge-conflict stop condition fails', () => {
+  // Deleted once for real: an edit adding a bullet beside it replaced it
+  // instead, while `STOP.mergeConflict` stayed live at three call sites — so
+  // a halt quoted a string the skill's list no longer carried.
+  const skill = copyRepo()
+  mutate(skill, 'plugins/flow/skills/run/SKILL.md', '- on **a merge conflict — refreshing the epic branch, or anywhere else,\n  including a ticket branch that will not merge into the epic branch**;\n', '')
+  const s = run(skill)
+  assert.equal(s.status, 1, s.out)
+  assert.match(s.out, /run\/SKILL\.md.*merge-conflict stop condition/s)
+})
+
+test('the workflow script losing the deviation stop condition fails', () => {
+  const root = copyRepo()
+  mutate(root, 'plugins/flow/workflows/run-epic.mjs', 'a recorded deviation — the ticket', 'a recorded departure — the ticket')
+  const r = run(root)
+  assert.equal(r.status, 1, r.out)
+  assert.match(r.out, /run-epic\.mjs.*deviation stop condition/s)
+})
+
+test('the run skill drifting from the deviation stop condition fails, including its "closed or not" clause', () => {
+  const root = copyRepo()
+  mutate(root, 'plugins/flow/skills/run/SKILL.md', 'the run asks rather than records', 'the run records rather than asks')
+  const r = run(root)
+  assert.equal(r.status, 1, r.out)
+  assert.match(r.out, /run\/SKILL\.md.*deviation stop condition/s)
+  // Pinned whole: "closed or not" is the clause that makes this gate differ
+  // from the attended one, and a copy that softened it would describe a gate
+  // honouring a closing line this one ignores — the fail-open the halt exists
+  // to prevent. The skill wraps the sentence, so the mutation target stops at
+  // the wrap; the checker matches across it because it normalises whitespace.
+  const clause = copyRepo()
+  mutate(clause, 'plugins/flow/skills/run/SKILL.md', '`**Deviation:**` line, closed or not, because nobody present in an', '`**Deviation:**` line no human has closed, because nobody present in an')
+  const c = run(clause)
+  assert.equal(c.status, 1, c.out)
+  assert.match(c.out, /run\/SKILL\.md.*deviation stop condition/s)
+})
+
 test('either document dropping the never-resume-by-id rule fails', () => {
   // The rule lives at two doors: the run skill, where a human meets the halt,
   // and METHODOLOGY, which says why the cache makes a resume a lie. Losing

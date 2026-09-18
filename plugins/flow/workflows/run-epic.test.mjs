@@ -116,13 +116,23 @@ const dispFixed = {
 // `origin/epic/<name>` before the merge, so every resolve stub carries the
 // field the way the real command prints it — null when the epic declares no
 // `Ticket budget:` line.
+// The departures the pushed entry records, read at the same step through the
+// deviations subcommand and its own `--log-from` flag. `count` is what the
+// gate reads — every `**Deviation:**` line, closed or not — and `open` is
+// recorded beside it and decides nothing.
+const deviationsNone = (id = 'PAY-1') => ({ commandSucceeded: true, ticket: id, count: 0, open: 0, failure: '' })
 const resolvedOk = {
   outcome: 'resolved',
   addendumMatches: 1,
   headSha: 'beefc0ffee42',
   ticketBudget: null,
+  deviations: deviationsNone(),
   detail: '',
 }
+// The same clean report for a ticket other than PAY-1: the gate refuses a
+// deviations fact about a different ticket, so a multi-ticket stub cannot
+// reuse PAY-1's.
+const resolvedFor = id => ({ ...resolvedOk, deviations: deviationsNone(id) })
 const resolvedWithBudget = n => ({ ...resolvedOk, ticketBudget: n })
 const acceptOk = { outcome: 'ran', total: 2, passed: 2, skipped: 0, allPassed: true, problems: 0, failures: [], detail: '' }
 const acceptNone = { outcome: 'ran', total: 0, passed: 0, skipped: 0, allPassed: true, problems: 0, failures: [], detail: '' }
@@ -158,7 +168,7 @@ test('the happy path runs refresh+select -> worker -> review -> disposition -> a
     if (label.startsWith('review:')) return reviewClean
     if (label.startsWith('disposition:')) return dispClean
     if (label.startsWith('accept:')) return acceptOk
-    if (label.startsWith('resolve:')) return resolvedOk
+    if (label.startsWith('resolve:')) return resolvedFor(label.split(':')[1])
     if (label.startsWith('merge:')) return mergedOk
     if (label.startsWith('verify:')) return integratedOk
   })
@@ -555,6 +565,190 @@ test('an unusable head SHA halts with no merge agent ever spawned, and never rea
   }
 })
 
+// ---- the deviation gate -----------------------------------------------------
+
+const STOP_DEVIATION =
+  "a recorded deviation — the ticket's pushed status entry carries a `**Deviation:**` line, closed or not, because nobody present in an unattended run could have closed it; the run asks rather than records"
+const STOP_CONTRADICTION = "a document/code contradiction — reported by a worker, or met by the script's own checks"
+const deviations = over => ({ ...resolvedOk, deviations: { ...deviationsNone(), ...over } })
+
+test('a deviation recorded on the pushed branch halts before any merge agent exists, on its own stop string', async () => {
+  const r = await drive(oneTicket({ 'resolve:PAY-1': deviations({ count: 1, open: 1 }) }))
+  assert.equal(r.out.outcome, 'halted')
+  // The whole sentence, not a prefix: "closed or not" is what separates this
+  // gate from the attended one, and a retro reading only the opening would
+  // file the halt as something the closing line could have prevented.
+  assert.equal(r.out.haltedOn.stopCondition, STOP_DEVIATION)
+  assert.equal(r.out.haltedOn.ticket, 'PAY-1')
+  assert.match(r.out.haltedOn.detail, /records 1 `\*\*Deviation:\*\*` line/)
+  assert.match(r.out.haltedOn.detail, /Nothing merged/)
+  // The recovery the halt advertises is the one that works in the refused
+  // state: read them off the pushed branch, then finish the ticket by hand.
+  assert.match(r.out.haltedOn.detail, /deviations PAY-1 --log-from origin\/pay-1/)
+  assert.match(r.out.haltedOn.detail, /Resuming after a halt/)
+  assert.ok(!r.labels.some(l => l.startsWith('merge:') || l.startsWith('verify:')))
+  const rec = r.out.ticketRecords[0]
+  assert.equal(rec.deviationsRecorded, 1)
+  assert.equal(rec.deviationsOpen, 1)
+  assert.equal(rec.result, 'halted')
+})
+
+test('the deviation gate fires after the review, the addendum and the acceptance checks', async () => {
+  // Decision 4: recovery from any halt runs through the ticket skill's step
+  // 10, which needs the review on the record — so this halt waits for it.
+  const r = await drive(oneTicket({ 'resolve:PAY-1': deviations({ count: 2, open: 2 }) }))
+  assert.equal(r.out.haltedOn.stopCondition, STOP_DEVIATION)
+  assert.deepEqual(r.labels, ['refresh+select:1', 'worker:PAY-1', 'tier-facts:PAY-1', 'review:PAY-1', 'disposition:PAY-1', 'accept:PAY-1', 'resolve:PAY-1'])
+  assert.equal(r.out.ticketRecords[0].acceptanceAllPassed, true)
+  assert.equal(r.out.ticketRecords[0].addendumMatches, 1)
+})
+
+test('a closing line on the pushed branch does not clear the gate — the count is what it reads', async () => {
+  // Every deviation closed, by the log's own account. In an unattended run
+  // the only parties who could have written that line are the worker and the
+  // disposition agent, both under review, so `open` decides nothing here.
+  const r = await drive(oneTicket({ 'resolve:PAY-1': deviations({ count: 3, open: 0 }) }))
+  assert.equal(r.out.outcome, 'halted')
+  assert.equal(r.out.haltedOn.stopCondition, STOP_DEVIATION)
+  assert.match(r.out.haltedOn.detail, /records 3 `\*\*Deviation:\*\*` line/)
+  assert.match(r.out.haltedOn.detail, /3 of them already carrying a closing line, which this gate does not honour/)
+  assert.ok(!r.labels.some(l => l.startsWith('merge:')))
+  const rec = r.out.ticketRecords[0]
+  assert.equal(rec.deviationsRecorded, 3)
+  assert.equal(rec.deviationsOpen, 0)
+})
+
+test('a ticket whose entry records no deviation passes the gate untouched', async () => {
+  const r = await drive(oneTicket())
+  assert.equal(r.out.outcome, 'completed', JSON.stringify(r.out.haltedOn))
+  assert.equal(r.out.ticketRecords[0].deviationsRecorded, 0)
+  assert.equal(r.out.ticketRecords[0].deviationsOpen, 0)
+  assert.equal(r.out.ticketRecords[0].result, 'integrated')
+})
+
+test('a deviations fact the gate cannot read halts on the contradiction condition, never as "none recorded"', async () => {
+  const cases = [
+    [{ outcome: 'resolved', addendumMatches: 1, headSha: 'beefc0ffee42', ticketBudget: null, detail: '' }, /no `deviations` fact at all/, 'missing'],
+    [deviations({ commandSucceeded: false, count: 0, failure: 'exit 1: cannot read epics/payments/status.md from ref "origin/pay-1"' }), /did not succeed/, 'command failed'],
+    [deviations({ count: '2' }), /`count` is not a count/, 'a string count'],
+    [deviations({ count: -1 }), /`count` is not a count/, 'a negative count'],
+    [deviations({ count: 1.5 }), /`count` is not a count/, 'a fractional count'],
+    [{ ...resolvedOk, deviations: { commandSucceeded: true, ticket: 'PAY-1', open: 0 } }, /`count` is not a count/, 'no count at all'],
+    [deviations({ ticket: 'PAY-9', count: 0 }), /names ticket .*PAY-9.* rather than PAY-1/s, "another ticket's log"],
+    [{ ...resolvedOk, deviations: 'none' }, /no `deviations` fact at all/, 'a fact that is not an object'],
+  ]
+  for (const [resolve, re, what] of cases) {
+    const r = await drive(oneTicket({ 'resolve:PAY-1': resolve }))
+    assert.equal(r.out.outcome, 'halted', what)
+    assert.equal(r.out.haltedOn.stopCondition, STOP_CONTRADICTION, what)
+    assert.match(r.out.haltedOn.detail, re, what)
+    // The whole point: an unreadable count is not zero.
+    assert.match(r.out.haltedOn.detail, /never "none recorded"/, what)
+    assert.ok(!r.labels.some(l => l.startsWith('merge:') || l.startsWith('verify:')), what)
+    assert.equal(r.out.ticketRecords[0].deviationsRecorded, null, what)
+    // Neither number reaches the record alone: a count beside a figure taken
+    // from a refused command, or from another ticket's log, is what the retro
+    // would later mine as this ticket's own.
+    assert.equal(r.out.ticketRecords[0].deviationsOpen, null, what)
+  }
+})
+
+test('a deviations report that contradicts itself halts — `open` can never exceed `count`', async () => {
+  // `open` gates nothing and is still evidence: the subcommand builds it as
+  // the unclosed subset of what `count` counts. The transposition is the
+  // shape that matters — `count 2, open 0` arriving as `count 0, open 2`
+  // would merge a ticket whose own fact says two departures exist.
+  const cases = [
+    [deviations({ count: 0, open: 2 }), /`open` 2 against `count` 0/, 'the two numbers transposed'],
+    [deviations({ count: 2, open: 5 }), /`open` 5 against `count` 2/, 'open above count'],
+    [deviations({ count: 0, open: '2' }), /`open` is not a count/, 'a string open'],
+    [deviations({ count: 0, open: -1 }), /`open` is not a count/, 'a negative open'],
+    [{ ...resolvedOk, deviations: { commandSucceeded: true, ticket: 'PAY-1', count: 0 } }, /`open` is not a count/, 'no open at all'],
+  ]
+  for (const [resolve, re, what] of cases) {
+    const r = await drive(oneTicket({ 'resolve:PAY-1': resolve }))
+    assert.equal(r.out.outcome, 'halted', what)
+    assert.equal(r.out.haltedOn.stopCondition, STOP_CONTRADICTION, what)
+    assert.match(r.out.haltedOn.detail, re, what)
+    assert.ok(!r.labels.some(l => l.startsWith('merge:') || l.startsWith('verify:')), what)
+    assert.equal(r.out.ticketRecords[0].deviationsRecorded, null, what)
+    assert.equal(r.out.ticketRecords[0].deviationsOpen, null, what)
+  }
+  // The schema says so too, so a reporter is never told the field is optional.
+  const c = call(await drive(oneTicket()), 'resolve:PAY-1')
+  assert.deepEqual(c.schema.properties.deviations.required, ['commandSucceeded', 'ticket', 'count', 'open'])
+  assert.match(c.prompt, /`open` counts the subset of `count` that no closing line closed, so it can never exceed `count`/)
+})
+
+test('the deviation gate stands ahead of the fix-bounds branch: a bounds-gated ticket with a departure still halts', async () => {
+  // Both live in the same if/else chain, so their ORDER is behaviour: below
+  // the deviation branch, a bounds-gated ticket would take the bounds path
+  // and merge. Nothing else in the suite drives a ticket that is both.
+  const r = await drive(
+    oneTicket({
+      'review:PAY-1': reviewImportant,
+      'disposition:PAY-1': dispFixed,
+      'resolve:PAY-1': { ...resolvedOk, ...resolvedOkBounds, deviations: { ...deviationsNone(), count: 2, open: 2 } },
+    }),
+  )
+  assert.equal(r.out.outcome, 'halted')
+  assert.equal(r.out.haltedOn.stopCondition, STOP_DEVIATION)
+  assert.ok(!r.labels.some(l => l.startsWith('merge:') || l.startsWith('verify:')))
+  // The bounds branch never ran: its measurement is not what stopped this.
+  assert.equal(r.out.ticketRecords[0].fixBoundsGated, true)
+  assert.equal(r.out.ticketRecords[0].fixLines, null)
+  assert.equal(r.out.ticketRecords[0].fixBoundsTripped, false)
+})
+
+test("a failed deviations command is quoted fenced, and the agent's words never arrive as instructions", async () => {
+  const r = await drive(
+    oneTicket({ 'resolve:PAY-1': deviations({ commandSucceeded: false, count: 0, failure: 'exit 1: fetch the ref, or check its name' }) }),
+  )
+  assert.match(r.out.haltedOn.detail, /<<<UNTRUSTED[\s\S]*fetch the ref, or check its name/)
+})
+
+test('the resolve prompt reads the departures through their own subcommand and flag, never through find --from', async () => {
+  const c = call(await drive(oneTicket()), 'resolve:PAY-1')
+  const p = c.prompt
+  // Required, like the ceiling and for the same reason: a fact the gate needs
+  // is not an optional extra, and a schema that lets it go missing invites a
+  // report the gate then has to refuse.
+  assert.ok(c.schema.required.includes('deviations'), 'the resolve schema requires the deviations fact')
+  assert.deepEqual(c.schema.properties.deviations.required, ['commandSucceeded', 'ticket', 'count', 'open'])
+  assert.match(p, /FACT 4 — the departures PAY-1's own entries record/)
+  assert.match(p, /tickets\.mjs" deviations PAY-1 --log-from origin\/pay-1 --json/)
+  // Two reads, two commands, two flags: `--from` is the epic's declarations
+  // as signed off, `--log-from` is a status log off a pushed branch. One
+  // low-effort proxy holds both JSONs, and swapping them is how a deviation
+  // gate reads a budget document as "no deviations".
+  assert.doesNotMatch(p, /deviations PAY-1 --from /)
+  assert.match(p, /A different command from FACT 3's, with a different flag/)
+  assert.match(p, /shares no field name/)
+  // The one direction the report can lie in.
+  assert.match(p, /\*\*Never report a failure as a count of 0\*\*/)
+  assert.match(p, /an unreadable status log is not "no deviations"/)
+  // The branch was fetched in FACT 1; the log is read at the merged commit.
+  const fetchAt = p.indexOf('git fetch origin pay-1')
+  const readAt = p.indexOf('deviations PAY-1 --log-from origin/pay-1')
+  assert.ok(fetchAt !== -1 && fetchAt < readAt, 'the branch fetch precedes the log read')
+  assert.match(p, /never the checkout/)
+})
+
+test('the worker and disposition prompts both say the closing line is not theirs to write', async () => {
+  const r = await drive(oneTicket({ 'review:PAY-1': reviewImportant, 'disposition:PAY-1': dispFixed, 'resolve:PAY-1': { ...resolvedOk, ...resolvedOkBounds } }))
+  const worker = call(r, 'worker:PAY-1').prompt
+  assert.match(worker, /goes on its own `\*\*Deviation:\*\*` line/)
+  assert.match(worker, /`\*\*Deviations closed:\*\*` line that closes one is never yours to write/)
+  assert.match(worker, /including one you fixed yourself in this ticket/)
+  assert.match(worker, /halts before the merge on every `\*\*Deviation:\*\*` line your entry carries, closed or not/)
+  const disp = call(r, 'disposition:PAY-1').prompt
+  assert.match(disp, /A deviation this ticket recorded is not yours to close/)
+  assert.match(disp, /never write a `\*\*Deviations closed:\*\*` line/)
+  // The half a fixer most needs: fixing it does not clear the halt.
+  assert.match(disp, /a departure an agent already fixed halts exactly the same way/)
+  assert.match(disp, /say so in the addendum/)
+})
+
 test('a resolve step that cannot read the repository halts without merging', async () => {
   const failed = await drive(oneTicket({ 'resolve:PAY-1': { outcome: 'command-failed', detail: 'gh: not authenticated' } }))
   assert.match(failed.out.haltedOn.stopCondition, /^a nonzero exit from any command/)
@@ -618,9 +812,11 @@ test('at the consequence tier, fix commits earn exactly one re-review, and a cle
   // request rides the first review only.
   assert.doesNotMatch(p, /Report `reviewedHead`/)
   // With the re-review standing guard, the resolve step carries no fix-bounds
-  // fact (FACT 4); FACT 3, the epic's ceiling, is asked for unconditionally.
-  assert.doesNotMatch(call(r, 'resolve:PAY-1').prompt, /FACT 4/)
+  // fact (FACT 5); FACT 3, the epic's ceiling, and FACT 4, the departures the
+  // entry records, are asked for unconditionally.
+  assert.doesNotMatch(call(r, 'resolve:PAY-1').prompt, /FACT 5/)
   assert.match(call(r, 'resolve:PAY-1').prompt, /FACT 3 — the epic's per-ticket token ceiling/)
+  assert.match(call(r, 'resolve:PAY-1').prompt, /FACT 4 — the departures PAY-1's own entries record/)
 })
 
 test('below the consequence tier, fixes skip the re-review and are bounds-checked in code at the resolve step', async () => {
@@ -643,7 +839,7 @@ test('below the consequence tier, fixes skip the re-review and are bounds-checke
   const p = call(r, 'resolve:PAY-1').prompt
   // The bounds commands are anchored on the code-verified reviewed head and
   // exclude the epics/ addendum commit; the resolve agent judges nothing.
-  assert.match(p, /FACT 4/)
+  assert.match(p, /FACT 5/)
   assert.match(p, /git diff --name-only origin\/epic\/payments abc1234def0 -- ':\(exclude\)epics'/)
   assert.match(p, /git diff --numstat abc1234def0 origin\/pay-1 -- ':\(exclude\)epics'/)
   assert.match(p, /the driver checks the bounds in code/i)
@@ -1302,7 +1498,7 @@ test('a board that never runs out of tickets is stopped by the run cap', async (
     if (label.startsWith('review:')) return reviewClean
     if (label.startsWith('disposition:')) return dispClean
     if (label.startsWith('accept:')) return acceptOk
-    if (label.startsWith('resolve:')) return { ...resolvedOk, headRefName: label.split(':')[1].toLowerCase() }
+    if (label.startsWith('resolve:')) return { ...resolvedFor(label.split(':')[1]), headRefName: label.split(':')[1].toLowerCase() }
     if (label.startsWith('merge:')) return mergedOk
     if (label.startsWith('verify:')) return integratedOk
   })
@@ -1521,7 +1717,7 @@ test('budget re-read: a resolve report with a malformed budget halts before the 
   // A report missing the field entirely is the same class: the run cannot say
   // what ceiling is in force, so it does not fall back to the launch value.
   const missing = await drive(
-    oneTicket({ 'resolve:PAY-1': { outcome: 'resolved', addendumMatches: 1, headSha: 'beefc0ffee42', detail: '' } }),
+    oneTicket({ 'resolve:PAY-1': { outcome: 'resolved', addendumMatches: 1, headSha: 'beefc0ffee42', deviations: deviationsNone(), detail: '' } }),
     { ...ARGS, ticketBudget: 50000 },
     meter(1000),
   )
