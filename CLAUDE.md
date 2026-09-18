@@ -21,19 +21,19 @@ go through the flow, one-off work goes through `/flow:quick` into
 ## Commands
 
 - **Tests:** `node --test plugins/flow/scripts/tickets.test.mjs` — expect
-  every test passing (`# pass 113`, `# fail 0` as of 2026-09-18; the count
+  every test passing (`# pass 118`, `# fail 0` as of 2026-09-18; the count
   grows, the fail line does not). The suite builds a throwaway git repo in a
   temp dir; it needs `git` on PATH and nothing else. The session-guard hook
   has its own suite:
   `node --test plugins/flow/hooks/ticket-session-guard.test.mjs` (`# pass 14`
   on the same terms). The invariant checker has
-  `node --test plugins/flow/scripts/check-invariants.test.mjs` (`# pass 25`),
+  `node --test plugins/flow/scripts/check-invariants.test.mjs` (`# pass 29`),
   The board renderer has
   `node --test plugins/flow/scripts/board.test.mjs` (`# pass 9`) and the
   plan-page renderer `node --test plugins/flow/scripts/plan-page.test.mjs`
   (`# pass 8`) — both pure rendering tests over fixture JSON, no git
   needed. The fidelity differ has
-  `node --test plugins/flow/scripts/fidelity.test.mjs` (`# pass 40`) — the
+  `node --test plugins/flow/scripts/fidelity.test.mjs` (`# pass 43`) — the
   diff driven through the CLI over the committed fixture reports under
   `scripts/fixtures/fidelity/` (what a real browser returned once, from
   `design.html` and `page.html`), and the page-side extractor evaluated with
@@ -64,12 +64,13 @@ go through the flow, one-off work goes through `/flow:quick` into
   must exit 0 on this repo; mechanically verifies the string-checkable
   cross-document couplings (the status-log preamble's three copies, the run
   log's copy of its **Rules** block, the two
-  risk lists, skill heading templates against the parser regexes, the session
+  risk lists, skill heading templates against the parser regexes, the
+  `COMPARE`/`LANDMARKS` template against theirs, the session
   guard's refusal message as the ticket skill quotes it, load-bearing doctrine
   phrases). Run it whenever a skill, agent, hook or doctrine document changes —
   it is presence and equality only, so contradictions in meaning still need
   review. Its suite: `node --test plugins/flow/scripts/check-invariants.test.mjs`
-  (`# pass 25` on the same terms).
+  (`# pass 29` on the same terms).
 - **Smoke:** `node plugins/flow/scripts/tickets.mjs doctor` — must exit 0 on
   this repo. `… list` shows the board.
 - **Syntax check:** `node --check plugins/flow/scripts/tickets.mjs`, and the
@@ -131,14 +132,32 @@ test file path explicitly.
   loop's refresh in `workflows/run-epic.mjs`) is the safe direction — main is
   the source, never the target —
   and is not a merge toward main.
-- **CHECK/EXPECT acceptance criteria are one format in five documents and
-  one parser.** `tickets.mjs` parses and runs them (`check <ID>`, with
-  doctor near-miss coverage), the epic skill's template teaches them, the
-  ticket and quick skills run them, and the run driver re-runs them from
-  the signed-off document (`--from origin/epic/<name>`) as a code merge
+- **CHECK/EXPECT and COMPARE acceptance criteria are one format in five
+  documents and one parser.** `tickets.mjs` parses and runs them (`check
+  <ID>`, with doctor near-miss coverage), the epic skill's template teaches
+  them, the ticket and quick skills run them, and the run driver re-runs them
+  from the signed-off document (`--from origin/epic/<name>`) as a code merge
   gate — because the reviewed party must not edit its own gate. A format
   change moves the parser, the skills and the driver in the same commit;
   `check-invariants.mjs` holds the coupling.
+
+  **`COMPARE:` / `LANDMARKS:` are part of that one format and the part no
+  code runs**: comparing an artboard with a rendered page needs a browser,
+  and this plugin owns none — so `check` lists comparisons apart from the
+  checks, marked manual, in **neither `total` nor `passed`** (the driver
+  halts when `passed !== total`, so a compare counted there would halt every
+  COMPARE ticket), and what the code gates is the **presence** of the
+  `**Compared:**` table in the status entry. A malformed COMPARE is a ledger
+  problem and fails the gate, exactly as a malformed CHECK does.
+
+  The one sanctioned departure from "the parser, the skills and the driver
+  move in the same commit": **a criterion format may land one ticket ahead of
+  its gate within a single release epic**, on two conditions that were true
+  when `COMPARE` did it (FID-3 and FID-4) — the format and its gate reach the
+  default branch inside that epic's **one** release pull request, so no
+  window exists on `main` where the format is readable and ungated; and the
+  ungated criterion cannot green anything in the meantime, which here is the
+  compare rows staying out of the ledger's `total`, pinned by a test.
 - **The two risk lists are one list.** The quick skill's entry triggers and
   the ticket skill's `xhigh` review tier measure the same consequences at two
   doors — a trigger added to either is added to the other in the same commit.

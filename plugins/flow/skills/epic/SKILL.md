@@ -248,6 +248,9 @@ Then one section per ticket:
 - <a criterion a command can decide outright>
   CHECK: <command run from the repository root>
   EXPECT: <text its output must contain>
+- <a criterion about what the design draws — name the landmarks it is about>
+  COMPARE: <design source path, from the Design sources line> @ <width>[, <width>]
+  LANDMARKS: <name>[, <name>]
 ```
 
 Rules that matter:
@@ -289,6 +292,44 @@ Rules that matter:
   the gate, so an EXPECT a skip can match costs the run a halt. If
   verification needs something a session may not have (Docker, credentials,
   a browser), give the fallback: *"or flag it as owed to ticket X"*.
+- **A criterion about the design carries `COMPARE`, and names its
+  landmarks.** `COMPARE: <design source path> @ <width>[, <width>]`, indented
+  under its criterion bullet like `CHECK:`, with an optional
+  `LANDMARKS: <name>[, <name>]` line beneath it — absent means every landmark
+  in the map, which is the whole page. The path is one the preamble's
+  `Design sources:` line lists, and the widths are the ones the design draws
+  at. "Renders as the design draws it" is **not** a criterion: it is prose a
+  worker satisfies with the properties it already believes are right, which is
+  how nine tickets passed six gates and shipped a page missing three drawn
+  elements. Name the landmarks the ticket is about, and let the differ decide
+  the properties.
+
+  The landmarks themselves live in `epics/<name>/design-map.json` — a
+  planning document like `tickets.md`, written here and signed off with the
+  plan:
+
+  ```json
+  { "landmarks": [ { "name": "hero",
+                     "design": "<selector in the design source>",
+                     "page":   "<selector in the built page>" } ],
+    "removed":   [ { "name": "promo", "by": "<the deciding rule>",
+                     "date": "YYYY-MM-DD" } ] }
+  ```
+
+  A worker edits the `page` selectors — they are written before the page
+  exists — so **the `removed` list is planning's and nobody else's**: it is
+  read only from the signed-off ref, never from the copy riding the ticket
+  branch, because a worker who could not build an element could otherwise
+  declare it removed, get a clean diff and halt nothing. That is the founding
+  failure routed through the new machinery.
+
+  `tickets.mjs check` **never runs a COMPARE** — it has no browser. It lists
+  comparisons apart from the checks, marked manual, in neither `total` nor
+  `passed`; what runs the differ is the ticket's own verify step, and what the
+  reviewer reads is the `**Compared:**` table in the status entry. So a
+  COMPARE is not proven red the way a CHECK is (there is nothing to run); what
+  sign-off checks is that its path is declared, its widths are the design's,
+  and its landmarks are in the map.
 - **Every CHECK you write must fail on the tree before the ticket exists,
   and you prove it before sign-off.** Run each one now, on the tree as it is,
   with `node "${CLAUDE_PLUGIN_ROOT}/scripts/tickets.mjs" check <ID>`, and

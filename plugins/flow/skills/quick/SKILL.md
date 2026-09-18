@@ -130,6 +130,20 @@ pasted as the counts. A check that cannot run here is said so and recorded
 as owed; never imply it passed. A ledger line reading `↓ skipped` is one of
 those: the command exited 0 and the work it names never ran, and **a skipped
 check is not a passed one**.
+A criterion carrying a `COMPARE:` line is run here too, and the board script
+never runs one — it has no browser. Serve the design source and the built page
+with the project's own tooling, open each at every width the line names,
+evaluate `node "${CLAUDE_PLUGIN_ROOT}/scripts/fidelity.mjs" extract` in both,
+and compare the two reports with `fidelity.mjs diff … --map
+epics/<name>/design-map.json --removed-from <the signed-off map>` — read with
+`git show origin/<default-branch>:epics/<name>/design-map.json`, because a
+removal is a planning decision and the map in the tree is the one this ticket
+edits. Exit 0 is nothing differing or only declared removals, exit 1 is a
+difference, and **exit 2 is "nothing was compared", never "no differences"**.
+Paste the table into the entry's `**Compared:**` field and answer every row —
+fixed, recorded as a `**Deviation:**`, or already a declared removal. With no
+browser here, or a design nothing can render, the comparison is **owed**, said
+so, and a hand-written table is labelled as one.
 Then the **revert check**: set the source
 change aside, keep the tests, run — and name on the Verified line the test
 that **fails with the source change reverted** (`revert check: n/a,
@@ -157,7 +171,8 @@ required even when empty.
 
 The **entry** heading is parsed — match it exactly — then keep the body to
 the ticket skill's step 6 fields: **Built / Mode / Tokens / Verified /
-Decisions / Deviation (optional, one per departure) / Owed**, with `Mode:` =
+Compared (optional, required for every `COMPARE:` criterion) / Decisions /
+Deviation (optional, one per departure) / Owed**, with `Mode:` =
 `quick — in-session (/flow:quick)` and Decisions recording judgment calls, not
 narration:
 

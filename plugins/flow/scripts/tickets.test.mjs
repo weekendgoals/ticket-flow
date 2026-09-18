@@ -2274,6 +2274,64 @@ says whether anything happened.
   CHECK: node -e "console.log('TAP version 13'); console.log('1..2'); console.log('ok 1 - the integration case # SKIP no DATABASE_URL'); console.log('not ok 2 - the write fence # SKIP no DATABASE_URL')"
 `,
 )
+// A second epic in the same repository for the COMPARE criterion: the
+// fidelity form of the machine-runnable criterion, which this script never
+// runs because it owns no browser. Its own epic because it needs a
+// `Design sources:` line, and the checks epic's preamble is what the --from
+// tests above assert the shape of.
+mkdirSync(join(crepo, 'designs'), { recursive: true })
+writeFileSync(join(crepo, 'designs/City Desktop.html'), '<!doctype html><title>city</title>')
+writeFileSync(join(crepo, 'designs/map.html'), '<!doctype html><title>map</title>')
+mkdirSync(join(crepo, 'epics/compares'), { recursive: true })
+const comparesDoc = join(crepo, 'epics/compares/tickets.md')
+writeFileSync(
+  comparesDoc,
+  `# Compares epic — tickets
+
+Delivery: incremental
+Design sources: designs/City Desktop.html, designs/map.html
+
+## P-1 — a comparison of named landmarks
+
+**Acceptance criteria.**
+- the hero and the nav match the artboard at both widths
+  COMPARE: designs/City Desktop.html @ 1440,393
+  LANDMARKS: hero, nav
+- the command answers
+  CHECK: node -e "console.log('ok 1/1')"
+  EXPECT: ok 1/1
+
+## P-2 — the whole page, at one width
+
+**Acceptance criteria.**
+- the whole page matches the artboard
+  COMPARE: designs/map.html @ 1440
+
+## P-3 — a comparison with no width
+
+**Acceptance criteria.**
+- the page renders as drawn
+  COMPARE: designs/map.html
+
+## P-4 — LANDMARKS with no COMPARE above it
+
+**Acceptance criteria.**
+- the hero matches
+  LANDMARKS: hero
+
+## P-5 — a comparison naming a path the epic does not declare
+
+**Acceptance criteria.**
+- the page matches
+  COMPARE: designs/other.html @ 1440
+
+## P-6 — a comparison-shaped line that will not parse
+
+**Acceptance criteria.**
+- the page matches
+  Compare: designs/map.html @ 1440
+`,
+)
 git(crepo, 'add', '.')
 git(crepo, 'commit', '-m', 'checks epic')
 
@@ -2409,6 +2467,88 @@ test('find --from a ref that cannot be read refuses instead of falling back to t
   const bare = runFail(crepo, 'find', 'K-1', '--from')
   assert.equal(bare.status, 2)
   assert.match(bare.stderr, /--from needs a git ref/)
+})
+
+// ── the COMPARE criterion ────────────────────────────────────────────────────
+// Part of the one machine-runnable format, and the one part no code runs: the
+// comparison needs a browser and this script owns none. So the ledger reports
+// comparisons apart from checks, counts them in neither `total` nor `passed`
+// — the unattended driver halts when `passed !== total`, so a compare counted
+// there would halt every COMPARE ticket — and what gates them is the presence
+// of the `**Compared:**` table in the status entry.
+
+test('the ledger reports comparisons apart from checks, in neither total nor passed', () => {
+  const out = JSON.parse(run(crepo, 'check', 'P-1', '--json'))
+  assert.equal(out.total, 1, 'the CHECK beside it is the only thing counted')
+  assert.equal(out.passed, 1)
+  assert.equal(out.allPassed, true, 'a comparison this script never runs cannot fail the gate it is not in')
+  assert.equal(out.compares.length, 1)
+  const c = out.compares[0]
+  assert.equal(c.criterion, 'the hero and the nav match the artboard at both widths')
+  assert.equal(c.source, 'designs/City Desktop.html', 'the path keeps its space: everything before the last @ is the path')
+  assert.deepEqual(c.widths, [1440, 393])
+  assert.deepEqual(c.landmarks, ['hero', 'nav'])
+  assert.equal(c.status, 'manual')
+  assert.match(c.note, /run the differ, table required in the entry/)
+  const text = run(crepo, 'check', 'P-1')
+  assert.match(text, /1\/1 checks passed/)
+  assert.match(text, /1 comparison\(s\) this script never runs/)
+})
+
+test('a COMPARE with no LANDMARKS line is the whole page, and is still not a check', () => {
+  const out = JSON.parse(run(crepo, 'check', 'P-2', '--json'))
+  assert.equal(out.total, 0, 'a ticket whose only criterion is a comparison has nothing to run')
+  assert.equal(out.allPassed, true)
+  assert.equal(out.compares[0].landmarks, null, 'absent means every landmark in the map — the whole page')
+  assert.match(run(crepo, 'check', 'P-2'), /every landmark in the map — the whole page/)
+})
+
+test('a malformed COMPARE is a ledger problem and fails allPassed, exactly as a malformed CHECK does', () => {
+  // Three shapes, each of which would otherwise be a criterion nobody can
+  // re-run: no width, a LANDMARKS line narrowing nothing, and a path the
+  // epic's Design sources line does not list — which is a comparison against
+  // a file neither reviewer was handed.
+  for (const [id, why] of [
+    ['P-3', /no "@ <width>"/],
+    ['P-4', /no COMPARE line above it/],
+    ['P-5', /"Design sources:" line does not list/],
+  ]) {
+    const fail = runFail(crepo, 'check', id, '--json')
+    assert.equal(fail.status, 1, `${id} must fail the gate`)
+    const out = JSON.parse(fail.stdout)
+    assert.equal(out.allPassed, false)
+    assert.equal(out.compares.length, 0, 'a malformed comparison is a problem, never a silently listed one')
+    assert.equal(out.problems.length, 1)
+    assert.match(out.problems[0].why, why)
+  }
+})
+
+test('doctor flags a COMPARE/LANDMARKS near-miss, so a comparison never silently disappears', () => {
+  const rows = JSON.parse(runFail(crepo, 'doctor', '--json').stdout)
+  const p6 = rows.filter((r) => r.level === 'warn' && r.msg.includes('(P-6)'))
+  assert.equal(p6.length, 1, rows.map((r) => r.msg).join('\n'))
+  assert.match(p6[0].msg, /will not parse, so it silently never runs/)
+  assert.match(p6[0].msg, /CHECK\/EXPECT\/COMPARE\/LANDMARKS/)
+  // The malformed comparisons are flagged at the author's door too, not only
+  // by the ledger a gate reads.
+  assert.ok(rows.some((r) => r.msg.includes('(P-3)') && /no "@ <width>"/.test(r.msg)))
+  assert.ok(rows.some((r) => r.msg.includes('(P-5)') && /Design sources/.test(r.msg)))
+})
+
+test('check --from validates a COMPARE against the design sources of the same ref', () => {
+  // One document, one judgment: a branch that adds a design source to its own
+  // copy of the preamble must not be able to anchor a comparison the
+  // signed-off document does not declare.
+  const original = readFileSync(comparesDoc, 'utf8')
+  try {
+    writeFileSync(comparesDoc, original.replace('designs/map.html\n', 'designs/map.html, designs/other.html\n'))
+    assert.equal(JSON.parse(run(crepo, 'check', 'P-5', '--json')).allPassed, true, 'the working tree accepts its own addition')
+    const out = JSON.parse(runFail(crepo, 'check', 'P-5', '--json', '--from', 'HEAD').stdout)
+    assert.equal(out.allPassed, false, 'the signed-off document does not declare it')
+    assert.match(out.problems[0].why, /"Design sources:" line does not list/)
+  } finally {
+    writeFileSync(comparesDoc, original)
+  }
 })
 
 test('doctor flags CHECK/EXPECT near-misses as silently-never-runs', () => {

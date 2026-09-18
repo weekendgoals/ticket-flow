@@ -206,6 +206,54 @@ never an invented test command.
   unattended run the driver re-runs it with `--from origin/epic/<name>` —
   the criteria as signed off — and gates the merge in code.
 
+- A criterion carrying a `COMPARE:` line is the one the board script never
+  runs — it has no browser — so you run it, and its table is what the entry
+  carries. For each one:
+
+  ```bash
+  # 1. serve the design source and the built page with the project's OWN
+  #    tooling (its dev server, its e2e runner, a static file server) and open
+  #    each at every width the COMPARE line names.
+  # 2. print the extractor, evaluate it in the page, keep the two JSON reports:
+  node "${CLAUDE_PLUGIN_ROOT}/scripts/fidelity.mjs" extract
+  # 3. the removals, from the SIGNED-OFF map — never the working tree's:
+  git show origin/<base>:epics/<epic-name>/design-map.json > /tmp/signed-map.json
+  # 4. the comparison itself:
+  node "${CLAUDE_PLUGIN_ROOT}/scripts/fidelity.mjs" diff design.json page.json \
+    --map epics/<epic-name>/design-map.json \
+    --removed-from /tmp/signed-map.json [--landmarks <the LANDMARKS names>]
+  ```
+
+  **`--removed-from` is not optional and is never the working tree's map.** A
+  removal is a planning decision; the map in your tree is the file this ticket
+  edits (its `page` selectors are written before the page exists), so a
+  removal read from it would be a removal the reviewed party declared. Read it
+  from the base ref step 3 cut from — and when that ref has no map yet, which
+  is the first ticket of an incremental epic (the epic's documents land in
+  that ticket's own pull request), read it from `origin/epic/<epic-name>`,
+  where sign-off pushed it.
+
+  The differ's exit codes: **0** — nothing differs, or the only rows are
+  declared removals (including one the design no longer draws either: the two
+  sides agreeing with the plan). **1** — something differs; the rows say what.
+  **2** — nothing was compared, or the command or a file could not be read.
+  **Exit 2 is never "no differences"**: it means the map's selectors matched
+  neither report, so the run collected no evidence at all — fix the selectors
+  or the widths and run it again; a comparison nobody performed is recorded as
+  owed, never as passed.
+
+  Paste the differ's table into the entry's `**Compared:**` field (step 6),
+  verbatim — it is plain text for that reason. Then **every row is answered**:
+  fixed, or recorded as a `**Deviation:**`, or already a declared removal the
+  table names as such. A row nobody answers is the whole mechanism spending
+  its cost and buying nothing.
+
+  **No browser in this session, or a design nothing can render** (an image, a
+  PDF): the comparison is **owed**, said so in those words on the Verified
+  line, and the table is written by hand from the design source's own markup
+  and **labelled as hand-written**. A criterion the lane cannot perform is
+  recorded as owed, never implied.
+
 Report **counts** — "api-gateway 217/217 passed", never "tests pass". A check
 that cannot run here is recorded as owed; never imply it passed.
 
@@ -298,6 +346,13 @@ Driver-spawned: `recorded in the run record`. In-session: `unknown`.>
 **Verified:** <exact commands and counts; manual checks with evidence; the
 test that fails with the source change reverted, or `revert check: n/a,
 prose-only`>
+
+**Compared:** <OPTIONAL, and required for every `COMPARE:` criterion this
+ticket carries: the differ's table, pasted verbatim, with the command that
+produced it and the ref the removals were read from. `owed — <why>` when the
+lane could not perform it, and `hand-written — <why nothing could render it>`
+when the table was not produced by the differ. Omitted only when the ticket
+has no `COMPARE:` criterion>
 
 **Decisions:** <judgment calls the documents left open, each with the why —
 "none" when the ticket went as written. A departure from what the documents

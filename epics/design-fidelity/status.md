@@ -378,3 +378,80 @@ root (an absolute path is taken as given), since the line lives in a versioned
 document.
 
 **Owed:** Nothing.
+
+### FID-3 — The `COMPARE` criterion — 2026-09-18 — DONE
+
+**Built:** `tickets.mjs` parses `COMPARE: <design source path> @ <width>[,<width>]`
+indented under its criterion bullet, with an optional `LANDMARKS: <name>[, <name>]`
+beneath it (absent = every landmark in the map = the whole page), and `check <ID>`
+reports them in a separate `compares` list marked *manual — run the differ, table
+required in the entry*, in **neither `total` nor `passed`**. A malformed one — no
+width, a path the epic's `Design sources:` line does not list, a `LANDMARKS:` with
+no `COMPARE:` above it — is a ledger problem that fails `allPassed`, exactly as a
+malformed CHECK does; doctor's near-miss scan covers both new labels. The epic
+skill teaches the format, the design map and that its `removed` list is
+planning's; the ticket skill's step 5 and the quick skill's step 5 run the differ
+with `--removed-from` filled from the signed-off ref, and step 6's entry template
+gains the optional `**Compared:**` field. `check-invariants.mjs` gained a check
+holding the epic template to the parser's `COMPARE_LINE`/`LANDMARKS_LINE` and both
+lanes to `--removed-from`, plus a presence phrase across the four documents.
+CLAUDE.md's criterion invariant now names `COMPARE` and records the one sanctioned
+format-ahead-of-gate departure with the two conditions that make it safe.
+
+**Mode:** direct — built in-session on `epic/design-fidelity` at the repository
+owner's instruction, with no per-ticket review; one review of the whole
+FID-2…FID-6 range follows.
+
+**Tokens:** unknown — in-session.
+
+**Verified:** `tickets.mjs check FID-3` **4/4**. `tickets.test.mjs` 113 → **118**
+(the ledger's separate list and its shape; a COMPARE with no LANDMARKS; the three
+malformed shapes; the doctor near-miss; `check --from` validating the path against
+the same ref's declarations). `fidelity.test.mjs` 40 → **43**;
+`check-invariants.test.mjs` 25 → **29**. Unchanged:
+`ticket-session-guard.test.mjs` 14/14, `board.test.mjs` 9/9,
+`plan-page.test.mjs` 8/8, `run-epic.test.mjs` 137/137, `codex.test.mjs` 21/21,
+`codex-review.test.mjs` 19/19. `check-invariants.mjs` exit 0; `doctor` exit 0;
+`node --check` exit 0 on `tickets.mjs`, `fidelity.mjs` and `check-invariants.mjs`.
+**Revert check:** with the six changed source files restored from HEAD and every
+suite kept, 5 tickets tests, 2 fidelity tests and 4 invariant tests fail — one per
+new behaviour. Each new guard was then flipped in turn: counting comparisons in
+`total` kills 2, accepting a malformed COMPARE kills 3, dropping the `--from`
+re-read of the declarations kills 1, ignoring an orphan `LANDMARKS:` kills 6.
+**demonstrate:** a throwaway epic at `<scratch>/fid3-demo` declaring
+`Design sources: designs/City Desktop.html`. `check DC-1 --json` printed
+`"total": 0`, `"allPassed": true` and one `compares` entry — source
+`designs/City Desktop.html` (the space intact), `widths [1440, 393]`, `landmarks
+["hero","nav"]`, `status "manual"`. `check DC-2 --json` (a `COMPARE:` with no
+width) printed `"allPassed": false`, `compares: []` and one problem, *COMPARE with
+no "@ <width>"*. `doctor` flagged both DC-2 and DC-3's `Compare:` line — *looks
+like a CHECK/EXPECT/COMPARE/LANDMARKS line but will not parse, so it silently
+never runs*.
+
+**Resolves owed:** FID-1.2 — the amended exit contract is carried into the verify
+step in both lanes (0 = nothing differs or only declared removals; 1 = a
+difference; **2 = nothing was compared, never "no differences"**, with the repair
+named), and the both-sides-agree case is decided in `fidelity.mjs`: a landmark the
+**signed-off** list declares removed and absent from both reports is now a row of
+its own kind, `removed-absent`, counted as compared and exiting 0.
+
+**Decisions:** (1) Of the reviewer's two ways out, the second — *give the
+both-sides-agree case its own message* — is taken, and its *own exit code* half is
+rejected: the contract has three outcomes, FID-3's skills and FID-6's re-run are
+written against them, and a fourth code would make every reader learn a code for
+one case when exit 0 already means "the only rows are declared removals". The
+first way out (refuse only when the unmatched set is the whole map) is rejected on
+the merits: under `--landmarks` the unmatched set is never the whole map, so a
+selection matching nothing would print "no differences — 0 landmarks compared",
+which is the silent pass the guard exists to prevent. (2) The agreement is a
+**row**, not a note: one rule — every declared removal in the selected set prints
+`removed by <by>, <date>` — and the design column (`present` vs `absent`) says
+which of the two states it is. (3) `COMPARE`'s path is everything before the
+**last** `@`, because a design path may contain spaces and an `@`
+(`assets/@2x/hero.html`). (4) A COMPARE naming a path the epic does not declare is
+malformed, not merely odd: the declaration is what hands the design to both
+reviewers, so a comparison against an undeclared file is one nobody else can open.
+(5) Under `check --from`, the `Design sources:` line is read from that same ref, so
+a branch cannot anchor a comparison the signed-off document does not declare.
+
+**Owed:** Nothing.

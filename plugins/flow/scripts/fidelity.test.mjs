@@ -207,6 +207,71 @@ test('a landmark declared removed that is on the page is its own row', () => {
   assert.match(row.page, /on the page — declared removed by ground rule 3/)
 })
 
+// FID-1 shipped one answer too many for one state. A landmark the signed-off
+// map declares removed, absent from the design AND the page — the designer
+// dropped it too — compared nothing, so selected alone through `--landmarks`
+// it exited 2 as unreadable input ("a map whose selectors match neither
+// report"), while the same pair over the whole map exited 0 with a note. The
+// realistic shape is `COMPARE … @ 1440,393` with a `LANDMARKS:` subset run at
+// the width where neither side draws them. The two sides agree with the plan,
+// which is evidence, not the absence of it.
+const bothAbsent = () => {
+  const landmarks = [
+    { name: 'promo', design: '#promo', page: '#promo' },
+    { name: 'ghost', design: '#ghost', page: '#ghost' },
+    { name: 'hero', design: '#hero', page: '.masthead' },
+  ]
+  const removed = [{ name: 'promo', by: 'ground rule 2 — no promotional band', date: '2026-09-18' }]
+  const absent = { found: false, order: null, childCount: null, props: {} }
+  const report = (side) => ({
+    side,
+    landmarks: { promo: absent, ghost: absent, hero: { found: true, order: 1, childCount: 0, props: { display: 'block' } } },
+  })
+  return {
+    design: tmp('design.json', report('design')),
+    page: tmp('page.json', report('page')),
+    map: tmp('design-map.json', { landmarks, removed }),
+    signed: tmp('signed-map.json', { landmarks, removed }),
+  }
+}
+
+test('a declared removal absent from both sides is a row of its own, counts as compared, and exits 0', () => {
+  const f = bothAbsent()
+  const r = cli('diff', f.design, f.page, '--map', f.map, '--removed-from', f.signed, '--landmarks', 'promo')
+  assert.equal(r.code, 0, 'the plan, the design and the page agree — that is not unreadable input')
+  assert.match(r.out, /removed by ground rule 2 — no promotional band, 2026-09-18/)
+  assert.match(r.out, /1 landmark compared/)
+  assert.doesNotMatch(r.err, /nothing was compared/)
+  const { rows, compared } = JSON.parse(cli('diff', f.design, f.page, '--map', f.map, '--removed-from', f.signed, '--landmarks', 'promo', '--json').out)
+  assert.equal(compared, 1, 'a removal both sides honoured is a landmark compared, not one nobody looked at')
+  assert.equal(rows.length, 1)
+  assert.equal(rows[0].kind, 'removed-absent', 'its own kind — the design does not draw it either, which `removed` does not say')
+  assert.equal(rows[0].design, 'absent')
+})
+
+test('the both-sides-agree row is honoured only from the signed-off file, like every other removal', () => {
+  // The map carries the same `removed` list, and --map's list is never
+  // honoured: with no signed-off file there is no decision behind the absence,
+  // so the run is refused exactly as before. The new row must not become a
+  // second door onto the removals a ticket can write for itself.
+  const f = bothAbsent()
+  const r = cli('diff', f.design, f.page, '--map', f.map, '--landmarks', 'promo')
+  assert.equal(r.code, 2)
+  assert.match(r.err, /nothing was compared/)
+})
+
+test('a landmark absent from both sides and declared nowhere is still uncompared, beside one that is declared', () => {
+  const f = bothAbsent()
+  const { rows, compared, notes } = JSON.parse(
+    cli('diff', f.design, f.page, '--map', f.map, '--removed-from', f.signed, '--landmarks', 'promo,ghost', '--json').out,
+  )
+  assert.equal(compared, 1, 'only the declared removal is evidence; the other is silence')
+  assert.deepEqual(rows.map((r) => r.landmark), ['promo'])
+  assert.ok(notes.some((n) => /matched nothing on either side/.test(n) && /ghost/.test(n)))
+  const only = cli('diff', f.design, f.page, '--map', f.map, '--removed-from', f.signed, '--landmarks', 'ghost')
+  assert.equal(only.code, 2, 'a selection of nothing but undeclared absences is still refused')
+})
+
 test('swapped landmarks differ in order', () => {
   const { rows } = rowsOf()
   assert.equal(rowFor(rows, 'aside', 'order').kind, 'order')

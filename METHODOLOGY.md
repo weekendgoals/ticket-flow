@@ -461,6 +461,49 @@ nothing, and nothing downstream would say why the comparison never ran. The
 whole text between commas is the path; doctor names a declared path that does
 not exist, in full, for the same reason.
 
+## Why a fidelity criterion is the one the code never runs
+
+Every other machine-runnable criterion is a command the board script executes:
+that is what makes a CHECK something no worker can satisfy by narration. A
+`COMPARE` cannot be, and the reason is the same one that shapes the differ —
+the plugin owns no browser, because a differ that shipped one would be a
+plugin some project could not install. So the comparison is performed by the
+lane that has a browser (the ticket's own verify step, in the project's own
+tooling) and the code gates something else: the **presence** of the
+`**Compared:**` table in the status entry, which is FID-4's gate, at a door
+the code can actually stand in.
+
+Three consequences follow, and each is a rule rather than a detail. Compare
+rows are counted in **neither `total` nor `passed`**, because the unattended
+driver halts when `passed !== total` — a comparison counted there would halt
+every ticket that carried one, which is a gate that fires on its own
+correctness. A malformed COMPARE is nonetheless a **ledger problem** that
+fails the gate, for the reason a malformed CHECK is: a criterion nobody can
+read is a criterion nobody performs, and it must not be quiet. And the
+criterion **names its landmarks**, because "renders as the design draws it"
+is prose a worker satisfies with the properties it already believes are
+right — which is how nine tickets passed six gates and shipped a page missing
+three drawn elements.
+
+The removals are the part most likely to be simplified away. `removed` lives
+in the design map, and the differ honours it **only** from `--removed-from`,
+a file the verify step fills from the signed-off ref — never from the `--map`
+the ticket passes, which is the copy that ticket edits. Both files are
+usually the same path at different refs, and that is exactly the point: a
+worker must edit the map (its `page` selectors are written before the page
+exists), so a single reading would let a worker who could not build an
+element declare it removed, get a clean diff, and halt nothing. That is the
+founding failure re-routed through the new machinery, which is the failure a
+new gate is most likely to have.
+
+One state had two answers and now has one. A landmark the signed-off list
+declares removed, absent from the design and the page alike — the designer
+dropped it too — used to count as "nothing compared" and be refused as
+unreadable input when it was selected alone, while the same pair over the
+whole map passed with a note. Two answers to one state is the shape a gate
+gets routed around, so the agreement is now a row of its own: the plan, the
+design and the page concur, which is evidence, not the absence of it.
+
 ## Why token figures are observed, never asked
 
 The Tokens lines exist as planning evidence — they are what priced the

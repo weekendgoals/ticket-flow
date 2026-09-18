@@ -345,3 +345,38 @@ test('a skill dropping the CHECK/EXPECT format fails the coupling', () => {
   assert.equal(r.status, 1, r.out)
   assert.match(r.out, /epic\/SKILL\.md.*machine-runnable acceptance criteria/s)
 })
+
+test('a reshaped COMPARE template fails against the parser regex', () => {
+  // A template the parser rejects is worse than a missing one: the criterion
+  // is written, never parsed, never listed in the ledger, and the comparison
+  // it exists for is performed by nobody.
+  const root = copyRepo()
+  mutate(root, 'plugins/flow/skills/epic/SKILL.md', '  COMPARE: <design source path', '  Compare <design source path')
+  const r = run(root)
+  assert.equal(r.status, 1, r.out)
+  assert.match(r.out, /COMPARE criterion template/)
+})
+
+test('a reshaped LANDMARKS template fails the same way', () => {
+  const root = copyRepo()
+  mutate(root, 'plugins/flow/skills/epic/SKILL.md', '  LANDMARKS: <name>[, <name>]', '  LANDMARKS <name>[, <name>]')
+  const r = run(root)
+  assert.equal(r.status, 1, r.out)
+  assert.match(r.out, /LANDMARKS criterion template/)
+})
+
+test('an execution lane that teaches the comparison without --removed-from fails', () => {
+  const root = copyRepo()
+  mutate(root, 'plugins/flow/skills/quick/SKILL.md', '--removed-from', '--removed')
+  const r = run(root)
+  assert.equal(r.status, 1, r.out)
+  assert.match(r.out, /quick\/SKILL\.md.*--removed-from/s)
+})
+
+test('a document dropping the COMPARE criterion fails the coupling', () => {
+  const root = copyRepo()
+  mutate(root, 'plugins/flow/skills/quick/SKILL.md', 'COMPARE', 'COMPARISON')
+  const r = run(root)
+  assert.equal(r.status, 1, r.out)
+  assert.match(r.out, /quick\/SKILL\.md.*one format in four documents/s)
+})

@@ -50,6 +50,12 @@
 // anything else differs, 2 on a usage error or unreadable input — which
 // includes a run where no landmark matched on either side, since a map that
 // describes neither report is not evidence that a page matches its design.
+// One case that looks like the last is not it: a landmark the signed-off
+// `removed` list names, absent from the design and the page alike, is the two
+// sides AGREEING with the plan. It prints a `removed by …` row with `absent`
+// in the design column, counts as compared, and exits 0 — otherwise a
+// `--landmarks` subset of nothing but such landmarks was refused as unreadable
+// while the same pair over the whole map passed with a note.
 //
 // Zero dependencies, no configuration, stores nothing, and launches no browser.
 
@@ -242,6 +248,12 @@ export function validateReport(report, side, label) {
 
 const MISSING = '(not reported)'
 
+// The two row kinds that report a removal planning declared and the page
+// honoured. They never make a run fail — a declared removal is the plan being
+// followed — so the exit rule and the table's summary read this one set rather
+// than each naming its own list and drifting apart.
+const DECLARED_REMOVAL = new Set(['removed', 'removed-absent'])
+
 // One row per difference; notes are not rows, because they say something about
 // the comparison rather than about the page, and only rows decide the exit code.
 export function diffReports(design, page, { landmarks, removed = [], only = null, mapHasRemoved = false, removedFrom = null }) {
@@ -274,6 +286,20 @@ export function diffReports(design, page, { landmarks, removed = [], only = null
       continue
     }
     if (!dFound && !pFound) {
+      // Both sides agree, and the plan is why: the signed-off map declares
+      // this landmark removed, the page does not build it, and the design no
+      // longer draws it either. That is evidence — the removal was carried
+      // out — so it is a row like any other honoured removal, it counts as
+      // compared, and it never fails the run. Without this branch a
+      // `--landmarks` subset naming only such landmarks compared nothing and
+      // was refused as unreadable input, with a recovery message ("a map whose
+      // selectors match neither report") naming the one thing that was not
+      // wrong; the same pair over the whole map exited 0 with a note. Two
+      // answers to one state is the shape a gate gets routed around.
+      if (gone) {
+        row(l.name, 'presence', 'absent', `removed by ${gone.by}, ${gone.date}`, 'removed-absent')
+        continue
+      }
       unmatched.push(l.name)
       continue
     }
@@ -299,7 +325,7 @@ export function diffReports(design, page, { landmarks, removed = [], only = null
   // the layout the doctrine prefers (removals live only in the signed-off map)
   // is exactly never. With no --removed-from, the point is the other way round:
   // the removals in hand are being ignored, and the recovery is what to say.
-  if (removedFrom && (mapHasRemoved || rows.some((r) => r.kind === 'removed' || r.kind === 'removal-contradicted'))) {
+  if (removedFrom && (mapHasRemoved || rows.some((r) => DECLARED_REMOVAL.has(r.kind) || r.kind === 'removal-contradicted'))) {
     notes.push(`removals were read from --removed-from (${removedFrom}); a "removed" list in --map is never honoured`)
   } else if (mapHasRemoved) {
     notes.push('the --map file carries a "removed" list; it is never honoured, because --map is the file the ticket under review edits — pass the signed-off map as --removed-from to read its removals')
@@ -309,7 +335,7 @@ export function diffReports(design, page, { landmarks, removed = [], only = null
     notes.push(`the reports were taken at different viewport widths (design ${design.viewportWidth}, page ${page.viewportWidth})`)
   }
   const compared = list.length - unmatched.length
-  return { rows, notes, compared, exit: rows.length === 0 || rows.every((r) => r.kind === 'removed') ? 0 : 1 }
+  return { rows, notes, compared, exit: rows.length === 0 || rows.every((r) => DECLARED_REMOVAL.has(r.kind)) ? 0 : 1 }
 }
 
 // The table is plain text with no colour: it is pasted into a status entry's
@@ -327,7 +353,7 @@ export function renderTable(result) {
     for (const r of result.rows) out.push(line(r))
     out.push('')
   }
-  const removals = result.rows.filter((r) => r.kind === 'removed').length
+  const removals = result.rows.filter((r) => DECLARED_REMOVAL.has(r.kind)).length
   const others = result.rows.length - removals
   out.push(
     result.rows.length === 0

@@ -308,10 +308,24 @@ function parseTickets(epic) {
 // never runs, which is the one way a machine-checked criterion can lie.
 const CHECK_LINE = /^\s*CHECK:\s*(\S.*)$/
 const EXPECT_LINE = /^\s*EXPECT:\s*(\S.*)$/
+// The fidelity form of the same idea, and part of the same one format: an
+// indented `COMPARE: <design source path> @ <width>[,<width>]` under its
+// criterion bullet, optionally followed by `LANDMARKS: <name>[, <name>]`
+// (absent = every landmark in the map = the whole page). It is the one
+// criterion this script never RUNS: comparing an artboard with a page needs a
+// browser, and this script owns none — so `check` reports comparisons in
+// their own list, marked manual, and the code gates the presence of the
+// `**Compared:**` table instead of its content.
+//
+// The path is everything before the LAST `@`, because a design path may
+// contain spaces and may contain an `@` (`assets/@2x/hero.html`), and the
+// widths are what follows: the last `@` is the only unambiguous separator.
+const COMPARE_LINE = /^\s*COMPARE:\s*(\S.*)$/
+const LANDMARKS_LINE = /^\s*LANDMARKS:\s*(\S.*)$/
 // Near-miss shapes doctor flags: a lowercase or spaced label, or the label
 // written as a bullet of its own instead of indented under its criterion.
-const CHECK_NEAR = /^\s*(check|expect)\s*:/i
-const CHECK_BULLET_NEAR = /^\s*[-*]\s+(CHECK|EXPECT)\s*:/i
+const CHECK_NEAR = /^\s*(check|expect|compare|landmarks)\s*:/i
+const CHECK_BULLET_NEAR = /^\s*[-*]\s+(CHECK|EXPECT|COMPARE|LANDMARKS)\s*:/i
 
 // One layer in from a near-miss: shapes that parse, run, and still cannot
 // decide anything. Both are quoted from redesign-foundation's history, where
@@ -355,13 +369,49 @@ function checkShapeProblems(command) {
   return why
 }
 
-function parseChecks(body) {
+// One malformed COMPARE is a ledger problem, exactly as a malformed CHECK is:
+// a criterion nobody can satisfy and a criterion nobody can read fail the gate
+// the same way. `designSources` is the epic's declared list — a COMPARE naming
+// a path the epic does not declare is unanchored, since the declaration is
+// what hands the design to the reviewers, and a comparison against a file
+// nobody was given is a comparison nobody can check.
+function compareProblem(value, designSources) {
+  const at = value.lastIndexOf('@')
+  if (at === -1) return 'COMPARE with no "@ <width>" — a comparison needs the width the design draws at (needs "COMPARE: <design source path> @ <width>[, <width>]"), because a page compared at an unstated width is compared against nothing in particular'
+  const source = value.slice(0, at).trim()
+  const widthText = value.slice(at + 1).trim()
+  if (!source) return 'COMPARE with no design source path before its "@" (needs "COMPARE: <design source path> @ <width>[, <width>]")'
+  const widths = widthText.split(',').map((w) => w.trim())
+  if (!widths.length || widths.some((w) => !/^\d+$/.test(w)))
+    return `COMPARE whose width list is not widths: "${widthText}" (needs one or more plain numbers, "@ 1440,393") — a width nothing can parse is a comparison nobody can re-run`
+  if (!designSources || !designSources.length)
+    return `COMPARE names "${source}", but this epic declares no "Design sources:" line — the declaration is what hands the design to both reviewers, so a comparison against an undeclared file is one nobody else can open`
+  if (!designSources.includes(source))
+    return `COMPARE names "${source}", which this epic's "Design sources:" line does not list (it lists: ${designSources.join(', ')}) — the whole text between commas is a path there, so check for a typo rather than adding prose`
+  return null
+}
+
+function parseCompare(value) {
+  const at = value.lastIndexOf('@')
+  return {
+    source: value.slice(0, at).trim(),
+    widths: value
+      .slice(at + 1)
+      .split(',')
+      .map((w) => Number(w.trim())),
+  }
+}
+
+function parseChecks(body, designSources = null) {
   const checks = []
+  const compares = []
   const problems = []
   let bullet = null
   body.split('\n').forEach((line, i) => {
     const c = line.match(CHECK_LINE)
     const e = line.match(EXPECT_LINE)
+    const cmp = line.match(COMPARE_LINE)
+    const lm = line.match(LANDMARKS_LINE)
     const b = line.match(/^\s*[-*]\s+(.*)$/)
     if (c) {
       const command = c[1].trim()
@@ -372,15 +422,28 @@ function parseChecks(body) {
       if (!last || last.expect !== null)
         problems.push({ line: i + 1, text: line.trim(), why: 'EXPECT with no CHECK line above it to attach to' })
       else last.expect = e[1].trim()
+    } else if (cmp) {
+      const value = cmp[1].trim()
+      const why = compareProblem(value, designSources)
+      if (why) problems.push({ line: i + 1, text: line.trim(), why })
+      else compares.push({ criterion: bullet, compare: value, ...parseCompare(value), landmarks: null })
+    } else if (lm) {
+      // LANDMARKS attaches to the COMPARE above it the way EXPECT attaches to
+      // its CHECK. With none above it, it narrows nothing and reads as if it
+      // did — so it is a problem, not a silently ignored line.
+      const last = compares[compares.length - 1]
+      if (!last || last.landmarks !== null)
+        problems.push({ line: i + 1, text: line.trim(), why: 'LANDMARKS with no COMPARE line above it to attach to — on its own it narrows nothing, while reading as though it narrowed the comparison' })
+      else last.landmarks = lm[1].split(',').map((n) => n.trim()).filter(Boolean)
     } else if (CHECK_BULLET_NEAR.test(line)) {
-      problems.push({ line: i + 1, text: line.trim(), why: 'CHECK/EXPECT written as its own bullet — indent it under the criterion bullet instead, or it never runs' })
+      problems.push({ line: i + 1, text: line.trim(), why: 'CHECK/EXPECT/COMPARE/LANDMARKS written as its own bullet — indent it under the criterion bullet instead, or it never runs' })
     } else if (b) {
       bullet = b[1].trim()
     } else if (CHECK_NEAR.test(line)) {
-      problems.push({ line: i + 1, text: line.trim(), why: 'looks like a CHECK/EXPECT line but will not parse, so it silently never runs (needs the uppercase label at line start after indentation, a colon, and a value)' })
+      problems.push({ line: i + 1, text: line.trim(), why: 'looks like a CHECK/EXPECT/COMPARE/LANDMARKS line but will not parse, so it silently never runs (needs the uppercase label at line start after indentation, a colon, and a value)' })
     }
   })
-  return { checks, problems }
+  return { checks, compares, problems }
 }
 
 // One command may hang forever, and in an unattended run a hung gate is
@@ -1623,7 +1686,7 @@ function doctor() {
     // do parse and run yet can never pass, because a criterion that cannot
     // come out green lies in exactly the same direction.
     for (const t of parseTickets(epic))
-      for (const p of parseChecks(t.body).problems)
+      for (const p of parseChecks(t.body, epic.designSources).problems)
         add('warn', `${epic.epic}/tickets.md (${t.id}) — ${p.why}: ${p.text}`)
     if (!epic.statusDoc) {
       // Two doors create this file — /flow:epic at sign-off, or the first
@@ -2083,7 +2146,13 @@ switch (cmd) {
     }
     const data = board(null)
     const t = resolveTicket(data, arg.toUpperCase())
+    const epic = data.epics.find((e) => e.epic === t.epic)
     let body = t.body
+    // A COMPARE is validated against the epic's declared design sources, so
+    // under `--from` those come from the same ref as the criteria: the gate
+    // judges one document, not a criterion from the signed-off copy against a
+    // declaration the branch under review edited.
+    let designSources = epic.designSources
     if (fromRef) {
       const rel = `epics/${t.epic}/tickets.md`
       const shown = git(['show', `${fromRef}:${rel}`], { allowFail: true })
@@ -2097,17 +2166,34 @@ switch (cmd) {
         process.exit(1)
       }
       body = section.body
+      designSources = parsePreambleText(shown).designSources
     }
-    const { checks, problems } = parseChecks(body)
+    const { checks, compares, problems } = parseChecks(body, designSources)
     const results = runChecks(checks)
     const passed = results.filter((r) => r.passed).length
     const skipped = results.filter((r) => r.status === 'skipped').length
     const allPassed = passed === results.length && !problems.length
+    // Comparisons ride their own list and are counted in NEITHER `total` nor
+    // `passed`. This script has no browser and never runs one — and the
+    // unattended driver halts when `passed !== total`, so a compare counted
+    // there would halt every COMPARE ticket. What gates them is the presence
+    // of the `**Compared:**` table in the ticket's status entry, which is a
+    // different door and a different ticket's gate.
+    const comparisons = compares.map((c, i) => ({
+      n: i + 1,
+      criterion: c.criterion,
+      compare: c.compare,
+      source: c.source,
+      widths: c.widths,
+      landmarks: c.landmarks,
+      status: 'manual',
+      note: 'manual — run the differ, table required in the entry',
+    }))
     if (json) {
-      emit({ id: t.id, epic: t.epic, from: fromRef, total: results.length, passed, skipped, allPassed, checks: results, problems })
+      emit({ id: t.id, epic: t.epic, from: fromRef, total: results.length, passed, skipped, allPassed, checks: results, compares: comparisons, problems })
     } else {
       if (fromRef) console.log(`${C.dim}criteria read from ${fromRef}${C.off}`)
-      if (!results.length && !problems.length) console.log(`no CHECK criteria in ${t.id} — nothing to run`)
+      if (!results.length && !problems.length && !comparisons.length) console.log(`no CHECK criteria in ${t.id} — nothing to run`)
       const MARK = { passed: `${C.green}✓${C.off}`, skipped: `${C.yellow}↓${C.off}`, failed: `${C.red}✗${C.off}` }
       for (const r of results) {
         console.log(`${MARK[r.status]} ${r.n}/${results.length} ${r.criterion || '(no criterion bullet above the CHECK line)'}`)
@@ -2121,11 +2207,19 @@ switch (cmd) {
             `    ${C.yellow}the evidence is a skip: the named work did not run, so this criterion is not passed. Give the command what the run needed (a database, a credential, a service), or point EXPECT at a line that proves it ran.${C.off}`,
           )
       }
+      for (const c of comparisons) {
+        console.log(`${C.cyan}⊙${C.off} ${c.n}/${comparisons.length} ${c.criterion || '(no criterion bullet above the COMPARE line)'}`)
+        console.log(`    COMPARE: ${c.compare}${c.landmarks ? `\n    LANDMARKS: ${c.landmarks.join(', ')}` : '  (every landmark in the map — the whole page)'}`)
+        console.log(`    ${C.cyan}${c.note}${C.off}`)
+      }
       for (const p of problems) console.log(`${C.red}!${C.off} line ${p.line}: ${p.why}: ${p.text}`)
-      if (results.length || problems.length)
+      if (results.length || problems.length || comparisons.length)
         console.log(
           `${passed}/${results.length} checks passed` +
             (skipped ? ` — ${skipped} skipped, which does not pass the gate` : '') +
+            (comparisons.length
+              ? ` — ${comparisons.length} comparison(s) this script never runs, counted in neither total nor passed; the differ is run by hand and its table belongs in the status entry`
+              : '') +
             (problems.length ? ` — ${problems.length} malformed line(s), which fail the gate` : ''),
         )
     }

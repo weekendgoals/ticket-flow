@@ -8,6 +8,31 @@ with one version and date.
 
 ## Unreleased
 
+- **A `COMPARE` acceptance criterion, and the differ's exit contract amended**
+  (`scripts/tickets.mjs` and `scripts/fidelity.mjs` with both suites,
+  `skills/epic/SKILL.md`, `skills/ticket/SKILL.md`, `skills/quick/SKILL.md`,
+  `scripts/check-invariants.mjs` and its suite, CLAUDE.md, METHODOLOGY §
+  "Why a fidelity criterion is the one the code never runs"). A criterion
+  bullet may carry `COMPARE: <design source path> @ <width>[, <width>]` with
+  an optional `LANDMARKS: <name>[, <name>]` beneath it (absent = the whole
+  page). `check <ID>` reports comparisons in their own `compares` list,
+  **marked manual and counted in neither `total` nor `passed`** — this script
+  has no browser and never runs one, and the driver halts when `passed !==
+  total`, so a compare counted there would halt every COMPARE ticket. A
+  malformed one — no width, a path the epic's `Design sources:` line does not
+  list, a `LANDMARKS:` with no `COMPARE:` above it — is a ledger problem that
+  fails the gate, exactly as a malformed CHECK does, and doctor's near-miss
+  scan now covers both labels. The ticket and quick lanes run the differ
+  (`--removed-from` filled from the **signed-off** ref, because a removal is a
+  planning decision and the working map is the file the ticket edits) and
+  paste its table into the entry's new optional `**Compared:**` field.
+  `fidelity.mjs`: a landmark the signed-off list declares removed and absent
+  from **both** reports is now a row of its own (`removed-absent`) that counts
+  as compared and exits 0, instead of "nothing was compared", exit 2 — the two
+  sides agreeing with the plan is evidence, and the old refusal fired only
+  when such landmarks were selected alone, giving one state two answers.
+  Nothing gates the table's presence yet: that is the next ticket.
+
 - **An epic can declare what its design draws: `Design sources: <path>[,
   <path>]`** (`scripts/tickets.mjs` and its suite, `skills/epic/SKILL.md`,
   README, METHODOLOGY § "Why an epic declares its design sources"). A tenth
