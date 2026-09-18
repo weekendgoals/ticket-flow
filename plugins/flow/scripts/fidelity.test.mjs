@@ -188,6 +188,18 @@ test("a removed list inside --map is never honoured, and the table says so", () 
   assert.ok(notes.some((n) => /never honoured/.test(n) && /--removed-from/.test(n)))
 })
 
+// The doctrine-preferred layout keeps removals only in the signed-off map, so
+// the working --map carries none — and then the table used to print `removed
+// by …` rows with nothing saying where the removal came from. Pasted into a
+// status entry, that is a removal the reviewer cannot check.
+test('a honoured removal names the file it was read from, even when --map carries no list', () => {
+  const bare = tmp('design-map.json', { landmarks: JSON.parse(readFileSync(MAP, 'utf8')).landmarks })
+  const r = cli('diff', DESIGN, PAGE, '--map', bare, '--removed-from', MAP, '--landmarks', 'promo')
+  assert.match(r.out, /removed by ground rule 2/)
+  assert.match(r.out, new RegExp(`removals were read from --removed-from \\(${MAP.replace(/[/\\.]/g, '\\$&')}\\)`))
+  assert.equal(r.code, 0)
+})
+
 test('a landmark declared removed that is on the page is its own row', () => {
   const { rows } = rowsOf('--removed-from', MAP)
   const row = rowFor(rows, 'legacy', 'presence')
@@ -266,6 +278,32 @@ test('exit 2 on a usage error, never 1 — a typo is not a difference', () => {
   }
 })
 
+// A large diff is the shape every sanctioned caller uses — the ticket's own
+// criteria run `$(…)` and `| grep`, and the skills paste the table — and stdout
+// is asynchronous on a pipe, so `process.exit()` used to throw away everything
+// past the 64KiB the kernel had taken. Silently: the exit code survived. The
+// test reads through a pipe (spawnSync gives one) and parses the whole payload,
+// which is the only assertion that can tell a cut stream from a short one.
+test('a diff far larger than the pipe buffer arrives whole', () => {
+  const n = 600
+  const landmarks = Array.from({ length: n }, (_, i) => ({ name: `l${i}`, design: `#d${i}`, page: `#p${i}` }))
+  const side = (s, props) => ({
+    side: s,
+    viewportWidth: 1280,
+    landmarks: Object.fromEntries(landmarks.map((l) => [l.name, { found: true, order: 1, childCount: 0, props }])),
+  })
+  const d = tmp('design.json', side('design', { display: 'grid', color: 'rgb(1, 2, 3)', 'font-size': '16px' }))
+  const p = tmp('page.json', side('page', { display: 'flex', color: 'rgb(9, 9, 9)', 'font-size': '14px' }))
+  const m = tmp('design-map.json', { landmarks })
+  const r = cli('diff', d, p, '--map', m, '--json')
+  assert.ok(r.out.length > 65536, `only ${r.out.length} bytes came through the pipe`)
+  assert.equal(JSON.parse(r.out).rows.length, n * 3, 'every landmark differs in three properties, and every row must arrive')
+  assert.equal(r.code, 1)
+  const table = cli('diff', d, p, '--map', m)
+  assert.ok(table.out.length > 65536, `the table came through at only ${table.out.length} bytes`)
+  assert.match(table.out.trimEnd().split('\n').pop(), /1800 differences — 600 landmarks compared/, 'the last line printed is the last line received')
+})
+
 test('exit 2 on unreadable input, naming the file', () => {
   const r = cli('diff', '/no/such/design.json', PAGE, '--map', MAP)
   assert.equal(r.code, 2)
@@ -286,6 +324,45 @@ test('--landmarks naming something the map does not declare is refused, not comp
   const r = diff('--landmarks', 'hero,ghost')
   assert.equal(r.code, 2)
   assert.match(r.err, /ghost/)
+})
+
+// Every one of these spellings filtered the comparison to zero landmarks and
+// printed "no differences — 0 landmarks compared", exit 0: a pass earned by a
+// stray comma. The empty string is refused with the rest and not read as
+// "everything", because omitting the flag is how you ask for everything.
+test('--landmarks that names nothing is refused, in every spelling', () => {
+  for (const value of ['', ' ', ',', ',,', '  ,  ', ' , ,']) {
+    const r = diff('--landmarks', value)
+    assert.equal(r.code, 2, `--landmarks "${value}"`)
+    assert.match(r.err, /names no landmark/, `--landmarks "${value}"`)
+  }
+})
+
+// No landmark matching on either side means no evidence was collected at all,
+// and "no differences" over zero landmarks is the silent pass this tool exists
+// to stop. Refused as unreadable input, with the landmarks named.
+test('a comparison that compared nothing is refused, never reported as no differences', () => {
+  const landmarks = [{ name: 'a', design: '#a', page: '#a' }, { name: 'b', design: '#b', page: '#b' }]
+  const empty = (s) => ({ side: s, landmarks: Object.fromEntries(landmarks.map((l) => [l.name, { found: false, order: null, childCount: null, props: {} }])) })
+  const r = cli('diff', tmp('design.json', empty('design')), tmp('page.json', empty('page')), '--map', tmp('design-map.json', { landmarks }))
+  assert.equal(r.code, 2)
+  assert.match(r.err, /nothing was compared/)
+  assert.doesNotMatch(r.out, /no differences/)
+  const none = cli('diff', DESIGN, PAGE, '--map', tmp('design-map.json', { landmarks: [] }))
+  assert.equal(none.code, 2)
+  assert.match(none.err, /the map declares no landmarks/)
+})
+
+test('a flag given twice is refused, not resolved last-wins', () => {
+  const r = diff('--removed-from', MAP, '--removed-from', MAP)
+  assert.equal(r.code, 2)
+  assert.match(r.err, /--removed-from given twice/)
+})
+
+test('a report file named like an Object.prototype key is a file, not a flag', () => {
+  const r = cli('diff', DESIGN, PAGE, 'toString', '--map', MAP)
+  assert.equal(r.code, 2)
+  assert.match(r.err, /exactly two report files/, 'it is a third positional, not a flag that eats --map')
 })
 
 // ── the design map ───────────────────────────────────────────────────────────
@@ -340,6 +417,13 @@ test('font-family compares its first family, unquoted and case-insensitively', (
   assert.ok(sameValue('font-family', 'system-ui', 'System-UI, sans-serif'))
   assert.ok(!sameValue('font-family', 'system-ui, sans-serif', 'ui-monospace, monospace'))
   assert.equal(firstFamily("'SF Pro Text', system-ui"), 'sf pro text')
+  // A family name may contain a comma. Splitting on commas first read
+  // `"Helvetica, Neue"` as `Helvetica` and called two different stacks equal —
+  // a normalisation that hides a difference, which is worse than none.
+  assert.equal(firstFamily('"Helvetica, Neue", serif'), 'helvetica, neue')
+  assert.ok(!sameValue('font-family', '"Helvetica, Neue", serif', 'Helvetica, serif'))
+  assert.ok(sameValue('font-family', '"Helvetica, Neue", serif', "'helvetica, neue'"))
+  assert.equal(firstFamily('"unterminated, serif'), 'unterminated', 'an unclosed quote falls back to the comma split')
 })
 
 test('a value one report carries and the other does not is a row, not a silent match', () => {

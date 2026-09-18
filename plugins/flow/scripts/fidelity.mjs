@@ -47,7 +47,9 @@
 // diff and halt nothing — the exact failure this script exists to catch.
 //
 // Exit: 0 when nothing differs or the only rows are declared removals, 1 when
-// anything else differs, 2 on a usage error or unreadable input.
+// anything else differs, 2 on a usage error or unreadable input — which
+// includes a run where no landmark matched on either side, since a map that
+// describes neither report is not evidence that a page matches its design.
 //
 // Zero dependencies, no configuration, stores nothing, and launches no browser.
 
@@ -143,8 +145,18 @@ export function asRgba(value) {
 
 // The first family, unquoted and case-insensitive: a design source and a page
 // rarely spell the same stack identically, and the family that actually paints
-// is the first one both offer.
-export const firstFamily = (value) => String(value ?? '').split(',')[0].trim().replace(/^['"]|['"]$/g, '').toLowerCase()
+// is the first one both offer. A quoted family is read to its closing quote
+// BEFORE any comma split, because a family name may contain one — splitting
+// first turned `"Helvetica, Neue", serif` into `Helvetica` and made two
+// different stacks compare equal, which is a normalisation hiding a real
+// difference, the one failure this file must never have.
+export const firstFamily = (value) => {
+  const s = String(value ?? '').trim()
+  const quote = s[0] === '"' || s[0] === "'" ? s[0] : null
+  const close = quote ? s.indexOf(quote, 1) : -1
+  const first = quote && close !== -1 ? s.slice(1, close) : s.split(',')[0].replace(/^['"]|['"]$/g, '')
+  return first.trim().toLowerCase()
+}
 
 // Lengths within 0.5px are equal, token by token — which is what makes a grid
 // track list (`284px 284px 284px`) comparable at all: same track count and each
@@ -280,15 +292,17 @@ export function diffReports(design, page, { landmarks, removed = [], only = null
     }
   }
 
-  // Said whenever --map carries removals, and worded for the reader's actual
-  // situation: with no --removed-from the removals in hand are being ignored
-  // and the recovery is the point; with one, which file was honoured is.
-  if (mapHasRemoved) {
-    notes.push(
-      removedFrom
-        ? `a "removed" list in --map is never honoured; removals were read from --removed-from (${removedFrom})`
-        : 'the --map file carries a "removed" list; it is never honoured, because --map is the file the ticket under review edits — pass the signed-off map as --removed-from to read its removals',
-    )
+  // Provenance travels with the table, because the table is pasted into a
+  // status entry and a `removed by …` row without its source is a removal the
+  // reviewer cannot check. So the note fires whenever a removal was honoured at
+  // all — not only when --map happens to carry a list of its own, which under
+  // the layout the doctrine prefers (removals live only in the signed-off map)
+  // is exactly never. With no --removed-from, the point is the other way round:
+  // the removals in hand are being ignored, and the recovery is what to say.
+  if (removedFrom && (mapHasRemoved || rows.some((r) => r.kind === 'removed' || r.kind === 'removal-contradicted'))) {
+    notes.push(`removals were read from --removed-from (${removedFrom}); a "removed" list in --map is never honoured`)
+  } else if (mapHasRemoved) {
+    notes.push('the --map file carries a "removed" list; it is never honoured, because --map is the file the ticket under review edits — pass the signed-off map as --removed-from to read its removals')
   }
   if (unmatched.length) notes.push(`matched nothing on either side, so nothing was compared: ${unmatched.join(', ')}`)
   if (design.viewportWidth != null && page.viewportWidth != null && design.viewportWidth !== page.viewportWidth) {
@@ -345,9 +359,15 @@ export function run(argv) {
   for (let i = 1; i < argv.length; i++) {
     const a = argv[i]
     if (a === '--json') json = true
-    else if (a in flags) {
+    // hasOwnProperty, not `in`: `in` walks Object.prototype, so a report file
+    // named `toString` would be read as a flag and swallow the argument after it.
+    else if (Object.prototype.hasOwnProperty.call(flags, a)) {
       const v = argv[++i]
       if (v === undefined || v.startsWith('--')) throw new UsageError(`${a} needs a value\n${USAGE}`)
+      // A repeated flag is refused rather than last-wins: two --removed-from
+      // files is somebody asking two questions, and answering the second
+      // silently is how the wrong removals get honoured.
+      if (flags[a] !== null) throw new UsageError(`${a} given twice ("${flags[a]}" and "${v}")\n${USAGE}`)
       flags[a] = v
     } else if (a.startsWith('--')) throw new UsageError(`unknown option "${a}"\n${USAGE}`)
     else positional.push(a)
@@ -361,8 +381,15 @@ export function run(argv) {
   const removed = flags['--removed-from'] ? validateMap(readJson(flags['--removed-from'], '--removed-from'), '--removed-from').removed : []
 
   let only = null
-  if (flags['--landmarks']) {
+  // `!== null`, not truthiness: `--landmarks ""` is a list of no names, not the
+  // absence of the flag. Omitting the flag compares everything; giving it a
+  // value that names nothing — "", " ", ",", ",," — is refused with every other
+  // empty spelling, because each of them filtered the comparison to zero
+  // landmarks and printed "no differences", which is the pass this tool exists
+  // to stop anyone earning by accident.
+  if (flags['--landmarks'] !== null) {
     only = flags['--landmarks'].split(',').map((s) => s.trim()).filter(Boolean)
+    if (!only.length) throw new UsageError(`--landmarks "${flags['--landmarks']}" names no landmark — omit the flag to compare every landmark in the map`)
     const known = new Set(map.landmarks.map((l) => l.name))
     const unknown = only.filter((n) => !known.has(n))
     // An unknown name is refused rather than compared as nothing: a typo that
@@ -377,16 +404,31 @@ export function run(argv) {
     mapHasRemoved: (map.removed || []).length > 0,
     removedFrom: flags['--removed-from'],
   })
+  // Nothing compared is not a clean page: with no landmark matching on either
+  // side there is no evidence at all, and exit 0 under "no differences" is the
+  // silent pass this differ exists to prevent. It is refused as unreadable
+  // input, because that is what a map whose selectors describe neither report is.
+  if (result.compared === 0) {
+    throw new UsageError(
+      `nothing was compared — no landmark ${only ? 'named by --landmarks ' : ''}matched on either side${map.landmarks.length ? '' : ' (the map declares no landmarks)'}. ` +
+        'A map whose selectors match neither report is not a page that matches its design.',
+    )
+  }
   return { stdout: json ? JSON.stringify(result, null, 2) : renderTable(result), code: result.exit }
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  // `process.exitCode`, never `process.exit()`: stdout is asynchronous on a
+  // pipe, and process.exit() discards whatever has not flushed — measured, this
+  // script's own `--json` came through a pipe cut at exactly 65,536 bytes, mid
+  // object, with the exit code intact. Every sanctioned caller pipes: the
+  // ticket's criteria use `$(…)` and `| grep`, and the skills paste the table.
   try {
     const { stdout, code } = run(process.argv.slice(2))
     console.log(stdout)
-    process.exit(code)
+    process.exitCode = code
   } catch (e) {
     console.error(`fidelity: ${e instanceof UsageError ? e.message : e.stack}`)
-    process.exit(2)
+    process.exitCode = 2
   }
 }

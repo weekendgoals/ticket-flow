@@ -33,7 +33,7 @@ go through the flow, one-off work goes through `/flow:quick` into
   plan-page renderer `node --test plugins/flow/scripts/plan-page.test.mjs`
   (`# pass 8`) — both pure rendering tests over fixture JSON, no git
   needed. The fidelity differ has
-  `node --test plugins/flow/scripts/fidelity.test.mjs` (`# pass 33`) — the
+  `node --test plugins/flow/scripts/fidelity.test.mjs` (`# pass 39`) — the
   diff driven through the CLI over the committed fixture reports under
   `scripts/fixtures/fidelity/` (what a real browser returned once, from
   `design.html` and `page.html`), and the page-side extractor evaluated with

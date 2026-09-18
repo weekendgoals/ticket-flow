@@ -28,7 +28,14 @@ with one version and date.
   `font-family` by its first family) because two renderers print one value two
   ways. Exit 0 when nothing differs or the only rows are declared removals, 1
   when anything else differs, 2 on a usage error or unreadable input — a typo
-  is never reported as a difference.
+  is never reported as a difference. Exit 2 also covers the two ways a run can
+  produce no evidence at all, because "no differences" over nothing compared is
+  a pass nobody earned: no landmark matching on either side, and a
+  `--landmarks` value that names none (`""`, `" "`, `","` — omitting the flag
+  is how you ask for everything). A flag given twice is refused rather than
+  last-wins, and the honoured removals' source file is named in the table
+  whenever any removal row is printed, so a table pasted into a status entry
+  carries its own provenance.
 - **Every note is cleared by the repair it names, in both ledgers**
   (`scripts/tickets.mjs` — `parseOwed` and `parseDeviationsText` —
   `skills/ticket/SKILL.md` steps 6, 9 and 10, `skills/quick/SKILL.md` step 7,
