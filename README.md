@@ -228,6 +228,19 @@ amendments, so the review stays auditable against exactly what was reviewed.
 decomposition against the actual code — a wrong split caught there costs one
 edit instead of every ticket built on it.
 
+**Both are given the design, where the epic declares one.** The plan reviewer
+gets the design sources and the design map, because an element the drawing has
+and the map does not is invisible to everything downstream. The ticket
+reviewer gets them too, plus the entry's `**Compared:**` table — which is a
+**claim**, not evidence: it re-runs the differ where the project's instruction
+file says how to serve and drive a page, and otherwise audits the table
+against the design source's markup and **says the page was not rendered** (the
+Codex shadow reviewer, sandboxed with no network, never renders, and its
+packet says so). A table the re-run contradicts is Important, as is a
+`removed` entry the ticket's own diff added or changed — the design map's
+removal list is planning's, and the party under review is the one that must
+never declare its own missing element removed.
+
 **The hirer is never the party under review.** In `/flow:ticket`'s default
 lane the supervisor hires the reviewer, not the worker that wrote the code;
 in `/flow:run` the driver script does the same one level up — the worker

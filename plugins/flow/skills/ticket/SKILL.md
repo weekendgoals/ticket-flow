@@ -500,7 +500,15 @@ give it:
   rules, criteria, Not in scope (straying outside it is a finding), open owed
   items — not the whole `ticketsDoc`;
 - this ticket's own entry from `statusDoc`, not the whole log;
-- the instruction files for every area in scope.
+- the instruction files for every area in scope;
+- **when the epic declares `Design sources:` and this ticket carries a
+  `COMPARE:` criterion**: those design files, and the **signed-off** design
+  map — `git show origin/<base-branch>:epics/<epic-name>/design-map.json`,
+  never the working tree's copy, which is the file this ticket edits. The
+  entry above already carries the `**Compared:**` table; the review skill
+  says when to re-run the differ against it and what to say where nothing can
+  render a page. A reviewer that is never given the design is a reviewer who
+  can only check the table against itself.
 
 **It reports; it does not fix.**
 

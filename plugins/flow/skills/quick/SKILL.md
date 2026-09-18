@@ -255,7 +255,11 @@ after the retro has converted the open owed items.
     Acceptance criteria, open owed items;
   - this ticket's **own** status entry, sliced from the log:
     `awk '/^### /{f=/^### Q-<n> /} f' epics/quick/status.md`;
-  - the instruction files for the touched areas.
+  - the instruction files for the touched areas;
+  - **with a `COMPARE:` criterion**: the epic's declared design sources and the
+    signed-off design map (`git show origin/<default-branch>:epics/quick/design-map.json`),
+    never the working tree's copy — the entry's `**Compared:**` table is a
+    claim, and a reviewer given no design can only check it against itself.
 
   **Nothing else rides along**: no summary of what you built, no reasoning,
   no conversation content. It reports; it does not fix.

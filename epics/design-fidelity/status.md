@@ -568,3 +568,55 @@ code: "a UI-building ticket" is not something a parser can detect, which is why
 FID-5 adds no gate and the plan reviewer carries the judgment.
 
 **Owed:** Nothing.
+
+### FID-6 — The reviewer sees the design — 2026-09-18 — DONE
+
+**Built:** The reviewer's packet carries the epic's design sources, the
+**signed-off** design map (`git show origin/<base>:epics/<name>/design-map.json`,
+never the working tree's copy) and the entry's `**Compared:**` table, in all four
+copies — ticket skill step 7, quick skill step 6, the driver's `packetBody` and
+the Codex runner's copy, which `codex-review.test.mjs` pins to it verbatim. The
+review skill gained § 3b: re-run the differ when the project's instruction file
+says how to serve and drive a page (a table the re-run contradicts is
+**Important**), and otherwise audit the table against the design source's own
+markup and **say the page was not rendered** — with the differ's re-run stated as
+a read, since reviewers report and never fix. The Codex shadow reviewer's prompt
+now says it cannot serve or render a page, so its audit says so too. Two lenses
+joined the reviewer agent, the review skill and both `REVIEWER_RULES` copies: a
+`removed` entry added or changed **in the ticket's own diff** is Important, and a
+style assertion that reads a property off an element **while the page paints
+something else**. `check-invariants.mjs` pins both across the three documents it
+reads; the fourth is held by the runner suite.
+
+**Mode:** direct — built in-session on `epic/design-fidelity` at the repository
+owner's instruction, with no per-ticket review; one review of the whole
+FID-2…FID-6 range follows.
+
+**Tokens:** unknown — in-session.
+
+**Verified:** `tickets.mjs check FID-6` **4/4**. `codex-review.test.mjs`
+19 → **20** (*the prompt says the sandbox cannot render a page, so a fidelity
+table is audited and said to be unrendered*), with its existing
+packet-body/reviewer-rules equality test now covering the new text.
+`check-invariants.test.mjs` 31 → **32** (*a reviewer document dropping either
+design lens fails*, six cases). Unchanged: `tickets.test.mjs` 121/121,
+`ticket-session-guard.test.mjs` 14/14, `board.test.mjs` 9/9,
+`plan-page.test.mjs` 8/8, `fidelity.test.mjs` 43/43, `run-epic.test.mjs` 143/143,
+`codex.test.mjs` 21/21. `check-invariants.mjs` exit 0; `doctor` exit 0;
+`node --check` exit 0 on `tickets.mjs`, `fidelity.mjs`, `check-invariants.mjs` and
+`runners/codex-review.mjs`; `run-epic.mjs` parsed with CLAUDE.md's `node -e`
+command, exit 0.
+**Revert check:** with the seven changed source files restored from HEAD and the
+suites kept, both new tests fail. Each pinned copy was then flipped in turn:
+dropping one lens from the runner's `REVIEWER_RULES`, and dropping the design
+bullet from the runner's packet body, each turn the driver-equality test red —
+which is the guard that keeps the two packets one.
+
+**Decisions:** (1) The packet's new bullet names the design map by
+`origin/epic/<name>` rather than a fetched ref, so the Codex runner's offline
+sandbox can still read it — `git show` of a local remote-tracking ref needs no
+network. (2) The design sources themselves are not re-listed in the packet: the
+`brief` the packet already names prints the epic preamble, which carries the
+`Design sources:` line, and a second copy is a second thing to drift.
+
+**Owed:** Nothing.

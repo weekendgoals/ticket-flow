@@ -27,7 +27,7 @@ go through the flow, one-off work goes through `/flow:quick` into
   has its own suite:
   `node --test plugins/flow/hooks/ticket-session-guard.test.mjs` (`# pass 14`
   on the same terms). The invariant checker has
-  `node --test plugins/flow/scripts/check-invariants.test.mjs` (`# pass 31`),
+  `node --test plugins/flow/scripts/check-invariants.test.mjs` (`# pass 32`),
   The board renderer has
   `node --test plugins/flow/scripts/board.test.mjs` (`# pass 9`) and the
   plan-page renderer `node --test plugins/flow/scripts/plan-page.test.mjs`
@@ -54,7 +54,7 @@ go through the flow, one-off work goes through `/flow:quick` into
   remote that never answers) and nothing else, and never calls the real
   Codex. The Codex shadow-review runner has
   `node --test plugins/flow/scripts/runners/codex-review.test.mjs`
-  (`# pass 19`) — the same kind of stub, including the schema-valid interim
+  (`# pass 20`) — the same kind of stub, including the schema-valid interim
   messages real Codex streams, drives every outcome through a throwaway git
   repo and checks the review worktree is gone after each; it also cuts the
   driver's packet body, reviewer rules and `REVIEW_SCHEMA` out of
@@ -70,7 +70,7 @@ go through the flow, one-off work goes through `/flow:quick` into
   phrases). Run it whenever a skill, agent, hook or doctrine document changes —
   it is presence and equality only, so contradictions in meaning still need
   review. Its suite: `node --test plugins/flow/scripts/check-invariants.test.mjs`
-  (`# pass 31` on the same terms).
+  (`# pass 32` on the same terms).
 - **Smoke:** `node plugins/flow/scripts/tickets.mjs doctor` — must exit 0 on
   this repo. `… list` shows the board.
 - **Syntax check:** `node --check plugins/flow/scripts/tickets.mjs`, and the

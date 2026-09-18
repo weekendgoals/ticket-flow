@@ -514,3 +514,15 @@ test('a runner stopped by a signal still prints its failed report and removes th
   assert.equal(out.review, null)
   assertWorktreeGone()
 })
+
+test('shadow runner: the prompt says the sandbox cannot render a page, so a fidelity table is audited and said to be unrendered', () => {
+  // The review skill tells a reviewer to re-run the differ where the project
+  // can serve a page. This one never can — no network, no server — and an
+  // audit that is silent about not having rendered reads as a confirmation.
+  const r = runRunner('clean')
+  assert.equal(r.out.outcome, 'reviewed')
+  const prompt = readFileSync(rec.prompt, 'utf8')
+  assert.match(prompt, /You cannot serve or render a page/)
+  assert.match(prompt, /say in your report that the page was not rendered/)
+  assertWorktreeGone()
+})

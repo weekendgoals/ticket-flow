@@ -453,6 +453,16 @@ const PHRASES = [
     files: ['epic', 'ticket', 'quick', 'run', 'script', 'workflow'],
   },
   {
+    why: "the painted-versus-property lens — a style assertion that reads a property off an element while the page paints something else is the visual form of the test that executes code without checking it, and the reviewer definition, the review skill and the driver's inlined reviewer rules must all carry it. The Codex runner's copy is pinned to the driver's by codex-review.test.mjs, so this entry covers the three that are not",
+    re: /paints something else/i,
+    files: ['reviewer', 'review', 'workflow'],
+  },
+  {
+    why: "a removal declared in the ticket's own diff is Important — the design map's `removed` list is planning's, and the one party that must never declare its own missing element removed is the ticket under review. A reviewer document that drops it accepts the founding failure routed through the new machinery",
+    re: /in the ticket's own diff/i,
+    files: ['reviewer', 'review', 'workflow'],
+  },
+  {
     why: "the COMPARE criterion is one format in four documents: the parser lists comparisons apart from the checks and never runs one, the planning skill teaches the line, and both execution lanes run the differ it names and paste its table. A document that drops it leaves a criterion somebody writes and nobody performs",
     re: /COMPARE/,
     files: ['epic', 'ticket', 'quick', 'script'],

@@ -583,6 +583,37 @@ the table and to everyone reading the table. It is the one reading nobody
 downstream can perform, because nobody downstream holds both the drawing and
 the plan.
 
+## Why the reviewer is handed the design
+
+Everything else in this epic makes the comparison possible; this is what makes
+it checked. The worker's `**Compared:**` table is produced by the party under
+review, from a map that party may edit, in a browser nobody else watched. Read
+as evidence it is exactly the shape the methodology distrusts everywhere else —
+a claim by the author that the author's work is right.
+
+So the reviewer is given the design sources, the **signed-off** map and the
+table, in all four copies of the packet, and told what to do with them. Where
+the project's own instruction file says how to serve and drive a page, it
+re-runs the differ: the reviewer is the only fresh context that can, and a
+table the re-run contradicts is Important. Where nothing can render — a sandbox
+with no network, a design that is a PDF — it audits the table against the
+design source's markup and **says the page was not rendered**. That sentence is
+load-bearing: an audit silent about not having rendered reads as a
+confirmation, and the epic this work came from shipped on exactly that kind of
+silence.
+
+Two lenses ride with it, both instances of defects the flow already names, in
+their visual form. A **`removed` entry added or changed in the ticket's own
+diff** is the reviewed party declaring its own missing element removed — a
+clean comparison bought by editing the gate, which is why removals are honoured
+only from the signed-off ref and why this is Important however reasonable the
+entry reads. And **a style assertion that reads a property off an element while
+the page paints something else** — an inline style beating the rule under test,
+an assertion on a wrapper while a child paints, a property read at a width the
+test never set — is the visual form of the test that executes code without
+checking it: the assertion passes, the page is wrong, and the suite reports the
+opposite.
+
 ## Why token figures are observed, never asked
 
 The Tokens lines exist as planning evidence — they are what priced the

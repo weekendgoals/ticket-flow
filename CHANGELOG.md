@@ -8,6 +8,28 @@ with one version and date.
 
 ## Unreleased
 
+- **The ticket reviewer sees the design** (`agents/ticket-reviewer.md`,
+  `skills/review/SKILL.md`, `skills/ticket/SKILL.md`, `skills/quick/SKILL.md`,
+  `workflows/run-epic.mjs` and `scripts/runners/codex-review.mjs` with its
+  suite, `scripts/check-invariants.mjs` and its suite, README, METHODOLOGY §
+  "Why the reviewer is handed the design"). The reviewer's packet — in all
+  four copies: ticket skill step 7, quick skill step 6, the driver's packet
+  body and the Codex runner's copy pinned equal to it — carries the epic's
+  design sources, the **signed-off** design map (`git show
+  origin/<base>:epics/<name>/design-map.json`, never the working tree's copy)
+  and the entry's `**Compared:**` table. The review skill's new § 3b tells the
+  reviewer to **re-run the differ where the project's instruction file says how
+  to serve and drive a page** — a table the re-run contradicts is Important —
+  and otherwise to audit the table against the design source's markup and
+  **say the page was not rendered**; the Codex shadow reviewer, sandboxed with
+  no network, never renders, and its prompt now says so. Two new lenses in the
+  reviewer agent, the review skill and both `REVIEWER_RULES` copies: a
+  `removed` entry added or changed **in the ticket's own diff** is Important
+  (the removal list is planning's, and a worker who could not build an element
+  writes a deviation), and a style assertion that reads a property off an
+  element **while the page paints something else** — the visual form of the
+  test that executes code without checking it.
+
 - **The plan side of a design: one ticket owns the whole page, and a narrowing
   declares its removal** (`skills/epic/SKILL.md`, `agents/plan-reviewer.md`,
   `scripts/check-invariants.mjs` and its suite, README, METHODOLOGY § "Why a

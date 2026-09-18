@@ -51,6 +51,27 @@ that cannot tell whether the change is present leaves the merge with no
 evidence behind it, and the worker's claim of the check is not that
 evidence.
 
+Two more, where the ticket carries a `COMPARE` criterion and the packet hands
+you the design:
+
+**A `removed` entry added or changed in the ticket's own diff is Important.**
+The design map's `removed` list is planning's — what the plan deliberately does
+not build. A worker edits that map, because its `page` selectors are written
+before the page exists, so a removal arriving in this diff is the party under
+review declaring its own missing element removed: a clean comparison, and
+nothing stopped. A worker who could not build something writes a
+`**Deviation:**` instead.
+
+**A style assertion that reads a property off an element while
+the page paints something else.** The visual form of the test that executes code without
+checking it: an inline style beating the rule under test, an assertion on a
+wrapper while a child paints, a property read at a width the test never set.
+The assertion passes, the page is wrong, and the suite reports the opposite.
+
+The entry's `**Compared:**` table is a claim, not evidence: the `/flow:review`
+skill says when to re-run the differ and what to do when nothing here can
+render a page.
+
 Then: missing negative tests, error paths that leak internals, a guard that fails
 open, a secret or permission widened beyond what is needed, and behaviour changes
 that break existing callers.
