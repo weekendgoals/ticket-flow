@@ -2636,6 +2636,40 @@ test('a malformed COMPARE is a ledger problem and fails allPassed, exactly as a 
   }
 })
 
+test('prose that merely begins "Compare:" or "Landmarks:" is not a malformed criterion', () => {
+  // Installed projects update live: before this pin, a case-blind near-miss
+  // scan failed the gate of any ticket whose criteria used the English word.
+  const dir = mkdtempSync(join(tmpdir(), 'tickets-prose-'))
+  try {
+    git(dir, 'init', '--initial-branch=main')
+    git(dir, 'config', 'user.email', 'test@example.com')
+    git(dir, 'config', 'user.name', 'Test')
+    mkdirSync(join(dir, 'epics', 'prose'), { recursive: true })
+    writeFileSync(
+      join(dir, 'epics', 'prose', 'tickets.md'),
+      `# Prose epic — tickets
+
+## W-1 — words, not labels
+
+**Acceptance criteria.**
+- Compare: the old output with the new one by hand.
+- Landmarks: every section keeps its heading.
+  Compare: both by eye.
+- it runs
+  CHECK: true
+`,
+    )
+    git(dir, 'add', '.')
+    git(dir, 'commit', '-q', '-m', 'prose epic')
+    // `run` throws on a nonzero exit, so reaching the asserts is the exit-0 half.
+    const out = JSON.parse(run(dir, 'check', 'W-1', '--json'))
+    assert.equal(out.problems.length, 0, JSON.stringify(out.problems))
+    assert.equal(out.allPassed, true)
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
 test('doctor flags a COMPARE/LANDMARKS near-miss, so a comparison never silently disappears', () => {
   const rows = JSON.parse(runFail(crepo, 'doctor', '--json').stdout)
   const p6 = rows.filter((r) => r.level === 'warn' && r.msg.includes('(P-6)'))

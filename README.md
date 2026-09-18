@@ -417,7 +417,8 @@ epic's integration merge **refuses a ticket with an unclosed deviation**: the
 gate reads the departures off the pushed branch it is about to merge, stops
 before the merge, and resumes only once a human has decided — accepted, or
 fixed on the branch and then accepted as fixed — in the `**Deviations
-closed:**` line that no agent may write. That merge is the last point at which
+closed:**` line that no agent may decide: an explicit answer in the session
+is the decision, and the session records it. That merge is the last point at which
 one ticket's departure is still one decision rather than a paragraph inside a
 whole epic's diff. **An unattended run halts on any departure at all** — it
 counts every `**Deviation:**` line the pushed entry carries and honours no

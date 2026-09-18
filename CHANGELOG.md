@@ -8,6 +8,23 @@ with one version and date.
 
 ## Unreleased
 
+- **Review fixes to the design-fidelity range, before release**
+  (`scripts/tickets.mjs`, `workflows/run-epic.mjs`, `scripts/fidelity.mjs`,
+  `skills/run/SKILL.md`, `skills/ticket/SKILL.md`, `skills/epic/SKILL.md`,
+  README). The near-miss scan for the new `COMPARE` and `LANDMARKS` labels was
+  case-blind, so an acceptance bullet beginning "Compare:" in plain English
+  failed its ticket's gate — a regression for every installed project; the two
+  new labels are now caught in capitals, and a lowercase `compare:` only when
+  the line carries the ` @ ` that makes it comparison-shaped. The acceptance
+  step's prompt now names `compares`, which the driver already refused a report
+  without: the step runs on a small model that reports what it is asked for,
+  and the omission would have halted every ticket of every epic. Two sentences
+  that still said no agent may *write* the closing line now say no agent may
+  *decide* it, matching the rule above. The differ's "nothing was compared"
+  refusal names the `--removed-from` repair when removals sit only in `--map`,
+  and the epic skill states `COMPARE`'s hand-written form like every other
+  document that teaches it.
+
 - **The ticket reviewer sees the design** (`agents/ticket-reviewer.md`,
   `skills/review/SKILL.md`, `skills/ticket/SKILL.md`, `skills/quick/SKILL.md`,
   `workflows/run-epic.mjs` and `scripts/runners/codex-review.mjs` with its

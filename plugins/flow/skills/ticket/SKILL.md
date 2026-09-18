@@ -710,8 +710,8 @@ reads it.
   status log on the ticket branch, committed and pushed. *Fixed* — you build
   the missing thing as new commits on this branch (`<ID>: … (deviation fix)`),
   re-run the affected checks, report the counts, append a dated addendum
-  saying what you built and where, and push; then the human's line names that
-  departure as **fixed in `<sha>`**. Either way, `git fetch origin --prune`
+  saying what you built and where, and push; then the closing line, once the
+  human has accepted the fix, names that departure as **fixed in `<sha>`**. Either way, `git fetch origin --prune`
   and re-run the command above: it reads the remote-tracking ref, which a
   human pushing the closing line from their own checkout leaves stale here,
   and a gate refusing a branch that is already clean has no diagnosis to give.

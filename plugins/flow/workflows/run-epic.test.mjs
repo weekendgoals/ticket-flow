@@ -1294,6 +1294,16 @@ test('the accept step reads the criteria from the signed-off document on the epi
   assert.equal(rec.acceptanceProblems, 0)
 })
 
+test('the accept prompt asks by name for every field the driver refuses a report without', async () => {
+  // The step runs on haiku at low effort and follows the prompt's list. A field
+  // the gate requires and the prompt never names halts every ticket of every
+  // epic the day a proxy reports exactly what it was asked for — `compares`
+  // shipped that way for one review.
+  const c = call(await drive(oneTicket()), 'accept:PAY-1')
+  for (const field of ['total', 'passed', 'skipped', 'allPassed', 'problems', 'compares'])
+    assert.match(c.prompt, new RegExp('`' + field + '`'), `the accept prompt never names \`${field}\``)
+})
+
 test('a failed acceptance check halts before any merge agent exists, quoting the failures fenced', async () => {
   const r = await drive(
     oneTicket({
@@ -1587,7 +1597,7 @@ test('the resolve prompt asks for the comparison count with its own command and 
   // would report a gate's answer off the wrong document.
   assert.match(p, /none of the three shares a field name with the others/)
   assert.match(p, /an unreadable log is not "no comparison"/)
-  assert.match(p, /report .*six facts|report five facts/)
+  assert.match(p, /report five facts/) // six only when the fix-bounds gate is armed, which oneTicket() does not arm
 })
 
 // ---- pre-existing findings --------------------------------------------------

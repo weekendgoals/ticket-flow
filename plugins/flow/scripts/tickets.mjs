@@ -331,8 +331,14 @@ const COMPARE_LINE = /^\s*COMPARE:\s*(\S.*)$/
 const LANDMARKS_LINE = /^\s*LANDMARKS:\s*(\S.*)$/
 // Near-miss shapes doctor flags: a lowercase or spaced label, or the label
 // written as a bullet of its own instead of indented under its criterion.
-const CHECK_NEAR = /^\s*(check|expect|compare|landmarks)\s*:/i
-const CHECK_BULLET_NEAR = /^\s*[-*]\s+(CHECK|EXPECT|COMPARE|LANDMARKS)\s*:/i
+// CHECK and EXPECT are caught in any case. COMPARE and LANDMARKS are caught
+// in capitals — and a lowercase "compare:" only when the line also carries the
+// ` @ ` that makes it comparison-shaped — because "Compare:" and "Landmarks:"
+// are ordinary English at the head of an acceptance bullet: installed projects
+// update live, and a case-blind scan turned a green ledger red over prose
+// ("- Compare: the old output with the new one by hand") the day it was written.
+const CHECK_NEAR = /^\s*(?:(?:[Cc][Hh][Ee][Cc][Kk]|[Ee][Xx][Pp][Ee][Cc][Tt]|COMPARE|LANDMARKS)\s*:|[Cc][Oo][Mm][Pp][Aa][Rr][Ee]\s*:.*\s@\s)/
+const CHECK_BULLET_NEAR = /^\s*[-*]\s+(?:[Cc][Hh][Ee][Cc][Kk]|[Ee][Xx][Pp][Ee][Cc][Tt]|COMPARE|LANDMARKS)\s*:/
 
 // One layer in from a near-miss: shapes that parse, run, and still cannot
 // decide anything. Both are quoted from redesign-foundation's history, where

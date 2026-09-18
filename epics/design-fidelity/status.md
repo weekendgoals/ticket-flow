@@ -620,3 +620,33 @@ network. (2) The design sources themselves are not re-listed in the packet: the
 `Design sources:` line, and a second copy is a second thing to drift.
 
 **Owed:** Nothing.
+
+**Addendum — 2026-09-19 — one review of the directly built range, and its fixes**
+
+FID-2 to FID-6 were built directly at Vadim's instruction ("also the tickets in
+the epic - build them directly"), with one fresh-context review of
+`a4ef91b..c0d0b9d` and of `f25f270` in place of five (opus/default effort,
+223,140 tokens; builder 490,232). **3 Important, 4 nits, 1 pre-existing; all
+three Important and all four nits fixed in the commit that carries this
+addendum.** Important 1: the accept prompt never named `compares` while the
+driver refused a report without it — every ticket of every epic would have
+halted on a proxy that reported what it was asked; the prompt names it, and a
+new driver test holds the prompt to every field the gate requires. Important
+2: the case-blind near-miss scan failed the gate of a ticket whose bullet
+began "Compare:" in prose (exit 0 before the range, exit 1 after) — now
+capitals, or a lowercase `compare:` carrying ` @ `; a new test, seen red with
+the old regexes (121/1), pins the prose case. Important 3: `f25f270` had left
+"that no agent may write" in the run skill and README beside its own rewrite —
+both now say "decide". Nits: the epic skill's missing degraded form; the
+differ's refusal dropping the `--removed-from` repair; a driver assertion that
+accepted either fact count (now `report five facts`); one stale "the human's
+line" in step 10. Pre-existing, left with the reversal record: `fidelity.mjs`
+does not refuse `--removed-from` naming the same file as `--map`; mitigated by
+the provenance note and FID-6's reviewer lens. The review found the FID-4
+consequence path failing closed everywhere it pushed, `removed-absent` not
+abusable into a silent pass, and the unattended deviation rule intact. After
+the fixes: tickets 122, fidelity 43, check-invariants 32, run-epic 144, codex
+21, codex-review 20, session-guard 14, board 9, plan-page 8, all `# fail 0`;
+`check-invariants.mjs`, `doctor`, both syntax checks exit 0; `check` FID-1 to
+FID-6 all pass. No re-review of these fixes was run — the release pull request
+is where they are read.

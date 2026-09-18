@@ -437,7 +437,13 @@ export function run(argv) {
   if (result.compared === 0) {
     throw new UsageError(
       `nothing was compared — no landmark ${only ? 'named by --landmarks ' : ''}matched on either side${map.landmarks.length ? '' : ' (the map declares no landmarks)'}. ` +
-        'A map whose selectors match neither report is not a page that matches its design.',
+        'A map whose selectors match neither report is not a page that matches its design.' +
+        // The one repair this refusal can name for certain: removals sitting in
+        // --map are ignored, so a landmark declared removed there reads as
+        // merely unmatched — and the fix is a flag, not a selector.
+        (result.notes.some((n) => n.includes('pass the signed-off map as --removed-from'))
+          ? ' The --map file carries a "removed" list, which is never honoured — if these landmarks were removed on purpose, pass the signed-off map as --removed-from.'
+          : ''),
     )
   }
   return { stdout: json ? JSON.stringify(result, null, 2) : renderTable(result), code: result.exit }

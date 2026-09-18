@@ -814,7 +814,8 @@ happens to the ticket. And **an unclosed deviation** — a departure the entry
 recorded that no human has closed: the step shows it and holds the merge until
 the human has accepted it, or had it fixed on the branch and accepted it as
 fixed, in a dated `**Deviations closed:**` line on the pushed branch that no
-agent may write. That second refusal is why a halted ticket carrying a
+agent may decide — your explicit answer is the decision, and the attended
+session records it. That second refusal is why a halted ticket carrying a
 departure comes back here at all: nobody in an unattended run could have
 written that line. Once the board reads `integrated`, re-run
 `/flow:run <epic>`.

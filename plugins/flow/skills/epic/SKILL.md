@@ -329,7 +329,10 @@ Rules that matter:
   reviewer reads is the `**Compared:**` table in the status entry. So a
   COMPARE is not proven red the way a CHECK is (there is nothing to run); what
   sign-off checks is that its path is declared, its widths are the design's,
-  and its landmarks are in the map.
+  and its landmarks are in the map. **Where the design cannot be rendered** —
+  an image, a PDF — `COMPARE` degrades to a table written by hand and labelled
+  as hand-written, and the ticket says so: a criterion the lane cannot perform
+  is recorded as owed, never implied.
 - **Every CHECK you write must fail on the tree before the ticket exists,
   and you prove it before sign-off.** Run each one now, on the tree as it is,
   with `node "${CLAUDE_PLUGIN_ROOT}/scripts/tickets.mjs" check <ID>`, and
