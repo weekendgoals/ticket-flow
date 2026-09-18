@@ -32,7 +32,15 @@ go through the flow, one-off work goes through `/flow:quick` into
   `node --test plugins/flow/scripts/board.test.mjs` (`# pass 9`) and the
   plan-page renderer `node --test plugins/flow/scripts/plan-page.test.mjs`
   (`# pass 8`) — both pure rendering tests over fixture JSON, no git
-  needed. And the run driver has
+  needed. The fidelity differ has
+  `node --test plugins/flow/scripts/fidelity.test.mjs` (`# pass 40`) — the
+  diff driven through the CLI over the committed fixture reports under
+  `scripts/fixtures/fidelity/` (what a real browser returned once, from
+  `design.html` and `page.html`), and the page-side extractor evaluated with
+  `new Function` against a stub `document`/`getComputedStyle`, which is how a
+  closure reference fails here instead of inside somebody's page. It needs
+  nothing but Node, and **no test may launch or drive a browser** — the plugin
+  owns none, which is why it installs anywhere. And the run driver has
   `node --test plugins/flow/workflows/run-epic.test.mjs` (`# pass 137`) —
   which evaluates `run-epic.mjs`'s module body with stubbed agents and
   asserts the sequence, the gate branches and the halt mapping. It needs
@@ -64,7 +72,8 @@ go through the flow, one-off work goes through `/flow:quick` into
   (`# pass 25` on the same terms).
 - **Smoke:** `node plugins/flow/scripts/tickets.mjs doctor` — must exit 0 on
   this repo. `… list` shows the board.
-- **Syntax check:** `node --check plugins/flow/scripts/tickets.mjs`. This does
+- **Syntax check:** `node --check plugins/flow/scripts/tickets.mjs`, and the
+  same for `scripts/fidelity.mjs`. This does
   **not** work on `plugins/flow/workflows/run-epic.mjs`: a workflow script is
   a module body with a top-level `return`, which the workflow runtime allows
   (`allowReturnOutsideFunction`) and `node --check` rejects. Parse it the way
