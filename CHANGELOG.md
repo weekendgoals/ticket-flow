@@ -196,6 +196,37 @@ with one version and date.
   with a deviation is the rest of the `deviation-routing` epic. The status
   log's shape is unchanged: both lines are optional, `**Owed:**` is still the
   one required line, and no existing log needs an edit.
+
+- **A reviewer hire that throws is a failed hire, not the end of the run**
+  (`workflows/run-epic.mjs` `hireReviewer` and the two reviewer-spawn halt
+  details, `skills/run/SKILL.md` steps 3 and 4). The driver's sanctioned
+  fallback — one retry with a general agent given the reviewer's rules —
+  was reached only when the first hire *returned* nothing or returned
+  something that is not a review. But for an agent type the launching
+  session never registered, the Workflow runtime does not return: it throws
+  `agent type 'flow:ticket-reviewer' not found`, and an uncaught throw in
+  the script's module body ends the whole workflow — so the fallback was
+  unreachable in exactly the situation it was written for. A live run died
+  this way at its first review hire (Workflow run `wf_2e558dac-83d`,
+  2026-09-17, the deviation-routing epic): it failed closed, nothing
+  unreviewed merged, and the run was lost. A throwing hire is now caught and
+  logged with the error's first line — so a run record can quote why rather
+  than report an unexplained fallback — and takes the same one retry, for
+  the review and the re-review alike. The catch wraps the whole call, so any
+  other rejection lands there too and is reported the same way — the
+  reviewer **could not be hired**, with the error quoted, rather than a
+  spawn failure the driver has not diagnosed. A fallback that also throws
+  returns no review exactly as one that returns nothing does, and the run
+  halts on **reviewer-spawn failure after the sanctioned fallback also
+  fails** with the branch pushed and unmerged: an unreviewed ticket is still
+  never merged, anywhere. No other agent spawn in the script catches a
+  throw, and a test pins that — an unhandled surprise must not look like a
+  handled one. Step
+  3 now names the cost of running without the plugin installed (a failed
+  hire per review, and reviews by the fallback rather than by the reviewer
+  agent with its Edit and Write removed), which is a price and not a
+  refusal.
+
 - **An entry that owes several things is retired item by item: `brief`
   numbers an `**Owed:**` block's bullets `<ID>.1`, `<ID>.2` …, and a bare
   `**Resolves owed:** <ID>` against a multi-item entry retires nothing**

@@ -1043,3 +1043,20 @@ Re-review tokens: 17,976 (178,632 cumulative for the reviewer agent across both
 rounds). Corrected figure for the entry's token line, observed by the
 supervisor: Worker tokens (implementation leg): 255,492; 271,099 cumulative
 after disposition.
+
+**Addendum — 2026-09-18 — second refresh from `main`**
+
+PR #52 (the throwing reviewer hire) reached `main` (`d47f95d`) after the last
+ticket integrated, and the release pull request conflicted in two files.
+`main` is the source, never the target. CHANGELOG.md: both sides kept — this
+epic's entries, then #52's. CLAUDE.md: the run driver's count, 133 here and
+127 on `main`, is 137 on the merged suite (run, not added up).
+`run-epic.mjs`, its suite, the run skill and METHODOLOGY merged without
+conflict; the diff of the result against each side shows neither side's
+driver change altered (`hireError` whole from #52; `STOP.deviation` and the
+`devAgrees` cross-check whole from DEV-3). On the result: tickets 110/0,
+run-epic 137/0, check-invariants 25/0, session-guard 14/0, board 9/0,
+plan-page 8/0, codex 21/0, codex-review 19/0; `check-invariants.mjs`,
+`doctor`, `node --check` and the driver parse exit 0; `check` for all five
+tickets passes. Not reviewed in a fresh context, unlike the first refresh:
+two conflicts, one keep-both and one number read off the suite.
