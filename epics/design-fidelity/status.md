@@ -260,3 +260,64 @@ truncated `check --json` is a payload the unattended driver's merge gate reads,
 which is the fail-open shape on the risk list that bars work from the quick
 path. It is for this epic's retro to convert into a ticket of its own, with the
 measurement above as its evidence.
+
+**Addendum — re-review — 2026-09-18 — opus/default effort:** the same reviewer,
+resumed and bounded to the fix range `e294bd3..a787ff2`. **0 Important, 2
+nits.** It re-ran every reproduction from the first pass and closed each:
+221,626 bytes through a pipe and through `$( )`, the JSON parsing at 1,600
+rows; all six empty `--landmarks` spellings exit 2; all-unfound exits 2; a
+comma-inside-quotes family now compares unequal; `toString x` is refused; the
+provenance note prints; a repeated flag is refused. The exit contract is
+otherwise intact, the `--json` shape unchanged, error paths print in full and
+leave no lingering handle, and `| head -1` on a 62KB table produces no EPIPE
+noise now that `process.exit` is gone. Seven first-pass mutants re-run, all
+killed. The nit 2 decline (no CSS named-colour table) was judged sound, and the
+owed item reads correctly through `brief FID-3`. Tokens: reviewer 183,335
+cumulative, so this leg is about 40,184; worker legs as the supervisor observed
+them, cumulative — 168,622 after the build, 193,852 after the smoke test and
+entry, 234,642 after the review disposition.
+
+**Nit 1 — the disposition's "8 of 8" was wrong, and is corrected here.**
+Reverting `process.exitCode = 2` to `process.exit(2)` in the **error** path
+left the suite green: seven fixes were pinned, not eight, and the enumerated
+list in the addendum above names seven. It is pinned now, in `28a252b`: a
+`--landmarks` refusal naming 7,000 unknown landmarks writes about 76KiB to
+stderr, and the test asserts the tail arrived rather than the first 64KiB —
+red with `process.exit(2)` restored. `fidelity.test.mjs` 39 → **40**, CLAUDE.md
+with it. So "8 of 8" is true at HEAD and was not true when it was written.
+
+**Nit 2 — the first Deviation's figures are stale, and the line cannot be
+edited.** It records 837 / 1,424; the fixes moved the diff twice since. At
+`67914c2` the figures were 970 / 1,069 / 1,656 and at HEAD they are **980
+changed lines** for source, suite and documents — the like-for-like successor
+of the 837 — **1,163** with this status log included, and **1,750** with the
+fixtures. The "1,738" reported after the disposition was the whole-diff figure
+measured one commit later than the two figures quoted beside it; this paragraph
+is the correction. Whoever closes the departure should read 980, not 837.
+
+**Deviation:** The ticket's exit contract shows three outcomes — "Exit 0 when
+the only rows are declared removals, 1 when anything else differs, 2 on a usage
+error or unreadable input" — so a run whose two reports parse, whose map
+validates, and whose selected landmarks are absent on **both** sides yields no
+rows and exits 0 → `fidelity.mjs` exits **2** on that run instead, refusing it
+as unreadable input with "nothing was compared", because "no differences" over
+zero landmarks compared is a pass nobody earned, and a silent pass is the
+failure this differ exists to end. It was built in answer to a review finding,
+after the ticket's criteria were written, and it is right on the merits; it is
+recorded as a departure because it is outside the letter of the contract that
+FID-3's verify step and FID-6's re-run will be written against, and prose in an
+addendum is invisible to `tickets.mjs deviations`.
+
+**Owed:** FID-3 — carry the amended exit contract into the `COMPARE` verify
+step, and decide the one case the refusal above gets wrong. A landmark that is
+declared removed **and** absent from the artboard too (the designer dropped it
+as well), selected alone through `--landmarks`, exits 2 with a recovery message
+that does not fit, while the same pair over the whole map exits 0 with a note —
+the two sides agree, and the differ calls it unreadable. The realistic shape is
+`COMPARE … @ 1440,393` with a `LANDMARKS:` subset of breakpoint-specific
+landmarks, run at the width where neither side draws them. Two ways out were
+suggested by the reviewer and neither is chosen here: refuse only when nothing
+matched **and** the unmatched set is the whole map; or give the
+both-sides-agree case its own message and exit code. FID-3 owns the decision
+because it is the ticket that teaches the contract, and changing it now would
+be redesigning a gate after its review.
