@@ -245,7 +245,13 @@ Rules that matter:
   proves or kills it, and the doc says what happens on failure.
 - **Sized for one session and a reviewable pull request** — a few hundred
   changed lines; defect discovery collapses past roughly 400. If the
-  criteria will not fit a handful of bullets, split it.
+  criteria will not fit a handful of bullets, split it. **Size it when you
+  plan it, and never write the figure into the ticket as a condition the
+  worker must stop on** ("two lines", "split past ~450"): an estimate is the
+  planner's guess, a worker that misses it has departed from nothing that was
+  designed, and both times one was written as binding it stopped a merge to
+  ask a human a question the plan had invented. A size you expect belongs in
+  the ticket as an expectation the reviewer weighs.
 - **All three of Scope / Not in scope / Acceptance criteria.** "Not in
   scope" is what stops a fresh-context agent wandering.
 - **Acceptance criteria must be checkable.** Prefer *when <condition> then

@@ -181,7 +181,7 @@ closes them one at a time, so write each to be read alone.
 instead, and why>
 ```
 
-**`**Deviations closed:**` is the human's line, never yours.** A dated line
+**`**Deviations closed:**` records a human's decision, never yours.** A dated line
 naming each deviation as **accepted** or as **fixed in `<sha>`**, with who
 decided and when, closing by its leading reference list the departures the named
 entries recorded above it in the file — the shape the ticket skill's step 6
@@ -189,8 +189,13 @@ carries. **A bare closing line** — `**Deviations closed:** Q-<n>` — closes a
 entry's one departure; facing more than one open it closes **nothing** and says
 so, because accepted and fixed are decisions per departure and one wrongly
 closed is gone from every brief with nobody having decided it. Do not write
-one, even for a departure you fixed in this same ticket: a closing line the
-party that made the departure could have written clears nothing.
+one on your own authority, even for a departure you fixed in this same ticket:
+a closure the party that made the departure could have decided clears nothing.
+With the human in the session, ask for the decision and not for a sentence:
+an explicit answer to the departure you showed — "accept", "fix it" — is the
+decision, and you record the line quoting it, ending `recorded by the session
+from <name>'s answer`. A missed estimate and a change made in answer to a
+review finding are not deviations — the ticket skill's step 6 says why.
 `node "${CLAUDE_PLUGIN_ROOT}/scripts/tickets.mjs" deviations Q-<n>` reads every
 one this ticket recorded, closed or not, and reports any closing line that
 closed nothing.

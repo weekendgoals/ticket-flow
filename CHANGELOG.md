@@ -8,6 +8,30 @@ with one version and date.
 
 ## Unreleased
 
+- **A deviation is narrowed to what it was for, and closing one takes a word,
+  not a sentence** (`skills/ticket/SKILL.md` steps 6 and 10,
+  `skills/quick/SKILL.md`, `skills/run/SKILL.md`'s after-a-halt procedure,
+  `skills/epic/SKILL.md`, the worker's instructions in `workflows/run-epic.mjs`
+  and `scripts/runners/codex.mjs`, README, METHODOLOGY). On its first day the
+  gate stopped three merges and none was the case it exists for: two were
+  missed estimates a planner had written into tickets as conditions, one was a
+  change made in answer to a review finding. **Neither is a deviation now** — a
+  missed estimate goes under `**Decisions:**` with its figure, a reviewed fix in
+  the review addendum, with an `**Owed:**` item to any later ticket written
+  against what it moved — and the epic skill tells planners not to write a
+  size into a ticket as a stop condition. **The closing line still records a
+  human's decision and no agent's, but the human no longer has to compose it:**
+  in an attended session an explicit answer to the departure shown ("accept",
+  "fix it") is the decision, and the session records the line, naming every
+  reference, quoting the answer, and ending `recorded by the session from
+  <name>'s answer`. Silence, a general instruction to carry on, or an answer
+  about something else is not a decision. The session may now say which way it
+  would decide, labelled as a recommendation. This supersedes the
+  attended-door entry below where it says "both end in a line you do not
+  compose" and that a "yes" is not the human's line. Unchanged: the parser, the
+  attended gate (stops on `open` above zero), and the unattended gate, which
+  honours no closing line because nobody is present to answer.
+
 - **Every note is cleared by the repair it names, in both ledgers**
   (`scripts/tickets.mjs` — `parseOwed` and `parseDeviationsText` —
   `skills/ticket/SKILL.md` steps 6, 9 and 10, `skills/quick/SKILL.md` step 7,

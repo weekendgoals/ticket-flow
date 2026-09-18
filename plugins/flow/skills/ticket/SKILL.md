@@ -320,8 +320,20 @@ once handed to a lane that never touches the step it was meant to verify>
 ```
 
 **What counts as a deviation:** anything the ticket's documents or its design
-showed that you did not build, or built differently. A judgment call the
-documents left open is not one and stays in `**Decisions:**`. A deviation is
+showed that you did not build, or built differently. Three things are **not**
+one, because a line that stops a merge for a human has to be worth the human:
+a judgment call the documents left open, which stays in `**Decisions:**`; **a
+missed estimate** — a line count, a size, "about two lines", a duration — which
+is an expectation about effort and not about what is built, so it goes in
+`**Decisions:**` with the figure, where the reviewer weighs it; and **a change
+made in answer to a review finding**, which the re-review judges and the review
+addendum records beside the finding it answers — and when such a change moves
+something a later ticket is written against, hand that ticket an `**Owed:**`
+item naming what moved. Two of the first three deviations this line ever
+carried were missed estimates a planner had written into tickets as
+conditions, and the third was a reviewed fix: each stopped a merge to ask a
+human something already answered, and a gate that does that is a gate people
+stop reading. A deviation is
 **never owed work**, and the two are not interchangeable: an owed item is work
 someone will do, a deviation is a decision someone must see. It gets its own
 line because the field that used to hold it — `**Decisions:**` prose — is read
@@ -331,8 +343,8 @@ sentence any further. On its own line it is parsed, and
 `node "${CLAUDE_PLUGIN_ROOT}/scripts/tickets.mjs" brief <ID>` hands every one
 no human has closed to every later ticket in this epic.
 
-**`**Deviations closed:**` is the human's line — never yours, and never any
-agent's.** A dated line, in an entry or an addendum, naming each deviation as
+**`**Deviations closed:**` records a human's decision — never yours to decide,
+and never any agent's.** A dated line, in an entry or an addendum, naming each deviation as
 **accepted** or as **fixed in `<sha>`**, with who decided and when:
 
 ```markdown
@@ -361,14 +373,16 @@ nothing too, and each ends once a line **below** it names one of that entry's
 departures correctly — below, because position is time here: a correct
 reference written earlier is not a correction of a later mistake. For an entry
 that recorded one departure the correct reference is its bare ID, that being
-the only reference such an entry has. Do not write one, even for a departure
-you fixed yourself in this same ticket: a closing line the reviewed party could
-have written clears nothing, and "which of the two happened" is what the human
-reading it needs to know. Record the fix as a deviation like any other and
-leave the line to whoever decides. Step 10 draws the one boundary this leaves,
-at the attended door where the human is in the room: a sentence they dictate
-for you to commit verbatim is theirs, while one you infer from a "yes" or draft
-for them to approve is not.
+the only reference such an entry has. Do not write one on your own authority,
+even for a departure you fixed yourself in this same ticket: a closure the
+reviewed party could have decided clears nothing, and "which of the two
+happened" is what the human reading it needs to know. Record the fix as a
+deviation like any other and leave the decision to whoever owns it. Step 10
+draws the one boundary this leaves, at the attended door where the human is in
+the room: **the decision is theirs and the typing need not be** — an explicit
+answer to a departure you showed them is the decision, and you record the line
+quoting it; silence, a general instruction to carry on, or an answer about
+something else is not one.
 `node "${CLAUDE_PLUGIN_ROOT}/scripts/tickets.mjs" deviations <ID>` reads all of
 a ticket's own — closed or not, each with its closing line.
 
@@ -593,9 +607,9 @@ reads it.
   rather than one paragraph inside the nine-ticket diff the release pull
   request shows.
 
-  **Two ways out, and both end in a line you do not compose.** *Accepted* —
-  the human puts the dated `**Deviations closed:**` line into the status log
-  on the ticket branch, and it is committed and pushed. *Fixed* — you build
+  **Two ways out, and both end in a decision you do not make.** *Accepted* —
+  the human says so, and the dated `**Deviations closed:**` line goes into the
+  status log on the ticket branch, committed and pushed. *Fixed* — you build
   the missing thing as new commits on this branch (`<ID>: … (deviation fix)`),
   re-run the affected checks, report the counts, append a dated addendum
   saying what you built and where, and push; then the human's line names that
@@ -604,19 +618,26 @@ reads it.
   human pushing the closing line from their own checkout leaves stale here,
   and a gate refusing a branch that is already clean has no diagnosis to give.
   `open: 0` is what resumes this step, whatever notes the log still carries.
-  **Never write that line yourself,
-  for any departure, including one you just fixed** — a closure the party that
-  made the departure could have written clears nothing, which is the whole
-  reason this gate is worth stopping at. Dictating the sentence for you to
-  commit verbatim is the human writing it; inferring it from a "yes", or
-  drafting it for them to approve, is not. Show them the shape step 6 carries
-  and the `<ID>.<n>` references this command printed, and say why the
-  references matter: a bare `**Deviations closed:** <ID>` facing more than one
-  open departure closes **nothing**, the command still reports those
-  departures open with a note saying so, and this step still refuses — so a
-  recovery that ends in a bare line is not a recovery. Judging whether a
-  departure is acceptable is theirs alone: show it, and say nothing about
-  which way to decide.
+  **Never decide one yourself, for any departure, including one you just
+  fixed** — a closure the party that made the departure could have decided
+  clears nothing, which is the whole reason this gate is worth stopping at.
+  **Ask for the decision, not for a sentence.** Show each open departure in one
+  or two plain sentences — what the ticket showed, what was built, what the
+  review said of it — and ask: accept, or fix? You may say which you would
+  choose and why, labelled as your recommendation. An **explicit answer to the
+  departure shown** — "accept", "ok", "fix it" — is the human's decision, and
+  the line is then yours to record: name every reference this command printed
+  (a bare `**Deviations closed:** <ID>` facing more than one open departure
+  closes **nothing** and this step still refuses), quote the answer verbatim,
+  and end it `recorded by the session from <name>'s answer`, so a reader can
+  tell a recorded decision from a dictated one. A human who would rather write
+  or push the line themselves may; nothing requires it. What is never a
+  decision: silence; a general instruction to carry on; an answer given before
+  the departure was shown, or about a different one. The first version of this
+  step demanded a dictated sentence and refused a plain "accept" three times
+  in a day, and the human it was protecting called the gate unusable — a
+  refusal that costs more than the departure it guards gets routed around,
+  which protects nothing.
 - Merge **by verified SHA, with a merge commit** — the SHA is what makes the
   merged diff exactly the reviewed one; never squash, because the ID-prefixed
   subjects reaching `epic/<epic-name>` are how the board derives `integrated`:

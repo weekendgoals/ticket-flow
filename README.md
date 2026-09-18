@@ -365,9 +365,12 @@ ID; one that recorded several numbers them `<ID>.1`, `<ID>.2` … in document
 order across every entry it heads. A dated `**Deviations closed:** <ID>[,
 <ID>.<n>] — <each deviation named as accepted or as fixed in <sha>; who; when>`
 line closes what its **leading** reference list names, and only departures
-recorded **above it in the file** — and it is **a human's line, written by no
-agent**, because a closure the reviewed party could have written clears
-nothing. **A bare closing line** closes an entry's one departure, and facing
+recorded **above it in the file** — and it records **a human's decision, made
+by no agent**, because a closure the reviewed party could have decided clears
+nothing. The human need not type it: in an attended session an explicit answer
+to the departure shown ("accept", "fix it") is the decision, and the session
+records the line quoting it. A missed estimate (a line count, a size) and a
+change made in answer to a review finding are not deviations. **A bare closing line** closes an entry's one departure, and facing
 more than one open it closes **nothing** and says so: accepted and fixed are
 decisions per departure, and while a deviation wrongly left open costs a human
 one reread, one wrongly closed is a decision nobody made, gone from every brief

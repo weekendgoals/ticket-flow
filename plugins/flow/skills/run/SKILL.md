@@ -819,16 +819,18 @@ fixed.** Then finish that one ticket by hand — `/flow:ticket <ID>`, exactly
 as shape 2 says — and its step 10 is where both recoveries land: it shows
 every departure and refuses the merge until `open` is 0, and a worker fixing
 one builds it as new commits on the branch with a dated addendum saying what
-it built and where. Either way it ends in a line **you** write: a dated
+it built and where. Either way it ends in a decision **you** make: a dated
 `**Deviations closed:**` line in the status log on the ticket branch,
 committed and pushed, **naming the items by the references that command
 printed** and each as accepted or as fixed in `<sha>`. A bare
 `**Deviations closed:** <ID>` facing more than one open departure closes
 nothing, the command reports those departures open with a note saying so, and
 step 10 still refuses — so a recovery that ends in a bare line is not a
-recovery. No agent composes that line, not even for a departure it fixed
-itself: dictating the sentence for a worker to commit verbatim is you writing
-it; a draft handed to you for a "yes" is not. Once the line is pushed and the
+recovery. No agent decides that line, not even for a departure it fixed
+itself — but you need not type it: shown the departure in plain words, your
+explicit answer ("accept", "fix it") is the decision, and the attended session
+records the line quoting it and saying it was recorded from your answer.
+Silence, or a general instruction to carry on, is not an answer. Once the line is pushed and the
 board reads `integrated`, re-run `/flow:run <epic>`.
 
 **3. A BLOCKED or ABANDONED entry** — the ticket reads `blocked`, which step

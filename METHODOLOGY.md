@@ -544,9 +544,31 @@ one pause on something an agent may already have fixed; the cost of not
 refusing is the shipped page with no hero band, which is what this section is
 about.
 
+**A gate that asks too often, or asks for too much, is a gate nobody keeps.**
+The deviation gate's first day in use stopped three merges, and none of the
+three was the case it was built for. Two were missed estimates — "two lines",
+"split past ~450 changed lines" — that a planner had written into tickets as
+conditions, so a worker that did the right thing had formally departed from a
+guess; the third was a change a reviewer had asked for and then judged sound.
+And each time the human answered "accept", the step refused the answer and
+asked for a dictated sentence naming item references. The human's verdict was
+that the feature was unusable, and he was right on both counts. So the
+definition is narrowed to what the gate is for — something the documents or
+the design showed that was not built, or was built differently — with missed
+estimates sent to Decisions and reviewed fixes to the review addendum; and the
+closing procedure separates the two things the first version had welded
+together. What must be the human's is the **decision**; who types the line
+never mattered. An explicit answer to a departure shown in plain words is a
+decision, and the session records it, quoting the answer and saying it was
+recorded rather than dictated. What stays forbidden is an agent deciding:
+closing on silence, on a general instruction to carry on, or on an answer to
+a different question — and in an unattended run, where nobody is there to
+answer, a worker still never writes the line and the driver still honours
+none.
+
 **A refusal that cannot be cleared teaches people to route around it.** Both
 recoveries are therefore written into the step itself — accept it, or fix it on
-the branch and have the fix accepted — and both end in a human's line, because
+the branch and have the fix accepted — and both end in a human's decision, because
 a gate the guarded party can clear is not a gate. Which makes one detail
 load-bearing rather than pedantic: the closing line must name the departures it
 decides, since a bare line facing several closes nothing. A step that told a
