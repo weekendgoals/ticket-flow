@@ -15,7 +15,7 @@ repository).
 |---|---|
 | `/flow:epic <name> [source...]` | Turn a request, report or conversation into `epics/<name>/`. Sources are files, globs or URLs, saved into `context/`; with none, the conversation is the brief. The shape is agreed **before** the document is written, a fresh-context **plan reviewer** challenges the decomposition, then it **stops for sign-off** and commits — no pull request. Both human gates render the plan as a **styled page** (`plan-page.mjs`, published as an artifact): one URL that evolves from shape checkpoint to sign-off, never committed |
 | `/flow:ticket <ID>` | One ticket end to end: branch, implement, verify, log, commit, review, fix, push, pull request. Runs **supervisor-mode by default** — a fresh-context worker implements from the documents and the supervisor hires the reviewer; `--interactive` runs in-session, once per session (a hook refuses a second interactive run; supervisor runs stay open) |
-| `/flow:run <epic>` | Run a `Delivery: release` epic end to end with nobody present: verifies sign-off happened, then hands the loop to a shipped **workflow script** — **code-controlled, agent-executed** — that takes the tickets in document order. Per ticket: refresh the epic branch and read the board, a **fresh-context worker** implements and stops at its pushed branch (**release tickets open no pull request of their own** — the release pull request at the end is the epic's only one), the **driver hires the reviewer** priced by a code-floored tier, a disposition agent fixes and records, fixes get one bounded re-review at the consequence tier — below it a code gate checks the fix diff stayed inside the files the review saw or its findings named and under a line budget, and a trip buys that same re-review at the consequence tier instead of halting (only a fix diff nothing could measure still halts) — the ticket's `CHECK`/`EXPECT` acceptance criteria are **re-run from the signed-off document** (`tickets.mjs check <ID> --from origin/epic/<name>`) and gated on in code, then the branch's review addendum and its exact head SHA are checked **in code before any agent that could merge exists**; only then does a merge agent merge that verified SHA — which cannot be retargeted — into the epic branch, and the board — not an agent — confirms the result. It halts on any stop condition, because each one is a code path rather than a judgment call. The session ends by **opening** the release pull request. Requires the Workflow tool; never merges toward the default branch |
+| `/flow:run <epic>` | Run a `Delivery: release` epic end to end with nobody present: verifies sign-off happened, then hands the loop to a shipped **workflow script** — **code-controlled, agent-executed** — that takes the tickets in document order. Per ticket: refresh the epic branch and read the board, a **fresh-context worker** implements and stops at its pushed branch (**release tickets open no pull request of their own** — the release pull request at the end is the epic's only one), the **driver hires the reviewer** priced by a code-floored tier, a disposition agent fixes and records, fixes get one bounded re-review at the consequence tier — below it a code gate checks the fix diff stayed inside the files the review saw or its findings named and under a line budget, and a trip buys that same re-review at the consequence tier instead of halting (only a fix diff nothing could measure still halts) — the ticket's `CHECK`/`EXPECT` acceptance criteria are **re-run from the signed-off document** (`tickets.mjs check <ID> --from origin/epic/<name>`) and gated on in code, then the branch's review addendum, the departures its status entry records (**any `**Deviation:**` line halts the run — closed or not, because nobody present could have closed it**) and its exact head SHA are checked **in code before any agent that could merge exists**; only then does a merge agent merge that verified SHA — which cannot be retargeted — into the epic branch, and the board — not an agent — confirms the result. It halts on any stop condition, because each one is a code path rather than a judgment call. The session ends by **opening** the release pull request. Requires the Workflow tool; never merges toward the default branch |
 | `/flow:quick <description>` | The **cheap lane**: one small, low-risk piece of work, implemented **in-session** with a written scope, verification with counts, a short log entry and a pull request — and a fresh-context reviewer **only when behaviour changes** (prose-only diffs — documentation and comments, nothing a machine reads — get none; the PR is the review). Size- **and risk-gated**: auth, secrets, migrations and other consequential work is routed to `/flow:epic` at any size |
 | `/flow:tickets [epic]` | The board — shipped, in flight, blocked, todo |
 | `/flow:board [epic]` | The same board as a **styled HTML page**, published as an artifact you can open and share, with a **Tokens** column from the recorded spend ledger. A rendering of derived state, rebuilt from git on every run — never committed, never a second store |
@@ -325,24 +325,101 @@ Before starting a ticket, the board script's `brief [ID]` subcommand prints
 everything in one place: the ticket's full section from its epic's
 `tickets.md` — Scope, Not in scope, Acceptance criteria — plus the **epic
 preamble** (ground rules, ordering, delivery), the status log's **owed items
-not yet marked resolved** (every non-Nothing `**Owed:**` paragraph,
-attributed to its entry, until a later `**Resolves owed:** <ID>` line closes
-it — recorded state, so an item may already be discharged unmarked; the
-brief says so in its heading), and the derived facts the board knows (state,
+not yet marked resolved** (every non-Nothing obligation an `**Owed:**` block
+records, attributed to its entry — an entry that owed one thing is addressed
+by its own ID, one that owed several numbers its bullets `<ID>.1`, `<ID>.2` …
+in document order — until a later `**Resolves owed:** <ID>` line closes it.
+A bare entry ID is read against what the entry owed **when that line was
+written** — the items recorded above it, since an append-only log makes
+position time — so an old marker keeps closing what it closed even after the
+entry records again. Facing more than one open item it retires **nothing**
+and the brief says what to write instead: a marker naming one item once
+closed four, including a production-database hazard, and an item wrongly
+retired is gone from an append-only log with nothing left to report it.
+Naming any item the itemised way clears that note, and a reference matching
+no item is reported too — that one cleared in turn by a correct reference
+written **below** it, since every note here is cleared by the repair it names.
+Recorded state, so an
+item may already be discharged unmarked; the brief says so in its heading),
+the **deviations no human has closed** (with a note beside them for anything a
+`**Deviations closed:**` line could not close), and the derived facts the board knows (state,
 branch, epic, modes, pull request). This is a worker's whole required reading — O(epic), not
 O(history): the status log grows without bound, and the brief is what keeps
 each new ticket from paying to reread all of it. With no ID it briefs the
 first startable ticket, naming the epic it came from; `--json` returns the
-`find` payload with `preamble`, `owed` and the section text as a `body`
-field. The script ships inside the plugin, so it runs the same way every
+`find` payload with `preamble`, `owed`, `notes` (what a `**Resolves owed:**`
+line could not retire), `deviations`, `deviationNotes` and the section text as
+a `body` field.
+The script ships inside the plugin, so it runs the same way every
 skill runs it: `node "${CLAUDE_PLUGIN_ROOT}/scripts/tickets.mjs" brief [ID]`
 — there is no `/flow:brief` slash command.
+
+**The two deviation lines.** A status entry's optional `**Deviation:**` line —
+one per departure — records what the ticket's documents or design showed that
+was not built, or was built differently. It is not owed work and not a
+judgment call the documents left open (that stays in `**Decisions:**`): an
+owed item is work someone will do, a deviation is a decision someone must
+see, and it has its own line because the Decisions prose it used to live in is
+read by no command. An ID that recorded one departure is addressed by its own
+ID; one that recorded several numbers them `<ID>.1`, `<ID>.2` … in document
+order across every entry it heads. A dated `**Deviations closed:** <ID>[,
+<ID>.<n>] — <each deviation named as accepted or as fixed in <sha>; who; when>`
+line closes what its **leading** reference list names, and only departures
+recorded **above it in the file** — and it is **a human's line, written by no
+agent**, because a closure the reviewed party could have written clears
+nothing. **A bare closing line** closes an entry's one departure, and facing
+more than one open it closes **nothing** and says so: accepted and fixed are
+decisions per departure, and while a deviation wrongly left open costs a human
+one reread, one wrongly closed is a decision nobody made, gone from every brief
+and every attended door — the same asymmetry, and the same incident, behind the
+owed ledger's item numbering. A reference naming no departure, and an ID a
+reference ends inside (`<ID>oops`), close nothing and are reported too. Every
+note either ledger emits is **cleared by the repair it names**, because an
+append-only log cannot take a wrong line back and a warning nobody can clear is
+one its readers learn to skip: a bare line's note ends once any of the entry's
+departures is named the itemised way, wherever that line sits, while a faulty
+reference's ends once a line **below** it names one of them correctly — the
+bare ID, for an entry that recorded a single departure. Below, because position
+is time in an append-only log: a correct reference written earlier is not a
+correction of a later mistake. The script's
+`deviations <ID>` subcommand reads every one a ticket's own entries recorded,
+closed or not, each with its closing line, and `notes` for what a closing line
+could not close; `--log-from <ref>` reads the status
+log from a git ref — a pushed ticket branch, where the worker wrote its entry
+— instead of the checkout, and a log it cannot read is a nonzero exit naming
+the reason, never an empty list.
+
+**Where a deviation is read.** Every later brief in the epic carries the ones
+no human has closed. In an attended lane the ticket's own summary names
+**every** one it recorded — a closed one with its closing line, because no
+command can say who wrote that line — and **a deviation is named in the pull
+request body**, under its own heading, in both lanes that open one
+(`/flow:ticket`'s incremental pull request, `/flow:quick`'s). And a release
+epic's integration merge **refuses a ticket with an unclosed deviation**: the
+gate reads the departures off the pushed branch it is about to merge, stops
+before the merge, and resumes only once a human has decided — accepted, or
+fixed on the branch and then accepted as fixed — in the `**Deviations
+closed:**` line that no agent may write. That merge is the last point at which
+one ticket's departure is still one decision rather than a paragraph inside a
+whole epic's diff. **An unattended run halts on any departure at all** — it
+counts every `**Deviation:**` line the pushed entry carries and honours no
+closing line, because the only parties who could have written one in such a
+run are the worker and the disposition agent, both under review. So a
+departure an agent already fixed halts too, recorded as fixed in its addendum;
+the human then accepts it or has it fixed, and the ticket is finished by hand
+through `/flow:ticket <ID>` before the run is started again.
 
 A criterion can also be **machine-runnable**: an indented `CHECK: <command>`
 line under the criterion bullet, with an optional `EXPECT: <text the output
 must contain>` — exit 0 alone decides when EXPECT is absent. The script's
 `check <ID>` subcommand runs them from the repository root and reports a
-pass/fail ledger whose evidence is the deciding output line; a malformed
+ledger whose evidence is the deciding output line, with three verdicts: `✓`
+passed, `✗` failed, and `↓` **skipped** — the command exited 0 but the
+deciding line is a test runner's skip (a suite that skips itself without
+`DATABASE_URL` exits 0, and a verbose reporter still prints the titles an
+EXPECT matches). **A skipped check is not a passed one**: it proves nothing,
+so it never greens the gate, and it is not called failed either, because the
+repair is the missing prerequisite rather than the code. A malformed
 CHECK **fails** the gate rather than silently never running, and `doctor`
 flags the near-miss shapes — including two that parse and run yet can never
 pass: `\\|` inside a quoted `node -e` / `sh -c` string (the quoting layer

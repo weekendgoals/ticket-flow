@@ -197,9 +197,14 @@ never an invented test command.
   node "${CLAUDE_PLUGIN_ROOT}/scripts/tickets.mjs" check $ARGUMENTS
   ```
 
-  A failing check is a ticket that is not done. In an unattended run the
-  driver re-runs it with `--from origin/epic/<name>` — the criteria as signed
-  off — and gates the merge in code.
+  A failing check is a ticket that is not done. So is a skipped one: the
+  ledger marks `↓ skipped` when a command exits 0 while the work it names
+  never ran — the suite that skips itself without `DATABASE_URL` is the
+  common shape — and **a skipped check is not a passed one**. Give the
+  command what the run needed and re-run it, or record the criterion as owed
+  with the reason; never report it among the counts as passed. In an
+  unattended run the driver re-runs it with `--from origin/epic/<name>` —
+  the criteria as signed off — and gates the merge in code.
 
 Report **counts** — "api-gateway 217/217 passed", never "tests pass". A check
 that cannot run here is recorded as owed; never imply it passed.
@@ -294,16 +299,78 @@ Driver-spawned: `recorded in the run record`. In-session: `unknown`.>
 test that fails with the source change reverted, or `revert check: n/a,
 prose-only`>
 
-**Decisions:** <judgment calls and deviations from the documents, each with
-the why — "none" when the ticket went as written>
+**Decisions:** <judgment calls the documents left open, each with the why —
+"none" when the ticket went as written. A departure from what the documents
+show goes on its own **Deviation:** line below, never in here>
+
+**Deviation:** <one line per departure: what the ticket's documents or its
+design showed → what was built instead, and why. Optional; omitted when there
+is none. Several departures are several lines, and `deviations <ID>` numbers
+them `<ID>.1`, `<ID>.2` … in document order across every entry this ID heads —
+that is how a human closes them one at a time. Write each to be read alone>
 
 **Owed:** <anything deferred and which ticket inherits it — "Nothing" if
-genuinely nothing, never omitted. `brief` hands every non-Nothing line to
-future workers until a `**Resolves owed:**` line closes it, so write it to
-be read alone, and check the named carrier can structurally reach the thing
-— an owed check was once handed to a lane that never touches the step it
-was meant to verify>
+genuinely nothing, never omitted. **One obligation per bullet** when there
+is more than one: `brief` numbers an entry's bullets `<ID>.1`, `<ID>.2` … in
+document order, and that is how a later ticket retires them one at a time.
+`brief` hands every non-Nothing item to future workers until a
+`**Resolves owed:**` line closes it, so write each to be read alone, and
+check the named carrier can structurally reach the thing — an owed check was
+once handed to a lane that never touches the step it was meant to verify>
 ```
+
+**What counts as a deviation:** anything the ticket's documents or its design
+showed that you did not build, or built differently. A judgment call the
+documents left open is not one and stays in `**Decisions:**`. A deviation is
+**never owed work**, and the two are not interchangeable: an owed item is work
+someone will do, a deviation is a decision someone must see. It gets its own
+line because the field that used to hold it — `**Decisions:**` prose — is read
+by no command: a worker once recorded there, honestly, that it had not built a
+design's hero band, and the page shipped without it because nothing carried the
+sentence any further. On its own line it is parsed, and
+`node "${CLAUDE_PLUGIN_ROOT}/scripts/tickets.mjs" brief <ID>` hands every one
+no human has closed to every later ticket in this epic.
+
+**`**Deviations closed:**` is the human's line — never yours, and never any
+agent's.** A dated line, in an entry or an addendum, naming each deviation as
+**accepted** or as **fixed in `<sha>`**, with who decided and when:
+
+```markdown
+**Deviations closed:** <the departure's ID — the entry ID when that ID recorded
+one, `<ID>.<n>` when it recorded several>[, <ID>.<n>] — <each named as accepted
+or as fixed in <sha>; who; when>
+```
+
+It closes what its **leading** reference list names, and only departures
+recorded **above it in the file**: an ID further along, inside the prose, is a
+citation, and a departure recorded after the line must not be born closed. **A
+bare closing line** — `**Deviations closed:** <ID>` — closes an entry's one
+departure, and facing more than one open it closes **nothing** and says so,
+because "accepted" and "fixed in `<sha>`" are decisions per departure: a
+deviation wrongly left open costs a human one reread, while one wrongly closed
+is a decision nobody made, gone from every brief and every attended door.
+`brief`, `deviations <ID>` and `doctor` each report a line that closed nothing,
+and every such note is **cleared by the repair it names** — an append-only log
+cannot take a wrong line back, so a warning nobody can clear is one its readers
+learn to skip past. A bare line's note names the repair — a new dated line
+naming the items — and ends once any of that entry's departures is named that
+way, wherever that line sits, because a bare line is ambiguous about *which*
+departures rather than wrong about one. A reference naming no departure
+(`<ID>.7` against two) and an ID a reference ends inside (`<ID>oops`) close
+nothing too, and each ends once a line **below** it names one of that entry's
+departures correctly — below, because position is time here: a correct
+reference written earlier is not a correction of a later mistake. For an entry
+that recorded one departure the correct reference is its bare ID, that being
+the only reference such an entry has. Do not write one, even for a departure
+you fixed yourself in this same ticket: a closing line the reviewed party could
+have written clears nothing, and "which of the two happened" is what the human
+reading it needs to know. Record the fix as a deviation like any other and
+leave the line to whoever decides. Step 10 draws the one boundary this leaves,
+at the attended door where the human is in the room: a sentence they dictate
+for you to commit verbatim is theirs, while one you infer from a "yes" or draft
+for them to approve is not.
+`node "${CLAUDE_PLUGIN_ROOT}/scripts/tickets.mjs" deviations <ID>` reads all of
+a ticket's own — closed or not, each with its closing line.
 
 When this ticket discharges an owed item from an earlier entry, say so on its
 own line in this entry, or in a dated addendum beneath it (the shape the
@@ -311,8 +378,23 @@ own line in this entry, or in a dated addendum beneath it (the shape the
 removes it from every future brief:
 
 ```markdown
-**Resolves owed:** <ID of the entry that recorded it> — <how it was discharged>
+**Resolves owed:** <the item's ID — the entry ID when that entry owed one
+thing, `<ID>.<n>` when it owed several> — <how it was discharged>
 ```
+
+**Name the item, not the entry, when the entry recorded several.** A bare
+entry ID is read against what that entry owed when your line was written, so
+it closes a one-item entry and retires **nothing** when it faces more than
+one — it used to retire all of them, and a marker naming one item once closed
+four, including a production-database hazard that had to survive. `brief` and
+`doctor` both report a marker that retired nothing and name the form that
+works, and here too every note is **cleared by the repair it names**: a bare
+marker's ends once any of that entry's items is named the itemised way. A
+number past the end of the entry (`<ID>.7` of two) retires nothing as well, and
+its note ends once a line **below** it names one of that entry's items
+correctly — the bare ID, for an entry that recorded one — because a miscount is
+one specific mistake and only a later line can correct it. Check the count
+against the entry before you write it.
 
 Keep the entry short and written for someone who was not there. **Commit
 before the review runs** — the reviewer reads a commit range.
@@ -393,9 +475,28 @@ nothing — or, driver-spawned, `Tokens: recorded in the run record`.>
 
 ## 9. Show the user, then push and open the pull request
 
+First read what this ticket departed from — the entry is committed, so the
+log holds every one:
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/tickets.mjs" deviations $ARGUMENTS
+```
+
 Print, concisely: **Built** (what exists, and the files), **Verified**
 (commands, counts, anything that could not run), **Review** (effort, findings
-found, fixed, not fixed with reasons). Then:
+found, fixed, not fixed with reasons), and **Deviations** — **every** one the
+command reports, closed or not, never only the open ones. A closed one is
+shown **with its closing line**, because only a human may write that line and
+no command can say who did: showing the line is how a closure the reviewed
+party could have written is seen rather than trusted. Show the command's
+`note:` lines in the same field — a note says a closing line closed nothing,
+which is someone having tried to close a departure and failed; whether anything
+is still open is what the command's own count says, and a reader who counted
+only the closed ones would never learn that the attempt happened. When the
+command reports none, say "no deviations recorded" rather than dropping the
+field, so an empty one reads as an answer and not as an omission. Name what
+departed and stop there: whether a departure is acceptable is the human's
+judgment, and this skill never suggests an answer. Then:
 
 ```bash
 git push -u origin <branch>
@@ -411,10 +512,24 @@ The first ticket cuts from `epic/<epic-name>` but still targets the default
 branch — that is how the documents ship. The body carries what changed and
 why, the acceptance criteria with counts, the review summary, and any deploy
 precondition (an environment variable, a migration, a script that runs after).
+And **a deviation is named in the pull request body**, under its own
+`## Deviations` heading: every one the command above reported, each by **the
+reference the command printed** — a bare ID when that entry recorded one
+departure, `<ID>.<n>` when it recorded several, never a number invented for a
+lone one, because a reference nobody's log carries closes nothing when it is
+copied into a closing line — with its text, a closed one with its closing
+line, and any note, verbatim. The heading is written even when there is
+nothing to name, with "none recorded" under it, for the same reason the
+summary keeps an empty field: an absent heading reads as an omission. Here the
+pull request *is* the human gate, so a departure left out of the body is a
+departure the person merging never sees; the status log is the record, and the
+body is where they read.
 
 **Release delivery — no pull request.** The human's gate is the release pull
 request; the pushed branch and the committed entry with its addendum are the
-ticket's record and travel inside it.
+ticket's record and travel inside it. A departure travels with them, and its
+door is step 10's merge, which is nearer: the release pull request shows one
+ticket's departure inside a whole epic's diff.
 
 Do not add Claude as a co-author. **No agent ever merges toward the default
 branch, in any mode** — a human merges in the GitHub UI. A single-ticket pull
@@ -428,7 +543,9 @@ step 10.
 
 **Incremental:** print the pull request URL and
 `node "${CLAUDE_PLUGIN_ROOT}/scripts/tickets.mjs" next`. Then stop; nothing
-runs after the merge.
+runs after the merge. No agent merge happens here, so there is none to refuse:
+a departure's door was step 9's pull request body, where the human who merges
+reads it.
 
 **Release:**
 
@@ -438,6 +555,68 @@ runs after the merge.
   naming it, merge nothing. If the reviewer agent could not be spawned, the
   fallback is a general agent given the reviewer definition plus the review
   skill; if that fails too, BLOCKED entry, no merge.
+- **A ticket with an unclosed deviation is not integrated.** Read the
+  departures off the ref this step is about to merge, never off the checkout:
+
+  ```bash
+  node "${CLAUDE_PLUGIN_ROOT}/scripts/tickets.mjs" deviations $ARGUMENTS --log-from origin/<branch> --json
+  ```
+
+  `open` above zero stops this step before the merge commands below, and
+  nothing else does. Show the human every departure the command reports,
+  closed or not, each with its closing line where it has one, **and every
+  entry in `notes`** — a note reports a closing line that closed nothing, so
+  it is someone having tried to close a departure and failed, which is exactly
+  what a reader counting only the closed ones would miss. Then merge nothing
+  until the human has decided. The notes are **shown and gate nothing**, and
+  the reason is the gate's own soundness: a closing line that closed nothing
+  leaves whatever it failed to close still open, so `open` already stops every
+  departure such a line leaves undecided — and a note standing while `open` is
+  zero (a wrong reference against an entry whose departures are all closed
+  already) reports a line that decided nothing where nothing is left to decide,
+  which is not a case a gate has anything to hold. A note is advice about how a
+  line was written rather than a statement that something is undecided, so
+  gating on it would add no case and refuse over wording. (Every note is now cleared by the repair it names, so
+  none is permanent; that removed the sharpest argument against gating on one
+  and left the standing one, which is that a gate on advice is still a gate on
+  advice.) A nonzero exit or no payload is also a stop, and never an empty
+  answer: the script refuses a log it cannot read in those words ("An
+  unreadable status log is not 'no deviations'"), and a reader that took the
+  failure for "none recorded" would merge the one ticket this gate exists to
+  hold. Fetch and check the ref name, and if it still cannot be read, stop and
+  say so. The gate reads `origin/<branch>` because that is the SHA this step
+  merges: a closing line sitting only in the checkout would clear a gate on a
+  commit that does not carry it. Why this door, when the ticket already passed a
+  review: a reviewer judges the work against the documents, while a departure
+  is a decision only the person who owns the outcome can make — and this merge
+  is the last point at which one ticket's departure is still one decision
+  rather than one paragraph inside the nine-ticket diff the release pull
+  request shows.
+
+  **Two ways out, and both end in a line you do not compose.** *Accepted* —
+  the human puts the dated `**Deviations closed:**` line into the status log
+  on the ticket branch, and it is committed and pushed. *Fixed* — you build
+  the missing thing as new commits on this branch (`<ID>: … (deviation fix)`),
+  re-run the affected checks, report the counts, append a dated addendum
+  saying what you built and where, and push; then the human's line names that
+  departure as **fixed in `<sha>`**. Either way, `git fetch origin --prune`
+  and re-run the command above: it reads the remote-tracking ref, which a
+  human pushing the closing line from their own checkout leaves stale here,
+  and a gate refusing a branch that is already clean has no diagnosis to give.
+  `open: 0` is what resumes this step, whatever notes the log still carries.
+  **Never write that line yourself,
+  for any departure, including one you just fixed** — a closure the party that
+  made the departure could have written clears nothing, which is the whole
+  reason this gate is worth stopping at. Dictating the sentence for you to
+  commit verbatim is the human writing it; inferring it from a "yes", or
+  drafting it for them to approve, is not. Show them the shape step 6 carries
+  and the `<ID>.<n>` references this command printed, and say why the
+  references matter: a bare `**Deviations closed:** <ID>` facing more than one
+  open departure closes **nothing**, the command still reports those
+  departures open with a note saying so, and this step still refuses — so a
+  recovery that ends in a bare line is not a recovery. Judging whether a
+  departure is acceptable is theirs alone: show it, and say nothing about
+  which way to decide.
 - Merge **by verified SHA, with a merge commit** — the SHA is what makes the
   merged diff exactly the reviewed one; never squash, because the ID-prefixed
   subjects reaching `epic/<epic-name>` are how the board derives `integrated`:

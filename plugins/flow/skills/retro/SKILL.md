@@ -66,7 +66,7 @@ shadow reviewer, anything in `context/`, and the shipped work itself:
 instruction files for the areas the epic touched, as they are **now**, read
 from under `repoRoot`.
 
-## 4. Mine it — seven questions
+## 4. Mine it — eight questions
 
 - **Did it work?** The **Outcome** line named an observable change, its
   evidence and a reversal condition — check them: achieved (cite the
@@ -127,8 +127,24 @@ from under `repoRoot`.
   gathered while the halt was fresh, never a verdict to adopt: the
   classification is yours to make, not the record's to carry, because the run
   that stopped could not judge its own stop, and you read the records you did
-  not write. An epic run attended,
+  not write. **A halt on a recorded deviation** is filed under **plan** when
+  the ticket's documents could not be built as written and under **work**
+  otherwise, and records **what the human decided** — the dated
+  `**Deviations closed:**` line on the ticket branch says whether the
+  departure was accepted or fixed, and a run of halts all closed as
+  "accepted" with nothing changed is what the epic's own reversal clause
+  measures. An epic run attended,
   with no `### Run —` records: say so and move on.
+- **What did the human find at the release pull request
+  that no gate had surfaced?** Read it from where the human recorded it: the dated addendum
+  the run skill's release pull request body asks for, beneath that run's
+  record in `runs.md`. Write the answer down **even when it is "none found"**
+  — an absent record is indistinguishable from zero, and this is the only
+  measurement of what the gates missed. When no addendum exists, say that
+  instead of reporting a zero nobody observed. Each finding is a gate that did
+  not fire: name which door should have caught it, and propose the change
+  there. An epic with no release pull request — attended, or halted before the
+  end: say so and move on.
 
 ## 5. Propose — the miner drafts, the invoking session gates
 

@@ -82,6 +82,19 @@ ticket one. Report what is missing and stop.
   exactly like a run making progress. (The one exception is the shadow
   review's proxy, which records a prompt as a shadow failure — the trial
   gates nothing.)
+- **The plugin's agent types — never a refusal.** The driver hires the
+  reviewer by agent type (`flow:ticket-reviewer`), and only a session that
+  has the plugin installed can spawn one. A session in which the plugin is
+  **not installed** — the usual case being the plugin's own repository, with
+  this skill executed from its source — has no such type, and the runtime
+  answers every review hire by throwing `agent type 'flow:ticket-reviewer'
+  not found`. The driver treats that as a failed hire and takes the sanctioned
+  fallback (step 4), so the run continues; the cost is **one failed hire per
+  review and per re-review**, and reviews done by a general agent given the
+  reviewer's rules rather than by the reviewer agent, whose Edit and Write
+  are structurally removed. That is a price, not a refusal: report it before
+  ticket one so the run record can say whose reviews these were, and install
+  the plugin first when you want the reviewer agent itself.
 - **Branch protection on the default branch** — pull requests required, no
   force pushes, human-only merge. Probe it: `gh api
   "repos/{owner}/{repo}/branches/<default-branch>/protection"` succeeding
@@ -246,7 +259,16 @@ Everything else here (`reviewerModel`, `shadowReviewer`, `consequencePaths`,
   it distinct from the driver's `reviewedHead` anchor) — a **cross-check**,
   logged when it disagrees, never the anchor itself: the party under review
   does not name the commit that was reviewed. A failed spawn gets one retry
-  with the sanctioned fallback, then halts.
+  with the sanctioned fallback, then halts — and **a spawn that throws is a
+  failed spawn too**: for an agent type the launching session never
+  registered, the runtime does not return nothing, it throws `agent type
+  'flow:ticket-reviewer' not found`, so a hire that throws is caught, logged
+  with the error's first line, and takes the same one retry. The catch wraps
+  the whole call, so any other rejection lands there too and is reported the
+  same way — the reviewer **could not be hired**, with the error quoted,
+  rather than a spawn failure the driver has not actually diagnosed. Nothing
+  else in the script catches a throw from an agent spawn; an unhandled
+  surprise must not look like a handled one.
 - **Runs the shadow review, when the epic declares `Shadow reviewer: codex`
   and the ticket is priced at the consequence tier** (after the floor) — a
   trial that gates nothing. Right after the first review and before the
@@ -311,7 +333,13 @@ Everything else here (`reviewerModel`, `shadowReviewer`, `consequencePaths`,
   so the party under review cannot raise the ceiling it is judged by, and
   fetched first because the local ref is otherwise as old as the ticket. A
   fetch writes refs and nothing else, so the step stays read-only in the
-  sense that matters: no merge, no checkout, no file changed. A reported value that is not a positive
+  sense that matters: no merge, no checkout, no file changed. It also reads
+  **the departures the pushed entry records** (`tickets.mjs deviations <ID>
+  --log-from origin/<branch> --json`) — its own subcommand and its own flag,
+  never `find --from`, so the one proxy reading both facts cannot answer
+  either from the other's JSON; `--log-from` reads the log at the commit this
+  run would merge, not the checkout, and **a count above zero halts**,
+  whatever closure the entry claims. A reported ceiling that is not a positive
   integer, or missing altogether, halts on the contradiction condition; a
   reported `null` **keeps the last ceiling in force and logs it**, because a
   line that stopped parsing (`**Ticket budget:** 600k` parses as null, and
@@ -345,9 +373,11 @@ enters your context from the loop:
                      reviewerReportedHead, fixBoundsGated,
                      fixBoundsTripped, fixBoundsExclude,
                      fixLines, acceptanceOutcome, acceptanceChecks,
-                     acceptanceChecksPassed, acceptanceAllPassed,
+                     acceptanceChecksPassed, acceptanceChecksSkipped,
+                     acceptanceAllPassed,
                      acceptanceProblems, resolveOutcome, mergeOutcome,
-                     addendumMatches, headSha,
+                     addendumMatches, deviationsRecorded, deviationsOpen,
+                     headSha,
                      built, verification, workerReported,
                      outputTokensObserved, shadow, shadowSpend,
                      dispositionCounts, dispositionDetail,
@@ -419,14 +449,17 @@ that resumes past one. The run halts:
   What it measures is the fix diff minus `epics/` and the epic's `Fix bounds
   exclude:` globs, which sign-off approved as mechanical fan-out;
 - on **a failed acceptance CHECK — a machine-runnable criterion whose
-  command did not produce its expected result on the pushed branch, a CHECK
-  line too malformed to run at all, or an acceptance report the gate could
-  not read** — the gate reads the ledger's `allPassed` verdict, so a
-  malformed CHECK line halts even when every runnable check passed (it never
-  ran: a criterion nobody can satisfy is failed, not skipped), and an
-  unreadable report — missing counts, missing verdict, missing problem count
-  — halts on the same string. All three are one class, so a retro reading the
-  stop string alone files the halt correctly;
+  command did not produce its expected result on the pushed branch, a
+  criterion whose evidence is a skip, a CHECK line too malformed to run at
+  all, or an acceptance report the gate could not read** — the gate reads the
+  ledger's `allPassed` verdict, so a malformed CHECK line halts even when
+  every runnable check passed (it never ran, and a criterion nobody can
+  satisfy is a failed one), and a criterion the ledger marked `↓ skipped`
+  halts for the neighbouring reason: its command exited 0 while the work it
+  names never ran, and **a skipped check is not a passed one**. An unreadable
+  report — missing counts, missing verdict, missing problem count — halts on
+  the same string. All four are one class, so a retro reading the stop string
+  alone files the halt correctly;
 - on **a document/code contradiction — reported by a worker, or met by the
   script's own checks**: a ticket ID off the plugin's shape, a board that
   hands out the same ticket twice, a board reporting success without a
@@ -438,6 +471,22 @@ that resumes past one. The run halts:
   tickets in one epic, past any release epic's size) fires between tickets,
   after the ones before it have merged, and they stay merged — nothing
   un-merges, here or anywhere;
+- on **a recorded deviation — the ticket's pushed status entry carries a
+  `**Deviation:**` line, closed or not, because nobody present in an
+  unattended run could have closed it; the run asks rather than records** —
+  read at the resolve step, after the review and before any merge agent
+  exists, with `tickets.mjs deviations <ID> --log-from origin/<branch>
+  --json` on the branch the run would merge. The gate counts **every**
+  departure the entry records and honours no closing line: only a human
+  closes a deviation, and the only parties who could have written one on that
+  branch are the worker and the disposition agent, both under review. So a
+  departure an agent already fixed halts too, recorded as fixed in the
+  addendum — the halt is what hands the accept-or-fix decision to the person
+  who owns the outcome. A deviations fact that is missing, the wrong type,
+  negative or about another ticket halts on the contradiction condition like
+  every other unreadable resolve fact, and a command that exited nonzero is
+  never read as a count of 0: an unreadable status log is not "no
+  deviations". § "Resuming after a halt" carries the recovery;
 - on **a merge conflict — refreshing the epic branch, or anywhere else,
   including a ticket branch that will not merge into the epic branch**;
 - on **reviewer-spawn failure after the sanctioned fallback also fails** —
@@ -559,8 +608,10 @@ after fixes: `<reReviewImportantCount>` Important" when `reReviewRan`
 without a trip, or "fixes bounds-checked in code: `<fixLines>` lines inside
 the reviewed diff" when `fixBoundsGated` and nothing tripped — "acceptance:
 `<acceptanceChecksPassed>/<acceptanceChecks>` CHECKs" when any ran, plus
-"`<acceptanceProblems>` malformed" whenever that count is above zero,
-because a malformed CHECK is why an acceptance halt can read as all-green —
+"`<acceptanceChecksSkipped>` skipped" and "`<acceptanceProblems>` malformed"
+whenever either count is above zero, because a skipped check is not a passed
+one and a malformed CHECK never ran at all — either is why an acceptance halt
+can read as all-green, and `1/2` alone says which neither —
 integrated | halted. A record that omits the fix gate reads as though the
 fixes were never looked at.>
 
@@ -665,7 +716,21 @@ in this mode. It carries:
   names) — a defect neither fixed nor handed to someone is one the project
   has forgotten, and this is the last place a human sees it;
 - when step 3 proceeded on a protection waiver, that fact, right under the
-  never-squash line.
+  never-squash line;
+- **a closing request to the human, under its own heading**: *what did you
+  find here that no gate had surfaced?* — and the ask to record the answer as
+  a dated addendum beneath this run's record in `epics/<name>/runs.md`,
+  **including when the answer is "none found"**. The retro reads that
+  addendum; an absent one is indistinguishable from a zero, so the two have to
+  be written differently. This is the only measurement of what the run's gates
+  missed, and the human is the only observer of it. Say **where and when**:
+  committed to `epic/<name>` **before they merge this pull request**, so the
+  line rides in the release they are reading rather than becoming a commit
+  toward the default branch afterwards — nothing runs after that merge, and no
+  agent pushes toward the default branch in any mode. If they only think of it
+  after merging, it is a change like any other and ships through
+  `/flow:quick`, never as a direct commit. Either way the line is theirs to
+  write; you do not draft it for them.
 
 `ticketRecords` indexes those facts; the committed status log and its
 addenda are what travel in this pull request, so where the two differ the
@@ -719,11 +784,51 @@ Its supervisor-spawned worker checks out the pushed branch and builds
 nothing — the ticket skill's step 0 and step 3 carry that exception — and the
 supervisor picks the leg up where the run dropped it: step 7's review when
 the entry carries no `Addendum — review —` line, step 8 when it does and
-findings are still open, step 10's gate and merge by verified SHA when the
-addendum is committed. Rebuilding instead would throw away work the run
-already paid for, and skipping the ticket would build its successors on
-unreviewed work. An Important finding nobody could fix is the one case that
-does not end in a merge: step 10 refuses it, and a human decides. Once the
+findings are still open, step 10's **two gates** and the merge by verified SHA
+when the addendum is committed. Rebuilding instead would throw away work the
+run already paid for, and skipping the ticket would build its successors on
+unreviewed work. **Two cases do not end in a merge, and step 10 refuses
+both.** An Important finding nobody could fix: it is not the worker's to
+accept, so the recovery is a BLOCKED entry naming it and a human deciding what
+happens to the ticket. And **an unclosed deviation** — a departure the entry
+recorded that no human has closed: the step shows it and holds the merge until
+the human has accepted it, or had it fixed on the branch and accepted it as
+fixed, in a dated `**Deviations closed:**` line on the pushed branch that no
+agent may write. That second refusal is why a halted ticket carrying a
+departure comes back here at all: nobody in an unattended run could have
+written that line. Once the board reads `integrated`, re-run
+`/flow:run <epic>`.
+
+**A halt on a recorded deviation** is that shape with the decision named up
+front: the ticket is `done`, its branch is pushed with its entry and its
+committed addendum, and the run stopped at the resolve step because the entry
+records a departure. Read them off the branch the run would have merged —
+the checkout is not the evidence, and the fetch is what makes the
+remote-tracking ref current:
+
+```bash
+git fetch origin --prune
+node "${CLAUDE_PLUGIN_ROOT}/scripts/tickets.mjs" deviations <ID> --log-from origin/<id lowercased>
+```
+
+It prints every departure the ticket's own entries record with its reference
+(`<ID>` when that entry recorded one, `<ID>.1`, `<ID>.2` … when it recorded
+several), each closed one with its closing line, and a `note:` for any
+closing line that closed nothing. **Decide each one: accept it, or have it
+fixed.** Then finish that one ticket by hand — `/flow:ticket <ID>`, exactly
+as shape 2 says — and its step 10 is where both recoveries land: it shows
+every departure and refuses the merge until `open` is 0, and a worker fixing
+one builds it as new commits on the branch with a dated addendum saying what
+it built and where. Either way it ends in a line **you** write: a dated
+`**Deviations closed:**` line in the status log on the ticket branch,
+committed and pushed, **naming the items by the references that command
+printed** and each as accepted or as fixed in `<sha>`. A bare
+`**Deviations closed:** <ID>` facing more than one open departure closes
+nothing, the command reports those departures open with a note saying so, and
+step 10 still refuses — so a recovery that ends in a bare line is not a
+recovery. No agent composes that line, not even for a departure it fixed
+itself: dictating the sentence for a worker to commit verbatim is you writing
+it; a draft handed to you for a "yes" is not. Once the line is pushed and the
 board reads `integrated`, re-run `/flow:run <epic>`.
 
 **3. A BLOCKED or ABANDONED entry** — the ticket reads `blocked`, which step

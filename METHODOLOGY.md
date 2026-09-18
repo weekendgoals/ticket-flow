@@ -371,6 +371,22 @@ all. The admission test: this reduces uncertainty (a criterion nobody has
 seen fail is a criterion nobody has tested) and provides decision evidence at
 the sign-off gate, where the ledger is shown.
 
+The third correction came from console-foundations, and it is about what
+"green" means. A criterion's command can exit 0 while the work it names never
+ran: the house convention for a Postgres suite is to skip itself without
+`DATABASE_URL`, and a verbose reporter still prints the test titles an EXPECT
+matches — on the line that says they skipped. CF-3 measured it: `4/4 checks
+passed` with every evidence line reading `↓`, and every ticket in that epic
+needed a human to eyeball the markers, which is precisely the check the gate
+exists to perform. So the ledger has three verdicts rather than two. A skip is
+not a pass, because a run that did not happen is not evidence; and it is not a
+failure either, because calling it one sends a reader to debug code that is
+not wrong, and a gate whose red means two unrelated things is a gate people
+learn to argue with. Naming the third state is what makes the repair
+legible — supply the prerequisite, or point the EXPECT at a line that proves
+the run — and it keeps the gate's own contract: only checks the ledger counts
+as passed green a merge.
+
 Two deliberate limits. CHECK is optional, because most criteria are not
 mechanizable and forcing them into commands is ceremony — prose criteria and
 runtime demonstrations remain first-class, verified by the worker and held by
@@ -417,9 +433,215 @@ compiled list can shrink; an unmarked discharge is repaid by appending the
 marker, not by rereading), the ticket's own section, the derived facts —
 making required reading O(epic) while the log stays O(history) for the
 retro and the archaeologist, the readers it was always really for. The same pressure shortened the status
-entry itself: Built, Mode, Tokens, Verified, Decisions-that-deviate, Owed —
+entry itself: Built, Mode, Tokens, Verified, Decisions, Deviation, Owed —
 git already records the files and commits, and narration a future reader
-must wade through is a cost, not a record.
+must wade through is a cost, not a record. The brief compiles the deviations
+for the same reason it compiles the owed items, and with the same honesty about
+what it is reporting: not what is true, but what someone wrote down.
+
+A debt ledger with repayment syntax needs its repayments to be as granular as
+its debts, and for a while this one was not. The entry ID was the item's
+identity, so an entry that deferred four things could only be repaid whole:
+downstream, a marker naming one of them retired all four, and the item that
+had to survive was a production-database hazard. Two console-foundations
+workers had already seen the trap and written the marker's absence into their
+entries as a deliberate decision — paying permanent noise in every future
+brief to avoid a silent loss — which is the shape of a format forcing a bad
+choice on the people it serves. So an entry that owes several things numbers
+them and a marker names the item; a bare entry ID is read against what the
+entry owed when that line was written, and facing more than one open item it
+retires nothing and says what to write instead. The direction is decided by
+the asymmetry, not by taste: an item wrongly kept costs one reread, while an
+item wrongly retired is gone from an append-only log with nothing left to
+report that it ever existed. The admission test: it preserves necessary
+knowledge, and it constrains the blast radius of one line of markup.
+
+## Why a deviation has its own line
+
+A worker that builds something other than what its documents show was told to
+record it under `**Decisions:**` — "judgment calls and deviations from the
+documents, each with the why". In a page epic in an installed project a worker
+did exactly that, honestly and in the right field: it wrote that it had not
+built the design's hero band. Nothing read the field. No parser in
+`tickets.mjs` touches `**Decisions:**` — the only mentions of the field in that
+file are comments explaining why it needed none; no brief carried the sentence
+to the next ticket, no gate saw it, and the page shipped without the band. The
+claim is about code paths, not about the string: stated as "the file does not
+contain the word", it is refuted by a grep and invites a reader to correct the
+passage in the wrong direction. The record was
+perfect and the mechanism was absent — which is the failure mode this whole
+methodology is built to make impossible, arriving through the one field that
+had no reader.
+
+Three properties of the fix are load-bearing, and each was argued for.
+
+**It is a line, not a marker in prose.** The real Decisions field that held
+that deviation was a sixty-line paragraph of six numbered items with the
+departure third. A marker inside prose like that is not reliably parseable,
+and surfacing the whole field buries the departure again in the noise it was
+already buried in. `**Deviation:**` is an optional line whose paragraph ends at
+the first blank line, or at the next bolded field or heading — so a worker who
+writes one directly above `**Owed:**` records a departure, not a departure with
+the next field's markup glued to it — and it changes no existing log:
+`**Owed:**` remains the one required line, so the status log's shape — the
+preamble's three pinned copies, the entry heading — is untouched.
+
+**It is not owed work.** The debt ledger already existed and the temptation was
+to reuse it. But an owed item is *work someone will do*, and the ledger's whole
+grammar is about who inherits it; a deviation is *a decision someone must
+see*, and the only question it raises is accept or fix. Filing one as the
+other either converts a decision into a task nobody has agreed to, or lets a
+departure be discharged by whoever inherits it — the party under review
+closing its own record, one indirection away.
+
+**Only a human closes it.** The closing line names each deviation as *accepted*
+or as *fixed in a commit*, because a fixed deviation's paragraph still parses
+in an append-only log: a line that could only mean "accepted" would either
+leave a fix unable to clear a gate or record a fix as an acceptance. It closes
+by its leading reference list and only above itself in the file, because an ID
+can head more than one entry and a departure recorded later must not be born
+closed. No worker and no agent writes one, even for a departure it fixed
+itself — a closure the reviewed party could have written clears nothing.
+
+**And it closes them one at a time.** Closure was first designed per entry, on
+the argument that the entry ID is the only identity a paragraph has and that
+numbering would add a second identity scheme for a rare case. It was modelled on
+`**Resolves owed:**` as that marker then worked — and that model was retired
+days later, on a real loss: a marker naming one of an entry's four owed items
+retired all four, among them a production-database hazard. Both arguments died
+with it. The identity scheme exists, because the owed ledger now numbers an
+entry's items; and the rare case has an incident behind it. So an entry that
+records several departures numbers them, a closing line names the items, and a
+bare closing line facing more than one open departure closes nothing and says
+what to write instead. The direction is the same asymmetry, measured on the same
+two costs: a deviation wrongly left open costs a human one reread, while one
+wrongly closed is a decision nobody made, gone from every brief and every
+attended door in a log that cannot be edited to say so. The lesson generalises
+past both ledgers — **a rule defined as "like that other rule" drifts the moment
+the other one moves.** Five sentences written in this epic defined deviation
+behaviour by comparison with owed behaviour, and were untrue within hours of
+being written, in documents that each read correctly alone.
+
+That last property is why the parser *reports* closure instead of filtering on
+it. Which readers honour a closing line, and which count every recorded
+deviation regardless, is a judgment about who was in the room when the line was
+written; a parser that had already dropped the closed ones would have made that
+judgment for every reader at once, in the direction that trusts.
+
+**A record with no door is the same failure again.** The hero band was written
+down perfectly; what was missing was a reader. So the line is read wherever the
+next human decision happens — every later brief, the summary the lane prints,
+the pull request body, and, in a release epic, the integration merge — and each
+of those doors shows *every* departure the ticket recorded, not only the open
+ones. A closed one is shown with its closing line because the parser cannot say
+who wrote it: displaying the line is what turns "trusted" into "seen". The
+integration merge is the one door that refuses rather than reports, and the
+reason is position. It is the last moment at which one ticket's departure is
+still one decision; after it, the departure is a paragraph inside an epic-wide
+diff, and the evidence that the release pull request gets a paragraph-level
+reading is exactly the evidence this epic does not have. The cost of refusing is
+one pause on something an agent may already have fixed; the cost of not
+refusing is the shipped page with no hero band, which is what this section is
+about.
+
+**A refusal that cannot be cleared teaches people to route around it.** Both
+recoveries are therefore written into the step itself — accept it, or fix it on
+the branch and have the fix accepted — and both end in a human's line, because
+a gate the guarded party can clear is not a gate. Which makes one detail
+load-bearing rather than pedantic: the closing line must name the departures it
+decides, since a bare line facing several closes nothing. A step that told a
+human to "write the closing line" would be advertising a recovery that leaves
+the gate refusing, and a worker watching that happen twice learns that the gate
+is noise. The rule generalises: a refusal's advertised recovery has to work in
+the refused state, which is only knowable by reading the refusal from inside
+it.
+
+**The unattended run does not read the closing line at all.** The attended
+doors honour it; the driver's gate counts every `**Deviation:**` line the
+pushed entry carries and ignores closure entirely. That is not two rules, it
+is one rule applied to two rooms. A closing line is a human's, and the
+question a gate can actually answer is *could a human have written this one?*
+At an attended door the answer is yes by construction — a human is in the
+room. In an unattended run the only parties with commit access to that branch
+between the worker's first commit and the merge are the worker and the
+disposition agent, both of them the party under review; a gate that honoured
+their line would let the reviewed party clear its own gate, and "accepted"
+versus "fixed in `<sha>`" is prose no parser can police. The driver also only
+ever gates a ticket it started in the same pass — it refuses an epic holding
+an in-progress ticket, and a halted ticket is finished by hand and never
+re-gated — so there is no case where a legitimately human line is sitting on
+that branch at resolve time and being ignored.
+
+The price is exact and worth naming: a run halts on a departure an agent has
+already fixed. That is the reversal clause's subject rather than a defect —
+if every such halt is closed as "accepted" with nothing changed, the halt
+bought nothing and goes. What the halt is not allowed to be is quiet: a
+deviations fact the gate cannot read halts on the contradiction condition,
+like every other unreadable fact at that step, because the one direction this
+report can lie in is "none recorded", and a gate that read a failed command as
+zero would merge precisely the ticket it exists to hold.
+
+Its position follows from the recovery rather than from the risk. The halt
+fires at the resolve step — after the review, after the disposition's
+addendum, before any agent that could merge exists — because recovery from
+any halt runs through the ticket skill's step 10, which needs the review on
+the record; halting before the reviewer was hired would leave a human hiring
+one by hand. The cost of waiting is one review the human may end up
+discarding; the cost of halting early is a recovery that does not work.
+
+The same test decides **what a gate may read**. The parser reports both the
+departures and the notes a closing line earns when it closes nothing, and the
+attended doors show both — a note is how a human learns that someone tried to
+close a departure and failed. But the gate stops on the open departures alone,
+because a line that closed nothing leaves whatever it failed to close still
+open, so `open` already stops every departure such a line leaves undecided —
+and a note that stands while `open` is zero reports a line that decided nothing
+where nothing is left to decide. Either way the notes add no case: a note is
+advice about how a line was written, not a statement that a decision is
+outstanding, and a gate on advice refuses over wording. When that rule was written the notes were also unclearable — some
+survived the exact repair they named — and a gate on one would have refused
+forever on a mistyped digit. That half has since been fixed at the parser
+rather than at the gate (below); the gate did not move, because the reason
+that still holds was always the load-bearing one. Show what informs, stop on
+what clears — a condition nobody can discharge is not a gate, it is a wall,
+and the first person who meets one learns to go around gates in general.
+
+### A warning nobody can clear is worse than no warning
+
+Both ledgers warn when a line retires or closes nothing: a bare marker or bare
+closing line facing several open items, and a reference naming an item that
+does not exist. The deviation ledger warns about a third shape, an ID a
+reference ends inside (`<ID>oops`) — the owed ledger does not, because there
+its reference grammar refuses to parse such a line at all, so no reference and
+no note comes out of it. The warnings are worth having: each reports a human
+who believed they had discharged something and had not. But the wrong-reference
+warnings — one kind on the owed ledger, two on the deviation ledger — used to
+have no exit. The log is append-only, so the wrong line cannot be taken back,
+and the note's own instruction ("correct the number") produced a second line
+that the parser did not read as a correction of the first. In an installed
+project one mistyped digit was a `doctor` row for the life of the epic, and the
+skills and README both told its author otherwise.
+
+That is worse than not warning at all, and not only because it is noise. A
+warning is a claim that doing something specific will make it go away; one that
+survives its own cure teaches the reader that these warnings are weather, and
+the next one they skip is the one that mattered. So the rule is that **every
+note is cleared by the repair it names** — it is the same admission test a gate
+has to pass, applied to advice: a refusal whose advertised recovery does not
+work in the refused state is not a safeguard, it is a wall.
+
+The correction has to sit **below** the mistake, and that is not a parsing
+convenience. Position is time in an append-only log: a line written earlier
+could not have been answering a mistake made later, and clearing on one would
+take away the only feedback a miscount gets while the item it meant is still
+open — the entry would read as addressed by a line that addressed something
+else. The same reason gives the two note kinds two rules. A bare marker is
+*ambiguous* about which items it decided, so any itemised line for that entry
+answers it, wherever it sits: the writer has moved to the form that names
+things. A wrong reference is *one specific mistake*, and only a later line can
+be its correction. And a correction may name an item already retired — the
+whole point of correcting a reference is often that the writer meant the one
+that is already closed.
 
 ## Why a nit is not automatically a ticket
 
@@ -626,6 +848,19 @@ Both are flagged transferable for the same reason the transferable planning
 lessons are: the epic that paid for the lesson is rarely the one that can
 act on it.
 
+The eighth question asks the only thing no gate can observe: what the human
+found at the release pull request that nothing upstream had surfaced. Every
+other question mines a record some agent wrote; this one has a single
+observer, and they see it at the one moment the whole epic is in front of
+them. So the run skill's pull request body asks for the answer as a dated
+addendum beneath the run's record, and the question insists it be written
+down **even when it is "none found"** — because an absent record and a zero
+are the same silence, and a measure that cannot distinguish them measures
+nothing. This is how the deviation routing's own Outcome is read: departures
+found at that pull request which were written anywhere but a `**Deviation:**`
+line are the number the epic said it would move, and nobody but the human at
+that gate can count them.
+
 Three constraints keep it honest. The mining runs in a fresh-context agent
 (user request at the autonomous epic's retro, 2026-08-08): the invoking
 session is usually the one that planned the epic or ran its tickets, and it
@@ -785,6 +1020,17 @@ findings as structured data, and code, not prose, decides that an Important
 finding left unfixed or a review addendum left uncommitted stops the run. A
 gate written as a sentence is obeyed by a reader; a gate written as a branch
 is obeyed by the machine.
+
+That fallback had a second hole, and it was in the word *cannot*. "The
+reviewer agent cannot be spawned" turned out to have two shapes and the code
+read only one: an agent that returns nothing, and — when the launching
+session never registered the plugin's agent types — a runtime that throws
+instead of returning. The throw went uncaught until a run died on it on
+2026-09-17, with the fallback unreachable in exactly the case it was written
+for. Both are failed hires. The line the fallback draws is between a failed
+hire and an exhausted environment, not between two ways a spawn reports its
+failure — and a distinction that lives only in how an error arrives is one
+the code will get wrong.
 
 The trade is honest, and its name is **code-controlled, agent-executed**: the
 script cannot touch a file or run a command itself, so every mechanical fact

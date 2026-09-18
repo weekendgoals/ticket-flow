@@ -335,12 +335,22 @@ const PHRASES = [
   },
   {
     why: "the acceptance-check stop condition is one sentence in the skill and the script — a halt the run record quotes verbatim. Pinned whole, like the fix-bounds sentence: the gate halts on a malformed CHECK and on a report it cannot read as well as on a failing one, and a retro that reads only the first clause files those halts as something else",
-    re: /a failed acceptance CHECK — a machine-runnable criterion whose command did not produce its expected result on the pushed branch, a CHECK line too malformed to run at all, or an acceptance report the gate could not read/,
+    re: /a failed acceptance CHECK — a machine-runnable criterion whose command did not produce its expected result on the pushed branch, a criterion whose evidence is a skip, a CHECK line too malformed to run at all, or an acceptance report the gate could not read/,
     files: ['run', 'workflow'],
   },
   {
     why: 'the fix-bounds stop condition is one sentence in the skill and the script — since a bounds trip buys a re-review instead of a halt, the only fix that still halts is one nothing could measure, and both documents must say so in the same words. Pinned whole, not by its first clause: what it now excludes is as load-bearing as what it names',
     re: /no usable fix-diff facts from the resolve step, or a fix whose changed lines cannot be counted; an unmeasurable fix is never merged/,
+    files: ['run', 'workflow'],
+  },
+  {
+    why: "the merge-conflict stop condition is one sentence in the skill and the script — pinned because it was deleted from the skill's list by an edit that meant to add a bullet beside it (DEV-3's review), leaving `STOP.mergeConflict` live at three call sites and a human looking up a halt string the skill no longer carried. The general gap this one exposed — only some of the STOP sentences are pinned — is recorded for the retro; this entry holds the one that was actually lost",
+    re: /a merge conflict — refreshing the epic branch, or anywhere else, including a ticket branch that will not merge into the epic branch/,
+    files: ['run', 'workflow'],
+  },
+  {
+    why: "the deviation stop condition is one sentence in the skill and the script — the halt a run record quotes verbatim. Pinned whole, like the acceptance-check and fix-bounds sentences: \"closed or not\" is what makes this gate different from the attended one, and a copy that kept only the opening would describe a gate that honours a closing line this one ignores — which is the fail-open the halt exists to prevent",
+    re: /a recorded deviation — the ticket's pushed status entry carries a `\*\*Deviation:\*\*` line, closed or not, because nobody present in an unattended run could have closed it; the run asks rather than records/,
     files: ['run', 'workflow'],
   },
   {
@@ -354,12 +364,52 @@ const PHRASES = [
     files: ['run', 'retro', 'workflow', 'readme', 'script'],
   },
   {
+    why: "the deviation opener — `**Deviation:**` is the exact label the parser reads, so the two lanes that teach a worker to write one, the parser itself and README's account of the fields must spell it identically. A lane renamed to any other word teaches entries that parse as nothing, silently: doctor's near-miss scan catches a deviation-shaped slip like `**Deviations:**`, but a rename to an unrelated label looks like ordinary prose to it, and the departure goes back to reaching nobody",
+    re: /\*\*Deviation:\*\*/,
+    files: ['ticket', 'quick', 'script', 'readme'],
+  },
+  {
+    why: "the deviation closing line is one label in both lanes that write a status entry, in the parser that reads it and in README's account of the fields — and each says it is a human's line. A lane that stops teaching it sends the next departure back into Decisions prose, where nothing reads it; a document that keeps the label but drops the owner lets the reviewed party close its own record",
+    re: /\*\*Deviations closed:\*\*/,
+    files: ['ticket', 'quick', 'script', 'readme'],
+  },
+  {
+    why: "the attended merge's second refusal — an unclosed deviation holds a release integration, and the run skill's account of what a halted ticket meets at step 10 must name it beside the unfixed Important finding. That inventory is read by the session finishing a halted ticket by hand, and while it named one refusal it was an instruction to route around the other",
+    re: /unclosed deviation/i,
+    files: ['ticket', 'run'],
+  },
+  {
+    why: "the attended doors — a deviation is named in the pull request body, in both lanes that open one: the ticket lane's step 9 and the quick lane's step 7. That body is where the human who merges actually reads, and in the quick lane it is a departure's only door, there being no agent merge to refuse. A lane that drops the sentence keeps the record and loses the reader — the departure sits parsed in a status log nobody opens while the pull request that decides it says nothing",
+    re: /a deviation is named in the pull request body/i,
+    files: ['ticket', 'quick'],
+  },
+  {
+    why: "every note either ledger emits is cleared by the repair it names — the parser that emits them, the lane that teaches a worker to write the lines that earn them, and README's account of both ledgers. The rule is only worth anything if all three agree: a document that keeps the old story ('any item of that entry clears it') sends a human to a repair that leaves the warning standing, and an append-only log cannot take the wrong line back, so the next reader learns to skip warnings instead",
+    re: /cleared by the repair it names/i,
+    files: ['script', 'ticket', 'readme'],
+  },
+  {
+    why: "the closing line's granularity — a bare closing line closes an entry's one departure and closes nothing against several, so both lanes that teach a human the line, the parser that reads it and README's account of it must carry the same rule. A document that keeps the whole-entry story teaches a human to write a line that silently closes departures nobody decided on — which is the loss the owed ledger already took, one indirection away",
+    re: /bare closing line/i,
+    files: ['script', 'ticket', 'quick', 'readme'],
+  },
+  {
     why: 'machine-runnable acceptance criteria — the CHECK/EXPECT format is parsed and executed by tickets.mjs, taught by the planning skill, and run by both execution lanes and the driver',
     // Absorbs the deliberate wording variants: a literal "CHECK: <command>"
     // template line, the prose "CHECK/EXPECT", and the backticked
     // "`CHECK:` / `EXPECT:`" — presence of the format, not one spelling.
     re: /CHECK: |CHECK.{0,8}EXPECT/,
     files: ['epic', 'ticket', 'quick', 'run', 'script', 'workflow'],
+  },
+  {
+    why: "the ledger's third verdict — a check whose evidence is a skip is not passed, so it cannot green a merge gate. The script decides it, the planning skill writes EXPECTs a skip cannot satisfy, both execution lanes read the ledger, the driver halts on it, and README documents it; a document that keeps only the two-verdict story teaches a worker to report a ↓ line as a pass",
+    re: /skipped check is not a passed one/i,
+    files: ['script', 'epic', 'ticket', 'quick', 'run', 'workflow', 'readme'],
+  },
+  {
+    why: "the owed marker's granularity — an entry that owed several things is retired item by item, and a bare entry ID against it retires nothing. The script derives it, both lanes write the markers, and README documents the brief; a skill that keeps the old whole-entry story teaches a worker to write a line that silently retires items nobody discharged",
+    re: /retires \*{0,2}nothing/i,
+    files: ['script', 'ticket', 'quick', 'readme'],
   },
 ]
 

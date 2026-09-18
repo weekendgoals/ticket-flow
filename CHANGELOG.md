@@ -8,6 +8,343 @@ with one version and date.
 
 ## Unreleased
 
+- **Every note is cleared by the repair it names, in both ledgers**
+  (`scripts/tickets.mjs` — `parseOwed` and `parseDeviationsText` —
+  `skills/ticket/SKILL.md` steps 6, 9 and 10, `skills/quick/SKILL.md` step 7,
+  README, METHODOLOGY; `check-invariants.mjs` pins the phrase across the ticket
+  skill, README and the script). A reference that names no item (`<ID>.7`
+  against two) and, on the deviation ledger, an ID a reference ends inside
+  (`<ID>oops`) retire and close nothing and say so — and their notes now stop
+  being reported once a line **below** the faulty one names an item of the same
+  entry correctly. Below, because the log is append-only and position is time:
+  a correct reference written before the mistake was not answering it, and
+  clearing on one would take away the only feedback a miscount gets while the
+  item it meant is still open. "Correctly" is the entry's own item identity, so
+  an entry that recorded a single item — and therefore keeps its bare ID — is
+  named by that bare ID; that shape had no exit at all before, since no dotted
+  reference can ever be valid for it, and a lone departure closed by a bare line
+  and then "confirmed" as `<ID>.1` was a `doctor` warning nobody could clear for
+  the life of the epic. An item already retired or closed counts as a
+  correction, because the writer is usually naming the one they meant. The bare
+  marker's and bare line's notes keep the rule they had — any itemised line for
+  that entry answers them, wherever it sits — and each parser now carries the
+  reason the two rules differ: a bare line is ambiguous about *which* items, so
+  any itemised line answers it, while a wrong reference is one specific mistake,
+  so only a later line can be its correction. Both wrong-reference notes were
+  reworded to state the repair that actually clears them. Numbering, closure and
+  what `open`, `count` and the owed list report are unchanged, with a guard test
+  over every existing fixture in the suite saying so. **This corrects three
+  entries below, and they are left as written because a changelog is a dated
+  record plus its correction rather than a document to edit.** The
+  deviation-numbering entry ("A deviation is closed item by item") says a
+  reference naming no departure and an ID a reference ends inside "are reported
+  the same way; naming any item of that entry clears the note", and the owed
+  ledger's numbering entry ("An entry that owes several things is retired item
+  by item") says a reference matching no item "is reported the same way" —
+  true of the bare marker's and bare line's notes only, which is the defect
+  this entry fixes: those clear from an itemised line anywhere, a wrong
+  reference's note only from a correct reference below it. And the attended-door
+  entry ("A deviation reaches the human at every attended door") gives half a
+  reason that no longer holds: the notes gate nothing still, but no longer
+  because a note cannot be relied on to clear — it can, now — only because a
+  closing line that closed nothing leaves whatever it failed to close still
+  open, so `open` already stops every departure such a line leaves undecided,
+  while a note standing with `open` at zero reports a line that decided nothing
+  where nothing is left to decide. A gate on advice is still a gate on advice.
+
+- **An unattended run halts on a recorded deviation, and honours no closing
+  line** (`workflows/run-epic.mjs`, `skills/run/SKILL.md` step 5 and its
+  after-a-halt procedure, `skills/retro/SKILL.md`, `scripts/runners/codex.mjs`,
+  README, METHODOLOGY; `check-invariants.mjs` pins the stop sentence whole
+  across the skill and the script). The driver's resolve step — read-only,
+  after the review and before any agent that could merge exists — now reads a
+  fourth fact (a fifth when the fix-bounds gate is armed):
+  `tickets.mjs deviations <ID> --log-from origin/<branch> --json`
+  on the branch it would merge. Its own subcommand and its own flag,
+  deliberately: `find --from` means "the epic's declarations as signed off"
+  and is already read beside it for the ticket budget, so one low-effort
+  proxy holding two JSONs with shared field names is exactly how a deviation
+  gate ends up reading a budget document as "no deviations". The gate counts
+  `count` — **every `**Deviation:**` line the entry records, closed or not** —
+  and never `open`: in an unattended run the only parties who could have
+  written a closing line on that branch are the worker and the disposition
+  agent, both the party under review, and "accepted" versus "fixed in `<sha>`"
+  is prose no parser can police. So a departure an agent already fixed halts
+  too, recorded as fixed in its addendum; the halt is the mechanism working,
+  and its cost is what this epic's reversal clause measures. A deviations fact
+  that is missing, the wrong type, negative or about another ticket halts on
+  the contradiction condition like every other unreadable resolve fact, and a
+  command that exited nonzero is never read as a count of 0 — an unreadable
+  status log is not "no deviations", the one direction this report can lie in.
+  The worker and disposition prompts (the driver's, and the Codex runner's own
+  worker prompt) now say the closing line is not theirs to write, for any
+  departure including one they fixed. The run skill carries the stop sentence
+  word for word and the recovery that works in the refused state: read the
+  departures off the pushed branch, decide each, finish the ticket by hand
+  through `/flow:ticket <ID>` — whose step 10 refuses until `open` is 0 — with
+  a dated `**Deviations closed:**` line **naming the items** by the references
+  the command printed, then re-run `/flow:run <epic>`. The run record carries
+  `deviationsRecorded` and `deviationsOpen` per ticket.
+- **The retro asks what the release pull request caught that no gate did**
+  (`skills/retro/SKILL.md`, now eight questions; `skills/run/SKILL.md` step
+  7). The release pull request body asks the human to record what they found
+  that nothing upstream had surfaced, as a dated addendum beneath the run's
+  record in `runs.md`, **including when the answer is "none found"** — an
+  absent record and a zero are the same silence, and this is the only
+  measurement of what the gates missed. The halt question also files a
+  deviation halt under **plan** when the ticket's documents could not be built
+  as written and **work** otherwise, and records what the human decided.
+- **A deviation reaches the human at every attended door, and an unclosed one
+  stops a release integration** (`skills/ticket/SKILL.md` steps 9 and 10,
+  `skills/quick/SKILL.md` step 7, README, METHODOLOGY;
+  `check-invariants.mjs` pins the pull-request-body sentence across the two
+  lanes). Both lanes now run `deviations <ID>` before they show the ticket,
+  and the summary names **every** departure the ticket recorded — a closed one
+  **with its closing line**, because only a human may write that line and no
+  command can say who did, so showing it is how a self-closure is seen rather
+  than trusted; a note reporting a closing line that closed nothing is shown
+  for the same reason. **A deviation is named in the pull request body** in
+  both lanes that open one, under its own heading — in the quick lane that
+  body is a departure's only door, there being no agent merge to refuse. And
+  the ticket lane's step 10 **does not integrate a ticket with an unclosed
+  deviation** into its epic branch: it reads the departures off
+  `origin/<branch>` with `--log-from`, because that is the SHA it merges and a
+  closing line sitting only in the checkout would clear a gate on a commit
+  that does not carry it; `open` above zero stops the step before the merge
+  commands, and nothing else does. Notes are shown at every door and gate
+  nothing, deliberately: a closing line that closed nothing leaves its
+  departure open, so `open` already stops every case a note reports, while a
+  note cannot be relied on to clear — some survive the repair they prescribe,
+  in a log that is append-only — so a gate on one would be a refusal with no
+  recovery. A read that fails is a stop too, never "none recorded". The run
+  skill's account of what a halted ticket meets at step 10 now names both
+  refusals, the unfixed Important finding and the unclosed deviation, and
+  `check-invariants.mjs` pins that pair as well. The step spells out both recoveries — the human
+  accepts it, or the worker fixes it on the branch as new commits with a dated
+  addendum and the human then accepts it as fixed in a commit — and both end
+  in the `**Deviations closed:**` line, which no agent composes: dictating the
+  sentence for a worker to commit verbatim is the human writing it, inferring
+  it from a "yes" is not. The step also tells the human why the `<ID>.<n>`
+  references matter, because a bare closing line facing more than one open
+  departure closes nothing and would leave the gate still refusing — a
+  recovery that does not work in the refused state is not one. Why this door:
+  it is the last point at which one ticket's departure is still one decision
+  rather than a paragraph inside a whole epic's release diff.
+- **A deviation is closed item by item: an entry's departures are numbered
+  `<ID>.1`, `<ID>.2` …, and a bare `**Deviations closed:** <ID>` against more
+  than one open departure closes nothing** (`scripts/tickets.mjs`:
+  `parseDeviationsText` numbers an ID's departures across every entry it heads,
+  closes by the same reference grammar the owed ledger uses, and reports what a
+  closing line could not close — `brief` prints those notes beside the open
+  deviations and carries them as `deviationNotes`, `deviations <ID> --json`
+  carries them as `notes` beside each deviation's `item` ID, `doctor` warns at the
+  writer's door; both lanes, README and METHODOLOGY carry the rule and its
+  reason; `check-invariants.mjs` pins the phrase across the two lanes, the
+  script and README). Closure was per entry for one day: a human accepting one
+  departure of three closed all three — exactly the shape that had just been
+  retired from `**Resolves owed:**` after a marker naming one of an entry's four
+  owed items retired all four, including a production-database hazard. The
+  asymmetry is the same and so is the direction: a deviation wrongly left open
+  costs a human one reread, while one wrongly closed is a decision nobody made,
+  gone from every brief and every attended door in a log that cannot be edited
+  to say so. A bare line still closes an entry that recorded one departure, so
+  no log written before this needs an edit. A reference naming no departure
+  (`<ID>.7` against two) and an ID a reference ends inside (`<ID>oops`) close
+  nothing and are reported the same way; naming any item of that entry clears
+  the note. Also: a `**Deviation:**` paragraph now ends at the next **bolded
+  field or heading** as well as at a blank line — written directly above
+  `**Owed:**` it used to swallow the next field's markup into the text a brief
+  shows and a door gates on — and five sentences that defined a deviation rule
+  by what an owed rule does, untrue within hours of being written because the
+  owed rule moved, now state the deviation rule in their own words with their
+  own reason.
+- **A deviation is parsed and surfaced: the `**Deviation:**` line**
+  (`scripts/tickets.mjs` — a new `parseDeviations` beside `parseOwed`, a new
+  `deviations <ID> [--log-from <ref>]` subcommand, `brief`'s new section and
+  its `deviations` payload field, six new `doctor` near-misses;
+  `skills/ticket/SKILL.md` step 6, `skills/quick/SKILL.md` step 5, README;
+  `check-invariants.mjs` holds both labels — the `**Deviation:**` opener the
+  parser reads and the `**Deviations closed:**` closer — across all four
+  documents). A status
+  entry may carry one optional `**Deviation:**` line per departure — what the
+  ticket's documents or its design showed that was not built, or was built
+  differently — beside the `**Decisions:**` field that keeps the judgment
+  calls the documents left open. The line exists because Decisions prose is
+  read by no command: a worker recorded there, honestly, that it had not built
+  a design's hero band, the sentence reached no human and no later gate, and
+  the page shipped without it. A deviation is never owed work — an owed item
+  is work someone will do, a deviation is a decision someone must see — so it
+  is parsed and surfaced separately: `brief` now carries every deviation no
+  human has closed into every later ticket of the epic, under its own heading.
+  A dated `**Deviations closed:** <ID>[, <ID>] — <each deviation named as
+  accepted or as fixed in <sha>; who; when>` line closes every deviation the
+  named entries recorded **above it in the file**, by its leading reference
+  list only — an ID cited further along, inside the note's prose, is a
+  citation, not a target. Position is what a line can close: an ID can head
+  more than one entry, and a departure recorded after a closing line must not
+  be born closed. Both skills say the closing line is **a human's, never a
+  worker's or any agent's**, because a closure the reviewed party could have
+  written clears nothing. `deviations <ID>` reports **every** deviation a
+  ticket's own entries recorded, closed or not, each with its closing line —
+  its `--log-from <ref>` reads the status log off a pushed ticket branch rather
+  than the checkout, and a log it cannot read is a nonzero exit naming the
+  reason, never an empty list, because an unreadable fact must not read as "no
+  deviations". It is deliberately a separate command with a separate flag from
+  `find --from`, and its payload shares no field name with `find`'s: the two
+  answer opposite questions about opposite refs, and swapped they would read a
+  gate's answer from the wrong document. Nothing stops yet — what the doors do
+  with a deviation is the rest of the `deviation-routing` epic. The status
+  log's shape is unchanged: both lines are optional, `**Owed:**` is still the
+  one required line, and no existing log needs an edit.
+
+- **A reviewer hire that throws is a failed hire, not the end of the run**
+  (`workflows/run-epic.mjs` `hireReviewer` and the two reviewer-spawn halt
+  details, `skills/run/SKILL.md` steps 3 and 4). The driver's sanctioned
+  fallback — one retry with a general agent given the reviewer's rules —
+  was reached only when the first hire *returned* nothing or returned
+  something that is not a review. But for an agent type the launching
+  session never registered, the Workflow runtime does not return: it throws
+  `agent type 'flow:ticket-reviewer' not found`, and an uncaught throw in
+  the script's module body ends the whole workflow — so the fallback was
+  unreachable in exactly the situation it was written for. A live run died
+  this way at its first review hire (Workflow run `wf_2e558dac-83d`,
+  2026-09-17, the deviation-routing epic): it failed closed, nothing
+  unreviewed merged, and the run was lost. A throwing hire is now caught and
+  logged with the error's first line — so a run record can quote why rather
+  than report an unexplained fallback — and takes the same one retry, for
+  the review and the re-review alike. The catch wraps the whole call, so any
+  other rejection lands there too and is reported the same way — the
+  reviewer **could not be hired**, with the error quoted, rather than a
+  spawn failure the driver has not diagnosed. A fallback that also throws
+  returns no review exactly as one that returns nothing does, and the run
+  halts on **reviewer-spawn failure after the sanctioned fallback also
+  fails** with the branch pushed and unmerged: an unreviewed ticket is still
+  never merged, anywhere. No other agent spawn in the script catches a
+  throw, and a test pins that — an unhandled surprise must not look like a
+  handled one. Step
+  3 now names the cost of running without the plugin installed (a failed
+  hire per review, and reviews by the fallback rather than by the reviewer
+  agent with its Edit and Write removed), which is a price and not a
+  refusal.
+
+- **An entry that owes several things is retired item by item: `brief`
+  numbers an `**Owed:**` block's bullets `<ID>.1`, `<ID>.2` …, and a bare
+  `**Resolves owed:** <ID>` against a multi-item entry retires nothing**
+  (`scripts/tickets.mjs`: `parseOwed` splits the block, numbers the items and
+  reports what a bare marker could not retire, `brief` prints the note beside
+  the items and `--json` carries it as `notes`, `doctor` warns at the writer's
+  door; `skills/ticket/SKILL.md` step 6 asks for one obligation per bullet and
+  teaches the item form of the marker, `skills/quick/SKILL.md` step 5 the
+  same; README and METHODOLOGY § "Why a worker reads a brief, not the whole
+  log" carry the rule and its reason; `check-invariants.mjs` pins the phrase).
+  The entry ID was the item's identity, so an entry deferring four things
+  could only be repaid whole: downstream, a marker naming one of them retired
+  all four, including a production-database hazard that had to survive, caught
+  only because a worker had been warned to check. Two other workers had
+  already seen the trap and recorded the marker's **absence** as a deliberate
+  decision, paying permanent noise in every future brief to avoid the silent
+  loss — a format forcing a bad choice on the people it serves. An item
+  wrongly kept costs one reread; an item wrongly retired is gone from an
+  append-only log with nothing left to report that it existed, so a bare
+  marker facing more than one open item retires nothing and `brief` names the
+  form that works. A bare marker is read against **what the entry owed when
+  the line was written** — the items recorded above it, since append-only
+  makes position time — so a marker that correctly closed a one-item entry
+  keeps working when that entry records again later, instead of renumbering a
+  discharged item back into every brief forever. The note clears as soon as
+  any item of that entry is named the itemised way, which is exactly the
+  repair the note prescribes: a warning whose only exit was naming items that
+  are still open would push writers toward the silent retirement this rule
+  exists to prevent. A reference matching no item (`<ID>.7` against a
+  two-item entry) is reported the same way — the skills now ask workers to
+  hand-write these, so a miscount is the expected error, and it was the one
+  error with no feedback anywhere; a mistyped reference does not clear the
+  note either, since it retired nothing. A reference must also END where its
+  ID ends — `<ID>oops` is not `<ID>`, and anchoring at the start alone let a
+  typo's prefix silently discharge a one-item entry — and a dotted reference
+  is read against the items recorded ABOVE it, the way a bare marker already
+  is, so a number that pointed past the end of the entry when it was written
+  cannot retire an item that entry records days later. A marker naming an entry the log
+  does not record stays silent, because `**Resolves owed:**` does not cross
+  epics and a cross-epic marker is a legal thing to write. **Existing bare
+  markers against multi-item entries stop resolving** — those items reappear
+  in the brief, which is the safe direction; repair by appending a dated
+  addendum naming the items, never by editing the entry. Measured on the live
+  downstream logs: nine items reappear across three epics, three of them
+  genuinely open obligations a bare marker had silently retired. Same commit fixes three further losses
+  in the same parser, each found by running it over live downstream logs:
+  a bullet list separated from `**Owed:**` by a blank line — the idiomatic
+  markdown shape — was dropped whole, because the block was read as ending at
+  the first blank line (it now runs to the entry's next field, heading or
+  prose paragraph, and a wrapped bullet still arrives joined, while a
+  sub-bullet stays part of the item above it so the numbering counts what a
+  reader counts); an ID heading more than one `**Owed:**` block, which an
+  append-only log allows, gave two obligations one identity, so numbering is
+  now per entry across its blocks; and "Nothing" empties only a block with no
+  bullets — the convention is how an entry declares the field empty, and
+  applied to a bullet it dropped all five items of an entry whose first
+  bullet opened "Nothing in this ticket has met Postgres".
+
+- **The acceptance ledger has a third verdict: a check whose evidence is a
+  skip is `↓ skipped`, and a skipped check is not a passed one**
+  (`scripts/tickets.mjs`: `runChecks` decides it and `check` prints and
+  counts it, with a `skipped` count and a per-check `status` in `--json`;
+  `workflows/run-epic.mjs` reads the count and names the skip in the halt;
+  `skills/epic/SKILL.md` requires an EXPECT a skip cannot satisfy;
+  `skills/ticket/SKILL.md` and `skills/quick/SKILL.md` say a `↓` line is not
+  a count you may report as passed; README and METHODOLOGY § "Why acceptance
+  criteria can be machine-runnable" carry the rule and its reason;
+  `check-invariants.mjs` pins the phrase across the six documents). Measured
+  downstream: console-foundations CF-3 reported `4/4 checks passed` while
+  every evidence line read `↓` — its Postgres suites skipped themselves for
+  want of `DATABASE_URL` (the house `describe.skipIf(...)` convention),
+  vitest exited 0, and the verbose reporter still printed the titles the
+  EXPECT strings matched. Every ticket in that epic then needed a human to
+  eyeball the markers, which is the check the gate exists to perform.
+  **Skipped is not passed**, because a run that did not happen proves
+  nothing and must never green a merge gate; it is **not failed** either,
+  because the code is not what is wrong and a red verdict sends a reader to
+  debug working code instead of supplying what the run needed. With an
+  EXPECT, a skip on **any** line carrying the EXPECT text decides unless
+  another of them shows something having run — the criterion names one test,
+  so its neighbours passing is not evidence for it, and a runner that echoes
+  its argv (`npm test -- <file>`) prints the EXPECT string on a line that
+  proves nothing. A line showing a run still wins, so one skipped file inside
+  a suite that ran does not turn the ledger red. With no EXPECT, where exit 0
+  is the whole evidence, the question widens to the whole output (some line
+  reports a skip, no line reports anything having run) — and so it does when
+  an EXPECT's own matching lines show neither, which is the argv echo's
+  second shape: the runner names the file while starting and counts files
+  when it reports the skip, so narrowing the question to the matching lines
+  greened a suite in which nothing ran. TAP is read by its per-test lines as
+  well as its summary — `ok N` is a run, while `not ok` and an `ok N`
+  carrying `# SKIP` are not — because a TAP producer need print no summary at
+  all, and without that one `# SKIP` beside a real pass read as a run in
+  which nothing happened, halting a run on working code. Detection is shape,
+  not meaning: a runner's skip glyph starting a line (`↓`, `○`) or a skip
+  **count** (`12 skipped`, `skipped (12)`, TAP's `# SKIP`) — the count is
+  what keeps the bare word out, so a criterion may still assert that
+  something "is skipped". Coverage is bounded and named: vitest, jest,
+  `node --test` and TAP are matched; mocha's `N pending` and `go test`'s
+  `--- SKIP:` are not, because a detector guessing at every runner's
+  vocabulary starts failing correct runs. The recovery works from the refused
+  state either way: supply what the run needed, or point EXPECT at a line
+  that proves it ran — which is also what `agents/plan-reviewer.md` now asks
+  for, so a criterion red only because its suite skipped itself is a finding
+  at the door where CHECKs are proven red. Exit codes are unchanged — a skip
+  exits 1 like any ungreen gate, so the driver's acceptance step still
+  reports it as "ran" — and the driver halts on the skip count as its own
+  condition, the way it already re-derives `problems > 0` and
+  `passed !== total`, so a self-contradictory report merges nothing. The skip
+  count is refused like every other count rather than defaulted to 0 — the
+  one figure that names skips cannot be the one figure a report is allowed to
+  omit — and the ticket record carries `acceptanceChecksSkipped` whether or
+  not acceptance was reached, so a halted record and a merged one have the
+  same shape and the run summary prints the skips beside the counts. The
+  acceptance stop condition names the skipped criterion as a fourth member in
+  all four documents that state it, because a retro files halts by that
+  string and a skip filed as "did not produce its expected result" is the
+  conflation the third verdict exists to end.
 - **The revert check: a ticket names the test that fails with its source
   change reverted, and the reviewer opens that test** (`skills/ticket/SKILL.md`
   step 5 and its Verified field, `skills/quick/SKILL.md` step 5,
