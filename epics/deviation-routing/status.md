@@ -1006,3 +1006,40 @@ named above. Nothing else deferred.
 
 Worker tokens (implementation leg): unknown — observed by the supervisor;
 Reviewer tokens: 160,656
+
+**Addendum — re-review — 2026-09-18 — opus/default effort:** bounded re-review
+of the fix range (`5815a59..0ba5d3a`) by the same reviewer, resumed.
+**0 Important, 0 nits**, and nothing raised in the first review left
+unaddressed.
+
+It confirmed all four dispositions as stated. The CHANGELOG correction's three
+named entries match the actual bullet heads (`CHANGELOG.md:133`, `:199`, `:97`)
+and the fragments it quotes are verbatim — which is what the Important finding
+was about, a correction that pointed at a bullet saying nothing about notes.
+METHODOLOGY's per-ledger statement was verified twice over: by reading
+`OWED_REF_END` (`tickets.mjs:530`) and by running `**Resolves owed:** A-1oops`
+through the ledger, which yields zero notes. The three reworded "`open`
+stops…" copies were checked against the parser rather than read: a bare-line
+note cannot survive to `open: 0`, because the itemised lines that close the
+rest suppress it, and only a wrong reference can stand at `open: 0` — both run.
+The gate is where it was: `SKILL.md:565` still reads "`open` above zero stops
+this step … and nothing else does". The repo-wide grep accounting came out
+exact — three copies rewritten, three append-only records left standing, one
+deferred to the retro (`tickets.md:455-456`).
+
+Re-run on the same head: `tickets.test.mjs` 110/110,
+`check-invariants.test.mjs` 25/25, `check-invariants.mjs` exit 0, `doctor` exit
+0, `tickets.mjs check DEV-5` 4/4. `revert check: n/a, prose-only` holds for
+`bd5fe8c`; the revert check and the guard flips were not re-verified, the fix
+range being prose only, and the entry above stands as their record.
+
+One cosmetic observation, suppressed as a new nit under the re-review rule and
+recorded so it is not re-found: after the reflow `METHODOLOGY.md:601` runs to
+121 columns and `plugins/flow/skills/ticket/SKILL.md:579` to 111, against the
+80 these documents otherwise keep. Nothing reads either line but a human, and
+it was left unfixed deliberately.
+
+Re-review tokens: 17,976 (178,632 cumulative for the reviewer agent across both
+rounds). Corrected figure for the entry's token line, observed by the
+supervisor: Worker tokens (implementation leg): 255,492; 271,099 cumulative
+after disposition.
