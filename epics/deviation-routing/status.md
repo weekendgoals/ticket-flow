@@ -814,3 +814,14 @@ The decision is Vadim's, given in the supervising session in two messages
 quoted whole: "Accept it." and "its ok to use 18 lines". The label, the
 reference, his name and the date are the frame step 6 prescribes, set around
 his words by the supervisor; no word of the decision is the supervisor's.
+
+**Addendum — 2026-09-18 — re-plan: DEV-5 added**
+
+Vadim: "ship dev-5 with this epic", then, shown the draft, "yes, go ahead with
+DEV-5". `tickets.md` gains Decision 6, one sentence under **Order**, and the
+ticket, last in document order. Its four CHECKs were run on the epic branch at
+the DEV-3 merge (`57c6a20`) and all fail, none malformed. The fourth was
+corrected before this commit: as drafted its pattern could not match README's
+false sentence, which wraps across a line break, so the check would have gone
+green with README still wrong; it now matches the half that sits on one line,
+and hits both files (`SKILL.md:383`, `README.md:375`).

@@ -163,6 +163,22 @@ Decisions at planning, 2026-09-17:
    seen rather than trusted. The cost is a halt on a deviation an agent has
    already fixed; the reversal clause is what measures whether that cost is
    worth paying.
+6. **A note is cleared by the repair it names — in both ledgers** (added
+   2026-09-18 from DEV-2's review; Vadim: "ship dev-5 with this epic"). The
+   parser emits three notes when a closing or resolving line retires
+   nothing. One of them clears; two never do. `**Resolves owed:** P-1.7`
+   against a two-item entry, followed by exactly the line the note
+   prescribes, leaves no item open and the note in place forever — the
+   supervisor reproduced it on `main`'s owed ledger, and DEV-4 mirrored it
+   faithfully for deviations. An append-only log cannot take the wrong line
+   back, so in an installed project one mistyped digit is a `doctor` warning
+   nobody can clear, and the ticket skill and README both say otherwise.
+   DEV-2's first gate stopped on notes and would have made such a ticket
+   unmergeable; that door was fixed by not gating on notes, which is right
+   whatever the parser does, but it left the parser's defect and the two
+   false sentences in the release. DEV-5 fixes both ledgers in one ticket
+   because it is one rule: a fix to one alone is the two-statements drift
+   this epic has already paid for twice.
 
 CHECK ledger, 2026-09-17, on the tree at `b96da41` (`origin/main` after PR
 #50): every CHECK below was run with `tickets.mjs check <ID>` and **failed**,
@@ -176,7 +192,10 @@ reviewed): DEV-4 0/5, DEV-2 0/3, DEV-3 0/5 — every one failing, none
 malformed; DEV-1, integrated, 5/5 including its corrected third CHECK.
 DEV-4's phrase, "bare closing line", was checked against both `main` and
 the epic branch before it was chosen, so neither the refresh nor an earlier
-ticket could have turned it green.
+ticket could have turned it green. **DEV-5, added 2026-09-18, run on the
+epic branch at the DEV-3 merge:** 0/4, every one failing, none malformed;
+its phrase, "cleared by the repair it names", appears nowhere in the
+repository outside this plan.
 
 Status log: `epics/deviation-routing/status.md`. Run a ticket with `/flow:ticket <ID>`.
 
@@ -232,7 +251,7 @@ advertises a recovery that lets the deviation through. If DEV-1's parser
 cannot tell a `**Deviation:**` line from Decisions prose that merely uses
 the word — its fixture for exactly that must fail to parse as one — the
 epic stops there and the line's shape is redesigned before any door is
-built on it.
+built on it. DEV-5 last: nothing depends on it — DEV-2's gate reads `open` and DEV-3's reads `count`, and neither reads a note — and it is the only ticket here that changes `main`'s owed code, so it goes in after the doors are closed and reviewed.
 
 ## DEV-1 — A deviation is parsed and surfaced
 
@@ -517,3 +536,77 @@ exists to hand to a human.
   tests and report the suite's count under **Verified**; the driver parses
   with CLAUDE.md's `node -e` command.
 - Standing checks with counts, as DEV-1.
+
+## DEV-5 — A note is cleared by the repair it names
+
+**Scope.**
+- `tickets.mjs`, both ledgers — `parseOwed` and `parseDeviationsText`. The
+  unknown-item note (`<ID>.7` against two) and the malformed-reference note
+  (`<ID>oops`) stop being reported once a line **below** the faulty one
+  names an item of the same entry correctly. Below, because the log is
+  append-only and position is time: a correct reference written *before*
+  the mistake is not a correction of it, and clearing on one would take
+  away the only feedback a miscount gets while the item it meant is still
+  open. "Correctly" means a reference that resolves to an item that entry
+  recorded above the correcting line — including an item already retired,
+  since the writer's correction may name the one they meant — and, for an
+  entry that recorded a single item and so keeps its bare ID, the bare ID:
+  today no dotted reference can ever be valid for such an entry, which is
+  why a lone departure closed by a bare line and then "confirmed" as
+  `<ID>.1` is stuck forever.
+- The bare-line note keeps the rule it has (it stops once any item of that
+  entry is named the itemised way) — this ticket does not change it, and
+  says in a comment why the two rules differ: a bare line is ambiguous about
+  *which* items, so any itemised line answers it; a wrong reference is a
+  specific mistake, so only a later line can be its correction.
+- Every note's text states a repair that, followed literally, clears that
+  note. The test for each note kind in each ledger is exactly that: emit the
+  note, do what it says, assert it is gone — from `brief`, from
+  `deviations <ID> --json`, and from `doctor`. Then the negatives: a second
+  wrong line does not clear it; a correct line *above* it does not clear it;
+  a correct reference to a *different* entry does not clear it; and a note
+  attributed to entry X by a typo written under entry Y's addendum is
+  cleared by a later correct reference to X.
+- The two sentences that are false today become true and say the rule as it
+  is: `skills/ticket/SKILL.md` step 6 ("…and stop reporting it once any item
+  of that entry is named that way. A reference naming no departure … are
+  reported the same way") and `README.md` ("naming any item of that entry
+  clears the note"). The owed side's equivalents in both files are read and
+  corrected the same way. And the two display sites DEV-2's re-review
+  recorded — ticket skill step 9, quick skill step 7 — stop saying a note
+  means a departure "is still open": a note means a line closed nothing;
+  whether anything is still open is what `open` says.
+- METHODOLOGY: why a warning nobody can clear is worse than no warning, and
+  why the correction must sit below the mistake. CHANGELOG under
+  `## Unreleased`, naming both ledgers. `check-invariants.mjs` pins the
+  rule's phrase across the ticket skill, README and the script.
+
+**Not in scope.** Any gate: DEV-2's door stops on `open` and DEV-3's on
+`count`, and neither starts reading notes because notes became clearable —
+a gate on advice is still a gate on advice. The hardening items the retro
+owns (a closing line inside a fenced block, a period-form bold label, the
+silent bare line above an entry's only item, an empty `**Deviation:**`
+label): this ticket touches none of them, however near the code.
+Numbering, closure and what `open` and `count` report — unchanged, and a
+test says so: for every fixture in both suites, `open`, `count` and each
+item's `closed` are identical before and after this ticket.
+
+**Acceptance criteria.**
+- The ticket lane states the rule in the words the checker pins.
+  CHECK: grep -c "cleared by the repair it names" plugins/flow/skills/ticket/SKILL.md
+- README states it too.
+  CHECK: grep -c "cleared by the repair it names" README.md
+- `check-invariants.mjs` holds the skill, README and the script together.
+  CHECK: grep -c "cleared by the repair it names" plugins/flow/scripts/check-invariants.mjs
+- Neither false sentence survives (README wraps its sentence across a line
+  break, so the pattern is the half that sits on one line).
+  CHECK: ! grep -nE "of that entry clears the note|stop reporting it once any item of that entry is named that way" plugins/flow/skills/ticket/SKILL.md README.md
+- demonstrate: in a throwaway epic, for the owed ledger and for deviations
+  in turn — a two-item entry, a line naming `<ID>.7`, then the line the note
+  prescribes → the note is gone from `brief`, from `deviations <ID> --json`
+  (deviations) and from `doctor`, and `open`/the owed list read exactly as
+  they did before this ticket; a lone item closed by its bare ID and then
+  named `<ID>.1` → a note, cleared by a later line naming the bare ID.
+  Record the outputs, and `doctor`'s exit code on this repository.
+- Standing checks with counts, as DEV-1 — and `run-epic.test.mjs` unchanged
+  in count, since no gate moves.
