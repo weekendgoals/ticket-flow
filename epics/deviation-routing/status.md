@@ -935,3 +935,74 @@ of that entry clears the note", true of the bare line's note only. Both are now
 named in the new bullet, which corrects them in place of editing them, for the
 reason the entry's Decision (4) gives. No behaviour changed; `check DEV-5`
 4/4, `check-invariants.mjs` exit 0 and `doctor` exit 0 after the edit.
+
+**Addendum — review — 2026-09-18 — opus/default effort:** one Important, two
+nits, one pre-existing, reviewed by a fresh-context general agent standing in
+for `flow:ticket-reviewer`, which this session has not registered; the hiring
+tool exposes no effort setting. Every disposition landed in one commit,
+`bd5fe8c`. The review found **0 Important on the clearing rule itself**: it
+reproduced the revert check (103/7 and 24/1, the seven named tests), flipped
+eight guards itself with the suite red for each, ran 27 adversarial logs
+through the base and new scripts, and compared all 17 ticket IDs in this
+repository under both — byte-identical apart from `notes`. No gate moved, scope
+was clean, counts matched CLAUDE.md, `check DEV-5` 4/4.
+
+Important, fixed in `bd5fe8c`. The new CHANGELOG bullet said it corrected "the
+unattended-halt entry", while the sentence it corrects — "a note cannot be
+relied on to clear — some survive the repair they prescribe" — is in the
+attended-door entry; the unattended-halt entry says nothing about notes. The
+pointer missed, so the false sentence stood with nothing pointing at it. Both
+corrected entries are now named by their opening words, which is the reference
+a reader can follow.
+
+Nit, fixed in `bd5fe8c`. A third unreleased entry — the owed ledger's item
+numbering — carries the same "is reported the same way" construction about a
+reference matching no item, false in exactly the dimension this ticket changes.
+It is named as a third corrected entry, and the correction now states the
+difference rather than only asserting one: a bare marker's or bare line's note
+clears from an itemised line anywhere, a wrong reference's only from a correct
+reference below it.
+
+Nit, fixed in `bd5fe8c`. METHODOLOGY's new section said both ledgers warn about
+three shapes. The owed ledger has no malformed-reference note: `OWED_REF_END`
+refuses to parse `**Resolves owed:** A-1oops` as a reference at all, so nothing
+is reported — which also made "two of the three used to have no exit" a
+per-ledger miscount. Both statements are now per ledger, as the CHANGELOG
+bullet already had them.
+
+Pre-existing, **fixed where this ticket wrote it, and handed to an owner where
+it did not.** "`open` already stops every case a note reports" is literally
+false: a wrong reference against an entry whose departures are all already
+closed gives a note with `open: 0` — true before this change and after it. This
+ticket rewrote the sentences carrying that clause in the ticket skill's step 10
+and in METHODOLOGY, and wrote a third copy into the new CHANGELOG bullet, so
+the one-rule invariant makes those three this ticket's to get right: each now
+says that `open` stops every departure a failed closure leaves undecided, and
+that a note standing at `open: 0` reports a line that decided nothing where
+nothing is left to decide. **The gate is untouched** — `open` above zero stops
+the step, and nothing else does. Three copies are deliberately not edited: the
+dated attended-door CHANGELOG entry (corrected by the new bullet, like the rest
+of that batch), DEV-2's review addendum above, and this entry's own
+**Decisions:** field, both append-only — this addendum is their correction. One
+copy is left with an owner: `tickets.md:455-456`, DEV-2's scope text in the
+signed-off plan. Owner: the retro, with the hardening items it already holds; a
+worker does not edit a signed-off plan's rationale mid-epic, and nothing reads
+that sentence but a human.
+
+Re-run after the fixes, on `bd5fe8c`: `tickets.mjs check DEV-5` 4/4, exit 0;
+`tickets.test.mjs` 110/110; `check-invariants.test.mjs` 25/25;
+`ticket-session-guard.test.mjs` 14/14; `board.test.mjs` 9/9;
+`plan-page.test.mjs` 8/8; `run-epic.test.mjs` 133/133;
+`runners/codex.test.mjs` 21/21; `runners/codex-review.test.mjs` 19/19;
+`check-invariants.mjs` exit 0; `doctor` exit 0; `node --check tickets.mjs` exit
+0; the run-epic module-body parse exit 0. The fix commit is prose only —
+documentation and reasoning, nothing any runtime, parser, test or agent reads —
+so `revert check: n/a, prose-only` for it; the range's own revert check stands
+as the entry above records it, and `git diff 548b466..bd5fe8c` leaves
+`tickets.mjs`'s parser and every suite count exactly as the entry reports.
+
+One finding deferred: the pre-existing sentence in `tickets.md`, with the owner
+named above. Nothing else deferred.
+
+Worker tokens (implementation leg): unknown — observed by the supervisor;
+Reviewer tokens: 160,656
