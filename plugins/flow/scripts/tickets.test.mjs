@@ -755,7 +755,8 @@ test('naming an item closes that one, leaves the rest open, and clears the note'
   assert.equal(e1.deviations[0].closedBy, null)
   assert.equal(noteOf(e1, /had 2 open deviations/).length, 0,
     'the bare line above it is superseded by the itemisation, so its note is cleared')
-  assert.equal(noteOf(e1, /names no deviation/).length, 2, 'the references that named nothing still closed nothing and still say so')
+  assert.deepEqual(e1.notes, [],
+    'and the wrong-reference notes above it clear too: `E-1.2` is written BELOW them and names a departure of the same entry correctly, which is the repair all three notes prescribe')
 
   // Closed twice: the decision a reader wants is the one that was made, not the
   // last line to mention it.
@@ -772,17 +773,21 @@ test('naming an item closes that one, leaves the rest open, and clears the note'
 test('brief never says none outstanding above a note about a line that closed nothing', () => {
   // Cosmetic, from the same review: the heading's "none outstanding" is a claim
   // about the epic, and a note underneath it contradicts the claim.
+  // The last line is a fresh miscount with nothing below it, because the
+  // itemised repairs above clear every note they sit under: a note only
+  // survives while no correct reference follows it.
   const dir = echoRepo(
     'deviations-brief-none',
     '\n**Deviations closed:** E-1.1, E-1.2, E-1.3 — accepted; Vadim; 2026-09-06.\n' +
-      '\n**Deviations closed:** E-3 — accepted; Vadim; 2026-09-06.\n',
+      '\n**Deviations closed:** E-3 — accepted; Vadim; 2026-09-06.\n' +
+      '\n**Deviations closed:** E-1.9 — accepted; Vadim; 2026-09-07.\n',
   )
   const briefed = JSON.parse(run(dir, 'brief', 'E-4', '--json'))
   assert.deepEqual(briefed.deviations, [], 'every departure is closed')
-  assert.equal(briefed.deviationNotes.length, 3, 'and three closing lines still closed nothing')
+  assert.equal(briefed.deviationNotes.length, 1, 'and the last closing line still closed nothing')
   const section = run(dir, 'brief', 'E-4').split('Deviations — recorded, not yet closed by a human')[1].split('\nTicket')[0]
   assert.ok(!section.includes('none outstanding'), 'the notes print without the claim that nothing is outstanding')
-  assert.match(section, /note:.*names `E-1oops`/)
+  assert.match(section, /note:.*reference `E-1\.9` names no deviation/)
 })
 
 test('a deviation paragraph ends at the next bolded field, blank line or not', () => {
@@ -1304,6 +1309,261 @@ test('a reference that only starts with a valid ID is not read as that ID', () =
     briefed.owed.some((o) => o.id === 'G-2'),
     'the item the typo appeared to discharge is still owed',
   )
+})
+
+// ── a note is cleared by the repair it names — both ledgers ──────────────────
+// Every note either ledger emits states a repair, and doing literally what it
+// says has to end it everywhere it is reported. A warning nobody can clear is
+// worse than no warning: the log is append-only, so a mistyped digit cannot be
+// taken back, and a `doctor` row that survives its own cure teaches its reader
+// to skip past warnings in general. The two rules differ on purpose. A BARE
+// line is ambiguous about *which* items it decided, so any itemised line for
+// that entry answers it wherever it sits; a wrong reference is one specific
+// mistake, so only a line BELOW it can be its correction — position is time in
+// an append-only log, and clearing on a correct line written earlier would take
+// the only feedback a miscount gets while the item it meant is still open.
+//
+// One fixture, both ledgers: T-1 records three departures and three owed items
+// across two entries, T-2 records one departure — the lone-item shape whose
+// only valid reference is its bare ID.
+const THETA_TICKETS =
+  '# Theta epic — tickets\n\nDelivery: release\n\n' +
+  '## T-1 — the landing page\n\n**Scope.** The page.\n\n' +
+  '## T-2 — the results list\n\n**Scope.** The list.\n\n' +
+  '## T-3 — next up\n\n**Scope.** Three.\n'
+
+const THETA_STATUS = `# Theta epic — status log
+
+Append-only record of finished tickets. Tickets: \`epics/theta/tickets.md\`.
+
+### T-1 — the landing page — 2026-09-01 — DONE
+
+**Deviation:** the design showed a hero band above the fold → built without it,
+because the asset pipeline cannot resize the source image yet.
+
+**Deviation:** the design showed a sticky nav → built as a static header,
+because sticky positioning fought the existing scroll container.
+
+**Owed:**
+- the hero band's art direction is unresolved — T-2 inherits it
+- the focus order through the static header is untested
+
+### T-2 — the results list — 2026-09-02 — DONE
+
+**Deviation:** the spec showed server-side paging → built client-side, because
+the endpoint has no cursor.
+
+**Owed:** Nothing.
+
+### T-1 — the landing page, redone — 2026-09-03 — DONE
+
+**Deviation:** the design showed three footer links → built with one, because
+two of the three have no destination yet.
+
+**Owed:** the footer's two dead links need destinations.
+`
+
+let thetaSeq = 0
+function thetaRepo(extra) {
+  const dir = join(tmp, `theta-${thetaSeq++}`)
+  git(tmp, 'init', '--initial-branch=main', dir)
+  mkdirSync(join(dir, 'epics/theta'), { recursive: true })
+  writeFileSync(join(dir, 'epics/theta/tickets.md'), THETA_TICKETS)
+  writeFileSync(
+    join(dir, 'epics/theta/status.md'),
+    `${THETA_STATUS}\n**Addendum — 2026-09-04 — decisions and discharges.**\n${extra}`,
+  )
+  return dir
+}
+
+// These fixtures have no origin remote, so doctor exits 1 on that; its rows are
+// on stdout either way, and they are the writer's own door onto the note.
+const doctorRows = (dir, re) => {
+  const failed = runFail(dir, 'doctor', '--json')
+  return JSON.parse(failed ? failed.stdout : run(dir, 'doctor', '--json')).filter((r) => re.test(r.msg))
+}
+// A note has to be gone from all three readers at once, or it is still a
+// warning someone meets: the brief a later worker reads, the subcommand every
+// attended door reads, and the doctor row the line's own author sees.
+const devNotes = (dir, id) => ({
+  sub: JSON.parse(run(dir, 'deviations', id, '--json')).notes,
+  brief: JSON.parse(run(dir, 'brief', 'T-3', '--json')).deviationNotes,
+  doctor: doctorRows(dir, /Deviations closed:/).map((r) => r.msg),
+})
+const owedNotes = (dir) => ({
+  brief: JSON.parse(run(dir, 'brief', 'T-3', '--json')).notes,
+  doctor: doctorRows(dir, /Resolves owed:/).map((r) => r.msg),
+})
+
+test('the deviation bare-line note is cleared by the itemised line it names', () => {
+  const bare = '\n**Deviations closed:** T-1 — all of them, accepted; Vadim; 2026-09-04.\n'
+  const before = devNotes(thetaRepo(bare), 'T-1')
+  assert.equal(before.sub.filter((n) => /had 3 open deviations/.test(n)).length, 1, 'the bare line faced three open, so it closed nothing and says so')
+  assert.ok(before.brief.some((n) => /had 3 open deviations/.test(n)) && before.doctor.some((n) => /had 3 open deviations/.test(n)),
+    'and says it at all three doors')
+
+  const after = thetaRepo(`${bare}\n**Deviations closed:** T-1.1 — the hero band, accepted; Vadim; 2026-09-05.\n`)
+  assert.deepEqual(devNotes(after, 'T-1'), { sub: [], brief: [], doctor: [] },
+    'naming one item the itemised way is the repair the note states, and it clears the note everywhere it was reported')
+  const dev = JSON.parse(run(after, 'deviations', 'T-1', '--json'))
+  assert.deepEqual(dev.deviations.map((d) => [d.item, d.closed]), [['T-1.1', true], ['T-1.2', false], ['T-1.3', false]],
+    'and clears it without closing anything the human did not name — the rest stay open')
+  assert.equal(dev.open, 2)
+})
+
+test('the deviation unknown-item note is cleared by the correct reference written below it', () => {
+  const wrong = '\n**Deviations closed:** T-1.7 — accepted; Vadim; 2026-09-04.\n'
+  const before = devNotes(thetaRepo(wrong), 'T-1')
+  assert.equal(before.sub.length, 1)
+  assert.match(before.sub[0], /reference `T-1\.7` names no deviation: T-1 records 3/)
+  assert.match(before.sub[0], /a line below it naming one of T-1's deviations clears this note/,
+    'the note states the repair that clears it — the reviewer opens this text and follows it literally')
+  assert.equal(before.brief.length, 1)
+  assert.equal(before.doctor.length, 1)
+
+  const after = thetaRepo(`${wrong}\n**Deviations closed:** T-1.2 — the sticky nav, fixed in 9f3a21c; Vadim; 2026-09-05.\n`)
+  assert.deepEqual(devNotes(after, 'T-1'), { sub: [], brief: [], doctor: [] }, 'doing exactly what the note says ends it at all three doors')
+  const dev = JSON.parse(run(after, 'deviations', 'T-1', '--json'))
+  assert.deepEqual(dev.deviations.map((d) => [d.item, d.closed]), [['T-1.1', false], ['T-1.2', true], ['T-1.3', false]])
+})
+
+test('the deviation malformed-reference note is cleared by the reference written again correctly', () => {
+  const malformed = '\n**Deviations closed:** T-1oops — accepted; Vadim; 2026-09-04.\n'
+  const before = devNotes(thetaRepo(malformed), 'T-1')
+  assert.match(before.sub[0], /names `T-1oops`, and an ID has to end where the reference ends/)
+  assert.match(before.sub[0], /a line below it naming one of T-1's deviations clears this note/)
+  assert.equal(before.brief.length, 1)
+  assert.equal(before.doctor.length, 1)
+
+  const after = thetaRepo(`${malformed}\n**Deviations closed:** T-1.1 — the hero band, accepted; Vadim; 2026-09-05.\n`)
+  assert.deepEqual(devNotes(after, 'T-1'), { sub: [], brief: [], doctor: [] })
+})
+
+test("a lone departure's bare ID clears the note a dotted reference to it earned", () => {
+  // The shape that was stuck forever: an entry recording ONE departure keeps
+  // its bare ID, so no dotted reference can ever be valid for it — a human
+  // "confirming" a bare closure as `T-2.1` earned a note whose only exit was a
+  // reference the parser would never accept. The bare ID is that lone
+  // departure's identity, so writing it again is the repair, and it clears.
+  const wrong =
+    '\n**Deviations closed:** T-2 — the paging, accepted; Vadim; 2026-09-04.\n' +
+    '\n**Deviations closed:** T-2.1 — confirming the above; Vadim; 2026-09-04.\n'
+  const before = devNotes(thetaRepo(wrong), 'T-2')
+  assert.equal(before.sub.length, 1)
+  assert.match(before.sub[0], /`T-2\.1` names no deviation: T-2 records 1 \(`T-2`\) above that line/,
+    'the note names the only reference that entry has, which is the bare ID')
+
+  const after = thetaRepo(`${wrong}\n**Deviations closed:** T-2 — the paging, accepted; Vadim; 2026-09-05.\n`)
+  assert.deepEqual(devNotes(after, 'T-2'), { sub: [], brief: [], doctor: [] })
+  const dev = JSON.parse(run(after, 'deviations', 'T-2', '--json'))
+  assert.deepEqual(dev.deviations.map((d) => [d.item, d.closed]), [['T-2', true]], 'the departure was closed by the first line and stays closed')
+  assert.match(dev.deviations[0].closedBy, /2026-09-04/, 'an already-closed item still answers a correction — the writer may be naming the very one they meant')
+})
+
+test('the owed bare-marker note is cleared by the itemised marker it names', () => {
+  const bare = '\n**Resolves owed:** T-1 — done.\n'
+  const before = owedNotes(thetaRepo(bare))
+  assert.equal(before.brief.filter((n) => /3 open items/.test(n)).length, 1)
+  assert.equal(before.doctor.length, 1, "and at the writer's own door")
+
+  const after = thetaRepo(`${bare}\n**Resolves owed:** T-1.1 — the art direction is signed off.\n`)
+  assert.deepEqual(owedNotes(after), { brief: [], doctor: [] }, 'the repair the note names clears it at both doors')
+  assert.deepEqual(JSON.parse(run(after, 'brief', 'T-3', '--json')).owed.map((o) => o.id), ['T-1.2', 'T-1.3'],
+    'and retires only the item that was named')
+})
+
+test('the owed unknown-item note is cleared by the correct reference written below it', () => {
+  const wrong = '\n**Resolves owed:** T-1.7 — done.\n'
+  const before = owedNotes(thetaRepo(wrong))
+  assert.equal(before.brief.length, 1)
+  assert.match(before.brief[0], /`\*\*Resolves owed:\*\* T-1\.7` names no item: T-1 records 3/)
+  assert.match(before.brief[0], /a line below it naming one of T-1's items clears this note/)
+  assert.equal(before.doctor.length, 1)
+
+  const after = thetaRepo(`${wrong}\n**Resolves owed:** T-1.2 — the focus order has a test now.\n`)
+  assert.deepEqual(owedNotes(after), { brief: [], doctor: [] })
+  assert.deepEqual(JSON.parse(run(after, 'brief', 'T-3', '--json')).owed.map((o) => o.id), ['T-1.1', 'T-1.3'])
+})
+
+test('what does not clear a wrong reference: another wrong line, a correct line above, or a correct one for another entry', () => {
+  // The negatives are the rule's teeth. Without them "clearable" would slide
+  // into "any later line silences it", and a miscount would lose its only
+  // feedback while the item it meant is still open.
+  const wrong = '\n**Deviations closed:** T-1.7 — accepted; Vadim; 2026-09-04.\n'
+  const second = devNotes(thetaRepo(`${wrong}\n**Deviations closed:** T-1.8 — accepted; Vadim; 2026-09-05.\n`), 'T-1')
+  assert.equal(second.sub.length, 2, 'a second wrong reference is a second mistake, not a correction')
+  assert.equal(second.doctor.length, 2)
+
+  const above = devNotes(thetaRepo(`\n**Deviations closed:** T-1.1 — accepted; Vadim; 2026-09-03.\n${wrong}`), 'T-1')
+  assert.equal(above.sub.length, 1, 'a correct line ABOVE the mistake was written before it and cannot be its correction — position is time')
+  assert.match(above.sub[0], /T-1\.7/)
+
+  const other = devNotes(thetaRepo(`${wrong}\n**Deviations closed:** T-2 — accepted; Vadim; 2026-09-05.\n`), 'T-1')
+  assert.equal(other.sub.length, 1, "a correct reference to another entry answers nothing about T-1's miscount")
+
+  // The asymmetry the comment in the parser explains: a BARE line's note is
+  // answered by any itemised line for that entry, including one above it,
+  // because a bare line is ambiguous about which items rather than wrong about
+  // one.
+  const bareAfterItem = devNotes(
+    thetaRepo('\n**Deviations closed:** T-1.1 — accepted; Vadim; 2026-09-03.\n\n**Deviations closed:** T-1 — the rest; Vadim; 2026-09-05.\n'),
+    'T-1',
+  )
+  assert.deepEqual(bareAfterItem.sub, [], 'the entry was already being addressed item by item, which is the form the bare-line note asks for')
+
+  // Owed side, same three negatives — one rule over two ledgers.
+  const owedWrong = '\n**Resolves owed:** T-1.7 — done.\n'
+  assert.equal(owedNotes(thetaRepo(`${owedWrong}\n**Resolves owed:** T-1.8 — done.\n`)).brief.length, 2)
+  assert.equal(owedNotes(thetaRepo(`\n**Resolves owed:** T-1.1 — done.\n${owedWrong}`)).brief.length, 1)
+  assert.equal(owedNotes(thetaRepo(`${owedWrong}\n**Resolves owed:** T-2 — done.\n`)).brief.length, 1)
+})
+
+test('a note earned by a typo under another entry is attributed to the entry it names, and cleared there', () => {
+  // The reference decides whose note it is, not the entry it was written
+  // under: a human closing T-1's departures from inside T-2's addendum mistypes
+  // one, and the note has to reach the ticket whose departure is still
+  // undecided — and be cleared by that ticket's own correct reference.
+  const typo = '\n**Deviations closed:** T-1.7 — accepted; Vadim; 2026-09-04.\n'
+  const dir = thetaRepo(typo)
+  assert.equal(JSON.parse(run(dir, 'deviations', 'T-1', '--json')).notes.length, 1, 'T-1 owns the note, though the line sits under T-2')
+  assert.deepEqual(JSON.parse(run(dir, 'deviations', 'T-2', '--json')).notes, [], 'and T-2, which merely hosts the line, does not')
+
+  const fixed = thetaRepo(`${typo}\n**Deviations closed:** T-1.3 — the footer links, accepted; Vadim; 2026-09-05.\n`)
+  assert.deepEqual(devNotes(fixed, 'T-1'), { sub: [], brief: [], doctor: [] })
+})
+
+test('numbering, closure and what open, count and the owed list report are untouched by the clearing rule', () => {
+  // The guard for this change: it moves notes and nothing else. Every fixture
+  // above reads exactly as it did before, so a later edit that "simplifies" the
+  // clearing rule into the closure rule fails here rather than in an installed
+  // project's release gate.
+  const echo = echoRepo('deviations-unchanged')
+  assert.deepEqual(
+    ['E-1', 'E-2', 'E-3'].map((id) => {
+      const d = JSON.parse(run(echo, 'deviations', id, '--json'))
+      return [id, d.count, d.open, d.deviations.map((x) => [x.item, x.closed])]
+    }),
+    [
+      ['E-1', 3, 3, [['E-1.1', false], ['E-1.2', false], ['E-1.3', false]]],
+      ['E-2', 1, 0, [['E-2', true]]],
+      ['E-3', 1, 1, [['E-3', false]]],
+    ],
+  )
+  const delta = deltaRepo('deviations-unchanged-delta')
+  assert.deepEqual(
+    ['D-1', 'D-2'].map((id) => {
+      const d = JSON.parse(run(delta, 'deviations', id, '--json'))
+      return [id, d.count, d.open, d.deviations.map((x) => [x.item, x.closed])]
+    }),
+    [
+      ['D-1', 3, 1, [['D-1.1', true], ['D-1.2', true], ['D-1.3', false]]],
+      ['D-2', 1, 1, [['D-2', false]]],
+    ],
+  )
+  assert.deepEqual(JSON.parse(run(ledger2, 'brief', 'D-4', '--json')).owed.map((o) => o.id), ['D-1.1', 'D-1.2', 'D-1.4', 'D-2'])
+  assert.deepEqual(JSON.parse(run(ledger2, 'brief', 'E-3', '--json')).owed.map((o) => o.id), ['E-1.1', 'E-1.2', 'E-1.3'])
+  assert.deepEqual(JSON.parse(run(ledger2, 'brief', 'F-4', '--json')).owed.map((o) => o.id), ['F-1.2', 'F-1.3', 'F-2.1', 'F-2.2'])
+  assert.deepEqual(JSON.parse(run(ledger3, 'brief', 'G-4', '--json')).owed.map((o) => o.id), ['G-1.1', 'G-1.2', 'G-1.3', 'G-2'])
 })
 
 test('brief with no argument briefs the first startable ticket and names its epic', () => {
