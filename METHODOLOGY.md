@@ -593,10 +593,12 @@ The same test decides **what a gate may read**. The parser reports both the
 departures and the notes a closing line earns when it closes nothing, and the
 attended doors show both — a note is how a human learns that someone tried to
 close a departure and failed. But the gate stops on the open departures alone,
-because a line that closed nothing leaves its departure open anyway, so the
-notes add no case: a note is advice about how a line was written, not a
-statement that a decision is outstanding, and a gate on advice refuses over
-wording. When that rule was written the notes were also unclearable — some
+because a line that closed nothing leaves whatever it failed to close still
+open, so `open` already stops every departure such a line leaves undecided —
+and a note that stands while `open` is zero reports a line that decided nothing
+where nothing is left to decide. Either way the notes add no case: a note is
+advice about how a line was written, not a statement that a decision is
+outstanding, and a gate on advice refuses over wording. When that rule was written the notes were also unclearable — some
 survived the exact repair they named — and a gate on one would have refused
 forever on a mistyped digit. That half has since been fixed at the parser
 rather than at the gate (below); the gate did not move, because the reason
@@ -606,15 +608,19 @@ and the first person who meets one learns to go around gates in general.
 
 ### A warning nobody can clear is worse than no warning
 
-Both ledgers warn when a line retires or closes nothing: a bare marker facing
-several open items, a reference naming an item that does not exist, an ID a
-reference ends inside. The warnings are worth having — each reports a human
-who believed they had discharged something and had not. But two of the three
-used to have no exit. The log is append-only, so the wrong line cannot be
-taken back, and the note's own instruction ("correct the number") produced a
-second line that the parser did not read as a correction of the first. In an
-installed project one mistyped digit was a `doctor` row for the life of the
-epic, and the skills and README both told its author otherwise.
+Both ledgers warn when a line retires or closes nothing: a bare marker or bare
+closing line facing several open items, and a reference naming an item that
+does not exist. The deviation ledger warns about a third shape, an ID a
+reference ends inside (`<ID>oops`) — the owed ledger does not, because there
+its reference grammar refuses to parse such a line at all, so no reference and
+no note comes out of it. The warnings are worth having: each reports a human
+who believed they had discharged something and had not. But the wrong-reference
+warnings — one kind on the owed ledger, two on the deviation ledger — used to
+have no exit. The log is append-only, so the wrong line cannot be taken back,
+and the note's own instruction ("correct the number") produced a second line
+that the parser did not read as a correction of the first. In an installed
+project one mistyped digit was a `doctor` row for the life of the epic, and the
+skills and README both told its author otherwise.
 
 That is worse than not warning at all, and not only because it is noise. A
 warning is a claim that doing something specific will make it go away; one that

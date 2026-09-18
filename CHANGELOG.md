@@ -33,18 +33,24 @@ with one version and date.
   so only a later line can be its correction. Both wrong-reference notes were
   reworded to state the repair that actually clears them. Numbering, closure and
   what `open`, `count` and the owed list report are unchanged, with a guard test
-  over every existing fixture in the suite saying so. **This corrects two
-  entries below, both in this same unreleased batch, and they are left as
-  written because a changelog is a dated record plus its correction rather than
-  a document to edit.** The deviation-numbering entry says a reference naming no
-  departure and an ID a reference ends inside "are reported the same way;
-  naming any item of that entry clears the note" — true of the bare line's note
-  only, which is the defect this entry fixes. And the unattended-halt entry
-  gives half a reason that no longer holds: the notes gate nothing still, but no
-  longer because a note cannot be relied on to clear — it can, now — only
-  because a line that closed nothing leaves its departure open anyway, so `open`
-  already stops every case a note reports, and a gate on advice is still a gate
-  on advice.
+  over every existing fixture in the suite saying so. **This corrects three
+  entries below, and they are left as written because a changelog is a dated
+  record plus its correction rather than a document to edit.** The
+  deviation-numbering entry ("A deviation is closed item by item") says a
+  reference naming no departure and an ID a reference ends inside "are reported
+  the same way; naming any item of that entry clears the note", and the owed
+  ledger's numbering entry ("An entry that owes several things is retired item
+  by item") says a reference matching no item "is reported the same way" —
+  true of the bare marker's and bare line's notes only, which is the defect
+  this entry fixes: those clear from an itemised line anywhere, a wrong
+  reference's note only from a correct reference below it. And the attended-door
+  entry ("A deviation reaches the human at every attended door") gives half a
+  reason that no longer holds: the notes gate nothing still, but no longer
+  because a note cannot be relied on to clear — it can, now — only because a
+  closing line that closed nothing leaves whatever it failed to close still
+  open, so `open` already stops every departure such a line leaves undecided,
+  while a note standing with `open` at zero reports a line that decided nothing
+  where nothing is left to decide. A gate on advice is still a gate on advice.
 
 - **An unattended run halts on a recorded deviation, and honours no closing
   line** (`workflows/run-epic.mjs`, `skills/run/SKILL.md` step 5 and its

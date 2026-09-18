@@ -570,10 +570,13 @@ reads it.
   what a reader counting only the closed ones would miss. Then merge nothing
   until the human has decided. The notes are **shown and gate nothing**, and
   the reason is the gate's own soundness: a closing line that closed nothing
-  leaves its departure open, so `open` already stops every case a note
-  reports, and a note is advice about how a line was written rather than a
-  statement that something is undecided — gating on it would add no case and
-  refuse over wording. (Every note is now cleared by the repair it names, so
+  leaves whatever it failed to close still open, so `open` already stops every
+  departure such a line leaves undecided — and a note standing while `open` is
+  zero (a wrong reference against an entry whose departures are all closed
+  already) reports a line that decided nothing where nothing is left to decide,
+  which is not a case a gate has anything to hold. A note is advice about how a
+  line was written rather than a statement that something is undecided, so
+  gating on it would add no case and refuse over wording. (Every note is now cleared by the repair it names, so
   none is permanent; that removed the sharpest argument against gating on one
   and left the standing one, which is that a gate on advice is still a gate on
   advice.) A nonzero exit or no payload is also a stop, and never an empty
