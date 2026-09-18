@@ -33,7 +33,7 @@ go through the flow, one-off work goes through `/flow:quick` into
   plan-page renderer `node --test plugins/flow/scripts/plan-page.test.mjs`
   (`# pass 8`) — both pure rendering tests over fixture JSON, no git
   needed. And the run driver has
-  `node --test plugins/flow/workflows/run-epic.test.mjs` (`# pass 123`) —
+  `node --test plugins/flow/workflows/run-epic.test.mjs` (`# pass 127`) —
   which evaluates `run-epic.mjs`'s module body with stubbed agents and
   asserts the sequence, the gate branches and the halt mapping. It needs
   nothing but Node: no git, no network, no filesystem beyond the script.
