@@ -8,6 +8,22 @@ with one version and date.
 
 ## Unreleased
 
+- **An epic can declare what its design draws: `Design sources: <path>[,
+  <path>]`** (`scripts/tickets.mjs` and its suite, `skills/epic/SKILL.md`,
+  README, METHODOLOGY § "Why an epic declares its design sources"). A tenth
+  optional preamble line, exposed as `designSources` by `find`/`brief`/`list
+  --json` and read from the signed-off ref under `find --from` like every
+  other declaration, beside `designMap` — the absolute path of
+  `epics/<name>/design-map.json` when the epic has one, else null. It has its
+  **own list reader**: the whole text between commas is the path, trimmed,
+  rather than the glob lines' first-word parse, because designers name files
+  with spaces in them and `designs/City Desktop.html` must not reach every
+  reader as `designs/City` — which is also why this line carries no prose.
+  `doctor` flags a near-miss label like every other declaration, and warns
+  about a declared path that does not exist, naming it in full. Nothing reads
+  the declaration yet: the `COMPARE` criterion, the plan reviewer's packet and
+  the ticket reviewer's are later tickets of this epic.
+
 - **A deviation is narrowed to what it was for, and closing one takes a word,
   not a sentence** (`skills/ticket/SKILL.md` steps 6 and 10,
   `skills/quick/SKILL.md`, `skills/run/SKILL.md`'s after-a-halt procedure,

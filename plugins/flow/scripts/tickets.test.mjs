@@ -1655,8 +1655,8 @@ test('the Delivery line parses tolerantly and exposes in find and list', () => {
   assert.equal(a.delivery, 'incremental')
 
   const data = JSON.parse(run(repo, 'list', '--json'))
-  assert.deepEqual(data.modes.gamma, { delivery: 'release', reviewerModel: 'opus', workerModel: 'sonnet', workerRunner: 'codex', shadowReviewer: 'codex', plannerModel: 'fable', consequencePaths: ['src/auth/**', 'migrations/**'], fixBoundsExclude: ['src/messages/*.json'], ticketBudget: 250000 })
-  assert.deepEqual(data.modes.alpha, { delivery: 'incremental', reviewerModel: null, workerModel: null, workerRunner: null, shadowReviewer: null, plannerModel: null, consequencePaths: null, fixBoundsExclude: null, ticketBudget: null })
+  assert.deepEqual(data.modes.gamma, { delivery: 'release', reviewerModel: 'opus', workerModel: 'sonnet', workerRunner: 'codex', shadowReviewer: 'codex', plannerModel: 'fable', consequencePaths: ['src/auth/**', 'migrations/**'], fixBoundsExclude: ['src/messages/*.json'], designSources: null, ticketBudget: 250000 })
+  assert.deepEqual(data.modes.alpha, { delivery: 'incremental', reviewerModel: null, workerModel: null, workerRunner: null, shadowReviewer: null, plannerModel: null, consequencePaths: null, fixBoundsExclude: null, designSources: null, ticketBudget: null })
 })
 
 test('a Worker model line pins the implementer; absent, workers inherit the session', () => {
@@ -1685,7 +1685,7 @@ test('an unrecognised or near-miss Delivery line warns instead of silently defau
     assert.equal(data.modes.misdeclared.delivery, 'continuous', 'the raw value is exposed, not coerced')
     assert.deepEqual(
       data.modes['fancy-delivery'],
-      { delivery: 'incremental', reviewerModel: null, workerModel: null, workerRunner: null, shadowReviewer: null, plannerModel: null, consequencePaths: null, fixBoundsExclude: null, ticketBudget: null },
+      { delivery: 'incremental', reviewerModel: null, workerModel: null, workerRunner: null, shadowReviewer: null, plannerModel: null, consequencePaths: null, fixBoundsExclude: null, designSources: null, ticketBudget: null },
       'a formatted Delivery line reads as absent, so the default applies',
     )
     const rows = JSON.parse(run(repo, 'doctor', '--json'))
@@ -1712,7 +1712,7 @@ test('the retired two-line syntax is flagged, not silently ignored', () => {
     const data = JSON.parse(run(repo, 'list', '--json'))
     assert.deepEqual(
       data.modes.oldstyle,
-      { delivery: 'incremental', reviewerModel: null, workerModel: null, workerRunner: null, shadowReviewer: null, plannerModel: null, consequencePaths: null, fixBoundsExclude: null, ticketBudget: null },
+      { delivery: 'incremental', reviewerModel: null, workerModel: null, workerRunner: null, shadowReviewer: null, plannerModel: null, consequencePaths: null, fixBoundsExclude: null, designSources: null, ticketBudget: null },
       'the dead labels parse as nothing; the delivery default applies',
     )
     const rows = JSON.parse(run(repo, 'doctor', '--json'))
@@ -1866,6 +1866,70 @@ test('a Fix bounds exclude near-miss is flagged by doctor, never silently droppe
   }
 })
 
+test('a Design sources line keeps each whole path, spaces and all, and reaches find and list', () => {
+  // NOT the glob list's parse: that one keeps a segment's first word, which
+  // would turn "designs/City Desktop.html" into "designs/City" — a path to
+  // nothing, handed to every reader of the epic. The whole text between
+  // commas is the path here, which is also why the line carries no prose.
+  mkdirSync(join(repo, 'epics/designed'), { recursive: true })
+  mkdirSync(join(repo, 'designs'), { recursive: true })
+  writeFileSync(join(repo, 'designs/map.html'), '<!doctype html><title>map</title>')
+  writeFileSync(
+    join(repo, 'epics/designed/tickets.md'),
+    '# Designed\n\nDesign sources: designs/City Desktop.html, designs/map.html\n\n## D-1 — the page\n\n**Scope.** D.\n',
+  )
+  try {
+    const d = JSON.parse(run(repo, 'find', 'D-1', '--json'))
+    assert.deepEqual(d.designSources, ['designs/City Desktop.html', 'designs/map.html'], 'both paths whole, the space kept')
+    assert.equal(d.designMap, null, 'no design-map.json yet — null, never a path to a file that is not there')
+    assert.deepEqual(
+      JSON.parse(run(repo, 'list', '--json')).modes.designed.designSources,
+      ['designs/City Desktop.html', 'designs/map.html'],
+      'the run skill reads an epic’s configuration from list --json, so a line only find exposes reaches no run',
+    )
+    assert.equal(JSON.parse(run(repo, 'find', 'A-2', '--json')).designSources, null, 'absent is null, never a default')
+    // The map is derived from the folder, never declared: writing one is all
+    // it takes for every reader to be handed its absolute path.
+    writeFileSync(join(repo, 'epics/designed/design-map.json'), '{"landmarks":[]}')
+    assert.equal(
+      JSON.parse(run(repo, 'find', 'D-1', '--json')).designMap,
+      join(repo, 'epics/designed/design-map.json'),
+      'the design map is exposed as an absolute path once it exists',
+    )
+  } finally {
+    rmSync(join(repo, 'epics/designed'), { recursive: true, force: true })
+    rmSync(join(repo, 'designs'), { recursive: true, force: true })
+  }
+})
+
+test('doctor warns about a declared design source that does not exist, and about a line that will not parse', () => {
+  // Two silent failures at one door. A path to nothing parses fine and hands
+  // every reader — brief, ticket reviewer, plan reviewer — a file they cannot
+  // open; a formatted label parses as nothing at all and the epic reads as
+  // having no design. Both are named, and the missing one by its full path,
+  // because a path with a space is where a truncating reader goes wrong.
+  mkdirSync(join(repo, 'epics/designed'), { recursive: true })
+  mkdirSync(join(repo, 'designs'), { recursive: true })
+  writeFileSync(join(repo, 'designs/map.html'), '<!doctype html><title>map</title>')
+  writeFileSync(
+    join(repo, 'epics/designed/tickets.md'),
+    '# Designed\n\nDesign sources: designs/City Desktop.html, designs/map.html\n\n**Design sources:** designs/other.html\n\n## D-1 — the page\n\n**Scope.** D.\n',
+  )
+  try {
+    const rows = JSON.parse(run(repo, 'doctor', '--json'))
+    const missing = rows.filter((r) => r.level === 'warn' && /does not exist/.test(r.msg))
+    assert.equal(missing.length, 1, 'only the path that is really absent is named')
+    assert.match(missing[0].msg, /designs\/City Desktop\.html/, 'named in full, the space included')
+    assert.ok(!missing.some((r) => /map\.html/.test(r.msg)), 'the path that exists is not flagged')
+    const near = rows.find((r) => r.level === 'warn' && r.msg.includes('designed/tickets.md') && /will not parse/.test(r.msg))
+    assert.ok(near, 'the near-miss scan covers the Design sources label')
+    assert.match(near.msg, /"Design sources: <path>\[, <path>\]"/, 'the warning names the syntax that would parse')
+  } finally {
+    rmSync(join(repo, 'epics/designed'), { recursive: true, force: true })
+    rmSync(join(repo, 'designs'), { recursive: true, force: true })
+  }
+})
+
 test('a Ticket budget line parses digits with k/m suffixes; an unrecognised suffix reads as absent and is flagged', () => {
   // The run driver enforces this as a per-ticket output-token ceiling; this
   // script only parses and exposes it. The suffix boundary is load-bearing:
@@ -1912,7 +1976,7 @@ test('an epic with no declaration lines defaults to incremental delivery', () =>
   writeFileSync(join(repo, 'epics/delta/tickets.md'), '# Delta\n\n## D-1 — bare epic\n\n**Scope.** Bare.\n')
   try {
     const data = JSON.parse(run(repo, 'list', '--json'))
-    assert.deepEqual(data.modes.delta, { delivery: 'incremental', reviewerModel: null, workerModel: null, workerRunner: null, shadowReviewer: null, plannerModel: null, consequencePaths: null, fixBoundsExclude: null, ticketBudget: null })
+    assert.deepEqual(data.modes.delta, { delivery: 'incremental', reviewerModel: null, workerModel: null, workerRunner: null, shadowReviewer: null, plannerModel: null, consequencePaths: null, fixBoundsExclude: null, designSources: null, ticketBudget: null })
   } finally {
     rmSync(join(repo, 'epics/delta'), { recursive: true, force: true })
   }
@@ -1926,7 +1990,7 @@ test('the Delivery line parses case-insensitively', () => {
   )
   try {
     const data = JSON.parse(run(repo, 'list', '--json'))
-    assert.deepEqual(data.modes.shout, { delivery: 'release', reviewerModel: null, workerModel: null, workerRunner: null, shadowReviewer: null, plannerModel: null, consequencePaths: null, fixBoundsExclude: null, ticketBudget: null })
+    assert.deepEqual(data.modes.shout, { delivery: 'release', reviewerModel: null, workerModel: null, workerRunner: null, shadowReviewer: null, plannerModel: null, consequencePaths: null, fixBoundsExclude: null, designSources: null, ticketBudget: null })
   } finally {
     rmSync(join(repo, 'epics/shout'), { recursive: true, force: true })
   }
@@ -1951,7 +2015,7 @@ test('a value-less label line reads as absent, never the next paragraph\'s first
     const data = JSON.parse(run(repo, 'list', '--json'))
     assert.deepEqual(
       data.modes.bare,
-      { delivery: 'incremental', reviewerModel: null, workerModel: null, workerRunner: null, shadowReviewer: null, plannerModel: null, consequencePaths: null, fixBoundsExclude: null, ticketBudget: null },
+      { delivery: 'incremental', reviewerModel: null, workerModel: null, workerRunner: null, shadowReviewer: null, plannerModel: null, consequencePaths: null, fixBoundsExclude: null, designSources: null, ticketBudget: null },
       'a value-less label must read as absent (incremental default / null), never scavenge prose',
     )
     // And doctor's near-miss wording is true of these lines: they will not
@@ -2312,6 +2376,29 @@ test('find --from reads the epic declarations from the ref, never the working tr
     assert.ok(!('from' in JSON.parse(run(crepo, 'find', 'K-1', '--json'))))
   } finally {
     writeFileSync(checksDoc, original)
+  }
+})
+
+test('find --from reads Design sources from the ref, while the design map stays a working-tree path', () => {
+  // The declaration is read as signed off, like every other: a ticket branch
+  // that adds a design source to its own copy of the preamble must not be
+  // able to hand its reviewer a design nobody approved. The map's PATH is not
+  // a declaration — it says where the file is now — so `--from` leaves it be.
+  const original = readFileSync(checksDoc, 'utf8')
+  try {
+    writeFileSync(checksDoc, original.replace('Delivery: incremental', 'Delivery: incremental\nDesign sources: designs/City Desktop.html'))
+    assert.deepEqual(JSON.parse(run(crepo, 'find', 'K-1', '--json')).designSources, ['designs/City Desktop.html'], 'the working tree sees the edit')
+    const out = JSON.parse(run(crepo, 'find', 'K-1', '--json', '--from', 'HEAD'))
+    assert.equal(out.designSources, null, 'the committed document is the source')
+    writeFileSync(join(crepo, 'epics/checks/design-map.json'), '{"landmarks":[]}')
+    assert.equal(
+      JSON.parse(run(crepo, 'find', 'K-1', '--json', '--from', 'HEAD')).designMap,
+      join(crepo, 'epics/checks/design-map.json'),
+      'the map path describes the repository as it is now, uncommitted included',
+    )
+  } finally {
+    writeFileSync(checksDoc, original)
+    rmSync(join(crepo, 'epics/checks/design-map.json'), { force: true })
   }
 })
 

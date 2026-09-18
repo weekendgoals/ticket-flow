@@ -152,6 +152,21 @@ function parsePreambleText(doc) {
     const globs = m[1].split(',').map(s => s.trim().split(/\s+/)[0]).filter(Boolean)
     return globs.length ? globs : null
   }
+  // "Design sources" is the list of files that hold what the design draws —
+  // whatever a browser can render and `getComputedStyle` can read. Its own
+  // reader, deliberately NOT `grabPathList`: that one keeps a segment's first
+  // WORD, which is right for a glob followed by prose and wrong for a file a
+  // designer named ("designs/City Desktop.html" would parse as
+  // "designs/City"). Here the whole segment between commas is the path,
+  // trimmed — which is why the line carries no prose, and why the skills that
+  // teach it say so: with spaces legal in a path, nothing could tell a
+  // trailing sentence from a filename.
+  const grabTextList = label => {
+    const m = preamble.match(new RegExp(`^${label}[^\\S\\n]*:[^\\S\\n]*(\\S[^\\n]*)`, 'im'))
+    if (!m) return null
+    const items = m[1].split(',').map(s => s.trim()).filter(Boolean)
+    return items.length ? items : null
+  }
   // "Ticket budget" is the fifth optional line: a per-ticket output-token
   // ceiling for unattended runs — digits with an optional k/m suffix
   // (`250000`, `250k`, `1m`), because a budget is a number humans write. The
@@ -191,6 +206,12 @@ function parsePreambleText(doc) {
     // tolerant list parse as Consequence paths; this script only parses it,
     // the run driver validates and applies it.
     fixBoundsExclude: grabPathList('Fix bounds exclude'),
+    // "Design sources" names what the design draws, so that everything
+    // downstream can read it: the brief a worker gets, the ticket reviewer's
+    // packet and the plan reviewer's. Absent is null — an epic with no design
+    // declares none, and nothing here judges the paths; doctor warns about one
+    // that does not exist, and this script never opens them.
+    designSources: grabTextList('Design sources'),
     ticketBudget: budget,
   }
 }
@@ -221,6 +242,12 @@ function discoverEpics() {
         // until the first run record after the split — every log written
         // before it keeps its records in status.md and is still read there.
         runsDoc: optional('runs.md'),
+        // The design map is a planning document like tickets.md, at a fixed
+        // name beside it — the differ reads it directly, so there is nothing
+        // to declare and nothing to configure. Null until an epic writes one:
+        // the path is derived, never parsed, so it cannot disagree with the
+        // preamble.
+        designMap: optional('design-map.json'),
         contextDir: optional('context'),
         ...parsePreamble(ticketsDoc),
       }
@@ -1538,15 +1565,25 @@ function doctor() {
   // old two-line syntax ("Release mode:" / "Run mode:") is in the near set
   // deliberately: those labels parse as nothing at all now, and a preamble
   // written in them would silently run incremental.
-  const declNear = /^[^A-Za-z]*\b(delivery|(reviewer|worker|planner)\s+model|worker\s+runner|shadow\s+reviewer|consequence\s+paths|fix\s+bounds\s+exclude|ticket\s+budget|(release|run)\s+mode)\b/i
-  const declStrict = /^Delivery\s*:\s*[A-Za-z-]+|^(Reviewer|Worker|Planner) model\s*:\s*[A-Za-z0-9._-]+|^Worker runner\s*:\s*[A-Za-z-]+|^Shadow reviewer\s*:\s*[A-Za-z-]+|^Consequence paths\s*:\s*\S+|^Fix bounds exclude\s*:\s*\S+|^Ticket budget\s*:\s*\d+[km]?(\s|$)/i
+  const declNear = /^[^A-Za-z]*\b(delivery|(reviewer|worker|planner)\s+model|worker\s+runner|shadow\s+reviewer|consequence\s+paths|fix\s+bounds\s+exclude|design\s+sources|ticket\s+budget|(release|run)\s+mode)\b/i
+  const declStrict = /^Delivery\s*:\s*[A-Za-z-]+|^(Reviewer|Worker|Planner) model\s*:\s*[A-Za-z0-9._-]+|^Worker runner\s*:\s*[A-Za-z-]+|^Shadow reviewer\s*:\s*[A-Za-z-]+|^Consequence paths\s*:\s*\S+|^Fix bounds exclude\s*:\s*\S+|^Design sources\s*:\s*\S+|^Ticket budget\s*:\s*\d+[km]?(\s|$)/i
   for (const epic of epics) {
     if (!DELIVERIES.has(epic.delivery))
       add('warn', `${epic.epic}: unrecognised delivery "${epic.delivery}" (known: release, incremental) — skills reading it will not know how this epic ships`)
     readFileSync(epic.ticketsDoc, 'utf8').split(/^##\s/m)[0].split('\n').forEach((line, i) => {
       if (declNear.test(line) && !declStrict.test(line))
-        add('warn', `${epic.epic}/tickets.md:${i + 1} — looks like a declaration line but will not parse, so it silently defaults (needs "Delivery: release|incremental" / "Reviewer model: <value>" / "Worker model: <value>" / "Worker runner: claude|codex" / "Shadow reviewer: codex" / "Planner model: <value>" / "Consequence paths: <glob>[, <glob>]" / "Fix bounds exclude: <glob>[, <glob>]" / "Ticket budget: <digits, optional k or m suffix>" — label at line start, no formatting, value on the label's own line; "Release mode:"/"Run mode:" are not read at all): ${line.trim()}`)
+        add('warn', `${epic.epic}/tickets.md:${i + 1} — looks like a declaration line but will not parse, so it silently defaults (needs "Delivery: release|incremental" / "Reviewer model: <value>" / "Worker model: <value>" / "Worker runner: claude|codex" / "Shadow reviewer: codex" / "Planner model: <value>" / "Consequence paths: <glob>[, <glob>]" / "Fix bounds exclude: <glob>[, <glob>]" / "Design sources: <path>[, <path>]" / "Ticket budget: <digits, optional k or m suffix>" — label at line start, no formatting, value on the label's own line; "Release mode:"/"Run mode:" are not read at all): ${line.trim()}`)
     })
+    // A declared design source that is not there is the whole declaration
+    // failing quietly: the line parses, every reader is handed a path, and
+    // whoever opens it finds nothing — so the comparison it exists for is
+    // never run and nobody is told why. Named by its full path, because a
+    // path with spaces is exactly where a truncating reader would go wrong.
+    for (const src of epic.designSources || []) {
+      const abs = src.startsWith('/') ? src : join(repoRoot, src)
+      if (!existsSync(abs))
+        add('warn', `${epic.epic}: declared design source "${src}" does not exist (looked for ${abs}) — every reader of this epic is handed a path to nothing; fix the path, or drop it from the "Design sources:" line`)
+    }
   }
 
   // The worker runner's environment, when an epic names one. `codex` must
@@ -1777,6 +1814,7 @@ function ticketFacts(data, t) {
     plannerModel: epic.plannerModel,
     consequencePaths: epic.consequencePaths,
     fixBoundsExclude: epic.fixBoundsExclude,
+    designSources: epic.designSources,
     ticketBudget: epic.ticketBudget,
     repoRoot,
     epicDir: epic.dir,
@@ -1788,6 +1826,11 @@ function ticketFacts(data, t) {
     // whether it is there yet, so a caller never has to guess either.
     runsDoc: epic.runsDoc || join(epic.dir, 'runs.md'),
     runsDocExists: Boolean(epic.runsDoc),
+    // The design map's absolute path when the epic has one, else null. A
+    // working-tree fact like every other path here, and so untouched by
+    // `--from`: the declarations come from the ref, the paths describe the
+    // repository as it is now.
+    designMap: epic.designMap,
     contextDir: epic.contextDir,
     isCurrentFolderEpic: data.current?.epic === t.epic,
     pr: t.pr || null,
@@ -2144,7 +2187,7 @@ switch (cmd) {
         modes: Object.fromEntries(
           data.epics.map((e) => [
             e.epic,
-            { delivery: e.delivery, reviewerModel: e.reviewerModel, workerModel: e.workerModel, workerRunner: e.workerRunner, shadowReviewer: e.shadowReviewer, plannerModel: e.plannerModel, consequencePaths: e.consequencePaths, fixBoundsExclude: e.fixBoundsExclude, ticketBudget: e.ticketBudget },
+            { delivery: e.delivery, reviewerModel: e.reviewerModel, workerModel: e.workerModel, workerRunner: e.workerRunner, shadowReviewer: e.shadowReviewer, plannerModel: e.plannerModel, consequencePaths: e.consequencePaths, fixBoundsExclude: e.fixBoundsExclude, designSources: e.designSources, ticketBudget: e.ticketBudget },
           ]),
         ),
         duplicates: data.duplicates,

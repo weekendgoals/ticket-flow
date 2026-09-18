@@ -191,6 +191,21 @@ approximated. Both glob lines split on commas, so a comma inside trailing
 prose makes that prose an entry and the run refuses to start — keep prose on
 these two lines comma-free, or leave it off.
 
+`Design sources: <path>[, <path>]` — e.g. `designs/City Desktop.html,
+designs/map.html`: the files that hold **what the design draws** — an
+artboard exported to HTML, a rendered spec page, anything a browser can
+render and `getComputedStyle` can read. Repository-relative, and they need
+not live in this epic's `context/`: a design usually belongs to the project,
+not to one epic, and copying it in would freeze a moving thing. This line is
+what hands the design to everything downstream — the brief a worker reads,
+the ticket reviewer's packet and the plan reviewer's — so an epic that has a
+design and does not declare it is an epic whose reviewers are given
+everything except the thing the page is judged against. Unlike every other
+line here, **it carries no prose**: the whole text between commas is the
+path, because designers name files with spaces in them (`City Desktop.html`)
+and nothing could tell a trailing sentence from a filename. `/flow:doctor`
+warns about a declared path that does not exist, by its full name.
+
 `Ticket budget: <n>` — e.g. `250k` or `1m`: a per-ticket output-token
 ceiling for unattended runs; the driver halts after any ticket that exceeds
 it (the ticket stays merged), so a runaway ticket is a signal, not a bill.

@@ -321,3 +321,60 @@ matched **and** the unmatched set is the whole map; or give the
 both-sides-agree case its own message and exit code. FID-3 owns the decision
 because it is the ticket that teaches the contract, and changing it now would
 be redesigning a gate after its review.
+
+### FID-2 — The `Design sources:` declaration — 2026-09-18 — DONE
+
+**Built:** `tickets.mjs` parses a `Design sources: <path>[, <path>]` preamble
+line with its **own** list reader — the whole text between commas is the path, so
+`designs/City Desktop.html` survives whole, where `grabPathList`'s first-word
+parse would hand every reader `designs/City` — and exposes it as `designSources`
+on `find`/`brief`/`list --json`, read from the ref under `find --from` like every
+other declaration, beside `designMap` (the absolute path of
+`epics/<name>/design-map.json` when it exists, else null). `doctor` gained the
+label in its declaration near-miss scan and a warning naming a declared path that
+does not exist, in full. The epic skill's configuration block and README's table
+teach the line; METHODOLOGY § "Why an epic declares its design sources" carries
+the reasoning; CHANGELOG under `## Unreleased`. Nothing reads the declaration yet
+— `COMPARE` is FID-3's, the two reviewers' packets are FID-5's and FID-6's.
+
+**Mode:** direct — built in-session on `epic/design-fidelity` at the repository
+owner's instruction ("done directly, without the Ticket Flow ceremony"), with no
+per-ticket review; one review of the whole FID-2…FID-6 range follows.
+
+**Tokens:** unknown — in-session.
+
+**Verified:** `tickets.mjs check FID-2` **3/3**. `tickets.test.mjs` 110 → **113**
+(the declaration's whole-path parse and the two exposures; doctor's missing-path
+warning and near-miss; `find --from` reading the line from a ref while the map
+path stays a working-tree fact). Every other suite CLAUDE.md names, unchanged:
+`ticket-session-guard.test.mjs` 14/14, `check-invariants.test.mjs` 25/25,
+`board.test.mjs` 9/9, `plan-page.test.mjs` 8/8, `fidelity.test.mjs` 40/40,
+`run-epic.test.mjs` 137/137, `codex.test.mjs` 21/21,
+`codex-review.test.mjs` 19/19. `check-invariants.mjs` exit 0; `doctor` exit 0;
+`node --check plugins/flow/scripts/tickets.mjs` exit 0.
+**Revert check:** with `tickets.mjs` restored from HEAD and the suite kept, 9
+tests fail — among them the three new ones (*a Design sources line keeps each
+whole path, spaces and all*; *doctor warns about a declared design source that
+does not exist*; *find --from reads Design sources from the ref*). Each new guard
+was then flipped in turn: parsing the line with `grabPathList` kills 3 tests,
+dropping the missing-path warning kills 1, dropping the label from `declNear`
+kills 1.
+**demonstrate:** a throwaway epic at `<scratch>/fid2-demo` declaring
+`Design sources: designs/City Desktop.html, designs/map.html` with only
+`designs/map.html` present → `find DM-1 --json` printed
+`"designSources": ["designs/City Desktop.html", "designs/map.html"]`, both paths
+whole; `doctor` printed `! demo: declared design source "designs/City
+Desktop.html" does not exist (looked for …/designs/City Desktop.html) — every
+reader of this epic is handed a path to nothing; fix the path, or drop it from
+the "Design sources:" line`, and said nothing about `map.html`.
+
+**Decisions:** (1) `designSources` joins `list --json`'s `modes` map as well as
+`find`/`brief`, because that map is where the run skill reads an epic's
+configuration and it would otherwise be the only declaration line missing from
+it. (2) `designMap` is derived from the folder, not declared, and is left alone
+by `--from`: the declarations come from the ref, the paths describe the
+repository as it is now. (3) A declared path is resolved against the repository
+root (an absolute path is taken as given), since the line lives in a versioned
+document.
+
+**Owed:** Nothing.

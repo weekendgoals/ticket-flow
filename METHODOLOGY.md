@@ -434,6 +434,33 @@ would let a worker who could not build an element declare it removed, get a
 clean diff, and halt nothing. That is the founding failure re-routed through
 the new machinery, which is the failure a new gate is most likely to have.
 
+## Why an epic declares its design sources
+
+A differ is no use to a reader who cannot find the design. In the page epic
+this work came from, no acceptance criterion referenced the drawing, neither
+reviewer was handed it, and the only person who ever put the page beside the
+artboard was the human at the pull request — twice, finding eight differences
+both times. Nothing was hidden: the design existed, in a file, in the
+repository. It was simply not written down anywhere a fresh context would
+look, and a fresh context is what every worker and both reviewers are.
+
+So the epic's preamble carries one line, `Design sources:`, and every reader
+downstream gets it from the same place it gets the delivery and the models:
+`brief` for a worker, the packet for the ticket reviewer, the plan review's
+inputs for the plan reviewer. Declaring it is what makes "the reviewer was not
+given the design" a fixable omission rather than an invisible one.
+
+Two shapes of that line are decided rather than left open. It is **read from
+the signed-off ref** like every other declaration, because a ticket branch
+that could add a design source to its own copy of the preamble could hand its
+reviewer a drawing nobody approved. And it is the **one declaration that
+carries no prose**: every other line keeps its first word and lets commentary
+follow, which is right for a glob and wrong for a file a designer named `City
+Desktop.html` — that parse would hand every reader `designs/City`, a path to
+nothing, and nothing downstream would say why the comparison never ran. The
+whole text between commas is the path; doctor names a declared path that does
+not exist, in full, for the same reason.
+
 ## Why token figures are observed, never asked
 
 The Tokens lines exist as planning evidence — they are what priced the

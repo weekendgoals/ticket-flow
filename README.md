@@ -292,7 +292,7 @@ records' evidence — Important findings per ticket and observed spend —
 and never cheapen the *plan* side to match: a weak plan produces tickets
 that are confidently, reviewably wrong.
 
-**The whole configuration surface is nine optional preamble lines** in the
+**The whole configuration surface is ten optional preamble lines** in the
 epic's `tickets.md` — one place, one syntax (label at line start, value
 first after the colon, prose after it ignored), every near-miss flagged by
 `/flow:doctor`:
@@ -307,6 +307,7 @@ first after the colon, prose after it ignored), every near-miss flagged by
 | `Planner model:` | `fable` | the plan reviewer for this epic | the agent definition's pinned strongest |
 | `Consequence paths:` | `src/auth/**, migrations/**` | globs that force the consequence review tier in a run — the code floor under the worker's self-reported tier | tier floor still applies (docs-only vs code), globs add nothing |
 | `Fix bounds exclude:` | `src/messages/*.json` | globs the run's fix-bounds gate leaves out of the review-fix diff (as it already leaves out `epics/`) — for files a fix fans out into mechanically, translation catalogs being the canonical case | every fixed file counts toward the bounds |
+| `Design sources:` | `designs/City Desktop.html, designs/map.html` | the files holding what the design draws — anything a browser can render and `getComputedStyle` can read; repository-relative, and free to live outside the epic's `context/`. This is what hands the design to the brief and to both reviewers. The one line that carries **no prose**: the whole text between commas is the path, because designers name files with spaces in them | no design is declared, and nothing downstream is handed one |
 | `Ticket budget:` | `250k` | per-ticket output-token ceiling in a run (a shadow review's spend is left out); an over-budget ticket stays merged and the run halts before the next. The only line a run re-reads: each ticket's resolve step fetches the epic branch and reads the signed-off document from it before the merge, so raising it mid-run (committed and pushed) governs the running ticket, and a ticket branch cannot raise its own ceiling; removing the line keeps the last ceiling and logs that it did | no ceiling; per-ticket spend still recorded when the runtime meters it |
 
 ## Reading the board
