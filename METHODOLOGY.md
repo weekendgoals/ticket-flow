@@ -543,6 +543,46 @@ asymmetry: the record says a comparison was owed and not performed, and the
 merge is a decision somebody made rather than one a missing file made for
 them.
 
+## Why a design is a fourth artifact
+
+The methodology names three kinds of artifact: documents, a diff, and tests.
+A design is a fourth, and for a long time the plugin had no slot for it. The
+consequence was not that anyone ignored the drawing — it was that nothing
+carried it. In the page epic this epic was mined from, nine tickets passed six
+gates and shipped a page missing three drawn elements. No acceptance criterion
+referenced the design; neither reviewer was handed it; the only reader who ever
+put the page beside the artboard was the human at the pull request, twice, and
+each time found differences the gates had not.
+
+The tempting diagnosis is that the criteria were not checkable enough, and it
+is the wrong one. A visual criterion *was* written — scoped to one section —
+and the gaps between sections then belonged to no ticket at all. **Scope, not
+checkability, was the cause**, and the two fixes it implies are different: a
+differ makes a criterion mechanical, while a **whole-page ticket** makes the
+page somebody's. An epic that declares a design therefore ends with one, and
+it goes last, because it can only compare a page the other tickets have
+finished building.
+
+The other half is what a plan is allowed to narrow. A design draws more than
+any release builds, and that is normal — what is not normal is the narrowing
+living only in a ground rule's prose, where a comparison meets it as an
+element that is simply absent. So a plan that narrows what the design draws
+**declares the removal** in the design map, with the element, the deciding
+rule and the date, and sign-off approves that list. Then the diff prints
+"removed by <rule>" instead of nothing, one file holds everything the build
+deliberately does not draw, and the decision stays with the party that made
+it. The ticket under review is the one party that must never be able to
+declare its own missing element removed: that is the founding failure, and
+routing it through new machinery is the most likely way to rebuild it.
+
+Both halves rest on the design map being complete, which no code can check —
+a map that matches itself always passes. That is why the **plan reviewer** is
+handed the design and asked to walk the drawing rather than the map: an
+element no landmark covers is silent by omission, invisible to the differ, to
+the table and to everyone reading the table. It is the one reading nobody
+downstream can perform, because nobody downstream holds both the drawing and
+the plan.
+
 ## Why token figures are observed, never asked
 
 The Tokens lines exist as planning evidence — they are what priced the

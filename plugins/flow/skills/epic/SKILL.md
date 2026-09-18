@@ -344,6 +344,26 @@ Rules that matter:
   which CHECKs were proven failing, and which could not run here and why (an
   interactive runner, a minutes-long suite). The plan reviewer re-runs the
   runnable ones, and step 5 shows the ledger at the gate.
+- **An epic that declares `Design sources:` ends with one whole-page fidelity ticket**
+  — a `COMPARE` with **no** `LANDMARKS:` line for each design source,
+  at every width the design draws. Per-section comparisons distributed across
+  tickets do not sum to a page that matches: what lies between two sections
+  belongs to neither section's ticket, and in the epic this rule comes from,
+  three drawn elements shipped missing with every ticket's own criteria green.
+  It goes last, because it can only compare a page every other ticket has
+  finished building. Check its actor like any other rule here: where the
+  declared delivery gives it a lane with no browser, it is a **human-owned
+  ticket ordered before the release**, never a line owed to the release pull
+  request — a criterion deferred to that pull request merges unperformed.
+- **A plan that narrows what the design draws declares the removal.** When a
+  ground rule or a scope line says an element the design draws will not be
+  built, add it to `epics/<name>/design-map.json`'s `removed` list — the
+  element's landmark name, the deciding rule, the date — in this same
+  document's commit, so sign-off approves the list. Then a comparison prints
+  "removed by <rule>, <date>" instead of nothing; one file holds everything
+  the build deliberately does not draw; and the decision belongs to the plan,
+  where it was made, rather than to the ticket under review, which is the one
+  party that must not be able to declare its own missing element removed.
 - **No status column.** State is derived by `tickets.mjs`; a hand-maintained
   table drifts within days.
 
@@ -357,7 +377,11 @@ own `Planner model:` line when it declares one, otherwise omit the parameter
 so the agent definition's pinned model applies; `effort: high`. Give it the
 draft `epics/<name>/tickets.md`, the `context/` directory, the root
 instruction file and each in-scope area's, and one line on what was
-requested. It reports; it does not rewrite.
+requested. **When the draft declares `Design sources:`, give it those paths
+and `epics/<name>/design-map.json` as well** — the design is an input like
+the code, and a plan review that never sees the drawing cannot tell you that
+the map misses something it draws, or that a ground rule quietly narrows it.
+It reports; it does not rewrite.
 
 Then, before showing the user: **fix what is right** (re-split, reorder —
 edit `tickets.md` now, while it is cheap); **keep what you reject, with a
@@ -378,6 +402,13 @@ questions.
 tree, and which could not run in this session and why. A criterion whose
 CHECK nobody has seen fail is a criterion nobody has tested; the human
 signing off is the last reader before a worker builds against it.
+
+**If the epic declares a design, show what it will not build**: the design
+map's `removed` list, entry by entry, each with the rule that decided it —
+this is the one moment a human can say "no, that element stays" before a
+comparison starts printing it as a decision already taken. Name any
+UI-building ticket carrying no `COMPARE` criterion as **not ready**, and say
+which one closes the whole page.
 
 **Name what the lane cannot do, and what nobody will collect**: which ground
 rules and criteria need an actor the declared delivery mode does not provide

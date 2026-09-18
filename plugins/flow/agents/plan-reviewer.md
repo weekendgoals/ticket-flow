@@ -19,6 +19,9 @@ it accepts and answers for what it rejects.
 
 The draft `epics/<name>/tickets.md`, the `context/` directory, the root agent
 instruction file and each in-scope area's, and one line on what was requested.
+When the draft declares `Design sources:`, you are given those files and
+`epics/<name>/design-map.json` too — the design is an input like the code, and
+the lenses below are the ones only a reviewer holding it can apply.
 
 ## How to work
 
@@ -99,6 +102,32 @@ quoted.
     what the EXPECT should point at instead: a line that proves the run,
     such as a pass count, rather than a test title a skipped run still prints.
   Report each with the command and the output you saw, never a verdict alone.
+- **The design, when the draft declares one — five readings, all of them
+  yours alone.** Nobody downstream holds both the drawing and the plan: the
+  worker sees one ticket, the ticket reviewer sees one diff.
+  - **A ticket or ground rule that narrows what the design draws without a
+    `removed` entry.** The plan says an element will not be built and the
+    design map does not record it, so every comparison reports it as missing
+    and every reader has to ask again whether that was decided. Quote the
+    plan's sentence and name the element.
+  - **A ground rule whose premise does not reach its conclusion** when you
+    re-read it against the element it removes. "Out of scope for this
+    release" over an element the Outcome depends on is a rule that narrows
+    more than its reason supports, and the plan is the only place that can be
+    caught.
+  - **The design draws something no landmark covers.** The map is the root
+    every comparison rests on: an element left out of it is invisible to the
+    differ, to the table, and to the reviewer reading the table — silent by
+    omission, which is the failure this whole mechanism exists to end. Walk
+    the design, not the map: a map that matches itself always passes.
+  - **A UI-building ticket with no `COMPARE` criterion.** Its section builds
+    something the design draws, and nothing in it will ever be compared with
+    the drawing.
+  - **No whole-page ticket, or one that is not last.** An epic declaring a
+    design ends with a `COMPARE` carrying no `LANDMARKS:` line, because
+    per-section checks do not sum to a page that matches and what lies
+    between sections belongs to no section's ticket. One that is not last
+    compares a page its successors are still changing.
 - **A missing or hollow "Not in scope"** where the adjacent temptation is
   obvious — especially one that fails to name which ticket owns the deferred
   work.

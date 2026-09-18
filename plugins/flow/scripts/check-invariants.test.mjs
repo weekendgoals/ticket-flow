@@ -23,6 +23,7 @@ const FILES = [
   'plugins/flow/skills/run/SKILL.md',
   'plugins/flow/skills/retro/SKILL.md',
   'plugins/flow/agents/ticket-reviewer.md',
+  'plugins/flow/agents/plan-reviewer.md',
   'plugins/flow/scripts/tickets.mjs',
   'plugins/flow/hooks/ticket-session-guard.mjs',
   'plugins/flow/workflows/run-epic.mjs',
@@ -393,4 +394,15 @@ test('a document dropping the COMPARE criterion fails the coupling', () => {
   const r = run(root)
   assert.equal(r.status, 1, r.out)
   assert.match(r.out, /quick\/SKILL\.md.*one format in four documents/s)
+})
+
+test('the plan reviewer gaining a write instruction fails the never-fix check', () => {
+  // Until this entry covered it, the one rule CLAUDE.md states about both
+  // reviewer definitions was verified in only one of them — and the file it
+  // skipped is the one a design-fidelity ticket was about to edit.
+  const root = copyRepo()
+  mutate(root, 'plugins/flow/agents/plan-reviewer.md', 'You **report. You never rewrite the plan.**', 'You report and fix the plan.')
+  const r = run(root)
+  assert.equal(r.status, 1, r.out)
+  assert.match(r.out, /plan-reviewer\.md.*report and never fix/s)
 })

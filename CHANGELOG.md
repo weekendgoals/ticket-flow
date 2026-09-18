@@ -8,6 +8,30 @@ with one version and date.
 
 ## Unreleased
 
+- **The plan side of a design: one ticket owns the whole page, and a narrowing
+  declares its removal** (`skills/epic/SKILL.md`, `agents/plan-reviewer.md`,
+  `scripts/check-invariants.mjs` and its suite, README, METHODOLOGY § "Why a
+  design is a fourth artifact"). An epic that declares `Design sources:` now
+  **ends with one whole-page fidelity ticket** — a `COMPARE` with no
+  `LANDMARKS:` for each design source, at every width the design draws —
+  because per-section comparisons do not sum to a page that matches and what
+  lies between sections belongs to no section's ticket; where the declared lane
+  has no browser it is a human-owned ticket ordered before the release, never a
+  line owed to the release pull request. A ground rule or scope line that
+  narrows what the design draws **declares the removal** in
+  `epics/<name>/design-map.json`'s `removed` list, so the comparison prints
+  "removed by <rule>" instead of nothing and sign-off approves the list. The
+  plan reviewer's packet gains the design sources and the map, and the agent
+  gains five lenses for them (a narrowing with no `removed` entry; a ground
+  rule whose premise does not reach its conclusion; **an element the design
+  draws that no landmark covers**; a UI-building ticket with no `COMPARE`; no
+  whole-page ticket, or one that is not last). Sign-off shows the `removed`
+  list and names any UI-building ticket with no `COMPARE` as not ready.
+  `check-invariants.mjs` now covers `agents/plan-reviewer.md`: it joins `FILES`
+  and the "reviewers report and never fix" phrase check, which until now
+  verified that rule in only one of the two reviewer definitions CLAUDE.md
+  names.
+
 - **A missing comparison stops the merge, at every door** (`scripts/tickets.mjs`
   and its suite, `workflows/run-epic.mjs` and its suite,
   `skills/run/SKILL.md`, `skills/ticket/SKILL.md`, `skills/quick/SKILL.md`,

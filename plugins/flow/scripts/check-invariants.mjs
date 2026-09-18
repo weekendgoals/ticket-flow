@@ -39,6 +39,7 @@ const FILES = {
   run: 'plugins/flow/skills/run/SKILL.md',
   retro: 'plugins/flow/skills/retro/SKILL.md',
   reviewer: 'plugins/flow/agents/ticket-reviewer.md',
+  planReviewer: 'plugins/flow/agents/plan-reviewer.md',
   review: 'plugins/flow/skills/review/SKILL.md',
   script: 'plugins/flow/scripts/tickets.mjs',
   hook: 'plugins/flow/hooks/ticket-session-guard.mjs',
@@ -354,9 +355,14 @@ const PHRASES = [
     files: ['epic', 'ticket', 'quick'],
   },
   {
-    why: 'reviewers report and never fix',
-    re: /(reports?; it does not fix|report and never fix|report\. You never fix|reports without fixing)/i,
-    files: ['ticket', 'quick', 'reviewer', 'readme', 'claudemd'],
+    // Both reviewer definitions carry it, and the alternation absorbs the one
+    // deliberate wording difference: the ticket reviewer never FIXES a diff,
+    // the plan reviewer never REWRITES a plan. CLAUDE.md's invariant names
+    // both files, and until this entry did too, the rule was unchecked in the
+    // one of them a whole ticket was about to edit.
+    why: 'reviewers report and never fix — neither reviewer definition may gain a write instruction',
+    re: /(reports?; it does not fix|report and never fix|report\. You never fix|report\. You never rewrite|reports without fixing)/i,
+    files: ['ticket', 'quick', 'reviewer', 'planReviewer', 'readme', 'claudemd'],
   },
   {
     why: 'a regression the change introduced is Important, never a nit parked for the retro — the reviewer, the review skill, the lanes that disposition findings and the driver carry one rule',

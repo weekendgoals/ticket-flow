@@ -518,3 +518,53 @@ deviation near-miss, this one fails **closed** — a label the parser misses cou
 reachable here. Worth a look from a reviewer.
 
 **Owed:** Nothing.
+
+### FID-5 — The plan side: one ticket owns the whole page — 2026-09-18 — DONE
+
+**Built:** The epic skill's step 3 gained two rules — an epic that declares
+`Design sources:` **ends with one whole-page fidelity ticket** (a `COMPARE` with
+no `LANDMARKS:` per design source, at every width the design draws, and a
+human-owned ticket before the release where the declared lane holds no browser),
+and a ground rule or scope line that **narrows what the design draws declares the
+removal** in `design-map.json`'s `removed` list with the element, the rule and the
+date. Step 4 hands the plan reviewer the design sources and the map; step 5 shows
+the `removed` list at sign-off and names any UI-building ticket with no `COMPARE`
+as not ready. `plan-reviewer.md` gained the five lenses only a reviewer holding
+the drawing can apply, the third of them the one nobody downstream can perform —
+an element the design draws that **no landmark covers**. `check-invariants.mjs`
+now reads `agents/plan-reviewer.md`: it joins `FILES` and the
+"reviewers report and never fix" phrase check, whose alternation absorbs the one
+deliberate wording difference (the ticket reviewer never fixes a diff, the plan
+reviewer never rewrites a plan). METHODOLOGY § "Why a design is a fourth artifact"
+and README's command and documents tables carry the reasoning and the map.
+
+**Mode:** direct — built in-session on `epic/design-fidelity` at the repository
+owner's instruction, with no per-ticket review; one review of the whole
+FID-2…FID-6 range follows.
+
+**Tokens:** unknown — in-session.
+
+**Verified:** `tickets.mjs check FID-5` **5/5**. `check-invariants.test.mjs`
+30 → **31** (*the plan reviewer gaining a write instruction fails the never-fix
+check*). Every other suite unchanged: `tickets.test.mjs` 121/121,
+`ticket-session-guard.test.mjs` 14/14, `board.test.mjs` 9/9,
+`plan-page.test.mjs` 8/8, `fidelity.test.mjs` 43/43, `run-epic.test.mjs` 143/143,
+`codex.test.mjs` 21/21, `codex-review.test.mjs` 19/19. `check-invariants.mjs`
+exit 0; `doctor` exit 0; `node --check plugins/flow/scripts/check-invariants.mjs`
+exit 0.
+**Revert check:** with `check-invariants.mjs`, `plan-reviewer.md` and the epic
+skill restored from HEAD and the suite kept, the new test fails. Both new guards
+were flipped in turn: dropping `planReviewer` from the phrase's file list kills
+it, and dropping the `report. You never rewrite` alternation turns the intact repo
+red (14 tests) — which is the honest shape of a presence check whose regex is
+shared.
+
+**Decisions:** (1) The never-fix phrase gained an alternation rather than
+`plan-reviewer.md` gaining the ticket reviewer's wording: the two definitions
+forbid different writes — a diff and a plan — and rewording one to match the
+other's regex would make the document worse to serve the check. (2) The
+whole-page rule and the removal rule are **planning rules** in the epic skill, not
+code: "a UI-building ticket" is not something a parser can detect, which is why
+FID-5 adds no gate and the plan reviewer carries the judgment.
+
+**Owed:** Nothing.
