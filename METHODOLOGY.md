@@ -504,6 +504,45 @@ whole map passed with a note. Two answers to one state is the shape a gate
 gets routed around, so the agreement is now a row of its own: the plan, the
 design and the page concur, which is evidence, not the absence of it.
 
+## Why a missing comparison stops the merge
+
+A criterion nobody performs is worse than no criterion: it is a gate that
+reports itself green. The page epic that produced this evidence had a visual
+criterion on one section; it was satisfied by a worker's reading of its own
+work, and the gaps between sections belonged to nobody. The `COMPARE`
+criterion replaces the reading with a differ, but the differ runs in a lane
+the code cannot see into — the project's own browser — so something has to
+hold the door.
+
+What the code can hold is the **presence** of the evidence, and that is what
+it holds: the `**Compared:**` table in the pushed status entry. The content
+is left to the reviewer, who can re-run the differ and whose fresh context is
+the only thing that can check a worker's table at all. This is the same split
+as everywhere else in the flow — code gates what code can decide, judgment
+gates what it cannot — and it is why the gate reads a **count** and not a
+table.
+
+Three shapes of that gate are decided rather than incidental. It lives where
+both facts meet: how many `COMPARE` criteria the **signed-off** section
+carries comes from the acceptance step's ledger, how many tables the **pushed**
+entry records comes from the resolve step, and the judgment happens before any
+agent that could merge exists. It is a **subcommand**, `tickets.mjs compared`,
+rather than a `grep` inside the driver's prompt: the driver's suite stubs
+every agent, so a counting pipeline written into a template literal is
+executed by no test, and a mis-escaped `\*\*` would first show itself as a
+count of 0 on a live run — which reads exactly like a ticket that recorded
+nothing, and merges it. And an unreadable count is **refused**, never read as
+zero, because zero is precisely the value that would skip the gate.
+
+The recovery works in the refused state, which is the property a refusal is
+worth having. Where a browser exists, run the differ and append the table in
+a dated addendum. Where none does — an image, a PDF, a lane with no renderer
+— a human writes `**Compared:** owed`, with who accepted it and why. That
+line satisfies the gate and satisfies nobody reading it, which is the correct
+asymmetry: the record says a comparison was owed and not performed, and the
+merge is a decision somebody made rather than one a missing file made for
+them.
+
 ## Why token figures are observed, never asked
 
 The Tokens lines exist as planning evidence — they are what priced the

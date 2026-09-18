@@ -321,6 +321,10 @@ Everything else here (`reviewerModel`, `shadowReviewer`, `consequencePaths`,
   CHECK the parser rejects runs nothing, so `passed === total` is trivially
   true on it; reading the verdict is what keeps a criterion nobody can
   satisfy from merging. A ticket with no CHECK criteria passes untouched.
+  The same ledger reports the ticket's **`COMPARE` criteria** in their own
+  `compares` list — comparisons the script never runs, because it has no
+  browser — and the driver carries that count to the resolve step, where it
+  meets the other half.
 - **Resolves the merge inputs read-only, and the code judges them before a
   merging agent exists**: the pushed log narrowed to **this ticket's own
   entries** must carry a dated `Addendum — review —` line (matched by shape,
@@ -339,7 +343,15 @@ Everything else here (`reviewerModel`, `shadowReviewer`, `consequencePaths`,
   never `find --from`, so the one proxy reading both facts cannot answer
   either from the other's JSON; `--log-from` reads the log at the commit this
   run would merge, not the checkout, and **a count above zero halts**,
-  whatever closure the entry claims. A reported ceiling that is not a positive
+  whatever closure the entry claims. And it reads **how many `**Compared:**`
+  tables that same entry records** (`tickets.mjs compared <ID> --log-from
+  origin/<branch> --json`) — a third subcommand with a third field name, for
+  the same reason: one proxy reading three facts must not answer any of them
+  from another's JSON. A ticket whose signed-off section carries a `COMPARE`
+  and whose pushed entry records no comparison halts on the acceptance-check
+  condition; a `compares` or `compared` fact that is missing or the wrong
+  type halts there too, because read as zero it would skip the gate exactly
+  when the gate is needed. A reported ceiling that is not a positive
   integer, or missing altogether, halts on the contradiction condition; a
   reported `null` **keeps the last ceiling in force and logs it**, because a
   line that stopped parsing (`**Ticket budget:** 600k` parses as null, and
@@ -375,7 +387,8 @@ enters your context from the loop:
                      fixLines, acceptanceOutcome, acceptanceChecks,
                      acceptanceChecksPassed, acceptanceChecksSkipped,
                      acceptanceAllPassed,
-                     acceptanceProblems, resolveOutcome, mergeOutcome,
+                     acceptanceProblems, acceptanceCompares, comparedRecorded,
+                     resolveOutcome, mergeOutcome,
                      addendumMatches, deviationsRecorded, deviationsOpen,
                      headSha,
                      built, verification, workerReported,
@@ -451,14 +464,20 @@ that resumes past one. The run halts:
 - on **a failed acceptance CHECK — a machine-runnable criterion whose
   command did not produce its expected result on the pushed branch, a
   criterion whose evidence is a skip, a CHECK line too malformed to run at
-  all, or an acceptance report the gate could not read** — the gate reads the
+  all, a COMPARE criterion whose pushed entry records no comparison, or an
+  acceptance report the gate could not read** — the gate reads the
   ledger's `allPassed` verdict, so a malformed CHECK line halts even when
   every runnable check passed (it never ran, and a criterion nobody can
   satisfy is a failed one), and a criterion the ledger marked `↓ skipped`
   halts for the neighbouring reason: its command exited 0 while the work it
-  names never ran, and **a skipped check is not a passed one**. An unreadable
-  report — missing counts, missing verdict, missing problem count — halts on
-  the same string. All four are one class, so a retro reading the stop string
+  names never ran, and **a skipped check is not a passed one**. A `COMPARE`
+  criterion halts on the same string for the same reason one door along: the
+  script never runs a comparison (it owns no browser), so the
+  `**Compared:**` table in the pushed entry **is** the evidence, and a
+  criterion whose evidence nobody produced is a criterion nobody performed.
+  An unreadable report — missing counts, missing verdict, missing problem
+  count, a missing `compares` or `compared` fact — halts on
+  the same string. All five are one class, so a retro reading the stop string
   alone files the halt correctly;
 - on **a document/code contradiction — reported by a worker, or met by the
   script's own checks**: a ticket ID off the plugin's shape, a board that
@@ -777,7 +796,8 @@ across the first three live release epics. Everything from the reviewer
 onward halts here, because the entry and the push happened first — a
 reviewer that could not be spawned ("the branch `ghf-2` stays pushed and
 unmerged", groundhopper-foundation, 2026-08-24), an Important finding the
-disposition could not fix, a failed acceptance CHECK, a fix diff nothing
+disposition could not fix, a failed acceptance CHECK, a `COMPARE` criterion
+whose pushed entry records no comparison, a fix diff nothing
 could measure, a merge that would not go in. **Finish that one ticket by
 hand first**: `/flow:ticket <ID>`, the escape hatch step 1's refusal names.
 Its supervisor-spawned worker checks out the pushed branch and builds

@@ -957,6 +957,119 @@ test('an unreadable status log is a nonzero exit naming it, never an empty list'
   assert.match(noId.stderr, /usage: tickets\.mjs deviations <ID>/)
 })
 
+// ── the compared subcommand ──────────────────────────────────────────────────
+// The count of `**Compared:**` fidelity tables one ticket's own entries
+// record. It lives in the script rather than in a grep inside the driver's
+// prompt because the driver's suite stubs every agent: a counting pipeline in
+// a template literal is executed by no test, and a mis-escaped `\*\*` would
+// first show as a count of 0 on a live run — indistinguishable from a ticket
+// that recorded nothing, and merged as such.
+
+const VISION_STATUS = `# Vision epic — status log
+
+Append-only record of finished tickets. Tickets: \`epics/vision/tickets.md\`.
+
+### V-1 — the landing page — 2026-09-10 — DONE
+
+**Built:** the page.
+
+**Compared:** at 1440 and 393, against designs/City Desktop.html, removals from
+origin/epic/vision:
+
+landmark  property  design  page
+hero      order     1       2
+
+**Owed:** Nothing.
+
+**Addendum — 2026-09-11 — the comparison re-run after the review fix.**
+
+**Compared:** at 1440, no differences — 6 landmarks compared.
+
+### V-2 — the results list — 2026-09-12 — DONE
+
+**Built:** the list.
+
+**Compared:** owed — no browser in this session; Vadim accepted it 2026-09-12.
+
+**Owed:** Nothing.
+
+### V-3 — the footer — 2026-09-13 — DONE
+
+**Built:** the footer.
+
+**Owed:** Nothing.
+`
+
+function visionRepo(name, status = VISION_STATUS) {
+  const dir = join(tmp, name)
+  git(tmp, 'init', '--initial-branch=main', dir)
+  mkdirSync(join(dir, 'epics/vision'), { recursive: true })
+  writeFileSync(
+    join(dir, 'epics/vision/tickets.md'),
+    '# Vision epic — tickets\n\nDelivery: release\n\n## V-1 — the landing page\n\n**Scope.** V1.\n\n## V-2 — the results list\n\n**Scope.** V2.\n\n## V-3 — the footer\n\n**Scope.** V3.\n',
+  )
+  writeFileSync(join(dir, 'epics/vision/status.md'), status)
+  return dir
+}
+
+test('compared counts the tables a ticket\'s own entries record, addenda included', () => {
+  const dir = visionRepo('compared')
+  const v1 = JSON.parse(run(dir, 'compared', 'v-1', '--json'))
+  assert.equal(v1.ticket, 'V-1')
+  assert.equal(v1.compared, 2, "the entry's own table and the one its addendum added")
+  assert.deepEqual(v1.tables.map((t) => t.line > 0), [true, true], 'each is reported with the line it sits on')
+  assert.match(v1.tables[0].text, /against designs\/City Desktop\.html/)
+  // An owed comparison is a recorded one: it says a human accepted that it
+  // could not run, which a reader can see and a gate can count — the whole
+  // point of writing the field rather than omitting it.
+  assert.equal(JSON.parse(run(dir, 'compared', 'V-2', '--json')).compared, 1)
+  assert.equal(JSON.parse(run(dir, 'compared', 'V-3', '--json')).compared, 0, 'a ticket that recorded none reads as none')
+  assert.match(run(dir, 'compared', 'V-3'), /0 `\*\*Compared:\*\*` field\(s\) recorded/)
+})
+
+test('compared never counts another ticket\'s table', () => {
+  // A status log is append-only and a ticket branch carries every earlier
+  // ticket's entries, each able to carry this same field — so a count over the
+  // whole file would let a predecessor's comparison answer for this ticket,
+  // which is the gate passing on somebody else's evidence.
+  const dir = visionRepo('compared-narrowing')
+  assert.equal(JSON.parse(run(dir, 'compared', 'V-3', '--json')).compared, 0)
+  const text = readFileSync(join(dir, 'epics/vision/status.md'), 'utf8')
+  assert.match(text, /\*\*Compared:\*\*/, 'the log does carry tables — three of them, under other tickets')
+})
+
+test('compared --log-from reads the pushed branch, and an unreadable log is never a count of 0', () => {
+  const dir = visionRepo('compared-ref', '# Vision epic — status log\n')
+  git(dir, 'config', 'user.email', 'test@example.com')
+  git(dir, 'config', 'user.name', 'Test')
+  git(dir, 'config', 'commit.gpgsign', 'false')
+  git(dir, 'add', '.')
+  git(dir, 'commit', '-m', 'V-1: start the epic')
+  git(dir, 'checkout', '-b', 'v-1')
+  writeFileSync(join(dir, 'epics/vision/status.md'), VISION_STATUS)
+  git(dir, 'add', '.')
+  git(dir, 'commit', '-m', 'V-1: the landing page')
+  git(dir, 'checkout', 'main')
+
+  assert.equal(JSON.parse(run(dir, 'compared', 'V-1', '--json')).compared, 0, 'the checkout records none')
+  const fromRef = JSON.parse(run(dir, 'compared', 'V-1', '--log-from', 'v-1', '--json'))
+  assert.equal(fromRef.compared, 2, 'the pushed branch records two')
+  assert.equal(fromRef.logFrom, 'v-1')
+  assert.equal(fromRef.logPath, 'epics/vision/status.md', 'the ref-relative path, not a checkout path')
+
+  const badRef = runFail(dir, 'compared', 'V-1', '--log-from', 'no-such-ref', '--json')
+  assert.equal(badRef.status, 1)
+  assert.match(badRef.stderr, /not "no comparison"/, 'the refusal says what it refuses to claim')
+  assert.equal(badRef.stdout, '', 'no payload at all — a count of 0 would read as a ticket that skipped the comparison')
+
+  const noValue = runFail(dir, 'compared', 'V-1', '--log-from', '--json')
+  assert.equal(noValue.status, 2)
+  assert.match(noValue.stderr, /--log-from needs a git ref/)
+  const noId = runFail(dir, 'compared')
+  assert.equal(noId.status, 2)
+  assert.match(noId.stderr, /usage: tickets\.mjs compared <ID>/)
+})
+
 test('doctor flags a deviation line that will not parse, inside an entry only', () => {
   // A near-miss reads as absent, and the departure stays prose no command sees
   // — the exact failure the line exists to end, reintroduced one typo at a

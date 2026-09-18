@@ -8,6 +8,31 @@ with one version and date.
 
 ## Unreleased
 
+- **A missing comparison stops the merge, at every door** (`scripts/tickets.mjs`
+  and its suite, `workflows/run-epic.mjs` and its suite,
+  `skills/run/SKILL.md`, `skills/ticket/SKILL.md`, `skills/quick/SKILL.md`,
+  `scripts/check-invariants.mjs` and its suite, README, METHODOLOGY § "Why a
+  missing comparison stops the merge"). New subcommand: `tickets.mjs compared
+  <ID> [--log-from <ref>] [--json]` — the count of `**Compared:**` fields under
+  that ticket's **own** entries, addenda included, with `deviations`' rule that
+  an unreadable log is a nonzero exit and never a count of 0 (both now read the
+  log through one shared reader). It is a subcommand and not a `grep` in the
+  driver's prompt because `run-epic.test.mjs` stubs every agent: a counting
+  pipeline in a template literal is executed by no test, and a mis-escaped
+  `\*\*` would first show as a count of 0 on a live run. The driver's
+  acceptance report gains `compares` (how many `COMPARE` criteria the
+  signed-off section carries) and its resolve step gains FACT 5, the pushed
+  entry's comparison count; a ticket that owes a comparison and records none
+  **halts**, on the acceptance-check stop condition, whose pinned sentence gains
+  one clause in all five files that carry it. A `compares` or `compared` fact
+  that is missing or the wrong type is refused and halts — read as 0 it would
+  skip the gate. The attended doors move with it: the ticket skill's step 9
+  names such a ticket in the summary and the pull request body, step 10 does not
+  integrate it, and the quick skill's step 7 names it in the body. Recovery
+  either way leaves a record: run the differ and append the field in a dated
+  addendum, or `**Compared:** owed — <who accepted it, when, and why it could
+  not run>` on the human's word.
+
 - **A `COMPARE` acceptance criterion, and the differ's exit contract amended**
   (`scripts/tickets.mjs` and `scripts/fidelity.mjs` with both suites,
   `skills/epic/SKILL.md`, `skills/ticket/SKILL.md`, `skills/quick/SKILL.md`,

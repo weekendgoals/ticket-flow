@@ -34,6 +34,13 @@
 //                                        ledger; --from reads the criteria
 //                                        from a git ref (the signed-off
 //                                        document) instead of the working tree
+//   tickets.mjs compared <ID> [--json] [--log-from <ref>]
+//                                        how many `**Compared:**` fidelity
+//                                        tables the ticket's own status
+//                                        entries record; --log-from reads the
+//                                        log off a pushed branch, and an
+//                                        unreadable log exits nonzero rather
+//                                        than counting 0
 //   tickets.mjs spend [epic] [--json]    the recorded token ledger per ticket
 //                                        and per epic, derived from the
 //                                        status log's Tokens lines, addendum
@@ -1835,6 +1842,59 @@ function requireKnownEpic(data, epicFilter) {
   }
 }
 
+// The status log a per-ticket report reads: the working tree's, or the log as
+// a git ref carries it under `--log-from` — the pushed ticket branch is where
+// a worker writes its entry, and a reader on the checkout would read a log
+// that has not moved. One reader for every such report, because the rule it
+// enforces has to hold at every door: a log that cannot be read is a nonzero
+// exit naming the reason, NEVER an empty answer. `what` is the empty answer
+// this report would otherwise give ("no deviations", "no comparison"), quoted
+// back so the refusal says what it is refusing to claim.
+function readStatusLog(epic, rel, logFromRef, what) {
+  if (logFromRef) {
+    const shown = git(['show', `${logFromRef}:${rel}`], { allowFail: true })
+    if (shown === null) {
+      console.error(
+        `tickets: cannot read ${rel} from ref "${logFromRef}" — fetch the ref, or check its name. ` +
+          `An unreadable status log is not "${what}".`,
+      )
+      process.exit(1)
+    }
+    return shown
+  }
+  if (!epic.statusDoc) {
+    console.error(
+      `tickets: no status log at ${join(epic.dir, 'status.md')} — an absent log is not "${what}". ` +
+        "It is created at sign-off by /flow:epic, or by the first ticket's status entry; " +
+        'to read a log that exists only on a pushed branch, pass --log-from <ref>.',
+    )
+    process.exit(1)
+  }
+  return readFileSync(epic.statusDoc, 'utf8')
+}
+
+// The `**Compared:**` lines under one ticket's OWN entries — the fidelity
+// table a COMPARE criterion obliges, counted rather than judged. The narrowing
+// is the check: a status log is append-only and a ticket branch carries every
+// earlier ticket's entries too, all of them able to carry the same field, so a
+// count over the whole file would let a predecessor's table answer for this
+// ticket. Every heading closes the region, which is what the driver's own
+// `awk '/^### /{f=/^### <ID> /} f'` does, so an entry's addenda count and the
+// next entry's do not.
+function comparedIn(text, id) {
+  const found = []
+  let entry = null
+  text.split('\n').forEach((line, i) => {
+    if (/^#{1,6}\s/.test(line)) {
+      const m = line.match(STATUS_HEADING)
+      entry = m ? m[1] : null
+      return
+    }
+    if (entry === id && /^\*\*Compared:\*\*/.test(line)) found.push({ line: i + 1, text: line.slice('**Compared:**'.length).trim() })
+  })
+  return found
+}
+
 // Resolve an ID against the board, with find's refusals: an ambiguous ID and
 // an unknown ID both exit 1 with the message naming what is known. `brief`
 // shares this path so its refusals stay verbatim find's — one behaviour, not
@@ -2068,27 +2128,7 @@ switch (cmd) {
     const t = resolveTicket(data, arg.toUpperCase())
     const epic = data.epics.find((e) => e.epic === t.epic)
     const rel = `epics/${t.epic}/status.md`
-    let text
-    if (logFromRef) {
-      const shown = git(['show', `${logFromRef}:${rel}`], { allowFail: true })
-      if (shown === null) {
-        console.error(
-          `tickets: cannot read ${rel} from ref "${logFromRef}" — fetch the ref, or check its name. ` +
-            'An unreadable status log is not "no deviations".',
-        )
-        process.exit(1)
-      }
-      text = shown
-    } else if (!epic.statusDoc) {
-      console.error(
-        `tickets: no status log at ${join(epic.dir, 'status.md')} — an absent log is not "no deviations". ` +
-          "It is created at sign-off by /flow:epic, or by the first ticket's status entry; " +
-          'to read a log that exists only on a pushed branch, pass --log-from <ref>.',
-      )
-      process.exit(1)
-    } else {
-      text = readFileSync(epic.statusDoc, 'utf8')
-    }
+    const text = readStatusLog(epic, rel, logFromRef, 'no deviations')
     // This ticket's own entries only — an ID heads its entry, and a departure
     // another ticket recorded is that ticket's to answer for. The notes are
     // filtered the same way and for the same reason: a closing line that closed
@@ -2122,6 +2162,51 @@ switch (cmd) {
         if (d.closed) console.log(`        ${C.dim}closed by: ${d.closedBy}${C.off}`)
       }
       for (const n of deviationNotes) console.log(`${C.yellow}note:${C.off} ${n}`)
+    }
+    break
+  }
+
+  case 'compared': {
+    // How many `**Compared:**` fields one ticket's own entries record — the
+    // fidelity table a `COMPARE:` criterion obliges. It lives here, in the
+    // script, and not as a `grep` inside the driver's prompt: `run-epic.mjs`
+    // stubs every agent in its suite, so a counting pipeline written into a
+    // template literal is executed by no test, and a mis-escaped `\*\*` would
+    // first show itself as a count of 0 on a live run — which reads exactly
+    // like a ticket that recorded no comparison, and merges it.
+    //
+    // This counts; it never judges. Whether the table is right is the
+    // reviewer's, who can re-run the differ; whether a missing one stops a
+    // merge is the driver's gate and the attended doors'. And, like
+    // `deviations`, a log it cannot read is a nonzero exit and never a count
+    // of 0: "unreadable" and "none recorded" must not arrive as one number.
+    if (!arg) {
+      console.error('usage: tickets.mjs compared <ID> [--json] [--log-from <ref>]')
+      process.exit(2)
+    }
+    if (logFromIdx !== -1 && !logFromRef) {
+      console.error('tickets: --log-from needs a git ref (e.g. --log-from origin/<ticket-branch>)')
+      process.exit(2)
+    }
+    const data = board(null)
+    const t = resolveTicket(data, arg.toUpperCase())
+    const epic = data.epics.find((e) => e.epic === t.epic)
+    const rel = `epics/${t.epic}/status.md`
+    const text = readStatusLog(epic, rel, logFromRef, 'no comparison')
+    const found = comparedIn(text, t.id)
+    if (json)
+      emit({
+        ticket: t.id,
+        epicName: t.epic,
+        logPath: logFromRef ? rel : epic.statusDoc,
+        logFrom: logFromRef,
+        compared: found.length,
+        tables: found,
+      })
+    else {
+      const where = logFromRef ? `${rel} at ${logFromRef}` : epic.statusDoc
+      console.log(`${C.bold}${t.id}${C.off} ${C.dim}— ${t.epic} — ${where}${C.off}\n${found.length} \`**Compared:**\` field(s) recorded`)
+      for (const f of found) console.log(`  line ${f.line}: ${f.text.slice(0, 200) || '(the table follows on the next lines)'}`)
     }
     break
   }
@@ -2303,6 +2388,6 @@ switch (cmd) {
   }
 
   default:
-    console.error(`tickets: unknown command "${cmd}" (try: list, find, brief, next, check, deviations, spend, epics, current, doctor)`)
+    console.error(`tickets: unknown command "${cmd}" (try: list, find, brief, next, check, compared, deviations, spend, epics, current, doctor)`)
     process.exit(2)
 }

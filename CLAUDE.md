@@ -21,13 +21,13 @@ go through the flow, one-off work goes through `/flow:quick` into
 ## Commands
 
 - **Tests:** `node --test plugins/flow/scripts/tickets.test.mjs` — expect
-  every test passing (`# pass 118`, `# fail 0` as of 2026-09-18; the count
+  every test passing (`# pass 121`, `# fail 0` as of 2026-09-18; the count
   grows, the fail line does not). The suite builds a throwaway git repo in a
   temp dir; it needs `git` on PATH and nothing else. The session-guard hook
   has its own suite:
   `node --test plugins/flow/hooks/ticket-session-guard.test.mjs` (`# pass 14`
   on the same terms). The invariant checker has
-  `node --test plugins/flow/scripts/check-invariants.test.mjs` (`# pass 29`),
+  `node --test plugins/flow/scripts/check-invariants.test.mjs` (`# pass 30`),
   The board renderer has
   `node --test plugins/flow/scripts/board.test.mjs` (`# pass 9`) and the
   plan-page renderer `node --test plugins/flow/scripts/plan-page.test.mjs`
@@ -41,7 +41,7 @@ go through the flow, one-off work goes through `/flow:quick` into
   closure reference fails here instead of inside somebody's page. It needs
   nothing but Node, and **no test may launch or drive a browser** — the plugin
   owns none, which is why it installs anywhere. And the run driver has
-  `node --test plugins/flow/workflows/run-epic.test.mjs` (`# pass 137`) —
+  `node --test plugins/flow/workflows/run-epic.test.mjs` (`# pass 143`) —
   which evaluates `run-epic.mjs`'s module body with stubbed agents and
   asserts the sequence, the gate branches and the halt mapping. It needs
   nothing but Node: no git, no network, no filesystem beyond the script.
@@ -70,7 +70,7 @@ go through the flow, one-off work goes through `/flow:quick` into
   phrases). Run it whenever a skill, agent, hook or doctrine document changes —
   it is presence and equality only, so contradictions in meaning still need
   review. Its suite: `node --test plugins/flow/scripts/check-invariants.test.mjs`
-  (`# pass 29` on the same terms).
+  (`# pass 30` on the same terms).
 - **Smoke:** `node plugins/flow/scripts/tickets.mjs doctor` — must exit 0 on
   this repo. `… list` shows the board.
 - **Syntax check:** `node --check plugins/flow/scripts/tickets.mjs`, and the

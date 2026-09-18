@@ -455,3 +455,66 @@ reviewers, so a comparison against an undeclared file is one nobody else can ope
 a branch cannot anchor a comparison the signed-off document does not declare.
 
 **Owed:** Nothing.
+
+### FID-4 — A missing comparison stops the merge, at every door — 2026-09-18 — DONE
+
+**Built:** `tickets.mjs compared <ID> [--log-from <ref>] [--json]` counts the
+`**Compared:**` fields under a ticket's **own** entries, addenda included, through
+a status-log reader now shared with `deviations` — so the rule that an unreadable
+log is a nonzero exit and never a count of 0 holds at both doors by construction.
+The driver's `ACCEPT_SCHEMA` gained `compares` (how many `COMPARE` criteria the
+signed-off section carries) and `RESOLVE_SCHEMA` gained `compared` as FACT 5 (the
+fix-bounds facts move to FACT 6); the two meet in code at the resolve step, before
+any agent that could merge exists, and a ticket that owes a comparison and records
+none halts on the **acceptance-check** condition, whose pinned sentence gained one
+clause in all five files that carry it. A `compares` or `compared` fact that is
+missing, wrong-typed or about another ticket is refused and halts. The attended
+doors move with it: ticket skill step 9 names such a ticket in the summary and the
+pull request body, step 10 refuses to integrate it, and quick skill step 7 names
+it in the body — with the same two recoveries, each leaving a record.
+
+**Mode:** direct — built in-session on `epic/design-fidelity` at the repository
+owner's instruction, with no per-ticket review; one review of the whole
+FID-2…FID-6 range follows.
+
+**Tokens:** unknown — in-session.
+
+**Verified:** `tickets.mjs check FID-4` **5/5**. `tickets.test.mjs` 118 → **121**
+(the count narrowed to the ticket's own entries; a table under another ticket
+never counted; `--log-from` on a pushed branch, and the unreadable-log refusal).
+`run-epic.test.mjs` 137 → **143** — the new tests are *a COMPARE criterion whose
+pushed entry records no comparison halts before any merge agent exists*, *a
+COMPARE ticket whose entry records the comparison merges like any other*, *a
+ticket with no COMPARE criterion is untouched by the gate*, *an acceptance report
+with no compares count is unreadable evidence and halts*, *a compared fact that is
+missing, wrong-typed, about another ticket, or unreadable halts* (six cases), and
+*the resolve prompt asks for the comparison count with its own command and flag*.
+`check-invariants.test.mjs` 29 → **30** (both documents dropping the new clause).
+Unchanged: `ticket-session-guard.test.mjs` 14/14, `board.test.mjs` 9/9,
+`plan-page.test.mjs` 8/8, `fidelity.test.mjs` 43/43, `codex.test.mjs` 21/21,
+`codex-review.test.mjs` 19/19. `check-invariants.mjs` exit 0; `doctor` exit 0;
+`node --check` exit 0 on `tickets.mjs` and `check-invariants.mjs`; `run-epic.mjs`
+parsed with CLAUDE.md's `node -e` command, exit 0.
+**Revert check:** with the six changed source files restored from HEAD and the
+suites kept, 3 tickets tests, 9 driver tests and 1 invariant test fail. Each new
+guard was then flipped in turn: removing the gate branch kills the halt test;
+reading an unreadable `compared` as 0 kills the refusal test; defaulting a missing
+`compares` to 0 kills its test; dropping the narrowing to the ticket's own entries
+kills all three `compared` tests.
+
+**Decisions:** (1) The gate fires at the **resolve** step rather than the
+acceptance step, because that is where both facts are in hand — the ledger's
+`compares` is read at acceptance, the entry's `compared` at resolve — and it still
+runs before any agent that could merge exists. It carries the acceptance-check
+stop string all the same: one class, one string, so a retro reading the halt files
+it correctly. (2) The count is not judged: one table answers any number of
+`COMPARE` criteria, because whether a table is *right* is the reviewer's, who can
+re-run the differ, and whether it exists is the only thing a merge can hold.
+(3) `deviations` was refactored onto the shared log reader rather than having
+`compared` grow a second copy — the rule about an unreadable log is the same rule.
+(4) No doctor near-miss scan for a mis-spelled `**Compared:**` label: unlike a
+deviation near-miss, this one fails **closed** — a label the parser misses counts
+0 and halts the run — so the silent direction the near-miss scans exist for is not
+reachable here. Worth a look from a reviewer.
+
+**Owed:** Nothing.

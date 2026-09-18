@@ -264,6 +264,20 @@ test('the workflow script losing the acceptance-check stop condition fails', () 
   assert.match(r.out, /run-epic\.mjs.*acceptance-check stop condition/s)
 })
 
+test('either document dropping the acceptance condition\'s COMPARE clause fails', () => {
+  // The sentence is pinned whole for the reason its siblings are: a copy that
+  // kept only the CHECK clauses would describe a gate that lets a comparison
+  // nobody performed through, and a retro reading the stop string would file
+  // the halt as a failing test.
+  for (const file of ['plugins/flow/workflows/run-epic.mjs', 'plugins/flow/skills/run/SKILL.md']) {
+    const root = copyRepo()
+    mutate(root, file, 'a COMPARE criterion whose pushed entry records no comparison, ', '')
+    const r = run(root)
+    assert.equal(r.status, 1, r.out)
+    assert.match(r.out, /acceptance-check stop condition/s, file)
+  }
+})
+
 test('the run skill drifting from the fix-bounds stop condition fails', () => {
   const root = copyRepo()
   mutate(root, 'plugins/flow/skills/run/SKILL.md', 'no usable fix-diff facts', 'no usable fix-diff numbers')

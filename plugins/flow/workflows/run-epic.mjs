@@ -201,7 +201,7 @@ const STOP = {
   nonzeroExit: 'a nonzero exit from any command the run issues as a step, except those this skill explicitly marks tolerated',
   fixBounds: 'a review-fix diff the run could not measure — no usable fix-diff facts from the resolve step, or a fix whose changed lines cannot be counted; an unmeasurable fix is never merged',
   acceptanceCheck:
-    'a failed acceptance CHECK — a machine-runnable criterion whose command did not produce its expected result on the pushed branch, a criterion whose evidence is a skip, a CHECK line too malformed to run at all, or an acceptance report the gate could not read',
+    'a failed acceptance CHECK — a machine-runnable criterion whose command did not produce its expected result on the pushed branch, a criterion whose evidence is a skip, a CHECK line too malformed to run at all, a COMPARE criterion whose pushed entry records no comparison, or an acceptance report the gate could not read',
   // The sentence is pinned whole by `check-invariants.mjs` and carried word
   // for word by the run skill's step 5: "closed or not" is the load-bearing
   // half, and a copy that kept only the opening would describe a gate that
@@ -558,6 +558,11 @@ const ACCEPT_SCHEMA = {
       description:
         'how many entries the printed JSON\'s `problems` array holds — its LENGTH, not its contents (0 when it is empty). These are CHECK/EXPECT lines the parser rejected: criteria that never ran. Their text goes in `failures`.',
     },
+    compares: {
+      type: 'integer',
+      description:
+        "how many entries the printed JSON's `compares` array holds — its LENGTH, not its contents (0 when it is empty or absent). These are COMPARE criteria: fidelity comparisons the script never runs, because it has no browser. They are in neither `total` nor `passed`, so they cannot fail here; the driver reads this count to know whether the ticket's pushed entry owes a `**Compared:**` table. Report the 0 rather than leaving the field out: the driver halts on a report that does not carry it.",
+    },
     failures: {
       type: 'array',
       items: {
@@ -630,7 +635,7 @@ const DISPOSITION_SCHEMA = {
 // The two payloads share no field name, and this schema keeps them apart.
 const RESOLVE_SCHEMA = {
   type: 'object',
-  required: ['outcome', 'ticketBudget', 'deviations'],
+  required: ['outcome', 'ticketBudget', 'deviations', 'compared'],
   properties: {
     outcome: {
       type: 'string',
@@ -677,19 +682,39 @@ const RESOLVE_SCHEMA = {
         failure: { type: 'string', description: 'when commandSucceeded is false: the exit code and the first lines of stderr, verbatim, credentials masked' },
       },
     },
+    compared: {
+      type: 'object',
+      required: ['commandSucceeded', 'ticket', 'count'],
+      description:
+        "FACT 5: what the `compared <ID> --log-from origin/<the ticket branch> --json` command printed, verbatim — how many `**Compared:**` fidelity tables the pushed entry records. Its own command and its own field; nothing here comes from FACT 3 or FACT 4.",
+      properties: {
+        commandSucceeded: {
+          type: 'boolean',
+          description:
+            'true ONLY if that command exited 0 AND printed parseable JSON. It exits nonzero when it cannot read the status log from the ref — report false and quote the error in `failure`, never a count of 0: an unreadable log is not "no comparison".',
+        },
+        ticket: { type: 'string', description: "the JSON's `ticket` field, verbatim — the driver checks it names the ticket it asked about" },
+        count: {
+          type: 'integer',
+          description:
+            "the JSON's `compared` field, verbatim: how many `**Compared:**` fields this ticket's own entries record, its addenda included. 0 is a real answer. Never recompute it, never leave it out, and never fill in a number from earlier in this run.",
+        },
+        failure: { type: 'string', description: 'when commandSucceeded is false: the exit code and the first lines of stderr, verbatim, credentials masked' },
+      },
+    },
     reviewedFiles: {
       type: 'array',
       items: { type: 'string' },
-      description: 'FACT 5 only: the file paths the first diff command printed, verbatim, one entry per line. Omit when the prompt has no FACT 5.',
+      description: 'FACT 6 only: the file paths the first diff command printed, verbatim, one entry per line. Omit when the prompt has no FACT 6.',
     },
     fixFiles: {
       type: 'array',
       items: { type: 'string' },
-      description: 'FACT 5 only: the file paths the second (numstat) diff command printed, verbatim. [] when it printed nothing.',
+      description: 'FACT 6 only: the file paths the second (numstat) diff command printed, verbatim. [] when it printed nothing.',
     },
     fixLines: {
       type: 'integer',
-      description: 'FACT 5 only: the sum of every added and deleted count the numstat printed — 0 when it printed nothing. A "-" count (binary file) is reported as -1 here, never guessed at.',
+      description: 'FACT 6 only: the sum of every added and deleted count the numstat printed — 0 when it printed nothing. A "-" count (binary file) is reported as -1 here, never guessed at.',
     },
     detail: { type: 'string', description: 'first lines of any error output, verbatim, credentials masked' },
   },
@@ -1183,6 +1208,13 @@ Report honestly: \`branch-pushed\` ONLY if you saw the push of \`${branch}\` suc
     acceptanceChecksSkipped: null,
     acceptanceAllPassed: null,
     acceptanceProblems: null,
+    // The comparison gate's two halves: how many COMPARE criteria the
+    // signed-off section carries (read at the acceptance step) and how many
+    // `**Compared:**` tables the pushed entry records (read at the resolve
+    // step). Both on the record, because a retro reading only the second
+    // cannot tell a ticket that owed no comparison from one that owed three.
+    acceptanceCompares: null,
+    comparedRecorded: null,
     resolveOutcome: 'not reached',
     mergeOutcome: 'not reached',
     addendumMatches: null,
@@ -1853,12 +1885,19 @@ ${NO_MAIN} The checkout and fast-forward only move the local branch to where the
     // and a schema the prompt tells the reporter to fill with 0 when the JSON
     // has none leaves nothing legitimate for a default to rescue.
     const skipped = Number.isInteger(accept.skipped) && accept.skipped >= 0 ? accept.skipped : null
+    // How many COMPARE criteria the SIGNED-OFF section carries. It decides
+    // nothing here — a comparison this script cannot run cannot fail an
+    // acceptance gate — and it is refused when it is missing or the wrong type
+    // like every other fact, because read as 0 it would skip the comparison
+    // gate at the resolve step, which is the one place the two facts meet.
+    const compares = Number.isInteger(accept.compares) && accept.compares >= 0 ? accept.compares : null
     record.acceptanceChecks = total
     record.acceptanceChecksPassed = passed
     record.acceptanceChecksSkipped = skipped
     record.acceptanceAllPassed = allPassed
     record.acceptanceProblems = problems
-    const unreadable = total === null || passed === null || skipped === null || allPassed === null || problems === null
+    record.acceptanceCompares = compares
+    const unreadable = total === null || passed === null || skipped === null || allPassed === null || problems === null || compares === null
     // `skipped > 0` is its own condition rather than something the counts are
     // trusted to carry: the ledger keeps skips out of `passed`, so a report
     // that claims both is self-contradictory, and re-deriving it here is the
@@ -1888,15 +1927,18 @@ ${NO_MAIN} The checkout and fast-forward only move the local branch to where the
         stopCondition: STOP.acceptanceCheck,
         where: `the acceptance checks of ${id}`,
         detail: unreadable
-          ? `the acceptance-check step reported "ran" but no usable counts or verdict (total, passed, skipped, allPassed, problems) — a gate that cannot read its own evidence merges nothing; doubt goes up`
+          ? `the acceptance-check step reported "ran" but no usable counts or verdict (total, passed, skipped, allPassed, problems, compares) — a gate that cannot read its own evidence merges nothing; doubt goes up`
           : `${why.join('; and ')}, judged against the signed-off document on ${epicBranch}: ${quoted}`,
       }
       break
     }
     log(
-      total === 0
+      (total === 0
         ? `${id}: no machine-runnable acceptance criteria — nothing to gate here; prose and demonstrate criteria remain the worker's verified obligations.`
-        : `${id}: acceptance checks ${passed}/${total} passed against the signed-off criteria, none skipped, with no malformed CHECK line (the ledger's own \`allPassed\`).`,
+        : `${id}: acceptance checks ${passed}/${total} passed against the signed-off criteria, none skipped, with no malformed CHECK line (the ledger's own \`allPassed\`).`) +
+        (compares > 0
+          ? ` The signed-off section carries ${compares} COMPARE criterion(s), which this script never runs — the resolve step reads whether the pushed entry records the comparison.`
+          : ''),
     )
   }
 
@@ -1930,7 +1972,7 @@ ${NO_MAIN} The checkout and fast-forward only move the local branch to where the
   const fixBoundsFacts = boundsGated
     ? `
 
-FACT 5 — the review-fix diff, anchored on the reviewed head \`${anchorHead}\`:
+FACT 6 — the review-fix diff, anchored on the reviewed head \`${anchorHead}\`:
 
 \`\`\`bash
 git diff --name-only origin/${epicBranch} ${anchorHead} -- ${boundsPathspecs}
@@ -1940,7 +1982,7 @@ git diff --numstat ${anchorHead} origin/${branch} -- ${boundsPathspecs}
 The first command lists the files the review saw — report its paths, verbatim, as \`reviewedFiles\`. The second lists what the fix commits changed after the review (the status-log addendum${fixBoundsExclude.length ? " and the epic's excluded fan-out globs are" : ' is'} excluded by the pathspec) — report its paths as \`fixFiles\` and the sum of every added and deleted count it printed as \`fixLines\`: 0 when it prints nothing, and -1 if any count prints "-" (a binary file) — both are answers, not failures. You judge none of it; the driver checks the bounds in code.`
     : ''
   const resolved = await agent(
-    `In the repository at ${repoRoot}, report ${boundsGated ? 'five' : 'four'} facts about one ticket's pushed branch. **You change nothing**: no merge, no push, no edit. You do not judge what you find — report what the commands printed and let the driver decide.
+    `In the repository at ${repoRoot}, report ${boundsGated ? 'six' : 'five'} facts about one ticket's pushed branch. **You change nothing**: no merge, no push, no edit. You do not judge what you find — report what the commands printed and let the driver decide.
 
 FACT 1 — how many dated review addenda sit under **${id}'s own** entries in the branch as pushed:
 
@@ -1980,7 +2022,15 @@ ${TICKETS} deviations ${id} --log-from origin/${branch} --json
 
 A different command from FACT 3's, with a different flag, and its JSON shares no field name with FACT 3's: \`--from\` reads the epic's DECLARATIONS as signed off, \`--log-from\` reads a STATUS LOG off a pushed branch. Do not mix the two reports, and do not answer this fact from that one. FACT 1 already fetched \`${branch}\`, so the ref is current; \`--log-from\` reads the log at exactly the commit this run would merge, never the checkout, where a line nobody pushed would answer for a commit that does not carry it.
 
-Report what it printed under \`deviations\`: \`commandSucceeded\` true only when the command exited 0 AND printed parseable JSON, and the JSON's \`ticket\`, \`count\` and \`open\` fields exactly as printed. A \`count\` of 0 is a real answer. When the command exits nonzero — it refuses a status log it cannot read from that ref, in those words — report \`commandSucceeded\` false with its exit code and the first lines of stderr in \`failure\`, and report it that way rather than as the step's outcome: the step ran, and the driver reads this failure here. **Never report a failure as a count of 0**: an unreadable status log is not "no deviations", and that is the one direction this report can lie in. Never recompute the numbers, never leave either of them out, and never fill in a figure you saw earlier in this run. The two are checked against each other: \`open\` counts the subset of \`count\` that no closing line closed, so it can never exceed \`count\` — reporting them the wrong way round, or dropping one, is a halt rather than a merge.${fixBoundsFacts}
+Report what it printed under \`deviations\`: \`commandSucceeded\` true only when the command exited 0 AND printed parseable JSON, and the JSON's \`ticket\`, \`count\` and \`open\` fields exactly as printed. A \`count\` of 0 is a real answer. When the command exits nonzero — it refuses a status log it cannot read from that ref, in those words — report \`commandSucceeded\` false with its exit code and the first lines of stderr in \`failure\`, and report it that way rather than as the step's outcome: the step ran, and the driver reads this failure here. **Never report a failure as a count of 0**: an unreadable status log is not "no deviations", and that is the one direction this report can lie in. Never recompute the numbers, never leave either of them out, and never fill in a figure you saw earlier in this run. The two are checked against each other: \`open\` counts the subset of \`count\` that no closing line closed, so it can never exceed \`count\` — reporting them the wrong way round, or dropping one, is a halt rather than a merge.
+
+FACT 5 — how many fidelity comparisons ${id}'s own entries record in the status log the branch actually carries:
+
+\`\`\`bash
+${TICKETS} compared ${id} --log-from origin/${branch} --json
+\`\`\`
+
+A third command, with its own subcommand and its own field: it counts the \`**Compared:**\` tables a \`COMPARE:\` criterion obliges. Do not answer it from FACT 3's or FACT 4's JSON — none of the three shares a field name with the others. Report \`commandSucceeded\` true only when it exited 0 AND printed parseable JSON, the JSON's \`ticket\` verbatim, and its \`compared\` field as \`count\`. A \`count\` of 0 is a real answer. When the command exits nonzero — it refuses a status log it cannot read from that ref, in those words — report \`commandSucceeded\` false with the exit code and the first lines of stderr in \`failure\`, and **never as a count of 0**: an unreadable log is not "no comparison", and that is the one direction this report can lie in. Never recompute the number and never fill in one you saw earlier in this run.${fixBoundsFacts}
 
 Report outcome "resolved" once every command above has run, whatever it printed. "command-failed" is for a command that failed for some other reason (the fetch could not reach the remote, \`gh\` is not authenticated) — never for a count of 0 or an empty listing, which are answers.
 
@@ -2031,6 +2081,27 @@ ${NO_MAIN} You are read-only here in any case: the two fetches update remote-tra
     // refused together, and neither reaches the record alone: a run record
     // showing a count beside a figure from a refused command is what the
     // retro would later mine.
+    // FACT 5, judged the same way, and for the same reason one layer along.
+    // The comparison gate needs two facts read at two steps: how many COMPARE
+    // criteria the SIGNED-OFF section carries (the acceptance step's ledger,
+    // `check --from origin/<epic branch>`) and how many `**Compared:**` tables
+    // the PUSHED entry records (this step). They meet here, before any agent
+    // that could merge exists. A ticket asked for a comparison that recorded
+    // none merges a criterion nobody performed — which is the founding failure
+    // of this whole mechanism, arriving one door further along; and a fact the
+    // gate cannot read is refused rather than taken as 0, because 0 is exactly
+    // the value that would skip the gate.
+    const cmp = resolved && resolved.compared && typeof resolved.compared === 'object' ? resolved.compared : null
+    const cmpTicketOk = cmp && typeof cmp.ticket === 'string' && cmp.ticket.trim().toUpperCase() === id
+    const comparedCount = cmp && cmp.commandSucceeded === true && cmpTicketOk && Number.isInteger(cmp.count) && cmp.count >= 0 ? cmp.count : null
+    record.comparedRecorded = comparedCount
+    const comparedProblem = !cmp
+      ? 'the resolve step reported no `compared` fact at all'
+      : cmp.commandSucceeded !== true
+        ? `the \`compared ${id} --log-from origin/${branch} --json\` command did not succeed:${line(cmp.failure) ? ` ${fence(line(cmp.failure))}` : ' (no failure quoted)'}`
+        : !cmpTicketOk
+          ? `the compared report names ticket ${fence(line(String(cmp.ticket ?? '(nothing)')))} rather than ${id} — a table counted off another ticket's entries answers a question this gate did not ask`
+          : `the compared report's \`count\` is not a count: ${fence(line(JSON.stringify(cmp.count ?? null)))}`
     const dev = resolved && resolved.deviations && typeof resolved.deviations === 'object' ? resolved.deviations : null
     const devTicketOk = dev && typeof dev.ticket === 'string' && dev.ticket.trim().toUpperCase() === id
     const devRead = dev && dev.commandSucceeded === true && devTicketOk
@@ -2083,6 +2154,18 @@ ${NO_MAIN} You are read-only here in any case: the two fetches update remote-tra
             ? ` (${deviationCount - deviationOpen} of them already carrying a closing line, which this gate does not honour: only a human closes a deviation, and no human was present in this run)`
             : ''
         }. A departure is a decision only the person who owns the outcome can make, and one an agent fixed is recorded as fixed and still halts — the halt is the mechanism working. Nothing merged; the branch stays pushed with its review and its addendum on the record. Read them with \`${TICKETS} deviations ${id} --log-from origin/${branch}\`, then finish this one ticket by hand — the run skill's § "Resuming after a halt" carries the procedure.`,
+      )
+    } else if (comparedCount === null) {
+      stop(
+        STOP.acceptanceCheck,
+        `${comparedProblem}. A comparison fact the gate cannot read is never "none owed": ${id}'s signed-off section carries ${
+          record.acceptanceCompares === null ? 'an unknown number of' : record.acceptanceCompares
+        } COMPARE criterion(s), and reading an unreadable count as 0 would skip this gate exactly when it is needed. Re-run \`${TICKETS} compared ${id} --log-from origin/${branch} --json\` by hand to see what the branch records.${quoted}`,
+      )
+    } else if (record.acceptanceCompares > 0 && comparedCount === 0) {
+      stop(
+        STOP.acceptanceCheck,
+        `${id}'s signed-off section carries ${record.acceptanceCompares} \`COMPARE\` criterion(s) and its pushed status entry on \`origin/${branch}\` records no \`**Compared:**\` table. This script never runs a comparison — it has no browser — so the table IS the evidence, and a criterion whose evidence nobody produced is a criterion nobody performed. Nothing merged; the branch stays pushed with its review and its addendum on the record. Run the differ against the ticket's design source, append the \`**Compared:**\` field in a dated addendum, push, and finish this one ticket by hand — the run skill's § "Resuming after a halt" carries the procedure; where no browser exists, the recovery is a human accepting it in writing (\`**Compared:** owed — <who accepted it, when, and why it could not run>\`), which this gate then reads as present and a reader reads as not done.`,
       )
     } else if (boundsGated) {
       // The fix-bounds gate — what stands in for the re-review below the

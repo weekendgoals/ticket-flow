@@ -549,7 +549,22 @@ log holds every one:
 
 ```bash
 node "${CLAUDE_PLUGIN_ROOT}/scripts/tickets.mjs" deviations $ARGUMENTS
+node "${CLAUDE_PLUGIN_ROOT}/scripts/tickets.mjs" compared $ARGUMENTS
 ```
+
+The second counts the `**Compared:**` tables this ticket's own entries
+record. **A ticket that carries a `COMPARE:` criterion and records no
+comparison is named as such in the summary and in the pull request body** —
+in those words, so the human reading either can see that a criterion was
+asked for and its evidence was not produced. The comparison is the one
+criterion no command runs (there is no browser in the board script), so the
+table is the only evidence there is, and a missing one is not something a
+reader can infer from a green check ledger. Two recoveries, both leaving a
+record: run the differ now and append the `**Compared:**` field in a dated
+addendum; or, where nothing in this session can render the design, append
+`**Compared:** owed — <who accepted it, when, and why it could not run>` on
+the human's word — which a reader reads as not done and every gate reads as
+present.
 
 Print, concisely: **Built** (what exists, and the files), **Verified**
 (commands, counts, anything that could not run), **Review** (effort, findings
@@ -624,6 +639,26 @@ reads it.
   naming it, merge nothing. If the reviewer agent could not be spawned, the
   fallback is a general agent given the reviewer definition plus the review
   skill; if that fails too, BLOCKED entry, no merge.
+- **A ticket that owes a comparison and records none is not integrated.**
+  Read it off the same ref, for the same reason:
+
+  ```bash
+  node "${CLAUDE_PLUGIN_ROOT}/scripts/tickets.mjs" compared $ARGUMENTS --log-from origin/<branch> --json
+  ```
+
+  A ticket whose section carries a `COMPARE:` criterion while `compared` reads
+  0 **records no comparison**, and this step stops before the merge commands
+  below. Nothing else about the table is judged here: whether it is *right* is
+  the reviewer's, who can re-run the differ; whether it exists is the only
+  thing a merge can hold, because the comparison is the one criterion no
+  command runs. The recoveries are step 9's, and both leave a record — run the
+  differ and append the field in a dated addendum, committed and pushed to the
+  branch this step merges; or, with no browser anywhere in reach,
+  `**Compared:** owed — <who accepted it, when, and why it could not run>` on
+  the human's word. A nonzero exit or no payload is a stop too, and never an
+  empty answer: the script refuses a log it cannot read in those words ("An
+  unreadable status log is not 'no comparison'"), and a reader that took the
+  failure for a zero would merge the one ticket this gate exists to hold.
 - **A ticket with an unclosed deviation is not integrated.** Read the
   departures off the ref this step is about to merge, never off the checkout:
 

@@ -281,13 +281,18 @@ fix the tests so one pins the change, or name it as unfixed in the body.
 
 ```bash
 node "${CLAUDE_PLUGIN_ROOT}/scripts/tickets.mjs" deviations Q-<n>
+node "${CLAUDE_PLUGIN_ROOT}/scripts/tickets.mjs" compared Q-<n>
 git push -u origin q-<n>
 gh pr create --base <default-branch> --title "Q-<n>: <title>" --body "<body>"
 ```
 
 The body carries: what changed and why, the acceptance criteria with counts,
 the review outcome (or "prose-only; no separate review"), and any deploy
-precondition. And **a deviation is named in the pull request body** — the same
+precondition. **A ticket carrying a `COMPARE:` criterion whose entry records
+no comparison is named in the body in those words**, with the `**Compared:**`
+table when it has one: the comparison is the criterion no command runs, so
+the table is its only evidence, and this lane has no agent merge to refuse —
+the person reading the pull request is the gate. And **a deviation is named in the pull request body** — the same
 words the ticket lane's step 9 uses, because it is one rule at both doors:
 under its own `## Deviations` heading, every departure the command above
 reported, closed or not, each by **the reference the command printed** — a

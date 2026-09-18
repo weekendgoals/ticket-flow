@@ -442,6 +442,27 @@ reads the `Ticket budget:` line — for the same reason: the party under review
 must not be able to edit the terms it is judged by. Prose and *demonstrate:* criteria
 remain first-class; CHECK is for the criteria a command can decide outright.
 
+**A fidelity criterion is the one the code never runs.** `COMPARE: <design
+source path> @ <width>[, <width>]`, indented under its criterion bullet like
+`CHECK:`, with an optional `LANDMARKS: <name>[, <name>]` beneath it (absent =
+every landmark in the map = the whole page). Comparing an artboard with a
+rendered page needs a browser and the plugin owns none, so `check <ID>` lists
+comparisons in their own `compares` list, marked manual, **in neither `total`
+nor `passed`** — and what the code gates instead is the **presence** of the
+`**Compared:**` table in the ticket's status entry, counted by
+`tickets.mjs compared <ID> [--log-from <ref>]`. A ticket whose signed-off
+section carries a `COMPARE` and whose pushed entry records none halts an
+unattended run on the acceptance-check condition and holds an attended
+release merge; the recovery is to run the differ and append the table in a
+dated addendum, or — where nothing can render the design — a human's written
+`**Compared:** owed — <who accepted it, when, and why>`, which a gate reads
+as present and a reader reads as not done. What the table *says* is the
+reviewer's to check, who can re-run the differ; what a merge can hold is
+whether it exists. A malformed `COMPARE` — no width, a path the epic's
+`Design sources:` line does not list, a `LANDMARKS:` with no `COMPARE:` above
+it — fails the gate like a malformed CHECK, and `doctor` flags the
+near-misses.
+
 **Spend is derived too.** `tickets.mjs spend [epic]` compiles the recorded
 token ledger — per ticket, per role (worker, reviewer, re-review,
 disposition, shell proxies) and per epic — from the three places the epic's
