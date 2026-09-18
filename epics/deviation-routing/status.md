@@ -805,3 +805,12 @@ replacing it with `true &&` goes 130/133 red. Acceptable as it stands. Both
 reverted-fix results were reproduced in copies, and every count matches CLAUDE.md
 in every place it appears.
 Re-review tokens: 228,274
+
+### DEV-3 deviation closure — 2026-09-18
+
+**Deviations closed:** DEV-3 — accepted: "its ok to use 18 lines"; Vadim; 2026-09-18
+
+The decision is Vadim's, given in the supervising session in two messages
+quoted whole: "Accept it." and "its ok to use 18 lines". The label, the
+reference, his name and the date are the frame step 6 prescribes, set around
+his words by the supervisor; no word of the decision is the supervisor's.
