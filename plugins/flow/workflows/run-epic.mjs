@@ -202,6 +202,12 @@ const STOP = {
   fixBounds: 'a review-fix diff the run could not measure — no usable fix-diff facts from the resolve step, or a fix whose changed lines cannot be counted; an unmeasurable fix is never merged',
   acceptanceCheck:
     'a failed acceptance CHECK — a machine-runnable criterion whose command did not produce its expected result on the pushed branch, a criterion whose evidence is a skip, a CHECK line too malformed to run at all, or an acceptance report the gate could not read',
+  // The sentence is pinned whole by `check-invariants.mjs` and carried word
+  // for word by the run skill's step 5: "closed or not" is the load-bearing
+  // half, and a copy that kept only the opening would describe a gate that
+  // honours a closing line this one deliberately ignores.
+  deviation:
+    "a recorded deviation — the ticket's pushed status entry carries a `**Deviation:**` line, closed or not, because nobody present in an unattended run could have closed it; the run asks rather than records",
   ticketBudget: "a ticket's pass exceeding the epic's per-ticket token budget",
 }
 
@@ -614,9 +620,17 @@ const DISPOSITION_SCHEMA = {
 // `check --from origin/epic/<name>` for exactly that reason. A human's raise,
 // committed and pushed to the epic branch while the ticket runs, is on that
 // ref before this step reads it — which is the case the re-read exists for.
+// FACT 4, the departures the pushed entry records, rides this step too — and
+// is required here for the same reason the ceiling is: a fact the gate needs
+// is not an optional extra. It is read through the deviations subcommand with
+// `--log-from`, never through `find --from`: `--from` means "the epic's
+// declarations as signed off" and is already used here for the budget, so one
+// low-effort proxy would otherwise hold two JSONs with the same field names,
+// and swapped, the deviation gate reads a budget document as "no deviations".
+// The two payloads share no field name, and this schema keeps them apart.
 const RESOLVE_SCHEMA = {
   type: 'object',
-  required: ['outcome', 'ticketBudget'],
+  required: ['outcome', 'ticketBudget', 'deviations'],
   properties: {
     outcome: {
       type: 'string',
@@ -638,19 +652,44 @@ const RESOLVE_SCHEMA = {
       description:
         'what `git rev-parse origin/<the ticket branch>` printed, 7-40 hex characters, verbatim — never reconstructed. The driver merges exactly this commit and nothing else.',
     },
+    deviations: {
+      type: 'object',
+      required: ['commandSucceeded', 'ticket', 'count', 'open'],
+      description:
+        "FACT 4: what the `deviations <ID> --log-from origin/<the ticket branch> --json` command printed, verbatim. Its own command and its own field — nothing here comes from `find`.",
+      properties: {
+        commandSucceeded: {
+          type: 'boolean',
+          description:
+            'true ONLY if that command exited 0 AND printed parseable JSON. It exits nonzero when it cannot read the status log from the ref — report false and quote the error in `failure`, never a count of 0: an unreadable log is not "no deviations".',
+        },
+        ticket: { type: 'string', description: "the JSON's `ticket` field, verbatim — the driver checks it names the ticket it asked about, and reads nothing from a report about another one" },
+        count: {
+          type: 'integer',
+          description:
+            "the JSON's `count` field, verbatim: every `**Deviation:**` line under this ticket's own entries, closed or not. 0 is a real answer. Never recompute it, never leave it out, and never fill in a number from earlier in this run.",
+        },
+        open: {
+          type: 'integer',
+          description:
+            "the JSON's `open` field, verbatim: how many of those departures no closing line closed. The gate counts `count`, never this — but it CHECKS this against `count` and halts when the two disagree, so report it as printed and never leave it out. The command prints it every time, and transposing the two numbers is the mistake this cross-check exists to catch.",
+        },
+        failure: { type: 'string', description: 'when commandSucceeded is false: the exit code and the first lines of stderr, verbatim, credentials masked' },
+      },
+    },
     reviewedFiles: {
       type: 'array',
       items: { type: 'string' },
-      description: 'FACT 4 only: the file paths the first diff command printed, verbatim, one entry per line. Omit when the prompt has no FACT 4.',
+      description: 'FACT 5 only: the file paths the first diff command printed, verbatim, one entry per line. Omit when the prompt has no FACT 5.',
     },
     fixFiles: {
       type: 'array',
       items: { type: 'string' },
-      description: 'FACT 4 only: the file paths the second (numstat) diff command printed, verbatim. [] when it printed nothing.',
+      description: 'FACT 5 only: the file paths the second (numstat) diff command printed, verbatim. [] when it printed nothing.',
     },
     fixLines: {
       type: 'integer',
-      description: 'FACT 4 only: the sum of every added and deleted count the numstat printed — 0 when it printed nothing. A "-" count (binary file) is reported as -1 here, never guessed at.',
+      description: 'FACT 5 only: the sum of every added and deleted count the numstat printed — 0 when it printed nothing. A "-" count (binary file) is reported as -1 here, never guessed at.',
     },
     detail: { type: 'string', description: 'first lines of any error output, verbatim, credentials masked' },
   },
@@ -1075,6 +1114,8 @@ DO NOT run step 7 (review), step 8 (fix and addendum) or step 10 (the gate and t
 
 REPORT THE REVIEW TIER for your own diff, from the ticket skill's step 7 table: \`prose\` (documentation and code comments only — nothing any runtime, parser, test or agent reads), \`consequence\` (the risk list: authentication or authorization boundaries, secrets, crypto, network exposure, migrations, anything that deletes or rewrites data, payments or billing, anything that can fail open), or \`normal\` (everything else, including configuration, user-facing strings, CLI output and agent/skill instructions). Give one line of why. **When in doubt, the higher tier** — an unrecognised or missing tier is priced as \`consequence\`. The driver also reads your branch's changed file list itself and floors the tier in code, so your report can raise the review's price but never lower it — you are under review, and the reviewed party does not price its own judge.
 
+A DEPARTURE FROM WHAT YOUR DOCUMENTS SHOW goes on its own \`**Deviation:**\` line in the status entry, one line per departure, as the skill's step 6 says. **The \`**Deviations closed:**\` line that closes one is never yours to write** — not for any departure, including one you fixed yourself in this ticket; record the fix as a deviation like any other. The driver halts before the merge on every \`**Deviation:**\` line your entry carries, closed or not, and a human decides what happens to it. That halt is the mechanism working, not something to avoid by leaving a departure unrecorded.
+
 Your worker label for this run is \`${workerLabel}\` — record it in the status entry's Mode line (\`autonomous — driver-spawned worker ${workerLabel}\`), because the run record names the same label and those two lines together are what makes "the driver never implements" auditable after the fact. Report no token figure anywhere: you cannot see your own counter, and the session observes every agent's spend from the run's own transcripts after the run — your status entry's Tokens line reads \`recorded in the run record\`.
 
 The repository is at ${repoRoot}; the epic is \`${epic}\` and its branch is \`${epicBranch}\`. Everything else you need is in the epic's documents — start at \`${TICKETS} find ${id} --json\`, as the skill's step 1 says. Do NOT start another ticket, do not refresh the epic branch, and do not report on any ticket but this one.
@@ -1145,6 +1186,13 @@ Report honestly: \`branch-pushed\` ONLY if you saw the push of \`${branch}\` suc
     resolveOutcome: 'not reached',
     mergeOutcome: 'not reached',
     addendumMatches: null,
+    // What the pushed entry's own departures came to at the resolve step:
+    // `deviationsRecorded` is what the gate counts, `deviationsOpen` is the
+    // log's own account of how many are still open, recorded beside it and
+    // read by nothing — a run record that showed only the open ones would
+    // hide exactly the self-closure this gate exists to distrust.
+    deviationsRecorded: null,
+    deviationsOpen: null,
     headSha: '',
     built: worker && worker.built ? fence(worker.built) : '',
     verification: worker && worker.verification ? fence(worker.verification) : '',
@@ -1514,6 +1562,8 @@ Nits: fix one only if it is trivial and in scope; otherwise record it in the add
 
 **Pre-existing findings**: record EVERY one in the addendum, each with a **named owner** — an existing ticket that should inherit it, or \`retro\` when none fits (the retro skill mines these addenda, so \`retro\` is a real destination, not a shrug). Do not fix them here: they are outside this ticket's scope, and a defect that is neither fixed nor recorded is a defect the project has forgotten. Set \`preExistingRecorded\` to true only when every one of them is written down that way.
 
+**A deviation this ticket recorded is not yours to close.** If one of your fixes builds the thing a \`**Deviation:**\` line says was not built, say so in the addendum — what you built and in which commit — and stop there: **never write a \`**Deviations closed:**\` line**, for that departure or any other. Only a human writes one, and nobody present in this run is one. The driver halts before the merge on every departure the entry records, closed or not, and a departure an agent already fixed halts exactly the same way — a closure the party under review could have written clears nothing, which is the whole reason the halt is worth stopping at. The halt is the mechanism working.
+
 **An Important finding you cannot fix**: legitimate not-fixed reasons exist — out of scope and owned by a later ticket, the fix riskier than the bug, the premise wrong. But in an unattended run, accepting an unfixed Important finding is NOT yours to decide, whatever the reason. Report it in \`notFixed\`, report outcome "important-unfixed", still write and commit the addendum saying exactly that, and prepare nothing for merge. The driver halts there and a human decides — that is the mechanism working.
 
 ${PROMPT_RULE}
@@ -1880,7 +1930,7 @@ ${NO_MAIN} The checkout and fast-forward only move the local branch to where the
   const fixBoundsFacts = boundsGated
     ? `
 
-FACT 4 — the review-fix diff, anchored on the reviewed head \`${anchorHead}\`:
+FACT 5 — the review-fix diff, anchored on the reviewed head \`${anchorHead}\`:
 
 \`\`\`bash
 git diff --name-only origin/${epicBranch} ${anchorHead} -- ${boundsPathspecs}
@@ -1890,7 +1940,7 @@ git diff --numstat ${anchorHead} origin/${branch} -- ${boundsPathspecs}
 The first command lists the files the review saw — report its paths, verbatim, as \`reviewedFiles\`. The second lists what the fix commits changed after the review (the status-log addendum${fixBoundsExclude.length ? " and the epic's excluded fan-out globs are" : ' is'} excluded by the pathspec) — report its paths as \`fixFiles\` and the sum of every added and deleted count it printed as \`fixLines\`: 0 when it prints nothing, and -1 if any count prints "-" (a binary file) — both are answers, not failures. You judge none of it; the driver checks the bounds in code.`
     : ''
   const resolved = await agent(
-    `In the repository at ${repoRoot}, report ${boundsGated ? 'four' : 'three'} facts about one ticket's pushed branch. **You change nothing**: no merge, no push, no edit. You do not judge what you find — report what the commands printed and let the driver decide.
+    `In the repository at ${repoRoot}, report ${boundsGated ? 'five' : 'four'} facts about one ticket's pushed branch. **You change nothing**: no merge, no push, no edit. You do not judge what you find — report what the commands printed and let the driver decide.
 
 FACT 1 — how many dated review addenda sit under **${id}'s own** entries in the branch as pushed:
 
@@ -1920,7 +1970,17 @@ ${TICKETS} find ${id} --json --from origin/${epicBranch}
 
 Run the fetch first and do not skip it: \`--from\` reads the LOCAL remote-tracking ref, which nothing has updated since before this ticket's worker started — without the fetch the ceiling would be the one that stood hours ago, which is exactly the staleness this read exists to remove. A fetch writes refs and nothing else, so this step is still read-only in every sense that matters: no merge, no checkout, no file changed.
 
-\`--from\` is what makes this fact trustworthy: it reads the epic's declarations from that ref, not from the working tree, so the branch under review cannot raise the ceiling it is judged by. Report the \`ticketBudget\` field exactly as the JSON prints it — the number when it is a number, \`null\` when it is null. \`null\` is an answer (most epics declare no budget), not a failure. Never convert it, never round it, never substitute a number you saw earlier in this run.${fixBoundsFacts}
+\`--from\` is what makes this fact trustworthy: it reads the epic's declarations from that ref, not from the working tree, so the branch under review cannot raise the ceiling it is judged by. Report the \`ticketBudget\` field exactly as the JSON prints it — the number when it is a number, \`null\` when it is null. \`null\` is an answer (most epics declare no budget), not a failure. Never convert it, never round it, never substitute a number you saw earlier in this run.
+
+FACT 4 — the departures ${id}'s own entries record in the status log the branch actually carries:
+
+\`\`\`bash
+${TICKETS} deviations ${id} --log-from origin/${branch} --json
+\`\`\`
+
+A different command from FACT 3's, with a different flag, and its JSON shares no field name with FACT 3's: \`--from\` reads the epic's DECLARATIONS as signed off, \`--log-from\` reads a STATUS LOG off a pushed branch. Do not mix the two reports, and do not answer this fact from that one. FACT 1 already fetched \`${branch}\`, so the ref is current; \`--log-from\` reads the log at exactly the commit this run would merge, never the checkout, where a line nobody pushed would answer for a commit that does not carry it.
+
+Report what it printed under \`deviations\`: \`commandSucceeded\` true only when the command exited 0 AND printed parseable JSON, and the JSON's \`ticket\`, \`count\` and \`open\` fields exactly as printed. A \`count\` of 0 is a real answer. When the command exits nonzero — it refuses a status log it cannot read from that ref, in those words — report \`commandSucceeded\` false with its exit code and the first lines of stderr in \`failure\`, and report it that way rather than as the step's outcome: the step ran, and the driver reads this failure here. **Never report a failure as a count of 0**: an unreadable status log is not "no deviations", and that is the one direction this report can lie in. Never recompute the numbers, never leave either of them out, and never fill in a figure you saw earlier in this run. The two are checked against each other: \`open\` counts the subset of \`count\` that no closing line closed, so it can never exceed \`count\` — reporting them the wrong way round, or dropping one, is a halt rather than a merge.${fixBoundsFacts}
 
 Report outcome "resolved" once every command above has run, whatever it printed. "command-failed" is for a command that failed for some other reason (the fetch could not reach the remote, \`gh\` is not authenticated) — never for a count of 0 or an empty listing, which are answers.
 
@@ -1944,6 +2004,54 @@ ${NO_MAIN} You are read-only here in any case: the two fetches update remote-tra
     const stop = (stopCondition, detail) => {
       halted = { ticket: id, stopCondition, where, detail }
     }
+    // FACT 4, judged like every other resolve fact: refused when it is
+    // missing, the wrong type, negative, or about another ticket, because a
+    // gate that cannot read its own evidence fails closed — reading an
+    // unreadable count as "none" would merge exactly the ticket this gate
+    // exists to hold.
+    //
+    // The gate counts `count`, NOT `open`: it counts every `**Deviation:**`
+    // line the pushed entry records, closed or not. Only a human closes a
+    // deviation, and in an unattended run the only parties who could have
+    // written a closing line on that branch are the worker and the
+    // disposition agent — the party under review. Honouring `open` would let
+    // it clear its own gate, and "accepted" versus "fixed in <sha>" is prose
+    // no parser can police. `open` decides nothing; the attended doors, where
+    // a human is present to have written the line, are the ones that honour
+    // it.
+    //
+    // But `open` is still EVIDENCE, and it is checked as such. The subcommand
+    // builds `open` as the subset of what `count` counts that no closing line
+    // closed, so `open <= count` holds in every report the real command can
+    // print. A report where it does not — or where `open` is absent or is not
+    // a count, which the command always prints — is a report contradicting
+    // itself, and the likeliest shape of it is the two adjacent integers
+    // transposed: `count 2, open 0` arriving as `count 0, open 2` merges a
+    // ticket whose own fact says two departures exist. So both numbers are
+    // refused together, and neither reaches the record alone: a run record
+    // showing a count beside a figure from a refused command is what the
+    // retro would later mine.
+    const dev = resolved && resolved.deviations && typeof resolved.deviations === 'object' ? resolved.deviations : null
+    const devTicketOk = dev && typeof dev.ticket === 'string' && dev.ticket.trim().toUpperCase() === id
+    const devRead = dev && dev.commandSucceeded === true && devTicketOk
+    const devCount = devRead && Number.isInteger(dev.count) && dev.count >= 0 ? dev.count : null
+    const devOpen = devRead && Number.isInteger(dev.open) && dev.open >= 0 ? dev.open : null
+    const devAgrees = devCount !== null && devOpen !== null && devOpen <= devCount
+    const deviationCount = devAgrees ? devCount : null
+    const deviationOpen = devAgrees ? devOpen : null
+    record.deviationsRecorded = deviationCount
+    record.deviationsOpen = deviationOpen
+    const deviationProblem = !dev
+      ? 'the resolve step reported no `deviations` fact at all'
+      : dev.commandSucceeded !== true
+        ? `the \`deviations ${id} --log-from origin/${branch} --json\` command did not succeed:${line(dev.failure) ? ` ${fence(line(dev.failure))}` : ' (no failure quoted)'}`
+        : !devTicketOk
+          ? `the deviations report names ticket ${fence(line(String(dev.ticket ?? '(nothing)')))} rather than ${id} — a departure count read off another ticket's entries answers a question this gate did not ask`
+          : devCount === null
+            ? `the deviations report's \`count\` is not a count: ${fence(line(JSON.stringify(dev.count ?? null)))}`
+            : devOpen === null
+              ? `the deviations report's \`open\` is not a count: ${fence(line(JSON.stringify(dev.open ?? null)))} — the command prints it beside \`count\` every time, and a gate holding one of the two numbers cannot tell a dropped field from a zero`
+              : `the deviations report contradicts itself: \`open\` ${devOpen} against \`count\` ${devCount}. \`open\` is the subset of \`count\` no closing line closed, so it can never exceed it — and the likeliest shape of this is the two adjacent numbers transposed, which would merge a ticket whose own fact says ${devOpen} departure(s) exist`
     if (!resolved) {
       stop(STOP.nonzeroExit, `the resolve agent returned no report — nothing is known about ${id}'s pull request, and nothing is merged on a guess`)
     } else if (resolved.outcome === 'permission-prompt') {
@@ -1961,6 +2069,20 @@ ${NO_MAIN} You are read-only here in any case: the two fetches update remote-tra
         `no dated \`Addendum — review —\` line under ${id}'s own entries in \`epics/${epic}/status.md\` on \`origin/${branch}\` (count ${
           record.addendumMatches === null ? 'unreported' : record.addendumMatches === -1 ? 'unreadable' : record.addendumMatches
         }) — the disposition said it committed the addendum, the branch says otherwise, and the branch is the evidence. An unreviewed-on-the-record ticket is never merged.${quoted}`,
+      )
+    } else if (deviationCount === null) {
+      stop(
+        STOP.contradiction,
+        `${deviationProblem}. A deviations fact the gate cannot read is never "none recorded": the count IS this gate, so a report it cannot read merges nothing. Re-run \`${TICKETS} deviations ${id} --log-from origin/${branch} --json\` by hand to see what the branch records.${quoted}`,
+      )
+    } else if (deviationCount > 0) {
+      stop(
+        STOP.deviation,
+        `${id}'s pushed status entry on \`origin/${branch}\` records ${deviationCount} \`**Deviation:**\` line(s)${
+          deviationOpen !== null && deviationOpen < deviationCount
+            ? ` (${deviationCount - deviationOpen} of them already carrying a closing line, which this gate does not honour: only a human closes a deviation, and no human was present in this run)`
+            : ''
+        }. A departure is a decision only the person who owns the outcome can make, and one an agent fixed is recorded as fixed and still halts — the halt is the mechanism working. Nothing merged; the branch stays pushed with its review and its addendum on the record. Read them with \`${TICKETS} deviations ${id} --log-from origin/${branch}\`, then finish this one ticket by hand — the run skill's § "Resuming after a halt" carries the procedure.`,
       )
     } else if (boundsGated) {
       // The fix-bounds gate — what stands in for the re-review below the

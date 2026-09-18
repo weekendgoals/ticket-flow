@@ -140,6 +140,90 @@ test('a dropped doctrine phrase fails', () => {
   assert.match(r.out, /doctrine phrase missing/)
 })
 
+test('a lane that renames the deviation opener fails', () => {
+  // `**Deviation:**` is the exact label the parser reads. A lane that teaches
+  // any other word produces entries that parse as nothing — and doctor's
+  // near-miss scan covers a deviation-shaped slip like `**Deviations:**`, not
+  // a rename to an unrelated label, so without this phrase nothing catches it:
+  // every suite stays green while the epic's whole mechanism goes silent.
+  const root = copyRepo()
+  mutate(root, 'plugins/flow/skills/quick/SKILL.md', '**Deviation:**', '**Departure:**')
+  const r = run(root)
+  assert.equal(r.status, 1, r.out)
+  assert.match(r.out, /doctrine phrase missing/)
+})
+
+test('a lane that stops teaching the deviation closing line fails', () => {
+  // The label is one rule in four documents: both lanes that write a status
+  // entry teach it, the script parses it, README accounts for it. A lane that
+  // drops it sends the next departure back into Decisions prose, which no
+  // command reads — the failure the field exists to end.
+  const root = copyRepo()
+  mutate(root, 'plugins/flow/skills/quick/SKILL.md', '**Deviations closed:**', '**Deviation settled:**')
+  const r = run(root)
+  assert.equal(r.status, 1, r.out)
+  assert.match(r.out, /doctrine phrase missing/)
+})
+
+test('any of the three documents dropping "cleared by the repair it names" fails', () => {
+  // The parser emits the notes, the ticket lane teaches the lines that earn
+  // them, and README documents both ledgers. A document that keeps the old
+  // story — that naming any item of the entry clears a faulty reference's note
+  // — sends a human to a repair that leaves the warning standing, and an
+  // append-only log cannot take the wrong line back.
+  // Every occurrence in the mutated file goes: a document that keeps one copy
+  // of the phrase still carries the rule, so dropping one sentence of several
+  // is not the drift this entry is for.
+  for (const file of ['plugins/flow/skills/ticket/SKILL.md', 'README.md', 'plugins/flow/scripts/tickets.mjs']) {
+    const root = copyRepo()
+    mutate(root, file, 'cleared by the repair it names', 'reported until someone reads it')
+    const r = run(root)
+    assert.equal(r.status, 1, `${file}: ${r.out}`)
+    assert.match(r.out, /doctrine phrase missing/)
+  }
+})
+
+test("either document losing step 10's second refusal fails", () => {
+  // The ticket skill refuses an unclosed deviation at the integration merge;
+  // the run skill's "Resuming after a halt" tells the session finishing a
+  // halted ticket what step 10 will refuse. While that inventory named only
+  // the unfixed Important finding it read as permission to route around the
+  // other refusal — a document that is correct alone and wrong beside its
+  // pair, which is the drift this ledger exists to catch.
+  const ticket = copyRepo()
+  mutate(ticket, 'plugins/flow/skills/ticket/SKILL.md', 'unclosed deviation', 'open departure')
+  const t = run(ticket)
+  assert.equal(t.status, 1, t.out)
+  assert.match(t.out, /ticket\/SKILL\.md.*second refusal/s)
+
+  const runSkill = copyRepo()
+  mutate(runSkill, 'plugins/flow/skills/run/SKILL.md', 'unclosed deviation', 'open departure')
+  const r = run(runSkill)
+  assert.equal(r.status, 1, r.out)
+  assert.match(r.out, /run\/SKILL\.md.*second refusal/s)
+})
+
+test('either lane that stops naming a deviation in the pull request body fails', () => {
+  // The attended doors are one rule in two lanes: the ticket lane's step 9
+  // writes the body for an incremental pull request, the quick lane's step 7
+  // for its own — and in the quick lane that body is a departure's only door,
+  // since nothing there merges for an agent to refuse. A lane that drops the
+  // sentence still parses and still logs; it just stops telling the person who
+  // merges, which is the failure the whole line exists to end. Flipped at both
+  // doors, because a phrase held at one of two is held nowhere.
+  const quick = copyRepo()
+  mutate(quick, 'plugins/flow/skills/quick/SKILL.md', 'a deviation is named in the pull request body', 'departures are listed somewhere')
+  const q = run(quick)
+  assert.equal(q.status, 1, q.out)
+  assert.match(q.out, /quick\/SKILL\.md.*attended doors/s)
+
+  const ticket = copyRepo()
+  mutate(ticket, 'plugins/flow/skills/ticket/SKILL.md', 'a deviation is named in the pull request body', 'departures are listed somewhere')
+  const t = run(ticket)
+  assert.equal(t.status, 1, t.out)
+  assert.match(t.out, /ticket\/SKILL\.md.*attended doors/s)
+})
+
 test('the workflow script losing the driver handshake fails', () => {
   const root = copyRepo()
   mutate(root, 'plugins/flow/workflows/run-epic.mjs', 'A driver spawned you', 'You were spawned')
@@ -196,6 +280,43 @@ test('the run skill drifting from the fix-bounds stop condition fails', () => {
   const t = run(tail)
   assert.equal(t.status, 1, t.out)
   assert.match(t.out, /run\/SKILL\.md.*fix-bounds stop condition/s)
+})
+
+test('the run skill losing the merge-conflict stop condition fails', () => {
+  // Deleted once for real: an edit adding a bullet beside it replaced it
+  // instead, while `STOP.mergeConflict` stayed live at three call sites — so
+  // a halt quoted a string the skill's list no longer carried.
+  const skill = copyRepo()
+  mutate(skill, 'plugins/flow/skills/run/SKILL.md', '- on **a merge conflict — refreshing the epic branch, or anywhere else,\n  including a ticket branch that will not merge into the epic branch**;\n', '')
+  const s = run(skill)
+  assert.equal(s.status, 1, s.out)
+  assert.match(s.out, /run\/SKILL\.md.*merge-conflict stop condition/s)
+})
+
+test('the workflow script losing the deviation stop condition fails', () => {
+  const root = copyRepo()
+  mutate(root, 'plugins/flow/workflows/run-epic.mjs', 'a recorded deviation — the ticket', 'a recorded departure — the ticket')
+  const r = run(root)
+  assert.equal(r.status, 1, r.out)
+  assert.match(r.out, /run-epic\.mjs.*deviation stop condition/s)
+})
+
+test('the run skill drifting from the deviation stop condition fails, including its "closed or not" clause', () => {
+  const root = copyRepo()
+  mutate(root, 'plugins/flow/skills/run/SKILL.md', 'the run asks rather than records', 'the run records rather than asks')
+  const r = run(root)
+  assert.equal(r.status, 1, r.out)
+  assert.match(r.out, /run\/SKILL\.md.*deviation stop condition/s)
+  // Pinned whole: "closed or not" is the clause that makes this gate differ
+  // from the attended one, and a copy that softened it would describe a gate
+  // honouring a closing line this one ignores — the fail-open the halt exists
+  // to prevent. The skill wraps the sentence, so the mutation target stops at
+  // the wrap; the checker matches across it because it normalises whitespace.
+  const clause = copyRepo()
+  mutate(clause, 'plugins/flow/skills/run/SKILL.md', '`**Deviation:**` line, closed or not, because nobody present in an', '`**Deviation:**` line no human has closed, because nobody present in an')
+  const c = run(clause)
+  assert.equal(c.status, 1, c.out)
+  assert.match(c.out, /run\/SKILL\.md.*deviation stop condition/s)
 })
 
 test('either document dropping the never-resume-by-id rule fails', () => {

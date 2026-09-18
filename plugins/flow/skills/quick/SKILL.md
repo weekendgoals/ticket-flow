@@ -157,12 +157,43 @@ required even when empty.
 
 The **entry** heading is parsed — match it exactly — then keep the body to
 the ticket skill's step 6 fields: **Built / Mode / Tokens / Verified /
-Decisions / Owed**, with `Mode:` = `quick — in-session (/flow:quick)` and
-Decisions recording only deviations, not narration:
+Decisions / Deviation (optional, one per departure) / Owed**, with `Mode:` =
+`quick — in-session (/flow:quick)` and Decisions recording judgment calls, not
+narration:
 
 ```markdown
 ### Q-<n> — <name> — <YYYY-MM-DD> — DONE
 ```
+
+**A departure gets its own `**Deviation:**` line**, one per departure, between
+Decisions and Owed — optional, omitted when there is none. What counts:
+anything the ticket's documents or its design showed that you did not build, or
+built differently; a judgment call the documents left open is not one and stays
+in Decisions. A deviation is **never owed work**: an owed item is work someone
+will do, a deviation is a decision someone must see. Inside Decisions prose it
+is read by no command, which is how a design's hero band once went unbuilt and
+shipped anyway. Several departures are several lines, and `deviations Q-<n>`
+numbers them `Q-<n>.1`, `Q-<n>.2` … in document order — that is how a human
+closes them one at a time, so write each to be read alone.
+
+```markdown
+**Deviation:** <what the documents or the design showed> → <what was built
+instead, and why>
+```
+
+**`**Deviations closed:**` is the human's line, never yours.** A dated line
+naming each deviation as **accepted** or as **fixed in `<sha>`**, with who
+decided and when, closing by its leading reference list the departures the named
+entries recorded above it in the file — the shape the ticket skill's step 6
+carries. **A bare closing line** — `**Deviations closed:** Q-<n>` — closes an
+entry's one departure; facing more than one open it closes **nothing** and says
+so, because accepted and fixed are decisions per departure and one wrongly
+closed is gone from every brief with nobody having decided it. Do not write
+one, even for a departure you fixed in this same ticket: a closing line the
+party that made the departure could have written clears nothing.
+`node "${CLAUDE_PLUGIN_ROOT}/scripts/tickets.mjs" deviations Q-<n>` reads every
+one this ticket recorded, closed or not, and reports any closing line that
+closed nothing.
 
 If this ticket discharges an owed item an earlier entry recorded, add
 `**Resolves owed:** <ID> — <how>` on its own line — that marker removes the
@@ -229,11 +260,29 @@ fix the tests so one pins the change, or name it as unfixed in the body.
 ## 7. Push, open the pull request, stop
 
 ```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/tickets.mjs" deviations Q-<n>
 git push -u origin q-<n>
 gh pr create --base <default-branch> --title "Q-<n>: <title>" --body "<body>"
 ```
 
 The body carries: what changed and why, the acceptance criteria with counts,
 the review outcome (or "prose-only; no separate review"), and any deploy
-precondition. Print the URL and stop — a human merges, and nothing runs
-after the merge.
+precondition. And **a deviation is named in the pull request body** — the same
+words the ticket lane's step 9 uses, because it is one rule at both doors:
+under its own `## Deviations` heading, every departure the command above
+reported, closed or not, each by **the reference the command printed** — a
+bare `Q-<n>` when the entry recorded one departure, `Q-<n>.<n>` when it
+recorded several, never a number invented for a lone one, which a closing line
+copying it could not close — with its text, a closed one **with its closing
+line**, and any `note:` line verbatim. A closed one is shown because only a
+human may write that line and no command can say who did; a note is shown
+because it means a closing line closed nothing — someone having tried to close
+a departure and failed, which a reader counting only the closed ones would
+never learn. Write the heading even when there is nothing to name,
+with "none recorded" under it: this lane has no agent merge to refuse, so the
+body is the only door a departure passes through — the person reading the pull
+request is the gate, and an absent heading reads to them as an omission rather
+than an answer. Say what departed and leave it there —
+whether it is acceptable is their call, and this skill never suggests an
+answer. Print the URL and stop — a human merges, and nothing runs after the
+merge.
