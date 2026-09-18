@@ -926,3 +926,12 @@ reason no longer rests on notes being unclearable; what holds it now is that
 gate on advice.
 
 **Owed:** Nothing.
+
+**Addendum — 2026-09-18 — changelog correction scope.** The entry above says
+the new CHANGELOG bullet supersedes half of one earlier bullet's reason. A
+sweep after the entry was committed found a second statement of the old rule in
+the same unreleased batch — the deviation-numbering bullet's "naming any item
+of that entry clears the note", true of the bare line's note only. Both are now
+named in the new bullet, which corrects them in place of editing them, for the
+reason the entry's Decision (4) gives. No behaviour changed; `check DEV-5`
+4/4, `check-invariants.mjs` exit 0 and `doctor` exit 0 after the edit.

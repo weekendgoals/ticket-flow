@@ -33,8 +33,14 @@ with one version and date.
   so only a later line can be its correction. Both wrong-reference notes were
   reworded to state the repair that actually clears them. Numbering, closure and
   what `open`, `count` and the owed list report are unchanged, with a guard test
-  over every existing fixture in the suite saying so. **This supersedes half the
-  reason recorded in the entry below**: the notes gate nothing still, but no
+  over every existing fixture in the suite saying so. **This corrects two
+  entries below, both in this same unreleased batch, and they are left as
+  written because a changelog is a dated record plus its correction rather than
+  a document to edit.** The deviation-numbering entry says a reference naming no
+  departure and an ID a reference ends inside "are reported the same way;
+  naming any item of that entry clears the note" — true of the bare line's note
+  only, which is the defect this entry fixes. And the unattended-halt entry
+  gives half a reason that no longer holds: the notes gate nothing still, but no
   longer because a note cannot be relied on to clear — it can, now — only
   because a line that closed nothing leaves its departure open anyway, so `open`
   already stops every case a note reports, and a gate on advice is still a gate
