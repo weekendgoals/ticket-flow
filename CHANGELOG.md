@@ -8,6 +8,27 @@ with one version and date.
 
 ## Unreleased
 
+- **A fidelity differ, `scripts/fidelity.mjs`** (new script, new suite
+  `scripts/fidelity.test.mjs`, fixtures under `scripts/fixtures/fidelity/`;
+  METHODOLOGY § "Why the fidelity differ ships no browser", `tests.yml`,
+  CLAUDE.md's command list). Two subcommands and no browser: `extract` prints
+  the source of one self-contained function expression, `(landmarks, side) =>
+  report`, which any browser the project already has can evaluate on a rendered
+  page; `diff <design.json> <page.json> --map <design-map.json>` compares the
+  two reports in pure Node and prints one row per difference — a missing
+  landmark, a landmark built where the plan removed it, a different `order` or
+  `childCount`, or any of a fixed set of computed properties. The plugin gains
+  no dependency and launches nothing, because a differ that owned a browser
+  would be one a project could not install. Removals are honoured **only** from
+  `--removed-from`, the signed-off map: `--map` is the file the ticket under
+  review edits, so a worker who could not build an element must write a
+  deviation rather than declare its own element removed. Nothing reads the
+  differ yet — the `COMPARE` criterion that calls it is the next ticket's.
+  Comparison is normalised (lengths within 0.5px, colours as rgba,
+  `font-family` by its first family) because two renderers print one value two
+  ways. Exit 0 when nothing differs or the only rows are declared removals, 1
+  when anything else differs, 2 on a usage error or unreadable input — a typo
+  is never reported as a difference.
 - **Every note is cleared by the repair it names, in both ledgers**
   (`scripts/tickets.mjs` — `parseOwed` and `parseDeviationsText` —
   `skills/ticket/SKILL.md` steps 6, 9 and 10, `skills/quick/SKILL.md` step 7,

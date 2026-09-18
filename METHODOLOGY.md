@@ -396,6 +396,44 @@ the merged state is the one against the final pushed branch — the worker's
 own step 5 run already caught the cheap failures before the reviewer was
 ever hired.
 
+## Why the fidelity differ ships no browser
+
+A design is checked the way a page is looked at: by eye, and by whoever
+happens to open it. In the page epic that produced this epic's evidence, nine
+tickets passed six gates and shipped a page missing three drawn elements; two
+review rounds later eight differences had been found, every one of them a
+computed-style value, every one found with `getComputedStyle`, none found by
+eye. "Renders as the design draws it" is not a criterion, because the worker
+satisfies it with the properties it already believes are right.
+
+So `scripts/fidelity.mjs` makes the comparison mechanical, and the shape it
+takes is decided by one constraint that is not about designs at all: this
+plugin installs into a project by being copied, with no `package.json`, no
+dependency and no state — which is why `tickets.mjs` derives every fact from
+git rather than storing one. A differ that drove a browser would need a
+browser driver, and the first project whose toolchain disagreed with that
+driver could not install the plugin at all. The differ therefore does the two
+halves a browser is not needed for, and hands the middle back: `extract`
+prints the source of one self-contained function expression, whatever browser
+the project already owns evaluates it on a rendered page, and `diff` compares
+the two JSON reports in pure Node. The cost is a manual step in the loop; what
+it buys is that the page is measured by the same engine that paints it,
+instead of by a second renderer the plugin would have to agree with.
+
+Three consequences are worth stating because each one is a rule somebody will
+otherwise simplify away. The property set is **fixed**: a per-project property
+list would make two epics' tables incomparable, and the set is the one every
+found difference fell into. Comparison is **normalised** — lengths within
+0.5px, colours as rgba, `font-family` by its first family — because two
+renderers print one value two ways, and a table of noise is a table that stops
+being read. And `removed`, the list of drawn elements deliberately not built,
+is honoured **only** from a file named by `--removed-from`, never from the map
+the run passes as `--map`: workers must edit the map, since its `page`
+selectors are written before the page exists, so a single file holding both
+would let a worker who could not build an element declare it removed, get a
+clean diff, and halt nothing. That is the founding failure re-routed through
+the new machinery, which is the failure a new gate is most likely to have.
+
 ## Why token figures are observed, never asked
 
 The Tokens lines exist as planning evidence — they are what priced the
