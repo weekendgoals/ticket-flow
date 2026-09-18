@@ -806,7 +806,7 @@ reverted-fix results were reproduced in copies, and every count matches CLAUDE.m
 in every place it appears.
 Re-review tokens: 228,274
 
-### DEV-3 deviation closure — 2026-09-18
+**Addendum — 2026-09-18 — deviation closure**
 
 **Deviations closed:** DEV-3 — accepted: "its ok to use 18 lines"; Vadim; 2026-09-18
 
