@@ -244,15 +244,26 @@ test('exit 1 when anything else differs, including a declared removal beside it'
   assert.equal(diff('--removed-from', MAP, '--landmarks', 'promo,banner').code, 1)
 })
 
+// Each refusal is checked by its message as well as its code, because the code
+// is what several of these share by accident — drop the --map check and the
+// unreadable-file path still exits 2, drop the unknown-option check and the
+// flag is counted as a third report file. The message is the guard's whole
+// output, so a test that read only the code would pin nothing.
 test('exit 2 on a usage error, never 1 — a typo is not a difference', () => {
-  assert.equal(cli('diff', DESIGN, PAGE).code, 2, 'no --map')
-  assert.equal(cli('diff', DESIGN, '--map', MAP).code, 2, 'one report')
-  assert.equal(diff('--nope').code, 2)
-  assert.equal(diff('--map').code, 2, '--map with no value')
-  assert.equal(cli('extract', 'extra').code, 2)
-  assert.equal(cli().code, 2)
-  assert.equal(cli('compare').code, 2)
-  assert.match(cli('compare').err, /unknown command "compare"/)
+  const refusals = [
+    [['diff', DESIGN, PAGE], /diff needs --map/, 'no --map'],
+    [['diff', DESIGN, '--map', MAP], /exactly two report files/, 'one report'],
+    [['diff', DESIGN, PAGE, '--map', MAP, '--nope'], /unknown option "--nope"/, 'an unknown option'],
+    [['diff', DESIGN, PAGE, '--map'], /--map needs a value/, '--map with no value'],
+    [['extract', 'extra'], /extract takes no arguments/, 'an argument to extract'],
+    [[], /no command/, 'no command at all'],
+    [['compare'], /unknown command "compare"/, 'an unknown command'],
+  ]
+  for (const [args, message, what] of refusals) {
+    const r = cli(...args)
+    assert.equal(r.code, 2, what)
+    assert.match(r.err, message, what)
+  }
 })
 
 test('exit 2 on unreadable input, naming the file', () => {

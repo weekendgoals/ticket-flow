@@ -51,7 +51,7 @@
         "padding-bottom": "12px",
         "padding-left": "16px",
         "width": "900px",
-        "height": "41px"
+        "height": "40.5px"
       }
     },
     "grid": {
@@ -60,7 +60,7 @@
       "childCount": 3,
       "props": {
         "display": "grid",
-        "grid-template-columns": "273.328px 273.328px 273.328px",
+        "grid-template-columns": "273.328px 273.336px 273.336px",
         "column-gap": "24px",
         "row-gap": "24px",
         "flex-direction": "row",
