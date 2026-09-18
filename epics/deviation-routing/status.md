@@ -825,3 +825,104 @@ corrected before this commit: as drafted its pattern could not match README's
 false sentence, which wraps across a line break, so the check would have gone
 green with README still wrong; it now matches the half that sits on one line,
 and hits both files (`SKILL.md:383`, `README.md:375`).
+
+### DEV-5 — A note is cleared by the repair it names — 2026-09-18 — DONE
+
+**Built:** both ledgers' wrong-reference notes now stop being reported once a
+line **below** the faulty one names an item of the same entry correctly —
+`parseOwed`'s unknown-item note and `parseDeviationsText`'s unknown-item and
+malformed-reference notes. "Correctly" is the entry's own item identity, so an
+entry that recorded a single item and keeps its bare ID is named by that bare
+ID, which is the shape that had no exit at all before; an item already retired
+or closed counts, because a correction usually names the one its writer meant.
+The bare-marker and bare-line notes keep the rule they had, and a comment in
+each parser says why the two differ. Both wrong-reference notes were reworded
+to state the repair that clears them. The false sentences in the ticket skill's
+step 6 (both ledgers) and README (both ledgers) now say the rule as it is, the
+two display sites — ticket step 9, quick step 7 — stop reading a note as "still
+open", step 10 and METHODOLOGY stop resting the shown-but-not-gated rule on the
+half that is no longer true, and `check-invariants.mjs` pins "cleared by the
+repair it names" across the ticket skill, README and the script.
+
+**Mode:** supervisor — worker worker:DEV-5 (fable), reviewer hired by the
+supervisor
+
+**Tokens:** observed by the supervisor — see the review addendum
+
+**Verified:** `node plugins/flow/scripts/tickets.mjs check DEV-5` 4/4, exit 0
+(0/4 on the base tree at `548b466`, every criterion failing before the work).
+`node --test plugins/flow/scripts/tickets.test.mjs` 110/110 (101 before; nine
+new tests). `node --test plugins/flow/scripts/check-invariants.test.mjs` 25/25
+(24 before; one new test). Unchanged suites, all passing:
+`ticket-session-guard.test.mjs` 14/14, `board.test.mjs` 9/9,
+`plan-page.test.mjs` 8/8, `run-epic.test.mjs` 133/133 — unchanged in count, as
+the ticket requires, and `git diff 548b466..HEAD` touches neither
+`run-epic.mjs` nor its suite — `runners/codex.test.mjs` 21/21,
+`runners/codex-review.test.mjs` 19/19.
+`node plugins/flow/scripts/check-invariants.mjs` exit 0,
+`node plugins/flow/scripts/tickets.mjs doctor` exit 0,
+`node --check plugins/flow/scripts/tickets.mjs` exit 0, and the run-epic
+module-body parse exit 0. CLAUDE.md's counts move 101 → 110 and 24 → 25 in the
+commits that grew each suite.
+
+revert check: `git revert --no-commit $(git rev-list --no-merges
+548b466..HEAD)` with both test files checked back out of HEAD — **"the
+deviation unknown-item note is cleared by the correct reference written below
+it" fails**, with six others (110 → 103 pass, 7 fail: the two rewritten
+fixtures, the malformed-reference test, the lone-departure test, the owed
+unknown-item test and the cross-entry attribution test), and
+`check-invariants.test.mjs` 24 pass / 1 fail on **"any of the three documents
+dropping 'cleared by the repair it names' fails"**. `git revert --abort` left
+the tree exactly HEAD (`git diff HEAD` empty). Then each new guard was flipped
+in turn, suite red for every one: the owed unknown-item suppression (1 fail),
+the deviation malformed-reference suppression (3), the deviation unknown-item
+suppression (5), the position guard — `> line` widened to "anywhere" (3,
+including the negatives test), the bare ID no longer counting as a lone item's
+name (1), any later reference clearing whether or not it matches (3), and both
+notes' repair sentence (3). The new invariant phrase was flipped at one of its
+three doors — README dropped from the entry's file list — and
+`check-invariants.test.mjs` went red.
+
+demonstrate, run in a throwaway `demo` epic in a temp git repo with a bare
+remote, against the base script (`548b466`, extracted with `git show`) and the
+new one over the same log. **Stage A**, the log carrying `**Resolves owed:**
+M-1.7` and `**Deviations closed:** M-1.7` against M-1's two items, plus
+`**Resolves owed:** M-2.1` and `**Deviations closed:** M-2.1` against M-2's
+lone item already retired and closed by its bare ID: both scripts report the
+same owed list (`M-1.1`, `M-1.2`), the same `count`/`open`/`closed` (M-1 2/2,
+M-2 1/0 with `closedBy` carrying the 09-12 line), and four notes each — the
+base's prescribing "Correct the number in a new dated addendum", the new one's
+"Write the reference again correctly … and a line below it naming one of M-1's
+items clears this note". **Stage B**, after appending exactly what each note
+prescribes (`**Resolves owed:** M-1.1`, `**Deviations closed:** M-1.1`, and for
+the lone item `**Resolves owed:** M-2`, `**Deviations closed:** M-2`): under
+the new script the notes are gone from `brief M-4`, from `deviations M-1 --json`
+and `deviations M-2 --json` (`"notes": []` in both), and from `doctor --json`
+(no note rows) — while the base script still reports all four, forever. The
+ledgers read identically under both scripts at both stages: M-1 `count: 2,
+open: 1` with `M-1.1` closed by the 09-13 line and `M-1.2` open, M-2 `count: 1,
+open: 0`, owed `M-1.2` alone. `doctor` exit 0 on the demo repository at both
+stages, and **exit 0 on this repository**.
+
+**Decisions:** four judgment calls the documents left open. (1) One predicate
+does the work in both parsers — a reference names an item when it equals that
+item's identity and the item was recorded above the reference's line — because
+the identity map already gives a lone item its bare ID, so "the bare ID counts
+for a single-item entry" needs no special case and cannot drift from the
+numbering rule it depends on. (2) Suppression is by line number, strictly
+below: a correct reference on the *same* line as the faulty one (`**Deviations
+closed:** X.7, X.1`) does not clear, because the ticket's rule is "a line below"
+and the note's own repair is a new dated line. (3) Two existing fixtures lost
+notes they asserted, which is the behaviour change itself; one of them —
+`brief` never saying "none outstanding" above a note — needed a note to keep
+testing its heading, so it gained one trailing fresh miscount with nothing
+below it, and its closures are unchanged. (4) The CHANGELOG's DEV-2 bullet
+records a reason half of which this ticket retires: it is left as written and
+the new bullet says which half it supersedes, because a changelog is dated
+record plus correction, not a document to edit — the same shape the status log
+uses. Step 10's gate does not move (the ticket forbids it), but its stated
+reason no longer rests on notes being unclearable; what holds it now is that
+`open` already stops every case a note reports and a gate on advice is still a
+gate on advice.
+
+**Owed:** Nothing.
