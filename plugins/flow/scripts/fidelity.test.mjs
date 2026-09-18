@@ -304,6 +304,18 @@ test('a diff far larger than the pipe buffer arrives whole', () => {
   assert.match(table.out.trimEnd().split('\n').pop(), /1800 differences — 600 landmarks compared/, 'the last line printed is the last line received')
 })
 
+// The same flush rule on the other stream. A refusal that names thousands of
+// landmarks is not a shape any caller produces, but the guard is one line of
+// the same fix, and an unpinned half of a fix is how the fixed half gets
+// "simplified" back later.
+test('a refusal far larger than the pipe buffer arrives whole too', () => {
+  const names = Array.from({ length: 7000 }, (_, i) => `ghost${i}`)
+  const r = diff('--landmarks', names.join(','))
+  assert.equal(r.code, 2)
+  assert.ok(r.err.length > 65536, `only ${r.err.length} bytes of stderr came through the pipe`)
+  assert.match(r.err, /ghost6999/, 'the tail of the message arrived, not just the first 64KiB')
+})
+
 test('exit 2 on unreadable input, naming the file', () => {
   const r = cli('diff', '/no/such/design.json', PAGE, '--map', MAP)
   assert.equal(r.code, 2)
