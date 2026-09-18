@@ -62,3 +62,20 @@ available and not enabled), and Vadim waived the hard floor in so many
 words — "i waive the protection". `tickets.md` carries the decision on its
 `Delivery:` and probes paragraphs, which is where the run skill's step 3
 reads it. Nothing here starts until `deviation-routing` has reached `main`.
+
+**Addendum — 2026-09-18 — launch.** `deviation-routing` reached `main` in
+PR #53 (`5eb2e3c`), with PR #52 before it; Vadim: "PR 53 merged, start
+design-fidelity". This branch was refreshed from `main` — no conflict, since
+it carried only its own documents. Re-run on the refreshed tree: `doctor`
+clean; every CHECK still fails, as it must before its ticket exists — FID-1
+0/4, FID-2 0/3, FID-3 0/4, FID-4 0/5, FID-5 0/5, FID-6 0/4, none malformed.
+The protection probes answer as they did (404 "Branch not protected", `[]`),
+so the waiver of 2026-09-17 stands unchanged. One sentence of `Delivery:` was
+false when written and is true now: that an unregistered reviewer type
+"fails once and takes the driver's sanctioned fallback". On 2026-09-17 the
+hire threw and the fallback was unreachable, which halted
+`deviation-routing`'s run (its `runs.md`); PR #52 made a throwing hire a
+failed hire, and that fix is in this branch. What this epic now inherits from
+the other: a worker that departs from its ticket records a `**Deviation:**`
+line, an open one stops an attended merge, and any one halts the run. FID-1
+starts attended.
