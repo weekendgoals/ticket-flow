@@ -337,7 +337,9 @@ and the brief says what to write instead: a marker naming one item once
 closed four, including a production-database hazard, and an item wrongly
 retired is gone from an append-only log with nothing left to report it.
 Naming any item the itemised way clears that note, and a reference matching
-no item is reported too. Recorded state, so an
+no item is reported too — that one cleared in turn by a correct reference
+written **below** it, since every note here is cleared by the repair it names.
+Recorded state, so an
 item may already be discharged unmarked; the brief says so in its heading),
 the **deviations no human has closed** (with a note beside them for anything a
 `**Deviations closed:**` line could not close), and the derived facts the board knows (state,
@@ -371,8 +373,15 @@ decisions per departure, and while a deviation wrongly left open costs a human
 one reread, one wrongly closed is a decision nobody made, gone from every brief
 and every attended door — the same asymmetry, and the same incident, behind the
 owed ledger's item numbering. A reference naming no departure, and an ID a
-reference ends inside (`<ID>oops`), are reported the same way; naming any item
-of that entry clears the note. The script's
+reference ends inside (`<ID>oops`), close nothing and are reported too. Every
+note either ledger emits is **cleared by the repair it names**, because an
+append-only log cannot take a wrong line back and a warning nobody can clear is
+one its readers learn to skip: a bare line's note ends once any of the entry's
+departures is named the itemised way, wherever that line sits, while a faulty
+reference's ends once a line **below** it names one of them correctly — the
+bare ID, for an entry that recorded a single departure. Below, because position
+is time in an append-only log: a correct reference written earlier is not a
+correction of a later mistake. The script's
 `deviations <ID>` subcommand reads every one a ticket's own entries recorded,
 closed or not, each with its closing line, and `notes` for what a closing line
 could not close; `--log-from <ref>` reads the status

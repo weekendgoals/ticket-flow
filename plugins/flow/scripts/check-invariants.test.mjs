@@ -165,6 +165,24 @@ test('a lane that stops teaching the deviation closing line fails', () => {
   assert.match(r.out, /doctrine phrase missing/)
 })
 
+test('any of the three documents dropping "cleared by the repair it names" fails', () => {
+  // The parser emits the notes, the ticket lane teaches the lines that earn
+  // them, and README documents both ledgers. A document that keeps the old
+  // story — that naming any item of the entry clears a faulty reference's note
+  // — sends a human to a repair that leaves the warning standing, and an
+  // append-only log cannot take the wrong line back.
+  // Every occurrence in the mutated file goes: a document that keeps one copy
+  // of the phrase still carries the rule, so dropping one sentence of several
+  // is not the drift this entry is for.
+  for (const file of ['plugins/flow/skills/ticket/SKILL.md', 'README.md', 'plugins/flow/scripts/tickets.mjs']) {
+    const root = copyRepo()
+    mutate(root, file, 'cleared by the repair it names', 'reported until someone reads it')
+    const r = run(root)
+    assert.equal(r.status, 1, `${file}: ${r.out}`)
+    assert.match(r.out, /doctrine phrase missing/)
+  }
+})
+
 test("either document losing step 10's second refusal fails", () => {
   // The ticket skill refuses an unclosed deviation at the integration merge;
   // the run skill's "Resuming after a halt" tells the session finishing a

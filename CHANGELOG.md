@@ -8,6 +8,38 @@ with one version and date.
 
 ## Unreleased
 
+- **Every note is cleared by the repair it names, in both ledgers**
+  (`scripts/tickets.mjs` — `parseOwed` and `parseDeviationsText` —
+  `skills/ticket/SKILL.md` steps 6, 9 and 10, `skills/quick/SKILL.md` step 7,
+  README, METHODOLOGY; `check-invariants.mjs` pins the phrase across the ticket
+  skill, README and the script). A reference that names no item (`<ID>.7`
+  against two) and, on the deviation ledger, an ID a reference ends inside
+  (`<ID>oops`) retire and close nothing and say so — and their notes now stop
+  being reported once a line **below** the faulty one names an item of the same
+  entry correctly. Below, because the log is append-only and position is time:
+  a correct reference written before the mistake was not answering it, and
+  clearing on one would take away the only feedback a miscount gets while the
+  item it meant is still open. "Correctly" is the entry's own item identity, so
+  an entry that recorded a single item — and therefore keeps its bare ID — is
+  named by that bare ID; that shape had no exit at all before, since no dotted
+  reference can ever be valid for it, and a lone departure closed by a bare line
+  and then "confirmed" as `<ID>.1` was a `doctor` warning nobody could clear for
+  the life of the epic. An item already retired or closed counts as a
+  correction, because the writer is usually naming the one they meant. The bare
+  marker's and bare line's notes keep the rule they had — any itemised line for
+  that entry answers them, wherever it sits — and each parser now carries the
+  reason the two rules differ: a bare line is ambiguous about *which* items, so
+  any itemised line answers it, while a wrong reference is one specific mistake,
+  so only a later line can be its correction. Both wrong-reference notes were
+  reworded to state the repair that actually clears them. Numbering, closure and
+  what `open`, `count` and the owed list report are unchanged, with a guard test
+  over every existing fixture in the suite saying so. **This supersedes half the
+  reason recorded in the entry below**: the notes gate nothing still, but no
+  longer because a note cannot be relied on to clear — it can, now — only
+  because a line that closed nothing leaves its departure open anyway, so `open`
+  already stops every case a note reports, and a gate on advice is still a gate
+  on advice.
+
 - **An unattended run halts on a recorded deviation, and honours no closing
   line** (`workflows/run-epic.mjs`, `skills/run/SKILL.md` step 5 and its
   after-a-halt procedure, `skills/retro/SKILL.md`, `scripts/runners/codex.mjs`,

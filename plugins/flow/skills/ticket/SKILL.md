@@ -350,10 +350,18 @@ because "accepted" and "fixed in `<sha>`" are decisions per departure: a
 deviation wrongly left open costs a human one reread, while one wrongly closed
 is a decision nobody made, gone from every brief and every attended door.
 `brief`, `deviations <ID>` and `doctor` each report a line that closed nothing,
-name the repair — a new dated line naming the items — and stop reporting it
-once any item of that entry is named that way. A reference naming no departure
+and every such note is **cleared by the repair it names** — an append-only log
+cannot take a wrong line back, so a warning nobody can clear is one its readers
+learn to skip past. A bare line's note names the repair — a new dated line
+naming the items — and ends once any of that entry's departures is named that
+way, wherever that line sits, because a bare line is ambiguous about *which*
+departures rather than wrong about one. A reference naming no departure
 (`<ID>.7` against two) and an ID a reference ends inside (`<ID>oops`) close
-nothing and are reported the same way. Do not write one, even for a departure
+nothing too, and each ends once a line **below** it names one of that entry's
+departures correctly — below, because position is time here: a correct
+reference written earlier is not a correction of a later mistake. For an entry
+that recorded one departure the correct reference is its bare ID, that being
+the only reference such an entry has. Do not write one, even for a departure
 you fixed yourself in this same ticket: a closing line the reviewed party could
 have written clears nothing, and "which of the two happened" is what the human
 reading it needs to know. Record the fix as a deviation like any other and
@@ -379,10 +387,14 @@ entry ID is read against what that entry owed when your line was written, so
 it closes a one-item entry and retires **nothing** when it faces more than
 one — it used to retire all of them, and a marker naming one item once closed
 four, including a production-database hazard that had to survive. `brief` and
-`doctor` both report a marker that retired nothing, name the form that works,
-and stop reporting it once any item of that entry is named that way. A
-number past the end of the entry (`<ID>.7` of two) is reported the same way:
-check the count against the entry before you write it.
+`doctor` both report a marker that retired nothing and name the form that
+works, and here too every note is **cleared by the repair it names**: a bare
+marker's ends once any of that entry's items is named the itemised way. A
+number past the end of the entry (`<ID>.7` of two) retires nothing as well, and
+its note ends once a line **below** it names one of that entry's items
+correctly — the bare ID, for an entry that recorded one — because a miscount is
+one specific mistake and only a later line can correct it. Check the count
+against the entry before you write it.
 
 Keep the entry short and written for someone who was not there. **Commit
 before the review runs** — the reviewer reads a commit range.
@@ -478,7 +490,8 @@ shown **with its closing line**, because only a human may write that line and
 no command can say who did: showing the line is how a closure the reviewed
 party could have written is seen rather than trusted. Show the command's
 `note:` lines in the same field — a note says a closing line closed nothing,
-so a departure someone tried to close is still open, and a reader who counted
+which is someone having tried to close a departure and failed; whether anything
+is still open is what the command's own count says, and a reader who counted
 only the closed ones would never learn that the attempt happened. When the
 command reports none, say "no deviations recorded" rather than dropping the
 field, so an empty one reads as an answer and not as an omission. Name what
@@ -558,10 +571,12 @@ reads it.
   until the human has decided. The notes are **shown and gate nothing**, and
   the reason is the gate's own soundness: a closing line that closed nothing
   leaves its departure open, so `open` already stops every case a note
-  reports, while a note cannot be relied on to clear — some survive the very
-  repair they prescribe, and an append-only log cannot take a wrong line back
-  — so a gate on one would be a refusal with no recovery, which is worse than
-  no gate. A nonzero exit or no payload is also a stop, and never an empty
+  reports, and a note is advice about how a line was written rather than a
+  statement that something is undecided — gating on it would add no case and
+  refuse over wording. (Every note is now cleared by the repair it names, so
+  none is permanent; that removed the sharpest argument against gating on one
+  and left the standing one, which is that a gate on advice is still a gate on
+  advice.) A nonzero exit or no payload is also a stop, and never an empty
   answer: the script refuses a log it cannot read in those words ("An
   unreadable status log is not 'no deviations'"), and a reader that took the
   failure for "none recorded" would merge the one ticket this gate exists to

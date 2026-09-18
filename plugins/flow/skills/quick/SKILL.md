@@ -276,8 +276,9 @@ recorded several, never a number invented for a lone one, which a closing line
 copying it could not close — with its text, a closed one **with its closing
 line**, and any `note:` line verbatim. A closed one is shown because only a
 human may write that line and no command can say who did; a note is shown
-because it means a closing line closed nothing, so a departure someone tried
-to close is still open. Write the heading even when there is nothing to name,
+because it means a closing line closed nothing — someone having tried to close
+a departure and failed, which a reader counting only the closed ones would
+never learn. Write the heading even when there is nothing to name,
 with "none recorded" under it: this lane has no agent merge to refuse, so the
 body is the only door a departure passes through — the person reading the pull
 request is the gate, and an absent heading reads to them as an omission rather
