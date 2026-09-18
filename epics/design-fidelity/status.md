@@ -178,3 +178,85 @@ the named seam would leave the second half at roughly 525 lines, still over the
 condition, and Vadim was shown both figures at the stop and answered "accept".
 
 **Owed:** Nothing.
+
+**Addendum — review — 2026-09-18 — opus/default effort:** reviewed by a
+fresh-context general agent given `ticket-reviewer.md` and the review skill
+(the plugin agent type is not registered in this session). It reproduced the
+revert check, ran 15 mutants of its own (15 killed), attacked the `removed`
+rule from four directions (a `Removed` key, a nested `removed`, case-different
+names, `--removed-from` pointed at a report — all fail closed), checked the
+reports' arithmetic (the three tracks sum to 820.0px at 1/64px granularity),
+and found scope, project-agnosticism and the Deviation's figures sound.
+
+Fixed, all in `67914c2` (`fidelity.test.mjs` 33 → 39, all passing; each fix
+proven by flipping it back and watching the suite go red, 8 of 8): **Important
+1** — `console.log(stdout); process.exit(code)` discarded whatever stdout had
+not flushed, so a `--json` payload of 221,626 bytes came through a pipe cut at
+exactly 65,536, mid-object, with the exit code intact; every sanctioned caller
+pipes (the ticket's own criteria use `$(…)` and `| grep`). Now
+`process.exitCode`, pinned by a test that diffs 600 landmarks — 1,800 rows,
+over 64KiB in both output forms — through a pipe and parses the whole payload.
+**Important 2** — `--landmarks ","`, `" "`, `",,"` filtered the comparison to
+zero landmarks and printed "no differences", exit 0, which is the pass the
+guard beneath them exists to prevent; a value naming no landmark is now
+refused, `""` among them, because omitting the flag is how you ask for
+everything. **nit 1** — every landmark unmatched on both sides was the same
+exit 0 over no evidence; refused as unreadable input. **nit 3** —
+`firstFamily` split on commas before quotes, so `"Helvetica, Neue", serif`
+compared equal to `Helvetica`, a normalisation hiding a real difference; a
+quoted family is now read to its closing quote first. **nit 4** — `a in flags`
+walked `Object.prototype`, so a report file named `toString` was swallowed as a
+flag; `hasOwnProperty` now. **nit 5** — the honoured removals' source file is
+named whenever a removal row prints, not only when `--map` carries a list of
+its own, since under the layout the doctrine prefers it never does and a
+pasted table showed `removed by …` rows with no provenance. Also fixed, raised
+but not reported: a repeated flag is refused instead of last-wins.
+
+Not fixed — **nit 2**, `asRgba` has no CSS named-colour table, so `red` and
+`rgb(255, 0, 0)` read as a difference. Declined on two grounds, not on cost
+alone: the fixed property set is read from `getComputedStyle`, which returns
+`rgb()`/`rgba()` and never a name, so the gap is reachable only from the
+hand-written degraded table that FID-3 teaches; and the failure direction is
+the safe one — it over-reports a difference that is not one, never hides one,
+which is the opposite of nit 3. A partial table (the 16 names one remembers)
+would be right for 16 and silently wrong for the other 132, which is the
+shape of normalisation this file must not have. Recorded for the retro, and
+FID-3 may want it when it writes the degraded form.
+
+Re-verified after the fixes: `fidelity.test.mjs` 39/39; `tickets.mjs check
+FID-1` 4/4; `tickets.test.mjs` 110/110, `ticket-session-guard.test.mjs` 14/14,
+`check-invariants.test.mjs` 25/25, `board.test.mjs` 9/9, `plan-page.test.mjs`
+8/8, `run-epic.test.mjs` 137/137, `codex.test.mjs` 21/21,
+`codex-review.test.mjs` 19/19; `check-invariants.mjs` exit 0; `doctor` exit 0;
+`node --check plugins/flow/scripts/fidelity.mjs` exit 0. Revert check over the
+fix range (`029d71e..HEAD` reverted, tests kept at HEAD): 7 tests fail, one per
+fix — *a diff far larger than the pipe buffer arrives whole*, *--landmarks that
+names nothing is refused, in every spelling*, *a comparison that compared
+nothing is refused, never reported as no differences*, *a flag given twice is
+refused, not resolved last-wins*, *a report file named like an
+Object.prototype key is a file, not a flag*, *font-family compares its first
+family, unquoted and case-insensitively*, *a honoured removal names the file it
+was read from, even when --map carries no list*. The 27 guard mutants of the
+first pass were re-run on the fixed tree: 27/27 still killed. Worker tokens
+(implementation leg): unknown — only the supervisor observes it, and it was not
+handed over with the findings; Reviewer tokens: 143,151.
+
+**Addendum — 2026-09-18 — the Size deviation's figures after the review fixes,
+and a pre-existing defect handed on.** The Deviation above is unchanged and its
+figures are superseded, not corrected: the fixes moved the diff from 837 to
+**970 changed lines without the fixtures** (source, suite and documents only,
+which is what the 837 counted), or **1,069** with this status log included, and
+**1,656** with everything. The departure is the same one — built as one ticket
+past the ~450 condition — and remains open for a human.
+
+**Owed:** `plugins/flow/scripts/tickets.mjs` carries the same
+`console.log(…)` + `process.exit(n)` pattern that Important 1 fixed here (for
+example at its `deviations` and `doctor` exits), so its output is exposed to
+the identical silent truncation above ~64KiB; today's boards and ledgers are
+far under that. It is **not** for any ticket in this epic — FID-2 to FID-6 must
+not fix it, since it is outside every one of their scopes and `tickets.mjs` is
+on this epic's consequence paths — and **not** for `/flow:quick` either: a
+truncated `check --json` is a payload the unattended driver's merge gate reads,
+which is the fail-open shape on the risk list that bars work from the quick
+path. It is for this epic's retro to convert into a ticket of its own, with the
+measurement above as its evidence.
