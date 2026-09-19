@@ -27,7 +27,7 @@ go through the flow, one-off work goes through `/flow:quick` into
   has its own suite:
   `node --test plugins/flow/hooks/ticket-session-guard.test.mjs` (`# pass 14`
   on the same terms). The invariant checker has
-  `node --test plugins/flow/scripts/check-invariants.test.mjs` (`# pass 34`),
+  `node --test plugins/flow/scripts/check-invariants.test.mjs` (`# pass 36`),
   The board renderer has
   `node --test plugins/flow/scripts/board.test.mjs` (`# pass 9`) and the
   plan-page renderer `node --test plugins/flow/scripts/plan-page.test.mjs`
@@ -76,7 +76,7 @@ go through the flow, one-off work goes through `/flow:quick` into
   phrases). Run it whenever a skill, agent, hook or doctrine document changes —
   it is presence and equality only, so contradictions in meaning still need
   review. Its suite: `node --test plugins/flow/scripts/check-invariants.test.mjs`
-  (`# pass 34` on the same terms).
+  (`# pass 36` on the same terms).
 - **Smoke:** `node plugins/flow/scripts/tickets.mjs doctor` — must exit 0 on
   this repo. `… list` shows the board.
 - **Syntax check:** `node --check plugins/flow/scripts/tickets.mjs`, and the
@@ -131,7 +131,17 @@ test file path explicitly.
   refinements accumulate under an `## Unreleased` changelog heading, and a
   release stamps the batch with one version and date — one deliberate
   release beats a version number per sentence changed. What is never batched
-  away is the entry itself.
+  away is the entry itself. **The stamp has a trigger: the pull request that
+  brings work to the default branch** — a release epic's release pull
+  request, or a direct feature's own — renames `## Unreleased` to
+  `## <version> — <date>`, adds a fresh empty `## Unreleased` above it, and
+  bumps `plugin.json`, all in one commit. The rule had no trigger once, and
+  `2.0.0` then sat on 93 unreleased entries for five weeks while installed
+  projects updated live under an unchanging number. Minor for additive
+  batches; major only when a heading format, the ticket-ID shape or a
+  command's contract breaks. `check-invariants.mjs` fails when `plugin.json`
+  and the newest stamped heading disagree, and when `Unreleased` passes 30
+  entries.
 - **Reviewers report and never fix.** Do not give `ticket-reviewer` or
   `plan-reviewer` write instructions.
 - **A human merges into main; nothing runs after that merge.** Absolute in
