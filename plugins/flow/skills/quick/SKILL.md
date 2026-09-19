@@ -130,6 +130,20 @@ pasted as the counts. A check that cannot run here is said so and recorded
 as owed; never imply it passed. A ledger line reading `↓ skipped` is one of
 those: the command exited 0 and the work it names never ran, and **a skipped
 check is not a passed one**.
+A criterion carrying a `COMPARE:` line is run here too, and the board script
+never runs one — it has no browser. Serve the design source and the built page
+with the project's own tooling, open each at every width the line names,
+evaluate `node "${CLAUDE_PLUGIN_ROOT}/scripts/fidelity.mjs" extract` in both,
+and compare the two reports with `fidelity.mjs diff … --map
+epics/<name>/design-map.json --removed-from <the signed-off map>` — read with
+`git show origin/<default-branch>:epics/<name>/design-map.json`, because a
+removal is a planning decision and the map in the tree is the one this ticket
+edits. Exit 0 is nothing differing or only declared removals, exit 1 is a
+difference, and **exit 2 is "nothing was compared", never "no differences"**.
+Paste the table into the entry's `**Compared:**` field and answer every row —
+fixed, recorded as a `**Deviation:**`, or already a declared removal. With no
+browser here, or a design nothing can render, the comparison is **owed**, said
+so, and a hand-written table is labelled as one.
 Then the **revert check**: set the source
 change aside, keep the tests, run — and name on the Verified line the test
 that **fails with the source change reverted** (`revert check: n/a,
@@ -157,7 +171,8 @@ required even when empty.
 
 The **entry** heading is parsed — match it exactly — then keep the body to
 the ticket skill's step 6 fields: **Built / Mode / Tokens / Verified /
-Decisions / Deviation (optional, one per departure) / Owed**, with `Mode:` =
+Compared (optional, required for every `COMPARE:` criterion) / Decisions /
+Deviation (optional, one per departure) / Owed**, with `Mode:` =
 `quick — in-session (/flow:quick)` and Decisions recording judgment calls, not
 narration:
 
@@ -181,7 +196,7 @@ closes them one at a time, so write each to be read alone.
 instead, and why>
 ```
 
-**`**Deviations closed:**` is the human's line, never yours.** A dated line
+**`**Deviations closed:**` records a human's decision, never yours.** A dated line
 naming each deviation as **accepted** or as **fixed in `<sha>`**, with who
 decided and when, closing by its leading reference list the departures the named
 entries recorded above it in the file — the shape the ticket skill's step 6
@@ -189,8 +204,13 @@ carries. **A bare closing line** — `**Deviations closed:** Q-<n>` — closes a
 entry's one departure; facing more than one open it closes **nothing** and says
 so, because accepted and fixed are decisions per departure and one wrongly
 closed is gone from every brief with nobody having decided it. Do not write
-one, even for a departure you fixed in this same ticket: a closing line the
-party that made the departure could have written clears nothing.
+one on your own authority, even for a departure you fixed in this same ticket:
+a closure the party that made the departure could have decided clears nothing.
+With the human in the session, ask for the decision and not for a sentence:
+an explicit answer to the departure you showed — "accept", "fix it" — is the
+decision, and you record the line quoting it, ending `recorded by the session
+from <name>'s answer`. A missed estimate and a change made in answer to a
+review finding are not deviations — the ticket skill's step 6 says why.
 `node "${CLAUDE_PLUGIN_ROOT}/scripts/tickets.mjs" deviations Q-<n>` reads every
 one this ticket recorded, closed or not, and reports any closing line that
 closed nothing.
@@ -235,7 +255,11 @@ after the retro has converted the open owed items.
     Acceptance criteria, open owed items;
   - this ticket's **own** status entry, sliced from the log:
     `awk '/^### /{f=/^### Q-<n> /} f' epics/quick/status.md`;
-  - the instruction files for the touched areas.
+  - the instruction files for the touched areas;
+  - **with a `COMPARE:` criterion**: the epic's declared design sources and the
+    signed-off design map (`git show origin/<default-branch>:epics/quick/design-map.json`),
+    never the working tree's copy — the entry's `**Compared:**` table is a
+    claim, and a reviewer given no design can only check it against itself.
 
   **Nothing else rides along**: no summary of what you built, no reasoning,
   no conversation content. It reports; it does not fix.
@@ -261,13 +285,18 @@ fix the tests so one pins the change, or name it as unfixed in the body.
 
 ```bash
 node "${CLAUDE_PLUGIN_ROOT}/scripts/tickets.mjs" deviations Q-<n>
+node "${CLAUDE_PLUGIN_ROOT}/scripts/tickets.mjs" compared Q-<n>
 git push -u origin q-<n>
 gh pr create --base <default-branch> --title "Q-<n>: <title>" --body "<body>"
 ```
 
 The body carries: what changed and why, the acceptance criteria with counts,
 the review outcome (or "prose-only; no separate review"), and any deploy
-precondition. And **a deviation is named in the pull request body** — the same
+precondition. **A ticket carrying a `COMPARE:` criterion whose entry records
+no comparison is named in the body in those words**, with the `**Compared:**`
+table when it has one: the comparison is the criterion no command runs, so
+the table is its only evidence, and this lane has no agent merge to refuse —
+the person reading the pull request is the gate. And **a deviation is named in the pull request body** — the same
 words the ticket lane's step 9 uses, because it is one rule at both doors:
 under its own `## Deviations` heading, every departure the command above
 reported, closed or not, each by **the reference the command printed** — a

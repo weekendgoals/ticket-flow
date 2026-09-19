@@ -396,6 +396,224 @@ the merged state is the one against the final pushed branch — the worker's
 own step 5 run already caught the cheap failures before the reviewer was
 ever hired.
 
+## Why the fidelity differ ships no browser
+
+A design is checked the way a page is looked at: by eye, and by whoever
+happens to open it. In the page epic that produced this epic's evidence, nine
+tickets passed six gates and shipped a page missing three drawn elements; two
+review rounds later eight differences had been found, every one of them a
+computed-style value, every one found with `getComputedStyle`, none found by
+eye. "Renders as the design draws it" is not a criterion, because the worker
+satisfies it with the properties it already believes are right.
+
+So `scripts/fidelity.mjs` makes the comparison mechanical, and the shape it
+takes is decided by one constraint that is not about designs at all: this
+plugin installs into a project by being copied, with no `package.json`, no
+dependency and no state — which is why `tickets.mjs` derives every fact from
+git rather than storing one. A differ that drove a browser would need a
+browser driver, and the first project whose toolchain disagreed with that
+driver could not install the plugin at all. The differ therefore does the two
+halves a browser is not needed for, and hands the middle back: `extract`
+prints the source of one self-contained function expression, whatever browser
+the project already owns evaluates it on a rendered page, and `diff` compares
+the two JSON reports in pure Node. The cost is a manual step in the loop; what
+it buys is that the page is measured by the same engine that paints it,
+instead of by a second renderer the plugin would have to agree with.
+
+Three consequences are worth stating because each one is a rule somebody will
+otherwise simplify away. The property set is **fixed**: a per-project property
+list would make two epics' tables incomparable, and the set is the one every
+found difference fell into. Comparison is **normalised** — lengths within
+0.5px, colours as rgba, `font-family` by its first family — because two
+renderers print one value two ways, and a table of noise is a table that stops
+being read. And `removed`, the list of drawn elements deliberately not built,
+is honoured **only** from a file named by `--removed-from`, never from the map
+the run passes as `--map`: workers must edit the map, since its `page`
+selectors are written before the page exists, so a single file holding both
+would let a worker who could not build an element declare it removed, get a
+clean diff, and halt nothing. That is the founding failure re-routed through
+the new machinery, which is the failure a new gate is most likely to have.
+
+## Why an epic declares its design sources
+
+A differ is no use to a reader who cannot find the design. In the page epic
+this work came from, no acceptance criterion referenced the drawing, neither
+reviewer was handed it, and the only person who ever put the page beside the
+artboard was the human at the pull request — twice, finding eight differences
+both times. Nothing was hidden: the design existed, in a file, in the
+repository. It was simply not written down anywhere a fresh context would
+look, and a fresh context is what every worker and both reviewers are.
+
+So the epic's preamble carries one line, `Design sources:`, and every reader
+downstream gets it from the same place it gets the delivery and the models:
+`brief` for a worker, the packet for the ticket reviewer, the plan review's
+inputs for the plan reviewer. Declaring it is what makes "the reviewer was not
+given the design" a fixable omission rather than an invisible one.
+
+Two shapes of that line are decided rather than left open. It is **read from
+the signed-off ref** like every other declaration, because a ticket branch
+that could add a design source to its own copy of the preamble could hand its
+reviewer a drawing nobody approved. And it is the **one declaration that
+carries no prose**: every other line keeps its first word and lets commentary
+follow, which is right for a glob and wrong for a file a designer named `City
+Desktop.html` — that parse would hand every reader `designs/City`, a path to
+nothing, and nothing downstream would say why the comparison never ran. The
+whole text between commas is the path; doctor names a declared path that does
+not exist, in full, for the same reason.
+
+## Why a fidelity criterion is the one the code never runs
+
+Every other machine-runnable criterion is a command the board script executes:
+that is what makes a CHECK something no worker can satisfy by narration. A
+`COMPARE` cannot be, and the reason is the same one that shapes the differ —
+the plugin owns no browser, because a differ that shipped one would be a
+plugin some project could not install. So the comparison is performed by the
+lane that has a browser (the ticket's own verify step, in the project's own
+tooling) and the code gates something else: the **presence** of the
+`**Compared:**` table in the status entry, which is FID-4's gate, at a door
+the code can actually stand in.
+
+Three consequences follow, and each is a rule rather than a detail. Compare
+rows are counted in **neither `total` nor `passed`**, because the unattended
+driver halts when `passed !== total` — a comparison counted there would halt
+every ticket that carried one, which is a gate that fires on its own
+correctness. A malformed COMPARE is nonetheless a **ledger problem** that
+fails the gate, for the reason a malformed CHECK is: a criterion nobody can
+read is a criterion nobody performs, and it must not be quiet. And the
+criterion **names its landmarks**, because "renders as the design draws it"
+is prose a worker satisfies with the properties it already believes are
+right — which is how nine tickets passed six gates and shipped a page missing
+three drawn elements.
+
+The removals are the part most likely to be simplified away. `removed` lives
+in the design map, and the differ honours it **only** from `--removed-from`,
+a file the verify step fills from the signed-off ref — never from the `--map`
+the ticket passes, which is the copy that ticket edits. Both files are
+usually the same path at different refs, and that is exactly the point: a
+worker must edit the map (its `page` selectors are written before the page
+exists), so a single reading would let a worker who could not build an
+element declare it removed, get a clean diff, and halt nothing. That is the
+founding failure re-routed through the new machinery, which is the failure a
+new gate is most likely to have.
+
+One state had two answers and now has one. A landmark the signed-off list
+declares removed, absent from the design and the page alike — the designer
+dropped it too — used to count as "nothing compared" and be refused as
+unreadable input when it was selected alone, while the same pair over the
+whole map passed with a note. Two answers to one state is the shape a gate
+gets routed around, so the agreement is now a row of its own: the plan, the
+design and the page concur, which is evidence, not the absence of it.
+
+## Why a missing comparison stops the merge
+
+A criterion nobody performs is worse than no criterion: it is a gate that
+reports itself green. The page epic that produced this evidence had a visual
+criterion on one section; it was satisfied by a worker's reading of its own
+work, and the gaps between sections belonged to nobody. The `COMPARE`
+criterion replaces the reading with a differ, but the differ runs in a lane
+the code cannot see into — the project's own browser — so something has to
+hold the door.
+
+What the code can hold is the **presence** of the evidence, and that is what
+it holds: the `**Compared:**` table in the pushed status entry. The content
+is left to the reviewer, who can re-run the differ and whose fresh context is
+the only thing that can check a worker's table at all. This is the same split
+as everywhere else in the flow — code gates what code can decide, judgment
+gates what it cannot — and it is why the gate reads a **count** and not a
+table.
+
+Three shapes of that gate are decided rather than incidental. It lives where
+both facts meet: how many `COMPARE` criteria the **signed-off** section
+carries comes from the acceptance step's ledger, how many tables the **pushed**
+entry records comes from the resolve step, and the judgment happens before any
+agent that could merge exists. It is a **subcommand**, `tickets.mjs compared`,
+rather than a `grep` inside the driver's prompt: the driver's suite stubs
+every agent, so a counting pipeline written into a template literal is
+executed by no test, and a mis-escaped `\*\*` would first show itself as a
+count of 0 on a live run — which reads exactly like a ticket that recorded
+nothing, and merges it. And an unreadable count is **refused**, never read as
+zero, because zero is precisely the value that would skip the gate.
+
+The recovery works in the refused state, which is the property a refusal is
+worth having. Where a browser exists, run the differ and append the table in
+a dated addendum. Where none does — an image, a PDF, a lane with no renderer
+— a human writes `**Compared:** owed`, with who accepted it and why. That
+line satisfies the gate and satisfies nobody reading it, which is the correct
+asymmetry: the record says a comparison was owed and not performed, and the
+merge is a decision somebody made rather than one a missing file made for
+them.
+
+## Why a design is a fourth artifact
+
+The methodology names three kinds of artifact: documents, a diff, and tests.
+A design is a fourth, and for a long time the plugin had no slot for it. The
+consequence was not that anyone ignored the drawing — it was that nothing
+carried it. In the page epic this epic was mined from, nine tickets passed six
+gates and shipped a page missing three drawn elements. No acceptance criterion
+referenced the design; neither reviewer was handed it; the only reader who ever
+put the page beside the artboard was the human at the pull request, twice, and
+each time found differences the gates had not.
+
+The tempting diagnosis is that the criteria were not checkable enough, and it
+is the wrong one. A visual criterion *was* written — scoped to one section —
+and the gaps between sections then belonged to no ticket at all. **Scope, not
+checkability, was the cause**, and the two fixes it implies are different: a
+differ makes a criterion mechanical, while a **whole-page ticket** makes the
+page somebody's. An epic that declares a design therefore ends with one, and
+it goes last, because it can only compare a page the other tickets have
+finished building.
+
+The other half is what a plan is allowed to narrow. A design draws more than
+any release builds, and that is normal — what is not normal is the narrowing
+living only in a ground rule's prose, where a comparison meets it as an
+element that is simply absent. So a plan that narrows what the design draws
+**declares the removal** in the design map, with the element, the deciding
+rule and the date, and sign-off approves that list. Then the diff prints
+"removed by <rule>" instead of nothing, one file holds everything the build
+deliberately does not draw, and the decision stays with the party that made
+it. The ticket under review is the one party that must never be able to
+declare its own missing element removed: that is the founding failure, and
+routing it through new machinery is the most likely way to rebuild it.
+
+Both halves rest on the design map being complete, which no code can check —
+a map that matches itself always passes. That is why the **plan reviewer** is
+handed the design and asked to walk the drawing rather than the map: an
+element no landmark covers is silent by omission, invisible to the differ, to
+the table and to everyone reading the table. It is the one reading nobody
+downstream can perform, because nobody downstream holds both the drawing and
+the plan.
+
+## Why the reviewer is handed the design
+
+Everything else in this epic makes the comparison possible; this is what makes
+it checked. The worker's `**Compared:**` table is produced by the party under
+review, from a map that party may edit, in a browser nobody else watched. Read
+as evidence it is exactly the shape the methodology distrusts everywhere else —
+a claim by the author that the author's work is right.
+
+So the reviewer is given the design sources, the **signed-off** map and the
+table, in all four copies of the packet, and told what to do with them. Where
+the project's own instruction file says how to serve and drive a page, it
+re-runs the differ: the reviewer is the only fresh context that can, and a
+table the re-run contradicts is Important. Where nothing can render — a sandbox
+with no network, a design that is a PDF — it audits the table against the
+design source's markup and **says the page was not rendered**. That sentence is
+load-bearing: an audit silent about not having rendered reads as a
+confirmation, and the epic this work came from shipped on exactly that kind of
+silence.
+
+Two lenses ride with it, both instances of defects the flow already names, in
+their visual form. A **`removed` entry added or changed in the ticket's own
+diff** is the reviewed party declaring its own missing element removed — a
+clean comparison bought by editing the gate, which is why removals are honoured
+only from the signed-off ref and why this is Important however reasonable the
+entry reads. And **a style assertion that reads a property off an element while
+the page paints something else** — an inline style beating the rule under test,
+an assertion on a wrapper while a child paints, a property read at a width the
+test never set — is the visual form of the test that executes code without
+checking it: the assertion passes, the page is wrong, and the suite reports the
+opposite.
+
 ## Why token figures are observed, never asked
 
 The Tokens lines exist as planning evidence — they are what priced the
@@ -544,9 +762,31 @@ one pause on something an agent may already have fixed; the cost of not
 refusing is the shipped page with no hero band, which is what this section is
 about.
 
+**A gate that asks too often, or asks for too much, is a gate nobody keeps.**
+The deviation gate's first day in use stopped three merges, and none of the
+three was the case it was built for. Two were missed estimates — "two lines",
+"split past ~450 changed lines" — that a planner had written into tickets as
+conditions, so a worker that did the right thing had formally departed from a
+guess; the third was a change a reviewer had asked for and then judged sound.
+And each time the human answered "accept", the step refused the answer and
+asked for a dictated sentence naming item references. The human's verdict was
+that the feature was unusable, and he was right on both counts. So the
+definition is narrowed to what the gate is for — something the documents or
+the design showed that was not built, or was built differently — with missed
+estimates sent to Decisions and reviewed fixes to the review addendum; and the
+closing procedure separates the two things the first version had welded
+together. What must be the human's is the **decision**; who types the line
+never mattered. An explicit answer to a departure shown in plain words is a
+decision, and the session records it, quoting the answer and saying it was
+recorded rather than dictated. What stays forbidden is an agent deciding:
+closing on silence, on a general instruction to carry on, or on an answer to
+a different question — and in an unattended run, where nobody is there to
+answer, a worker still never writes the line and the driver still honours
+none.
+
 **A refusal that cannot be cleared teaches people to route around it.** Both
 recoveries are therefore written into the step itself — accept it, or fix it on
-the branch and have the fix accepted — and both end in a human's line, because
+the branch and have the fix accepted — and both end in a human's decision, because
 a gate the guarded party can clear is not a gate. Which makes one detail
 load-bearing rather than pedantic: the closing line must name the departures it
 decides, since a bare line facing several closes nothing. A step that told a

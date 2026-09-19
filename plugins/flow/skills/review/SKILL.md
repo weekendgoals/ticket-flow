@@ -68,11 +68,47 @@ Beyond correctness, look specifically for:
   and the project has a suite that could pin it — is Important: a suite
   that cannot tell whether the change is present leaves the merge with no
   evidence behind it.
+- **A `removed` entry added or changed in the ticket's own diff.** The design
+  map's `removed` list is **planning's**: it says what the plan deliberately
+  does not build. A worker edits the map — its `page` selectors are written
+  before the page exists — so a removal appearing in this diff is the party
+  under review declaring its own missing element removed, which produces a
+  clean comparison and stops nothing. That is **Important** whatever the
+  entry says; a worker who could not build something writes a
+  `**Deviation:**`.
+- **A style assertion that reads a property off an element while the page
+  paints something else.** The visual form of the test that executes code
+  without checking it: an inline style beating the rule under test, an
+  assertion on a wrapper while a child paints, a property read at a width the
+  test never set. The assertion passes, the page is wrong, and the suite says
+  the opposite.
 - Missing negative tests — the error path, the empty input, the boundary.
 - Error paths that leak internals.
 - A guard that fails open.
 - A secret or permission widened to somewhere it is not needed.
 - Behaviour changes that break existing callers.
+
+## 3b. When the ticket carries a `COMPARE` criterion
+
+The epic's `Design sources:` line names what the design draws, and the entry
+carries a `**Compared:**` table the worker produced. **That table is a claim,
+and you are the only fresh context that can check it.**
+
+- **Re-run the differ when the project's instruction file says how to serve
+  and drive a page** — its dev server, its e2e runner, whatever `Bash` can
+  already reach. Print the extractor with
+  `node "${CLAUDE_PLUGIN_ROOT}/scripts/fidelity.mjs" extract`, evaluate it on
+  the design source and on the built page at each width the criterion names,
+  and run `fidelity.mjs diff … --map epics/<name>/design-map.json
+  --removed-from <the signed-off map>` — removals from the base ref, never
+  from the working tree's copy, which is the file this ticket edits. **A table
+  the re-run contradicts is Important.**
+- **Otherwise, audit the table against the design source's own markup and say
+  the page was not rendered.** A reviewer in a sandbox with no network never
+  renders anything, and its packet says so. An audit that is silent about not
+  having rendered reads as a confirmation, which is worse than no audit.
+- Re-running the differ is a **read**. You report what it printed; you fix
+  nothing, and you do not edit the map.
 
 ## 4. What NOT to flag
 

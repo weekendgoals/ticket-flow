@@ -23,6 +23,7 @@ const FILES = [
   'plugins/flow/skills/run/SKILL.md',
   'plugins/flow/skills/retro/SKILL.md',
   'plugins/flow/agents/ticket-reviewer.md',
+  'plugins/flow/agents/plan-reviewer.md',
   'plugins/flow/scripts/tickets.mjs',
   'plugins/flow/hooks/ticket-session-guard.mjs',
   'plugins/flow/workflows/run-epic.mjs',
@@ -264,6 +265,20 @@ test('the workflow script losing the acceptance-check stop condition fails', () 
   assert.match(r.out, /run-epic\.mjs.*acceptance-check stop condition/s)
 })
 
+test('either document dropping the acceptance condition\'s COMPARE clause fails', () => {
+  // The sentence is pinned whole for the reason its siblings are: a copy that
+  // kept only the CHECK clauses would describe a gate that lets a comparison
+  // nobody performed through, and a retro reading the stop string would file
+  // the halt as a failing test.
+  for (const file of ['plugins/flow/workflows/run-epic.mjs', 'plugins/flow/skills/run/SKILL.md']) {
+    const root = copyRepo()
+    mutate(root, file, 'a COMPARE criterion whose pushed entry records no comparison, ', '')
+    const r = run(root)
+    assert.equal(r.status, 1, r.out)
+    assert.match(r.out, /acceptance-check stop condition/s, file)
+  }
+})
+
 test('the run skill drifting from the fix-bounds stop condition fails', () => {
   const root = copyRepo()
   mutate(root, 'plugins/flow/skills/run/SKILL.md', 'no usable fix-diff facts', 'no usable fix-diff numbers')
@@ -344,4 +359,71 @@ test('a skill dropping the CHECK/EXPECT format fails the coupling', () => {
   const r = run(root)
   assert.equal(r.status, 1, r.out)
   assert.match(r.out, /epic\/SKILL\.md.*machine-runnable acceptance criteria/s)
+})
+
+test('a reshaped COMPARE template fails against the parser regex', () => {
+  // A template the parser rejects is worse than a missing one: the criterion
+  // is written, never parsed, never listed in the ledger, and the comparison
+  // it exists for is performed by nobody.
+  const root = copyRepo()
+  mutate(root, 'plugins/flow/skills/epic/SKILL.md', '  COMPARE: <design source path', '  Compare <design source path')
+  const r = run(root)
+  assert.equal(r.status, 1, r.out)
+  assert.match(r.out, /COMPARE criterion template/)
+})
+
+test('a reshaped LANDMARKS template fails the same way', () => {
+  const root = copyRepo()
+  mutate(root, 'plugins/flow/skills/epic/SKILL.md', '  LANDMARKS: <name>[, <name>]', '  LANDMARKS <name>[, <name>]')
+  const r = run(root)
+  assert.equal(r.status, 1, r.out)
+  assert.match(r.out, /LANDMARKS criterion template/)
+})
+
+test('an execution lane that teaches the comparison without --removed-from fails', () => {
+  const root = copyRepo()
+  mutate(root, 'plugins/flow/skills/quick/SKILL.md', '--removed-from', '--removed')
+  const r = run(root)
+  assert.equal(r.status, 1, r.out)
+  assert.match(r.out, /quick\/SKILL\.md.*--removed-from/s)
+})
+
+test('a document dropping the COMPARE criterion fails the coupling', () => {
+  const root = copyRepo()
+  mutate(root, 'plugins/flow/skills/quick/SKILL.md', 'COMPARE', 'COMPARISON')
+  const r = run(root)
+  assert.equal(r.status, 1, r.out)
+  assert.match(r.out, /quick\/SKILL\.md.*one format in four documents/s)
+})
+
+test('the plan reviewer gaining a write instruction fails the never-fix check', () => {
+  // Until this entry covered it, the one rule CLAUDE.md states about both
+  // reviewer definitions was verified in only one of them — and the file it
+  // skipped is the one a design-fidelity ticket was about to edit.
+  const root = copyRepo()
+  mutate(root, 'plugins/flow/agents/plan-reviewer.md', 'You **report. You never rewrite the plan.**', 'You report and fix the plan.')
+  const r = run(root)
+  assert.equal(r.status, 1, r.out)
+  assert.match(r.out, /plan-reviewer\.md.*report and never fix/s)
+})
+
+test('a reviewer document dropping either design lens fails', () => {
+  // Both lenses are one rule in three documents — the reviewer definition, the
+  // review skill and the driver's inlined rules (the Codex runner's copy is
+  // pinned to the driver's by codex-review.test.mjs). A document that keeps
+  // only some of them hands a reviewer a design and no question to ask of it.
+  for (const [file, phrase] of [
+    ['plugins/flow/agents/ticket-reviewer.md', 'paints something else'],
+    ['plugins/flow/skills/review/SKILL.md', 'paints something else'],
+    ['plugins/flow/workflows/run-epic.mjs', 'paints something else'],
+    ['plugins/flow/agents/ticket-reviewer.md', "in the ticket's own diff"],
+    ['plugins/flow/skills/review/SKILL.md', "in the ticket's own diff"],
+    ['plugins/flow/workflows/run-epic.mjs', "in the ticket's own diff"],
+  ]) {
+    const root = copyRepo()
+    mutate(root, file, phrase, 'somewhere else entirely')
+    const r = run(root)
+    assert.equal(r.status, 1, `${file} / ${phrase}: ${r.out}`)
+    assert.match(r.out, /doctrine phrase missing/)
+  }
 })

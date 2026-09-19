@@ -957,6 +957,119 @@ test('an unreadable status log is a nonzero exit naming it, never an empty list'
   assert.match(noId.stderr, /usage: tickets\.mjs deviations <ID>/)
 })
 
+// ── the compared subcommand ──────────────────────────────────────────────────
+// The count of `**Compared:**` fidelity tables one ticket's own entries
+// record. It lives in the script rather than in a grep inside the driver's
+// prompt because the driver's suite stubs every agent: a counting pipeline in
+// a template literal is executed by no test, and a mis-escaped `\*\*` would
+// first show as a count of 0 on a live run — indistinguishable from a ticket
+// that recorded nothing, and merged as such.
+
+const VISION_STATUS = `# Vision epic — status log
+
+Append-only record of finished tickets. Tickets: \`epics/vision/tickets.md\`.
+
+### V-1 — the landing page — 2026-09-10 — DONE
+
+**Built:** the page.
+
+**Compared:** at 1440 and 393, against designs/City Desktop.html, removals from
+origin/epic/vision:
+
+landmark  property  design  page
+hero      order     1       2
+
+**Owed:** Nothing.
+
+**Addendum — 2026-09-11 — the comparison re-run after the review fix.**
+
+**Compared:** at 1440, no differences — 6 landmarks compared.
+
+### V-2 — the results list — 2026-09-12 — DONE
+
+**Built:** the list.
+
+**Compared:** owed — no browser in this session; Vadim accepted it 2026-09-12.
+
+**Owed:** Nothing.
+
+### V-3 — the footer — 2026-09-13 — DONE
+
+**Built:** the footer.
+
+**Owed:** Nothing.
+`
+
+function visionRepo(name, status = VISION_STATUS) {
+  const dir = join(tmp, name)
+  git(tmp, 'init', '--initial-branch=main', dir)
+  mkdirSync(join(dir, 'epics/vision'), { recursive: true })
+  writeFileSync(
+    join(dir, 'epics/vision/tickets.md'),
+    '# Vision epic — tickets\n\nDelivery: release\n\n## V-1 — the landing page\n\n**Scope.** V1.\n\n## V-2 — the results list\n\n**Scope.** V2.\n\n## V-3 — the footer\n\n**Scope.** V3.\n',
+  )
+  writeFileSync(join(dir, 'epics/vision/status.md'), status)
+  return dir
+}
+
+test('compared counts the tables a ticket\'s own entries record, addenda included', () => {
+  const dir = visionRepo('compared')
+  const v1 = JSON.parse(run(dir, 'compared', 'v-1', '--json'))
+  assert.equal(v1.ticket, 'V-1')
+  assert.equal(v1.compared, 2, "the entry's own table and the one its addendum added")
+  assert.deepEqual(v1.tables.map((t) => t.line > 0), [true, true], 'each is reported with the line it sits on')
+  assert.match(v1.tables[0].text, /against designs\/City Desktop\.html/)
+  // An owed comparison is a recorded one: it says a human accepted that it
+  // could not run, which a reader can see and a gate can count — the whole
+  // point of writing the field rather than omitting it.
+  assert.equal(JSON.parse(run(dir, 'compared', 'V-2', '--json')).compared, 1)
+  assert.equal(JSON.parse(run(dir, 'compared', 'V-3', '--json')).compared, 0, 'a ticket that recorded none reads as none')
+  assert.match(run(dir, 'compared', 'V-3'), /0 `\*\*Compared:\*\*` field\(s\) recorded/)
+})
+
+test('compared never counts another ticket\'s table', () => {
+  // A status log is append-only and a ticket branch carries every earlier
+  // ticket's entries, each able to carry this same field — so a count over the
+  // whole file would let a predecessor's comparison answer for this ticket,
+  // which is the gate passing on somebody else's evidence.
+  const dir = visionRepo('compared-narrowing')
+  assert.equal(JSON.parse(run(dir, 'compared', 'V-3', '--json')).compared, 0)
+  const text = readFileSync(join(dir, 'epics/vision/status.md'), 'utf8')
+  assert.match(text, /\*\*Compared:\*\*/, 'the log does carry tables — three of them, under other tickets')
+})
+
+test('compared --log-from reads the pushed branch, and an unreadable log is never a count of 0', () => {
+  const dir = visionRepo('compared-ref', '# Vision epic — status log\n')
+  git(dir, 'config', 'user.email', 'test@example.com')
+  git(dir, 'config', 'user.name', 'Test')
+  git(dir, 'config', 'commit.gpgsign', 'false')
+  git(dir, 'add', '.')
+  git(dir, 'commit', '-m', 'V-1: start the epic')
+  git(dir, 'checkout', '-b', 'v-1')
+  writeFileSync(join(dir, 'epics/vision/status.md'), VISION_STATUS)
+  git(dir, 'add', '.')
+  git(dir, 'commit', '-m', 'V-1: the landing page')
+  git(dir, 'checkout', 'main')
+
+  assert.equal(JSON.parse(run(dir, 'compared', 'V-1', '--json')).compared, 0, 'the checkout records none')
+  const fromRef = JSON.parse(run(dir, 'compared', 'V-1', '--log-from', 'v-1', '--json'))
+  assert.equal(fromRef.compared, 2, 'the pushed branch records two')
+  assert.equal(fromRef.logFrom, 'v-1')
+  assert.equal(fromRef.logPath, 'epics/vision/status.md', 'the ref-relative path, not a checkout path')
+
+  const badRef = runFail(dir, 'compared', 'V-1', '--log-from', 'no-such-ref', '--json')
+  assert.equal(badRef.status, 1)
+  assert.match(badRef.stderr, /not "no comparison"/, 'the refusal says what it refuses to claim')
+  assert.equal(badRef.stdout, '', 'no payload at all — a count of 0 would read as a ticket that skipped the comparison')
+
+  const noValue = runFail(dir, 'compared', 'V-1', '--log-from', '--json')
+  assert.equal(noValue.status, 2)
+  assert.match(noValue.stderr, /--log-from needs a git ref/)
+  const noId = runFail(dir, 'compared')
+  assert.equal(noId.status, 2)
+  assert.match(noId.stderr, /usage: tickets\.mjs compared <ID>/)
+})
+
 test('doctor flags a deviation line that will not parse, inside an entry only', () => {
   // A near-miss reads as absent, and the departure stays prose no command sees
   // — the exact failure the line exists to end, reintroduced one typo at a
@@ -1655,8 +1768,8 @@ test('the Delivery line parses tolerantly and exposes in find and list', () => {
   assert.equal(a.delivery, 'incremental')
 
   const data = JSON.parse(run(repo, 'list', '--json'))
-  assert.deepEqual(data.modes.gamma, { delivery: 'release', reviewerModel: 'opus', workerModel: 'sonnet', workerRunner: 'codex', shadowReviewer: 'codex', plannerModel: 'fable', consequencePaths: ['src/auth/**', 'migrations/**'], fixBoundsExclude: ['src/messages/*.json'], ticketBudget: 250000 })
-  assert.deepEqual(data.modes.alpha, { delivery: 'incremental', reviewerModel: null, workerModel: null, workerRunner: null, shadowReviewer: null, plannerModel: null, consequencePaths: null, fixBoundsExclude: null, ticketBudget: null })
+  assert.deepEqual(data.modes.gamma, { delivery: 'release', reviewerModel: 'opus', workerModel: 'sonnet', workerRunner: 'codex', shadowReviewer: 'codex', plannerModel: 'fable', consequencePaths: ['src/auth/**', 'migrations/**'], fixBoundsExclude: ['src/messages/*.json'], designSources: null, ticketBudget: 250000 })
+  assert.deepEqual(data.modes.alpha, { delivery: 'incremental', reviewerModel: null, workerModel: null, workerRunner: null, shadowReviewer: null, plannerModel: null, consequencePaths: null, fixBoundsExclude: null, designSources: null, ticketBudget: null })
 })
 
 test('a Worker model line pins the implementer; absent, workers inherit the session', () => {
@@ -1685,7 +1798,7 @@ test('an unrecognised or near-miss Delivery line warns instead of silently defau
     assert.equal(data.modes.misdeclared.delivery, 'continuous', 'the raw value is exposed, not coerced')
     assert.deepEqual(
       data.modes['fancy-delivery'],
-      { delivery: 'incremental', reviewerModel: null, workerModel: null, workerRunner: null, shadowReviewer: null, plannerModel: null, consequencePaths: null, fixBoundsExclude: null, ticketBudget: null },
+      { delivery: 'incremental', reviewerModel: null, workerModel: null, workerRunner: null, shadowReviewer: null, plannerModel: null, consequencePaths: null, fixBoundsExclude: null, designSources: null, ticketBudget: null },
       'a formatted Delivery line reads as absent, so the default applies',
     )
     const rows = JSON.parse(run(repo, 'doctor', '--json'))
@@ -1712,7 +1825,7 @@ test('the retired two-line syntax is flagged, not silently ignored', () => {
     const data = JSON.parse(run(repo, 'list', '--json'))
     assert.deepEqual(
       data.modes.oldstyle,
-      { delivery: 'incremental', reviewerModel: null, workerModel: null, workerRunner: null, shadowReviewer: null, plannerModel: null, consequencePaths: null, fixBoundsExclude: null, ticketBudget: null },
+      { delivery: 'incremental', reviewerModel: null, workerModel: null, workerRunner: null, shadowReviewer: null, plannerModel: null, consequencePaths: null, fixBoundsExclude: null, designSources: null, ticketBudget: null },
       'the dead labels parse as nothing; the delivery default applies',
     )
     const rows = JSON.parse(run(repo, 'doctor', '--json'))
@@ -1866,6 +1979,70 @@ test('a Fix bounds exclude near-miss is flagged by doctor, never silently droppe
   }
 })
 
+test('a Design sources line keeps each whole path, spaces and all, and reaches find and list', () => {
+  // NOT the glob list's parse: that one keeps a segment's first word, which
+  // would turn "designs/City Desktop.html" into "designs/City" — a path to
+  // nothing, handed to every reader of the epic. The whole text between
+  // commas is the path here, which is also why the line carries no prose.
+  mkdirSync(join(repo, 'epics/designed'), { recursive: true })
+  mkdirSync(join(repo, 'designs'), { recursive: true })
+  writeFileSync(join(repo, 'designs/map.html'), '<!doctype html><title>map</title>')
+  writeFileSync(
+    join(repo, 'epics/designed/tickets.md'),
+    '# Designed\n\nDesign sources: designs/City Desktop.html, designs/map.html\n\n## D-1 — the page\n\n**Scope.** D.\n',
+  )
+  try {
+    const d = JSON.parse(run(repo, 'find', 'D-1', '--json'))
+    assert.deepEqual(d.designSources, ['designs/City Desktop.html', 'designs/map.html'], 'both paths whole, the space kept')
+    assert.equal(d.designMap, null, 'no design-map.json yet — null, never a path to a file that is not there')
+    assert.deepEqual(
+      JSON.parse(run(repo, 'list', '--json')).modes.designed.designSources,
+      ['designs/City Desktop.html', 'designs/map.html'],
+      'the run skill reads an epic’s configuration from list --json, so a line only find exposes reaches no run',
+    )
+    assert.equal(JSON.parse(run(repo, 'find', 'A-2', '--json')).designSources, null, 'absent is null, never a default')
+    // The map is derived from the folder, never declared: writing one is all
+    // it takes for every reader to be handed its absolute path.
+    writeFileSync(join(repo, 'epics/designed/design-map.json'), '{"landmarks":[]}')
+    assert.equal(
+      JSON.parse(run(repo, 'find', 'D-1', '--json')).designMap,
+      join(repo, 'epics/designed/design-map.json'),
+      'the design map is exposed as an absolute path once it exists',
+    )
+  } finally {
+    rmSync(join(repo, 'epics/designed'), { recursive: true, force: true })
+    rmSync(join(repo, 'designs'), { recursive: true, force: true })
+  }
+})
+
+test('doctor warns about a declared design source that does not exist, and about a line that will not parse', () => {
+  // Two silent failures at one door. A path to nothing parses fine and hands
+  // every reader — brief, ticket reviewer, plan reviewer — a file they cannot
+  // open; a formatted label parses as nothing at all and the epic reads as
+  // having no design. Both are named, and the missing one by its full path,
+  // because a path with a space is where a truncating reader goes wrong.
+  mkdirSync(join(repo, 'epics/designed'), { recursive: true })
+  mkdirSync(join(repo, 'designs'), { recursive: true })
+  writeFileSync(join(repo, 'designs/map.html'), '<!doctype html><title>map</title>')
+  writeFileSync(
+    join(repo, 'epics/designed/tickets.md'),
+    '# Designed\n\nDesign sources: designs/City Desktop.html, designs/map.html\n\n**Design sources:** designs/other.html\n\n## D-1 — the page\n\n**Scope.** D.\n',
+  )
+  try {
+    const rows = JSON.parse(run(repo, 'doctor', '--json'))
+    const missing = rows.filter((r) => r.level === 'warn' && /does not exist/.test(r.msg))
+    assert.equal(missing.length, 1, 'only the path that is really absent is named')
+    assert.match(missing[0].msg, /designs\/City Desktop\.html/, 'named in full, the space included')
+    assert.ok(!missing.some((r) => /map\.html/.test(r.msg)), 'the path that exists is not flagged')
+    const near = rows.find((r) => r.level === 'warn' && r.msg.includes('designed/tickets.md') && /will not parse/.test(r.msg))
+    assert.ok(near, 'the near-miss scan covers the Design sources label')
+    assert.match(near.msg, /"Design sources: <path>\[, <path>\]"/, 'the warning names the syntax that would parse')
+  } finally {
+    rmSync(join(repo, 'epics/designed'), { recursive: true, force: true })
+    rmSync(join(repo, 'designs'), { recursive: true, force: true })
+  }
+})
+
 test('a Ticket budget line parses digits with k/m suffixes; an unrecognised suffix reads as absent and is flagged', () => {
   // The run driver enforces this as a per-ticket output-token ceiling; this
   // script only parses and exposes it. The suffix boundary is load-bearing:
@@ -1912,7 +2089,7 @@ test('an epic with no declaration lines defaults to incremental delivery', () =>
   writeFileSync(join(repo, 'epics/delta/tickets.md'), '# Delta\n\n## D-1 — bare epic\n\n**Scope.** Bare.\n')
   try {
     const data = JSON.parse(run(repo, 'list', '--json'))
-    assert.deepEqual(data.modes.delta, { delivery: 'incremental', reviewerModel: null, workerModel: null, workerRunner: null, shadowReviewer: null, plannerModel: null, consequencePaths: null, fixBoundsExclude: null, ticketBudget: null })
+    assert.deepEqual(data.modes.delta, { delivery: 'incremental', reviewerModel: null, workerModel: null, workerRunner: null, shadowReviewer: null, plannerModel: null, consequencePaths: null, fixBoundsExclude: null, designSources: null, ticketBudget: null })
   } finally {
     rmSync(join(repo, 'epics/delta'), { recursive: true, force: true })
   }
@@ -1926,7 +2103,7 @@ test('the Delivery line parses case-insensitively', () => {
   )
   try {
     const data = JSON.parse(run(repo, 'list', '--json'))
-    assert.deepEqual(data.modes.shout, { delivery: 'release', reviewerModel: null, workerModel: null, workerRunner: null, shadowReviewer: null, plannerModel: null, consequencePaths: null, fixBoundsExclude: null, ticketBudget: null })
+    assert.deepEqual(data.modes.shout, { delivery: 'release', reviewerModel: null, workerModel: null, workerRunner: null, shadowReviewer: null, plannerModel: null, consequencePaths: null, fixBoundsExclude: null, designSources: null, ticketBudget: null })
   } finally {
     rmSync(join(repo, 'epics/shout'), { recursive: true, force: true })
   }
@@ -1951,7 +2128,7 @@ test('a value-less label line reads as absent, never the next paragraph\'s first
     const data = JSON.parse(run(repo, 'list', '--json'))
     assert.deepEqual(
       data.modes.bare,
-      { delivery: 'incremental', reviewerModel: null, workerModel: null, workerRunner: null, shadowReviewer: null, plannerModel: null, consequencePaths: null, fixBoundsExclude: null, ticketBudget: null },
+      { delivery: 'incremental', reviewerModel: null, workerModel: null, workerRunner: null, shadowReviewer: null, plannerModel: null, consequencePaths: null, fixBoundsExclude: null, designSources: null, ticketBudget: null },
       'a value-less label must read as absent (incremental default / null), never scavenge prose',
     )
     // And doctor's near-miss wording is true of these lines: they will not
@@ -2210,6 +2387,64 @@ says whether anything happened.
   CHECK: node -e "console.log('TAP version 13'); console.log('1..2'); console.log('ok 1 - the integration case # SKIP no DATABASE_URL'); console.log('not ok 2 - the write fence # SKIP no DATABASE_URL')"
 `,
 )
+// A second epic in the same repository for the COMPARE criterion: the
+// fidelity form of the machine-runnable criterion, which this script never
+// runs because it owns no browser. Its own epic because it needs a
+// `Design sources:` line, and the checks epic's preamble is what the --from
+// tests above assert the shape of.
+mkdirSync(join(crepo, 'designs'), { recursive: true })
+writeFileSync(join(crepo, 'designs/City Desktop.html'), '<!doctype html><title>city</title>')
+writeFileSync(join(crepo, 'designs/map.html'), '<!doctype html><title>map</title>')
+mkdirSync(join(crepo, 'epics/compares'), { recursive: true })
+const comparesDoc = join(crepo, 'epics/compares/tickets.md')
+writeFileSync(
+  comparesDoc,
+  `# Compares epic — tickets
+
+Delivery: incremental
+Design sources: designs/City Desktop.html, designs/map.html
+
+## P-1 — a comparison of named landmarks
+
+**Acceptance criteria.**
+- the hero and the nav match the artboard at both widths
+  COMPARE: designs/City Desktop.html @ 1440,393
+  LANDMARKS: hero, nav
+- the command answers
+  CHECK: node -e "console.log('ok 1/1')"
+  EXPECT: ok 1/1
+
+## P-2 — the whole page, at one width
+
+**Acceptance criteria.**
+- the whole page matches the artboard
+  COMPARE: designs/map.html @ 1440
+
+## P-3 — a comparison with no width
+
+**Acceptance criteria.**
+- the page renders as drawn
+  COMPARE: designs/map.html
+
+## P-4 — LANDMARKS with no COMPARE above it
+
+**Acceptance criteria.**
+- the hero matches
+  LANDMARKS: hero
+
+## P-5 — a comparison naming a path the epic does not declare
+
+**Acceptance criteria.**
+- the page matches
+  COMPARE: designs/other.html @ 1440
+
+## P-6 — a comparison-shaped line that will not parse
+
+**Acceptance criteria.**
+- the page matches
+  Compare: designs/map.html @ 1440
+`,
+)
 git(crepo, 'add', '.')
 git(crepo, 'commit', '-m', 'checks epic')
 
@@ -2315,6 +2550,29 @@ test('find --from reads the epic declarations from the ref, never the working tr
   }
 })
 
+test('find --from reads Design sources from the ref, while the design map stays a working-tree path', () => {
+  // The declaration is read as signed off, like every other: a ticket branch
+  // that adds a design source to its own copy of the preamble must not be
+  // able to hand its reviewer a design nobody approved. The map's PATH is not
+  // a declaration — it says where the file is now — so `--from` leaves it be.
+  const original = readFileSync(checksDoc, 'utf8')
+  try {
+    writeFileSync(checksDoc, original.replace('Delivery: incremental', 'Delivery: incremental\nDesign sources: designs/City Desktop.html'))
+    assert.deepEqual(JSON.parse(run(crepo, 'find', 'K-1', '--json')).designSources, ['designs/City Desktop.html'], 'the working tree sees the edit')
+    const out = JSON.parse(run(crepo, 'find', 'K-1', '--json', '--from', 'HEAD'))
+    assert.equal(out.designSources, null, 'the committed document is the source')
+    writeFileSync(join(crepo, 'epics/checks/design-map.json'), '{"landmarks":[]}')
+    assert.equal(
+      JSON.parse(run(crepo, 'find', 'K-1', '--json', '--from', 'HEAD')).designMap,
+      join(crepo, 'epics/checks/design-map.json'),
+      'the map path describes the repository as it is now, uncommitted included',
+    )
+  } finally {
+    writeFileSync(checksDoc, original)
+    rmSync(join(crepo, 'epics/checks/design-map.json'), { force: true })
+  }
+})
+
 test('find --from a ref that cannot be read refuses instead of falling back to the working tree', () => {
   const fail = runFail(crepo, 'find', 'K-1', '--json', '--from', 'refs/no/such/ref')
   assert.equal(fail.status, 1)
@@ -2322,6 +2580,158 @@ test('find --from a ref that cannot be read refuses instead of falling back to t
   const bare = runFail(crepo, 'find', 'K-1', '--from')
   assert.equal(bare.status, 2)
   assert.match(bare.stderr, /--from needs a git ref/)
+})
+
+// ── the COMPARE criterion ────────────────────────────────────────────────────
+// Part of the one machine-runnable format, and the one part no code runs: the
+// comparison needs a browser and this script owns none. So the ledger reports
+// comparisons apart from checks, counts them in neither `total` nor `passed`
+// — the unattended driver halts when `passed !== total`, so a compare counted
+// there would halt every COMPARE ticket — and what gates them is the presence
+// of the `**Compared:**` table in the status entry.
+
+test('the ledger reports comparisons apart from checks, in neither total nor passed', () => {
+  const out = JSON.parse(run(crepo, 'check', 'P-1', '--json'))
+  assert.equal(out.total, 1, 'the CHECK beside it is the only thing counted')
+  assert.equal(out.passed, 1)
+  assert.equal(out.allPassed, true, 'a comparison this script never runs cannot fail the gate it is not in')
+  assert.equal(out.compares.length, 1)
+  const c = out.compares[0]
+  assert.equal(c.criterion, 'the hero and the nav match the artboard at both widths')
+  assert.equal(c.source, 'designs/City Desktop.html', 'the path keeps its space: everything before the last @ is the path')
+  assert.deepEqual(c.widths, [1440, 393])
+  assert.deepEqual(c.landmarks, ['hero', 'nav'])
+  assert.equal(c.status, 'manual')
+  assert.match(c.note, /run the differ, table required in the entry/)
+  const text = run(crepo, 'check', 'P-1')
+  assert.match(text, /1\/1 checks passed/)
+  assert.match(text, /1 comparison\(s\) this script never runs/)
+})
+
+test('a COMPARE with no LANDMARKS line is the whole page, and is still not a check', () => {
+  const out = JSON.parse(run(crepo, 'check', 'P-2', '--json'))
+  assert.equal(out.total, 0, 'a ticket whose only criterion is a comparison has nothing to run')
+  assert.equal(out.allPassed, true)
+  assert.equal(out.compares[0].landmarks, null, 'absent means every landmark in the map — the whole page')
+  assert.match(run(crepo, 'check', 'P-2'), /every landmark in the map — the whole page/)
+})
+
+test('a malformed COMPARE is a ledger problem and fails allPassed, exactly as a malformed CHECK does', () => {
+  // Three shapes, each of which would otherwise be a criterion nobody can
+  // re-run: no width, a LANDMARKS line narrowing nothing, and a path the
+  // epic's Design sources line does not list — which is a comparison against
+  // a file neither reviewer was handed.
+  for (const [id, why] of [
+    ['P-3', /no "@ <width>"/],
+    ['P-4', /no COMPARE line above it/],
+    ['P-5', /"Design sources:" line does not list/],
+  ]) {
+    const fail = runFail(crepo, 'check', id, '--json')
+    assert.equal(fail.status, 1, `${id} must fail the gate`)
+    const out = JSON.parse(fail.stdout)
+    assert.equal(out.allPassed, false)
+    assert.equal(out.compares.length, 0, 'a malformed comparison is a problem, never a silently listed one')
+    assert.equal(out.problems.length, 1)
+    assert.match(out.problems[0].why, why)
+  }
+})
+
+test('prose that merely begins "Compare:" or "Landmarks:" is not a malformed criterion', () => {
+  // Installed projects update live: before this pin, a case-blind near-miss
+  // scan failed the gate of any ticket whose criteria used the English word.
+  const dir = mkdtempSync(join(tmpdir(), 'tickets-prose-'))
+  try {
+    git(dir, 'init', '--initial-branch=main')
+    git(dir, 'config', 'user.email', 'test@example.com')
+    git(dir, 'config', 'user.name', 'Test')
+    mkdirSync(join(dir, 'epics', 'prose'), { recursive: true })
+    writeFileSync(
+      join(dir, 'epics', 'prose', 'tickets.md'),
+      `# Prose epic — tickets
+
+## W-1 — words, not labels
+
+**Acceptance criteria.**
+- Compare: the old output with the new one by hand.
+- Landmarks: every section keeps its heading.
+  Compare: both by eye.
+- it runs
+  CHECK: true
+`,
+    )
+    git(dir, 'add', '.')
+    git(dir, 'commit', '-q', '-m', 'prose epic')
+    // `run` throws on a nonzero exit, so reaching the asserts is the exit-0 half.
+    const out = JSON.parse(run(dir, 'check', 'W-1', '--json'))
+    assert.equal(out.problems.length, 0, JSON.stringify(out.problems))
+    assert.equal(out.allPassed, true)
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('a comparison-shaped line that will not parse is a problem in every spelling, never a ticket owing nothing', () => {
+  // Each of these read as `compares: 0, problems: 0` for one commit: the ticket
+  // owed a comparison, the ledger said it owed none, and the gate that stops a
+  // merge on a missing comparison had nothing to fire on.
+  const shapes = [
+    '- Compare: designs/a.html @ 1440',
+    '- compare: designs/a.html @ 1440',
+    '  Compare: designs/a.html @1440',
+    '  compare: designs/a.html @ 1440,393',
+    '- COMPARE: designs/a.html @ 1440',
+    '  LANDMARKS : hero, nav',
+  ]
+  for (const shape of shapes) {
+    const dir = mkdtempSync(join(tmpdir(), 'tickets-shape-'))
+    try {
+      git(dir, 'init', '--initial-branch=main')
+      git(dir, 'config', 'user.email', 'test@example.com')
+      git(dir, 'config', 'user.name', 'Test')
+      mkdirSync(join(dir, 'epics', 'shape'), { recursive: true })
+      writeFileSync(
+        join(dir, 'epics', 'shape', 'tickets.md'),
+        `# Shape epic — tickets\n\nDesign sources: designs/a.html\n\n## S-1 — one malformed comparison\n\n**Acceptance criteria.**\n- the page matches\n${shape}\n- it runs\n  CHECK: true\n`,
+      )
+      git(dir, 'add', '.')
+      git(dir, 'commit', '-q', '-m', 'shape epic')
+      const failed = runFail(dir, 'check', 'S-1', '--json')
+      assert.ok(failed, `${JSON.stringify(shape)} passed the gate`)
+      const out = JSON.parse(failed.stdout)
+      assert.equal(out.problems.length, 1, `${JSON.stringify(shape)}: ${JSON.stringify(out.problems)}`)
+      assert.equal(out.allPassed, false)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  }
+})
+
+test('doctor flags a COMPARE/LANDMARKS near-miss, so a comparison never silently disappears', () => {
+  const rows = JSON.parse(runFail(crepo, 'doctor', '--json').stdout)
+  const p6 = rows.filter((r) => r.level === 'warn' && r.msg.includes('(P-6)'))
+  assert.equal(p6.length, 1, rows.map((r) => r.msg).join('\n'))
+  assert.match(p6[0].msg, /will not parse, so it silently never runs/)
+  assert.match(p6[0].msg, /CHECK\/EXPECT\/COMPARE\/LANDMARKS/)
+  // The malformed comparisons are flagged at the author's door too, not only
+  // by the ledger a gate reads.
+  assert.ok(rows.some((r) => r.msg.includes('(P-3)') && /no "@ <width>"/.test(r.msg)))
+  assert.ok(rows.some((r) => r.msg.includes('(P-5)') && /Design sources/.test(r.msg)))
+})
+
+test('check --from validates a COMPARE against the design sources of the same ref', () => {
+  // One document, one judgment: a branch that adds a design source to its own
+  // copy of the preamble must not be able to anchor a comparison the
+  // signed-off document does not declare.
+  const original = readFileSync(comparesDoc, 'utf8')
+  try {
+    writeFileSync(comparesDoc, original.replace('designs/map.html\n', 'designs/map.html, designs/other.html\n'))
+    assert.equal(JSON.parse(run(crepo, 'check', 'P-5', '--json')).allPassed, true, 'the working tree accepts its own addition')
+    const out = JSON.parse(runFail(crepo, 'check', 'P-5', '--json', '--from', 'HEAD').stdout)
+    assert.equal(out.allPassed, false, 'the signed-off document does not declare it')
+    assert.match(out.problems[0].why, /"Design sources:" line does not list/)
+  } finally {
+    writeFileSync(comparesDoc, original)
+  }
 })
 
 test('doctor flags CHECK/EXPECT near-misses as silently-never-runs', () => {

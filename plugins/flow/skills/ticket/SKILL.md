@@ -206,6 +206,54 @@ never an invented test command.
   unattended run the driver re-runs it with `--from origin/epic/<name>` —
   the criteria as signed off — and gates the merge in code.
 
+- A criterion carrying a `COMPARE:` line is the one the board script never
+  runs — it has no browser — so you run it, and its table is what the entry
+  carries. For each one:
+
+  ```bash
+  # 1. serve the design source and the built page with the project's OWN
+  #    tooling (its dev server, its e2e runner, a static file server) and open
+  #    each at every width the COMPARE line names.
+  # 2. print the extractor, evaluate it in the page, keep the two JSON reports:
+  node "${CLAUDE_PLUGIN_ROOT}/scripts/fidelity.mjs" extract
+  # 3. the removals, from the SIGNED-OFF map — never the working tree's:
+  git show origin/<base>:epics/<epic-name>/design-map.json > /tmp/signed-map.json
+  # 4. the comparison itself:
+  node "${CLAUDE_PLUGIN_ROOT}/scripts/fidelity.mjs" diff design.json page.json \
+    --map epics/<epic-name>/design-map.json \
+    --removed-from /tmp/signed-map.json [--landmarks <the LANDMARKS names>]
+  ```
+
+  **`--removed-from` is not optional and is never the working tree's map.** A
+  removal is a planning decision; the map in your tree is the file this ticket
+  edits (its `page` selectors are written before the page exists), so a
+  removal read from it would be a removal the reviewed party declared. Read it
+  from the base ref step 3 cut from — and when that ref has no map yet, which
+  is the first ticket of an incremental epic (the epic's documents land in
+  that ticket's own pull request), read it from `origin/epic/<epic-name>`,
+  where sign-off pushed it.
+
+  The differ's exit codes: **0** — nothing differs, or the only rows are
+  declared removals (including one the design no longer draws either: the two
+  sides agreeing with the plan). **1** — something differs; the rows say what.
+  **2** — nothing was compared, or the command or a file could not be read.
+  **Exit 2 is never "no differences"**: it means the map's selectors matched
+  neither report, so the run collected no evidence at all — fix the selectors
+  or the widths and run it again; a comparison nobody performed is recorded as
+  owed, never as passed.
+
+  Paste the differ's table into the entry's `**Compared:**` field (step 6),
+  verbatim — it is plain text for that reason. Then **every row is answered**:
+  fixed, or recorded as a `**Deviation:**`, or already a declared removal the
+  table names as such. A row nobody answers is the whole mechanism spending
+  its cost and buying nothing.
+
+  **No browser in this session, or a design nothing can render** (an image, a
+  PDF): the comparison is **owed**, said so in those words on the Verified
+  line, and the table is written by hand from the design source's own markup
+  and **labelled as hand-written**. A criterion the lane cannot perform is
+  recorded as owed, never implied.
+
 Report **counts** — "api-gateway 217/217 passed", never "tests pass". A check
 that cannot run here is recorded as owed; never imply it passed.
 
@@ -299,6 +347,13 @@ Driver-spawned: `recorded in the run record`. In-session: `unknown`.>
 test that fails with the source change reverted, or `revert check: n/a,
 prose-only`>
 
+**Compared:** <OPTIONAL, and required for every `COMPARE:` criterion this
+ticket carries: the differ's table, pasted verbatim, with the command that
+produced it and the ref the removals were read from. `owed — <why>` when the
+lane could not perform it, and `hand-written — <why nothing could render it>`
+when the table was not produced by the differ. Omitted only when the ticket
+has no `COMPARE:` criterion>
+
 **Decisions:** <judgment calls the documents left open, each with the why —
 "none" when the ticket went as written. A departure from what the documents
 show goes on its own **Deviation:** line below, never in here>
@@ -320,8 +375,20 @@ once handed to a lane that never touches the step it was meant to verify>
 ```
 
 **What counts as a deviation:** anything the ticket's documents or its design
-showed that you did not build, or built differently. A judgment call the
-documents left open is not one and stays in `**Decisions:**`. A deviation is
+showed that you did not build, or built differently. Three things are **not**
+one, because a line that stops a merge for a human has to be worth the human:
+a judgment call the documents left open, which stays in `**Decisions:**`; **a
+missed estimate** — a line count, a size, "about two lines", a duration — which
+is an expectation about effort and not about what is built, so it goes in
+`**Decisions:**` with the figure, where the reviewer weighs it; and **a change
+made in answer to a review finding**, which the re-review judges and the review
+addendum records beside the finding it answers — and when such a change moves
+something a later ticket is written against, hand that ticket an `**Owed:**`
+item naming what moved. Two of the first three deviations this line ever
+carried were missed estimates a planner had written into tickets as
+conditions, and the third was a reviewed fix: each stopped a merge to ask a
+human something already answered, and a gate that does that is a gate people
+stop reading. A deviation is
 **never owed work**, and the two are not interchangeable: an owed item is work
 someone will do, a deviation is a decision someone must see. It gets its own
 line because the field that used to hold it — `**Decisions:**` prose — is read
@@ -331,8 +398,8 @@ sentence any further. On its own line it is parsed, and
 `node "${CLAUDE_PLUGIN_ROOT}/scripts/tickets.mjs" brief <ID>` hands every one
 no human has closed to every later ticket in this epic.
 
-**`**Deviations closed:**` is the human's line — never yours, and never any
-agent's.** A dated line, in an entry or an addendum, naming each deviation as
+**`**Deviations closed:**` records a human's decision — never yours to decide,
+and never any agent's.** A dated line, in an entry or an addendum, naming each deviation as
 **accepted** or as **fixed in `<sha>`**, with who decided and when:
 
 ```markdown
@@ -361,14 +428,16 @@ nothing too, and each ends once a line **below** it names one of that entry's
 departures correctly — below, because position is time here: a correct
 reference written earlier is not a correction of a later mistake. For an entry
 that recorded one departure the correct reference is its bare ID, that being
-the only reference such an entry has. Do not write one, even for a departure
-you fixed yourself in this same ticket: a closing line the reviewed party could
-have written clears nothing, and "which of the two happened" is what the human
-reading it needs to know. Record the fix as a deviation like any other and
-leave the line to whoever decides. Step 10 draws the one boundary this leaves,
-at the attended door where the human is in the room: a sentence they dictate
-for you to commit verbatim is theirs, while one you infer from a "yes" or draft
-for them to approve is not.
+the only reference such an entry has. Do not write one on your own authority,
+even for a departure you fixed yourself in this same ticket: a closure the
+reviewed party could have decided clears nothing, and "which of the two
+happened" is what the human reading it needs to know. Record the fix as a
+deviation like any other and leave the decision to whoever owns it. Step 10
+draws the one boundary this leaves, at the attended door where the human is in
+the room: **the decision is theirs and the typing need not be** — an explicit
+answer to a departure you showed them is the decision, and you record the line
+quoting it; silence, a general instruction to carry on, or an answer about
+something else is not one.
 `node "${CLAUDE_PLUGIN_ROOT}/scripts/tickets.mjs" deviations <ID>` reads all of
 a ticket's own — closed or not, each with its closing line.
 
@@ -431,7 +500,15 @@ give it:
   rules, criteria, Not in scope (straying outside it is a finding), open owed
   items — not the whole `ticketsDoc`;
 - this ticket's own entry from `statusDoc`, not the whole log;
-- the instruction files for every area in scope.
+- the instruction files for every area in scope;
+- **when the epic declares `Design sources:` and this ticket carries a
+  `COMPARE:` criterion**: those design files, and the **signed-off** design
+  map — `git show origin/<base-branch>:epics/<epic-name>/design-map.json`,
+  never the working tree's copy, which is the file this ticket edits. The
+  entry above already carries the `**Compared:**` table; the review skill
+  says when to re-run the differ against it and what to say where nothing can
+  render a page. A reviewer that is never given the design is a reviewer who
+  can only check the table against itself.
 
 **It reports; it does not fix.**
 
@@ -480,13 +557,28 @@ log holds every one:
 
 ```bash
 node "${CLAUDE_PLUGIN_ROOT}/scripts/tickets.mjs" deviations $ARGUMENTS
+node "${CLAUDE_PLUGIN_ROOT}/scripts/tickets.mjs" compared $ARGUMENTS
 ```
+
+The second counts the `**Compared:**` tables this ticket's own entries
+record. **A ticket that carries a `COMPARE:` criterion and records no
+comparison is named as such in the summary and in the pull request body** —
+in those words, so the human reading either can see that a criterion was
+asked for and its evidence was not produced. The comparison is the one
+criterion no command runs (there is no browser in the board script), so the
+table is the only evidence there is, and a missing one is not something a
+reader can infer from a green check ledger. Two recoveries, both leaving a
+record: run the differ now and append the `**Compared:**` field in a dated
+addendum; or, where nothing in this session can render the design, append
+`**Compared:** owed — <who accepted it, when, and why it could not run>` on
+the human's word — which a reader reads as not done and every gate reads as
+present.
 
 Print, concisely: **Built** (what exists, and the files), **Verified**
 (commands, counts, anything that could not run), **Review** (effort, findings
 found, fixed, not fixed with reasons), and **Deviations** — **every** one the
 command reports, closed or not, never only the open ones. A closed one is
-shown **with its closing line**, because only a human may write that line and
+shown **with its closing line**, because only a human may decide that line and
 no command can say who did: showing the line is how a closure the reviewed
 party could have written is seen rather than trusted. Show the command's
 `note:` lines in the same field — a note says a closing line closed nothing,
@@ -555,6 +647,26 @@ reads it.
   naming it, merge nothing. If the reviewer agent could not be spawned, the
   fallback is a general agent given the reviewer definition plus the review
   skill; if that fails too, BLOCKED entry, no merge.
+- **A ticket that owes a comparison and records none is not integrated.**
+  Read it off the same ref, for the same reason:
+
+  ```bash
+  node "${CLAUDE_PLUGIN_ROOT}/scripts/tickets.mjs" compared $ARGUMENTS --log-from origin/<branch> --json
+  ```
+
+  A ticket whose section carries a `COMPARE:` criterion while `compared` reads
+  0 **records no comparison**, and this step stops before the merge commands
+  below. Nothing else about the table is judged here: whether it is *right* is
+  the reviewer's, who can re-run the differ; whether it exists is the only
+  thing a merge can hold, because the comparison is the one criterion no
+  command runs. The recoveries are step 9's, and both leave a record — run the
+  differ and append the field in a dated addendum, committed and pushed to the
+  branch this step merges; or, with no browser anywhere in reach,
+  `**Compared:** owed — <who accepted it, when, and why it could not run>` on
+  the human's word. A nonzero exit or no payload is a stop too, and never an
+  empty answer: the script refuses a log it cannot read in those words ("An
+  unreadable status log is not 'no comparison'"), and a reader that took the
+  failure for a zero would merge the one ticket this gate exists to hold.
 - **A ticket with an unclosed deviation is not integrated.** Read the
   departures off the ref this step is about to merge, never off the checkout:
 
@@ -593,30 +705,37 @@ reads it.
   rather than one paragraph inside the nine-ticket diff the release pull
   request shows.
 
-  **Two ways out, and both end in a line you do not compose.** *Accepted* —
-  the human puts the dated `**Deviations closed:**` line into the status log
-  on the ticket branch, and it is committed and pushed. *Fixed* — you build
+  **Two ways out, and both end in a decision you do not make.** *Accepted* —
+  the human says so, and the dated `**Deviations closed:**` line goes into the
+  status log on the ticket branch, committed and pushed. *Fixed* — you build
   the missing thing as new commits on this branch (`<ID>: … (deviation fix)`),
   re-run the affected checks, report the counts, append a dated addendum
-  saying what you built and where, and push; then the human's line names that
-  departure as **fixed in `<sha>`**. Either way, `git fetch origin --prune`
+  saying what you built and where, and push; then the closing line, once the
+  human has accepted the fix, names that departure as **fixed in `<sha>`**. Either way, `git fetch origin --prune`
   and re-run the command above: it reads the remote-tracking ref, which a
   human pushing the closing line from their own checkout leaves stale here,
   and a gate refusing a branch that is already clean has no diagnosis to give.
   `open: 0` is what resumes this step, whatever notes the log still carries.
-  **Never write that line yourself,
-  for any departure, including one you just fixed** — a closure the party that
-  made the departure could have written clears nothing, which is the whole
-  reason this gate is worth stopping at. Dictating the sentence for you to
-  commit verbatim is the human writing it; inferring it from a "yes", or
-  drafting it for them to approve, is not. Show them the shape step 6 carries
-  and the `<ID>.<n>` references this command printed, and say why the
-  references matter: a bare `**Deviations closed:** <ID>` facing more than one
-  open departure closes **nothing**, the command still reports those
-  departures open with a note saying so, and this step still refuses — so a
-  recovery that ends in a bare line is not a recovery. Judging whether a
-  departure is acceptable is theirs alone: show it, and say nothing about
-  which way to decide.
+  **Never decide one yourself, for any departure, including one you just
+  fixed** — a closure the party that made the departure could have decided
+  clears nothing, which is the whole reason this gate is worth stopping at.
+  **Ask for the decision, not for a sentence.** Show each open departure in one
+  or two plain sentences — what the ticket showed, what was built, what the
+  review said of it — and ask: accept, or fix? You may say which you would
+  choose and why, labelled as your recommendation. An **explicit answer to the
+  departure shown** — "accept", "ok", "fix it" — is the human's decision, and
+  the line is then yours to record: name every reference this command printed
+  (a bare `**Deviations closed:** <ID>` facing more than one open departure
+  closes **nothing** and this step still refuses), quote the answer verbatim,
+  and end it `recorded by the session from <name>'s answer`, so a reader can
+  tell a recorded decision from a dictated one. A human who would rather write
+  or push the line themselves may; nothing requires it. What is never a
+  decision: silence; a general instruction to carry on; an answer given before
+  the departure was shown, or about a different one. The first version of this
+  step demanded a dictated sentence and refused a plain "accept" three times
+  in a day, and the human it was protecting called the gate unusable — a
+  refusal that costs more than the departure it guards gets routed around,
+  which protects nothing.
 - Merge **by verified SHA, with a merge commit** — the SHA is what makes the
   merged diff exactly the reviewed one; never squash, because the ID-prefixed
   subjects reaching `epic/<epic-name>` are how the board derives `integrated`:

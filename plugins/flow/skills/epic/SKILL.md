@@ -191,6 +191,21 @@ approximated. Both glob lines split on commas, so a comma inside trailing
 prose makes that prose an entry and the run refuses to start — keep prose on
 these two lines comma-free, or leave it off.
 
+`Design sources: <path>[, <path>]` — e.g. `designs/City Desktop.html,
+designs/map.html`: the files that hold **what the design draws** — an
+artboard exported to HTML, a rendered spec page, anything a browser can
+render and `getComputedStyle` can read. Repository-relative, and they need
+not live in this epic's `context/`: a design usually belongs to the project,
+not to one epic, and copying it in would freeze a moving thing. This line is
+what hands the design to everything downstream — the brief a worker reads,
+the ticket reviewer's packet and the plan reviewer's — so an epic that has a
+design and does not declare it is an epic whose reviewers are given
+everything except the thing the page is judged against. Unlike every other
+line here, **it carries no prose**: the whole text between commas is the
+path, because designers name files with spaces in them (`City Desktop.html`)
+and nothing could tell a trailing sentence from a filename. `/flow:doctor`
+warns about a declared path that does not exist, by its full name.
+
 `Ticket budget: <n>` — e.g. `250k` or `1m`: a per-ticket output-token
 ceiling for unattended runs; the driver halts after any ticket that exceeds
 it (the ticket stays merged), so a runaway ticket is a signal, not a bill.
@@ -233,6 +248,9 @@ Then one section per ticket:
 - <a criterion a command can decide outright>
   CHECK: <command run from the repository root>
   EXPECT: <text its output must contain>
+- <a criterion about what the design draws — name the landmarks it is about>
+  COMPARE: <design source path, from the Design sources line> @ <width>[, <width>]
+  LANDMARKS: <name>[, <name>]
 ```
 
 Rules that matter:
@@ -245,7 +263,13 @@ Rules that matter:
   proves or kills it, and the doc says what happens on failure.
 - **Sized for one session and a reviewable pull request** — a few hundred
   changed lines; defect discovery collapses past roughly 400. If the
-  criteria will not fit a handful of bullets, split it.
+  criteria will not fit a handful of bullets, split it. **Size it when you
+  plan it, and never write the figure into the ticket as a condition the
+  worker must stop on** ("two lines", "split past ~450"): an estimate is the
+  planner's guess, a worker that misses it has departed from nothing that was
+  designed, and both times one was written as binding it stopped a merge to
+  ask a human a question the plan had invented. A size you expect belongs in
+  the ticket as an expectation the reviewer weighs.
 - **All three of Scope / Not in scope / Acceptance criteria.** "Not in
   scope" is what stops a fresh-context agent wandering.
 - **Acceptance criteria must be checkable.** Prefer *when <condition> then
@@ -268,6 +292,47 @@ Rules that matter:
   the gate, so an EXPECT a skip can match costs the run a halt. If
   verification needs something a session may not have (Docker, credentials,
   a browser), give the fallback: *"or flag it as owed to ticket X"*.
+- **A criterion about the design carries `COMPARE`, and names its
+  landmarks.** `COMPARE: <design source path> @ <width>[, <width>]`, indented
+  under its criterion bullet like `CHECK:`, with an optional
+  `LANDMARKS: <name>[, <name>]` line beneath it — absent means every landmark
+  in the map, which is the whole page. The path is one the preamble's
+  `Design sources:` line lists, and the widths are the ones the design draws
+  at. "Renders as the design draws it" is **not** a criterion: it is prose a
+  worker satisfies with the properties it already believes are right, which is
+  how nine tickets passed six gates and shipped a page missing three drawn
+  elements. Name the landmarks the ticket is about, and let the differ decide
+  the properties.
+
+  The landmarks themselves live in `epics/<name>/design-map.json` — a
+  planning document like `tickets.md`, written here and signed off with the
+  plan:
+
+  ```json
+  { "landmarks": [ { "name": "hero",
+                     "design": "<selector in the design source>",
+                     "page":   "<selector in the built page>" } ],
+    "removed":   [ { "name": "promo", "by": "<the deciding rule>",
+                     "date": "YYYY-MM-DD" } ] }
+  ```
+
+  A worker edits the `page` selectors — they are written before the page
+  exists — so **the `removed` list is planning's and nobody else's**: it is
+  read only from the signed-off ref, never from the copy riding the ticket
+  branch, because a worker who could not build an element could otherwise
+  declare it removed, get a clean diff and halt nothing. That is the founding
+  failure routed through the new machinery.
+
+  `tickets.mjs check` **never runs a COMPARE** — it has no browser. It lists
+  comparisons apart from the checks, marked manual, in neither `total` nor
+  `passed`; what runs the differ is the ticket's own verify step, and what the
+  reviewer reads is the `**Compared:**` table in the status entry. So a
+  COMPARE is not proven red the way a CHECK is (there is nothing to run); what
+  sign-off checks is that its path is declared, its widths are the design's,
+  and its landmarks are in the map. **Where the design cannot be rendered** —
+  an image, a PDF — `COMPARE` degrades to a table written by hand and labelled
+  as hand-written, and the ticket says so: a criterion the lane cannot perform
+  is recorded as owed, never implied.
 - **Every CHECK you write must fail on the tree before the ticket exists,
   and you prove it before sign-off.** Run each one now, on the tree as it is,
   with `node "${CLAUDE_PLUGIN_ROOT}/scripts/tickets.mjs" check <ID>`, and
@@ -282,6 +347,26 @@ Rules that matter:
   which CHECKs were proven failing, and which could not run here and why (an
   interactive runner, a minutes-long suite). The plan reviewer re-runs the
   runnable ones, and step 5 shows the ledger at the gate.
+- **An epic that declares `Design sources:` ends with one whole-page fidelity ticket**
+  — a `COMPARE` with **no** `LANDMARKS:` line for each design source,
+  at every width the design draws. Per-section comparisons distributed across
+  tickets do not sum to a page that matches: what lies between two sections
+  belongs to neither section's ticket, and in the epic this rule comes from,
+  three drawn elements shipped missing with every ticket's own criteria green.
+  It goes last, because it can only compare a page every other ticket has
+  finished building. Check its actor like any other rule here: where the
+  declared delivery gives it a lane with no browser, it is a **human-owned
+  ticket ordered before the release**, never a line owed to the release pull
+  request — a criterion deferred to that pull request merges unperformed.
+- **A plan that narrows what the design draws declares the removal.** When a
+  ground rule or a scope line says an element the design draws will not be
+  built, add it to `epics/<name>/design-map.json`'s `removed` list — the
+  element's landmark name, the deciding rule, the date — in this same
+  document's commit, so sign-off approves the list. Then a comparison prints
+  "removed by <rule>, <date>" instead of nothing; one file holds everything
+  the build deliberately does not draw; and the decision belongs to the plan,
+  where it was made, rather than to the ticket under review, which is the one
+  party that must not be able to declare its own missing element removed.
 - **No status column.** State is derived by `tickets.mjs`; a hand-maintained
   table drifts within days.
 
@@ -295,7 +380,11 @@ own `Planner model:` line when it declares one, otherwise omit the parameter
 so the agent definition's pinned model applies; `effort: high`. Give it the
 draft `epics/<name>/tickets.md`, the `context/` directory, the root
 instruction file and each in-scope area's, and one line on what was
-requested. It reports; it does not rewrite.
+requested. **When the draft declares `Design sources:`, give it those paths
+and `epics/<name>/design-map.json` as well** — the design is an input like
+the code, and a plan review that never sees the drawing cannot tell you that
+the map misses something it draws, or that a ground rule quietly narrows it.
+It reports; it does not rewrite.
 
 Then, before showing the user: **fix what is right** (re-split, reorder —
 edit `tickets.md` now, while it is cheap); **keep what you reject, with a
@@ -316,6 +405,13 @@ questions.
 tree, and which could not run in this session and why. A criterion whose
 CHECK nobody has seen fail is a criterion nobody has tested; the human
 signing off is the last reader before a worker builds against it.
+
+**If the epic declares a design, show what it will not build**: the design
+map's `removed` list, entry by entry, each with the rule that decided it —
+this is the one moment a human can say "no, that element stays" before a
+comparison starts printing it as a decision already taken. Name any
+UI-building ticket carrying no `COMPARE` criterion as **not ready**, and say
+which one closes the whole page.
 
 **Name what the lane cannot do, and what nobody will collect**: which ground
 rules and criteria need an actor the declared delivery mode does not provide

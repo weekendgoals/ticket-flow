@@ -34,6 +34,13 @@
 //                                        ledger; --from reads the criteria
 //                                        from a git ref (the signed-off
 //                                        document) instead of the working tree
+//   tickets.mjs compared <ID> [--json] [--log-from <ref>]
+//                                        how many `**Compared:**` fidelity
+//                                        tables the ticket's own status
+//                                        entries record; --log-from reads the
+//                                        log off a pushed branch, and an
+//                                        unreadable log exits nonzero rather
+//                                        than counting 0
 //   tickets.mjs spend [epic] [--json]    the recorded token ledger per ticket
 //                                        and per epic, derived from the
 //                                        status log's Tokens lines, addendum
@@ -152,6 +159,21 @@ function parsePreambleText(doc) {
     const globs = m[1].split(',').map(s => s.trim().split(/\s+/)[0]).filter(Boolean)
     return globs.length ? globs : null
   }
+  // "Design sources" is the list of files that hold what the design draws —
+  // whatever a browser can render and `getComputedStyle` can read. Its own
+  // reader, deliberately NOT `grabPathList`: that one keeps a segment's first
+  // WORD, which is right for a glob followed by prose and wrong for a file a
+  // designer named ("designs/City Desktop.html" would parse as
+  // "designs/City"). Here the whole segment between commas is the path,
+  // trimmed — which is why the line carries no prose, and why the skills that
+  // teach it say so: with spaces legal in a path, nothing could tell a
+  // trailing sentence from a filename.
+  const grabTextList = label => {
+    const m = preamble.match(new RegExp(`^${label}[^\\S\\n]*:[^\\S\\n]*(\\S[^\\n]*)`, 'im'))
+    if (!m) return null
+    const items = m[1].split(',').map(s => s.trim()).filter(Boolean)
+    return items.length ? items : null
+  }
   // "Ticket budget" is the fifth optional line: a per-ticket output-token
   // ceiling for unattended runs — digits with an optional k/m suffix
   // (`250000`, `250k`, `1m`), because a budget is a number humans write. The
@@ -191,6 +213,12 @@ function parsePreambleText(doc) {
     // tolerant list parse as Consequence paths; this script only parses it,
     // the run driver validates and applies it.
     fixBoundsExclude: grabPathList('Fix bounds exclude'),
+    // "Design sources" names what the design draws, so that everything
+    // downstream can read it: the brief a worker gets, the ticket reviewer's
+    // packet and the plan reviewer's. Absent is null — an epic with no design
+    // declares none, and nothing here judges the paths; doctor warns about one
+    // that does not exist, and this script never opens them.
+    designSources: grabTextList('Design sources'),
     ticketBudget: budget,
   }
 }
@@ -221,6 +249,12 @@ function discoverEpics() {
         // until the first run record after the split — every log written
         // before it keeps its records in status.md and is still read there.
         runsDoc: optional('runs.md'),
+        // The design map is a planning document like tickets.md, at a fixed
+        // name beside it — the differ reads it directly, so there is nothing
+        // to declare and nothing to configure. Null until an epic writes one:
+        // the path is derived, never parsed, so it cannot disagree with the
+        // preamble.
+        designMap: optional('design-map.json'),
         contextDir: optional('context'),
         ...parsePreamble(ticketsDoc),
       }
@@ -281,10 +315,37 @@ function parseTickets(epic) {
 // never runs, which is the one way a machine-checked criterion can lie.
 const CHECK_LINE = /^\s*CHECK:\s*(\S.*)$/
 const EXPECT_LINE = /^\s*EXPECT:\s*(\S.*)$/
+// The fidelity form of the same idea, and part of the same one format: an
+// indented `COMPARE: <design source path> @ <width>[,<width>]` under its
+// criterion bullet, optionally followed by `LANDMARKS: <name>[, <name>]`
+// (absent = every landmark in the map = the whole page). It is the one
+// criterion this script never RUNS: comparing an artboard with a page needs a
+// browser, and this script owns none — so `check` reports comparisons in
+// their own list, marked manual, and the code gates the presence of the
+// `**Compared:**` table instead of its content.
+//
+// The path is everything before the LAST `@`, because a design path may
+// contain spaces and may contain an `@` (`assets/@2x/hero.html`), and the
+// widths are what follows: the last `@` is the only unambiguous separator.
+const COMPARE_LINE = /^\s*COMPARE:\s*(\S.*)$/
+const LANDMARKS_LINE = /^\s*LANDMARKS:\s*(\S.*)$/
 // Near-miss shapes doctor flags: a lowercase or spaced label, or the label
 // written as a bullet of its own instead of indented under its criterion.
-const CHECK_NEAR = /^\s*(check|expect)\s*:/i
-const CHECK_BULLET_NEAR = /^\s*[-*]\s+(CHECK|EXPECT)\s*:/i
+// CHECK and EXPECT are caught in any case. COMPARE and LANDMARKS are caught
+// in capitals — and a "compare:" in any case when the line is
+// comparison-shaped, an `@` followed by a width — because "Compare:" and
+// "Landmarks:" are ordinary English at the head of an acceptance bullet:
+// installed projects update live, and a case-blind scan turned a green ledger
+// red over prose ("- Compare: the old output with the new one by hand") the
+// day it was written. The shape test is in BOTH regexes and tolerates `@1440`:
+// a bulleted line never reaches CHECK_NEAR, and a malformed comparison that
+// goes unflagged is a ticket read as owing no comparison, which is the gate
+// failing open. What still goes unflagged is a lowercase "compare: <path>"
+// with its widths forgotten — indistinguishable from prose, and left so.
+const LABEL_NEAR = '(?:[Cc][Hh][Ee][Cc][Kk]|[Ee][Xx][Pp][Ee][Cc][Tt]|COMPARE|LANDMARKS)\\s*:'
+const COMPARE_SHAPED = '[Cc][Oo][Mm][Pp][Aa][Rr][Ee]\\s*:.*@\\s*\\d'
+const CHECK_NEAR = new RegExp(`^\\s*(?:${LABEL_NEAR}|${COMPARE_SHAPED})`)
+const CHECK_BULLET_NEAR = new RegExp(`^\\s*[-*]\\s+(?:${LABEL_NEAR}|${COMPARE_SHAPED})`)
 
 // One layer in from a near-miss: shapes that parse, run, and still cannot
 // decide anything. Both are quoted from redesign-foundation's history, where
@@ -328,13 +389,49 @@ function checkShapeProblems(command) {
   return why
 }
 
-function parseChecks(body) {
+// One malformed COMPARE is a ledger problem, exactly as a malformed CHECK is:
+// a criterion nobody can satisfy and a criterion nobody can read fail the gate
+// the same way. `designSources` is the epic's declared list — a COMPARE naming
+// a path the epic does not declare is unanchored, since the declaration is
+// what hands the design to the reviewers, and a comparison against a file
+// nobody was given is a comparison nobody can check.
+function compareProblem(value, designSources) {
+  const at = value.lastIndexOf('@')
+  if (at === -1) return 'COMPARE with no "@ <width>" — a comparison needs the width the design draws at (needs "COMPARE: <design source path> @ <width>[, <width>]"), because a page compared at an unstated width is compared against nothing in particular'
+  const source = value.slice(0, at).trim()
+  const widthText = value.slice(at + 1).trim()
+  if (!source) return 'COMPARE with no design source path before its "@" (needs "COMPARE: <design source path> @ <width>[, <width>]")'
+  const widths = widthText.split(',').map((w) => w.trim())
+  if (!widths.length || widths.some((w) => !/^\d+$/.test(w)))
+    return `COMPARE whose width list is not widths: "${widthText}" (needs one or more plain numbers, "@ 1440,393") — a width nothing can parse is a comparison nobody can re-run`
+  if (!designSources || !designSources.length)
+    return `COMPARE names "${source}", but this epic declares no "Design sources:" line — the declaration is what hands the design to both reviewers, so a comparison against an undeclared file is one nobody else can open`
+  if (!designSources.includes(source))
+    return `COMPARE names "${source}", which this epic's "Design sources:" line does not list (it lists: ${designSources.join(', ')}) — the whole text between commas is a path there, so check for a typo rather than adding prose`
+  return null
+}
+
+function parseCompare(value) {
+  const at = value.lastIndexOf('@')
+  return {
+    source: value.slice(0, at).trim(),
+    widths: value
+      .slice(at + 1)
+      .split(',')
+      .map((w) => Number(w.trim())),
+  }
+}
+
+function parseChecks(body, designSources = null) {
   const checks = []
+  const compares = []
   const problems = []
   let bullet = null
   body.split('\n').forEach((line, i) => {
     const c = line.match(CHECK_LINE)
     const e = line.match(EXPECT_LINE)
+    const cmp = line.match(COMPARE_LINE)
+    const lm = line.match(LANDMARKS_LINE)
     const b = line.match(/^\s*[-*]\s+(.*)$/)
     if (c) {
       const command = c[1].trim()
@@ -345,15 +442,28 @@ function parseChecks(body) {
       if (!last || last.expect !== null)
         problems.push({ line: i + 1, text: line.trim(), why: 'EXPECT with no CHECK line above it to attach to' })
       else last.expect = e[1].trim()
+    } else if (cmp) {
+      const value = cmp[1].trim()
+      const why = compareProblem(value, designSources)
+      if (why) problems.push({ line: i + 1, text: line.trim(), why })
+      else compares.push({ criterion: bullet, compare: value, ...parseCompare(value), landmarks: null })
+    } else if (lm) {
+      // LANDMARKS attaches to the COMPARE above it the way EXPECT attaches to
+      // its CHECK. With none above it, it narrows nothing and reads as if it
+      // did — so it is a problem, not a silently ignored line.
+      const last = compares[compares.length - 1]
+      if (!last || last.landmarks !== null)
+        problems.push({ line: i + 1, text: line.trim(), why: 'LANDMARKS with no COMPARE line above it to attach to — on its own it narrows nothing, while reading as though it narrowed the comparison' })
+      else last.landmarks = lm[1].split(',').map((n) => n.trim()).filter(Boolean)
     } else if (CHECK_BULLET_NEAR.test(line)) {
-      problems.push({ line: i + 1, text: line.trim(), why: 'CHECK/EXPECT written as its own bullet — indent it under the criterion bullet instead, or it never runs' })
+      problems.push({ line: i + 1, text: line.trim(), why: 'CHECK/EXPECT/COMPARE/LANDMARKS written as its own bullet — indent it under the criterion bullet instead, or it never runs' })
     } else if (b) {
       bullet = b[1].trim()
     } else if (CHECK_NEAR.test(line)) {
-      problems.push({ line: i + 1, text: line.trim(), why: 'looks like a CHECK/EXPECT line but will not parse, so it silently never runs (needs the uppercase label at line start after indentation, a colon, and a value)' })
+      problems.push({ line: i + 1, text: line.trim(), why: 'looks like a CHECK/EXPECT/COMPARE/LANDMARKS line but will not parse, so it silently never runs (needs the uppercase label at line start after indentation, a colon, and a value)' })
     }
   })
-  return { checks, problems }
+  return { checks, compares, problems }
 }
 
 // One command may hang forever, and in an unattended run a hung gate is
@@ -1538,15 +1648,25 @@ function doctor() {
   // old two-line syntax ("Release mode:" / "Run mode:") is in the near set
   // deliberately: those labels parse as nothing at all now, and a preamble
   // written in them would silently run incremental.
-  const declNear = /^[^A-Za-z]*\b(delivery|(reviewer|worker|planner)\s+model|worker\s+runner|shadow\s+reviewer|consequence\s+paths|fix\s+bounds\s+exclude|ticket\s+budget|(release|run)\s+mode)\b/i
-  const declStrict = /^Delivery\s*:\s*[A-Za-z-]+|^(Reviewer|Worker|Planner) model\s*:\s*[A-Za-z0-9._-]+|^Worker runner\s*:\s*[A-Za-z-]+|^Shadow reviewer\s*:\s*[A-Za-z-]+|^Consequence paths\s*:\s*\S+|^Fix bounds exclude\s*:\s*\S+|^Ticket budget\s*:\s*\d+[km]?(\s|$)/i
+  const declNear = /^[^A-Za-z]*\b(delivery|(reviewer|worker|planner)\s+model|worker\s+runner|shadow\s+reviewer|consequence\s+paths|fix\s+bounds\s+exclude|design\s+sources|ticket\s+budget|(release|run)\s+mode)\b/i
+  const declStrict = /^Delivery\s*:\s*[A-Za-z-]+|^(Reviewer|Worker|Planner) model\s*:\s*[A-Za-z0-9._-]+|^Worker runner\s*:\s*[A-Za-z-]+|^Shadow reviewer\s*:\s*[A-Za-z-]+|^Consequence paths\s*:\s*\S+|^Fix bounds exclude\s*:\s*\S+|^Design sources\s*:\s*\S+|^Ticket budget\s*:\s*\d+[km]?(\s|$)/i
   for (const epic of epics) {
     if (!DELIVERIES.has(epic.delivery))
       add('warn', `${epic.epic}: unrecognised delivery "${epic.delivery}" (known: release, incremental) — skills reading it will not know how this epic ships`)
     readFileSync(epic.ticketsDoc, 'utf8').split(/^##\s/m)[0].split('\n').forEach((line, i) => {
       if (declNear.test(line) && !declStrict.test(line))
-        add('warn', `${epic.epic}/tickets.md:${i + 1} — looks like a declaration line but will not parse, so it silently defaults (needs "Delivery: release|incremental" / "Reviewer model: <value>" / "Worker model: <value>" / "Worker runner: claude|codex" / "Shadow reviewer: codex" / "Planner model: <value>" / "Consequence paths: <glob>[, <glob>]" / "Fix bounds exclude: <glob>[, <glob>]" / "Ticket budget: <digits, optional k or m suffix>" — label at line start, no formatting, value on the label's own line; "Release mode:"/"Run mode:" are not read at all): ${line.trim()}`)
+        add('warn', `${epic.epic}/tickets.md:${i + 1} — looks like a declaration line but will not parse, so it silently defaults (needs "Delivery: release|incremental" / "Reviewer model: <value>" / "Worker model: <value>" / "Worker runner: claude|codex" / "Shadow reviewer: codex" / "Planner model: <value>" / "Consequence paths: <glob>[, <glob>]" / "Fix bounds exclude: <glob>[, <glob>]" / "Design sources: <path>[, <path>]" / "Ticket budget: <digits, optional k or m suffix>" — label at line start, no formatting, value on the label's own line; "Release mode:"/"Run mode:" are not read at all): ${line.trim()}`)
     })
+    // A declared design source that is not there is the whole declaration
+    // failing quietly: the line parses, every reader is handed a path, and
+    // whoever opens it finds nothing — so the comparison it exists for is
+    // never run and nobody is told why. Named by its full path, because a
+    // path with spaces is exactly where a truncating reader would go wrong.
+    for (const src of epic.designSources || []) {
+      const abs = src.startsWith('/') ? src : join(repoRoot, src)
+      if (!existsSync(abs))
+        add('warn', `${epic.epic}: declared design source "${src}" does not exist (looked for ${abs}) — every reader of this epic is handed a path to nothing; fix the path, or drop it from the "Design sources:" line`)
+    }
   }
 
   // The worker runner's environment, when an epic names one. `codex` must
@@ -1586,7 +1706,7 @@ function doctor() {
     // do parse and run yet can never pass, because a criterion that cannot
     // come out green lies in exactly the same direction.
     for (const t of parseTickets(epic))
-      for (const p of parseChecks(t.body).problems)
+      for (const p of parseChecks(t.body, epic.designSources).problems)
         add('warn', `${epic.epic}/tickets.md (${t.id}) — ${p.why}: ${p.text}`)
     if (!epic.statusDoc) {
       // Two doors create this file — /flow:epic at sign-off, or the first
@@ -1735,6 +1855,59 @@ function requireKnownEpic(data, epicFilter) {
   }
 }
 
+// The status log a per-ticket report reads: the working tree's, or the log as
+// a git ref carries it under `--log-from` — the pushed ticket branch is where
+// a worker writes its entry, and a reader on the checkout would read a log
+// that has not moved. One reader for every such report, because the rule it
+// enforces has to hold at every door: a log that cannot be read is a nonzero
+// exit naming the reason, NEVER an empty answer. `what` is the empty answer
+// this report would otherwise give ("no deviations", "no comparison"), quoted
+// back so the refusal says what it is refusing to claim.
+function readStatusLog(epic, rel, logFromRef, what) {
+  if (logFromRef) {
+    const shown = git(['show', `${logFromRef}:${rel}`], { allowFail: true })
+    if (shown === null) {
+      console.error(
+        `tickets: cannot read ${rel} from ref "${logFromRef}" — fetch the ref, or check its name. ` +
+          `An unreadable status log is not "${what}".`,
+      )
+      process.exit(1)
+    }
+    return shown
+  }
+  if (!epic.statusDoc) {
+    console.error(
+      `tickets: no status log at ${join(epic.dir, 'status.md')} — an absent log is not "${what}". ` +
+        "It is created at sign-off by /flow:epic, or by the first ticket's status entry; " +
+        'to read a log that exists only on a pushed branch, pass --log-from <ref>.',
+    )
+    process.exit(1)
+  }
+  return readFileSync(epic.statusDoc, 'utf8')
+}
+
+// The `**Compared:**` lines under one ticket's OWN entries — the fidelity
+// table a COMPARE criterion obliges, counted rather than judged. The narrowing
+// is the check: a status log is append-only and a ticket branch carries every
+// earlier ticket's entries too, all of them able to carry the same field, so a
+// count over the whole file would let a predecessor's table answer for this
+// ticket. Every heading closes the region, which is what the driver's own
+// `awk '/^### /{f=/^### <ID> /} f'` does, so an entry's addenda count and the
+// next entry's do not.
+function comparedIn(text, id) {
+  const found = []
+  let entry = null
+  text.split('\n').forEach((line, i) => {
+    if (/^#{1,6}\s/.test(line)) {
+      const m = line.match(STATUS_HEADING)
+      entry = m ? m[1] : null
+      return
+    }
+    if (entry === id && /^\*\*Compared:\*\*/.test(line)) found.push({ line: i + 1, text: line.slice('**Compared:**'.length).trim() })
+  })
+  return found
+}
+
 // Resolve an ID against the board, with find's refusals: an ambiguous ID and
 // an unknown ID both exit 1 with the message naming what is known. `brief`
 // shares this path so its refusals stay verbatim find's — one behaviour, not
@@ -1777,6 +1950,7 @@ function ticketFacts(data, t) {
     plannerModel: epic.plannerModel,
     consequencePaths: epic.consequencePaths,
     fixBoundsExclude: epic.fixBoundsExclude,
+    designSources: epic.designSources,
     ticketBudget: epic.ticketBudget,
     repoRoot,
     epicDir: epic.dir,
@@ -1788,6 +1962,11 @@ function ticketFacts(data, t) {
     // whether it is there yet, so a caller never has to guess either.
     runsDoc: epic.runsDoc || join(epic.dir, 'runs.md'),
     runsDocExists: Boolean(epic.runsDoc),
+    // The design map's absolute path when the epic has one, else null. A
+    // working-tree fact like every other path here, and so untouched by
+    // `--from`: the declarations come from the ref, the paths describe the
+    // repository as it is now.
+    designMap: epic.designMap,
     contextDir: epic.contextDir,
     isCurrentFolderEpic: data.current?.epic === t.epic,
     pr: t.pr || null,
@@ -1962,27 +2141,7 @@ switch (cmd) {
     const t = resolveTicket(data, arg.toUpperCase())
     const epic = data.epics.find((e) => e.epic === t.epic)
     const rel = `epics/${t.epic}/status.md`
-    let text
-    if (logFromRef) {
-      const shown = git(['show', `${logFromRef}:${rel}`], { allowFail: true })
-      if (shown === null) {
-        console.error(
-          `tickets: cannot read ${rel} from ref "${logFromRef}" — fetch the ref, or check its name. ` +
-            'An unreadable status log is not "no deviations".',
-        )
-        process.exit(1)
-      }
-      text = shown
-    } else if (!epic.statusDoc) {
-      console.error(
-        `tickets: no status log at ${join(epic.dir, 'status.md')} — an absent log is not "no deviations". ` +
-          "It is created at sign-off by /flow:epic, or by the first ticket's status entry; " +
-          'to read a log that exists only on a pushed branch, pass --log-from <ref>.',
-      )
-      process.exit(1)
-    } else {
-      text = readFileSync(epic.statusDoc, 'utf8')
-    }
+    const text = readStatusLog(epic, rel, logFromRef, 'no deviations')
     // This ticket's own entries only — an ID heads its entry, and a departure
     // another ticket recorded is that ticket's to answer for. The notes are
     // filtered the same way and for the same reason: a closing line that closed
@@ -2020,6 +2179,51 @@ switch (cmd) {
     break
   }
 
+  case 'compared': {
+    // How many `**Compared:**` fields one ticket's own entries record — the
+    // fidelity table a `COMPARE:` criterion obliges. It lives here, in the
+    // script, and not as a `grep` inside the driver's prompt: `run-epic.mjs`
+    // stubs every agent in its suite, so a counting pipeline written into a
+    // template literal is executed by no test, and a mis-escaped `\*\*` would
+    // first show itself as a count of 0 on a live run — which reads exactly
+    // like a ticket that recorded no comparison, and merges it.
+    //
+    // This counts; it never judges. Whether the table is right is the
+    // reviewer's, who can re-run the differ; whether a missing one stops a
+    // merge is the driver's gate and the attended doors'. And, like
+    // `deviations`, a log it cannot read is a nonzero exit and never a count
+    // of 0: "unreadable" and "none recorded" must not arrive as one number.
+    if (!arg) {
+      console.error('usage: tickets.mjs compared <ID> [--json] [--log-from <ref>]')
+      process.exit(2)
+    }
+    if (logFromIdx !== -1 && !logFromRef) {
+      console.error('tickets: --log-from needs a git ref (e.g. --log-from origin/<ticket-branch>)')
+      process.exit(2)
+    }
+    const data = board(null)
+    const t = resolveTicket(data, arg.toUpperCase())
+    const epic = data.epics.find((e) => e.epic === t.epic)
+    const rel = `epics/${t.epic}/status.md`
+    const text = readStatusLog(epic, rel, logFromRef, 'no comparison')
+    const found = comparedIn(text, t.id)
+    if (json)
+      emit({
+        ticket: t.id,
+        epicName: t.epic,
+        logPath: logFromRef ? rel : epic.statusDoc,
+        logFrom: logFromRef,
+        compared: found.length,
+        tables: found,
+      })
+    else {
+      const where = logFromRef ? `${rel} at ${logFromRef}` : epic.statusDoc
+      console.log(`${C.bold}${t.id}${C.off} ${C.dim}— ${t.epic} — ${where}${C.off}\n${found.length} \`**Compared:**\` field(s) recorded`)
+      for (const f of found) console.log(`  line ${f.line}: ${f.text.slice(0, 200) || '(the table follows on the next lines)'}`)
+    }
+    break
+  }
+
   case 'check': {
     // Run a ticket's machine-runnable acceptance criteria — the CHECK/EXPECT
     // lines — and report the ledger. Exit 0 only when every check passed and
@@ -2040,7 +2244,13 @@ switch (cmd) {
     }
     const data = board(null)
     const t = resolveTicket(data, arg.toUpperCase())
+    const epic = data.epics.find((e) => e.epic === t.epic)
     let body = t.body
+    // A COMPARE is validated against the epic's declared design sources, so
+    // under `--from` those come from the same ref as the criteria: the gate
+    // judges one document, not a criterion from the signed-off copy against a
+    // declaration the branch under review edited.
+    let designSources = epic.designSources
     if (fromRef) {
       const rel = `epics/${t.epic}/tickets.md`
       const shown = git(['show', `${fromRef}:${rel}`], { allowFail: true })
@@ -2054,17 +2264,34 @@ switch (cmd) {
         process.exit(1)
       }
       body = section.body
+      designSources = parsePreambleText(shown).designSources
     }
-    const { checks, problems } = parseChecks(body)
+    const { checks, compares, problems } = parseChecks(body, designSources)
     const results = runChecks(checks)
     const passed = results.filter((r) => r.passed).length
     const skipped = results.filter((r) => r.status === 'skipped').length
     const allPassed = passed === results.length && !problems.length
+    // Comparisons ride their own list and are counted in NEITHER `total` nor
+    // `passed`. This script has no browser and never runs one — and the
+    // unattended driver halts when `passed !== total`, so a compare counted
+    // there would halt every COMPARE ticket. What gates them is the presence
+    // of the `**Compared:**` table in the ticket's status entry, which is a
+    // different door and a different ticket's gate.
+    const comparisons = compares.map((c, i) => ({
+      n: i + 1,
+      criterion: c.criterion,
+      compare: c.compare,
+      source: c.source,
+      widths: c.widths,
+      landmarks: c.landmarks,
+      status: 'manual',
+      note: 'manual — run the differ, table required in the entry',
+    }))
     if (json) {
-      emit({ id: t.id, epic: t.epic, from: fromRef, total: results.length, passed, skipped, allPassed, checks: results, problems })
+      emit({ id: t.id, epic: t.epic, from: fromRef, total: results.length, passed, skipped, allPassed, checks: results, compares: comparisons, problems })
     } else {
       if (fromRef) console.log(`${C.dim}criteria read from ${fromRef}${C.off}`)
-      if (!results.length && !problems.length) console.log(`no CHECK criteria in ${t.id} — nothing to run`)
+      if (!results.length && !problems.length && !comparisons.length) console.log(`no CHECK criteria in ${t.id} — nothing to run`)
       const MARK = { passed: `${C.green}✓${C.off}`, skipped: `${C.yellow}↓${C.off}`, failed: `${C.red}✗${C.off}` }
       for (const r of results) {
         console.log(`${MARK[r.status]} ${r.n}/${results.length} ${r.criterion || '(no criterion bullet above the CHECK line)'}`)
@@ -2078,11 +2305,19 @@ switch (cmd) {
             `    ${C.yellow}the evidence is a skip: the named work did not run, so this criterion is not passed. Give the command what the run needed (a database, a credential, a service), or point EXPECT at a line that proves it ran.${C.off}`,
           )
       }
+      for (const c of comparisons) {
+        console.log(`${C.cyan}⊙${C.off} ${c.n}/${comparisons.length} ${c.criterion || '(no criterion bullet above the COMPARE line)'}`)
+        console.log(`    COMPARE: ${c.compare}${c.landmarks ? `\n    LANDMARKS: ${c.landmarks.join(', ')}` : '  (every landmark in the map — the whole page)'}`)
+        console.log(`    ${C.cyan}${c.note}${C.off}`)
+      }
       for (const p of problems) console.log(`${C.red}!${C.off} line ${p.line}: ${p.why}: ${p.text}`)
-      if (results.length || problems.length)
+      if (results.length || problems.length || comparisons.length)
         console.log(
           `${passed}/${results.length} checks passed` +
             (skipped ? ` — ${skipped} skipped, which does not pass the gate` : '') +
+            (comparisons.length
+              ? ` — ${comparisons.length} comparison(s) this script never runs, counted in neither total nor passed; the differ is run by hand and its table belongs in the status entry`
+              : '') +
             (problems.length ? ` — ${problems.length} malformed line(s), which fail the gate` : ''),
         )
     }
@@ -2144,7 +2379,7 @@ switch (cmd) {
         modes: Object.fromEntries(
           data.epics.map((e) => [
             e.epic,
-            { delivery: e.delivery, reviewerModel: e.reviewerModel, workerModel: e.workerModel, workerRunner: e.workerRunner, shadowReviewer: e.shadowReviewer, plannerModel: e.plannerModel, consequencePaths: e.consequencePaths, fixBoundsExclude: e.fixBoundsExclude, ticketBudget: e.ticketBudget },
+            { delivery: e.delivery, reviewerModel: e.reviewerModel, workerModel: e.workerModel, workerRunner: e.workerRunner, shadowReviewer: e.shadowReviewer, plannerModel: e.plannerModel, consequencePaths: e.consequencePaths, fixBoundsExclude: e.fixBoundsExclude, designSources: e.designSources, ticketBudget: e.ticketBudget },
           ]),
         ),
         duplicates: data.duplicates,
@@ -2166,6 +2401,6 @@ switch (cmd) {
   }
 
   default:
-    console.error(`tickets: unknown command "${cmd}" (try: list, find, brief, next, check, deviations, spend, epics, current, doctor)`)
+    console.error(`tickets: unknown command "${cmd}" (try: list, find, brief, next, check, compared, deviations, spend, epics, current, doctor)`)
     process.exit(2)
 }

@@ -121,21 +121,28 @@ const dispFixed = {
 // gate reads — every `**Deviation:**` line, closed or not — and `open` is
 // recorded beside it and decides nothing.
 const deviationsNone = (id = 'PAY-1') => ({ commandSucceeded: true, ticket: id, count: 0, open: 0, failure: '' })
+// FACT 5: how many `**Compared:**` tables the pushed entry records, read at
+// the same step through the `compared` subcommand and its own `--log-from`
+// flag. The gate compares it against how many COMPARE criteria the signed-off
+// section carries (the acceptance step's `compares`), so a clean stub carries
+// none of either.
+const comparedNone = (id = 'PAY-1', count = 0) => ({ commandSucceeded: true, ticket: id, count, failure: '' })
 const resolvedOk = {
   outcome: 'resolved',
   addendumMatches: 1,
   headSha: 'beefc0ffee42',
   ticketBudget: null,
   deviations: deviationsNone(),
+  compared: comparedNone(),
   detail: '',
 }
 // The same clean report for a ticket other than PAY-1: the gate refuses a
 // deviations fact about a different ticket, so a multi-ticket stub cannot
 // reuse PAY-1's.
-const resolvedFor = id => ({ ...resolvedOk, deviations: deviationsNone(id) })
+const resolvedFor = id => ({ ...resolvedOk, deviations: deviationsNone(id), compared: comparedNone(id) })
 const resolvedWithBudget = n => ({ ...resolvedOk, ticketBudget: n })
-const acceptOk = { outcome: 'ran', total: 2, passed: 2, skipped: 0, allPassed: true, problems: 0, failures: [], detail: '' }
-const acceptNone = { outcome: 'ran', total: 0, passed: 0, skipped: 0, allPassed: true, problems: 0, failures: [], detail: '' }
+const acceptOk = { outcome: 'ran', total: 2, passed: 2, skipped: 0, allPassed: true, problems: 0, compares: 0, failures: [], detail: '' }
+const acceptNone = { outcome: 'ran', total: 0, passed: 0, skipped: 0, allPassed: true, problems: 0, compares: 0, failures: [], detail: '' }
 const mergedOk = { outcome: 'merged', detail: '' }
 const integratedOk = { commandSucceeded: true, state: 'integrated', prUrl: '' }
 
@@ -900,11 +907,13 @@ test('at the consequence tier, fix commits earn exactly one re-review, and a cle
   // request rides the first review only.
   assert.doesNotMatch(p, /Report `reviewedHead`/)
   // With the re-review standing guard, the resolve step carries no fix-bounds
-  // fact (FACT 5); FACT 3, the epic's ceiling, and FACT 4, the departures the
-  // entry records, are asked for unconditionally.
-  assert.doesNotMatch(call(r, 'resolve:PAY-1').prompt, /FACT 5/)
+  // fact (FACT 6); FACT 3, the epic's ceiling, FACT 4, the departures the
+  // entry records, and FACT 5, the comparisons it records, are asked for
+  // unconditionally.
+  assert.doesNotMatch(call(r, 'resolve:PAY-1').prompt, /FACT 6/)
   assert.match(call(r, 'resolve:PAY-1').prompt, /FACT 3 — the epic's per-ticket token ceiling/)
   assert.match(call(r, 'resolve:PAY-1').prompt, /FACT 4 — the departures PAY-1's own entries record/)
+  assert.match(call(r, 'resolve:PAY-1').prompt, /FACT 5 — how many fidelity comparisons PAY-1's own entries record/)
 })
 
 test('below the consequence tier, fixes skip the re-review and are bounds-checked in code at the resolve step', async () => {
@@ -927,7 +936,7 @@ test('below the consequence tier, fixes skip the re-review and are bounds-checke
   const p = call(r, 'resolve:PAY-1').prompt
   // The bounds commands are anchored on the code-verified reviewed head and
   // exclude the epics/ addendum commit; the resolve agent judges nothing.
-  assert.match(p, /FACT 5/)
+  assert.match(p, /FACT 6/)
   assert.match(p, /git diff --name-only origin\/epic\/payments abc1234def0 -- ':\(exclude\)epics'/)
   assert.match(p, /git diff --numstat abc1234def0 origin\/pay-1 -- ':\(exclude\)epics'/)
   assert.match(p, /the driver checks the bounds in code/i)
@@ -1285,6 +1294,16 @@ test('the accept step reads the criteria from the signed-off document on the epi
   assert.equal(rec.acceptanceProblems, 0)
 })
 
+test('the accept prompt asks by name for every field the driver refuses a report without', async () => {
+  // The step runs on haiku at low effort and follows the prompt's list. A field
+  // the gate requires and the prompt never names halts every ticket of every
+  // epic the day a proxy reports exactly what it was asked for — `compares`
+  // shipped that way for one review.
+  const c = call(await drive(oneTicket()), 'accept:PAY-1')
+  for (const field of ['total', 'passed', 'skipped', 'allPassed', 'problems', 'compares'])
+    assert.match(c.prompt, new RegExp('`' + field + '`'), `the accept prompt never names \`${field}\``)
+})
+
 test('a failed acceptance check halts before any merge agent exists, quoting the failures fenced', async () => {
   const r = await drive(
     oneTicket({
@@ -1295,6 +1314,7 @@ test('a failed acceptance check halts before any merge agent exists, quoting the
         skipped: 0,
         allPassed: false,
         problems: 0,
+        compares: 0,
         failures: [{ criterion: 'the limit clamps to 50', evidence: 'exit 1 — AssertionError' }],
         detail: '',
       },
@@ -1304,7 +1324,7 @@ test('a failed acceptance check halts before any merge agent exists, quoting the
   // an unreadable report are what make a retro file those halts correctly.
   assert.equal(
     r.out.haltedOn.stopCondition,
-    'a failed acceptance CHECK — a machine-runnable criterion whose command did not produce its expected result on the pushed branch, a criterion whose evidence is a skip, a CHECK line too malformed to run at all, or an acceptance report the gate could not read',
+    'a failed acceptance CHECK — a machine-runnable criterion whose command did not produce its expected result on the pushed branch, a criterion whose evidence is a skip, a CHECK line too malformed to run at all, a COMPARE criterion whose pushed entry records no comparison, or an acceptance report the gate could not read',
   )
   assert.match(r.out.haltedOn.detail, /1 of 2 CHECK criteria failed/)
   assert.match(r.out.haltedOn.detail, /<<<UNTRUSTED[\s\S]*the limit clamps to 50 — exit 1 — AssertionError/)
@@ -1370,6 +1390,7 @@ test('the acceptance gate halts on a skipped check and names the skip, so the re
         skipped: 1,
         allPassed: false,
         problems: 0,
+        compares: 0,
         failures: [{ criterion: 'the ledger rejects a foreign tenant', evidence: '↓ src/db/tenant.int.test.ts (12 tests | 12 skipped)' }],
         detail: '',
       },
@@ -1389,7 +1410,7 @@ test('a report claiming every check passed while reporting a skip halts — the 
   // evidence, and nothing merges on it.
   const r = await drive(
     oneTicket({
-      'accept:PAY-1': { outcome: 'ran', total: 2, passed: 2, skipped: 1, allPassed: true, problems: 0, failures: [], detail: '' },
+      'accept:PAY-1': { outcome: 'ran', total: 2, passed: 2, skipped: 1, allPassed: true, problems: 0, compares: 0, failures: [], detail: '' },
     }),
   )
   assert.match(r.out.haltedOn.stopCondition, /^a failed acceptance CHECK/)
@@ -1401,7 +1422,7 @@ test('the acceptance gate halts when the ledger says allPassed false though pass
   // The shape a malformed criterion produces: nothing ran, so the counts
   // agree with themselves. The script's own verdict is what the gate reads.
   const r = await drive(
-    oneTicket({ 'accept:PAY-1': { outcome: 'ran', total: 1, passed: 1, skipped: 0, allPassed: false, problems: 0, failures: [], detail: '' } }),
+    oneTicket({ 'accept:PAY-1': { outcome: 'ran', total: 1, passed: 1, skipped: 0, allPassed: false, problems: 0, compares: 0, failures: [], detail: '' } }),
   )
   assert.match(r.out.haltedOn.stopCondition, /^a failed acceptance CHECK/)
   assert.match(r.out.haltedOn.detail, /allPassed: false/)
@@ -1419,6 +1440,7 @@ test('the acceptance gate halts on a malformed CHECK even when every runnable ch
         skipped: 0,
         allPassed: false,
         problems: 1,
+        compares: 0,
         failures: [{ criterion: 'CHECK npm test', evidence: 'looks like a CHECK/EXPECT line but will not parse, so it silently never runs' }],
         detail: '',
       },
@@ -1465,6 +1487,117 @@ test('a report that does not carry its skip count is unreadable, and the record 
   // the summary that prints them.
   const early = await drive(oneTicket({ 'accept:PAY-1': { outcome: 'command-failed', detail: 'git failed' } }))
   assert.equal(early.out.ticketRecords[0].acceptanceChecksSkipped, null)
+})
+
+// ---- the comparison gate ----------------------------------------------------
+// Two facts read at two steps and judged in one place: how many COMPARE
+// criteria the SIGNED-OFF section carries (the acceptance ledger's `compares`)
+// and how many `**Compared:**` tables the PUSHED entry records (the resolve
+// step's `compared`). The script never runs a comparison — it has no browser —
+// so the table is the evidence, and a ticket asked for one that recorded none
+// merges a criterion nobody performed.
+
+const acceptCompares = n => ({ ...acceptOk, compares: n })
+
+test('a COMPARE criterion whose pushed entry records no comparison halts before any merge agent exists', async () => {
+  const r = await drive(oneTicket({ 'accept:PAY-1': acceptCompares(2) }))
+  assert.equal(r.out.outcome, 'halted')
+  assert.equal(
+    r.out.haltedOn.stopCondition,
+    'a failed acceptance CHECK — a machine-runnable criterion whose command did not produce its expected result on the pushed branch, a criterion whose evidence is a skip, a CHECK line too malformed to run at all, a COMPARE criterion whose pushed entry records no comparison, or an acceptance report the gate could not read',
+  )
+  assert.match(r.out.haltedOn.detail, /carries 2 `COMPARE` criterion\(s\) and its pushed status entry on `origin\/pay-1` records no `\*\*Compared:\*\*` table/)
+  // The recovery must work in the refused state: run the differ and append the
+  // table in a dated addendum, or — with no browser — a human's written
+  // acceptance, which this gate reads as present and a reader reads as not done.
+  assert.match(r.out.haltedOn.detail, /dated addendum/)
+  assert.match(r.out.haltedOn.detail, /\*\*Compared:\*\* owed — <who accepted it, when, and why it could not run>/)
+  assert.ok(!r.labels.some(l => l.startsWith('merge:')), 'nothing merged')
+  const rec = r.out.ticketRecords[0]
+  assert.equal(rec.acceptanceCompares, 2)
+  assert.equal(rec.comparedRecorded, 0)
+})
+
+test('a COMPARE ticket whose entry records the comparison merges like any other', async () => {
+  const r = await drive(
+    oneTicket({ 'accept:PAY-1': acceptCompares(1), 'resolve:PAY-1': { ...resolvedOk, compared: comparedNone('PAY-1', 1) } }),
+  )
+  assert.equal(r.out.outcome, 'completed')
+  const rec = r.out.ticketRecords[0]
+  assert.equal(rec.acceptanceCompares, 1)
+  assert.equal(rec.comparedRecorded, 1)
+  // The count is not judged: one table answers any number of criteria, because
+  // what the table SAYS is the reviewer's to check and this gate counts.
+  const many = await drive(oneTicket({ 'accept:PAY-1': acceptCompares(3), 'resolve:PAY-1': { ...resolvedOk, compared: comparedNone('PAY-1', 1) } }))
+  assert.equal(many.out.outcome, 'completed')
+})
+
+test('a ticket with no COMPARE criterion is untouched by the gate, table or no table', async () => {
+  const r = await drive(oneTicket())
+  assert.equal(r.out.outcome, 'completed')
+  assert.equal(r.out.ticketRecords[0].acceptanceCompares, 0)
+  assert.equal(r.out.ticketRecords[0].comparedRecorded, 0)
+  // And a ticket that recorded a table without being asked for one is not a
+  // finding here either — the gate is about a missing comparison, not a spare.
+  const spare = await drive(oneTicket({ 'resolve:PAY-1': { ...resolvedOk, compared: comparedNone('PAY-1', 1) } }))
+  assert.equal(spare.out.outcome, 'completed')
+})
+
+test('an acceptance report with no compares count is unreadable evidence and halts', async () => {
+  // Read as 0 it would skip the gate exactly when the gate is needed: the
+  // ticket that owes a comparison is the ticket whose count is missing.
+  const { compares, ...noCompares } = acceptOk
+  const r = await drive(oneTicket({ 'accept:PAY-1': noCompares }))
+  assert.match(r.out.haltedOn.stopCondition, /^a failed acceptance CHECK/)
+  assert.match(r.out.haltedOn.detail, /no usable counts or verdict/)
+  assert.match(r.out.haltedOn.detail, /compares/, 'the halt names the field that was missing among the others')
+  assert.equal(r.out.ticketRecords[0].acceptanceCompares, null)
+  assert.ok(!r.labels.some(l => l.startsWith('resolve:') || l.startsWith('merge:')))
+
+  const wrongType = await drive(oneTicket({ 'accept:PAY-1': { ...acceptOk, compares: 'two' } }))
+  assert.match(wrongType.out.haltedOn.stopCondition, /^a failed acceptance CHECK/)
+  assert.equal(wrongType.out.ticketRecords[0].acceptanceCompares, null)
+})
+
+test('a compared fact that is missing, wrong-typed, about another ticket, or unreadable halts', async () => {
+  for (const [compared, why, what] of [
+    [undefined, /no `compared` fact at all/, 'missing'],
+    ['none', /no `compared` fact at all/, 'a fact that is not an object'],
+    [{ commandSucceeded: true, ticket: 'PAY-1', count: '1' }, /`count` is not a count/, 'a count that is not an integer'],
+    [{ commandSucceeded: true, ticket: 'PAY-1' }, /`count` is not a count/, 'no count at all'],
+    [{ commandSucceeded: true, ticket: 'PAY-2', count: 1 }, /names ticket .*PAY-2.* rather than PAY-1/s, "another ticket's entries"],
+    [
+      { commandSucceeded: false, ticket: 'PAY-1', count: 0, failure: 'exit 1: An unreadable status log is not "no comparison"' },
+      /did not succeed/,
+      'a log the command could not read',
+    ],
+  ]) {
+    const resolve = { ...resolvedOk }
+    if (compared === undefined) delete resolve.compared
+    else resolve.compared = compared
+    const r = await drive(oneTicket({ 'accept:PAY-1': acceptCompares(1), 'resolve:PAY-1': resolve }))
+    assert.equal(r.out.outcome, 'halted', what)
+    assert.match(r.out.haltedOn.stopCondition, /^a failed acceptance CHECK/, what)
+    assert.match(r.out.haltedOn.detail, why, what)
+    assert.match(r.out.haltedOn.detail, /never "none owed"/, what)
+    assert.equal(r.out.ticketRecords[0].comparedRecorded, null, what)
+    assert.ok(!r.labels.some(l => l.startsWith('merge:')), what)
+  }
+  // The refusal stands even for a ticket that owes no comparison: a fact the
+  // gate cannot read is not evidence that there was nothing to read.
+  const noneOwed = await drive(oneTicket({ 'resolve:PAY-1': { ...resolvedOk, compared: 'none' } }))
+  assert.equal(noneOwed.out.outcome, 'halted')
+})
+
+test('the resolve prompt asks for the comparison count with its own command and flag', async () => {
+  const p = call(await drive(oneTicket()), 'resolve:PAY-1').prompt
+  assert.match(p, /FACT 5 — how many fidelity comparisons PAY-1's own entries record/)
+  assert.match(p, /tickets\.mjs" compared PAY-1 --log-from origin\/pay-1 --json/)
+  // Three reads at one step, and a proxy that answered one from another's JSON
+  // would report a gate's answer off the wrong document.
+  assert.match(p, /none of the three shares a field name with the others/)
+  assert.match(p, /an unreadable log is not "no comparison"/)
+  assert.match(p, /report five facts/) // six only when the fix-bounds gate is armed, which oneTicket() does not arm
 })
 
 // ---- pre-existing findings --------------------------------------------------
@@ -1805,7 +1938,7 @@ test('budget re-read: a resolve report with a malformed budget halts before the 
   // A report missing the field entirely is the same class: the run cannot say
   // what ceiling is in force, so it does not fall back to the launch value.
   const missing = await drive(
-    oneTicket({ 'resolve:PAY-1': { outcome: 'resolved', addendumMatches: 1, headSha: 'beefc0ffee42', deviations: deviationsNone(), detail: '' } }),
+    oneTicket({ 'resolve:PAY-1': { outcome: 'resolved', addendumMatches: 1, headSha: 'beefc0ffee42', deviations: deviationsNone(), compared: comparedNone(), detail: '' } }),
     { ...ARGS, ticketBudget: 50000 },
     meter(1000),
   )

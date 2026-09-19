@@ -1,0 +1,18 @@
+{
+  "landmarks": [
+    { "name": "hero", "design": "#hero", "page": ".masthead" },
+    { "name": "nav", "design": "#nav", "page": "#nav" },
+    { "name": "grid", "design": "#grid", "page": "#grid" },
+    { "name": "card", "design": "#card", "page": "#card" },
+    { "name": "legacy", "design": "#legacy", "page": "#legacy" },
+    { "name": "aside", "design": "#aside", "page": "#aside" },
+    { "name": "footer", "design": "#footer", "page": "#footer" },
+    { "name": "banner", "design": "#banner", "page": "#banner" },
+    { "name": "promo", "design": "#promo", "page": "#promo" },
+    { "name": "extra", "design": "#extra", "page": "#extra" }
+  ],
+  "removed": [
+    { "name": "promo", "by": "ground rule 2 — no promotional band in this release", "date": "2026-09-18" },
+    { "name": "legacy", "by": "ground rule 3 — the legacy strip is dropped", "date": "2026-09-18" }
+  ]
+}

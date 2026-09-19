@@ -39,6 +39,7 @@ const FILES = {
   run: 'plugins/flow/skills/run/SKILL.md',
   retro: 'plugins/flow/skills/retro/SKILL.md',
   reviewer: 'plugins/flow/agents/ticket-reviewer.md',
+  planReviewer: 'plugins/flow/agents/plan-reviewer.md',
   review: 'plugins/flow/skills/review/SKILL.md',
   script: 'plugins/flow/scripts/tickets.mjs',
   hook: 'plugins/flow/hooks/ticket-session-guard.mjs',
@@ -264,6 +265,51 @@ function checkTemplates() {
     throw new Error(`the run-record heading now matches STATUS_HEADING — it must stay invisible to the board: "${runLine}"`)
 }
 
+// ── 3b. The COMPARE criterion's template matches its parser ──────────────────
+// `COMPARE:` / `LANDMARKS:` are the fidelity half of the one machine-runnable
+// criterion format, and they fail the way a CHECK near-miss does: a template
+// the parser rejects produces criteria that silently never appear in the
+// ledger, so the comparison the ticket was written for is performed by nobody
+// and gated by nothing. The regex literals are re-derived from tickets.mjs
+// source (importing it would run its CLI), and the planning skill's template
+// is held to them — the same coupling checkTemplates holds for the headings.
+//
+// The two lanes that RUN the comparison are checked for one thing more:
+// `--removed-from`. A removal is a planning decision, and a lane that teaches
+// the differ without it teaches a worker to read removals from the map its own
+// ticket edits — the founding failure routed through the new machinery.
+
+function criterionRegex(name) {
+  const src = read('script')
+  const m = src.match(new RegExp(`const ${name} = (/.+/)\\n`))
+  if (!m) throw new Error(`cannot extract ${name} from ${FILES.script} — source shape changed; update check-invariants.mjs`)
+  return new Function(`return ${m[1]}`)()
+}
+
+function checkCompareTemplate() {
+  const compare = criterionRegex('COMPARE_LINE')
+  const landmarks = criterionRegex('LANDMARKS_LINE')
+  const lines = fences(read('epic')).flatMap((b) => b.split('\n'))
+  for (const [label, re, parser] of [
+    ['COMPARE', /^\s*COMPARE\s*:/, compare],
+    ['LANDMARKS', /^\s*LANDMARKS\s*:/, landmarks],
+  ]) {
+    const line = lines.find((l) => re.test(l))
+    if (!line)
+      throw new Error(
+        `no ${label} criterion template in ${FILES.epic} — the planning skill is where the format is taught, and a format nobody teaches is a criterion nobody writes`,
+      )
+    if (!parser.test(line))
+      throw new Error(`the ${label} template in ${FILES.epic} no longer matches ${label}_LINE in ${FILES.script}: "${line.trim()}"`)
+  }
+  for (const key of ['ticket', 'quick']) {
+    if (!norm(read(key)).includes('--removed-from'))
+      throw new Error(
+        `${FILES[key]} teaches the COMPARE comparison without naming \`--removed-from\` — removals would then be read from the map the ticket under review edits, which is the failure the separate file exists to prevent`,
+      )
+  }
+}
+
 // ── 4. The guard's refusal message is the one the ticket skill advertises ────
 // The refusal's advertised recovery must work in the refused state (CLAUDE.md:
 // a gate is verified at the door its actor walks through) — which starts with
@@ -309,9 +355,14 @@ const PHRASES = [
     files: ['epic', 'ticket', 'quick'],
   },
   {
-    why: 'reviewers report and never fix',
-    re: /(reports?; it does not fix|report and never fix|report\. You never fix|reports without fixing)/i,
-    files: ['ticket', 'quick', 'reviewer', 'readme', 'claudemd'],
+    // Both reviewer definitions carry it, and the alternation absorbs the one
+    // deliberate wording difference: the ticket reviewer never FIXES a diff,
+    // the plan reviewer never REWRITES a plan. CLAUDE.md's invariant names
+    // both files, and until this entry did too, the rule was unchecked in the
+    // one of them a whole ticket was about to edit.
+    why: 'reviewers report and never fix — neither reviewer definition may gain a write instruction',
+    re: /(reports?; it does not fix|report and never fix|report\. You never fix|report\. You never rewrite|reports without fixing)/i,
+    files: ['ticket', 'quick', 'reviewer', 'planReviewer', 'readme', 'claudemd'],
   },
   {
     why: 'a regression the change introduced is Important, never a nit parked for the retro — the reviewer, the review skill, the lanes that disposition findings and the driver carry one rule',
@@ -334,8 +385,8 @@ const PHRASES = [
     files: ['run', 'readme'],
   },
   {
-    why: "the acceptance-check stop condition is one sentence in the skill and the script — a halt the run record quotes verbatim. Pinned whole, like the fix-bounds sentence: the gate halts on a malformed CHECK and on a report it cannot read as well as on a failing one, and a retro that reads only the first clause files those halts as something else",
-    re: /a failed acceptance CHECK — a machine-runnable criterion whose command did not produce its expected result on the pushed branch, a criterion whose evidence is a skip, a CHECK line too malformed to run at all, or an acceptance report the gate could not read/,
+    why: "the acceptance-check stop condition is one sentence in the skill and the script — a halt the run record quotes verbatim. Pinned whole, like the fix-bounds sentence: the gate halts on a malformed CHECK, on a COMPARE criterion whose pushed entry records no comparison, and on a report it cannot read, as well as on a failing check — and a retro that reads only the first clause files those halts as something else",
+    re: /a failed acceptance CHECK — a machine-runnable criterion whose command did not produce its expected result on the pushed branch, a criterion whose evidence is a skip, a CHECK line too malformed to run at all, a COMPARE criterion whose pushed entry records no comparison, or an acceptance report the gate could not read/,
     files: ['run', 'workflow'],
   },
   {
@@ -402,6 +453,21 @@ const PHRASES = [
     files: ['epic', 'ticket', 'quick', 'run', 'script', 'workflow'],
   },
   {
+    why: "the painted-versus-property lens — a style assertion that reads a property off an element while the page paints something else is the visual form of the test that executes code without checking it, and the reviewer definition, the review skill and the driver's inlined reviewer rules must all carry it. The Codex runner's copy is pinned to the driver's by codex-review.test.mjs, so this entry covers the three that are not",
+    re: /paints something else/i,
+    files: ['reviewer', 'review', 'workflow'],
+  },
+  {
+    why: "a removal declared in the ticket's own diff is Important — the design map's `removed` list is planning's, and the one party that must never declare its own missing element removed is the ticket under review. A reviewer document that drops it accepts the founding failure routed through the new machinery",
+    re: /in the ticket's own diff/i,
+    files: ['reviewer', 'review', 'workflow'],
+  },
+  {
+    why: "the COMPARE criterion is one format in four documents: the parser lists comparisons apart from the checks and never runs one, the planning skill teaches the line, and both execution lanes run the differ it names and paste its table. A document that drops it leaves a criterion somebody writes and nobody performs",
+    re: /COMPARE/,
+    files: ['epic', 'ticket', 'quick', 'script'],
+  },
+  {
     why: "the ledger's third verdict — a check whose evidence is a skip is not passed, so it cannot green a merge gate. The script decides it, the planning skill writes EXPECTs a skip cannot satisfy, both execution lanes read the ledger, the driver halts on it, and README documents it; a document that keeps only the two-verdict story teaches a worker to report a ↓ line as a pass",
     re: /skipped check is not a passed one/i,
     files: ['script', 'epic', 'ticket', 'quick', 'run', 'workflow', 'readme'],
@@ -430,6 +496,7 @@ const CHECKS = [
   ["the run log's Rules block is the status log's, verbatim", checkRunLogRules],
   ['the two risk lists cover the same trigger set', checkRiskLists],
   ['skill heading templates match the parser regexes', checkTemplates],
+  ["the COMPARE criterion's template matches its parser, and both lanes name --removed-from", checkCompareTemplate],
   ['hook refusal message quoted verbatim by the ticket skill', checkRefusalMessage],
   ['load-bearing doctrine phrases present everywhere required', checkPhrases],
 ]

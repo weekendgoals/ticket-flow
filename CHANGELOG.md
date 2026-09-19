@@ -8,6 +8,192 @@ with one version and date.
 
 ## Unreleased
 
+- **Review fixes to the design-fidelity range, before release**
+  (`scripts/tickets.mjs`, `workflows/run-epic.mjs`, `scripts/fidelity.mjs`,
+  `skills/run/SKILL.md`, `skills/ticket/SKILL.md`, `skills/epic/SKILL.md`,
+  README). The near-miss scan for the new `COMPARE` and `LANDMARKS` labels was
+  case-blind, so an acceptance bullet beginning "Compare:" in plain English
+  failed its ticket's gate — a regression for every installed project; the two
+  new labels are now caught in capitals, and a `compare:` in any case when
+  the line is comparison-shaped — an `@` followed by a width, bulleted or not,
+  `@1440` included. (The first cut of this fix let four malformed spellings
+  through unflagged, which read a ticket owing a comparison as owing none —
+  the missing-comparison gate failing open; a re-review caught it before
+  release. A lowercase `compare: <path>` with its widths forgotten is still
+  unflagged, being indistinguishable from prose.) The acceptance
+  step's prompt now names `compares`, which the driver already refused a report
+  without: the step runs on a small model that reports what it is asked for,
+  and the omission would have halted every ticket of every epic. Two sentences
+  that still said no agent may *write* the closing line now say no agent may
+  *decide* it, matching the rule above. The differ's "nothing was compared"
+  refusal names the `--removed-from` repair when removals sit only in `--map`,
+  and the epic skill states `COMPARE`'s hand-written form like every other
+  document that teaches it.
+
+- **The ticket reviewer sees the design** (`agents/ticket-reviewer.md`,
+  `skills/review/SKILL.md`, `skills/ticket/SKILL.md`, `skills/quick/SKILL.md`,
+  `workflows/run-epic.mjs` and `scripts/runners/codex-review.mjs` with its
+  suite, `scripts/check-invariants.mjs` and its suite, README, METHODOLOGY §
+  "Why the reviewer is handed the design"). The reviewer's packet — in all
+  four copies: ticket skill step 7, quick skill step 6, the driver's packet
+  body and the Codex runner's copy pinned equal to it — carries the epic's
+  design sources, the **signed-off** design map (`git show
+  origin/<base>:epics/<name>/design-map.json`, never the working tree's copy)
+  and the entry's `**Compared:**` table. The review skill's new § 3b tells the
+  reviewer to **re-run the differ where the project's instruction file says how
+  to serve and drive a page** — a table the re-run contradicts is Important —
+  and otherwise to audit the table against the design source's markup and
+  **say the page was not rendered**; the Codex shadow reviewer, sandboxed with
+  no network, never renders, and its prompt now says so. Two new lenses in the
+  reviewer agent, the review skill and both `REVIEWER_RULES` copies: a
+  `removed` entry added or changed **in the ticket's own diff** is Important
+  (the removal list is planning's, and a worker who could not build an element
+  writes a deviation), and a style assertion that reads a property off an
+  element **while the page paints something else** — the visual form of the
+  test that executes code without checking it.
+
+- **The plan side of a design: one ticket owns the whole page, and a narrowing
+  declares its removal** (`skills/epic/SKILL.md`, `agents/plan-reviewer.md`,
+  `scripts/check-invariants.mjs` and its suite, README, METHODOLOGY § "Why a
+  design is a fourth artifact"). An epic that declares `Design sources:` now
+  **ends with one whole-page fidelity ticket** — a `COMPARE` with no
+  `LANDMARKS:` for each design source, at every width the design draws —
+  because per-section comparisons do not sum to a page that matches and what
+  lies between sections belongs to no section's ticket; where the declared lane
+  has no browser it is a human-owned ticket ordered before the release, never a
+  line owed to the release pull request. A ground rule or scope line that
+  narrows what the design draws **declares the removal** in
+  `epics/<name>/design-map.json`'s `removed` list, so the comparison prints
+  "removed by <rule>" instead of nothing and sign-off approves the list. The
+  plan reviewer's packet gains the design sources and the map, and the agent
+  gains five lenses for them (a narrowing with no `removed` entry; a ground
+  rule whose premise does not reach its conclusion; **an element the design
+  draws that no landmark covers**; a UI-building ticket with no `COMPARE`; no
+  whole-page ticket, or one that is not last). Sign-off shows the `removed`
+  list and names any UI-building ticket with no `COMPARE` as not ready.
+  `check-invariants.mjs` now covers `agents/plan-reviewer.md`: it joins `FILES`
+  and the "reviewers report and never fix" phrase check, which until now
+  verified that rule in only one of the two reviewer definitions CLAUDE.md
+  names.
+
+- **A missing comparison stops the merge, at every door** (`scripts/tickets.mjs`
+  and its suite, `workflows/run-epic.mjs` and its suite,
+  `skills/run/SKILL.md`, `skills/ticket/SKILL.md`, `skills/quick/SKILL.md`,
+  `scripts/check-invariants.mjs` and its suite, README, METHODOLOGY § "Why a
+  missing comparison stops the merge"). New subcommand: `tickets.mjs compared
+  <ID> [--log-from <ref>] [--json]` — the count of `**Compared:**` fields under
+  that ticket's **own** entries, addenda included, with `deviations`' rule that
+  an unreadable log is a nonzero exit and never a count of 0 (both now read the
+  log through one shared reader). It is a subcommand and not a `grep` in the
+  driver's prompt because `run-epic.test.mjs` stubs every agent: a counting
+  pipeline in a template literal is executed by no test, and a mis-escaped
+  `\*\*` would first show as a count of 0 on a live run. The driver's
+  acceptance report gains `compares` (how many `COMPARE` criteria the
+  signed-off section carries) and its resolve step gains FACT 5, the pushed
+  entry's comparison count; a ticket that owes a comparison and records none
+  **halts**, on the acceptance-check stop condition, whose pinned sentence gains
+  one clause in all five files that carry it. A `compares` or `compared` fact
+  that is missing or the wrong type is refused and halts — read as 0 it would
+  skip the gate. The attended doors move with it: the ticket skill's step 9
+  names such a ticket in the summary and the pull request body, step 10 does not
+  integrate it, and the quick skill's step 7 names it in the body. Recovery
+  either way leaves a record: run the differ and append the field in a dated
+  addendum, or `**Compared:** owed — <who accepted it, when, and why it could
+  not run>` on the human's word.
+
+- **A `COMPARE` acceptance criterion, and the differ's exit contract amended**
+  (`scripts/tickets.mjs` and `scripts/fidelity.mjs` with both suites,
+  `skills/epic/SKILL.md`, `skills/ticket/SKILL.md`, `skills/quick/SKILL.md`,
+  `scripts/check-invariants.mjs` and its suite, CLAUDE.md, METHODOLOGY §
+  "Why a fidelity criterion is the one the code never runs"). A criterion
+  bullet may carry `COMPARE: <design source path> @ <width>[, <width>]` with
+  an optional `LANDMARKS: <name>[, <name>]` beneath it (absent = the whole
+  page). `check <ID>` reports comparisons in their own `compares` list,
+  **marked manual and counted in neither `total` nor `passed`** — this script
+  has no browser and never runs one, and the driver halts when `passed !==
+  total`, so a compare counted there would halt every COMPARE ticket. A
+  malformed one — no width, a path the epic's `Design sources:` line does not
+  list, a `LANDMARKS:` with no `COMPARE:` above it — is a ledger problem that
+  fails the gate, exactly as a malformed CHECK does, and doctor's near-miss
+  scan now covers both labels. The ticket and quick lanes run the differ
+  (`--removed-from` filled from the **signed-off** ref, because a removal is a
+  planning decision and the working map is the file the ticket edits) and
+  paste its table into the entry's new optional `**Compared:**` field.
+  `fidelity.mjs`: a landmark the signed-off list declares removed and absent
+  from **both** reports is now a row of its own (`removed-absent`) that counts
+  as compared and exits 0, instead of "nothing was compared", exit 2 — the two
+  sides agreeing with the plan is evidence, and the old refusal fired only
+  when such landmarks were selected alone, giving one state two answers.
+  Nothing gates the table's presence yet: that is the next ticket.
+
+- **An epic can declare what its design draws: `Design sources: <path>[,
+  <path>]`** (`scripts/tickets.mjs` and its suite, `skills/epic/SKILL.md`,
+  README, METHODOLOGY § "Why an epic declares its design sources"). A tenth
+  optional preamble line, exposed as `designSources` by `find`/`brief`/`list
+  --json` and read from the signed-off ref under `find --from` like every
+  other declaration, beside `designMap` — the absolute path of
+  `epics/<name>/design-map.json` when the epic has one, else null. It has its
+  **own list reader**: the whole text between commas is the path, trimmed,
+  rather than the glob lines' first-word parse, because designers name files
+  with spaces in them and `designs/City Desktop.html` must not reach every
+  reader as `designs/City` — which is also why this line carries no prose.
+  `doctor` flags a near-miss label like every other declaration, and warns
+  about a declared path that does not exist, naming it in full. Nothing reads
+  the declaration yet: the `COMPARE` criterion, the plan reviewer's packet and
+  the ticket reviewer's are later tickets of this epic.
+
+- **A deviation is narrowed to what it was for, and closing one takes a word,
+  not a sentence** (`skills/ticket/SKILL.md` steps 6 and 10,
+  `skills/quick/SKILL.md`, `skills/run/SKILL.md`'s after-a-halt procedure,
+  `skills/epic/SKILL.md`, the worker's instructions in `workflows/run-epic.mjs`
+  and `scripts/runners/codex.mjs`, README, METHODOLOGY). On its first day the
+  gate stopped three merges and none was the case it exists for: two were
+  missed estimates a planner had written into tickets as conditions, one was a
+  change made in answer to a review finding. **Neither is a deviation now** — a
+  missed estimate goes under `**Decisions:**` with its figure, a reviewed fix in
+  the review addendum, with an `**Owed:**` item to any later ticket written
+  against what it moved — and the epic skill tells planners not to write a
+  size into a ticket as a stop condition. **The closing line still records a
+  human's decision and no agent's, but the human no longer has to compose it:**
+  in an attended session an explicit answer to the departure shown ("accept",
+  "fix it") is the decision, and the session records the line, naming every
+  reference, quoting the answer, and ending `recorded by the session from
+  <name>'s answer`. Silence, a general instruction to carry on, or an answer
+  about something else is not a decision. The session may now say which way it
+  would decide, labelled as a recommendation. This supersedes the
+  attended-door entry below where it says "both end in a line you do not
+  compose" and that a "yes" is not the human's line. Unchanged: the parser, the
+  attended gate (stops on `open` above zero), and the unattended gate, which
+  honours no closing line because nobody is present to answer.
+
+- **A fidelity differ, `scripts/fidelity.mjs`** (new script, new suite
+  `scripts/fidelity.test.mjs`, fixtures under `scripts/fixtures/fidelity/`;
+  METHODOLOGY § "Why the fidelity differ ships no browser", `tests.yml`,
+  CLAUDE.md's command list). Two subcommands and no browser: `extract` prints
+  the source of one self-contained function expression, `(landmarks, side) =>
+  report`, which any browser the project already has can evaluate on a rendered
+  page; `diff <design.json> <page.json> --map <design-map.json>` compares the
+  two reports in pure Node and prints one row per difference — a missing
+  landmark, a landmark built where the plan removed it, a different `order` or
+  `childCount`, or any of a fixed set of computed properties. The plugin gains
+  no dependency and launches nothing, because a differ that owned a browser
+  would be one a project could not install. Removals are honoured **only** from
+  `--removed-from`, the signed-off map: `--map` is the file the ticket under
+  review edits, so a worker who could not build an element must write a
+  deviation rather than declare its own element removed. Nothing reads the
+  differ yet — the `COMPARE` criterion that calls it is the next ticket's.
+  Comparison is normalised (lengths within 0.5px, colours as rgba,
+  `font-family` by its first family) because two renderers print one value two
+  ways. Exit 0 when nothing differs or the only rows are declared removals, 1
+  when anything else differs, 2 on a usage error or unreadable input — a typo
+  is never reported as a difference. Exit 2 also covers the two ways a run can
+  produce no evidence at all, because "no differences" over nothing compared is
+  a pass nobody earned: no landmark matching on either side, and a
+  `--landmarks` value that names none (`""`, `" "`, `","` — omitting the flag
+  is how you ask for everything). A flag given twice is refused rather than
+  last-wins, and the honoured removals' source file is named in the table
+  whenever any removal row is printed, so a table pasted into a status entry
+  carries its own provenance.
 - **Every note is cleared by the repair it names, in both ledgers**
   (`scripts/tickets.mjs` — `parseOwed` and `parseDeviationsText` —
   `skills/ticket/SKILL.md` steps 6, 9 and 10, `skills/quick/SKILL.md` step 7,

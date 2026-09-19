@@ -13,7 +13,7 @@ repository).
 
 | | |
 |---|---|
-| `/flow:epic <name> [source...]` | Turn a request, report or conversation into `epics/<name>/`. Sources are files, globs or URLs, saved into `context/`; with none, the conversation is the brief. The shape is agreed **before** the document is written, a fresh-context **plan reviewer** challenges the decomposition, then it **stops for sign-off** and commits — no pull request. Both human gates render the plan as a **styled page** (`plan-page.mjs`, published as an artifact): one URL that evolves from shape checkpoint to sign-off, never committed |
+| `/flow:epic <name> [source...]` | Turn a request, report or conversation into `epics/<name>/`. Sources are files, globs or URLs, saved into `context/`; with none, the conversation is the brief. The shape is agreed **before** the document is written, a fresh-context **plan reviewer** challenges the decomposition — holding the **design** too, where the epic declares one, so that an element the drawing has and the map does not is caught before sign-off — then it **stops for sign-off** and commits — no pull request. An epic that declares `Design sources:` writes `design-map.json` beside its tickets and **ends with a whole-page fidelity ticket**; what the plan deliberately does not build is declared in that map's `removed` list, where a comparison prints it as a decision instead of a hole. Both human gates render the plan as a **styled page** (`plan-page.mjs`, published as an artifact): one URL that evolves from shape checkpoint to sign-off, never committed |
 | `/flow:ticket <ID>` | One ticket end to end: branch, implement, verify, log, commit, review, fix, push, pull request. Runs **supervisor-mode by default** — a fresh-context worker implements from the documents and the supervisor hires the reviewer; `--interactive` runs in-session, once per session (a hook refuses a second interactive run; supervisor runs stay open) |
 | `/flow:run <epic>` | Run a `Delivery: release` epic end to end with nobody present: verifies sign-off happened, then hands the loop to a shipped **workflow script** — **code-controlled, agent-executed** — that takes the tickets in document order. Per ticket: refresh the epic branch and read the board, a **fresh-context worker** implements and stops at its pushed branch (**release tickets open no pull request of their own** — the release pull request at the end is the epic's only one), the **driver hires the reviewer** priced by a code-floored tier, a disposition agent fixes and records, fixes get one bounded re-review at the consequence tier — below it a code gate checks the fix diff stayed inside the files the review saw or its findings named and under a line budget, and a trip buys that same re-review at the consequence tier instead of halting (only a fix diff nothing could measure still halts) — the ticket's `CHECK`/`EXPECT` acceptance criteria are **re-run from the signed-off document** (`tickets.mjs check <ID> --from origin/epic/<name>`) and gated on in code, then the branch's review addendum, the departures its status entry records (**any `**Deviation:**` line halts the run — closed or not, because nobody present could have closed it**) and its exact head SHA are checked **in code before any agent that could merge exists**; only then does a merge agent merge that verified SHA — which cannot be retargeted — into the epic branch, and the board — not an agent — confirms the result. It halts on any stop condition, because each one is a code path rather than a judgment call. The session ends by **opening** the release pull request. Requires the Workflow tool; never merges toward the default branch |
 | `/flow:quick <description>` | The **cheap lane**: one small, low-risk piece of work, implemented **in-session** with a written scope, verification with counts, a short log entry and a pull request — and a fresh-context reviewer **only when behaviour changes** (prose-only diffs — documentation and comments, nothing a machine reads — get none; the PR is the review). Size- **and risk-gated**: auth, secrets, migrations and other consequential work is routed to `/flow:epic` at any size |
@@ -91,6 +91,7 @@ checks all of it, so run that first in a new project.
 | `epics/<e>/tickets.md` | What the work **is** | Written up front. Edited to re-plan, never to record progress |
 | `epics/<e>/status.md` | What **happened** | Append-only. Corrections are dated addenda |
 | `epics/<e>/runs.md` | What the **runs** did | Append-only. Corrections are dated addenda |
+| `epics/<e>/design-map.json` | What the design **draws**, and what the plan deliberately does not build | Written with the plan and signed off with it. Workers edit its `page` selectors; its **`removed` list is planning's**, and the differ honours removals only from the signed-off ref |
 | `epics/<e>/context/` | What it was based on | Frozen. Add, never rewrite |
 
 `runs.md` exists because two writers used to share one file tail: a ticket
@@ -227,6 +228,19 @@ amendments, so the review stays auditable against exactly what was reviewed.
 decomposition against the actual code — a wrong split caught there costs one
 edit instead of every ticket built on it.
 
+**Both are given the design, where the epic declares one.** The plan reviewer
+gets the design sources and the design map, because an element the drawing has
+and the map does not is invisible to everything downstream. The ticket
+reviewer gets them too, plus the entry's `**Compared:**` table — which is a
+**claim**, not evidence: it re-runs the differ where the project's instruction
+file says how to serve and drive a page, and otherwise audits the table
+against the design source's markup and **says the page was not rendered** (the
+Codex shadow reviewer, sandboxed with no network, never renders, and its
+packet says so). A table the re-run contradicts is Important, as is a
+`removed` entry the ticket's own diff added or changed — the design map's
+removal list is planning's, and the party under review is the one that must
+never declare its own missing element removed.
+
 **The hirer is never the party under review.** In `/flow:ticket`'s default
 lane the supervisor hires the reviewer, not the worker that wrote the code;
 in `/flow:run` the driver script does the same one level up — the worker
@@ -292,7 +306,7 @@ records' evidence — Important findings per ticket and observed spend —
 and never cheapen the *plan* side to match: a weak plan produces tickets
 that are confidently, reviewably wrong.
 
-**The whole configuration surface is nine optional preamble lines** in the
+**The whole configuration surface is ten optional preamble lines** in the
 epic's `tickets.md` — one place, one syntax (label at line start, value
 first after the colon, prose after it ignored), every near-miss flagged by
 `/flow:doctor`:
@@ -307,6 +321,7 @@ first after the colon, prose after it ignored), every near-miss flagged by
 | `Planner model:` | `fable` | the plan reviewer for this epic | the agent definition's pinned strongest |
 | `Consequence paths:` | `src/auth/**, migrations/**` | globs that force the consequence review tier in a run — the code floor under the worker's self-reported tier | tier floor still applies (docs-only vs code), globs add nothing |
 | `Fix bounds exclude:` | `src/messages/*.json` | globs the run's fix-bounds gate leaves out of the review-fix diff (as it already leaves out `epics/`) — for files a fix fans out into mechanically, translation catalogs being the canonical case | every fixed file counts toward the bounds |
+| `Design sources:` | `designs/City Desktop.html, designs/map.html` | the files holding what the design draws — anything a browser can render and `getComputedStyle` can read; repository-relative, and free to live outside the epic's `context/`. This is what hands the design to the brief and to both reviewers. The one line that carries **no prose**: the whole text between commas is the path, because designers name files with spaces in them | no design is declared, and nothing downstream is handed one |
 | `Ticket budget:` | `250k` | per-ticket output-token ceiling in a run (a shadow review's spend is left out); an over-budget ticket stays merged and the run halts before the next. The only line a run re-reads: each ticket's resolve step fetches the epic branch and reads the signed-off document from it before the merge, so raising it mid-run (committed and pushed) governs the running ticket, and a ticket branch cannot raise its own ceiling; removing the line keeps the last ceiling and logs that it did | no ceiling; per-ticket spend still recorded when the runtime meters it |
 
 ## Reading the board
@@ -365,9 +380,12 @@ ID; one that recorded several numbers them `<ID>.1`, `<ID>.2` … in document
 order across every entry it heads. A dated `**Deviations closed:** <ID>[,
 <ID>.<n>] — <each deviation named as accepted or as fixed in <sha>; who; when>`
 line closes what its **leading** reference list names, and only departures
-recorded **above it in the file** — and it is **a human's line, written by no
-agent**, because a closure the reviewed party could have written clears
-nothing. **A bare closing line** closes an entry's one departure, and facing
+recorded **above it in the file** — and it records **a human's decision, made
+by no agent**, because a closure the reviewed party could have decided clears
+nothing. The human need not type it: in an attended session an explicit answer
+to the departure shown ("accept", "fix it") is the decision, and the session
+records the line quoting it. A missed estimate (a line count, a size) and a
+change made in answer to a review finding are not deviations. **A bare closing line** closes an entry's one departure, and facing
 more than one open it closes **nothing** and says so: accepted and fixed are
 decisions per departure, and while a deviation wrongly left open costs a human
 one reread, one wrongly closed is a decision nobody made, gone from every brief
@@ -399,7 +417,8 @@ epic's integration merge **refuses a ticket with an unclosed deviation**: the
 gate reads the departures off the pushed branch it is about to merge, stops
 before the merge, and resumes only once a human has decided — accepted, or
 fixed on the branch and then accepted as fixed — in the `**Deviations
-closed:**` line that no agent may write. That merge is the last point at which
+closed:**` line that no agent may decide: an explicit answer in the session
+is the decision, and the session records it. That merge is the last point at which
 one ticket's departure is still one decision rather than a paragraph inside a
 whole epic's diff. **An unattended run halts on any departure at all** — it
 counts every `**Deviation:**` line the pushed entry carries and honours no
@@ -437,6 +456,27 @@ document, which no ticket branch can edit. `tickets.mjs find <ID> --from
 reads the `Ticket budget:` line — for the same reason: the party under review
 must not be able to edit the terms it is judged by. Prose and *demonstrate:* criteria
 remain first-class; CHECK is for the criteria a command can decide outright.
+
+**A fidelity criterion is the one the code never runs.** `COMPARE: <design
+source path> @ <width>[, <width>]`, indented under its criterion bullet like
+`CHECK:`, with an optional `LANDMARKS: <name>[, <name>]` beneath it (absent =
+every landmark in the map = the whole page). Comparing an artboard with a
+rendered page needs a browser and the plugin owns none, so `check <ID>` lists
+comparisons in their own `compares` list, marked manual, **in neither `total`
+nor `passed`** — and what the code gates instead is the **presence** of the
+`**Compared:**` table in the ticket's status entry, counted by
+`tickets.mjs compared <ID> [--log-from <ref>]`. A ticket whose signed-off
+section carries a `COMPARE` and whose pushed entry records none halts an
+unattended run on the acceptance-check condition and holds an attended
+release merge; the recovery is to run the differ and append the table in a
+dated addendum, or — where nothing can render the design — a human's written
+`**Compared:** owed — <who accepted it, when, and why>`, which a gate reads
+as present and a reader reads as not done. What the table *says* is the
+reviewer's to check, who can re-run the differ; what a merge can hold is
+whether it exists. A malformed `COMPARE` — no width, a path the epic's
+`Design sources:` line does not list, a `LANDMARKS:` with no `COMPARE:` above
+it — fails the gate like a malformed CHECK, and `doctor` flags the
+near-misses.
 
 **Spend is derived too.** `tickets.mjs spend [epic]` compiles the recorded
 token ledger — per ticket, per role (worker, reviewer, re-review,

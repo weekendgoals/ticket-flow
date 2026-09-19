@@ -29,6 +29,7 @@ jobs:
           node --check plugins/flow/scripts/board.mjs
           node --check plugins/flow/scripts/plan-page.mjs
           node --check plugins/flow/scripts/check-invariants.mjs
+          node --check plugins/flow/scripts/fidelity.mjs
           node --check plugins/flow/hooks/ticket-session-guard.mjs
       - name: parse run-epic.mjs the way the workflow runtime does
         run: |
@@ -40,6 +41,7 @@ jobs:
           node --test plugins/flow/scripts/plan-page.test.mjs
           node --test plugins/flow/hooks/ticket-session-guard.test.mjs
           node --test plugins/flow/scripts/check-invariants.test.mjs
+          node --test plugins/flow/scripts/fidelity.test.mjs
           node --test plugins/flow/workflows/run-epic.test.mjs
           node --test plugins/flow/scripts/runners/codex.test.mjs
           node --test plugins/flow/scripts/runners/codex-review.test.mjs
