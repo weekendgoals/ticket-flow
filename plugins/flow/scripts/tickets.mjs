@@ -51,7 +51,13 @@
 //                                        phrases and the run records in
 //                                        epics/<e>/runs.md (and in status.md
 //                                        for logs written before the split);
-//                                        unknown stays unknown, never zero
+//                                        unknown stays unknown, never zero.
+//                                        Beside it, recorded TIME: seconds per
+//                                        role and each ticket's wall, from the
+//                                        run records' Time lines (written by
+//                                        scripts/meter.mjs), and where no wall
+//                                        was recorded the ticket's commit span
+//                                        from git — labelled, never as wall
 //   tickets.mjs epics [--json]           list known epics
 //   tickets.mjs current [--json]         the epic this folder belongs to
 //   tickets.mjs doctor [--json]          check the flow's preconditions and
@@ -1183,7 +1189,16 @@ const SPEND_ROLES = ['worker', 'reviewer', 're-review', 'disposition', 'proxies'
 const RUN_HEADING = /^###\s+Run\s*[—–-]\s*(\d{4}-\d{2}-\d{2})(?:\s*\([^)]*\))?\s*[—–-]/
 const ROLE_RE = SPEND_ROLES.join('|')
 const ROLE_PHRASE = new RegExp(`\\b(${ROLE_RE})\\s+tokens\\b[^:]{0,40}:\\s*(\\d[\\d,]*|unknown)`, 'gi')
-const ROLE_PAIR = new RegExp(`\\b(${ROLE_RE})=(\\d[\\d,]*|unknown)`, 'gi')
+// A token figure ends where its digits end: `worker=1430s` is a TIME figure
+// (seconds carry their unit) and `worker=228k` is not machine-shaped at all,
+// and before this lookahead both were read as tokens — 1430 and 228. The
+// comma is in the class because the digit run may hold commas: without it
+// `worker=1,430s` backs off to `worker=1`, where the next character is a
+// comma and the lookahead is satisfied — one token, overwriting the real
+// figure. A figure followed by a comma is still read (`worker=1,234, then`):
+// the run takes the trailing comma with it, and `toNum` drops it.
+const NOT_A_UNIT = '(?![A-Za-z\\d,])'
+const ROLE_PAIR = new RegExp(`\\b(${ROLE_RE})=(\\d[\\d,]*|unknown)${NOT_A_UNIT}`, 'gi')
 const ROLE_UNKNOWN = new RegExp(`\\b(${ROLE_RE})\\s+unknown\\b`, 'gi')
 const TOKENS_LINE = /\*\*Tokens:\*\*\s*([^\n]*)/gi
 // A group may open with `round=<n>` — `CITY-14 round=2 worker=804432
@@ -1195,14 +1210,85 @@ const TOKENS_LINE = /\*\*Tokens:\*\*\s*([^\n]*)/gi
 // the group read, the strip that separates an entry's own bare pairs from
 // labelled groups, and doctor's only test for a parseable run record — so the
 // round label lives here, where all three move together.
-const ROLE_PAIRS = `((?:\\s+(?:${ROLE_RE})=(?:\\d[\\d,]*|unknown))+)`
-const RUN_GROUP = new RegExp(`\\b(${TICKET_ID})(?:\\s+round=(\\d+))?${ROLE_PAIRS}`, 'g')
+const ROLE_PAIRS = `((?:\\s+(?:${ROLE_RE})=(?:\\d[\\d,]*|unknown)${NOT_A_UNIT})+)`
+// …and a group is never followed by a role pair it could not read. Without
+// the closing lookahead `CITY-15 worker=unknown reviewer=200s` — a TIME group,
+// quoted in prose — reads as the token group `CITY-15 worker=unknown`:
+// `unknown` is the one figure with no unit, so it is the hole in the wall
+// between the ledgers, and the leak replaces the ticket's own
+// `**Tokens:** unknown` marker with a role nobody wrote a token figure for.
+// (`wall` is time's own key; it is here because it is what follows.)
+//
+// The follower must be TIME-SHAPED — seconds, or `unknown`. The first cut
+// refused a group followed by any `<role>=` at all, and that threw away whole
+// groups main had read correctly: `A-1 worker=100 reviewer=50 wall=9`,
+// `… reviewer=228k`, `… reviewer=` — silently, wherever a sibling group in the
+// record parsed. A follower that is merely unreadable costs only itself.
+const RUN_GROUP = new RegExp(`\\b(${TICKET_ID})(?:\\s+round=(\\d+))?${ROLE_PAIRS}(?!\\s+(?:${ROLE_RE}|wall)=(?:\\d[\\d,]*s|unknown)\\b)`, 'g')
 // The same label inside a ticket's own entry, where the ID is the heading's.
 const ENTRY_ROUND = new RegExp(`\\bround=(\\d+)${ROLE_PAIRS}`, 'gi')
 // What marks a repeated figure as a correction rather than a round: the dated
 // addendum corrections already take ("**Addendum — correction — …").
 const CORRECTION_MARK = /Addendum\b[^*]{0,80}\bcorrect/i
-const toNum = (s) => Number(s.replace(/,/g, ''))
+const toNum = (s) => Number(s.replace(/,|s$/g, ''))
+
+// ── time ─────────────────────────────────────────────────────────────────────
+// A run record's `**Time:**` line is the Tokens line's twin — the same groups,
+// the same rounds, the same corrections, written by the same observer
+// (`scripts/meter.mjs`, from the transcripts' own timestamps) — with two
+// differences. Every figure carries its unit, `worker=1430s`, because a bare
+// `worker=1430` anywhere in a record is a token figure; and a group ends with
+// `wall=<n>s`, the ticket's first agent start to its last agent end, which is
+// NOT the roles' sum: the gap is what the ticket spent between agents.
+//
+// Time is read ONLY inside a `**Time:**` paragraph, and that paragraph is
+// taken out of the text before tokens are read. The unit alone does not keep
+// the ledgers apart — `FND-3 worker=unknown reviewer=200s` opens like a token
+// group — so the paragraph is the boundary, and a correction to a time figure
+// is a dated addendum whose figures sit under their own `**Time:**` line.
+const TIME_ROLES = [...SPEND_ROLES, 'wall']
+const TIME_RE = TIME_ROLES.join('|')
+const TIME_PAIR = new RegExp(`\\b(${TIME_RE})=(\\d+s|unknown)\\b`, 'gi')
+const TIME_GROUP = new RegExp(`\\b(${TICKET_ID})(?:\\s+round=(\\d+))?((?:\\s+(?:${TIME_RE})=(?:\\d+s|unknown)\\b)+)`, 'g')
+// A time-shaped figure, wherever it sits — doctor's test for one that landed
+// outside a Time paragraph, where nothing reads it.
+// Commas included: `worker=1,430s` is not machine-shaped, and it is still a
+// duration somebody meant the ledger to have.
+const TIME_FIGURE = new RegExp(`\\b(?:${TIME_RE})=\\d[\\d,]*s\\b`, 'i')
+// The paragraph runs from a line that starts `**Time:**` to the next blank line
+// or bold label — records wrap at the house width — and the split is by GROUP,
+// not by line: every time group in the paragraph is lifted out for the time
+// ledger, whatever prose stands beside it, and what is left goes back to the
+// text tokens are read from. Both line-level cuts lost figures silently. The
+// paragraph taken whole swallowed `CITY-15 worker=100 reviewer=50` written
+// under a Time line, and it reached neither ledger; the paragraph narrowed to
+// lines holding nothing but time dropped a whole ticket's time for one
+// parenthesis on a wrapped line, and handed the rejected line's
+// `worker=unknown` to the token ledger. Lifted groups are blanked in place,
+// newlines kept, so `rest` has the record's own line numbers and doctor can
+// name the line it means.
+function splitTimeParagraphs(text) {
+  const lines = text.split('\n')
+  const time = []
+  const paragraphs = []
+  let start = -1
+  const close = (end) => {
+    if (start < 0) return
+    const raw = lines.slice(start, end).join('\n')
+    paragraphs.push(raw)
+    const kept = raw.replace(TIME_GROUP, (m) => (time.push(m), m.replace(/[^\n]/g, ' ')))
+    lines.splice(start, end - start, ...kept.split('\n'))
+    start = -1
+  }
+  lines.forEach((line, i) => {
+    if (/^\*\*Time:\*\*/i.test(line)) {
+      close(i)
+      start = i
+    } else if (start >= 0 && (line.trim() === '' || /^\*\*/.test(line))) close(i)
+  })
+  close(lines.length)
+  return { rest: lines.join('\n'), restLines: lines.map((l, i) => [i, l]), time: time.join('\n'), paragraphs: paragraphs.join('\n') }
+}
 
 function parseSpend(epic) {
   const byId = {}
@@ -1212,7 +1298,9 @@ function parseSpend(epic) {
   // never where an old one can be found.
   const docs = [epic.statusDoc, epic.runsDoc].filter(Boolean)
   if (!docs.length) return byId
-  const rec = (id) => byId[id] || (byId[id] = { id, figures: {}, rounds: {}, repeats: [], unknown: new Set(), source: null, note: null })
+  const rec = (id) =>
+    byId[id] ||
+    (byId[id] = { id, figures: {}, rounds: {}, repeats: [], unknown: new Set(), source: null, note: null, time: { figures: {}, rounds: {}, unknown: new Set(), source: null } })
   // Two files means two orders, so the ranking is stated rather than left to
   // whichever file is read last:
   //
@@ -1252,7 +1340,16 @@ function parseSpend(epic) {
   // joined text, never line by line: "Worker tokens (implementation\nleg):".
   const flush = (region, text) => {
     if (!region) return
-    const flat = text.replace(/\s+/g, ' ')
+    const split = splitTimeParagraphs(text)
+    // Time groups go to the ticket's time ledger under the token ledger's own
+    // rules — `apply` and `applyRound` take either — so rounds sum, a repeat
+    // corrects, and `unknown` never erases an observation, in both.
+    for (const m of split.time.replace(/\s+/g, ' ').matchAll(TIME_GROUP)) {
+      const t = rec(m[1]).time
+      const where = region.run ? 'run-record' : 'log'
+      for (const p of m[3].matchAll(TIME_PAIR)) m[2] ? applyRound(t, m[2], p[1], p[2], where) : apply(t, p[1], p[2], where)
+    }
+    const flat = split.rest.replace(/\s+/g, ' ')
     // A machine-shaped group names its own ticket, so it is read wherever it
     // sits — a correction addendum for a run record appended at the end of
     // a log lands in whatever entry is last, and must still reach the ticket
@@ -1329,7 +1426,7 @@ function parseSpend(epic) {
   // labelled rounds is their sum — the labelled reading wins over any
   // unlabelled figure for the same role, and `mixed` says so for doctor. A
   // round known only as `unknown` adds nothing and erases nothing.
-  for (const r of Object.values(byId)) {
+  for (const r of Object.values(byId).flatMap((x) => [x, x.time])) {
     r.mixed = []
     for (const [role, rounds] of Object.entries(r.rounds)) {
       const known = Object.values(rounds).filter((v) => v !== null)
@@ -1352,30 +1449,66 @@ function parseSpend(epic) {
 // repair is the log's own correction mechanism — a dated addendum beneath the
 // record restating the figures as groups — and parseSpend already reads a
 // region's addenda, so the advertised recovery works in the flagged state.
-function runRecordNearMisses(doc) {
+function runRecordNearMisses(doc, timed = new Set()) {
   const misses = []
   let region = null // { line } for a run record; null elsewhere
   let text = ''
   const flush = () => {
     if (!region || region.tokensLine === undefined) return
-    const flat = text.replace(/\s+/g, ' ')
+    const flat = splitTimeParagraphs(text).rest.replace(/\s+/g, ' ')
     const groups = [...flat.matchAll(RUN_GROUP)]
     // The figure must sit in the Tokens paragraph itself — the line and its
     // house-width continuation lines, up to the next blank line or bold
     // label — not anywhere later in the record: a Halted-on sentence that
     // mentions a token count is not a figure the ledger was meant to read.
     // A date (2026-08-24) is not a figure either.
-    const hasFigure = /(?<![\d-])\d[\d,]+(?![\d-])/.test(region.tokensParagraph)
+    // Nor is `total=` on its own: a run that selected no ticket has a total
+    // and no group to restate, and a warn no append can clear is a warn that
+    // teaches its reader to ignore the rest.
+    const hasFigure = /(?<![\d-])\d[\d,]+(?![\d-])/.test(region.tokensParagraph.replace(/\btotal=[\d,]+/gi, ''))
     if (!groups.length && hasFigure) misses.push({ line: region.tokensLine, heading: region.heading })
+  }
+  // The Time line's two near-misses, and both are written so that the repair
+  // they advertise ends them — the log is append-only, so an addendum can add
+  // a group and can never remove the prose that tripped a warn. (The first cut
+  // of the stray-figure warn fired on the figure alone, and kept firing after
+  // the repair had worked.)
+  //
+  //   time-shape  — the record has a Time line with figures and no Time group
+  //                 parses anywhere in it. `run=` alone is the whole Time line
+  //                 of a run that selected no ticket, and is no figure here.
+  //   time-stray  — a time-shaped figure nothing read (`worker=1,430s`, or a
+  //                 well-formed one in prose outside a Time paragraph), on a
+  //                 line naming a ticket that has NO time anywhere in the
+  //                 ledger. Per ticket, because per record hides the common
+  //                 case: ticket A's group parses, ticket B's is malformed,
+  //                 and B's time is silently absent. A record whose tickets
+  //                 all have time may quote a duration in its Diagnosis. A
+  //                 stray figure on a line naming no ticket falls back to the
+  //                 record: it warns when no group parses in it.
+  const flushTime = () => {
+    if (!region) return
+    const split = splitTimeParagraphs(text)
+    const parses = split.time !== ''
+    if (!parses && region.timeLine !== undefined && /\d/.test(split.paragraphs.replace(/\d{4}-\d{2}-\d{2}|\brun=\d+s\b/gi, '')))
+      return misses.push({ kind: 'time-shape', line: region.timeLine, heading: region.heading })
+    for (const [i, line] of split.restLines) {
+      if (!TIME_FIGURE.test(line)) continue
+      const ids = [...line.matchAll(new RegExp(`\\b${TICKET_ID}\\b`, 'g'))].map((m) => m[0])
+      const untimed = ids.filter((id) => !timed.has(id))
+      if (ids.length ? untimed.length : !parses) return misses.push({ kind: 'time-stray', line: region.line + 1 + i, heading: region.heading, ids: untimed })
+    }
   }
   readFileSync(doc, 'utf8').split('\n').forEach((line, i) => {
     if (/^#{2,3}\s/.test(line)) {
       flush()
+      flushTime()
       region = RUN_HEADING.test(line) ? { line: i + 1, heading: line.trim(), tokensParagraph: '' } : null
       text = ''
       return
     }
     if (!region) return
+    if (region.timeLine === undefined && /^\*\*Time:\*\*/i.test(line)) region.timeLine = i + 1
     if (region.tokensLine === undefined && /^\*\*Tokens:\*\*/i.test(line)) {
       region.tokensLine = i + 1
       region.inTokens = true
@@ -1387,6 +1520,7 @@ function runRecordNearMisses(doc) {
     text += `${line}\n`
   })
   flush()
+  flushTime()
   return misses
 }
 
@@ -1405,9 +1539,41 @@ function runRecordHeadings(doc) {
   return found
 }
 
+// The fallback for a ticket no run record timed: the span between the first
+// and the last commit whose subject names it, off author dates (a rebase
+// rewrites the committer date and keeps the author's). It is observed, which
+// is why it is shown at all — and it is NOT the ticket's wall-clock, which is
+// why it is never written into `time.wall`: the work before the first commit
+// is most of an implementation and none of this span, and a squash-merged
+// ticket's span ends at the merge, human wait included. One commit is a point,
+// not a span, and reads as nothing.
+function commitSpans() {
+  const out = git(['log', '--all', '--no-merges', '--format=%at%x09%s', '-n', String(MAIN_SCAN_LIMIT)], { allowFail: true })
+  const spans = {}
+  const subject = new RegExp(`^(${TICKET_ID})[:\\s]`)
+  const lines = out ? out.split('\n') : []
+  // `--all` reaches a rebased or cherry-picked commit once per ref it sits on.
+  // Same author date and same subject is the same piece of work, counted once.
+  // And when the scan cap bites, a ticket's first commit may be past it — the
+  // span would shrink with nothing saying so, so the report says so.
+  Object.defineProperty(spans, 'capped', { value: lines.length >= MAIN_SCAN_LIMIT, enumerable: false })
+  for (const line of new Set(lines)) {
+    const tab = line.indexOf('\t')
+    const m = line.slice(tab + 1).match(subject)
+    const at = Number(line.slice(0, tab))
+    if (!m || !at) continue
+    const sp = spans[m[1]] || (spans[m[1]] = { first: at, last: at, commits: 0 })
+    sp.first = Math.min(sp.first, at)
+    sp.last = Math.max(sp.last, at)
+    sp.commits++
+  }
+  return spans
+}
+
 function spendReport(epicFilter) {
   const data = board(epicFilter)
   requireKnownEpic(data, epicFilter)
+  const spans = commitSpans()
   const epics = []
   for (const epic of data.epics) {
     const spend = parseSpend(epic)
@@ -1416,6 +1582,8 @@ function spendReport(epicFilter) {
       .map((t) => {
         const r = spend[t.id] || { figures: {}, rounds: {}, unknown: new Set(), source: null, note: null }
         const known = Object.values(r.figures)
+        const time = r.time || { figures: {}, rounds: {}, unknown: new Set() }
+        const span = spans[t.id]
         return {
           id: t.id,
           title: t.title,
@@ -1428,18 +1596,34 @@ function spendReport(epicFilter) {
           rounds: Object.fromEntries(Object.entries(r.rounds || {}).map(([role, rs]) => [role, Object.keys(rs).length])),
           source: r.source,
           note: r.note,
+          // Seconds, per role and `wall`, from the run records' Time lines;
+          // null where nothing was recorded. `wall` is first agent start to
+          // last agent end and is not the roles' sum.
+          time: {
+            ...Object.fromEntries(TIME_ROLES.map((role) => [role, time.figures[role] ?? null])),
+            unknown: [...time.unknown].sort(),
+            source: time.source ?? null,
+            rounds: Object.fromEntries(Object.entries(time.rounds || {}).map(([role, rs]) => [role, Object.keys(rs).length])),
+          },
+          // Only where no wall was recorded — a recorded wall is the better
+          // observation and the span would read as a second opinion on it.
+          // One commit is a point, and so are several at one instant.
+          commitSpan: time.figures.wall == null && span && span.last > span.first ? { seconds: span.last - span.first, commits: span.commits } : null,
         }
       })
     const totals = Object.fromEntries(SPEND_ROLES.map((role) => [role, tickets.reduce((a, t) => a + (t[role] || 0), 0)]))
     totals.total = tickets.reduce((a, t) => a + (t.total || 0), 0)
+    const timeTotals = Object.fromEntries(TIME_ROLES.map((role) => [role, tickets.reduce((a, t) => a + (t.time[role] || 0), 0)]))
     epics.push({
       epic: epic.epic,
       tickets,
       totals,
+      timeTotals,
+      untimedTickets: tickets.filter((t) => t.time.wall === null).length,
       unknownTickets: tickets.filter((t) => t.total === null || t.unknown.length).length,
     })
   }
-  return { epics }
+  return { epics, commitSpansCapped: spans.capped }
 }
 
 // ── git and GitHub state ─────────────────────────────────────────────────────
@@ -1913,6 +2097,14 @@ function doctor() {
     // written before the split keeps them), so both files get the run-record
     // scans — a record flagged in only one of them would be a gate at a door
     // its writer no longer walks through.
+    // Which tickets have time anywhere in the ledger — an `unknown` counts, it
+    // is an answer — so a stray time figure warns only while its ticket has
+    // none, and the addendum that gives it some ends the warn.
+    const timed = new Set(
+      Object.values(parseSpend(epic))
+        .filter((r) => Object.keys(r.time.figures).length || r.time.unknown.size)
+        .map((r) => r.id),
+    )
     for (const doc of [epic.statusDoc, epic.runsDoc].filter(Boolean)) {
       const name = basename(doc)
       // A run heading that almost parses — a missing date, a qualifier outside
@@ -1928,8 +2120,12 @@ function doctor() {
       // A run record's Tokens line written as prose reads as nothing: every
       // ticket that points at the record then reports "no figure recorded",
       // which is indistinguishable from a run nobody measured.
-      for (const miss of runRecordNearMisses(doc))
-        add('warn', `${epic.epic}/${name}:${miss.line} — the run record's Tokens line carries figures but no machine-shaped group, so spend reads nothing from it (needs "<ID> worker=<n> reviewer=<n> disposition=<n> re-review=<n> proxies=<n>" per ticket, "unknown" for any missing figure); repair by appending a dated addendum beneath the record restating the figures as groups — never by editing the record: ${miss.heading}`)
+      for (const miss of runRecordNearMisses(doc, timed))
+        if (miss.kind === 'time-shape')
+          add('warn', `${epic.epic}/${name}:${miss.line} — the run record's Time line carries figures but no machine-shaped group, so spend reads no time from it (needs "<ID> worker=<n>s reviewer=<n>s disposition=<n>s re-review=<n>s proxies=<n>s wall=<n>s" per ticket — seconds, each with its "s" — "unknown" for any missing figure; \`scripts/meter.mjs <workflow-run-dir>\` prints the line); repair by appending a dated addendum beneath the record with the groups under its own "**Time:**" line — never by editing the record: ${miss.heading}`)
+        else if (miss.kind === 'time-stray')
+          add('warn', `${epic.epic}/${name}:${miss.line} — a time figure here was read by nothing${miss.ids.length ? `, and ${miss.ids.join(', ')} ${miss.ids.length === 1 ? 'has' : 'have'} no time anywhere in the ledger` : ', and no Time group parses in this run record'}: time is read from "<ID> worker=<n>s … wall=<n>s" groups inside a paragraph that starts "**Time:**" (to the next blank line or bold label) — seconds with their "s" and no commas ("1,430s" is not machine-shaped). Repair by appending a dated addendum beneath the record with the groups under a "**Time:**" line of its own — never by editing the record: ${miss.heading}`)
+        else add('warn', `${epic.epic}/${name}:${miss.line} — the run record's Tokens line carries figures but no machine-shaped group, so spend reads nothing from it (needs "<ID> worker=<n> reviewer=<n> disposition=<n> re-review=<n> proxies=<n>" per ticket, "unknown" for any missing figure); repair by appending a dated addendum beneath the record restating the figures as groups — never by editing the record: ${miss.heading}`)
     }
     // Once an epic has a runs.md, a run record appended to status.md puts the
     // two writers back on one file tail — the conflict the split ended. The
@@ -2536,6 +2732,12 @@ switch (cmd) {
     if (json) emit(report)
     else {
       const fmt = (n) => (n === null || n === undefined ? '?' : n.toLocaleString('en-US'))
+      const dur = (n) => {
+        if (n === null || n === undefined) return '?'
+        const h = Math.floor(n / 3600)
+        const m = Math.floor((n % 3600) / 60)
+        return h ? `${h}h ${String(m).padStart(2, '0')}m` : m ? `${m}m ${String(n % 60).padStart(2, '0')}s` : `${n}s`
+      }
       for (const e of report.epics) {
         console.log(
           `${C.bold}${e.epic}${C.off} — ${e.tickets.length} tickets · recorded ${fmt(e.totals.total)} tokens` +
@@ -2547,13 +2749,29 @@ switch (cmd) {
             ? `${parts.join('  ')}  total ${fmt(t.total)}  ${C.dim}(${t.source})${C.off}`
             : `${C.dim}no figure recorded${t.note ? ` — points at the ${t.note}` : ''}${C.off}`
           console.log(`  ${t.id.padEnd(8)} ${detail}`)
+          const timed = TIME_ROLES.filter((r) => t.time[r] !== null || t.time.unknown.includes(r)).map((r) => `${r} ${dur(t.time[r])}`)
+          if (timed.length) console.log(`  ${''.padEnd(8)} ${C.dim}time${C.off}  ${timed.join('  ')}  ${C.dim}(${t.time.source})${C.off}`)
+          else if (t.commitSpan)
+            console.log(`  ${''.padEnd(8)} ${C.dim}time  not recorded — commit span ${dur(t.commitSpan.seconds)} over ${t.commitSpan.commits} commits (git)${C.off}`)
         }
         console.log(
           `  ${C.dim}${SPEND_ROLES.map((r) => `${r} ${fmt(e.totals[r])}`).join('  ')}${C.off}`,
         )
+        if (e.tickets.some((t) => TIME_ROLES.some((r) => t.time[r] !== null)))
+          console.log(
+            `  ${C.dim}time  ${TIME_ROLES.map((r) => `${r} ${dur(e.timeTotals[r])}`).join('  ')}` +
+              (e.untimedTickets ? ` · ${e.untimedTickets} ticket${e.untimedTickets === 1 ? '' : 's'} with no recorded wall` : '') +
+              `${C.off}`,
+          )
         console.log()
       }
       console.log(`${C.dim}Recorded figures only — harness-observed or unknown, as the log says; nothing here is estimated.${C.off}`)
+      if (report.epics.some((e) => e.tickets.some((t) => t.commitSpan)))
+        console.log(`${C.dim}A commit span is first to last commit naming the ticket — not its wall-clock: the work before the first commit is not in it, and a squash-merged ticket's span ends at the merge.${C.off}`)
+      // Not nested under the line above: a ticket whose commits all lie past
+      // the cap shows no span at all, and that is the case this note is for.
+      if (report.commitSpansCapped && report.epics.some((e) => e.tickets.some((t) => t.time.wall === null)))
+        console.log(`${C.dim}Commit spans scanned only the last ${MAIN_SCAN_LIMIT} commits — an older ticket's span may start late, or be missing.${C.off}`)
     }
     break
   }

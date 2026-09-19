@@ -693,13 +693,60 @@ entries and addenda point here and never restate the figures. Figures are harnes
 from an agent's report: the Workflow run persists each `agent()` call's
 transcript under this session's directory, and `journal.jsonl` maps the
 labels (`worker:<ID>`, `review:<ID>`, `disposition:<ID>`, `re-review:<ID>`,
-the shell proxies) to their `agent-<id>.jsonl` files — sum each agent's
-`usage`. Add the reviewer's tier, model and effort as prose after the
+the shell proxies) to their `agent-<id>.jsonl` files. **Do not sum them by
+hand — run the meter, and paste the line it prints:**
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/meter.mjs" "$(find ~/.claude/projects -type d -path '*subagents/workflows/<run-id>')"
+```
+
+`<run-id>` is the `wf_…` ID the Workflow call returned. If the `find`
+matches nothing the script receives an empty path and says so: check the ID
+against the Workflow call's result, and list what runs exist with
+`ls -dt $(find ~/.claude/projects -type d -path '*subagents/workflows/wf_*') | head -5`
+— newest first, and the newest is usually the one. If the run's directory cannot be found, both lines
+are written `unknown`, never from memory of what the run seemed to cost. The script sums each
+agent's `usage` as input + output + cache-creation tokens, cache reads left
+out — the sum every record in the ledger uses — counting a message once
+however many lines it was streamed as, which is the arithmetic a session
+reading JSONL by hand got wrong in both directions. A `refresh+select` step
+counts as a proxy of the ticket it selected; one that selected nothing is
+printed apart as run overhead, in `total=` and in no group. A role whose
+transcript is missing prints `unknown`, and a role that never ran is absent.
+If the script finds no journal, every figure is `unknown` — never estimate
+one. A resumed run has a run ID of its own: meter each, and label the
+groups `round=<n>` as above. Add the reviewer's tier, model and effort as prose after the
 groups. This is the run lane's only token record: ticket entries and
 addenda point here. Planning evidence, never a gate. A record written
 without the groups reads as nothing — `doctor` flags it — and is repaired
 by a dated addendum beneath the record restating the figures as groups,
 never by editing the record.>
+
+**Time:** <the second line `meter.mjs` printed, pasted as printed — one group
+per ticket, `<ID> worker=<n>s reviewer=<n>s disposition=<n>s re-review=<n>s
+proxies=<n>s wall=<n>s`, groups separated by `;`, then `run=<n>s`. Seconds,
+**each with its `s`**: a bare `worker=1430` anywhere in a record is a token
+figure, so the unit is what keeps a duration out of the token ledger. A
+role's figure is its agents' first transcript timestamp to their last;
+`wall` is the ticket's first agent start to its last agent end and is **not
+the roles' sum** — the gap is what the ticket spent between agents, and it
+is part of what a human waited through. Observed the way tokens are and for
+the same reason: the driver has no clock (`Date.now()` throws in a workflow
+script) and no agent times itself honestly, but the harness stamped every
+transcript line anyway. `round=<n>` labels, `unknown` and corrections work
+exactly as on the Tokens line — with one difference: **time is read only
+inside a paragraph that starts `**Time:**`** (to the next blank line or bold
+label), where every time group is read whatever prose stands beside it and
+anything else is left for the token ledger — so a correction addendum puts
+its restated groups under a `**Time:**` line of its own. `tickets.mjs spend`
+reads these into the ledger beside the tokens; `doctor` flags a Time line
+with figures in a record where no Time group parses, and a time figure
+nothing read (`worker=1,430s`, or one quoted outside a Time paragraph) on a
+line naming a ticket that has no time anywhere in the ledger — both cleared
+by that addendum. A
+run that selected no ticket prints `**Time:** run=<n>s` and nothing else,
+which is a complete line and not a near-miss. Planning evidence, never a gate — no ticket halts on a
+duration.>
 
 **Halted on:** <`haltedOn.stopCondition` verbatim, with `haltedOn.ticket`
 and `haltedOn.where` — or "ran to completion".>

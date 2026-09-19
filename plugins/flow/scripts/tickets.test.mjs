@@ -3723,3 +3723,226 @@ test('vacuous pass count: "# pass 2", "# pass 12", and a "# pass 1" with no name
   assert.deepEqual(vacuousRows(vacuousRepo('twelve', "node --test --test-name-pattern 'x' s.test.mjs", '# pass 12')), [])
   assert.deepEqual(vacuousRows(vacuousRepo('whole', 'node --test one-test-file.test.mjs', '# pass 1')), [])
 })
+
+// ── time metering: the run record's Time line ────────────────────────────────
+// `**Time:**` is the Tokens line's twin, written by `scripts/meter.mjs` from
+// the transcripts' timestamps. What these pin is the boundary between the two
+// ledgers: seconds carry their unit and are read only inside a Time paragraph,
+// because a bare `worker=1430` anywhere in a record is a token figure.
+const TIMED_RUN =
+  '### Run — 2026-09-19 — completed\n\n**Tokens:** CITY-14 worker=462,249 reviewer=185,339 proxies=239,856; total=887,444\n\n**Time:** CITY-14 worker=1430s reviewer=475s proxies=99s wall=2353s;\nCITY-15 worker=825s reviewer=unknown wall=1240s; run=3600s\n\n**Halted on:** ran to completion.\n'
+
+test('time: a run record Time line is read per role with its wall, wrapped lines included, and leaves the token ledger alone', () => {
+  const dir = roundsRepo('time', `${CITY14}**Tokens:** recorded in the run record\n`, TIMED_RUN)
+  const t = spendOf(dir, 'CITY-14')
+  assert.equal(t.time.worker, 1430)
+  assert.equal(t.time.reviewer, 475)
+  assert.equal(t.time.wall, 2353)
+  assert.equal(t.time.disposition, null)
+  assert.equal(t.worker, 462249, 'the token figure is the Tokens line’s, not 1430')
+  assert.equal(t.total, 887444)
+  const t15 = spendOf(dir, 'CITY-15')
+  assert.equal(t15.time.worker, 825, 'the group on the continuation line is read')
+  assert.deepEqual(t15.time.unknown, ['reviewer'])
+  assert.equal(t15.total, null, 'a ticket with time and no tokens has no token figure')
+  assert.deepEqual(t15.unknown, [], 'and a time unknown is not a token unknown')
+  const epic = JSON.parse(run(dir, 'spend', 'city', '--json')).epics[0]
+  assert.equal(epic.timeTotals.wall, 2353 + 1240)
+  assert.equal(epic.untimedTickets, 0)
+})
+
+test('time: a figure with a unit is never a token figure, wherever it sits', () => {
+  const dir = roundsRepo('unit', `${CITY14}**Tokens:** recorded in the run record\n`, '### Run — 2026-09-19 — completed\n\n**Tokens:** CITY-14 worker=100 reviewer=10\n\nA stray restatement: CITY-14 worker=1430s reviewer=475s\n')
+  const t = spendOf(dir, 'CITY-14')
+  assert.equal(t.worker, 100)
+  assert.equal(t.reviewer, 10)
+  assert.equal(t.time.worker, null, 'and outside a Time paragraph it is not time either')
+  assert.equal(doctorWarns(dir, /time figure here was read by nothing, and CITY-14 has no time anywhere/).length, 1)
+})
+
+test('time: rounds sum and a restated group corrects, exactly as tokens do', () => {
+  const dir = roundsRepo(
+    'time-rounds',
+    `${CITY14}**Tokens:** recorded in the run record\n`,
+    '### Run — 2026-09-16 — halted\n\n**Time:** CITY-14 round=1 worker=1000s wall=1500s\n\n### Run — 2026-09-17 (resumed) — completed\n\n**Time:** CITY-14 round=2 worker=600s wall=unknown\n\n**Addendum — correction — 2026-09-18:** the first round was mis-summed.\n\n**Time:** CITY-14 round=1 worker=1100s\n',
+  )
+  const t = spendOf(dir, 'CITY-14')
+  assert.equal(t.time.worker, 1100 + 600)
+  assert.equal(t.time.wall, 1500, 'an unknown round adds nothing and erases nothing')
+  assert.deepEqual(t.time.rounds, { worker: 2, wall: 2 })
+})
+
+test('time: a Time line written as prose draws a doctor warn that names the shape and the script that prints it', () => {
+  const dir = roundsRepo('time-prose', `${CITY14}**Tokens:** recorded in the run record\n`, '### Run — 2026-09-19 — completed\n\n**Tokens:** CITY-14 worker=100\n\n**Time:** about 39 minutes for CITY-14, most of it the worker.\n')
+  const warns = doctorWarns(dir, /Time line carries figures but no machine-shaped group/)
+  assert.equal(warns.length, 1)
+  assert.match(warns[0].msg, /wall=<n>s/)
+  assert.match(warns[0].msg, /meter\.mjs/)
+  assert.deepEqual(doctorWarns(roundsRepo('time-ok', `${CITY14}**Tokens:** recorded in the run record\n`, TIMED_RUN), /Time line|time figure/), [])
+})
+
+// The suite runs with no global git config, so a fixture that commits names
+// its own author — CI has no identity to fall back on.
+const identified = (dir) => {
+  git(dir, 'config', 'user.email', 'test@example.com')
+  git(dir, 'config', 'user.name', 'Test')
+  return dir
+}
+
+test('time: with no recorded wall, spend shows the commit span and labels it git — and never calls it the wall', () => {
+  const dir = identified(roundsRepo('span', `${CITY14}**Tokens:** unknown\n`))
+  git(dir, 'add', '.')
+  const commitAt = (subject, date) =>
+    execFileSync('git', ['commit', '--allow-empty', '-m', subject], { cwd: dir, encoding: 'utf8', env: { ...ENV, GIT_AUTHOR_DATE: date, GIT_COMMITTER_DATE: date } })
+  commitAt('CITY-14: the map card', '2026-09-16T10:00:00Z')
+  commitAt('CITY-14: review fixes', '2026-09-16T10:25:30Z')
+  commitAt('CITY-15: derbies', '2026-09-16T11:00:00Z')
+  const t = spendOf(dir, 'CITY-14')
+  assert.deepEqual(t.commitSpan, { seconds: 1530, commits: 2 })
+  assert.equal(t.time.wall, null)
+  assert.equal(spendOf(dir, 'CITY-15').commitSpan, null, 'one commit is a point, not a span')
+  const text = run(dir, 'spend', 'city')
+  assert.match(text, /time {2}not recorded — commit span 25m 30s over 2 commits \(git\)/)
+  assert.match(text, /not its wall-clock/)
+})
+
+test('time: a recorded wall hides the commit span, and the text output prints durations', () => {
+  const dir = identified(roundsRepo('span-hidden', `${CITY14}**Tokens:** recorded in the run record\n`, TIMED_RUN))
+  git(dir, 'add', '.')
+  git(dir, 'commit', '-m', 'CITY-14: one')
+  git(dir, 'commit', '--allow-empty', '-m', 'CITY-14: two')
+  assert.equal(spendOf(dir, 'CITY-14').commitSpan, null)
+  assert.match(run(dir, 'spend', 'city'), /time {2}worker 23m 50s {2}reviewer 7m 55s {2}proxies 1m 39s {2}wall 39m 13s/)
+})
+
+// ── time metering: what the first review found ───────────────────────────────
+const TOKENS_ONLY = `${CITY14}**Tokens:** recorded in the run record\n`
+const timeWarns = (dir) => doctorWarns(dir, /Time line carries|time figure|Tokens line carries/)
+
+test('time: a comma in a seconds figure does not let it back off into a one-token figure', () => {
+  const dir = roundsRepo('comma', TOKENS_ONLY, '### Run — 2026-09-19 — completed\n\n**Tokens:** CITY-14 worker=462,249 reviewer=185,339\n\nDiagnosis: CITY-14 worker=1,430s reviewer=1,475s — the worker ran long.\n')
+  const t = spendOf(dir, 'CITY-14')
+  assert.equal(t.worker, 462249, 'not 1')
+  assert.equal(t.total, 647588)
+  assert.equal(timeWarns(dir).length, 1, 'and doctor sees the comma’d duration that nothing read')
+  // A token figure followed by a comma is still a token figure.
+  const prose = roundsRepo('comma-prose', TOKENS_ONLY, '### Run — 2026-09-19 — completed\n\n**Tokens:** CITY-14 worker=1,234, reviewer=500. Then prose.\n')
+  assert.equal(spendOf(prose, 'CITY-14').worker, 1234)
+})
+
+test('time: the stray-figure warn names the offending line, and the repair it advertises clears it', () => {
+  const stray = '### Run — 2026-09-19 — completed\n\n**Tokens:** CITY-14 worker=100\n\nProse: CITY-14 worker=1430s wall=2353s\n'
+  const before = roundsRepo('outside', TOKENS_ONLY, stray)
+  const warns = timeWarns(before)
+  assert.equal(warns.length, 1)
+  assert.match(warns[0].msg, /runs\.md:7 /, 'the line the figure is on, not the heading')
+  assert.equal(spendOf(before, 'CITY-14').time.wall, null)
+  const after = roundsRepo('outside-repaired', TOKENS_ONLY, `${stray}\n**Addendum — correction — 2026-09-20:** restated.\n\n**Time:** CITY-14 worker=1430s wall=2353s\n`)
+  assert.equal(spendOf(after, 'CITY-14').time.wall, 2353)
+  assert.deepEqual(timeWarns(after), [], 'append-only: a warn no append can clear is not a gate')
+})
+
+test('time: a record with parsing groups may quote a duration in its prose', () => {
+  const dir = roundsRepo('quoted', TOKENS_ONLY, `${TIMED_RUN}\n**Diagnosis:** CITY-14 worker=1430s against wall=2353s — no gap to speak of.\n`)
+  assert.deepEqual(timeWarns(dir), [])
+})
+
+test('time: a line under the Time line that holds anything but time goes back to the token ledger', () => {
+  const dir = roundsRepo('continuation', TOKENS_ONLY, '### Run — 2026-09-19 — completed\n\n**Tokens:** CITY-14 worker=100\n\n**Time:** CITY-14 worker=1430s\nwall=2353s; run=3600s\nSecond run figures: CITY-15 worker=100 reviewer=50\n')
+  assert.equal(spendOf(dir, 'CITY-14').time.wall, 2353, 'a group wrapped mid-way is still one group')
+  const t15 = spendOf(dir, 'CITY-15')
+  assert.equal(t15.worker, 100)
+  assert.equal(t15.total, 150)
+  assert.equal(t15.time.worker, null)
+})
+
+test('time: the lines the meter prints for a run that selected no ticket are not near-misses', () => {
+  const dir = roundsRepo('no-ticket', TOKENS_ONLY, '### Run — 2026-09-19 — completed\n\n**Tokens:** total=40,991\n\n**Time:** run=28s\n')
+  assert.deepEqual(timeWarns(dir), [])
+})
+
+test('time: the epic time row prints when every wall is unknown, and a Time line in a ticket entry is sourced to the log', () => {
+  const dir = roundsRepo('no-wall', `${CITY14}**Tokens:** unknown\n\n**Time:** CITY-14 reviewer=200s wall=unknown\n`)
+  const t = spendOf(dir, 'CITY-14')
+  assert.equal(t.time.source, 'log')
+  const text = run(dir, 'spend', 'city')
+  assert.match(text, /time {2}reviewer 3m 20s {2}wall \? {2}\S*\(log\)/)
+  assert.match(text, /time {2}worker 0s {2}reviewer 3m 20s/, 'the epic row')
+})
+
+test('time: a commit reached on two refs is one commit, and commits at one instant are not a span', () => {
+  const dir = identified(roundsRepo('span-dupe', `${CITY14}**Tokens:** unknown\n`))
+  git(dir, 'add', '.')
+  const at = { ...ENV, GIT_AUTHOR_DATE: '2026-09-16T10:00:00Z', GIT_COMMITTER_DATE: '2026-09-16T10:00:00Z' }
+  execFileSync('git', ['commit', '-m', 'CITY-14: the map card'], { cwd: dir, encoding: 'utf8', env: at })
+  git(dir, 'checkout', '-b', 'copy', 'HEAD~0')
+  execFileSync('git', ['commit', '--amend', '--no-edit', '--allow-empty'], { cwd: dir, encoding: 'utf8', env: { ...at, GIT_COMMITTER_DATE: '2026-09-16T12:00:00Z' } })
+  assert.equal(spendOf(dir, 'CITY-14').commitSpan, null, 'two refs, one instant: a point')
+  const later = { ...ENV, GIT_AUTHOR_DATE: '2026-09-16T10:30:00Z', GIT_COMMITTER_DATE: '2026-09-16T10:30:00Z' }
+  execFileSync('git', ['commit', '--allow-empty', '-m', 'CITY-14: review fixes'], { cwd: dir, encoding: 'utf8', env: later })
+  assert.deepEqual(spendOf(dir, 'CITY-14').commitSpan, { seconds: 1800, commits: 2 }, 'the copy on the second ref is not a third commit')
+})
+
+// ── time metering: what the second review found ──────────────────────────────
+// The line-level paragraph lost a ticket's time to one word on a wrapped line
+// and handed that line's `worker=unknown` to the token ledger. The split is by
+// group now, and these pin both directions of it.
+const CITY15_UNKNOWN = `${CITY14}**Tokens:** recorded in the run record\n\n### CITY-15 — derbies — 2026-09-16 — DONE\n\n**Tokens:** unknown\n\n**Owed:** Nothing.\n`
+
+// This test and 'a line under the Time line that holds anything but time…'
+// pin the group-level split TOGETHER: this one alone also passes under the
+// whole-paragraph cut, that one alone under the line-level cut. Deleting
+// either leaves a green suite over a broken split.
+test('time: prose beside a group on a wrapped Time line loses nothing, and leaks nothing into the token ledger', () => {
+  const dir = roundsRepo('prose-beside', CITY15_UNKNOWN, '### Run — 2026-09-19 — completed\n\n**Time:** CITY-14 worker=1430s wall=2353s;\nCITY-15 worker=unknown reviewer=200s wall=1240s (the shadow ran twice) — then\ntotal=2,898,047 was the token figure; run=3600s\n')
+  const t = spendOf(dir, 'CITY-15')
+  assert.equal(t.time.reviewer, 200)
+  assert.equal(t.time.wall, 1240)
+  assert.deepEqual(t.time.unknown, ['worker'])
+  assert.deepEqual(t.unknown, ['ticket'], "the ticket's own Tokens: unknown marker stands; a time unknown is not a token unknown")
+  assert.deepEqual(timeWarns(dir), [])
+})
+
+test('time: a time group quoted in prose outside a Time paragraph never reads as a token unknown', () => {
+  const dir = roundsRepo('prose-unknown', CITY15_UNKNOWN, `${TIMED_RUN}\n**Diagnosis:** the meter first printed CITY-15 worker=unknown reviewer=200s wall=1240s, before the transcript was found.\n`)
+  assert.deepEqual(spendOf(dir, 'CITY-15').unknown, ['ticket'])
+  // …and the refusal is for a TIME-shaped follower only: a group followed by a
+  // pair that is merely unreadable keeps every figure main read from it. The
+  // first cut of the lookahead dropped all four of these groups whole.
+  const kept = roundsRepo('prose-followers', CITY15_UNKNOWN, '### Run — 2026-09-19 — completed\n\n**Tokens:** CITY-14 round=1 worker=100 reviewer=50 wall=9; CITY-15 round=1 worker=9 reviewer=228k\n\n### Run — 2026-09-20 — completed\n\n**Tokens:** CITY-14 round=2 worker=7 wall=9; CITY-15 round=2 worker=3 reviewer=\n')
+  assert.deepEqual([spendOf(kept, 'CITY-14').worker, spendOf(kept, 'CITY-14').reviewer], [107, 50])
+  assert.equal(spendOf(kept, 'CITY-15').worker, 12)
+  // A real token group followed by nothing role-shaped is read, as ever.
+  const ok = roundsRepo('prose-tokens', CITY15_UNKNOWN, '### Run — 2026-09-19 — completed\n\n**Tokens:** CITY-15 worker=unknown reviewer=50 proxies=25; total=75\n')
+  assert.deepEqual([spendOf(ok, 'CITY-15').reviewer, spendOf(ok, 'CITY-15').unknown], [50, ['worker']])
+})
+
+test('time: a ticket whose time nothing read draws a warn even when another ticket in the record parses — and the addendum clears it', () => {
+  const lost = '### Run — 2026-09-19 — completed\n\n**Time:** CITY-14 worker=1430s wall=2353s; CITY-15 worker=1,430s wall=1,240s\n'
+  const before = roundsRepo('partial', TOKENS_ONLY, lost)
+  assert.equal(spendOf(before, 'CITY-15').time.wall, null)
+  const warns = timeWarns(before)
+  assert.equal(warns.length, 1)
+  assert.match(warns[0].msg, /runs\.md:5 .*CITY-15 has no time anywhere in the ledger/)
+  assert.doesNotMatch(warns[0].msg, /CITY-14/, 'the ticket that parsed is not named')
+  const after = roundsRepo('partial-repaired', TOKENS_ONLY, `${lost}\n**Addendum — correction — 2026-09-20:** restated without commas.\n\n**Time:** CITY-15 worker=1430s wall=1240s\n`)
+  assert.equal(spendOf(after, 'CITY-15').time.wall, 1240)
+  assert.deepEqual(timeWarns(after), [])
+})
+
+test('time: the scan-cap note prints for an untimed ticket even when no commit span survived', () => {
+  // The ticket's two commits are the OLDEST of 4,100, past the 4,000-commit
+  // scan: no span survives, which is exactly when the note has to print.
+  const dir = identified(roundsRepo('capped', `${CITY14}**Tokens:** unknown\n`))
+  const commit = (n, subject) =>
+    `commit refs/heads/main\nmark :${n + 1}\ncommitter Test <test@example.com> ${1789000000 + n * 60} +0000\ndata ${Buffer.byteLength(subject)}\n${subject}\n${n ? `from :${n}\n` : ''}\n`
+  let stream = commit(0, 'CITY-14: the map card') + commit(1, 'CITY-14: review fixes')
+  for (let n = 2; n < 4100; n++) stream += commit(n, `chore: filler ${n}`)
+  execFileSync('git', ['fast-import', '--quiet'], { cwd: dir, input: stream, env: ENV, stdio: ['pipe', 'ignore', 'ignore'] })
+  const report = JSON.parse(run(dir, 'spend', 'city', '--json'))
+  assert.equal(report.commitSpansCapped, true)
+  assert.equal(report.epics[0].tickets[0].commitSpan, null)
+  assert.match(run(dir, 'spend', 'city'), /Commit spans scanned only the last 4000 commits/)
+  // …and an uncapped repo says nothing of the kind.
+  assert.doesNotMatch(run(roundsRepo('uncapped', `${CITY14}**Tokens:** unknown\n`), 'spend', 'city'), /scanned only/)
+})

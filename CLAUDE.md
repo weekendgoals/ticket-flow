@@ -21,7 +21,7 @@ go through the flow, one-off work goes through `/flow:quick` into
 ## Commands
 
 - **Tests:** `node --test plugins/flow/scripts/tickets.test.mjs` — expect
-  every test passing (`# pass 142`, `# fail 0` as of 2026-09-19; the count
+  every test passing (`# pass 159`, `# fail 0` as of 2026-09-19; the count
   grows, the fail line does not). The suite builds a throwaway git repo in a
   temp dir; it needs `git` on PATH and nothing else. The session-guard hook
   has its own suite:
@@ -40,7 +40,13 @@ go through the flow, one-off work goes through `/flow:quick` into
   `new Function` against a stub `document`/`getComputedStyle`, which is how a
   closure reference fails here instead of inside somebody's page. It needs
   nothing but Node, and **no test may launch or drive a browser** — the plugin
-  owns none, which is why it installs anywhere. And the run driver has
+  owns none, which is why it installs anywhere. The run meter has
+  `node --test plugins/flow/scripts/meter.test.mjs` (`# pass 16`) — tokens
+  and time metered off journal and transcript text built in the test, in the
+  shapes a real run wrote; the two CLI cases write a throwaway run directory
+  to the OS temp dir. Nothing but Node, and **no test reads a real
+  transcript** — those live under `~/.claude` and belong to whoever ran
+  them. And the run driver has
   `node --test plugins/flow/workflows/run-epic.test.mjs` (`# pass 163`) —
   which evaluates `run-epic.mjs`'s module body with stubbed agents and
   asserts the sequence, the gate branches and the halt mapping. It needs
@@ -74,7 +80,7 @@ go through the flow, one-off work goes through `/flow:quick` into
 - **Smoke:** `node plugins/flow/scripts/tickets.mjs doctor` — must exit 0 on
   this repo. `… list` shows the board.
 - **Syntax check:** `node --check plugins/flow/scripts/tickets.mjs`, and the
-  same for `scripts/fidelity.mjs`. This does
+  same for `scripts/fidelity.mjs` and `scripts/meter.mjs`. This does
   **not** work on `plugins/flow/workflows/run-epic.mjs`: a workflow script is
   a module body with a top-level `return`, which the workflow runtime allows
   (`allowReturnOutsideFunction`) and `node --check` rejects. Parse it the way
@@ -96,6 +102,16 @@ test file path explicitly.
 - **`tickets.mjs` has zero dependencies and stores nothing.** Every fact is
   recomputed from git, `gh`, and document headings. Never add a cache, a state
   file, or an npm dependency.
+- **Tokens and time are one grammar in two ledgers, and the unit is the
+  wall between them.** `spend` reads a `<ID> worker=<n>` group wherever it
+  sits in a run record, so a duration written without its `s` is added to
+  the token ledger silently. `scripts/meter.mjs` writes both lines,
+  `tickets.mjs` parses both, the run skill's template teaches both — a
+  change to either shape moves all three in the same commit, and
+  `check-invariants.mjs` pins the Time template. `meter.mjs` shares the
+  first invariant: zero dependencies, stores nothing, and a figure it cannot
+  observe is `unknown`, never an estimate. A ticket's git commit span is
+  never reported as its `wall` — commits begin when the work is nearly over.
 - **The heading regexes are load-bearing and shared.** `TICKET_HEADING` and
   `STATUS_HEADING` are used by both the parsers and `doctor`'s near-miss
   detection — that coupling is the point. If a heading format changes, the

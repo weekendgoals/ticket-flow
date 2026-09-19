@@ -42,6 +42,7 @@ const FILES = {
   planReviewer: 'plugins/flow/agents/plan-reviewer.md',
   review: 'plugins/flow/skills/review/SKILL.md',
   script: 'plugins/flow/scripts/tickets.mjs',
+  meter: 'plugins/flow/scripts/meter.mjs',
   hook: 'plugins/flow/hooks/ticket-session-guard.mjs',
   workflow: 'plugins/flow/workflows/run-epic.mjs',
   readme: 'README.md',
@@ -383,6 +384,11 @@ const PHRASES = [
     why: "the run record's per-ticket token groups are what `tickets.mjs spend` parses out of a run record — the run skill's template must keep the key=value shape",
     re: /worker=<n> reviewer=<n>/,
     files: ['run', 'readme'],
+  },
+  {
+    why: "the run record's Time groups are what `tickets.mjs spend` parses — seconds with their unit, closed by the wall. The unit is load-bearing: a bare `worker=<n>` is a token figure, so a template that dropped the `s` would pour durations into the token ledger",
+    re: /worker=<n>s reviewer=<n>s[\s\S]{0,80}wall=<n>s/,
+    files: ['run', 'readme', 'script', 'meter'],
   },
   {
     why: "the acceptance-check stop condition is one sentence in the skill and the script — a halt the run record quotes verbatim. Pinned whole, like the fix-bounds sentence: the gate halts on a malformed CHECK, on a COMPARE criterion whose pushed entry records no comparison, and on a report it cannot read, as well as on a failing check — and a retro that reads only the first clause files those halts as something else",
