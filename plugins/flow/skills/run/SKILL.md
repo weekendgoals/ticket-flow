@@ -380,6 +380,7 @@ enters your context from the loop:
                      preExistingCount, preExisting, preExistingRecorded,
                      findings, checkedAndSound,
                      fixedCommits, notFixed, disposition,
+                     dispositionRecovered,
                      reReviewRan, reReviewImportantCount,
                      reReviewFindings, reviewedHead,
                      reviewerReportedHead, fixBoundsGated,
@@ -448,7 +449,21 @@ that resumes past one. The run halts:
   show, halts here too. So does a review that is not on the record: the
   addendum never committed, or this ticket's entries in the pushed log
   carrying no dated `Addendum — review —` line. An unreviewed-on-the-record
-  ticket is never merged, whatever an agent says it did;
+  ticket is never merged, whatever an agent says it did. **A disposition
+  that returns no report is classified from the branch, not from the
+  silence**: one read-only step (`disposition-facts:<ID>`) counts the dated
+  addendum lines in this ticket's pushed entry and lists the code commits
+  since the reviewed head. No addendum, no usable answer, or no review anchor
+  to measure from: this halt, unchanged. An addendum on the branch: the work
+  landed and only its report was lost (one live run halted on exactly that),
+  so the run continues **on the branch** — any code commits take the bounded
+  re-review at the consequence tier whatever the ticket's own tier, with the
+  first review's Important findings in that reviewer's packet, because it is
+  then the only check that they were fixed; Important findings with no code
+  commit after the reviewed head halt on the Important-finding condition.
+  The record says so (`dispositionRecovered: true`, `disposition: "recovered
+  from the branch"`), and nothing on this path merges without that re-review
+  having run;
 - on **an Important review finding it cannot fix** — accepting a not-fixed
   Important is not an agent's to decide in an unattended run, so the
   disposition reports it and the run stops for a human. The same halt fires
@@ -748,7 +763,10 @@ in this mode. It carries:
 - the release's size up front — `git diff --stat
   origin/<default-branch>...epic/<name>` — a release too large to review is
   a fact the human sees before approving;
-- the run record summary, including which agent ran each ticket;
+- the run record summary, including which agent ran each ticket — and any
+  ticket whose record carries `dispositionRecovered: true`, by name: it
+  merged on what the branch showed and a re-review, not on a disposition's
+  report, and the human reading this body should know which those were;
 - every deploy precondition any ticket created (an environment variable, a
   migration, a script that runs after), collected from the status log;
 - **every pre-existing finding** the reviewers reported (the result's

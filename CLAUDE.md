@@ -41,7 +41,7 @@ go through the flow, one-off work goes through `/flow:quick` into
   closure reference fails here instead of inside somebody's page. It needs
   nothing but Node, and **no test may launch or drive a browser** — the plugin
   owns none, which is why it installs anywhere. And the run driver has
-  `node --test plugins/flow/workflows/run-epic.test.mjs` (`# pass 153`) —
+  `node --test plugins/flow/workflows/run-epic.test.mjs` (`# pass 158`) —
   which evaluates `run-epic.mjs`'s module body with stubbed agents and
   asserts the sequence, the gate branches and the halt mapping. It needs
   nothing but Node: no git, no network, no filesystem beyond the script.

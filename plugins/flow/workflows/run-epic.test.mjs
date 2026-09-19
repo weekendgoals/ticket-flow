@@ -526,7 +526,8 @@ test('an Important finding left unfixed halts before the merge', async () => {
 test('a disposition that failed or died halts the run', async () => {
   const failed = await drive(oneTicket({ 'disposition:PAY-1': { outcome: 'failed', addendumCommitted: false, detail: 'tests would not run' } }))
   assert.match(failed.out.haltedOn.stopCondition, /^BLOCKED/)
-  const dead = await drive(oneTicket({ 'disposition:PAY-1': null }))
+  // Died, and left nothing on the branch: the facts read finds no addendum.
+  const dead = await drive(oneTicket({ 'disposition:PAY-1': null, 'disposition-facts:PAY-1': { outcome: 'read', addendumMatches: 0, codeCommits: [], detail: '' } }))
   assert.match(dead.out.haltedOn.stopCondition, /^BLOCKED/)
   assert.ok(!dead.labels.some(l => l.startsWith('merge:')))
 })
@@ -2724,4 +2725,76 @@ test('added files: an unreadable answer halts as an unmeasured fix does, and the
   const p = call(ok, 'fix-added:PAY-1').prompt
   assert.match(p, /git diff --name-only --diff-filter=A abc1234def0\.\.origin\/pay-1 -- \. ':\(exclude\)epics' ':\(exclude,glob\)src\/messages\/\*\.json'/)
   assert.equal(call(ok, 'fix-added:PAY-1').model, 'haiku')
+})
+
+// ---- RETRO-2: a disposition that landed is read as landed --------------------
+// weekendgoals' H3: the disposition's commits and addendum were pushed, its
+// structured return failed, and the script could not tell it from one that did
+// nothing. The git state is the fact; the return is a report of it.
+
+const landed = (codeCommits = ['PAY-1: reject empty token (review fix)']) => ({ outcome: 'read', addendumMatches: 1, codeCommits, detail: '' })
+const lostReport = (over = {}) => oneTicket({ 'review:PAY-1': reviewImportant, 'disposition:PAY-1': null, 'disposition-facts:PAY-1': landed(), 're-review:PAY-1': { important: [] }, ...over })
+
+test('recovered disposition: no report and no addendum on the pushed branch halts exactly as before', async () => {
+  const r = await drive(lostReport({ 'disposition-facts:PAY-1': { outcome: 'read', addendumMatches: 0, codeCommits: ['PAY-1: half a fix'], detail: '' } }))
+  assert.match(r.out.haltedOn.stopCondition, /^BLOCKED/)
+  assert.match(r.out.haltedOn.detail, /returned no report — the review is not on the record/)
+  assert.equal(r.out.ticketRecords[0].dispositionRecovered, false)
+  assert.ok(!r.labels.some(l => /^(re-review|accept|resolve|merge):/.test(l)))
+})
+
+test('recovered disposition: an addendum and fix commits on the branch go through the bounded re-review, at the consequence tier, and only then to the merge', async () => {
+  const r = await drive(lostReport())
+  assert.equal(r.out.outcome, 'completed', JSON.stringify(r.out.haltedOn))
+  // The sequence, not a flag: the merge exists only after the re-review ran.
+  const seq = r.labels.filter(l => /^(disposition|disposition-facts|fix-added|re-review|accept|resolve|merge):/.test(l))
+  assert.deepEqual(seq, ['disposition:PAY-1', 'disposition-facts:PAY-1', 'fix-added:PAY-1', 're-review:PAY-1', 'accept:PAY-1', 'resolve:PAY-1', 'merge:PAY-1'])
+  const rec = r.out.ticketRecords[0]
+  assert.equal(rec.dispositionRecovered, true)
+  assert.equal(rec.disposition, 'recovered from the branch')
+  assert.deepEqual(rec.fixedCommits, ['PAY-1: reject empty token (review fix)'])
+  assert.equal(rec.reReviewRan, true)
+  // A `normal`-tier ticket, yet judged at the consequence tier's price: no
+  // agent reported what these commits are, and the bounds gate is skipped.
+  assert.equal(rec.fixBoundsGated, false)
+  assert.equal(call(r, 're-review:PAY-1').effort, 'xhigh')
+  assert.match(r.logs.join('\n'), /returned no report, but its work is on the pushed branch/)
+})
+
+test('recovered disposition: an addendum but no code commit, against Important findings, halts on the Important finding — nothing fixed them', async () => {
+  const r = await drive(lostReport({ 'disposition-facts:PAY-1': landed([]) }))
+  assert.equal(r.out.haltedOn.stopCondition, 'an Important review finding it cannot fix')
+  assert.match(r.out.haltedOn.detail, /NO code commit since the reviewed head/)
+  assert.ok(!r.labels.some(l => /^(re-review|merge):/.test(l)))
+})
+
+test('recovered disposition: a facts read that returns nothing, fails, or has no anchor to measure from halts as before — and an Important in the recovered re-review halts too', async () => {
+  for (const bad of [null, { outcome: 'command-failed', addendumMatches: -1, codeCommits: [], detail: 'fatal' }, { outcome: 'read', codeCommits: [] }]) {
+    const r = await drive(lostReport({ 'disposition-facts:PAY-1': bad }))
+    assert.match(r.out.haltedOn.stopCondition, /^BLOCKED/)
+    assert.ok(!r.labels.some(l => l.startsWith('merge:')))
+  }
+  const noAnchor = await drive(lostReport({ 'tier-facts:PAY-1': { outcome: 'listed', files: ['src/a.ts'], head: '', detail: '' } }))
+  assert.match(noAnchor.out.haltedOn.stopCondition, /^BLOCKED/)
+  assert.ok(!noAnchor.labels.includes('disposition-facts:PAY-1'))
+  const stillBroken = await drive(lostReport({ 're-review:PAY-1': { important: [{ file: 'a.ts', cite: 'a.ts:12', summary: 'still fails open', confirmedOrPlausible: 'confirmed', failure: 'empty token passes' }] } }))
+  assert.equal(stillBroken.out.haltedOn.stopCondition, 'an Important review finding it cannot fix')
+  assert.ok(!stillBroken.labels.some(l => l.startsWith('merge:')))
+})
+
+test('recovered disposition: the re-review is handed the first review\'s findings — it is the only check that they were fixed — and an ordinary re-review is not', async () => {
+  const r = await drive(lostReport())
+  const p = call(r, 're-review:PAY-1').prompt
+  assert.match(p, /THE FIRST REVIEW'S IMPORTANT FINDINGS/)
+  assert.match(p, /guard fails open/)
+  assert.match(p, /returned NO report/)
+  const ordinary = await drive(
+    oneTicket({ 'worker:PAY-1': workerOk('PAY-1', { tier: 'consequence' }), 'review:PAY-1': reviewImportant, 'disposition:PAY-1': dispFixed, 're-review:PAY-1': { important: [] } }),
+  )
+  assert.doesNotMatch(call(ordinary, 're-review:PAY-1').prompt, /THE FIRST REVIEW'S IMPORTANT FINDINGS/)
+  // A clean review whose disposition lost its report: addendum landed, no
+  // code changed — nothing to re-review, and the ticket merges on the branch.
+  const clean = await drive(oneTicket({ 'disposition:PAY-1': null, 'disposition-facts:PAY-1': landed([]) }))
+  assert.equal(clean.out.outcome, 'completed')
+  assert.ok(!clean.labels.includes('re-review:PAY-1'))
 })

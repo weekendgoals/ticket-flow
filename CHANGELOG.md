@@ -8,6 +8,22 @@ with one version and date.
 
 ## Unreleased
 
+- **A disposition that landed is read as landed** (`workflows/run-epic.mjs`
+  and its suite, `skills/run/SKILL.md`, METHODOLOGY § "A missing report is not
+  a missing fact"). When the disposition agent returns **no report**, the
+  driver no longer halts on the silence: a read-only `disposition-facts:<ID>`
+  step counts the dated review-addendum lines in the ticket's pushed entry and
+  lists the code commits since the reviewed head. With an addendum on the
+  branch the run continues **on the branch** — code commits always take the
+  bounded re-review at the consequence tier, whose packet now carries the
+  first review's Important findings on this path (and only on this path);
+  Important findings with no commit after the reviewed head halt on the
+  Important-finding condition; a clean review with an addendum and no code
+  change proceeds. No addendum, an unreadable answer, or no review anchor:
+  the old halt, unchanged — as is a disposition that *reports* `failed`.
+  Ticket records gain `dispositionRecovered`, and the release pull request
+  body names any ticket that merged that way.
+
 - **No agent the driver spawns sweeps the working tree into a ticket**
   (`workflows/run-epic.mjs` and its suite, `skills/run/SKILL.md`,
   `scripts/check-invariants.mjs`, README, METHODOLOGY § "The one trip that

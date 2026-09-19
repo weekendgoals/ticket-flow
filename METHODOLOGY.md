@@ -1313,6 +1313,30 @@ pull request does this ticket own" is exactly the kind of question a
 confident wrong answer ends badly. Self-reports still fill the record; they
 just no longer open the gate.
 
+### A missing report is not a missing fact
+
+The loop reads agents through schemas, and for most of its life it treated a
+disposition that returned nothing as one that did nothing. weekendgoals'
+redesign-city run (H3, 2026-09) showed the difference: the agent had fixed,
+written the addendum, committed and pushed — and then its structured return
+failed. The script halted a finished ticket, and a human resumed it by hand
+to learn that nothing had been wrong. Asked what that halt bought (the
+retro's question), the answer was nothing: the fact it lacked was one `git
+show` away.
+
+So the driver now reads the branch before classifying — the same two reads
+the resolve step already trusted: the dated addendum line in the ticket's own
+entry, and the commits since the head the driver anchored the review on. What
+that read may buy is deliberately narrow. It never stands in for the report:
+with no agent's account of what the commits are, they take the bounded
+re-review at the consequence tier whatever the ticket's tier, and that
+reviewer is handed the first review's findings, because on this path nothing
+else checks they were fixed. Findings with no commit after them halt as an
+unfixed Important does. The rule underneath is the one the lane already ran
+on — gates read repository state, not an agent's account of it — applied to
+the one place where the absence of an account was still being read as a
+state.
+
 ## Why release tickets stopped opening pull requests
 
 Through 2026-08-18 every release ticket opened a pull request against the
