@@ -1172,7 +1172,22 @@ const ROLE_PHRASE = new RegExp(`\\b(${ROLE_RE})\\s+tokens\\b[^:]{0,40}:\\s*(\\d[
 const ROLE_PAIR = new RegExp(`\\b(${ROLE_RE})=(\\d[\\d,]*|unknown)`, 'gi')
 const ROLE_UNKNOWN = new RegExp(`\\b(${ROLE_RE})\\s+unknown\\b`, 'gi')
 const TOKENS_LINE = /\*\*Tokens:\*\*\s*([^\n]*)/gi
-const RUN_GROUP = new RegExp(`\\b(${TICKET_ID})((?:\\s+(?:${ROLE_RE})=(?:\\d[\\d,]*|unknown))+)`, 'g')
+// A group may open with `round=<n>` — `CITY-14 round=2 worker=804432
+// reviewer=324269` — and rounds for a ticket and role are SUMMED, where every
+// other repeat is a correction and the last one wins. The label is what tells
+// them apart: a ticket reviewed four times spent four passes' tokens, and one
+// live entry recorded exactly that as four unlabelled pairs, of which the
+// ledger counted the last (879k of 4.4M). This one regex is used three times —
+// the group read, the strip that separates an entry's own bare pairs from
+// labelled groups, and doctor's only test for a parseable run record — so the
+// round label lives here, where all three move together.
+const ROLE_PAIRS = `((?:\\s+(?:${ROLE_RE})=(?:\\d[\\d,]*|unknown))+)`
+const RUN_GROUP = new RegExp(`\\b(${TICKET_ID})(?:\\s+round=(\\d+))?${ROLE_PAIRS}`, 'g')
+// The same label inside a ticket's own entry, where the ID is the heading's.
+const ENTRY_ROUND = new RegExp(`\\bround=(\\d+)${ROLE_PAIRS}`, 'gi')
+// What marks a repeated figure as a correction rather than a round: the dated
+// addendum corrections already take ("**Addendum — correction — …").
+const CORRECTION_MARK = /Addendum\b[^*]{0,80}\bcorrect/i
 const toNum = (s) => Number(s.replace(/,/g, ''))
 
 function parseSpend(epic) {
@@ -1183,7 +1198,7 @@ function parseSpend(epic) {
   // never where an old one can be found.
   const docs = [epic.statusDoc, epic.runsDoc].filter(Boolean)
   if (!docs.length) return byId
-  const rec = (id) => byId[id] || (byId[id] = { id, figures: {}, unknown: new Set(), source: null, note: null })
+  const rec = (id) => byId[id] || (byId[id] = { id, figures: {}, rounds: {}, repeats: [], unknown: new Set(), source: null, note: null })
   // Two files means two orders, so the ranking is stated rather than left to
   // whichever file is read last:
   //
@@ -1207,6 +1222,17 @@ function parseSpend(epic) {
     }
     r.source = source
   }
+  // A labelled round: last figure wins WITHIN the round (a correction to a
+  // round is that round written again), rounds are summed at the end, and
+  // `unknown` never erases a round's known figure — rule 1, per round.
+  const applyRound = (r, n, role, val, source) => {
+    role = role.toLowerCase()
+    const rounds = (r.rounds[role] ||= {})
+    if (/^unknown$/i.test(val)) {
+      if (!(n in rounds)) rounds[n] = null
+    } else rounds[n] = toNum(val)
+    r.source = source
+  }
   // Entries wrap at the house width, so phrases are matched over a region's
   // joined text, never line by line: "Worker tokens (implementation\nleg):".
   const flush = (region, text) => {
@@ -1218,12 +1244,31 @@ function parseSpend(epic) {
     // it names rather than the entry it landed in.
     for (const m of flat.matchAll(RUN_GROUP)) {
       const r = rec(m[1])
-      for (const p of m[2].matchAll(ROLE_PAIR)) apply(r, p[1], p[2], 'run-record')
+      for (const p of m[3].matchAll(ROLE_PAIR)) m[2] ? applyRound(r, m[2], p[1], p[2], 'run-record') : apply(r, p[1], p[2], 'run-record')
       r.unknown.delete('ticket')
     }
     if (region.id) {
       const r = rec(region.id)
-      const own = flat.replace(RUN_GROUP, ' ') // bare pairs and phrases belong to this entry; labelled groups do not
+      let own = flat.replace(RUN_GROUP, ' ') // bare pairs and phrases belong to this entry; labelled groups do not
+      for (const m of own.matchAll(ENTRY_ROUND)) for (const p of m[2].matchAll(ROLE_PAIR)) applyRound(r, m[1], p[1], p[2], 'log')
+      own = own.replace(ENTRY_ROUND, ' ')
+      // Two unlabelled known figures for one role in one entry are either a
+      // correction or two rounds, and only the first is what last-wins means.
+      // Doctor asks which, unless a correction addendum sits between them.
+      const seen = {}
+      const unlabelled = [...own.matchAll(ROLE_PHRASE), ...own.matchAll(ROLE_PAIR)]
+        .filter((m) => !/^unknown$/i.test(m[2]))
+        .sort((a, b) => a.index - b.index)
+      for (const m of unlabelled) {
+        const role = m[1].toLowerCase()
+        const prev = seen[role]
+        if (prev && !CORRECTION_MARK.test(own.slice(prev.index, m.index))) {
+          let hit = r.repeats.find((x) => x.role === role)
+          if (!hit) r.repeats.push((hit = { role, figures: [toNum(prev[2])] }))
+          hit.figures.push(toNum(m[2]))
+        }
+        seen[role] = m
+      }
       for (const m of own.matchAll(ROLE_PHRASE)) apply(r, m[1], m[2], 'log')
       for (const m of own.matchAll(ROLE_PAIR)) apply(r, m[1], m[2], 'log')
       for (const m of own.matchAll(ROLE_UNKNOWN)) apply(r, m[1], 'unknown', 'log')
@@ -1258,6 +1303,23 @@ function parseSpend(epic) {
       if (region) text += `${line}\n`
     }
     flush(region, text)
+  }
+  // Rounds are summed last, over everything both files said. A role that has
+  // labelled rounds is their sum — the labelled reading wins over any
+  // unlabelled figure for the same role, and `mixed` says so for doctor. A
+  // round known only as `unknown` adds nothing and erases nothing.
+  for (const r of Object.values(byId)) {
+    r.mixed = []
+    for (const [role, rounds] of Object.entries(r.rounds)) {
+      const known = Object.values(rounds).filter((v) => v !== null)
+      if (!known.length) {
+        if (!(role in r.figures)) r.unknown.add(role)
+        continue
+      }
+      if (role in r.figures) r.mixed.push(role)
+      r.figures[role] = known.reduce((a, b) => a + b, 0)
+      r.unknown.delete(role)
+    }
   }
   return byId
 }
@@ -1331,7 +1393,7 @@ function spendReport(epicFilter) {
     const tickets = data.tickets
       .filter((t) => t.epic === epic.epic)
       .map((t) => {
-        const r = spend[t.id] || { figures: {}, unknown: new Set(), source: null, note: null }
+        const r = spend[t.id] || { figures: {}, rounds: {}, unknown: new Set(), source: null, note: null }
         const known = Object.values(r.figures)
         return {
           id: t.id,
@@ -1340,6 +1402,9 @@ function spendReport(epicFilter) {
           ...Object.fromEntries(SPEND_ROLES.map((role) => [role, r.figures[role] ?? null])),
           total: known.length ? known.reduce((a, b) => a + b, 0) : null,
           unknown: [...r.unknown].sort(),
+          // How many labelled rounds each summed role's figure adds up — absent
+          // roles were never labelled, so their figure is a single reading.
+          rounds: Object.fromEntries(Object.entries(r.rounds || {}).map(([role, rs]) => [role, Object.keys(rs).length])),
           source: r.source,
           note: r.note,
         }
@@ -1802,6 +1867,19 @@ function doctor() {
       // brief that would say so is read by the next worker, not by the
       // session that wrote the line. Flagged here, where the writer looks.
       for (const n of parseOwed(epic).notes) add('warn', `${epic.epic}/status.md — ${n}`)
+      // A role's figure written twice in one entry with no round label and no
+      // correction between: spend keeps the last, which is right for a
+      // correction and wrong for a second review round. Ask, never guess.
+      const fmt = (n) => n.toLocaleString('en-US')
+      for (const r of Object.values(parseSpend(epic))) {
+        for (const rep of r.repeats)
+          add(
+            'warn',
+            `${epic.epic}/status.md (${r.id}) — ${rep.figures.length} unlabelled ${rep.role} figures in one entry (${rep.figures.map(fmt).join(', ')}) and no correction addendum between them: spend counts only the last, ${fmt(rep.figures[rep.figures.length - 1])}, where review rounds would total ${fmt(rep.figures.reduce((x, y) => x + y, 0))}. If they are rounds, append a dated addendum restating them with labels — "round=1 ${rep.role}=<n> … round=2 ${rep.role}=<n> …" — which spend sums; if the later one corrects the earlier, say so in a dated "Addendum — correction" between them. Never edit the entry`,
+          )
+        if (r.mixed.length)
+          add('warn', `${epic.epic} (${r.id}) — ${r.mixed.join(', ')} carr${r.mixed.length === 1 ? 'ies' : 'y'} both round-labelled and unlabelled figures; spend counts the labelled rounds' sum and ignores the unlabelled figure`)
+      }
       // And a closing line that closed nothing, flagged at the same door for
       // the same reason: the brief that reports it is read by the next worker,
       // not by the human who wrote the line, and only that human can repair it.

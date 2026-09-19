@@ -550,6 +550,20 @@ leg): <n>; Reviewer tokens: <n>`, `unknown` where the harness exposed
 nothing — or, driver-spawned, `Tokens: recorded in the run record`.>
 ```
 
+**A ticket reviewed more than once labels its rounds.** Each review pass
+after the first writes its figures as a labelled group — `round=2
+worker=<n> reviewer=<n>` (the first pass is `round=1`, written that way as
+soon as a second exists, in a dated addendum restating it) — because
+`tickets.mjs spend` **sums labelled rounds and keeps only the last of any
+unlabelled repeat**: "the last figure wins" is how a dated correction
+overrides the entry it corrects, so four unlabelled pairs read as three
+corrections. One live entry did exactly that and its ticket read 879k of the
+4.4M it records; `/flow:doctor` now warns on the shape. A correction to a
+round is that round written again, in an `Addendum — correction`. **One
+writer labels a round**: here, the supervisor's addendum; in an unattended
+run, the run record — the other document points (`Tokens: recorded in the
+run record`) and never restates, or one pass is counted twice.
+
 ## 9. Show the user, then push and open the pull request
 
 First read what this ticket departed from — the entry is committed, so the

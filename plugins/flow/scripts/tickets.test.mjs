@@ -3591,3 +3591,92 @@ test('owed command: an unknown or missing epic is refused by naming the known on
   assert.equal(missing.status, 1)
   assert.match(missing.stderr, /owed needs an epic/)
 })
+
+// ── RETRO-5: spend sums review rounds ────────────────────────────────────────
+// One live entry (CITY-14) recorded four worker/reviewer pairs, one per review
+// round, none labelled — and last-wins, which is right for a correction, read
+// 879k of the 4.4M it records. A `round=<n>` label is what tells a round from
+// a correction: rounds are summed, and within a round the last figure wins.
+const roundsRepo = (name, status, runs = null) => {
+  const dir = join(tmp, `rounds-${name}`)
+  git(tmp, 'init', '--initial-branch=main', dir)
+  mkdirSync(join(dir, 'epics/city'), { recursive: true })
+  writeFileSync(join(dir, 'epics/city/tickets.md'), '# City\n\nDelivery: release\n\n## CITY-14 — the map card\n\n**Scope.** One.\n\n## CITY-15 — derbies\n\n**Scope.** Two.\n')
+  writeFileSync(join(dir, 'epics/city/status.md'), `# City epic — status log\n\n${status}`)
+  if (runs) writeFileSync(join(dir, 'epics/city/runs.md'), `# City epic — run records\n\n${runs}`)
+  return dir
+}
+const spendOf = (dir, id) => JSON.parse(run(dir, 'spend', 'city', '--json')).epics[0].tickets.find((t) => t.id === id)
+// These fixtures have no remote, so doctor exits 1 on its own precondition
+// rows; the rows it printed are what is read here, whatever the exit code.
+const doctorWarns = (dir, re) => {
+  const failed = runFail(dir, 'doctor', '--json')
+  const rows = JSON.parse(failed ? failed.stdout : run(dir, 'doctor', '--json'))
+  return rows.filter((r) => r.level === 'warn' && re.test(r.msg))
+}
+const CITY14 = '### CITY-14 — the map card — 2026-09-16 — DONE\n\n**Built:** the card.\n\n**Owed:** Nothing.\n\n'
+
+test('spend rounds: four labelled rounds in one entry sum per role — CITY-14 reads 4.4M, not the last pair', () => {
+  const dir = roundsRepo('sum', `${CITY14}**Addendum — review — 2026-09-16:** round=1 worker=911,511 reviewer=302,889\n\n**Addendum — review — 2026-09-17:** round=2 worker=804432 reviewer=324269\n\n**Addendum — review — 2026-09-17:** round=3 worker=909377\nreviewer=259927\n\n**Addendum — review — 2026-09-18:** round=4 worker=581236 reviewer=297991\n`)
+  const t = spendOf(dir, 'CITY-14')
+  assert.equal(t.worker, 911511 + 804432 + 909377 + 581236)
+  assert.equal(t.reviewer, 302889 + 324269 + 259927 + 297991)
+  assert.equal(t.total, 4391632)
+  assert.deepEqual(t.rounds, { worker: 4, reviewer: 4 })
+})
+
+test('spend rounds: a round written again overrides that round only — a correction to a round is the round, restated', () => {
+  const dir = roundsRepo('restate', `${CITY14}round=1 worker=100 reviewer=10\n\nround=2 worker=200 reviewer=20\n\n**Addendum — correction — 2026-09-19:** round=1 worker=150\n`)
+  const t = spendOf(dir, 'CITY-14')
+  assert.equal(t.worker, 350)
+  assert.equal(t.reviewer, 30)
+})
+
+test('spend rounds: unlabelled repeats read exactly as before — the last figure for a role wins', () => {
+  const dir = roundsRepo('lastwins', `${CITY14}**Addendum — review — 2026-09-16:** Worker tokens (implementation leg): 911,511; Reviewer tokens: 302,889\n\n**Addendum — correction — 2026-09-17:** Worker tokens (implementation leg): 900,000\n`)
+  const t = spendOf(dir, 'CITY-14')
+  assert.equal(t.worker, 900000)
+  assert.equal(t.reviewer, 302889)
+  assert.deepEqual(t.rounds, {})
+})
+
+test('spend rounds: unknown inside a round never erases a known figure, and an all-unknown role stays unknown', () => {
+  const dir = roundsRepo('unknown', `${CITY14}round=1 worker=100 reviewer=unknown\n\nround=2 worker=unknown reviewer=unknown\n\nround=1 worker=unknown\n`)
+  const t = spendOf(dir, 'CITY-14')
+  assert.equal(t.worker, 100)
+  assert.equal(t.reviewer, null)
+  assert.ok(t.unknown.includes('reviewer'))
+})
+
+test('spend rounds: a run record whose groups carry round= is summed across records, and is not a doctor near-miss', () => {
+  const dir = roundsRepo(
+    'runs',
+    `${CITY14}**Tokens:** recorded in the run record\n`,
+    '### Run — 2026-09-16 — halted\n\n**Tokens:** CITY-14 round=1 worker=911511 reviewer=302889 disposition=50000\n\n### Run — 2026-09-17 (resumed) — halted\n\n**Tokens:** CITY-14 round=2 worker=804432 reviewer=324269 disposition=unknown\n',
+  )
+  const t = spendOf(dir, 'CITY-14')
+  assert.equal(t.worker, 911511 + 804432)
+  assert.equal(t.disposition, 50000)
+  assert.equal(t.source, 'run-record')
+  assert.deepEqual(doctorWarns(dir, /no machine-shaped group/), [])
+})
+
+test('repeated figure: four unlabelled pairs with no correction between them draw a doctor warn naming what spend counts and what rounds would total', () => {
+  const dir = roundsRepo('warn', `${CITY14}**Addendum — review — 2026-09-16:** worker=911511 reviewer=302889\n\n**Addendum — review — 2026-09-17:** worker=804432 reviewer=324269\n\n**Addendum — review — 2026-09-17:** worker=909377 reviewer=259927\n\n**Addendum — review — 2026-09-18:** worker=581236 reviewer=297991\n`)
+  const warns = doctorWarns(dir, /unlabelled (worker|reviewer) figures in one entry/)
+  assert.equal(warns.length, 2, JSON.stringify(warns))
+  const w = warns.find((r) => / worker figures/.test(r.msg)).msg
+  assert.match(w, /\(CITY-14\) — 4 unlabelled worker figures/)
+  assert.match(w, /spend counts only the last, 581,236/)
+  assert.match(w, /would total 3,206,556/)
+  assert.match(w, /round=1 worker=<n>/)
+  // And the ledger still reads what it always read — the warn changes no total.
+  assert.equal(spendOf(dir, 'CITY-14').worker, 581236)
+})
+
+test('repeated figure: a genuine dated correction is silent, and so are labelled rounds', () => {
+  const corrected = roundsRepo('quiet', `${CITY14}**Addendum — review — 2026-09-16:** worker=911511\n\n**Addendum — correction — 2026-09-17:** the meter was misread; worker=900000\n`)
+  assert.deepEqual(doctorWarns(corrected, /unlabelled \w[\w-]* figures/), [])
+  const labelled = roundsRepo('quiet2', `${CITY14}round=1 worker=1 reviewer=1\n\nround=2 worker=2 reviewer=2\n`)
+  assert.deepEqual(doctorWarns(labelled, /unlabelled \w[\w-]* figures|round-labelled and unlabelled/), [])
+})

@@ -8,6 +8,25 @@ with one version and date.
 
 ## Unreleased
 
+- **Spend sums review rounds** (`scripts/tickets.mjs` and its suite,
+  `skills/ticket/SKILL.md`, `skills/run/SKILL.md`, `skills/spend/SKILL.md`,
+  METHODOLOGY § "Why a round has a label, and a correction does not"). A
+  figure group may open with **`round=<n>`** — `round=2 worker=… reviewer=…`
+  inside a ticket's entry, `<ID> round=2 worker=…` in a run record. Labelled
+  rounds for a ticket and role are **summed**; within a round the last figure
+  wins, `unknown` never erases a round's known figure, and a role carrying
+  both labelled and unlabelled figures reads as the labelled sum (doctor says
+  so). **Unlabelled figures read exactly as before** — the last one wins, so
+  no existing ledger total moves. `spend --json` gains a per-ticket `rounds`
+  map (passes per summed role). `doctor` **warns** when one entry carries two
+  or more unlabelled known figures for a role with no `Addendum — correction`
+  between them, naming what spend counts, what rounds would total, and the
+  repair (a dated addendum restating them with labels, never an edit). The
+  round label lives in `RUN_GROUP`, whose three uses — the group read, the
+  strip of labelled groups from an entry's own text, and doctor's
+  parseable-run-record test — therefore moved together. From weekendgoals'
+  CITY-14: four unlabelled rounds read as 879k of 4.4M.
+
 - **The release body is built from the log, at either door**
   (`scripts/tickets.mjs` and its suite, `workflows/run-epic.test.mjs`,
   `skills/run/SKILL.md`, `skills/ticket/SKILL.md`, README). New subcommand

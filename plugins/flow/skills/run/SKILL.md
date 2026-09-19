@@ -675,7 +675,16 @@ fixes were never looked at.>
 groups separated by `;`, `unknown` in place of any figure the transcripts
 did not expose, then `total=<n>` — because `tickets.mjs spend` parses these
 groups into the epic's ledger and the retro reads that instead of summing by
-hand. Figures are harness-observed from the run's own transcripts, never
+hand. **A ticket that went through more than one pass — reviewed again in a
+resumed run, or finished by hand after a halt — gets one group per pass,
+labelled: `<ID> round=2 worker=<n> reviewer=<n> …`** (and the earlier
+record's group is `round=1`; when that record was written without the label,
+restate it as `round=1` in a dated addendum beneath it). `spend` sums
+labelled rounds and keeps only the last of an unlabelled repeat, because
+last-wins is how a correction overrides what it corrects — so two unlabelled
+groups for one ticket read as a correction and the first pass's spend
+vanishes. The run record is the only writer of a round in this lane: ticket
+entries and addenda point here and never restate the figures. Figures are harness-observed from the run's own transcripts, never
 from an agent's report: the Workflow run persists each `agent()` call's
 transcript under this session's directory, and `journal.jsonl` maps the
 labels (`worker:<ID>`, `review:<ID>`, `disposition:<ID>`, `re-review:<ID>`,

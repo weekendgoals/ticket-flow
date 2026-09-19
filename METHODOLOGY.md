@@ -681,6 +681,29 @@ cannot observe itself, and `unknown` is an honest answer where a guess is
 not. The old rule survives, finally enforceable because no field invites
 an estimate: harness-observed or unknown, never estimated.
 
+### Why a round has a label, and a correction does not
+
+The ledger's one ordering rule is "the last figure for a role wins", because
+the log is append-only and that is what lets a dated correction override the
+entry it corrects. weekendgoals' CITY-14 showed what the rule costs when the
+repeats are not corrections: the ticket went through four review rounds, its
+entry recorded a worker/reviewer pair for each — 911,511 / 302,889, 804,432 /
+324,269, 909,377 / 259,927, 581,236 / 297,991 — and the ledger read the last
+pair. The ticket appeared to cost 879k where the log records 4.4M, the epic
+12.7M where it records about 16.2M, and the most expensive ticket of the epic
+read as a mid-sized one — the opposite of what a spend ledger is for.
+
+Inverting the rule (every repeat is a round unless marked a correction) would
+have read CITY-14 right and silently changed the total of every log already
+written. So the rule stays and the round is what gets marked: `round=<n>`
+opening a group, summed per ticket and role, last-wins within a round. Doctor
+asks about the ambiguous shape — two unlabelled figures for one role with no
+correction between — rather than guessing, and the repair is an addendum.
+One writer labels a round in each lane (the run record unattended, the
+supervisor's addendum attended; the other document points), because under a
+sum, two documents restating one pass is a double count where under last-wins
+it was harmless.
+
 ## Why a worker reads a brief, not the whole log
 
 The ticket skill originally required each worker to read the entire status

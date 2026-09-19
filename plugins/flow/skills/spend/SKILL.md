@@ -28,6 +28,17 @@ show is a number nobody observed. `unknown` and `no figure recorded` are honest 
   figures is appended there. An `unknown` never overwrites a known figure in
   either direction: `unknown` is the absence of an observation, not a
   correction.
+- **Rounds are summed; every other repeat is a correction.** A figure
+  labelled `round=<n>` — in a ticket's own entry (`round=2 worker=… reviewer=…`)
+  or a run-record group (`<ID> round=2 worker=…`) — is one review pass, and a
+  ticket's figure for a role is the sum of its rounds; the JSON's `rounds`
+  field says how many passes each summed figure adds up. Within a round, and
+  for every unlabelled figure, the last one read wins. When the ledger looks
+  low for a ticket that was reviewed several times, run `/flow:doctor`: it
+  warns when an entry carries two unlabelled figures for one role with no
+  correction addendum between them, naming what is counted and what rounds
+  would total. The repair is a dated addendum restating them with labels,
+  never an edit.
 - **Per epic:** the sum of known figures and the count of tickets with
   unknown or missing figures — the second number is what makes the first
   one honest.
