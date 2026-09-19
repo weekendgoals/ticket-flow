@@ -14,8 +14,13 @@ with one version and date.
   README). The near-miss scan for the new `COMPARE` and `LANDMARKS` labels was
   case-blind, so an acceptance bullet beginning "Compare:" in plain English
   failed its ticket's gate — a regression for every installed project; the two
-  new labels are now caught in capitals, and a lowercase `compare:` only when
-  the line carries the ` @ ` that makes it comparison-shaped. The acceptance
+  new labels are now caught in capitals, and a `compare:` in any case when
+  the line is comparison-shaped — an `@` followed by a width, bulleted or not,
+  `@1440` included. (The first cut of this fix let four malformed spellings
+  through unflagged, which read a ticket owing a comparison as owing none —
+  the missing-comparison gate failing open; a re-review caught it before
+  release. A lowercase `compare: <path>` with its widths forgotten is still
+  unflagged, being indistinguishable from prose.) The acceptance
   step's prompt now names `compares`, which the driver already refused a report
   without: the step runs on a small model that reports what it is asked for,
   and the omission would have halted every ticket of every epic. Two sentences

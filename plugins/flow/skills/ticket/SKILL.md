@@ -578,7 +578,7 @@ Print, concisely: **Built** (what exists, and the files), **Verified**
 (commands, counts, anything that could not run), **Review** (effort, findings
 found, fixed, not fixed with reasons), and **Deviations** — **every** one the
 command reports, closed or not, never only the open ones. A closed one is
-shown **with its closing line**, because only a human may write that line and
+shown **with its closing line**, because only a human may decide that line and
 no command can say who did: showing the line is how a closure the reviewed
 party could have written is seen rather than trusted. Show the command's
 `note:` lines in the same field — a note says a closing line closed nothing,

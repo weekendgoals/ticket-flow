@@ -425,6 +425,14 @@ test('a comparison that compared nothing is refused, never reported as no differ
   assert.equal(r.code, 2)
   assert.match(r.err, /nothing was compared/)
   assert.doesNotMatch(r.out, /no differences/)
+  // The repair is named only when it is the repair: removals sitting in --map,
+  // and no --removed-from to read them with.
+  assert.doesNotMatch(r.err, /--removed-from/)
+  const removed = [{ name: 'a', by: 'ground rule 1', date: '2026-09-19' }]
+  const hinted = cli('diff', tmp('design.json', empty('design')), tmp('page.json', empty('page')), '--map', tmp('design-map.json', { landmarks, removed }))
+  assert.equal(hinted.code, 2)
+  assert.match(hinted.err, /nothing was compared/)
+  assert.match(hinted.err, /pass the signed-off map as --removed-from/)
   const none = cli('diff', DESIGN, PAGE, '--map', tmp('design-map.json', { landmarks: [] }))
   assert.equal(none.code, 2)
   assert.match(none.err, /the map declares no landmarks/)

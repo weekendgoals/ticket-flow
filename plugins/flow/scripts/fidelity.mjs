@@ -441,7 +441,7 @@ export function run(argv) {
         // The one repair this refusal can name for certain: removals sitting in
         // --map are ignored, so a landmark declared removed there reads as
         // merely unmatched — and the fix is a flag, not a selector.
-        (result.notes.some((n) => n.includes('pass the signed-off map as --removed-from'))
+        ((map.removed || []).length > 0 && !flags['--removed-from']
           ? ' The --map file carries a "removed" list, which is never honoured — if these landmarks were removed on purpose, pass the signed-off map as --removed-from.'
           : ''),
     )

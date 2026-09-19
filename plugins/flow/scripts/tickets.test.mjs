@@ -2670,6 +2670,42 @@ test('prose that merely begins "Compare:" or "Landmarks:" is not a malformed cri
   }
 })
 
+test('a comparison-shaped line that will not parse is a problem in every spelling, never a ticket owing nothing', () => {
+  // Each of these read as `compares: 0, problems: 0` for one commit: the ticket
+  // owed a comparison, the ledger said it owed none, and the gate that stops a
+  // merge on a missing comparison had nothing to fire on.
+  const shapes = [
+    '- Compare: designs/a.html @ 1440',
+    '- compare: designs/a.html @ 1440',
+    '  Compare: designs/a.html @1440',
+    '  compare: designs/a.html @ 1440,393',
+    '- COMPARE: designs/a.html @ 1440',
+    '  LANDMARKS : hero, nav',
+  ]
+  for (const shape of shapes) {
+    const dir = mkdtempSync(join(tmpdir(), 'tickets-shape-'))
+    try {
+      git(dir, 'init', '--initial-branch=main')
+      git(dir, 'config', 'user.email', 'test@example.com')
+      git(dir, 'config', 'user.name', 'Test')
+      mkdirSync(join(dir, 'epics', 'shape'), { recursive: true })
+      writeFileSync(
+        join(dir, 'epics', 'shape', 'tickets.md'),
+        `# Shape epic — tickets\n\nDesign sources: designs/a.html\n\n## S-1 — one malformed comparison\n\n**Acceptance criteria.**\n- the page matches\n${shape}\n- it runs\n  CHECK: true\n`,
+      )
+      git(dir, 'add', '.')
+      git(dir, 'commit', '-q', '-m', 'shape epic')
+      const failed = runFail(dir, 'check', 'S-1', '--json')
+      assert.ok(failed, `${JSON.stringify(shape)} passed the gate`)
+      const out = JSON.parse(failed.stdout)
+      assert.equal(out.problems.length, 1, `${JSON.stringify(shape)}: ${JSON.stringify(out.problems)}`)
+      assert.equal(out.allPassed, false)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  }
+})
+
 test('doctor flags a COMPARE/LANDMARKS near-miss, so a comparison never silently disappears', () => {
   const rows = JSON.parse(runFail(crepo, 'doctor', '--json').stdout)
   const p6 = rows.filter((r) => r.level === 'warn' && r.msg.includes('(P-6)'))

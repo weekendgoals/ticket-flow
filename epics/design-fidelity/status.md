@@ -660,3 +660,33 @@ changed lines against a "split past ~450" condition ("accept", then "size
 overrun is fine"); FID-1.2, exit 2 when nothing was compared where the ticket
 said exit 0, with the re-review's verdict "right on the merits and outside the
 letter of the ticket". FID-3 has since resolved the rough edge FID-1.2 left.
+
+**Addendum — 2026-09-19 — re-review of the review fixes**
+
+Vadim asked for it ("do quick re-review, use fable"): a fresh-context reviewer
+on `7fa57d2`, 83,124 tokens. **1 Important, 4 nits, all fixed in the commit
+that carries this addendum.** Important: the supervisor's narrowing of the
+`COMPARE`/`LANDMARKS` near-miss scan failed open — `- Compare: a.html @ 1440`
+as its own bullet (a bulleted line never reaches `CHECK_NEAR`, and
+`CHECK_BULLET_NEAR` had no comparison-shaped alternative), `Compare: a.html
+@1440` (the shape test demanded whitespace after `@`), and their lowercase
+forms all read `compares: 0, problems: 0, allPassed: true`, so a ticket owing
+a comparison owed none and FID-4's gate had nothing to fire on. Both regexes
+now share one comparison-shaped alternative (`compare:` in any case with an
+`@` followed by a digit); a new test drives six spellings through
+`check --json` and was seen red against `7fa57d2`'s script (122/1). Left
+unflagged, knowingly: a lowercase `compare: <path>` with no `@` at all, which
+is indistinguishable from prose — the reviewer called it a judgment call and
+this is the judgment. No CHECK/EXPECT near-miss regressed (nine shapes
+compared before and after). Nits: the doctor test covered half its name (the
+new test covers a `LANDMARKS` near-miss and the fail-open shapes); one more
+stale "only a human may write that line" in ticket skill step 9, now
+"decide"; the differ's `--removed-from` hint was keyed to a substring of a
+note and had no test — now keyed to the facts (`removed` in `--map`, no
+`--removed-from`) and tested, red against `c0d0b9d`'s script (42/1); the
+accept prompt's exit-1 list now names COMPARE/LANDMARKS. The reviewer
+confirmed the unattended rule untouched and the `compares` prompt clause
+pinned (143/1 with it removed). After: tickets 123, fidelity 43,
+check-invariants 32, run-epic 144, codex 21, codex-review 20, session-guard
+14, board 9, plan-page 8; `check-invariants.mjs`, `doctor`, syntax checks
+exit 0; `check` FID-1 to FID-6 pass.

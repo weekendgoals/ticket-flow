@@ -332,13 +332,20 @@ const LANDMARKS_LINE = /^\s*LANDMARKS:\s*(\S.*)$/
 // Near-miss shapes doctor flags: a lowercase or spaced label, or the label
 // written as a bullet of its own instead of indented under its criterion.
 // CHECK and EXPECT are caught in any case. COMPARE and LANDMARKS are caught
-// in capitals — and a lowercase "compare:" only when the line also carries the
-// ` @ ` that makes it comparison-shaped — because "Compare:" and "Landmarks:"
-// are ordinary English at the head of an acceptance bullet: installed projects
-// update live, and a case-blind scan turned a green ledger red over prose
-// ("- Compare: the old output with the new one by hand") the day it was written.
-const CHECK_NEAR = /^\s*(?:(?:[Cc][Hh][Ee][Cc][Kk]|[Ee][Xx][Pp][Ee][Cc][Tt]|COMPARE|LANDMARKS)\s*:|[Cc][Oo][Mm][Pp][Aa][Rr][Ee]\s*:.*\s@\s)/
-const CHECK_BULLET_NEAR = /^\s*[-*]\s+(?:[Cc][Hh][Ee][Cc][Kk]|[Ee][Xx][Pp][Ee][Cc][Tt]|COMPARE|LANDMARKS)\s*:/
+// in capitals — and a "compare:" in any case when the line is
+// comparison-shaped, an `@` followed by a width — because "Compare:" and
+// "Landmarks:" are ordinary English at the head of an acceptance bullet:
+// installed projects update live, and a case-blind scan turned a green ledger
+// red over prose ("- Compare: the old output with the new one by hand") the
+// day it was written. The shape test is in BOTH regexes and tolerates `@1440`:
+// a bulleted line never reaches CHECK_NEAR, and a malformed comparison that
+// goes unflagged is a ticket read as owing no comparison, which is the gate
+// failing open. What still goes unflagged is a lowercase "compare: <path>"
+// with its widths forgotten — indistinguishable from prose, and left so.
+const LABEL_NEAR = '(?:[Cc][Hh][Ee][Cc][Kk]|[Ee][Xx][Pp][Ee][Cc][Tt]|COMPARE|LANDMARKS)\\s*:'
+const COMPARE_SHAPED = '[Cc][Oo][Mm][Pp][Aa][Rr][Ee]\\s*:.*@\\s*\\d'
+const CHECK_NEAR = new RegExp(`^\\s*(?:${LABEL_NEAR}|${COMPARE_SHAPED})`)
+const CHECK_BULLET_NEAR = new RegExp(`^\\s*[-*]\\s+(?:${LABEL_NEAR}|${COMPARE_SHAPED})`)
 
 // One layer in from a near-miss: shapes that parse, run, and still cannot
 // decide anything. Both are quoted from redesign-foundation's history, where
