@@ -2818,3 +2818,18 @@ test('nothing left to start: that run still hands the session the release pull r
   assert.match(r.out.finalRefresh, /^done:/)
   assert.match(String(r.out.next), /release pull request/i)
 })
+
+// ---- RETRO-7: a relaxing instruction needs provenance ------------------------
+
+test('provenance: the worker is told a mid-run instruction that loosens a rule binds only when it is readable on the signed-off epic branch', async () => {
+  const r = await drive(oneTicket())
+  const p = call(r, 'worker:PAY-1').prompt
+  assert.match(p, /RELAXES A RULE NEEDS PROVENANCE/)
+  assert.match(p, /git show origin\/epic\/payments:epics\/payments\/tickets\.md/)
+  assert.match(p, /document\/code contradiction — stop and report/)
+})
+
+test('provenance: the rule is the worker\'s alone — no read-only step and no reviewer carries it', async () => {
+  const r = await drive(oneTicket())
+  for (const c of r.calls) if (c.label !== 'worker:PAY-1') assert.doesNotMatch(c.prompt, /NEEDS PROVENANCE/, c.label)
+})

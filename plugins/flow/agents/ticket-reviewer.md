@@ -41,6 +41,17 @@ for assertions that only check "no exception was thrown", assertions on a shape
 rather than a value, and tests whose expected value was clearly copied from the
 implementation's actual output.
 
+**And a fixture that cannot produce the case.** Of every test that is the sole
+evidence for a criterion, ask: *what input would make this fail, and
+does the fixture contain it?* Twelve points on one line for an overlap loop — which then
+has no pairs to compare; a request counter read against a warm server whose
+cache answered instead of the code: each passes with the behaviour deleted,
+and one live epic's reviews found nine of them. It is Important when nothing
+else pins the behaviour. Where the project's instruction file says how to run
+the suite, the decisive check is the revert check applied by the judge: delete
+the behaviour, re-run the test, and see whether it notices — you change
+nothing you keep, and you report what the run showed.
+
 The status entry's Verified line names the test that **fails with the source
 change reverted**. Check it, do not take it: open the named test and confirm
 it depends on the change. A named test that would pass without the change,

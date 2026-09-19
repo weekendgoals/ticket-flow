@@ -427,3 +427,27 @@ test('a reviewer document dropping either design lens fails', () => {
     assert.match(r.out, /doctrine phrase missing/)
   }
 })
+
+test('retro lenses: a reviewer document dropping the fixture question fails', () => {
+  // One question in three documents: what input would make this test fail,
+  // and does the fixture contain it? Nine specs in one live epic passed with
+  // the behaviour they named deleted.
+  for (const file of ['plugins/flow/agents/ticket-reviewer.md', 'plugins/flow/skills/review/SKILL.md', 'plugins/flow/workflows/run-epic.mjs']) {
+    const root = copyRepo()
+    mutate(root, file, 'does the fixture contain it', 'is the fixture tidy')
+    const r = run(root)
+    assert.equal(r.status, 1, `${file}: ${r.out}`)
+    assert.match(r.out, /fixture lens/)
+  }
+})
+
+test('retro lenses: the render-and-read ticket planned by the epic skill and unchecked by the plan reviewer — or the reverse — fails', () => {
+  for (const file of ['plugins/flow/skills/epic/SKILL.md', 'plugins/flow/agents/plan-reviewer.md']) {
+    const root = copyRepo()
+    const path = join(root, file)
+    writeFileSync(path, readFileSync(path, 'utf8').replaceAll('render-and-read', 'look-over'))
+    const r = run(root)
+    assert.equal(r.status, 1, `${file}: ${r.out}`)
+    assert.match(r.out, /render-and-read/)
+  }
+})

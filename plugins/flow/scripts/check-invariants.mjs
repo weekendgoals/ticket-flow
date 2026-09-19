@@ -458,6 +458,16 @@ const PHRASES = [
     files: ['epic', 'ticket', 'quick', 'run', 'script', 'workflow'],
   },
   {
+    why: 'the fixture lens — a test whose fixture cannot reach the branch it names passes with the behaviour deleted; the reviewer definition, the review skill and the driver\'s inlined rules ask the same question of it (the Codex runner\'s copy is pinned to the driver\'s by its own suite), and a document that drops the question leaves that reviewer reading assertions and never fixtures',
+    re: /does the fixture contain it/i,
+    files: ['reviewer', 'review', 'workflow'],
+  },
+  {
+    why: 'the human render-and-read ticket — the differ decides computed style and cannot decide composition or behaviour, so a page epic schedules a human-owned ticket after the whole-page comparison; the epic skill plans it, the plan reviewer refuses a plan without it, and METHODOLOGY carries why, and a rule in only one of the first two is either never planned or never checked',
+    re: /render-and-read/i,
+    files: ['epic', 'planReviewer', 'methodology'],
+  },
+  {
     why: "the painted-versus-property lens — a style assertion that reads a property off an element while the page paints something else is the visual form of the test that executes code without checking it, and the reviewer definition, the review skill and the driver's inlined reviewer rules must all carry it. The Codex runner's copy is pinned to the driver's by codex-review.test.mjs, so this entry covers the three that are not",
     re: /paints something else/i,
     files: ['reviewer', 'review', 'workflow'],

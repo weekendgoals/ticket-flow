@@ -634,6 +634,30 @@ the table and to everyone reading the table. It is the one reading nobody
 downstream can perform, because nobody downstream holds both the drawing and
 the plan.
 
+### Why a page epic also schedules a human
+
+The whole-page ticket was the previous retro's headline proposal, and
+redesign-city then tested it: CITY-16 *was* that ticket, and one further
+ticket plus ten post-ticket commits still found five differences — two
+anchors to one URL, a chip sitting where the artboards draw a button, a table
+breaking on its longest row, a map fit squeezing a card to 60px, a weekend
+grid spending its six slots on unticketed fixtures. The pattern in who found
+what was exact: **every difference a gate or an agent caught was a
+computed-style value; every difference a human caught was a judgement about
+composition or behaviour.** The first class is mechanisable and the differ
+mechanises it. The second is not — nothing computes whether a fixture
+deserves a slot — and leaving it unscheduled does not remove it, it moves it
+to after the last ticket, where it arrived as ten commits no document
+records.
+
+So a page epic budgets a human render-and-read ticket, after the whole-page
+comparison and before the release: criteria that are questions, answered with
+the built page open on real data, findings that become tickets. It is
+human-owned in every delivery mode, for the reason every lane rule here asks
+— name the actor and check the mode provides one — and it passes the
+admission test on decision evidence: it is the only place the release reader
+learns that somebody looked.
+
 ## Why the reviewer is handed the design
 
 Everything else in this epic makes the comparison possible; this is what makes
@@ -1246,6 +1270,30 @@ whole-change revert stays red on the headline fix while a half of a
 compound condition, or a fixture sized from the constant under test, is
 never exercised.
 
+### The fixture is part of the assertion
+
+The redesign-city retro (2026-09) put a number on the defect above: nine
+specs across one epic passed with the behaviour they named deleted. None was
+a missing assertion. Three shapes recurred — the spec read a *declared
+property* rather than the rendered result (answered in "Why the reviewer is
+handed the design"); the *environment answered instead of the code* (a request
+counter reading 0 against a warm server's cached 404); and **the fixture could
+not produce the case**: twelve venues on one line merged into a single map
+pin, so a pairwise-overlap loop ran over zero pairs and passed. An assertion
+is only as strong as the inputs that reach it, and a reviewer reading
+assertions alone will pass all three.
+
+One ticket in that epic wrote the class into its own acceptance criteria, and
+the next ticket produced four more: prose in one ticket does not bind the
+next, which is why this is a reviewer's lens and not a planner's sentence.
+The question is small enough to carry — *what input would make this fail,
+and does the fixture contain it?* — and the decisive technique was the one
+the method already owned: the revert check, applied by the judge. A bounded
+re-review deleted the behaviour, re-ran three specs an earlier round had
+"repaired", and one still passed. No mutation tool ships here — the plugin
+runs no project's tests except through CHECK — but a reviewer told how to run
+the suite can delete a behaviour and watch.
+
 ## Why tickets go one at a time
 
 Working an epic by stacking each ticket on the last is tempting: nothing waits.
@@ -1537,6 +1585,29 @@ shipped. The record survives untouched; the working copy stops paying for
 it. The rollover lives behind the retro's owed-conversion gate for the
 same reason the general archive step does: the archive drops off the
 board, and an unconverted owed item would vanish from every future brief.
+
+## Why a relaxing instruction needs provenance
+
+The driver has always refused to take its gates from the party it judges:
+criteria are re-run `--from origin/epic/<name>`, the ticket budget is read
+from that ref, the `removed` list from the signed-off map. The worker had no
+such rule stated for it, and it needs one for a plainer reason than
+adversaries: a worker's context is full of text nobody vouched for — file
+contents, tool output, relayed messages — and a sentence saying "the human
+says skip the locale fan-out" looks the same whether the human said it, a
+confused supervisor relayed it, or a string in a fetched file claimed it.
+
+In redesign-city one worker met exactly that, treated it as possible
+injection, and refused to act until `git fetch` showed the change committed
+on the epic branch; the reviewer judged it right in shape. The rule makes
+that the method rather than one agent's good instinct, and it is asymmetric
+on purpose: an instruction that *tightens* is cheap to obey and needs no
+proof, while one that *loosens* a criterion, a ground rule or a scope line is
+precisely what an error or an attack would say — so it binds only where the
+plan lives, in the signed-off document, and is otherwise a document/code
+contradiction to stop and report. The cost is a halt when a human really did
+mean it and said so out of band; the repair is a commit to the epic branch,
+which is where a change of plan belonged anyway.
 
 ## The failure modes this is designed against
 

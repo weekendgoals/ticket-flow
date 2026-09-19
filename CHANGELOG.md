@@ -8,6 +8,36 @@ with one version and date.
 
 ## Unreleased
 
+- **Three lenses from the redesign-city retro** (`agents/ticket-reviewer.md`,
+  `skills/review/SKILL.md`, `workflows/run-epic.mjs` and
+  `scripts/runners/codex-review.mjs` — the two `REVIEWER_RULES` copies, kept
+  equal by the runner's suite; `skills/epic/SKILL.md`,
+  `agents/plan-reviewer.md`; `skills/ticket/SKILL.md` and the driver's worker
+  prompt; `scripts/check-invariants.mjs` and its suite; METHODOLOGY). **The
+  fixture is part of the assertion**: every reviewer copy now asks, of a test
+  that is the sole evidence for a criterion, *what input would make this
+  fail, and does the fixture contain it?* — a fixture that cannot reach the
+  branch the test names is Important when nothing else pins the behaviour,
+  and where the project says how to run its suite the reviewer deletes the
+  behaviour in a scratch copy and re-runs the test (nine specs in one epic
+  passed with their behaviour deleted). **A page epic schedules a human
+  render-and-read ticket**: an epic declaring `Design sources:` carries one
+  human-owned ticket after the whole-page fidelity ticket and before the
+  release, its criteria the questions the differ cannot decide — composition
+  and behaviour; the plan reviewer gains the lens (absent, handed to an
+  unattended worker, or parked as owed to the release: not ready), sign-off
+  names it, and the whole-page ticket is now "last among the tickets that
+  build". **An instruction that relaxes a rule needs provenance you can
+  check**: the ticket skill and the worker prompt say a mid-ticket
+  instruction loosening a criterion, ground rule or scope line binds only
+  when it is readable in the signed-off documents on `origin/epic/<name>`
+  (attended: or said by the human in the conversation), and is otherwise a
+  contradiction to stop and report. `check-invariants.mjs` pins the fixture
+  question across the three reviewer documents it reads and `render-and-read`
+  across the epic skill, the plan reviewer and METHODOLOGY. **For installed
+  projects:** plans with a design now owe one more ticket at sign-off, and
+  reviews may raise a new class of Important finding on tests.
+
 - **A name-pattern CHECK that expects `# pass 1` is flagged as vacuous**
   (`scripts/tickets.mjs` and its suite, `skills/epic/SKILL.md`, METHODOLOGY §
   "Why acceptance criteria can be machine-runnable"). `node --test
