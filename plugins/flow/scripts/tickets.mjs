@@ -445,7 +445,21 @@ function parseChecks(body, designSources = null) {
       const last = checks[checks.length - 1]
       if (!last || last.expect !== null)
         problems.push({ line: i + 1, text: line.trim(), why: 'EXPECT with no CHECK line above it to attach to' })
-      else last.expect = e[1].trim()
+      else {
+        last.expect = e[1].trim()
+        // `node --test --test-name-pattern <p> <file>` prints `# pass 1` when
+        // the pattern matches NOTHING — the file itself counts as one passing
+        // test — and when it matches one. So this EXPECT is green before the
+        // ticket exists and green whatever the worker builds: the vacuous
+        // CHECK, in the spelling this plugin's own plans use. Measured on Node
+        // 22; two planning drafts shipped it before a ledger run caught them.
+        if (/--test-name-pattern\b/.test(last.check) && /^#\s*pass\s+1$/.test(last.expect))
+          problems.push({
+            line: i + 1,
+            text: line.trim(),
+            why: 'this CHECK parses and runs but proves nothing: under `--test-name-pattern`, node prints "# pass 1" when the pattern matches NO test (the file itself counts), so it is green before the ticket exists — expect two or more matching tests ("# pass 2"), or grep the TAP line of the test\'s own title',
+          })
+      }
     } else if (cmp) {
       const value = cmp[1].trim()
       const why = compareProblem(value, designSources)

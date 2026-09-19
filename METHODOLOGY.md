@@ -411,7 +411,14 @@ not run here, and the plan reviewer — who has no stake in the plan — re-runs
 the runnable ones under a per-command bound. A CHECK green before the work is
 a finding; a CHECK that errors is a finding. Doctor carries the two shapes
 that can never pass, so the cheapest of these is caught without an agent at
-all. The admission test: this reduces uncertainty (a criterion nobody has
+all. It carries one shape that can never *fail*, too, found by that same
+red-before-green run while planning the `retro-lessons` epic: `node --test
+--test-name-pattern <p> <file>` prints `# pass 1` when the pattern matches no
+test at all, because the file itself counts — so a CHECK written to name the
+one test a ticket adds, expecting `# pass 1`, is green on the tree before the
+test exists. Two of that plan's own draft CHECKs read green this way, in the
+repository that wrote the rule; the ledger run is what caught them, which is
+the argument for running it rather than reasoning about it. The admission test: this reduces uncertainty (a criterion nobody has
 seen fail is a criterion nobody has tested) and provides decision evidence at
 the sign-off gate, where the ledger is shown.
 

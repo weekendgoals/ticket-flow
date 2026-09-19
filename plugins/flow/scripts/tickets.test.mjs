@@ -3680,3 +3680,46 @@ test('repeated figure: a genuine dated correction is silent, and so are labelled
   const labelled = roundsRepo('quiet2', `${CITY14}round=1 worker=1 reviewer=1\n\nround=2 worker=2 reviewer=2\n`)
   assert.deepEqual(doctorWarns(labelled, /unlabelled \w[\w-]* figures|round-labelled and unlabelled/), [])
 })
+
+// ── RETRO-6: a name-pattern CHECK that expects `# pass 1` is vacuous ─────────
+// `node --test --test-name-pattern <p> <file>` prints `# pass 1` when the
+// pattern matches nothing: the file itself counts. Found planning the epic
+// this ticket belongs to — two of its own draft CHECKs read green that way.
+const vacuousRepo = (name, check, expect) => {
+  const dir = join(tmp, `vacuous-${name}`)
+  git(tmp, 'init', '--initial-branch=main', dir)
+  mkdirSync(join(dir, 'epics/nu'), { recursive: true })
+  writeFileSync(
+    join(dir, 'epics/nu/tickets.md'),
+    `# Nu\n\n## N-1 — first\n\n**Scope.** One.\n\n**Acceptance criteria.**\n- the behaviour is pinned by a test\n  CHECK: ${check}\n  EXPECT: ${expect}\n`,
+  )
+  writeFileSync(join(dir, 'epics/nu/status.md'), '# Nu epic — status log\n')
+  return dir
+}
+const vacuousRows = (dir) => {
+  const failed = runFail(dir, 'doctor', '--json')
+  return JSON.parse(failed ? failed.stdout : run(dir, 'doctor', '--json')).filter((r) => /proves nothing/.test(r.msg))
+}
+
+test('vacuous pass count: a --test-name-pattern CHECK expecting "# pass 1" is a doctor near-miss, with the repair in the message', () => {
+  const rows = vacuousRows(vacuousRepo('one', "node --test --test-name-pattern 'staging rule' suite.test.mjs", '# pass 1'))
+  assert.equal(rows.length, 1)
+  assert.equal(rows[0].level, 'warn')
+  assert.match(rows[0].msg, /nu\/tickets\.md \(N-1\)/)
+  assert.match(rows[0].msg, /matches NO test/)
+  assert.match(rows[0].msg, /# pass 2/)
+})
+
+test('vacuous pass count: the same shape fails the check gate as a malformed CHECK does — problems counted, allPassed false', () => {
+  const dir = vacuousRepo('gate', "node --test --test-name-pattern 'zz' suite.test.mjs || echo '# pass 1'", '# pass 1')
+  const failed = runFail(dir, 'check', 'N-1', '--json')
+  const ledger = JSON.parse(failed ? failed.stdout : run(dir, 'check', 'N-1', '--json'))
+  assert.equal(ledger.allPassed, false)
+  assert.ok(ledger.problems.length >= 1, JSON.stringify(ledger))
+})
+
+test('vacuous pass count: "# pass 2", "# pass 12", and a "# pass 1" with no name pattern are not flagged', () => {
+  assert.deepEqual(vacuousRows(vacuousRepo('two', "node --test --test-name-pattern 'x' s.test.mjs", '# pass 2')), [])
+  assert.deepEqual(vacuousRows(vacuousRepo('twelve', "node --test --test-name-pattern 'x' s.test.mjs", '# pass 12')), [])
+  assert.deepEqual(vacuousRows(vacuousRepo('whole', 'node --test one-test-file.test.mjs', '# pass 1')), [])
+})

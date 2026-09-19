@@ -343,7 +343,15 @@ Rules that matter:
   passes on the pre-ticket tree too (six of one live epic's eight CHECKs
   were this), so it is **not a criterion** — the suite stays a standing
   check the doer reports under **Verified**, and a CHECK names the one test,
-  assertion or fact this ticket turns green. Record the ledger in the draft:
+  assertion or fact this ticket turns green. **Naming one test has its own
+  vacuous spelling**: `node --test --test-name-pattern '<p>' <file>` prints
+  `# pass 1` when the pattern matches **nothing** — the file itself counts as
+  a passing test — so `EXPECT: # pass 1` is green before the test exists and
+  green whatever the worker names it. Expect two or more matching tests
+  (`# pass 2`), or grep the TAP line of the test's own title; `doctor` and
+  `check` flag the `# pass 1` shape as they flag a malformed CHECK. Other
+  runners have their own version of this — which is what proving each CHECK
+  red is for, and why the ledger is read rather than assumed. Record the ledger in the draft:
   which CHECKs were proven failing, and which could not run here and why (an
   interactive runner, a minutes-long suite). The plan reviewer re-runs the
   runnable ones, and step 5 shows the ledger at the gate.

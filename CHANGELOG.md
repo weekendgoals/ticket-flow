@@ -8,6 +8,21 @@ with one version and date.
 
 ## Unreleased
 
+- **A name-pattern CHECK that expects `# pass 1` is flagged as vacuous**
+  (`scripts/tickets.mjs` and its suite, `skills/epic/SKILL.md`, METHODOLOGY §
+  "Why acceptance criteria can be machine-runnable"). `node --test
+  --test-name-pattern <p> <file>` prints `# pass 1` when the pattern matches
+  **no** test — the file itself counts as one passing test — so a CHECK
+  carrying `--test-name-pattern` with `EXPECT: # pass 1` is green before its
+  ticket exists. The CHECK parser now records that shape as a problem: `doctor`
+  warns with the repair (expect two or more, or grep the test's own TAP line),
+  and `check` — and so the unattended driver's acceptance gate, which reads
+  `allPassed` and the problem count — fails it as it fails a malformed CHECK.
+  `# pass 2` and up, and a `# pass 1` with no name pattern, are untouched.
+  **For installed projects:** a signed-off ticket carrying the shape now halts
+  an unattended run at acceptance until the criterion is rewritten; no epic
+  in this repository carried it.
+
 - **Spend sums review rounds** (`scripts/tickets.mjs` and its suite,
   `skills/ticket/SKILL.md`, `skills/run/SKILL.md`, `skills/spend/SKILL.md`,
   METHODOLOGY § "Why a round has a label, and a correction does not"). A
