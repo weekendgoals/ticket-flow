@@ -809,6 +809,13 @@ hand. The board says which case you are in:
 node "${CLAUDE_PLUGIN_ROOT}/scripts/tickets.mjs" list <epic>
 ```
 
+**Finish the ticket, not the epic, by hand.** Work committed to `epic/<name>`
+outside any ticket — no ID opening its subject — reaches no status entry, no
+spend line and no reviewer; the board lists it as unticketed and `doctor`
+warns. If picking up after a halt turns up more work than the halted ticket's,
+it is a new ticket in `tickets.md` (or `/flow:quick`), not a commit on the epic
+branch.
+
 Three shapes are possible, and the halted ticket's **status entry** — the
 thing the board reads — is what tells them apart. Read them off the board,
 not off the halt's narrative: the worker writes its entry and pushes its

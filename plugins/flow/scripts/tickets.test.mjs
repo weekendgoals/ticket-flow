@@ -3443,3 +3443,95 @@ test('doctor says nothing about codex when no epic declares the runner', () => {
   const rows = doctorWith({}, crepo)
   assert.ok(!rows.some((r) => /codex/.test(r.msg)), rows.map((r) => r.msg).join('\n'))
 })
+
+// ── RETRO-3: unticketed commits on an epic branch ────────────────────────────
+// weekendgoals' redesign-city shipped ten commits no document mentions — the
+// fix for a production crash loop among them. Derived from git alone: what is
+// on the epic branch, not on the default branch, is not a merge, touches
+// something outside epics/, and opens with no ticket ID.
+const utmp = realpathSync(mkdtempSync(join(tmpdir(), 'tickets-unticketed-')))
+const uremote = join(utmp, 'remote.git')
+const urepo = join(utmp, 'repo')
+after(() => rmSync(utmp, { recursive: true, force: true }))
+git(utmp, 'init', '--bare', '--initial-branch=main', uremote)
+git(utmp, 'init', '--initial-branch=main', urepo)
+git(urepo, 'config', 'user.email', 'test@example.com')
+git(urepo, 'config', 'user.name', 'Test')
+git(urepo, 'config', 'commit.gpgsign', 'false')
+const uwrite = (rel, text) => {
+  mkdirSync(dirname(join(urepo, rel)), { recursive: true })
+  writeFileSync(join(urepo, rel), text)
+}
+const ucommit = (subject, ...paths) => {
+  git(urepo, 'add', ...paths)
+  git(urepo, 'commit', '-q', '-m', subject)
+}
+for (const [name, id] of [['rho', 'R'], ['tau', 'T']]) {
+  uwrite(`epics/${name}/tickets.md`, `# ${name} epic — tickets\n\nDelivery: release\n\n## ${id}-1 — the one ticket\n\n**Scope.** One.\n`)
+  uwrite(`epics/${name}/status.md`, `# ${name} epic — status log\n`)
+}
+uwrite('src/app.js', 'export const a = 1\n')
+ucommit('initial', 'epics', 'src/app.js')
+git(urepo, 'remote', 'add', 'origin', uremote)
+git(urepo, 'push', '-q', '-u', 'origin', 'main')
+git(urepo, 'remote', 'set-head', 'origin', 'main')
+// rho's epic branch: one ticketed commit, one epics-only commit with no ID,
+// one bare code commit, one subjected with the epic's name, and a refresh
+// merge from main that itself carries an ID-less commit made ON main.
+git(urepo, 'checkout', '-q', '-b', 'epic/rho')
+uwrite('src/r1.js', 'export const r1 = 1\n')
+ucommit('R-1: the one ticket', 'src/r1.js')
+uwrite('epics/rho/status.md', '# rho epic — status log\n\nA plan edit.\n')
+ucommit('re-plan the order after the probe', 'epics/rho/status.md')
+uwrite('src/env.js', 'import "dotenv/config"\n')
+ucommit('move dotenv to dependencies — the prod image prunes dev deps', 'src/env.js')
+uwrite('src/app.js', 'export const a = 2\n')
+ucommit('rho: release review fixes — the guard no longer fails open', 'src/app.js')
+git(urepo, 'checkout', '-q', 'main')
+uwrite('src/main-only.js', 'export const m = 1\n')
+ucommit('an unrelated change somebody merged to main', 'src/main-only.js')
+git(urepo, 'push', '-q', 'origin', 'main')
+git(urepo, 'checkout', '-q', 'epic/rho')
+git(urepo, 'merge', '-q', '--no-ff', 'main', '-m', 'Merge main into epic/rho')
+git(urepo, 'push', '-q', '-u', 'origin', 'epic/rho')
+git(urepo, 'checkout', '-q', 'main')
+const ulist = (...a) => JSON.parse(run(urepo, 'list', ...a, '--json'))
+
+test('unticketed: a code commit on the epic branch with no ID in its subject is reported, by sha and subject', () => {
+  const loose = ulist().unticketed.rho
+  assert.ok(Array.isArray(loose), 'the board JSON carries an unticketed map keyed by epic')
+  const bare = loose.find((c) => /dotenv/.test(c.subject))
+  assert.ok(bare, JSON.stringify(loose))
+  assert.match(bare.sha, /^[0-9a-f]{7,}$/)
+  assert.equal(bare.epicLevel, false)
+})
+
+test('unticketed: a ticketed commit, a merge, a commit from main the refresh brought in, and an epics-only commit are not reported', () => {
+  const subjects = ulist().unticketed.rho.map((c) => c.subject)
+  assert.deepEqual(subjects.sort(), ['move dotenv to dependencies — the prod image prunes dev deps', 'rho: release review fixes — the guard no longer fails open'])
+})
+
+test('unticketed: a commit subjected with the epic name is listed as epic-level, and doctor warns only on the one that names neither', () => {
+  const named = ulist().unticketed.rho.find((c) => c.subject.startsWith('rho:'))
+  assert.equal(named.epicLevel, true)
+  const rows = JSON.parse(run(urepo, 'doctor', '--json'))
+  const warn = rows.filter((r) => r.level === 'warn' && /name[s]? no ticket/.test(r.msg))
+  assert.equal(warn.length, 1, JSON.stringify(rows.map((r) => r.msg)))
+  assert.match(warn[0].msg, /^rho: 1 commit on epic\/rho names no ticket/)
+  assert.match(warn[0].msg, /dotenv/)
+  assert.doesNotMatch(warn[0].msg, /release review fixes/)
+  assert.match(warn[0].msg, /Never rewrite pushed history/)
+  // A warn, never a fail: doctor still exits 0 (run() would have thrown).
+})
+
+test('unticketed: an epic with no epic branch reports none and breaks nothing', () => {
+  const data = ulist()
+  assert.equal(data.unticketed.tau, undefined)
+  assert.ok(data.tickets.some((t) => t.id === 'T-1'))
+})
+
+test('unticketed: the board prints one line under the epic, with how many carry the epic name, and nothing under a clean epic', () => {
+  const out = run(urepo, 'list')
+  assert.match(out, /2 unticketed commits on epic\/rho \(1 subjected "rho: …"\)/)
+  assert.doesNotMatch(out, /unticketed commit[s]? on epic\/tau/)
+})

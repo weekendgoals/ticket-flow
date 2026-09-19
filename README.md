@@ -107,6 +107,17 @@ headings, git branches, commit subjects on the default branch, and `gh pr list`.
 Never add a status column anywhere — a hand-maintained mirror of a derivable fact
 drifts within days.
 
+The board also names **work that belongs to no ticket**. Under an epic whose
+branch carries them it prints one line — `2 unticketed commits on epic/<name>
+(1 subjected "<name>: …")` — and `list <epic> --json` lists them by sha and
+subject: the non-merge commits between the default branch and the epic branch
+that touch anything outside `epics/` and open with no ticket ID. Such a commit
+reaches no status entry, no spend line and no reviewer, however right it is.
+Work that belongs to the epic as a whole — a release review's fixes — is
+subjected `<epic-name>: …`; `/flow:doctor` warns only about commits that name
+neither a ticket nor their epic, and the repair is a record (a ticket with a
+status entry, or `/flow:quick`), never a rewritten history.
+
 **Keeping the default branch tidy.** The documents ride the same branches and
 pull requests as the code — that is what makes the record travel — but they
 need not dominate the diff or the language stats. Two practices, both optional:

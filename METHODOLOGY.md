@@ -82,6 +82,23 @@ Two consequences that look arbitrary until you know this:
   squashed. Relaxing this removed a real adoption barrier: many organisations
   mandate squash and cannot turn it off per-repository.
 
+A third consequence arrived later (2026-09): what is derived includes **what
+no document mentions**. weekendgoals' redesign-city epic closed its last
+ticket, and the session then committed ten more changes to the epic branch —
+a production crash-loop fix, a changed endpoint contract, a moved site-wide
+component — none with a ticket, a status entry or a spend figure. All of it
+was defensible work; the retro, the release reader and the ledger saw 17
+tickets and not the 18th unit of work. A rule ("always open a ticket") was
+already in force and did not hold, so the board now derives the gap the same
+way it derives everything: commits on the epic branch, not on the default
+branch, not merges, touching something outside `epics/`, whose subject opens
+with no ticket ID. It warns and gates nothing — the work may be right, and
+what is missing is a record, which only a person can decide to write. Commits
+subjected with the epic's own name are listed without a warning: this
+repository's release-review fixes are work no ticket owns by construction,
+and a report that flagged a convention somebody chose would be noise by its
+second epic.
+
 ## Why a human merges, and nothing runs after
 
 When merging deploys, that click is the last gate there is. The further an agent

@@ -1405,6 +1405,37 @@ function idsOnRef(ref) {
 
 const idsOnMain = () => idsOnRef(`origin/${defaultBranch}`)
 
+// Work on an epic branch that belongs to no ticket. A commit there whose
+// subject carries no ticket ID reaches no status entry, no spend line and no
+// reviewer — weekendgoals' redesign-city shipped ten of them, the fix for a
+// production crash loop among them, and its documents stop one day before the
+// epic does. Derived like everything else: the non-merge commits between the
+// default branch and the epic branch that touch anything outside `epics/`
+// (plan edits, status entries, run records and addenda are the epic's own
+// bookkeeping) and whose subject does not open with a ticket ID. `epicLevel`
+// marks the ones subjected `<epic-name>: …` — the convention for work no
+// ticket owns by construction, the release review's own fixes — which are
+// listed and never warned about: somebody chose that name. An epic whose
+// branch is gone or merged reads as none, which is what derived means.
+function unticketedCommits(epicName) {
+  const ref = [`origin/epic/${epicName}`, `epic/${epicName}`].find((r) => git(['rev-parse', '--verify', '--quiet', `${r}^{commit}`], { allowFail: true }))
+  if (!ref) return []
+  const out = git(
+    ['log', '--no-merges', '--format=%h%x09%s', '-n', String(MAIN_SCAN_LIMIT), `origin/${defaultBranch}..${ref}`, '--', ':(top)', ':(top,exclude)epics'],
+    { allowFail: true },
+  )
+  if (!out) return []
+  const ticketed = new RegExp(`^(${TICKET_ID})[:\\s]`)
+  return out
+    .split('\n')
+    .map((l) => {
+      const tab = l.indexOf('\t')
+      return { sha: l.slice(0, tab), subject: l.slice(tab + 1) }
+    })
+    .filter((c) => c.sha && !ticketed.test(c.subject))
+    .map((c) => ({ ...c, epicLevel: c.subject.startsWith(`${epicName}:`) }))
+}
+
 function commitsAhead(branch) {
   const n = git(['rev-list', '--count', `origin/${defaultBranch}..${branch}`], { allowFail: true })
   return n === null ? 0 : Number(n)
@@ -1449,7 +1480,10 @@ function board(epicFilter) {
   const onMain = idsOnMain()
 
   const tickets = []
+  const unticketed = {}
   for (const epic of epics) {
+    const loose = unticketedCommits(epic.epic)
+    if (loose.length) unticketed[epic.epic] = loose
     const status = parseStatus(epic)
     // Only release epics pay the extra log call, and only when their epic
     // branch exists on the remote — the remote, because integration is the
@@ -1472,6 +1506,7 @@ function board(epicFilter) {
     tickets,
     byId: Object.fromEntries(tickets.map((t) => [t.id, t])),
     duplicates,
+    unticketed,
     current: currentEpic(allEpics),
     prsAvailable: prs.available,
     onMainCapped: onMain.capped,
@@ -1564,6 +1599,15 @@ function printBoard(data, epicFilter) {
       const title = t.title.length > 46 ? t.title.slice(0, 45) + '…' : t.title
       console.log(
         `  ${t.id.padEnd(8)} ${title.padEnd(46)} ${BADGE[t.state]}` + (t.pr ? `  #${t.pr.number}` : ''),
+      )
+    }
+    const loose = data.unticketed[epic.epic] || []
+    if (loose.length) {
+      const named = loose.filter((c) => c.epicLevel).length
+      console.log(
+        `  ${C.dim}${loose.length} unticketed commit${loose.length === 1 ? '' : 's'} on epic/${epic.epic}` +
+          (named ? ` (${named} subjected "${epic.epic}: …")` : '') +
+          ` — work no status entry records; \`list ${epic.epic} --json\` names them${C.off}`,
       )
     }
     console.log()
@@ -1696,6 +1740,18 @@ function doctor() {
   const nearTicket = new RegExp(`^##\\s+[A-Za-z][A-Za-z0-9]*-\\d+`)
   const nearStatus = new RegExp(`^###\\s+[A-Za-z][A-Za-z0-9]*-\\d+`)
   for (const epic of epics) {
+    // Commits on the epic branch that name neither a ticket nor the epic: the
+    // shape nobody chose. A warn, never a fail — the work may be right; what
+    // is missing is its record, and the repair is to write one, never to
+    // rewrite history to add an ID.
+    const bare = unticketedCommits(epic.epic).filter((c) => !c.epicLevel)
+    if (bare.length) {
+      const shown = bare.slice(0, 3).map((c) => `${c.sha} "${c.subject}"`).join(', ')
+      add(
+        'warn',
+        `${epic.epic}: ${bare.length} commit${bare.length === 1 ? '' : 's'} on epic/${epic.epic} name${bare.length === 1 ? 's' : ''} no ticket and touch${bare.length === 1 ? 'es' : ''} code outside epics/ — ${shown}${bare.length > 3 ? `, and ${bare.length - 3} more` : ''}. Work there reaches no status entry, no spend line and no reviewer. Record it: add a ticket to ${epic.epic}/tickets.md with a status entry for what was done, or run a one-off through /flow:quick; work that belongs to the epic as a whole (a release review's fixes) is subjected "${epic.epic}: …", which is listed on the board and not warned about. Never rewrite pushed history to add an ID`,
+      )
+    }
     readFileSync(epic.ticketsDoc, 'utf8').split('\n').forEach((line, i) => {
       if (nearTicket.test(line) && !TICKET_HEADING.test(line))
         add('warn', `${epic.epic}/tickets.md:${i + 1} — heading will not parse as a ticket (needs "## <ID> — <name>", ID uppercase): ${line.trim()}`)
@@ -2383,6 +2439,7 @@ switch (cmd) {
           ]),
         ),
         duplicates: data.duplicates,
+        unticketed: data.unticketed,
         tickets: data.tickets.map(({ body, ...t }) => t),
       })
     } else printBoard(data, arg)

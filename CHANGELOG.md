@@ -8,6 +8,23 @@ with one version and date.
 
 ## Unreleased
 
+- **Unticketed commits show on the board** (`scripts/tickets.mjs` and its
+  suite, `skills/ticket/SKILL.md`, `skills/run/SKILL.md`, README, METHODOLOGY
+  § "Why state is derived"). For every epic whose `origin/epic/<name>` (or
+  local `epic/<name>`) exists, the script derives from git alone the
+  non-merge commits between the default branch and the epic branch that touch
+  anything outside `epics/` and whose subject opens with no ticket ID — work
+  that reaches no status entry, no spend line and no reviewer. `list` prints
+  one dim line under the epic with the count; `list --json` gains a top-level
+  `unticketed` map (`{ <epic>: [{ sha, subject, epicLevel }] }`, epics with
+  none omitted); `doctor` **warns** — never fails — about the commits that name
+  neither a ticket nor their epic. A subject opening `<epic-name>:` marks
+  epic-level work (a release review's fixes): listed, `epicLevel: true`, not
+  warned about. Nothing is stored, so a merged or deleted epic branch reads
+  as none. **For installed projects:** one `git rev-parse` and one `git log`
+  more per epic on every board read; an open epic with ID-less code commits
+  starts drawing a doctor warning.
+
 - **A disposition that landed is read as landed** (`workflows/run-epic.mjs`
   and its suite, `skills/run/SKILL.md`, METHODOLOGY § "A missing report is not
   a missing fact"). When the disposition agent returns **no report**, the

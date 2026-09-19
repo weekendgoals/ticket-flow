@@ -641,6 +641,17 @@ reads it.
 
 **Release:**
 
+- **Work on the epic branch outside any ticket reaches no status entry, no
+  spend line and no reviewer.** The board derives it from git — a commit on
+  `epic/<name>` whose subject opens with no ticket ID and that touches
+  anything outside `epics/` — and the release pull request lists it. So if
+  the session finds more to do after the last ticket, it is a ticket: add a
+  section to `tickets.md` and run it, or take a one-off through `/flow:quick`.
+  The one exception is work the epic as a whole owns — fixes answering the
+  release review — subjected `<epic-name>: …`, which the board lists and
+  doctor does not warn about. One live epic shipped ten such commits with no
+  record, the fix for a production crash loop among them; its documents stop
+  a day before the epic does.
 - **An unreviewed ticket is never merged, anywhere.** This step requires the
   step 8 addendum **committed** with **no Important finding left unfixed** —
   a not-fixed Important finding is not yours to accept: write a BLOCKED entry
