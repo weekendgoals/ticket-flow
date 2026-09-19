@@ -45,6 +45,13 @@
 //                                        records and nothing has resolved —
 //                                        the release pull request's Owed
 //                                        section, printed rather than recalled
+//   tickets.mjs next [epic] --with-waiting
+//                                        the run driver's form of `next`:
+//                                        {ready, waiting} as JSON, always exit
+//                                        0 — so "tickets wait and none can
+//                                        start" reaches the driver as data it
+//                                        refuses on in code, never only as an
+//                                        exit code relayed by a shell proxy
 //   tickets.mjs spend [epic] [--json]    the recorded token ledger per ticket
 //                                        and per epic, derived from the
 //                                        status log's Tokens lines, addendum
@@ -3041,6 +3048,20 @@ switch (cmd) {
     // epic's ready tickets nor fail a question nobody asked about it: it is
     // said on stderr, and the exit is nonzero only when nothing anywhere can
     // start.
+    // `--with-waiting` is the run driver's form, and it changes HOW the fact
+    // travels, not what it is: `{ready, waiting}` as data, exit 0, the wait
+    // reasons included. The refusal below is an exit code, and the driver has
+    // no shell — it learns an exit code from a shell proxy's report of one. An
+    // empty `ready` with a non-empty `waiting` must halt a run even if that
+    // proxy reports the exit wrongly, so the driver is handed both lists and
+    // refuses in code. Humans and every other caller keep the refusal.
+    if (argv.includes('--with-waiting')) {
+      emit({
+        ready: open.map((t) => ({ id: t.id, title: t.title, epic: t.epic })),
+        waiting: waiting.map((t) => ({ id: t.id, title: t.title, epic: t.epic, on: t.waitingOn, problem: t.dependencyProblem, reason: waitingReason(t, data.byId) })),
+      })
+      break
+    }
     const stuck = data.epics
       .map((e) => e.epic)
       .filter((name) => !open.some((t) => t.epic === name) && waiting.some((t) => t.epic === name))

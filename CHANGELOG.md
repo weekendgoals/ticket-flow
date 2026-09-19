@@ -12,6 +12,48 @@ heading here. `check-invariants.mjs` holds both.
 
 ## Unreleased
 
+- **`Parallel: 2|3` — an unattended run works the ready set in waves**
+  (`workflows/run-epic.mjs` and its suite; `scripts/tickets.mjs` and its
+  suite; `scripts/meter.mjs` and its suite; `skills/run/SKILL.md`;
+  `scripts/check-invariants.mjs`; CLAUDE.md). Absent or `1` the run is the
+  serial one it was, prompt for prompt — a test holds the two equal. With 2
+  or 3, each pass takes the first `parallel` tickets of the board's READY set
+  (`next` already leaves out every ticket whose `**Blocked by:**` blockers
+  have not landed) and runs their pipelines — worker through the resolve
+  step's gates — side by side, **each in its own git worktree** at
+  `<repoRoot>/../.flow-worktrees/<epic>/<id>`; then integrates them **one at a
+  time in document order**, whichever finished first; then refreshes and asks
+  again. The loop body became two functions for this — `runTicket` (touches
+  only the ticket's branch) and `integrateTicket` (touches the epic branch) —
+  lifted in a commit of their own that changes no behaviour. New with a wave:
+  **a post-merge gate** — every merge after a wave's first lands on a moved
+  base, so the ticket's own CHECK criteria are re-run on the merged epic
+  branch, and a failure halts with the ticket still merged (new stop
+  condition); **the union merge driver** for the epic's two append-only logs,
+  written once to the local `.git/info/attributes`, because every ticket
+  appends to the end of `status.md` and two branches from one head conflict
+  there on the second merge; **a halt in one pipeline does not un-pass its
+  siblings** — they integrate, then the run halts on the first halt in
+  document order with the rest in a new `alsoHalted`, halted tickets'
+  worktrees left in place; a failed integration merges nothing past it and
+  records the rest `passed, not merged`. Refused at launch: `parallel`
+  outside 1–3, and **`parallel` > 1 beside `Ticket budget:`** (in a wave the
+  meter's delta is the wave's; a budget that appears mid-run is refused at the
+  resolve step on the same terms) — `outputTokensObserved` is `null` for a
+  ticket that ran in a wave, and per-ticket figures come from
+  `scripts/meter.mjs`, which reads per agent. The worker is told it is in a
+  fresh worktree with nothing git does not track.
+- **The driver refuses to call an epic built while tickets wait — in code**
+  (`workflows/run-epic.mjs`, `scripts/tickets.mjs next --with-waiting`,
+  `skills/run/SKILL.md`). `next`'s exit-1 refusal reached a run only as a
+  shell proxy's report of an exit code, and an empty list means "open the
+  release pull request". The select step now runs `next <epic>
+  --with-waiting` — `{ready, waiting}` as data, exit 0 — and the script halts
+  on a new stop condition when nothing is ready and something waits, serial
+  or parallel; a report with no `waiting` array is a contradiction, not an
+  empty one. The run skill's step 1 refuses to start while `doctor` says a
+  ticket of the epic will wait for ever, and — under `Parallel:` — while it
+  says a Blocked-by-looking line or a `Depends on` field is unread.
 - **`**Blocked by:**` and the `waiting` state** (`scripts/tickets.mjs` and
   its suite; `skills/epic/SKILL.md`, `skills/ticket/SKILL.md`;
   `scripts/board.mjs`; `scripts/check-invariants.mjs`; README, METHODOLOGY,

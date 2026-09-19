@@ -40,7 +40,17 @@ const TICKET_LABEL = new RegExp(`^([^:]+):(${TICKET_ID})(?::.*)?$`)
 const SELECT_LABEL = /^refresh\+select:/
 // Every step that is not one of the four named roles is a shell proxy — the
 // cheap agents the driver spawns because it has no shell of its own
-// (tier-facts, accept, resolve, merge, verify, fix-added, the shadow's proxy).
+// (tier-facts, accept, resolve, merge, verify, fix-added, the shadow's proxy,
+// and in a parallel run a ticket's worktree, worktree-remove and post-merge).
+//
+// A parallel run changes nothing here, and that is why its per-ticket figures
+// come from this script and not from the driver's meter: usage and timestamps
+// are per AGENT, so a ticket's tokens and seconds are its own whatever ran
+// beside it. What a wave does change is how to read the lines: the `wall`s of
+// one wave overlap (so they sum to more than `run=`), and a wave's
+// `refresh+select` is counted with the first of its tickets to start, which
+// is the wave's first in document order unless the runtime started them
+// otherwise. `union:<epic>` names no ticket and is run overhead.
 const STEP_ROLE = { worker: 'worker', review: 'reviewer', disposition: 'disposition', 're-review': 're-review' }
 
 // One agent's transcript → { tokens, seconds, first, last, … }, each null when

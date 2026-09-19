@@ -21,7 +21,7 @@ go through the flow, one-off work goes through `/flow:quick` into
 ## Commands
 
 - **Tests:** `node --test plugins/flow/scripts/tickets.test.mjs` — expect
-  every test passing (`# pass 176`, `# fail 0` as of 2026-09-19; the count
+  every test passing (`# pass 177`, `# fail 0` as of 2026-09-19; the count
   grows, the fail line does not). The suite builds a throwaway git repo in a
   temp dir; it needs `git` on PATH and nothing else. The session-guard hook
   has its own suite:
@@ -41,13 +41,13 @@ go through the flow, one-off work goes through `/flow:quick` into
   closure reference fails here instead of inside somebody's page. It needs
   nothing but Node, and **no test may launch or drive a browser** — the plugin
   owns none, which is why it installs anywhere. The run meter has
-  `node --test plugins/flow/scripts/meter.test.mjs` (`# pass 16`) — tokens
+  `node --test plugins/flow/scripts/meter.test.mjs` (`# pass 17`) — tokens
   and time metered off journal and transcript text built in the test, in the
   shapes a real run wrote; the two CLI cases write a throwaway run directory
   to the OS temp dir. Nothing but Node, and **no test reads a real
   transcript** — those live under `~/.claude` and belong to whoever ran
   them. And the run driver has
-  `node --test plugins/flow/workflows/run-epic.test.mjs` (`# pass 163`) —
+  `node --test plugins/flow/workflows/run-epic.test.mjs` (`# pass 172`) —
   which evaluates `run-epic.mjs`'s module body with stubbed agents and
   asserts the sequence, the gate branches and the halt mapping. It needs
   nothing but Node: no git, no network, no filesystem beyond the script.

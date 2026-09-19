@@ -409,6 +409,16 @@ const PHRASES = [
     files: ['run', 'workflow'],
   },
   {
+    why: "the waiting stop condition is one sentence in the skill and the script — the halt that keeps a run from opening a release pull request for an epic with work unbuilt; a retro that cannot match the record's quoted condition to the skill's files the halt as something else",
+    re: /tickets still waiting and none that can start — every unstarted ticket is held by a `\*\*Blocked by:\*\*` line whose blocker has not landed, or by one that cannot be read; the epic is NOT built, and no release pull request is opened/,
+    files: ['run', 'workflow'],
+  },
+  {
+    why: "the post-merge stop condition is one sentence in the skill and the script — the only gate that checks a wave's declaration of independence, and like the budget halt it un-merges nothing, which both documents must say in the same words",
+    re: /a failed acceptance CHECK after the merge — a ticket merged onto an epic branch that had moved since it branched, and its signed-off criteria no longer pass on the combination; the ticket stays merged and nothing further starts/,
+    files: ['run', 'workflow'],
+  },
+  {
     why: 'the added-files stop condition is one sentence in the skill and the script — the halt a run record quotes verbatim. Pinned whole: its second half ("or the run could not read which files the fix commits added") is the unmeasured case, and a copy that kept only the first would send a human looking for stray files in a run that never listed any',
     re: /a review fix that adds files where the ticket never worked — a fix\s+commit created a file outside every directory the reviewed diff touched or\s+a finding named, or the run could not read which files the fix commits\s+added; that is the signature of a swept working tree, and it is never\s+handed to a reviewer to read/,
     files: ['run', 'workflow'],

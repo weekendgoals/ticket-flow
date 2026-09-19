@@ -33,7 +33,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/tickets.mjs" list <epic> --json
 Read `defaultBranch` and the epic's entry in `modes` — `delivery`, and the
 declarations step 4 passes on (`workerModel`, `workerRunner`,
 `reviewerModel`, `shadowReviewer`, `consequencePaths`, `fixBoundsExclude`,
-`ticketBudget`). **Stop unless
+`ticketBudget`, `parallel`). **Stop unless
 `delivery` is `"release"`** — checked before anything mutates
 `origin/epic/<name>`; an incremental epic is run by `/flow:ticket`, and an
 unrecognised value is not a release declaration.
@@ -51,7 +51,28 @@ Stop and report too if:
   hands out `todo` tickets, so starting now would build every successor on
   the blocked one. The human resolves or re-plans it first.
 
+- **the plan's dependencies cannot be trusted** — run
+  `node "${CLAUDE_PLUGIN_ROOT}/scripts/tickets.mjs" doctor --json` and refuse
+  to start while it carries a row for this epic saying a ticket **"will wait
+  for ever"** (a `**Blocked by:**` line that will not parse, an unknown ID, a
+  self-reference, a cycle) or — **when the epic declares `Parallel:` 2 or 3**
+  — that a line **"looks like a Blocked by line, and nothing reads it"** or
+  that a ticket **carries a "Depends on" line, which nothing reads**. The
+  first kind ends every run at the driver's `tickets still waiting` halt,
+  after it has spent the run's tokens on the tickets that could start; the
+  second is worse, because in a parallel epic a ticket with no readable line
+  is *declared independent* and will be started beside the work it depends
+  on. Both are fixed in `tickets.md`, committed and pushed to `epic/<name>`,
+  before the run — the doctor row names the line. Refused here, in session,
+  because the script has no way to run doctor;
+- `parallel` is 2 or 3 **and** `ticketBudget` is set — the script refuses the
+  pair at launch (a per-ticket ceiling is a delta on one meter, and in a wave
+  the delta is the wave's); say so now rather than let the Workflow call
+  error. One of the two lines leaves the preamble.
+
 `integrated` or `shipped` tickets are fine: re-running resumes after them.
+`waiting` tickets are fine too — that is the plan working — as long as doctor
+has nothing to say about why they wait.
 
 ## 2. Verify sign-off actually happened
 
@@ -189,7 +210,8 @@ Workflow({
     shadowReviewer: "<modes[<name>].shadowReviewer — omit the key when absent>",
     consequencePaths: <modes[<name>].consequencePaths — omit the key when null>,
     fixBoundsExclude: <modes[<name>].fixBoundsExclude — omit the key when null>,
-    ticketBudget: <modes[<name>].ticketBudget — omit the key when null>
+    ticketBudget: <modes[<name>].ticketBudget — omit the key when null>,
+    parallel: <modes[<name>].parallel — omit the key when null>
   }
 })
 ```
@@ -198,6 +220,41 @@ Everything mechanical rides in `args` because a workflow script has **no
 filesystem, no shell and no clock** — every fact it uses is fetched by an
 agent it spawns. Pass the date and the two absolute paths, or the script
 refuses to start.
+
+**`parallel` is what makes a run go wide**, and absent (or `1`) the run is
+the serial one it always was. With `2` or `3` the script works the board's
+**ready set in waves**: it takes the first `parallel` tickets `next` hands out
+— `next` has already left out every ticket whose `**Blocked by:**` blockers
+have not landed, so two tickets in one wave are two the plan declared
+independent — and runs their pipelines (worker through the resolve step's
+gates) side by side, **each in its own git worktree** at
+`<repoRoot>/../.flow-worktrees/<epic>/<id>`, because every step of a pipeline
+checks branches out and two cannot share a working tree. Then it integrates
+them **one at a time, in document order**, whichever finished first: the merge
+by verified SHA, the board's confirmation, and — for every merge after the
+wave's first, which lands on an epic branch that has moved since the ticket
+branched — **the ticket's own CHECK criteria re-run on the merged epic
+branch**. Then it refreshes and asks the board again. Three things follow:
+
+- **The worktree is fresh.** It has what git tracks and nothing else — no
+  installed dependencies, no build output, no local `.env`. The worker is told
+  so and installs what the project's instructions say; a project whose
+  verification needs something that cannot be reproduced from the repository
+  will see those criteria recorded as owed, or a BLOCKED ticket. Know this
+  before declaring `Parallel:` on such a project.
+- **This epic's two append-only logs merge by union.** Before the first wave
+  the script writes `epics/<name>/status.md merge=union` (and the same for
+  `shadow-reviews.md`) to the repository's local `.git/info/attributes` —
+  never committed, never pushed. Every ticket appends its entry to the end of
+  the same file, so two branches cut from one epic head conflict there on the
+  second merge, every time; git's built-in union driver keeps both sides'
+  lines, which is the correct merge of an append-only log. The line stays
+  after the run and is harmless.
+- **The meter is the wave's.** `outputTokensObserved` is `null` for a ticket
+  that ran in a wave, and the script logs the wave's delta instead — which is
+  why `parallel` and `ticketBudget` cannot be declared together. Step 6's
+  per-ticket figures come from the transcripts, which are per agent whatever
+  ran beside them.
 
 `ticketBudget` is the **launch-time** value, and the only one of these the
 script does not keep: the ceiling is **re-read at every refresh** of the
@@ -567,10 +624,38 @@ that resumes past one. The run halts:
   the raise is committed and pushed to the epic branch. Each ticket's meter
   delta lands in `outputTokensObserved` either way, including on a halt whose
   subject is the spending;
+- on **tickets still waiting and none that can start — every unstarted ticket is held by a `**Blocked by:**` line whose blocker has not landed, or by one that cannot be read; the epic is NOT built, and no release pull request is opened** —
+  the script asks the board for both lists (`next <epic> --with-waiting`) and
+  refuses in code, because to the loop an empty ready list otherwise means
+  "open the release". The halt quotes each ticket's reason. A blocker that is
+  `blocked` or unmerged is finished or re-planned; a line that cannot be read
+  is fixed in `tickets.md` — step 1's doctor check exists so this halt is
+  rare;
+- on **a failed acceptance CHECK after the merge — a ticket merged onto an epic branch that had moved since it branched, and its signed-off criteria no longer pass on the combination; the ticket stays merged and nothing further starts** —
+  waves only. The tickets of a wave were reviewed and accepted against the
+  epic branch as it stood when the wave began, and the plan declared them
+  independent; this is where that declaration is checked. Like the budget
+  halt it un-merges nothing. The repair is forward: a ticket that fixes the
+  combination on `epic/<name>`, and a `**Blocked by:**` line on the later of
+  the two so the plan stops claiming what the run disproved;
 - on **a nonzero exit from any command the run issues as a step, except
   those this skill explicitly marks tolerated** — the one tolerated shape is
   a 404 or 403 from step 3's protection probes, which run in session before
   the script starts.
+
+**A halt inside a wave.** A pipeline that halts does not un-pass its
+siblings: they cleared every gate a serial run has and are independent by the
+plan's own declaration, so they are integrated, in document order — and
+**then** the run halts, and nothing new starts. `haltedOn` is the first halt
+in document order; any others ride in `alsoHalted`, and the run record
+quotes each. If an *integration* fails (a merge conflict, a failed
+post-merge CHECK), nothing merges past it: a sibling that had passed is
+recorded `passed, not merged`, its branch pushed and its status entry
+committed — § "Resuming after a halt" finishes it like any ticket a run left
+behind. **Halted tickets' worktrees are left in place** — they hold the
+evidence — and the script logs their paths: look, then
+`git worktree remove --force <path>` each before re-running, because a path
+left behind refuses the next run's worktree of the same name.
 
 **Nothing improvises past one.** Halting is the mechanism working; a run that
 pushes through is a run whose release pull request cannot be trusted. **With
@@ -658,7 +743,11 @@ Then the record itself:
 ```markdown
 ### Run — <YYYY-MM-DD> — <completed | halted>
 
-**Driver:** /flow:run, unattended, loop by `workflows/run-epic.mjs`.
+**Driver:** /flow:run, unattended, loop by `workflows/run-epic.mjs`<, and
+when the run went wide: "`Parallel: <n>` — waves: <IDs of wave 1> | <IDs of
+wave 2> | …", because which tickets ran beside which is what the retro needs
+to read a post-merge halt, and the Time line's `wall` figures overlap inside
+a wave>.
 **Tickets this run:** <one line per ticket, in order, from `ticketRecords`:
 ID — worker agent — review tier and outcome (`importantCount` Important,
 `nitCount` nits, fixed or not) — what stood between the fixes and the merge:
@@ -749,7 +838,11 @@ which is a complete line and not a near-miss. Planning evidence, never a gate �
 duration.>
 
 **Halted on:** <`haltedOn.stopCondition` verbatim, with `haltedOn.ticket`
-and `haltedOn.where` — or "ran to completion".>
+and `haltedOn.where` — or "ran to completion". **When `alsoHalted` is not
+empty** (a wave produced more than one halt), one further line per entry, in
+the same shape — the run stopped on the first, and the others are work a
+human still has to look at; a record that names only one reads as though the
+rest of the wave was fine. Name any ticket recorded `passed, not merged`.>
 
 **Diagnosis:** <**required on a halted record**, omitted only when the run
 ran to completion. What the driver's halt detail says; what you found when

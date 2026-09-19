@@ -206,3 +206,21 @@ test('CLI: a directory with no journal is refused, and told to write unknown', (
     rmSync(dir, { recursive: true, force: true })
   }
 })
+
+test('a wave: the plumbing steps are the ticket\'s proxies, the union step is run overhead, and walls overlap', () => {
+  const journal = jsonl([
+    started('refresh+select:1', 's1'), started('union:payments', 'u'),
+    started('worktree:PAY-1', 'wt1'), started('worktree:PAY-2', 'wt2'),
+    started('worker:PAY-1', 'w1'), started('worker:PAY-2', 'w2'),
+    started('merge:PAY-1', 'm1'), started('worktree-remove:PAY-1', 'wr1'),
+    started('merge:PAY-2', 'm2'), started('post-merge:PAY-2', 'pm2'), started('worktree-remove:PAY-2', 'wr2'),
+  ])
+  const t = { s1: [0, 10], u: [10, 12], wt1: [12, 14], wt2: [12, 15], w1: [15, 1015], w2: [15, 615], m1: [1020, 1030], wr1: [1030, 1032], m2: [1032, 1042], pm2: [1042, 1062], wr2: [1062, 1064] }
+  const r = meter(journal, id => transcript(t[id][0], t[id][1], usage(0, 10, 90)))
+  assert.deepEqual(r.overhead.map(a => a.label), ['union:payments'])
+  const [p1, p2] = r.tickets
+  assert.deepEqual(p1.agents.map(a => a.label), ['refresh+select:1', 'worktree:PAY-1', 'worker:PAY-1', 'merge:PAY-1', 'worktree-remove:PAY-1'])
+  assert.deepEqual([p2.tokens.proxies, p2.seconds.proxies], [400, 3 + 10 + 20 + 2], 'worktree, merge, post-merge and worktree-remove')
+  assert.deepEqual([p1.wall, p2.wall, r.runSeconds], [1032, 1052, 1064])
+  assert.ok(p1.wall + p2.wall > r.runSeconds, 'side by side: the walls overlap')
+})

@@ -4190,3 +4190,18 @@ test('next with no epic does not announce a healthy epic as stuck because one of
   assert.deepEqual([r.status, r.stderr], [0, ''])
   assert.deepEqual(JSON.parse(r.stdout).map((t) => t.id), ['DEP-1'])
 })
+
+// ── parallel tickets, stage 2: the driver's form of `next` ───────────────────
+test('next --with-waiting hands the driver both lists as data and exits 0 — even when nothing can start', () => {
+  const stuck = depsRepo('ww-stuck', sec('DEP-1') + sec('DEP-2', '**Blocked by:** DEP-9') + sec('DEP-3', '**Blocked by:** DEP-1'), ['DEP-1'])
+  const r = spawnSync(process.execPath, [SCRIPT, 'next', 'dep', '--with-waiting'], { cwd: stuck, encoding: 'utf8', env: ENV })
+  assert.equal(r.status, 0, 'the refusal is the driver’s to make, in code')
+  const out = JSON.parse(r.stdout)
+  assert.deepEqual(out.ready.map((t) => t.id), ['DEP-3'])
+  assert.deepEqual(out.waiting.map((t) => [t.id, t.on, /DEP-9 is not a ticket/.test(t.problem), /^DEP-2 cannot start/.test(t.reason)]), [['DEP-2', ['DEP-9'], true, true]])
+  // The plain form still refuses for everyone else once only the stuck one is left.
+  const only = depsRepo('ww-only', sec('DEP-1') + sec('DEP-2', '**Blocked by:** DEP-9'), ['DEP-1'])
+  assert.equal(runFail(only, 'next', 'dep', '--json').status, 1)
+  const o = JSON.parse(run(only, 'next', 'dep', '--with-waiting'))
+  assert.deepEqual([o.ready, o.waiting.length], [[], 1])
+})
