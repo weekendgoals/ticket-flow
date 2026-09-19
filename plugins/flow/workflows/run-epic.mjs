@@ -1011,34 +1011,6 @@ for (let i = 0; i < MAX_TICKETS && !halted; i++) {
   // calls the session is awaiting this workflow, so the delta is, to a close
   // approximation, this ticket's own output-token spend.
   const spentAtStart = METER ? METER.spent() : null
-  // Reading the meter is what closes this ticket's spend, so it happens once
-  // and the figure is reusable: the budget check needs it, and so does a halt
-  // that fires before the budget check — a halt whose subject IS the spending
-  // that must not report `unknown` for what was spent. Idempotent on purpose;
-  // a second reading would measure the agents of the halt itself.
-  let spendRecorded = false
-  const recordSpend = () => {
-    if (!METER || spendRecorded) return record.outputTokensObserved
-    spendRecorded = true
-    const spent = METER.spent() - spentAtStart
-    record.outputTokensObserved = spent
-    // Spend is surfaced as it happens, not only in the record after the run:
-    // the meter delta is the runtime's own count of this ticket's output
-    // tokens across every agent it spawned, and a runner's usage (Codex's
-    // event stream) is the one figure the worker's side can add.
-    // The shadow's share is reported on its own: it is inside the meter delta,
-    // and outside what the ticket budget judges (see the budget check).
-    const wu = record.workerUsage
-    const su = record.shadow && record.shadow.usage
-    log(
-      `${id}: spend — ${spent} output tokens by the runtime meter` +
-        (record.shadowSpend != null ? `, ${record.shadowSpend} of them across the shadow review (outside the ticket budget)` : '') +
-        (wu ? `; ${record.workerRunner} worker in=${wu.input ?? '?'} cached=${wu.cached ?? '?'} out=${wu.output ?? '?'} by its own meter` : '') +
-        (su ? `; ${record.shadow.reviewer} shadow in=${su.input ?? '?'} cached=${su.cached ?? '?'} out=${su.output ?? '?'} by its own meter` : '') +
-        (ticketBudget ? ` (budget ${ticketBudget})` : ''),
-    )
-    return spent
-  }
 
   // a. Refresh epic/<name> from the default branch — between every ticket, or
   //    the release merge becomes its own big-bang — and then take the first
@@ -1105,6 +1077,61 @@ for (let i = 0; i < MAX_TICKETS && !halted; i++) {
   // review range can be computed here instead of taken from the worker's prose.
   const branch = id.toLowerCase()
   log(`Ticket ${ticketRecords.length + 1}: ${id}${ticket.title ? ` — ${line(ticket.title)}` : ''}`)
+
+  // The ticket's own pipeline — worker through resolve — touches only the
+  // ticket's branch; integration — merge, verify, budget — touches the epic
+  // branch. They are two functions because that line is where a run can go
+  // wide: pipelines may run side by side, integration is always one at a time.
+  const ticketRun = await runTicket({ id, branch, ticket, spentAtStart })
+  if (ticketRun.halted) {
+    halted = ticketRun.halted
+    break
+  }
+  const integrationHalt = await integrateTicket(ticketRun)
+  if (integrationHalt) {
+    halted = integrationHalt
+    break
+  }
+}
+
+// Everything from the worker's spawn to the resolve step's gates, for ONE
+// ticket. A stop condition is RETURNED, never thrown and never written to the
+// run's own `halted`: the caller decides what a halt means for the run. The
+// body is the loop body it was lifted out of, unchanged — declared as a
+// function (hoisted) so that it could stay where it stood and keep its
+// history; only the `break`s became returns.
+async function runTicket({ id, branch, ticket, spentAtStart }) {
+  let halted = null
+  // `record` is created part-way down; a halt before that returns none.
+  let record = null
+  // Reading the meter is what closes this ticket's spend, so it happens once
+  // and the figure is reusable: the budget check needs it, and so does a halt
+  // that fires before the budget check — a halt whose subject IS the spending
+  // that must not report `unknown` for what was spent. Idempotent on purpose;
+  // a second reading would measure the agents of the halt itself.
+  let spendRecorded = false
+  const recordSpend = () => {
+    if (!METER || spendRecorded) return record.outputTokensObserved
+    spendRecorded = true
+    const spent = METER.spent() - spentAtStart
+    record.outputTokensObserved = spent
+    // Spend is surfaced as it happens, not only in the record after the run:
+    // the meter delta is the runtime's own count of this ticket's output
+    // tokens across every agent it spawned, and a runner's usage (Codex's
+    // event stream) is the one figure the worker's side can add.
+    // The shadow's share is reported on its own: it is inside the meter delta,
+    // and outside what the ticket budget judges (see the budget check).
+    const wu = record.workerUsage
+    const su = record.shadow && record.shadow.usage
+    log(
+      `${id}: spend — ${spent} output tokens by the runtime meter` +
+        (record.shadowSpend != null ? `, ${record.shadowSpend} of them across the shadow review (outside the ticket budget)` : '') +
+        (wu ? `; ${record.workerRunner} worker in=${wu.input ?? '?'} cached=${wu.cached ?? '?'} out=${wu.output ?? '?'} by its own meter` : '') +
+        (su ? `; ${record.shadow.reviewer} shadow in=${su.input ?? '?'} cached=${su.cached ?? '?'} out=${su.output ?? '?'} by its own meter` : '') +
+        (ticketBudget ? ` (budget ${ticketBudget})` : ''),
+    )
+    return spent
+  }
 
   // c. Spawn the worker: a fresh agent, empty context, one ticket. "A driver
   //    spawned you" is the phrase the ticket skill's step 0 and step 10 key on
@@ -1212,7 +1239,7 @@ Report honestly: \`branch-pushed\` ONLY if you saw the push of \`${branch}\` suc
     },
   )
 
-  const record = {
+  record = {
     id,
     title: line(ticket.title || ''),
     branch,
@@ -1307,7 +1334,7 @@ Report honestly: \`branch-pushed\` ONLY if you saw the push of \`${branch}\` suc
         ? `worker reported ${worker.result}: ${fence(line(worker.detail || worker.built || '(no detail)'))}`
         : 'the worker returned no report — it died, was skipped, or ran out of room; the ticket has no reviewable pull request',
     }
-    break
+    return { id, branch, record, recordSpend, halted }
   }
 
   // d. Read the changed files and floor the tier — in code, before pricing.
@@ -1336,7 +1363,7 @@ ${NO_MAIN} You are read-only here in any case: nothing in this task writes anyth
   )
   if (tierFacts && tierFacts.outcome === 'permission-prompt') {
     halted = { ticket: id, stopCondition: STOP.permissionPrompt, where: `reading ${id}'s changed files to price its review`, detail: fence(line(tierFacts.detail || '(no command named)')) }
-    break
+    return { id, branch, record, recordSpend, halted }
   }
   if (tierFacts && tierFacts.outcome === 'command-failed') {
     halted = {
@@ -1345,7 +1372,7 @@ ${NO_MAIN} You are read-only here in any case: nothing in this task writes anyth
       where: `reading ${id}'s changed files to price its review`,
       detail: `the changed-file listing failed:${line(tierFacts.detail) ? ` ${fence(line(tierFacts.detail))}` : ' (no detail quoted)'}`,
     }
-    break
+    return { id, branch, record, recordSpend, halted }
   }
   // A dead agent or an unusable list is priced, not halted: the floor goes to
   // consequence — the strongest review — because missing facts must raise
@@ -1448,7 +1475,7 @@ Report \`reviewedHead\`: what \`git rev-parse origin/${branch}\` prints when you
       where: `hiring the reviewer for ${id}`,
       detail: `both the \`flow:ticket-reviewer\` agent and the sanctioned general-agent fallback produced no review — each either could not be hired or returned nothing usable, and the run log's hire lines name which. The branch ${branch} stays pushed and unmerged: an unreviewed ticket is never merged, anywhere.`,
     }
-    break
+    return { id, branch, record, recordSpend, halted }
   }
 
   const important = Array.isArray(review.important) ? review.important : []
@@ -1699,7 +1726,7 @@ ${NO_MAIN} You are read-only here in any case.`,
     )
     if (facts && facts.outcome === 'permission-prompt') {
       halted = { ticket: id, stopCondition: STOP.permissionPrompt, where: `reading ${id}'s pushed branch after a disposition that returned no report`, detail: fence(line(facts.detail || '(no detail)')) }
-      break
+      return { id, branch, record, recordSpend, halted }
     }
     const readable = facts && facts.outcome === 'read' && Number.isInteger(facts.addendumMatches) && Array.isArray(facts.codeCommits)
     if (readable && facts.addendumMatches >= 1) {
@@ -1717,7 +1744,7 @@ ${NO_MAIN} You are read-only here in any case.`,
           where: `dispositioning the review of ${id}`,
           detail: `the disposition agent returned no report; the pushed branch carries its review addendum but NO code commit since the reviewed head, against a review that raised ${important.length} Important finding(s) — nothing fixed them, and accepting an unfixed Important finding is a human's call. The addendum on \`origin/${branch}\` says what the agent decided.`,
         }
-        break
+        return { id, branch, record, recordSpend, halted }
       }
       disposition = {
         outcome: codeCommits.length ? 'fixed' : 'clean',
@@ -1760,7 +1787,7 @@ ${NO_MAIN} You are read-only here in any case.`,
         ? `the disposition agent failed: ${fence(line(disposition.detail || '(no detail)'))}`
         : 'the disposition agent returned no report — the review is not on the record and the ticket is not mergeable',
     }
-    break
+    return { id, branch, record, recordSpend, halted }
   }
   if (disposition.outcome === 'permission-prompt') {
     halted = {
@@ -1769,7 +1796,7 @@ ${NO_MAIN} You are read-only here in any case.`,
       where: `dispositioning the review of ${id}`,
       detail: fence(line(disposition.detail || '(no detail)')),
     }
-    break
+    return { id, branch, record, recordSpend, halted }
   }
   if (disposition.outcome === 'important-unfixed') {
     halted = {
@@ -1780,7 +1807,7 @@ ${NO_MAIN} You are read-only here in any case.`,
         (Array.isArray(disposition.notFixed) ? disposition.notFixed : []).map(n => `${line(n.summary)} — ${line(n.reason)}`).join('; ') || '(no reasons given)',
       )}`,
     }
-    break
+    return { id, branch, record, recordSpend, halted }
   }
   // The disposition's own account of what it did has to agree with the review
   // the driver is holding. Both shapes below are schema-legal and both would
@@ -1793,7 +1820,7 @@ ${NO_MAIN} You are read-only here in any case.`,
       where: `dispositioning the review of ${id}`,
       detail: `the disposition reported "clean" against a review that raised ${important.length} Important finding(s). One of the two is wrong, and merging on either reading is not the run's call.`,
     }
-    break
+    return { id, branch, record, recordSpend, halted }
   }
   if (disposition.outcome === 'fixed' && !record.fixedCommits.length) {
     halted = {
@@ -1802,7 +1829,7 @@ ${NO_MAIN} You are read-only here in any case.`,
       where: `dispositioning the review of ${id}`,
       detail: `the disposition reported "fixed" but named no fix commits — there is nothing to re-review and nothing to point at in the log, so what was fixed cannot be established.`,
     }
-    break
+    return { id, branch, record, recordSpend, halted }
   }
   if (disposition.addendumCommitted !== true) {
     halted = {
@@ -1811,7 +1838,7 @@ ${NO_MAIN} You are read-only here in any case.`,
       where: `the review record of ${id}`,
       detail: `the disposition reported "${line(disposition.outcome)}" but did not commit the review addendum. An unreviewed-on-the-record ticket is never merged: the pull request stays open, and the log has to show the review before anything integrates.`,
     }
-    break
+    return { id, branch, record, recordSpend, halted }
   }
 
   // e2. What the fix commits ADDED — at every tier, before any re-review is
@@ -1847,7 +1874,7 @@ ${NO_MAIN} You are read-only here in any case.`,
     const where = `reading what ${id}'s review-fix commits added`
     if (fixAdded && fixAdded.outcome === 'permission-prompt') {
       halted = { ticket: id, stopCondition: STOP.permissionPrompt, where, detail: fence(line(fixAdded.detail || '(no detail)')) }
-      break
+      return { id, branch, record, recordSpend, halted }
     }
     if (!fixAdded || fixAdded.outcome !== 'listed' || !Array.isArray(fixAdded.addedFiles)) {
       halted = {
@@ -1856,7 +1883,7 @@ ${NO_MAIN} You are read-only here in any case.`,
         where,
         detail: `the run could not read which files the fix commits added (${fixAdded ? `the step reported ${fence(line(fixAdded.outcome || '(nothing)'))}: ${fence(line(fixAdded.detail || '(no detail)'))}` : 'the agent returned no report'}) — a fix nothing measured is never merged, and never handed to a reviewer first. Nothing merged.`,
       }
-      break
+      return { id, branch, record, recordSpend, halted }
     }
     const dirOf = f => (f.includes('/') ? f.slice(0, f.lastIndexOf('/')) : '')
     const insideDirs = new Set(
@@ -1885,7 +1912,7 @@ ${NO_MAIN} You are read-only here in any case.`,
         where,
         detail: `${strays.length} file(s) added by the fix commits sit outside every directory the reviewed diff touched or a finding named: ${fence(shown.join(', '))}${strays.length > shown.length ? ` and ${strays.length - shown.length} more` : ''}. A review fix adds a file beside the code it fixes; files appearing elsewhere are usually untracked files swept in by \`git add -A\`. Nothing merged and no reviewer was hired to read them: inspect \`git show --stat ${anchorHead}..origin/${branch}\`, and if the sweep is real, revert it as a NEW commit on \`${branch}\` and finish the ticket by hand.`,
       }
-      break
+      return { id, branch, record, recordSpend, halted }
     }
     if (record.fixAddedFiles.length) log(`${id}: the fix commits added ${record.fixAddedFiles.length} file(s), all beside reviewed code — no stray additions.`)
   } else if (record.fixedCommits.length > 0) {
@@ -1900,7 +1927,7 @@ ${NO_MAIN} You are read-only here in any case.`,
       where: `reading what ${id}'s review-fix commits added`,
       detail: `the run could not read which files the fix commits added: the tier-facts step gave the driver no usable head to anchor the review on, so there is no range to measure ${record.fixedCommits.length} fix commit(s) from — and a fix nothing measured is never merged, and never handed to a reviewer first. Nothing merged. Compare \`git diff --name-only --diff-filter=A origin/${epicBranch}...origin/${branch}\` with the ticket's scope by hand, then finish the ticket by hand.`,
     }
-    break
+    return { id, branch, record, recordSpend, halted }
   }
 
   // f. Re-review — only when there were fixes, and only ONCE. A merged diff
@@ -2034,7 +2061,7 @@ ${fence(findingsBlock)}
       : await boundedReReview(priced, priced.tier === 'consequence' ? 'the consequence tier' : 'the fix-bounds gate has no anchor')
     if (halt) {
       halted = halt
-      break
+      return { id, branch, record, recordSpend, halted }
     }
   }
 
@@ -2072,7 +2099,7 @@ ${NO_MAIN} The checkout and fast-forward only move the local branch to where the
   record.acceptanceOutcome = accept ? line(accept.outcome) : 'no report'
   if (accept && accept.outcome === 'permission-prompt') {
     halted = { ticket: id, stopCondition: STOP.permissionPrompt, where: `running ${id}'s acceptance checks`, detail: fence(line(accept.detail || '(no command named)')) }
-    break
+    return { id, branch, record, recordSpend, halted }
   }
   if (!accept || accept.outcome !== 'ran') {
     halted = {
@@ -2083,7 +2110,7 @@ ${NO_MAIN} The checkout and fast-forward only move the local branch to where the
         ? `the acceptance-check step failed:${line(accept.detail) ? ` ${fence(line(accept.detail))}` : ' (no detail quoted)'}`
         : 'the acceptance-check agent returned no report — whether the criteria pass is unknown, and nothing merges on a guess',
     }
-    break
+    return { id, branch, record, recordSpend, halted }
   }
   {
     // The gate reads the ledger the script printed, not a count the proxy
@@ -2151,7 +2178,7 @@ ${NO_MAIN} The checkout and fast-forward only move the local branch to where the
           ? `the acceptance-check step reported "ran" but no usable counts or verdict (total, passed, skipped, allPassed, problems, compares) — a gate that cannot read its own evidence merges nothing; doubt goes up`
           : `${why.join('; and ')}, judged against the signed-off document on ${epicBranch}: ${quoted}`,
       }
-      break
+      return { id, branch, record, recordSpend, halted }
     }
     log(
       (total === 0
@@ -2480,7 +2507,7 @@ ${NO_MAIN} You are read-only here in any case: the two fetches update remote-tra
       }
     }
   }
-  if (halted) break
+  if (halted) return { id, branch, record, recordSpend, halted }
 
   // g2. The bounds trip buys a re-review, not a halt. The fixes left what the
   //     cheap gate can judge, so the strong reviewer judges them: one bounded
@@ -2494,10 +2521,19 @@ ${NO_MAIN} You are read-only here in any case: the two fetches update remote-tra
     const halt = await boundedReReview(priceReview('consequence', 'consequence'), 'the fix-bounds gate tripped')
     if (halt) {
       halted = halt
-      break
+      return { id, branch, record, recordSpend, halted }
     }
   }
 
+  return { id, branch, record, recordSpend, halted: null, resolvedHead }
+}
+
+// Integration for ONE ticket whose pipeline passed every gate: the merge by
+// verified SHA, the board's confirmation, and the budget check. Returns the
+// halt, or null. Always serial — it is the only code that touches the epic
+// branch between refreshes.
+async function integrateTicket({ id, branch, record, recordSpend, resolvedHead }) {
+  let halted = null
   // h. Merge — the one sanctioned agent merge, and its surface is the epic
   //    branch only. A fixed git sequence on a SHA this code verified, by an
   //    agent with nothing to decide: release tickets have no pull request,
@@ -2540,7 +2576,7 @@ ${NO_MAIN} This merge into ${epicBranch} is the only merge you perform.`,
             ? { stopCondition: STOP.mergeConflict, detail: `merging ${branch} into ${epicBranch} conflicted:${quoted}` }
             : { stopCondition: STOP.nonzeroExit, detail: `the merge sequence did not merge ${id}'s verified head ${resolvedHead} (${line(merged.outcome)}):${quoted}` }),
     }
-    break
+    return halted
   }
 
   // g. Verify the outcome mechanically. The merged pull request into the epic
@@ -2570,7 +2606,7 @@ ${PROMPT_RULE}`,
           detail: failure || '(the agent reported the command failed but quoted nothing)',
         }
       : { ticket: id, stopCondition: STOP.nonzeroExit, where: `\`tickets.mjs find ${id} --json\``, detail: 'the agent returned no report on the board command' }
-    break
+    return halted
   }
   if (found.state !== 'integrated') {
     halted = {
@@ -2581,7 +2617,7 @@ ${PROMPT_RULE}`,
       // here; everything an agent writes freely is fenced.
       detail: `the merge agent reported success, but the board reads state "${line(found.state)}" — the merged pull request is the only evidence that counts. Never re-run the ticket, never finish it yourself.`,
     }
-    break
+    return halted
   }
   record.result = 'integrated'
   log(`${id}: integrated (confirmed from the board, not from any agent's report).`)
@@ -2607,9 +2643,10 @@ ${PROMPT_RULE}`,
         where: 'the per-ticket token budget, after the merge was confirmed',
         detail: `${id} integrated, but its pass spent ${spent} output tokens${record.shadowSpend ? ` (${spentWhole} including the shadow review's ${record.shadowSpend}, which the budget leaves out)` : ''} against the epic's budget of ${ticketBudget}. The work is merged and stays merged; the run stops before the next ticket so a human can decide whether this class of spend is expected — raise the epic's Ticket budget line on ${epicBranch} and push it (every later ticket reads that line off \`origin/${epicBranch}\` before its own merge, so a raise that lands while a ticket is still running governs that ticket's own check), or look at why the ticket outgrew its plan.`,
       }
-      break
+      return halted
     }
   }
+  return null
 }
 
 if (!halted && ticketRecords.length >= MAX_TICKETS) {
