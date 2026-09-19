@@ -650,3 +650,13 @@ the fixes: tickets 122, fidelity 43, check-invariants 32, run-epic 144, codex
 `check-invariants.mjs`, `doctor`, both syntax checks exit 0; `check` FID-1 to
 FID-6 all pass. No re-review of these fixes was run — the release pull request
 is where they are read.
+
+**Addendum — 2026-09-19 — FID-1's deviations closed**
+
+**Deviations closed:** FID-1.1, FID-1.2 — both accepted: "FID-1's two deviation lines are still open in the log - close the deviations"; Vadim; 2026-09-19 — recorded by the session from Vadim's answer
+
+He had been shown both in plain words: FID-1.1, built as one ticket at 980
+changed lines against a "split past ~450" condition ("accept", then "size
+overrun is fine"); FID-1.2, exit 2 when nothing was compared where the ticket
+said exit 0, with the re-review's verdict "right on the merits and outside the
+letter of the ticket". FID-3 has since resolved the rough edge FID-1.2 left.
