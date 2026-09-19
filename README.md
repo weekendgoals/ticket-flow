@@ -19,7 +19,7 @@ repository).
 | `/flow:quick <description>` | The **cheap lane**: one small, low-risk piece of work, implemented **in-session** with a written scope, verification with counts, a short log entry and a pull request — and a fresh-context reviewer **only when behaviour changes** (prose-only diffs — documentation and comments, nothing a machine reads — get none; the PR is the review). Size- **and risk-gated**: auth, secrets, migrations and other consequential work is routed to `/flow:epic` at any size |
 | `/flow:tickets [epic]` | The board — shipped, in flight, blocked, todo |
 | `/flow:board [epic]` | The same board as a **styled HTML page**, published as an artifact you can open and share, with a **Tokens** column from the recorded spend ledger. A rendering of derived state, rebuilt from git on every run — never committed, never a second store |
-| `/flow:spend [epic]` | The **recorded token ledger** — per ticket, per role (worker, reviewer, re-review, disposition, proxies) and per epic, derived from the status logs' Tokens lines, addendum phrases and run records. `unknown` stays unknown, nothing is estimated |
+| `/flow:spend [epic]` | The **recorded token ledger** — per ticket, per role (worker, reviewer, re-review, disposition, proxies) and per epic, derived from the status logs' Tokens lines, addendum phrases and run records — and beside it the **recorded time**: seconds per role and each ticket's wall-clock, from the run records' Time lines. `unknown` stays unknown, nothing is estimated |
 | `/flow:review [range]` | Review a commit range and report. Used by `/flow:ticket`; runnable on its own |
 | `/flow:doctor` | Is this project ready for the flow? Preconditions, merge settings, instruction-file quality, and headings that would silently misparse |
 | `/flow:retro [epic]` | Close a finished epic: a **fresh-context miner** reads the status log and review addenda and drafts the lessons and owed work — the invoking session often planned or ran the epic, so it mines nothing itself — then the approval gate and the shipping stay in-session, into instruction files and tickets. Its **seventh question asks what the run halted on and what each halt bought**: every `### Run —` record's halt classified as **work**, **plan**, **plugin/environment** or **policy**, with what the human did to resume and whether the stop retired a real risk or fired on a clean state — a policy stop that keeps firing clean becomes a proposal against the policy, a plugin halt a ticket for the plugin's own repository |
@@ -526,6 +526,37 @@ record in it: the ledger still reads the figures, but the two writers are
 back on one file tail. Records dated on or before the split day are never
 flagged — moving them is what append-only forbids — nor is one whose heading
 already appears in `runs.md`, which is what the repair looks like.
+
+**Time is in the same ledger.** A run record carries a `**Time:**` line beside
+its Tokens line — `<ID> worker=<n>s reviewer=<n>s … wall=<n>s` per ticket —
+and `spend` reads it under the same rules: labelled rounds sum, a restated
+group corrects, `unknown` erases nothing. Two things differ, both to keep a
+duration out of the token ledger: every figure carries its `s`, because a
+bare `worker=1430` anywhere in a record is a token figure, and time is read
+only inside a paragraph that starts `**Time:**` (to the next blank line or
+bold label) — where every time group is lifted out whatever prose stands
+beside it, and anything else in the paragraph is left for the token ledger. `wall` is the ticket's first
+agent start to its last agent end, not the roles' sum — the gap is the time
+between agents. Nobody writes either line by hand:
+`node plugins/flow/scripts/meter.mjs <workflow-run-dir>` reads the run's
+`journal.jsonl` and per-agent transcripts and prints both, ready to paste —
+tokens from each message's `usage`, time from each line's `timestamp`,
+because the driver has no clock and no agent can time itself. Where a ticket
+has no recorded wall, `spend` shows its **commit span** instead, labelled
+`(git)`: first to last commit naming the ticket, by author date, a commit
+reached on several refs counted once — and nothing at all for a ticket with
+one commit, or several at one instant, because a point is not a span. The
+scan reads the last 4000 commits across all refs and says so when that cap
+is reached (`commitSpansCapped` in `--json`), since an older ticket's span
+would otherwise start late with nothing to show for it. That is observed but is not
+the ticket's wall-clock — the work before the first commit is not in it — so
+it is reported under its own name (`commitSpan` in `--json`) and never as
+`wall`. `doctor` flags a Time line with figures in a run record where no Time
+group parses, and a time figure nothing read — `worker=1,430s`, or one quoted
+outside a Time paragraph — on a line naming a ticket that has no time
+anywhere in the ledger (per ticket, because one ticket's group parsing must
+not hide another's being lost). The repair for both is a dated addendum with
+the groups under a `**Time:**` line of its own, and it clears the warn.
 
 Two blind spots worth knowing: the board reads *this checkout's* view of the
 remote, so fetch first when the answer matters; and `shipped` means some commit

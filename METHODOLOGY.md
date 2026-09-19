@@ -713,6 +713,67 @@ cannot observe itself, and `unknown` is an honest answer where a guess is
 not. The old rule survives, finally enforceable because no field invites
 an estimate: harness-observed or unknown, never estimated.
 
+### Why time is metered the same way, and why it has a unit
+
+Tokens said what a ticket cost and nothing said where the afternoon went. A
+three-ticket run's first ticket (weekendgoals, FND-2) held the lane for 39
+minutes with nothing else able to start, and its record could not say
+whether that was the worker, the review, or the driver waiting between them
+— metered afterwards it reads `worker=1430s … wall=2353s`, the roles summing
+to 2351: the agents, not the driver. The obvious instrument — the
+driver timing its own steps — does not exist: a workflow script has no clock,
+`Date.now()` throws there. Asking each agent how long it took would repeat
+the mistake above with a different number. But the harness had been writing
+the answer down all along: every transcript line carries a timestamp. So
+`scripts/meter.mjs` reads a finished run's journal and transcripts and
+prints the `**Time:**` line, and — since it is reading the same files — the
+`**Tokens:**` line too, which retires the last place the ledger's arithmetic
+was done by a model reading JSONL. A message streamed as several lines
+carries its usage on each; summing lines instead of messages roughly doubles
+a worker, and nothing in a hand-summed record says which was done.
+
+`wall` is recorded separately from the roles because their difference is the
+finding. A ticket whose roles sum to its wall was slow because its agents
+were; one whose wall is far above the sum was waiting on something that is
+not an agent, and only the second is a driver problem.
+
+The unit is there because the two ledgers share a grammar. `spend` reads a
+`<ID> worker=<n>` group wherever it sits in a record — that is what lets a
+correction addendum land anywhere — so a bare duration would be added to the
+token ledger silently. Seconds carry an `s`, a figure with a unit is never a
+token figure, and time is read only inside a `**Time:**` paragraph, since
+`worker=unknown` looks the same in both. The first review of this found the
+wall one character thin — `worker=1,430s` backed off to `worker=1`, one
+token, over a real 462,249 — and found the paragraph too wide: taken whole,
+it swallowed a token group written on the line beneath the Time line, and
+those figures reached neither ledger. The repair for that was a line-level
+cut — the paragraph is the lines that hold nothing but time — and the second
+review found it worse than what it replaced: one parenthesis on a wrapped
+line dropped a whole ticket's time, silently, and handed that line's
+`worker=unknown` to the token ledger, `unknown` being the one figure with no
+unit to stop it. A line is the wrong thing to accept or reject, because
+people put words on lines. The split is by group: every time group in the
+paragraph is lifted out whatever stands beside it, the rest goes back to the
+token text, and a token group is never followed by a time-shaped pair —
+time-shaped only: the first cut of that refusal took any unreadable follower
+as grounds, and threw away whole token groups `main` had read correctly.
+
+The doctor warns for time are written so the repair they advertise ends
+them, because the log is append-only: an addendum can add a group and can
+never remove the prose that tripped a warn. The first cut fired on the stray
+figure alone and stayed red after the repair had worked; a check that does
+that teaches its reader to ignore it. The second cut asked only whether *any*
+group parsed in the record, which hid the commonest loss — one ticket's group
+parses, another's is malformed. So the stray-figure warn is per ticket: it
+fires while the ticket named on that line has no time anywhere in the ledger,
+and the addendum that gives it some is what clears it.
+
+The commit span `spend` falls back to is the one figure here that is observed
+and still not what it seems, so it is never called `wall`: commits begin when
+the work is nearly over. It is shown because a labelled weak observation
+beats `unknown` for a human, and named for what it is because a metric built
+on it later would inherit the error invisibly.
+
 ### Why a round has a label, and a correction does not
 
 The ledger's one ordering rule is "the last figure for a role wins", because

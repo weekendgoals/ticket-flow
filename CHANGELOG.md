@@ -8,6 +8,45 @@ with one version and date.
 
 ## Unreleased
 
+- **Time is metered, and nobody sums a transcript by hand** (new
+  `scripts/meter.mjs` and its suite; `scripts/tickets.mjs` and its suite;
+  `skills/run/SKILL.md`, `skills/spend/SKILL.md`;
+  `scripts/check-invariants.mjs`; README, METHODOLOGY, CLAUDE.md, CI). The run
+  record gains a `**Time:**` line beside `**Tokens:**` — per ticket
+  `<ID> worker=<n>s reviewer=<n>s … wall=<n>s`, then `run=<n>s` — and
+  `meter.mjs <workflow-run-dir>` prints both lines from the run's
+  `journal.jsonl` and per-agent transcripts: time from each line's
+  `timestamp` (the driver has no clock, and no agent times itself), tokens
+  from each message's `usage`, deduplicated by message id (request id where a
+  line carries none), as input + output + cache-creation. The run skill's step 6 now runs it instead of asking the
+  session to sum JSONL. `wall` is first agent start to last agent end, not
+  the roles' sum. **`spend` reads time into the ledger** under the token
+  rules (rounds sum, a restated group corrects, `unknown` erases nothing),
+  shows it per ticket and per epic, and returns `time`, `timeTotals`,
+  `untimedTickets`, `commitSpan` and a top-level `commitSpansCapped` in
+  `--json`. **A figure with a unit is no
+  longer a token figure**: `worker=1430s` — and `worker=228k`, which used to
+  read as 228 tokens — match nothing in the token grammar, a token group is
+  never followed by a time-shaped role pair (so a quoted
+  `<ID> worker=unknown reviewer=200s` is not a token `unknown`), and time is
+  read only inside a `**Time:**` paragraph, by group: every time group there
+  is lifted out whatever prose stands beside it, and the rest of the
+  paragraph is left for the token ledger. Where no wall is recorded, `spend`
+  shows the ticket's **commit span** labelled `(git)` — first to last commit
+  naming it, never reported as `wall`, because the work before the first
+  commit is not in it. `doctor` flags a Time line with figures in a run
+  record where no Time group parses, and a time figure nothing read on a line
+  naming a ticket with no time anywhere in the ledger — per ticket, so one
+  group parsing cannot hide another's loss, and both cleared by the addendum
+  they advertise — and
+  no longer flags a Tokens line holding only `total=`, which is the whole line
+  of a run that selected no ticket. Planning evidence only: no gate reads a
+  duration. **Known gap:** a unit-suffixed token figure (`reviewer=228k`) now
+  reads as nothing, which is more honest than the 228 it used to read; the
+  pairs before it in the group are kept, and when it is the group's FIRST
+  pair the whole group goes with it. In a record whose other groups parse,
+  neither draws a warn — the Tokens near-miss asks only whether any group
+  parsed.
 - **Three lenses from the redesign-city retro** (`agents/ticket-reviewer.md`,
   `skills/review/SKILL.md`, `workflows/run-epic.mjs` and
   `scripts/runners/codex-review.mjs` — the two `REVIEWER_RULES` copies, kept

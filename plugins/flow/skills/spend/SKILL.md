@@ -1,6 +1,6 @@
 ---
 name: spend
-description: Show the recorded token spend per ticket, per role and per epic, derived from the status logs. Use when the user runs /flow:spend [epic], asks what an epic or ticket cost, or asks where the tokens went.
+description: Show the recorded token spend and wall-clock time per ticket, per role and per epic, derived from the status logs. Use when the user runs /flow:spend [epic], asks what an epic or ticket cost, how long it took, or asks where the tokens or the time went.
 ---
 
 # Token spend $ARGUMENTS
@@ -42,6 +42,23 @@ show is a number nobody observed. `unknown` and `no figure recorded` are honest 
 - **Per epic:** the sum of known figures and the count of tickets with
   unknown or missing figures — the second number is what makes the first
   one honest.
+- **Time:** the dim `time` row under a ticket is the run record's
+  `**Time:**` line — seconds per role from the transcripts' own timestamps,
+  and `wall`, the ticket's first agent start to its last agent end. `wall` is
+  not the roles' sum: the difference is what the ticket spent between agents.
+  Rounds, `unknown` and corrections follow the token rules above. The row
+  ends with where it was read: `(run-record)` for a driver run, whose line
+  `scripts/meter.mjs` prints from the workflow run's directory, or `(log)`
+  for a `**Time:**` paragraph in a ticket's own entry — which only a
+  supervisor that watched the agents stop can honestly write.
+- **`commit span … (git)`** appears only where no wall was recorded: the
+  first to the last commit naming the ticket, by author date — so a ticket
+  with one commit, or several at one instant, shows nothing: a point is not
+  a span. It is observed,
+  and it is **not the ticket's wall-clock** — the work before the first
+  commit is most of an implementation and none of the span, and a
+  squash-merged ticket's span ends at the merge, the human's wait included.
+  Never quote it as how long a ticket took; say what it is.
 - **In-session lanes** (`/flow:quick`, `--interactive`) always read
   `unknown`: a session cannot see its own counter. Claude Code's own `/cost`
   is the only view of those.
@@ -58,5 +75,10 @@ One line each, only where the ledger shows something a human should act on:
   Tokens line was written without the per-ticket shape the run skill's step
   6 asks for; say so, that `/flow:doctor` flags the record, and that a dated
   addendum beneath it restating the figures as groups repairs it.
+
+- **A ticket whose `wall` is far above its roles' sum** — say which, and
+  that the gap is time between agents (driver overhead, a retried step, a
+  rate limit), which the run's journal and the record's Diagnosis explain
+  and a slow worker does not.
 
 Otherwise just show the ledger. Then stop.
