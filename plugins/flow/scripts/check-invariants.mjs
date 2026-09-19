@@ -42,6 +42,8 @@ const FILES = {
   planReviewer: 'plugins/flow/agents/plan-reviewer.md',
   review: 'plugins/flow/skills/review/SKILL.md',
   script: 'plugins/flow/scripts/tickets.mjs',
+  plugin: 'plugins/flow/.claude-plugin/plugin.json',
+  changelog: 'CHANGELOG.md',
   meter: 'plugins/flow/scripts/meter.mjs',
   hook: 'plugins/flow/hooks/ticket-session-guard.mjs',
   workflow: 'plugins/flow/workflows/run-epic.mjs',
@@ -512,6 +514,44 @@ function checkPhrases() {
 
 // ── entry point ──────────────────────────────────────────────────────────────
 
+// The version is the one fact an installed project has about what it is
+// running, and the plugin updates live — so a version that stops moving is a
+// silent change every time a skill does. The batching rule once named no
+// trigger, and `2.0.0` sat on 93 unreleased entries for five weeks. Three
+// things are held here, all countable: `plugin.json` names the newest stamped
+// heading; stamped headings are well-formed and newest-first; and
+// `Unreleased` stays under a ceiling. A count rather than an age, on purpose:
+// a check that fails by the calendar fails on an untouched tree, while this
+// one fails in the pull request that adds the entry — the one place the batch
+// can be stamped.
+const UNRELEASED_CEILING = 30
+function checkRelease() {
+  const log = read('changelog')
+  const version = JSON.parse(read('plugin')).version
+  if (!/^\d+\.\d+\.\d+$/.test(version || '')) throw new Error(`${FILES.plugin} has no x.y.z version: ${JSON.stringify(version)}`)
+  const headings = [...log.matchAll(/^## (.+)$/gm)].map((m) => m[1])
+  if (headings[0] !== 'Unreleased') throw new Error(`${FILES.changelog}'s first section must be "## Unreleased" (found "## ${headings[0]}") — a release adds a fresh empty one above the batch it stamps`)
+  // The file's last heading may be the pre-history tail ("## 1.2.0 and
+  // earlier") — one section for everything before releases were dated.
+  const stamped = headings.slice(1).filter((h, i, all) => !(i === all.length - 1 && /^\d+\.\d+\.\d+ and earlier$/.test(h)))
+  const parsed = stamped.map((h) => {
+    const m = h.match(/^(\d+)\.(\d+)\.(\d+) — \d{4}-\d{2}-\d{2}$/)
+    if (!m) throw new Error(`${FILES.changelog} has a release heading that is not "## <x.y.z> — <YYYY-MM-DD>": "## ${h}"`)
+    return m.slice(1, 4).map(Number)
+  })
+  if (!parsed.length) throw new Error(`${FILES.changelog} has no stamped release`)
+  const cmp = (a, b) => a[0] - b[0] || a[1] - b[1] || a[2] - b[2]
+  parsed.forEach((v, i) => {
+    if (i && cmp(parsed[i - 1], v) <= 0) throw new Error(`${FILES.changelog}'s releases are not newest-first: ${stamped[i - 1]} sits above ${stamped[i]}`)
+  })
+  if (parsed[0].join('.') !== version)
+    throw new Error(`${FILES.plugin} says ${version} and the newest stamped release in ${FILES.changelog} is ${parsed[0].join('.')} — a release bumps both in one commit`)
+  const unreleased = log.slice(log.indexOf('## Unreleased'), log.indexOf(`## ${stamped[0]}`))
+  const entries = (unreleased.match(/^- \*\*/gm) || []).length
+  if (entries > UNRELEASED_CEILING)
+    throw new Error(`${entries} entries under "## Unreleased" (ceiling ${UNRELEASED_CEILING}) — stamp the batch in this pull request: rename the heading to "## <version> — <date>", add a fresh "## Unreleased" above it, and bump ${FILES.plugin} (CLAUDE.md § Invariants)`)
+}
+
 const CHECKS = [
   ['status-log preamble identical across its three copies', checkPreambleCopies],
   ["the run log's Rules block is the status log's, verbatim", checkRunLogRules],
@@ -520,6 +560,7 @@ const CHECKS = [
   ["the COMPARE criterion's template matches its parser, and both lanes name --removed-from", checkCompareTemplate],
   ['hook refusal message quoted verbatim by the ticket skill', checkRefusalMessage],
   ['load-bearing doctrine phrases present everywhere required', checkPhrases],
+  ["plugin.json names the newest stamped release, and Unreleased is under its ceiling", checkRelease],
 ]
 
 let failed = 0

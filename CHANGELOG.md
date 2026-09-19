@@ -4,10 +4,36 @@ The plugin is the methodology's distribution mechanism: a change to a skill is
 a behaviour change in every project that installs it. This file is what makes
 those changes deliberate and visible. Entries land in the same commit as the
 change, under `## Unreleased` between releases; a release stamps the batch
-with one version and date.
+with one version and date. **The pull request that brings work to the default
+branch is what stamps it** — a release epic's release pull request, or a
+direct feature's own — so `Unreleased` is empty on the default branch between
+pull requests, and `plugin.json`'s version always names the newest stamped
+heading here. `check-invariants.mjs` holds both.
 
 ## Unreleased
 
+## 2.1.0 — 2026-09-19
+
+Everything since 2.0.0, stamped in one batch because nothing had said when a
+batch is stamped: five weeks and seven epics accumulated under `Unreleased`
+while every installed project went on reading `2.0.0`. Minor, not major —
+the batch adds optional preamble lines, commands, gates and warns, and breaks
+no heading format, ticket-ID shape or command contract. From here the rule
+above applies, and `check-invariants.mjs` enforces it.
+
+- **Releases are stamped by the pull request that lands the work, and the
+  checker holds it** (`scripts/check-invariants.mjs` and its suite,
+  `plugin.json`, CLAUDE.md, this file's preamble). The version-batching rule
+  said bumps accumulate and "a release stamps the batch" — and named no
+  trigger, so none fired. Now: the pull request to the default branch stamps
+  `Unreleased` with a version and date and bumps `plugin.json` in the same
+  commit. The checker fails when `plugin.json`'s version is not the newest
+  stamped heading in this file, when a stamped heading is malformed or out
+  of order, and when `Unreleased` holds more than 30 entries — a count, not a
+  clock, so the check is deterministic and fails in the pull request that
+  would make the backlog worse, which is the one that can stamp it. Its first
+  run found one: an empty duplicate `## 1.3.0 — 2026-08-07` heading, removed
+  here.
 - **Time is metered, and nobody sums a transcript by hand** (new
   `scripts/meter.mjs` and its suite; `scripts/tickets.mjs` and its suite;
   `skills/run/SKILL.md`, `skills/spend/SKILL.md`;
@@ -2566,8 +2592,6 @@ toolkit) were rejected under the new admission test.
   classes review kept finding, and planning misses. Proposes at a hard gate;
   approved lessons ship via `/flow:quick`, owed work becomes tickets, and the
   status log gains one final appended `## Retro` section.
-
-## 1.3.0 — 2026-08-07
 
 ## 1.3.0 — 2026-08-07
 

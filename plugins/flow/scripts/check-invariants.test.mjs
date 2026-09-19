@@ -25,6 +25,8 @@ const FILES = [
   'plugins/flow/agents/ticket-reviewer.md',
   'plugins/flow/agents/plan-reviewer.md',
   'plugins/flow/scripts/tickets.mjs',
+  'plugins/flow/.claude-plugin/plugin.json',
+  'CHANGELOG.md',
   'plugins/flow/scripts/meter.mjs',
   'plugins/flow/hooks/ticket-session-guard.mjs',
   'plugins/flow/workflows/run-epic.mjs',
@@ -451,4 +453,33 @@ test('retro lenses: the render-and-read ticket planned by the epic skill and unc
     assert.equal(r.status, 1, `${file}: ${r.out}`)
     assert.match(r.out, /render-and-read/)
   }
+})
+
+// ── releases: the version moves when the batch is stamped ────────────────────
+test('release: a version that is not the newest stamped heading fails, in either direction', () => {
+  const bumped = copyRepo()
+  mutate(bumped, 'plugins/flow/.claude-plugin/plugin.json', '"version": "2.1.0"', '"version": "2.2.0"')
+  const b = run(bumped)
+  assert.equal(b.status, 1, b.out)
+  assert.match(b.out, /says 2\.2\.0 and the newest stamped release .* is 2\.1\.0/)
+  const stamped = copyRepo()
+  mutate(stamped, 'CHANGELOG.md', '## 2.1.0 — 2026-09-19', '## 2.2.0 — 2026-10-01\n\n## 2.1.0 — 2026-09-19')
+  assert.match(run(stamped).out, /says 2\.1\.0 and the newest stamped release .* is 2\.2\.0/)
+})
+
+test('release: a backlog past the ceiling fails and says how to stamp it; a malformed or misordered heading fails', () => {
+  const backlog = copyRepo()
+  mutate(backlog, 'CHANGELOG.md', '## Unreleased\n', `## Unreleased\n\n${Array.from({ length: 31 }, (_, i) => `- **Entry ${i}** (x).`).join('\n')}\n`)
+  const r = run(backlog)
+  assert.equal(r.status, 1, r.out)
+  assert.match(r.out, /31 entries under "## Unreleased" \(ceiling 30\) — stamp the batch in this pull request/)
+  const atCeiling = copyRepo()
+  mutate(atCeiling, 'CHANGELOG.md', '## Unreleased\n', `## Unreleased\n\n${Array.from({ length: 30 }, (_, i) => `- **Entry ${i}** (x).`).join('\n')}\n`)
+  assert.equal(run(atCeiling).status, 0, 'thirty is allowed')
+  const malformed = copyRepo()
+  mutate(malformed, 'CHANGELOG.md', '## 2.1.0 — 2026-09-19', '## v2.1.0 (2026-09-19)')
+  assert.match(run(malformed).out, /release heading that is not/)
+  const misordered = copyRepo()
+  mutate(misordered, 'CHANGELOG.md', '## 2.1.0 — 2026-09-19', '## 1.9.0 — 2026-09-19')
+  assert.match(run(misordered).out, /not newest-first/)
 })
