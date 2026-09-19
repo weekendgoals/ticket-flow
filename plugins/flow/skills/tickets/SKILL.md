@@ -26,7 +26,8 @@ exactly the drift it exists to remove.
 | `done, unpushed` | Status log says DONE but nothing reached the default branch — **the loop stalled here**, `/flow:ticket` should have pushed |
 | `in progress` | A local branch exists with commits, no pull request yet |
 | `blocked` | Status log records BLOCKED or ABANDONED |
-| `todo` | Not started |
+| `waiting` | Not started, and the plan says not yet: its `**Blocked by:**` line names a ticket that is not `integrated` or `shipped` — the row says which — or the line cannot be read. Ends by itself when the blocker lands |
+| `todo` | Not started, and free to start |
 
 Two things the board cannot see, worth knowing before you trust it:
 
@@ -44,9 +45,15 @@ line each:
 
 - **`done, unpushed`** — work exists that no one else can see. Name the checkout
   it is sitting in if you can find it.
-- **Every ticket in an epic `integrated`, none `todo`** — the epic is done
-  integrating and is waiting on its release pull request. Say so; nothing else
-  will.
+- **Every ticket in an epic `integrated`, none `todo` or `waiting`** — the
+  epic is done integrating and is waiting on its release pull request. Say
+  so; nothing else will. A `waiting` ticket is unbuilt work: an epic with one
+  is never done.
+- **`waiting` with nothing startable in that epic** — the board's footer says
+  "Nothing can start" and why. If the reason is a blocker that is `blocked`
+  or unmerged, that ticket is what needs a human; if it is a `**Blocked
+  by:**` line that will not parse, an unknown ID or a cycle, the fix is in
+  `tickets.md` and `/flow:doctor` names the line.
 - **`blocked` with nothing startable in that epic** — the epic is stalled.
 - **A duplicate-ID warning** — two epics define the same ticket ID, and
   `/flow:ticket` will refuse it. Relay the warning; do not pick an epic yourself.

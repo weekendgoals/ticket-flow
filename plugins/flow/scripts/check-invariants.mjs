@@ -211,6 +211,7 @@ function parserRegexes() {
   return {
     ticketHeading: build(grab(/const TICKET_HEADING = new RegExp\(`([^`]+)`\)/, 'TICKET_HEADING')),
     statusHeading: build(grab(/const STATUS_HEADING = new RegExp\(\s*`([^`]+)`,?\s*\)/, 'STATUS_HEADING')),
+    blockedBy: build(grab(/const BLOCKED_BY_LINE = new RegExp\(`([^`]+)`\)/, 'BLOCKED_BY_LINE')),
     outcomes: grab(/const KNOWN_OUTCOMES = new Set\(\[([^\]]+)\]\)/, 'KNOWN_OUTCOMES')
       .split(',')
       .map((s) => s.trim().replace(/'/g, '')),
@@ -388,6 +389,11 @@ const PHRASES = [
     files: ['run', 'readme'],
   },
   {
+    why: "the Blocked by line is one strict format in the parser, the template that teaches it, and the manual — a template that drifted to a tolerant spelling (`Depends on:`, trailing prose) would teach lines that leave their tickets waiting for ever",
+    re: /\*\*Blocked by:\*\* <ID>\[, <ID>\]/,
+    files: ['epic', 'script', 'readme'],
+  },
+  {
     why: "the run record's Time groups are what `tickets.mjs spend` parses — seconds with their unit, closed by the wall. The unit is load-bearing: a bare `worker=<n>` is a token figure, so a template that dropped the `s` would pour durations into the token ledger",
     re: /worker=<n>s reviewer=<n>s[\s\S]{0,80}wall=<n>s/,
     files: ['run', 'readme', 'script', 'meter'],
@@ -546,10 +552,30 @@ function checkRelease() {
   })
   if (parsed[0].join('.') !== version)
     throw new Error(`${FILES.plugin} says ${version} and the newest stamped release in ${FILES.changelog} is ${parsed[0].join('.')} — a release bumps both in one commit`)
-  const unreleased = log.slice(log.indexOf('## Unreleased'), log.indexOf(`## ${stamped[0]}`))
+  // Anchored to the heading LINE: this file's preamble quotes "## Unreleased"
+  // in a sentence, and a plain indexOf finds that first.
+  const unreleased = log.slice(log.search(/^## Unreleased$/m), log.search(new RegExp(`^## ${stamped[0].replace(/[.]/g, '\\.')}$`, 'm')))
   const entries = (unreleased.match(/^- \*\*/gm) || []).length
   if (entries > UNRELEASED_CEILING)
     throw new Error(`${entries} entries under "## Unreleased" (ceiling ${UNRELEASED_CEILING}) — stamp the batch in this pull request: rename the heading to "## <version> — <date>", add a fresh "## Unreleased" above it, and bump ${FILES.plugin} (CLAUDE.md § Invariants)`)
+}
+
+// The Blocked by line is strict by design, and a string-presence check cannot
+// hold that: the template's spelling could sit in three documents while the
+// regex behind it went tolerant. So the epic skill's template line is run
+// through the parser's own regex — instantiated it must parse, and the same
+// line with a trailing sentence must NOT, because tolerance here is the
+// removed dependency graph's failure coming back.
+function checkBlockedByTemplate() {
+  const { blockedBy } = parserRegexes()
+  const lines = fences(read('epic')).flatMap((b) => b.split('\n')).filter((l) => /^\*\*Blocked by:\*\*/.test(l))
+  if (!lines.length) throw new Error(`no "**Blocked by:**" template line in a fenced block of ${FILES.epic}`)
+  for (const raw of lines) {
+    const line = raw.replace('<ID>[, <ID>]', 'SEC-3, SEC-4')
+    if (!blockedBy.test(line)) throw new Error(`the epic skill's template no longer matches BLOCKED_BY_LINE: "${raw}"`)
+    if (blockedBy.test(`${line} once its API settles`)) throw new Error('BLOCKED_BY_LINE accepts prose after the IDs — the parse must stay strict (CLAUDE.md § Invariants)')
+    if (blockedBy.test(line.replace('**Blocked by:**', '**Depends on:**'))) throw new Error('BLOCKED_BY_LINE accepts the removed "Depends on" spelling')
+  }
 }
 
 const CHECKS = [
@@ -557,6 +583,7 @@ const CHECKS = [
   ["the run log's Rules block is the status log's, verbatim", checkRunLogRules],
   ['the two risk lists cover the same trigger set', checkRiskLists],
   ['skill heading templates match the parser regexes', checkTemplates],
+  ["the epic skill's Blocked by template parses, and the parse is strict", checkBlockedByTemplate],
   ["the COMPARE criterion's template matches its parser, and both lanes name --removed-from", checkCompareTemplate],
   ['hook refusal message quoted verbatim by the ticket skill', checkRefusalMessage],
   ['load-bearing doctrine phrases present everywhere required', checkPhrases],

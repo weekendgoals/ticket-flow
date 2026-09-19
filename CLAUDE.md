@@ -21,13 +21,13 @@ go through the flow, one-off work goes through `/flow:quick` into
 ## Commands
 
 - **Tests:** `node --test plugins/flow/scripts/tickets.test.mjs` — expect
-  every test passing (`# pass 159`, `# fail 0` as of 2026-09-19; the count
+  every test passing (`# pass 176`, `# fail 0` as of 2026-09-19; the count
   grows, the fail line does not). The suite builds a throwaway git repo in a
   temp dir; it needs `git` on PATH and nothing else. The session-guard hook
   has its own suite:
   `node --test plugins/flow/hooks/ticket-session-guard.test.mjs` (`# pass 14`
   on the same terms). The invariant checker has
-  `node --test plugins/flow/scripts/check-invariants.test.mjs` (`# pass 36`),
+  `node --test plugins/flow/scripts/check-invariants.test.mjs` (`# pass 37`),
   The board renderer has
   `node --test plugins/flow/scripts/board.test.mjs` (`# pass 9`) and the
   plan-page renderer `node --test plugins/flow/scripts/plan-page.test.mjs`
@@ -76,7 +76,7 @@ go through the flow, one-off work goes through `/flow:quick` into
   phrases). Run it whenever a skill, agent, hook or doctrine document changes —
   it is presence and equality only, so contradictions in meaning still need
   review. Its suite: `node --test plugins/flow/scripts/check-invariants.test.mjs`
-  (`# pass 36` on the same terms).
+  (`# pass 37` on the same terms).
 - **Smoke:** `node plugins/flow/scripts/tickets.mjs doctor` — must exit 0 on
   this repo. `… list` shows the board.
 - **Syntax check:** `node --check plugins/flow/scripts/tickets.mjs`, and the
@@ -118,6 +118,22 @@ test file path explicitly.
   templates in `skills/epic/SKILL.md`, `skills/ticket/SKILL.md` and
   `skills/quick/SKILL.md` must change in the same commit, and a test must
   cover the new shape.
+- **`**Blocked by:**` is strict, and an unreadable line is a named problem —
+  never a guess.** `BLOCKED_BY_LINE` takes bare same-epic IDs and commas and
+  nothing else; a line whose label opens it at the margin and does not parse
+  (`BLOCKED_BY_NEAR` — keep that set small: a near line stalls a ticket, and
+  the first cut stalled one on a wrapped sentence — and never silent either:
+  a dependency stated off the margin is what `BLOCKED_BY_UNREAD` makes
+  `doctor` say, because under `Parallel:` an unread line is a ticket
+  "declared independent") leaves the ticket `waiting` with a sentence the board,
+  `find`, `doctor` and `next` all print. Do not make the parse tolerant: the
+  removed dependency graph was, and prose stalled tickets silently. And
+  `next` must keep exiting nonzero when tickets wait and none can start — the
+  run driver reads an empty list as "the epic is built, open the release".
+  The epic skill's template moves with the regex in the same commit;
+  `check-invariants.mjs` runs the template through the regex and fails if
+  the parse goes tolerant. The removed `Depends on:` spelling stays inert:
+  a live installed epic carries it on unstarted tickets.
 - **Ticket IDs match `[A-Z][A-Z0-9]*-\d+`**, branches are the lowercased ID,
   and shipped detection reads `^<ID>[:\s]` off commit subjects on the default
   branch. Changing any of these breaks every installed project's board.

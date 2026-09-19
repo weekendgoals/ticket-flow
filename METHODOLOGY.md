@@ -1380,6 +1380,61 @@ That is why serial-to-main stopped being the universal default: the record
 showed disciplined users stacking anyway (Q-10–Q-17), which was the rule
 mismeasuring their throughput needs, not the users misbehaving.
 
+## Why a dependency is a strict line, and a wait is a state
+
+Document order was the only dependency mechanism while every lane was serial,
+and it was enough: the board proposes the first unstarted ticket, so nothing
+overtakes anything. A lane that starts tickets side by side needs the one fact
+order cannot carry — which tickets may **not** run beside which — and that is
+what earns `**Blocked by:**` its place under the admission test: it constrains
+blast radius. It failed that test for as long as nothing could overtake — and
+taken alone it still would: the format was built one stage ahead of the lane
+that needs it, and the two reach the default branch in one pull request, which
+is the same departure, on the same condition, that a criterion format is
+allowed inside one release epic. A `Blocked by:` with no lane to obey it
+never exists on `main`.
+
+The line is strict because the first version was tolerant and the tolerance
+was its failure: a dependency written as prose read as a hard blocker, the
+ticket stalled, and nothing said so. A parser has two wrong guesses available
+for a line it cannot read — "no blockers", which starts a ticket beside the
+work it depends on, and "blocked", which stalls silently. So it makes neither:
+an unreadable line is a **named problem** — and because a problem stalls a
+ticket, the set of lines that count as "about blocking" is kept as small as
+the mistake it exists to catch: the label, bold or with its colon, opening a
+line at the margin. The first cut took any line that began with the words,
+and a wrapped sentence — "…because it is / blocked by the vendor API" —
+stalled its ticket for ever. Prose wraps; a label does not start mid-bullet.
+But a small near set has its own failure, which the second review found: a
+dependency stated on a bullet, in a quote or with underscore bold fell out of
+both patterns and was read as no line — and in a `Parallel:` epic no line
+means "declared independent", so the parser was making the unsafe guess it
+exists not to make. Such a line still changes no state (a bullet must stall
+nothing), and it is never silent: `doctor` says it is unread, and what that
+means for the run. The body's first line also keeps its indent, because
+trimming the section whole made one spelling a dependency at the top of a
+section and nothing below it.
+
+`nothing`, the template's unedited placeholder, anything inside a fence (a
+line swallowed by one that never closes draws the unread warn) and
+the removed `Depends on:` spelling all read as no line at all, the last
+because a format that arrives in every installed project overnight must read
+old documents as it found them. The ticket waits, because that is
+the safe direction; the board row, `find` and `doctor` all carry the sentence,
+because a safe stall nobody hears about is the old bug; and `next` exits
+nonzero when tickets wait and none can start, because the run driver reads an
+empty `next` as "the epic is built — open the release", and the worst outcome
+available here is a release pull request for an epic with work unbuilt. That
+refusal is at `next` and not only in `doctor` for the usual reason: `next` is
+the command the guarded actor runs.
+
+`waiting` is a state and not a flavour of `blocked` because they are
+different kinds of fact. `blocked` is an outcome a worker recorded — something
+went wrong and a human must look. `waiting` is the plan's own statement about
+order; it ends by itself when the blocker lands, and it applies only to a
+ticket nobody has started — once there is work on a branch, the board reports
+the work, because the plan's order is by then history.
+
 ## Why the run loop is code, not prose
 
 The unattended lane's guarantees were originally sentences a driver session
@@ -1719,4 +1774,8 @@ time.
   cross-epic cases. The shape to reach for if a parallel lane ever lands:
   bare-ID `Blocked by:` lines parsed strictly, doctor near-miss coverage,
   and a `waiting` board state — the strict parse being exactly what the
-  first version lacked.
+  first version lacked. **That lane landed (2026-09), and this is the shape
+  it took** — see § "Why a dependency is a strict line, and a wait is a
+  state". What stays removed is everything the first version had beyond
+  that: tolerant parsing, automatic stacking, and a dependency that could
+  stall a ticket without a sentence saying why.

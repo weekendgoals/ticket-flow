@@ -12,6 +12,44 @@ heading here. `check-invariants.mjs` holds both.
 
 ## Unreleased
 
+- **`**Blocked by:**` and the `waiting` state** (`scripts/tickets.mjs` and
+  its suite; `skills/epic/SKILL.md`, `skills/ticket/SKILL.md`;
+  `scripts/board.mjs`; `scripts/check-invariants.mjs`; README, METHODOLOGY,
+  CLAUDE.md). A ticket section may carry `**Blocked by:** <ID>[, <ID>]` —
+  bare IDs of the same epic, strictly parsed. An unstarted ticket whose
+  blockers are not all `integrated`/`shipped` reads **`waiting`** and is left
+  out of `next`; `find --json` gains `blockedBy`, `waitingOn`,
+  `dependencyProblem` (and `parallel`), and the ticket skill stops on a
+  waiting ticket. The label must open the line at the margin, bold or with
+  its colon; prose that merely begins with the words, anything in a fenced
+  block, `**Blocked by:** nothing` and the template's unedited placeholder
+  read as no line (an empty label is a problem). A dependency stated off the
+  margin — bulleted, indented, quoted, underscore-bold — or swallowed by a
+  fence that never closes changes no state and draws a `doctor` warn that the
+  line is unread, which under `Parallel:` says the ticket may start beside
+  the work it names. A line that almost parses (`Blocked by: X`,
+  trailing prose, "and"), an unknown ID, a self-reference or a cycle is a
+  named problem: the ticket waits, the board row says so, `doctor` warns with
+  the line number, and **`next <epic>` now exits 1 when tickets are waiting
+  and none can start** (board-wide `next` names a stuck epic on stderr and
+  fails only when nothing anywhere can start) — the run driver reads an empty `next` as "the epic is built",
+  which must never be said with work unbuilt. `doctor` also notes a blocker
+  placed later in the document. Epics with no such line behave exactly as
+  before — including ones carrying the removed graph's `Depends on:` lines,
+  which stay inert (a live epic has `**Depends on:** nothing` on unstarted
+  tickets) and are mentioned by `doctor` only under `Parallel:`. `brief` prints the wait. The preamble gains an
+  optional **`Parallel: 1|2|3`** line — parsed, exposed in `find`/`list`
+  JSON and near-miss-flagged; the run driver's use of it lands with the
+  driver change in this same release, and until then a run is serial
+  whatever the line says.
+- **The release checker reads the `Unreleased` heading, not the phrase**
+  (`scripts/check-invariants.mjs` and its suite). `checkRelease` found the
+  section with a plain text search, and this file's own preamble quotes
+  "## Unreleased" in a sentence — so the count started from the prose and was
+  right only because the preamble holds no entries. Anchored to the heading
+  line; the ceiling test now tops `Unreleased` up to the ceiling instead of
+  assuming it starts empty, which it does not on any working branch.
+
 ## 2.1.0 — 2026-09-19
 
 Everything since 2.0.0, stamped in one batch because nothing had said when a
