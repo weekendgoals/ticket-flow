@@ -147,7 +147,14 @@ with one version and date.
   "under", except at the repository root, where a reviewed file admits only
   other root-level files. An added file beside reviewed code is unchanged: it
   is still outside `reviewedFiles`, so the bounds gate trips and buys the
-  bounded re-review. Ticket records gain `fixAddedFiles`. **For installed
+  bounded re-review. **Fix commits with no review anchor to measure them from
+  now halt on the same condition** — they used to be sent to the bounded
+  re-review ("doubt raises scrutiny"), which reads the whole branch, the one
+  thing a swept tree must never be handed to; a clean review with no anchor
+  is unaffected. Empty entries in the reviewed-file list are dropped before
+  the directory test, since an empty path's directory is the repository root
+  (both found by the epic's fresh-context review). Ticket records gain
+  `fixAddedFiles`. **For installed
   projects:** a run now hires one more fast-model agent per ticket that had
   review fixes, and a run that used to buy a re-review of a swept tree halts
   instead; the Codex worker runner was already safe (it refuses a tree that

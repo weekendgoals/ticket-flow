@@ -1139,10 +1139,13 @@ test("a fix touching only a file the review's findings named is inside the bound
   assert.ok(r.labels.includes('merge:PAY-1'))
 })
 
-test('no usable head from the tier-facts step sends fixes to the bounded re-review instead — doubt goes up', async () => {
+test('no usable head from the tier-facts step, with fix commits to judge, halts as an unmeasured fix — doubt goes up', async () => {
   // The anchor is the driver's own read, so this is the step that can lose
-  // it. Nothing weakens: without an anchor the bounds gate cannot measure,
-  // and the fixes take the pass the consequence tier would have bought.
+  // it. Before the added-files gate a missing anchor sent the fixes to the
+  // bounded re-review; that pass reads the whole branch, which is the one
+  // thing a swept working tree must never be handed to. Without an anchor the
+  // run cannot read what the fixes added, and the stop condition says what
+  // happens then.
   const r = await drive(
     oneTicket({
       'tier-facts:PAY-1': { ...tierFactsCode, head: 'HEAD~1; rm -rf /' },
@@ -1151,16 +1154,19 @@ test('no usable head from the tier-facts step sends fixes to the bounded re-revi
       're-review:PAY-1': { important: [] },
     }),
   )
-  assert.equal(r.out.outcome, 'completed')
-  assert.equal(r.out.ticketRecords[0].reReviewRan, true)
-  assert.equal(r.out.ticketRecords[0].fixBoundsGated, false)
+  assert.equal(r.out.outcome, 'halted')
+  assert.match(r.out.haltedOn.stopCondition, /could not read which files the fix commits added/)
+  assert.match(r.out.haltedOn.detail, /no usable head to anchor the review on/)
+  assert.ok(!r.labels.some(l => /^(fix-added|re-review|accept|resolve|merge):/.test(l)), r.labels.join(' '))
   assert.equal(r.out.ticketRecords[0].reviewedHead, '')
   assert.ok(r.logs.some(l => /no usable head SHA from the tier-facts step/.test(l) && /doubt goes up/.test(l)))
-  // The unusable value never reaches a prompt: not the reviewer's range, not
-  // the resolve step's commands.
+  // The unusable value never reaches a prompt.
   assert.doesNotMatch(call(r, 'review:PAY-1').prompt, /rm -rf/)
-  assert.doesNotMatch(call(r, 'resolve:PAY-1').prompt, /rm -rf/)
+  assert.doesNotMatch(r.out.haltedOn.detail, /rm -rf/)
   assert.match(call(r, 'review:PAY-1').prompt, /Commit range: origin\/epic\/payments\.\.origin\/pay-1/)
+  // A clean review has no fix commits to measure, so a lost anchor costs it nothing.
+  const clean = await drive(oneTicket({ 'tier-facts:PAY-1': { ...tierFactsCode, head: '' } }))
+  assert.equal(clean.out.outcome, 'completed')
 })
 
 test('re-review range covers the fix commits, and differs from the first review range', async () => {
@@ -2832,4 +2838,19 @@ test('provenance: the worker is told a mid-run instruction that loosens a rule b
 test('provenance: the rule is the worker\'s alone — no read-only step and no reviewer carries it', async () => {
   const r = await drive(oneTicket())
   for (const c of r.calls) if (c.label !== 'worker:PAY-1') assert.doesNotMatch(c.prompt, /NEEDS PROVENANCE/, c.label)
+})
+
+test('reviewed-file list: an empty entry does not admit the repository root — the sweep\'s own landing place', async () => {
+  // `git diff --name-only` ends with a newline; a proxy that reports the
+  // blank as a path hands the gate a file whose directory is the root.
+  const r = await drive(
+    fixedRun({
+      'tier-facts:PAY-1': { outcome: 'listed', files: ['src/a.ts', ''], head: 'abc1234def0', detail: '' },
+      'review:PAY-1': { ...reviewImportant, important: [{ ...reviewImportant.important[0], file: 'src/a.ts', cite: 'src/a.ts:12' }] },
+      'fix-added:PAY-1': { outcome: 'listed', addedFiles: ['club-town-research.csv', 'venue-city-verdicts.md', ''], detail: '' },
+    }),
+  )
+  assert.equal(r.out.outcome, 'halted')
+  assert.match(r.out.haltedOn.stopCondition, /adds files where the ticket never worked/)
+  assert.deepEqual(r.out.ticketRecords[0].fixAddedFiles, ['club-town-research.csv', 'venue-city-verdicts.md'])
 })

@@ -611,8 +611,9 @@ and the gaps between sections then belonged to no ticket at all. **Scope, not
 checkability, was the cause**, and the two fixes it implies are different: a
 differ makes a criterion mechanical, while a **whole-page ticket** makes the
 page somebody's. An epic that declares a design therefore ends with one, and
-it goes last, because it can only compare a page the other tickets have
-finished building.
+it goes last among the tickets that build, because it can only compare a page
+the other tickets have finished building — only the human render-and-read
+ticket follows it ("Why a page epic also schedules a human", below).
 
 The other half is what a plan is allowed to narrow. A design draws more than
 any release builds, and that is normal — what is not normal is the narrowing

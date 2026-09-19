@@ -9,7 +9,7 @@ export const meta = {
     { title: 'Ticket', detail: 'one fresh-context worker per ticket, stopping at its pushed branch — release tickets open no pull request of their own' },
     { title: 'Review', detail: "the driver hires the judge, priced by the worker's reported tier floored in code by the diff's own file list — and, at the consequence tier of an epic that declares a shadow reviewer, one blind Codex review of the same packet that gates nothing" },
     { title: 'Disposition', detail: 'fix Important findings, record pre-existing ones, commit the addendum — a merge precondition' },
-    { title: 'Re-review', detail: 'one bounded pass over the fix commits — at the consequence tier, when the fix-bounds gate has no anchor, or when that gate trips; below the consequence tier the fixes are bounds-checked in code at the resolve step, and a trip buys this same pass at the consequence tier instead of halting — that one runs out of order, after the resolve step measured the bounds and just before the merge, so acceptance has already run' },
+    { title: 'Re-review', detail: 'one bounded pass over the fix commits — at the consequence tier, when a disposition returned no report and its commits are judged from the branch, or when the fix-bounds gate trips (fix commits with no review anchor to measure them from halt before this pass); below the consequence tier the fixes are bounds-checked in code at the resolve step, and a trip buys this same pass at the consequence tier instead of halting — that one runs out of order, after the resolve step measured the bounds and just before the merge, so acceptance has already run' },
     { title: 'Acceptance', detail: "run the ticket's CHECK/EXPECT criteria from the signed-off document against the pushed branch — the counts judged in code before anything can merge" },
     { title: 'Resolve', detail: 'read-only: the addendum on the pushed branch and the exact head commit it stands at, checked in code before anything can merge' },
     { title: 'Merge', detail: 'one fixed git sequence merging the code-verified head SHA into epic/<name> — a merge commit, never a squash, and a SHA cannot be retargeted' },
@@ -1373,7 +1373,7 @@ ${NO_MAIN} You are read-only here in any case: nothing in this task writes anyth
   record.reviewedHead = anchorHead || ''
   if (!anchorHead) {
     log(
-      `${id}: no usable head SHA from the tier-facts step (${tierFacts ? `it reported ${fence(line(tierFacts.head || '(nothing)'))}` : 'the agent returned no report'}) — the review range falls back to the branch name and the fix-bounds gate has no anchor; doubt goes up.`,
+      `${id}: no usable head SHA from the tier-facts step (${tierFacts ? `it reported ${fence(line(tierFacts.head || '(nothing)'))}` : 'the agent returned no report'}) — the review range falls back to the branch name, and any review-fix commits will halt as unmeasured rather than merge: with no anchor the run cannot read what they added; doubt goes up.`,
     )
   }
   // The range the reviewer is given, spelled for the command it reads first:
@@ -1703,7 +1703,7 @@ ${NO_MAIN} You are read-only here in any case.`,
     }
     const readable = facts && facts.outcome === 'read' && Number.isInteger(facts.addendumMatches) && Array.isArray(facts.codeCommits)
     if (readable && facts.addendumMatches >= 1) {
-      const codeCommits = facts.codeCommits.map(line).filter(Boolean)
+      const codeCommits = facts.codeCommits.filter(c => typeof c === 'string').map(line).filter(Boolean)
       recovered = true
       record.dispositionRecovered = true
       log(
@@ -1860,8 +1860,12 @@ ${NO_MAIN} You are read-only here in any case.`,
     }
     const dirOf = f => (f.includes('/') ? f.slice(0, f.lastIndexOf('/')) : '')
     const insideDirs = new Set(
+      // `.filter(Boolean)` on both: an empty entry — a listing's trailing
+      // blank line, reported as a path — has the root as its directory, and
+      // would admit every root-level file, which is where a sweep lands.
       (Array.isArray(tierFacts.files) ? tierFacts.files : [])
         .map(f => line(f))
+        .filter(Boolean)
         .concat(important.map(f => line(f.file || '')).filter(Boolean))
         .map(dirOf),
     )
@@ -1871,7 +1875,7 @@ ${NO_MAIN} You are read-only here in any case.`,
       for (const dir of insideDirs) if (dir !== '' && (d === dir || d.startsWith(`${dir}/`))) return true
       return false
     }
-    record.fixAddedFiles = fixAdded.addedFiles.map(f => line(f))
+    record.fixAddedFiles = fixAdded.addedFiles.map(f => line(f)).filter(Boolean)
     const strays = record.fixAddedFiles.filter(f => !isInside(f))
     if (strays.length) {
       const shown = strays.slice(0, 12)
@@ -1885,7 +1889,18 @@ ${NO_MAIN} You are read-only here in any case.`,
     }
     if (record.fixAddedFiles.length) log(`${id}: the fix commits added ${record.fixAddedFiles.length} file(s), all beside reviewed code — no stray additions.`)
   } else if (record.fixedCommits.length > 0) {
-    log(`${id}: no usable review anchor, so what the fix commits added cannot be measured from one — the fixes take the bounded re-review, which reads the whole branch.`)
+    // No anchor, so no range to read the additions from — and the stop
+    // condition's second half is this case exactly. Before this gate existed a
+    // missing anchor sent the fixes to the bounded re-review ("doubt raises
+    // scrutiny"); that pass reads the whole branch, which is the one thing a
+    // swept tree must never be handed to. Doubt still goes up: it halts.
+    halted = {
+      ticket: id,
+      stopCondition: STOP.fixAddedFiles,
+      where: `reading what ${id}'s review-fix commits added`,
+      detail: `the run could not read which files the fix commits added: the tier-facts step gave the driver no usable head to anchor the review on, so there is no range to measure ${record.fixedCommits.length} fix commit(s) from — and a fix nothing measured is never merged, and never handed to a reviewer first. Nothing merged. Compare \`git diff --name-only --diff-filter=A origin/${epicBranch}...origin/${branch}\` with the ticket's scope by hand, then finish the ticket by hand.`,
+    }
+    break
   }
 
   // f. Re-review — only when there were fixes, and only ONCE. A merged diff
@@ -1897,6 +1912,8 @@ ${NO_MAIN} You are read-only here in any case.`,
   // they are gated mechanically at the resolve step instead — unless the
   // review reported no usable head to anchor that gate on, in which case the
   // fixes take the re-review anyway: doubt raises scrutiny, never lowers it.
+  // (`!anchorHead` is kept for the shape of the rule, but fix commits with no
+  // anchor never reach here any more: e2 halts them as unmeasured.)
   // A recovered disposition's commits always take it: no agent reported what
   // they are, so nothing below the re-review has grounds to wave them through.
   const needsReReview = record.fixedCommits.length > 0 && (priced.tier === 'consequence' || !anchorHead || recovered)

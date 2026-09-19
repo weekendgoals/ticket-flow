@@ -1243,7 +1243,8 @@ function parseSpend(epic) {
     role = role.toLowerCase()
     const rounds = (r.rounds[role] ||= {})
     if (/^unknown$/i.test(val)) {
-      if (!(n in rounds)) rounds[n] = null
+      if (n in rounds) return // an unknown that changed nothing keeps the known figure's source too
+      rounds[n] = null
     } else rounds[n] = toNum(val)
     r.source = source
   }
@@ -1270,6 +1271,7 @@ function parseSpend(epic) {
       // correction or two rounds, and only the first is what last-wins means.
       // Doctor asks which, unless a correction addendum sits between them.
       const seen = {}
+      const entryRepeats = []
       const unlabelled = [...own.matchAll(ROLE_PHRASE), ...own.matchAll(ROLE_PAIR)]
         .filter((m) => !/^unknown$/i.test(m[2]))
         .sort((a, b) => a.index - b.index)
@@ -1277,8 +1279,13 @@ function parseSpend(epic) {
         const role = m[1].toLowerCase()
         const prev = seen[role]
         if (prev && !CORRECTION_MARK.test(own.slice(prev.index, m.index))) {
-          let hit = r.repeats.find((x) => x.role === role)
-          if (!hit) r.repeats.push((hit = { role, figures: [toNum(prev[2])] }))
+          // Per entry, not per ticket: a ticket with two entries (a BLOCKED one,
+          // then a DONE one) must not have their figures read as one entry's.
+          let hit = entryRepeats.find((x) => x.role === role)
+          if (!hit) {
+            entryRepeats.push((hit = { role, figures: [toNum(prev[2])] }))
+            r.repeats.push(hit)
+          }
           hit.figures.push(toNum(m[2]))
         }
         seen[role] = m

@@ -243,8 +243,8 @@ Everything else here (`reviewerModel`, `shadowReviewer`, `consequencePaths`,
 - **Floors that tier in code** from the branch's changed files, and reads
   the pushed head in the same step (one read-only fast-model listing,
   `epics/` excluded, plus `git rev-parse origin/<branch>`; that SHA is the
-  review anchor, and an unusable one costs the fix-bounds gate its anchor
-  rather than weakening anything): `Consequence paths:` matches floor
+  review anchor, and an unusable one weakens nothing — a clean review needs
+  none, and review fixes that cannot be measured from one halt): `Consequence paths:` matches floor
   at `consequence`, any non-documentation file at `normal`, docs-only may
   keep `prose`. The report can raise the price, never lower it — the
   reviewed party does not price its own judge down.
@@ -310,9 +310,12 @@ Everything else here (`reviewerModel`, `shadowReviewer`, `consequencePaths`,
   review's anchored range cannot contain them. That pass runs where the trip is detected: **after** the
   resolve step's bounds check and just before the merge, so a ticket that
   halts in `Re-review` with `fixBoundsTripped` had already passed its
-  acceptance checks. No usable anchor from the tier-facts step sends the
-  fixes to the re-review anyway — doubt raises scrutiny. A clean review skips
-  all of this.
+  acceptance checks. **Fix commits with no usable anchor from the tier-facts
+  step halt** on the added-files condition (step 5) before any re-review: the
+  run cannot read what they added, and the pass they used to be sent to reads
+  the whole branch — the one thing a swept tree is never handed to. Doubt
+  still raises scrutiny; it just stops instead of hiring. A clean review
+  skips all of this.
 - **Re-runs the ticket's CHECK/EXPECT criteria from the signed-off
   document** — `tickets.mjs check <ID> --from origin/epic/<name> --json` on
   the pushed branch, after the disposition so fix commits are judged too —
@@ -480,7 +483,9 @@ that resumes past one. The run halts:
   commit created a file outside every directory the reviewed diff touched or
   a finding named, or the run could not read which files the fix commits
   added; that is the signature of a swept working tree, and it is never
-  handed to a reviewer to read**. Read at every tier, right after the
+  handed to a reviewer to read**. "Could not read" includes the run that has
+  **no review anchor** to measure the fix commits from: it halts here rather
+  than sending them to the re-review as it once did. Read at every tier, right after the
   disposition and before any re-review is hired (`fix-added:<ID>`): one live
   run's disposition agent committed every untracked file in the working tree
   — 215 files, 1.9M lines — as a "review fix", and the only gate that met it
