@@ -127,7 +127,17 @@ quoted.
     design ends with a `COMPARE` carrying no `LANDMARKS:` line, because
     per-section checks do not sum to a page that matches and what lies
     between sections belongs to no section's ticket. One that is not last
-    compares a page its successors are still changing.
+    among the tickets that build compares a page its successors are still
+    changing — only the human render-and-read ticket may follow it.
+  - **No human render-and-read ticket.** The differ decides computed style; it
+    cannot decide composition or behaviour — which items earn the slots,
+    whether a control belongs where it sits, what the page does in use — and
+    in the epic this lens comes from, every such difference was found by a
+    human, by accident, after the last ticket. An epic declaring a design
+    carries one human-owned ticket after the whole-page ticket and before the
+    release, its criteria the questions to answer with the page open. Absent,
+    or handed to an unattended worker, or parked as owed to the release pull
+    request: not ready.
 - **A missing or hollow "Not in scope"** where the adjacent temptation is
   obvious — especially one that fails to name which ticket owns the deferred
   work.

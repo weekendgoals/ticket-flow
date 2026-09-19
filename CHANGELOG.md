@@ -8,6 +8,158 @@ with one version and date.
 
 ## Unreleased
 
+- **Three lenses from the redesign-city retro** (`agents/ticket-reviewer.md`,
+  `skills/review/SKILL.md`, `workflows/run-epic.mjs` and
+  `scripts/runners/codex-review.mjs` — the two `REVIEWER_RULES` copies, kept
+  equal by the runner's suite; `skills/epic/SKILL.md`,
+  `agents/plan-reviewer.md`; `skills/ticket/SKILL.md` and the driver's worker
+  prompt; `scripts/check-invariants.mjs` and its suite; METHODOLOGY). **The
+  fixture is part of the assertion**: every reviewer copy now asks, of a test
+  that is the sole evidence for a criterion, *what input would make this
+  fail, and does the fixture contain it?* — a fixture that cannot reach the
+  branch the test names is Important when nothing else pins the behaviour,
+  and where the project says how to run its suite the reviewer deletes the
+  behaviour in a scratch copy and re-runs the test (nine specs in one epic
+  passed with their behaviour deleted). **A page epic schedules a human
+  render-and-read ticket**: an epic declaring `Design sources:` carries one
+  human-owned ticket after the whole-page fidelity ticket and before the
+  release, its criteria the questions the differ cannot decide — composition
+  and behaviour; the plan reviewer gains the lens (absent, handed to an
+  unattended worker, or parked as owed to the release: not ready), sign-off
+  names it, and the whole-page ticket is now "last among the tickets that
+  build". **An instruction that relaxes a rule needs provenance you can
+  check**: the ticket skill and the worker prompt say a mid-ticket
+  instruction loosening a criterion, ground rule or scope line binds only
+  when it is readable in the signed-off documents on `origin/epic/<name>`
+  (attended: or said by the human in the conversation), and is otherwise a
+  contradiction to stop and report. `check-invariants.mjs` pins the fixture
+  question across the three reviewer documents it reads and `render-and-read`
+  across the epic skill, the plan reviewer and METHODOLOGY. **For installed
+  projects:** plans with a design now owe one more ticket at sign-off, and
+  reviews may raise a new class of Important finding on tests.
+
+- **A name-pattern CHECK that expects `# pass 1` is flagged as vacuous**
+  (`scripts/tickets.mjs` and its suite, `skills/epic/SKILL.md`, METHODOLOGY §
+  "Why acceptance criteria can be machine-runnable"). `node --test
+  --test-name-pattern <p> <file>` prints `# pass 1` when the pattern matches
+  **no** test — the file itself counts as one passing test — so a CHECK
+  carrying `--test-name-pattern` with `EXPECT: # pass 1` is green before its
+  ticket exists. The CHECK parser now records that shape as a problem: `doctor`
+  warns with the repair (expect two or more, or grep the test's own TAP line),
+  and `check` — and so the unattended driver's acceptance gate, which reads
+  `allPassed` and the problem count — fails it as it fails a malformed CHECK.
+  `# pass 2` and up, and a `# pass 1` with no name pattern, are untouched.
+  **For installed projects:** a signed-off ticket carrying the shape now halts
+  an unattended run at acceptance until the criterion is rewritten; no epic
+  in this repository carried it.
+
+- **Spend sums review rounds** (`scripts/tickets.mjs` and its suite,
+  `skills/ticket/SKILL.md`, `skills/run/SKILL.md`, `skills/spend/SKILL.md`,
+  METHODOLOGY § "Why a round has a label, and a correction does not"). A
+  figure group may open with **`round=<n>`** — `round=2 worker=… reviewer=…`
+  inside a ticket's entry, `<ID> round=2 worker=…` in a run record. Labelled
+  rounds for a ticket and role are **summed**; within a round the last figure
+  wins, `unknown` never erases a round's known figure, and a role carrying
+  both labelled and unlabelled figures reads as the labelled sum (doctor says
+  so). **Unlabelled figures read exactly as before** — the last one wins, so
+  no existing ledger total moves. `spend --json` gains a per-ticket `rounds`
+  map (passes per summed role). `doctor` **warns** when one entry carries two
+  or more unlabelled known figures for a role with no `Addendum — correction`
+  between them, naming what spend counts, what rounds would total, and the
+  repair (a dated addendum restating them with labels, never an edit). The
+  round label lives in `RUN_GROUP`, whose three uses — the group read, the
+  strip of labelled groups from an entry's own text, and doctor's
+  parseable-run-record test — therefore moved together. From weekendgoals'
+  CITY-14: four unlabelled rounds read as 879k of 4.4M.
+
+- **The release body is built from the log, at either door**
+  (`scripts/tickets.mjs` and its suite, `workflows/run-epic.test.mjs`,
+  `skills/run/SKILL.md`, `skills/ticket/SKILL.md`, README). New subcommand
+  **`tickets.mjs owed <epic> [--json]`**: every owed item the epic's status
+  log records and nothing has resolved, each with the entry that owes it —
+  the list `brief` already computed beside one ticket, on its own; "none
+  outstanding" and exit 0 when empty, and an unknown epic is refused by
+  naming the known ones. The run skill's step 7 body gains **`## Owed`**
+  (pasted from that command) and **`## Unticketed commits`** (from the
+  board), each written even when empty. And step 7 now has **two doors**: it
+  is written to be executed without a run result, every section naming the
+  command or log passage it is read from, because a run that halts never
+  reaches it — after the last ticket is finished by hand the route is
+  re-running `/flow:run <epic>` (pinned by two driver tests: an epic with
+  nothing left to start completes with only the refresh hired), and when step
+  1 refuses the board — an ABANDONED ticket reads `blocked` — an attended
+  session opens the pull request by hand, section for section. The ticket
+  skill's step 10 names both routes and no longer says "the driver" opens the
+  release pull request (the run skill's session does). From weekendgoals'
+  redesign-city: a hand-opened release said "Nothing owed" against 31 open
+  items and asked nobody for the addendum.
+
+- **Unticketed commits show on the board** (`scripts/tickets.mjs` and its
+  suite, `skills/ticket/SKILL.md`, `skills/run/SKILL.md`, README, METHODOLOGY
+  § "Why state is derived"). For every epic whose `origin/epic/<name>` (or
+  local `epic/<name>`) exists, the script derives from git alone the
+  non-merge commits between the default branch and the epic branch that touch
+  anything outside `epics/` and whose subject opens with no ticket ID — work
+  that reaches no status entry, no spend line and no reviewer. `list` prints
+  one dim line under the epic with the count; `list --json` gains a top-level
+  `unticketed` map (`{ <epic>: [{ sha, subject, epicLevel }] }`, epics with
+  none omitted); `doctor` **warns** — never fails — about the commits that name
+  neither a ticket nor their epic. A subject opening `<epic-name>:` marks
+  epic-level work (a release review's fixes): listed, `epicLevel: true`, not
+  warned about. Nothing is stored, so a merged or deleted epic branch reads
+  as none. **For installed projects:** one `git rev-parse` and one `git log`
+  more per epic on every board read; an open epic with ID-less code commits
+  starts drawing a doctor warning.
+
+- **A disposition that landed is read as landed** (`workflows/run-epic.mjs`
+  and its suite, `skills/run/SKILL.md`, METHODOLOGY § "A missing report is not
+  a missing fact"). When the disposition agent returns **no report**, the
+  driver no longer halts on the silence: a read-only `disposition-facts:<ID>`
+  step counts the dated review-addendum lines in the ticket's pushed entry and
+  lists the code commits since the reviewed head. With an addendum on the
+  branch the run continues **on the branch** — code commits always take the
+  bounded re-review at the consequence tier, whose packet now carries the
+  first review's Important findings on this path (and only on this path);
+  Important findings with no commit after the reviewed head halt on the
+  Important-finding condition; a clean review with an addendum and no code
+  change proceeds. No addendum, an unreadable answer, or no review anchor:
+  the old halt, unchanged — as is a disposition that *reports* `failed`.
+  Ticket records gain `dispositionRecovered`, and the release pull request
+  body names any ticket that merged that way.
+
+- **No agent the driver spawns sweeps the working tree into a ticket**
+  (`workflows/run-epic.mjs` and its suite, `skills/run/SKILL.md`,
+  `scripts/check-invariants.mjs`, README, METHODOLOGY § "The one trip that
+  halts again"). weekendgoals' redesign-city run had a disposition agent
+  commit every untracked file in the working tree — 215 files, 1.9M lines —
+  as a "review fix"; it halted only because one file was binary. Two changes.
+  The worker and disposition prompts now carry the **staging rule** the ticket
+  and quick skills already state for an in-session doer: `git add <path>` by
+  name, never `git add -A`, `git add .` or `git commit -a`, with the reason.
+  And a new read-only step, `fix-added:<ID>`, runs **at every tier, right
+  after the disposition and before any re-review is hired**, whenever the
+  disposition reports fix commits: it lists the files those commits added
+  (`--diff-filter=A` from the driver's review anchor, `epics/` and the `Fix
+  bounds exclude:` globs left out), and the driver **halts under a new stop
+  condition** — *a review fix that adds files where the ticket never worked*
+  — when one sits outside every directory the reviewed diff touched or a
+  finding named, or when the list cannot be read. A path prefix decides
+  "under", except at the repository root, where a reviewed file admits only
+  other root-level files. An added file beside reviewed code is unchanged: it
+  is still outside `reviewedFiles`, so the bounds gate trips and buys the
+  bounded re-review. **Fix commits with no review anchor to measure them from
+  now halt on the same condition** — they used to be sent to the bounded
+  re-review ("doubt raises scrutiny"), which reads the whole branch, the one
+  thing a swept tree must never be handed to; a clean review with no anchor
+  is unaffected. Empty entries in the reviewed-file list are dropped before
+  the directory test, since an empty path's directory is the repository root
+  (both found by the epic's fresh-context review). Ticket records gain
+  `fixAddedFiles`. **For installed
+  projects:** a run now hires one more fast-model agent per ticket that had
+  review fixes, and a run that used to buy a re-review of a swept tree halts
+  instead; the Codex worker runner was already safe (it refuses a tree that
+  is not clean, untracked files included) and is unchanged.
+
 - **Review fixes to the design-fidelity range, before release**
   (`scripts/tickets.mjs`, `workflows/run-epic.mjs`, `scripts/fidelity.mjs`,
   `skills/run/SKILL.md`, `skills/ticket/SKILL.md`, `skills/epic/SKILL.md`,

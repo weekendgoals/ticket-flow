@@ -243,8 +243,8 @@ Everything else here (`reviewerModel`, `shadowReviewer`, `consequencePaths`,
 - **Floors that tier in code** from the branch's changed files, and reads
   the pushed head in the same step (one read-only fast-model listing,
   `epics/` excluded, plus `git rev-parse origin/<branch>`; that SHA is the
-  review anchor, and an unusable one costs the fix-bounds gate its anchor
-  rather than weakening anything): `Consequence paths:` matches floor
+  review anchor, and an unusable one weakens nothing — a clean review needs
+  none, and review fixes that cannot be measured from one halt): `Consequence paths:` matches floor
   at `consequence`, any non-documentation file at `normal`, docs-only may
   keep `prose`. The report can raise the price, never lower it — the
   reviewed party does not price its own judge down.
@@ -310,9 +310,12 @@ Everything else here (`reviewerModel`, `shadowReviewer`, `consequencePaths`,
   review's anchored range cannot contain them. That pass runs where the trip is detected: **after** the
   resolve step's bounds check and just before the merge, so a ticket that
   halts in `Re-review` with `fixBoundsTripped` had already passed its
-  acceptance checks. No usable anchor from the tier-facts step sends the
-  fixes to the re-review anyway — doubt raises scrutiny. A clean review skips
-  all of this.
+  acceptance checks. **Fix commits with no usable anchor from the tier-facts
+  step halt** on the added-files condition (step 5) before any re-review: the
+  run cannot read what they added, and the pass they used to be sent to reads
+  the whole branch — the one thing a swept tree is never handed to. Doubt
+  still raises scrutiny; it just stops instead of hiring. A clean review
+  skips all of this.
 - **Re-runs the ticket's CHECK/EXPECT criteria from the signed-off
   document** — `tickets.mjs check <ID> --from origin/epic/<name> --json` on
   the pushed branch, after the disposition so fix commits are judged too —
@@ -380,10 +383,11 @@ enters your context from the loop:
                      preExistingCount, preExisting, preExistingRecorded,
                      findings, checkedAndSound,
                      fixedCommits, notFixed, disposition,
+                     dispositionRecovered,
                      reReviewRan, reReviewImportantCount,
                      reReviewFindings, reviewedHead,
                      reviewerReportedHead, fixBoundsGated,
-                     fixBoundsTripped, fixBoundsExclude,
+                     fixBoundsTripped, fixBoundsExclude, fixAddedFiles,
                      fixLines, acceptanceOutcome, acceptanceChecks,
                      acceptanceChecksPassed, acceptanceChecksSkipped,
                      acceptanceAllPassed,
@@ -448,7 +452,21 @@ that resumes past one. The run halts:
   show, halts here too. So does a review that is not on the record: the
   addendum never committed, or this ticket's entries in the pushed log
   carrying no dated `Addendum — review —` line. An unreviewed-on-the-record
-  ticket is never merged, whatever an agent says it did;
+  ticket is never merged, whatever an agent says it did. **A disposition
+  that returns no report is classified from the branch, not from the
+  silence**: one read-only step (`disposition-facts:<ID>`) counts the dated
+  addendum lines in this ticket's pushed entry and lists the code commits
+  since the reviewed head. No addendum, no usable answer, or no review anchor
+  to measure from: this halt, unchanged. An addendum on the branch: the work
+  landed and only its report was lost (one live run halted on exactly that),
+  so the run continues **on the branch** — any code commits take the bounded
+  re-review at the consequence tier whatever the ticket's own tier, with the
+  first review's Important findings in that reviewer's packet, because it is
+  then the only check that they were fixed; Important findings with no code
+  commit after the reviewed head halt on the Important-finding condition.
+  The record says so (`dispositionRecovered: true`, `disposition: "recovered
+  from the branch"`), and nothing on this path merges without that re-review
+  having run;
 - on **an Important review finding it cannot fix** — accepting a not-fixed
   Important is not an agent's to decide in an unattended run, so the
   disposition reports it and the run stops for a human. The same halt fires
@@ -461,6 +479,29 @@ that resumes past one. The run halts:
   halts on, because a re-review of a diff nothing measured proves nothing.
   What it measures is the fix diff minus `epics/` and the epic's `Fix bounds
   exclude:` globs, which sign-off approved as mechanical fan-out;
+- on **a review fix that adds files where the ticket never worked — a fix
+  commit created a file outside every directory the reviewed diff touched or
+  a finding named, or the run could not read which files the fix commits
+  added; that is the signature of a swept working tree, and it is never
+  handed to a reviewer to read**. "Could not read" includes the run that has
+  **no review anchor** to measure the fix commits from: it halts here rather
+  than sending them to the re-review as it once did. Read at every tier, right after the
+  disposition and before any re-review is hired (`fix-added:<ID>`): one live
+  run's disposition agent committed every untracked file in the working tree
+  — 215 files, 1.9M lines — as a "review fix", and the only gate that met it
+  would have *bought a re-review* of them. A fix rightly adds a test beside
+  the code it fixes, so the rule is about where: "under" a reviewed directory
+  is a path prefix, except at the repository root, where a reviewed file
+  admits only other root-level files (nearly every ticket touches a
+  changelog, and a prefix rule there would admit the whole tree). Inside
+  those directories a new file keeps the bounds gate's consequence — a trip
+  buys the re-review. **Recovery**: `git show --stat
+  <reviewedHead>..origin/<branch>`; if the sweep is real, revert it as a
+  **new** commit on the ticket branch (never a rewrite — the review must stay
+  auditable against what was reviewed), then finish the ticket by hand per §
+  "Resuming after a halt", case 2. The record's `fixAddedFiles` lists what the
+  fixes added on every ticket, stray or not, so the retro can count how often
+  a fix adds anything;
 - on **a failed acceptance CHECK — a machine-runnable criterion whose
   command did not produce its expected result on the pushed branch, a
   criterion whose evidence is a skip, a CHECK line too malformed to run at
@@ -639,7 +680,16 @@ fixes were never looked at.>
 groups separated by `;`, `unknown` in place of any figure the transcripts
 did not expose, then `total=<n>` — because `tickets.mjs spend` parses these
 groups into the epic's ledger and the retro reads that instead of summing by
-hand. Figures are harness-observed from the run's own transcripts, never
+hand. **A ticket that went through more than one pass — reviewed again in a
+resumed run, or finished by hand after a halt — gets one group per pass,
+labelled: `<ID> round=2 worker=<n> reviewer=<n> …`** (and the earlier
+record's group is `round=1`; when that record was written without the label,
+restate it as `round=1` in a dated addendum beneath it). `spend` sums
+labelled rounds and keeps only the last of an unlabelled repeat, because
+last-wins is how a correction overrides what it corrects — so two unlabelled
+groups for one ticket read as a correction and the first pass's spend
+vanishes. The run record is the only writer of a round in this lane: ticket
+entries and addenda point here and never restate the figures. Figures are harness-observed from the run's own transcripts, never
 from an agent's report: the Workflow run persists each `agent()` call's
 transcript under this session's directory, and `journal.jsonl` maps the
 labels (`worker:<ID>`, `review:<ID>`, `disposition:<ID>`, `re-review:<ID>`,
@@ -700,8 +750,23 @@ there is one, and push.
 
 ## 7. End: open the release pull request — never merge it
 
-Only on `outcome: "completed"`. The loop's last refresh already brought
-`epic/<name>` current (`finalRefresh`); do not refresh again.
+On `outcome: "completed"` — the loop's last refresh already brought
+`epic/<name>` current (`finalRefresh`); do not refresh again — **or by hand,
+by an attended session, when every ticket is integrated and no run can reach
+this step.** That second door is not a courtesy. A run that halts never gets
+here; after the halted ticket is finished by hand, re-running `/flow:run
+<epic>` finds nothing left to start, completes with only the refresh hired,
+and lands here with the whole body — **use that route whenever step 1 admits
+the board.** It does not always: an ABANDONED ticket reads `blocked` and step
+1 refuses the run until a human re-plans the document, which is exactly the
+board one live epic ended on (16 integrated, 1 abandoned) — its release pull
+request was opened by a session with no route to this step, said "Nothing
+owed" against 31 open items, and asked nobody for the addendum. So this step
+is written to be executed **without a run result**: every section below names
+the command or the log passage it is read from, and a session opening the
+pull request by hand owes the same body, section for section. Refresh the
+epic branch first in that case (ticket skill step 3 — main is the source,
+never the target).
 
 ```bash
 gh pr create --base <default-branch> --head epic/<name> \
@@ -717,7 +782,8 @@ body, above everything else: *merge with a merge commit, never squash.*
 The body is the human's entire evidence base for the one decision they make
 in this mode. It carries:
 
-- every ticket: what it built, its verification counts, its review outcome
+- every ticket (from `ticketRecords`; by hand, from each ticket's status entry
+  and review addendum): what it built, its verification counts, its review outcome
   (found / fixed / not fixed with reasons), and **what stood between its fix
   commits and the merge** — the re-review (`reReviewRan`,
   `reReviewImportantCount`, `reReviewFindings`), the code bounds check
@@ -727,12 +793,31 @@ in this mode. It carries:
 - the release's size up front — `git diff --stat
   origin/<default-branch>...epic/<name>` — a release too large to review is
   a fact the human sees before approving;
-- the run record summary, including which agent ran each ticket;
+- the run record summary, including which agent ran each ticket — and any
+  ticket whose record carries `dispositionRecovered: true`, by name: it
+  merged on what the branch showed and a re-review, not on a disposition's
+  report, and the human reading this body should know which those were;
 - every deploy precondition any ticket created (an environment variable, a
   migration, a script that runs after), collected from the status log;
+- **`## Owed`, pasted from the command, written even when empty**:
+
+  ```bash
+  node "${CLAUDE_PLUGIN_ROOT}/scripts/tickets.mjs" owed <epic>
+  ```
+
+  Every owed item the status log records and nothing has resolved, each with
+  the entry that owes it; "none outstanding" when that is what it prints. A
+  body that says nothing is owed must be one a command printed, never one a
+  session recalled — and an item the release itself discharges is discharged
+  in the log (`**Resolves owed:**`) first, so the command stops printing it;
+- **`## Unticketed commits`, written even when empty** — the epic's entry in
+  `tickets.mjs list <epic> --json`'s `unticketed` map, each commit by sha and
+  subject, "none" when the epic has no entry. These are the changes in this
+  release that no ticket, status entry, reviewer or spend figure covers; the
+  human reading the body is the first person to be told they exist;
 - **every pre-existing finding** the reviewers reported (the result's
   `preExisting`, with the ticket that met it and the owner the addendum
-  names) — a defect neither fixed nor handed to someone is one the project
+  names; by hand, read them from the review addenda in `status.md`) — a defect neither fixed nor handed to someone is one the project
   has forgotten, and this is the last place a human sees it;
 - when step 3 proceeded on a protection waiver, that fact, right under the
   never-squash line;
@@ -769,6 +854,20 @@ hand. The board says which case you are in:
 ```bash
 node "${CLAUDE_PLUGIN_ROOT}/scripts/tickets.mjs" list <epic>
 ```
+
+**Finish the ticket, not the epic, by hand.** Work committed to `epic/<name>`
+outside any ticket — no ID opening its subject — reaches no status entry, no
+spend line and no reviewer; the board lists it as unticketed and `doctor`
+warns. If picking up after a halt turns up more work than the halted ticket's,
+it is a new ticket in `tickets.md` (or `/flow:quick`), not a commit on the epic
+branch.
+
+**When the last ticket is integrated, the release pull request is opened by
+re-running `/flow:run <epic>`**: with nothing left to start the run completes
+with only the refresh hired and goes straight to step 7 — body, owed list,
+unticketed commits and the addendum request included. When step 1 refuses the
+board (a `blocked` ticket, which is how an ABANDONED one reads), an attended
+session opens it by hand, following step 7 section for section.
 
 Three shapes are possible, and the halted ticket's **status entry** — the
 thing the board reads — is what tells them apart. Read them off the board,

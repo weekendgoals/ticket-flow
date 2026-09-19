@@ -395,6 +395,11 @@ const PHRASES = [
     files: ['run', 'workflow'],
   },
   {
+    why: 'the added-files stop condition is one sentence in the skill and the script — the halt a run record quotes verbatim. Pinned whole: its second half ("or the run could not read which files the fix commits added") is the unmeasured case, and a copy that kept only the first would send a human looking for stray files in a run that never listed any',
+    re: /a review fix that adds files where the ticket never worked — a fix\s+commit created a file outside every directory the reviewed diff touched or\s+a finding named, or the run could not read which files the fix commits\s+added; that is the signature of a swept working tree, and it is never\s+handed to a reviewer to read/,
+    files: ['run', 'workflow'],
+  },
+  {
     why: "the merge-conflict stop condition is one sentence in the skill and the script — pinned because it was deleted from the skill's list by an edit that meant to add a bullet beside it (DEV-3's review), leaving `STOP.mergeConflict` live at three call sites and a human looking up a halt string the skill no longer carried. The general gap this one exposed — only some of the STOP sentences are pinned — is recorded for the retro; this entry holds the one that was actually lost",
     re: /a merge conflict — refreshing the epic branch, or anywhere else, including a ticket branch that will not merge into the epic branch/,
     files: ['run', 'workflow'],
@@ -451,6 +456,16 @@ const PHRASES = [
     // "`CHECK:` / `EXPECT:`" — presence of the format, not one spelling.
     re: /CHECK: |CHECK.{0,8}EXPECT/,
     files: ['epic', 'ticket', 'quick', 'run', 'script', 'workflow'],
+  },
+  {
+    why: 'the fixture lens — a test whose fixture cannot reach the branch it names passes with the behaviour deleted; the reviewer definition, the review skill and the driver\'s inlined rules ask the same question of it (the Codex runner\'s copy is pinned to the driver\'s by its own suite), and a document that drops the question leaves that reviewer reading assertions and never fixtures',
+    re: /does the fixture contain it/i,
+    files: ['reviewer', 'review', 'workflow'],
+  },
+  {
+    why: 'the human render-and-read ticket — the differ decides computed style and cannot decide composition or behaviour, so a page epic schedules a human-owned ticket after the whole-page comparison; the epic skill plans it, the plan reviewer refuses a plan without it, and METHODOLOGY carries why, and a rule in only one of the first two is either never planned or never checked',
+    re: /render-and-read/i,
+    files: ['epic', 'planReviewer', 'methodology'],
   },
   {
     why: "the painted-versus-property lens — a style assertion that reads a property off an element while the page paints something else is the visual form of the test that executes code without checking it, and the reviewer definition, the review skill and the driver's inlined reviewer rules must all carry it. The Codex runner's copy is pinned to the driver's by codex-review.test.mjs, so this entry covers the three that are not",

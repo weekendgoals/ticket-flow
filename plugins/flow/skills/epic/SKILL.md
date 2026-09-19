@@ -343,7 +343,15 @@ Rules that matter:
   passes on the pre-ticket tree too (six of one live epic's eight CHECKs
   were this), so it is **not a criterion** — the suite stays a standing
   check the doer reports under **Verified**, and a CHECK names the one test,
-  assertion or fact this ticket turns green. Record the ledger in the draft:
+  assertion or fact this ticket turns green. **Naming one test has its own
+  vacuous spelling**: `node --test --test-name-pattern '<p>' <file>` prints
+  `# pass 1` when the pattern matches **nothing** — the file itself counts as
+  a passing test — so `EXPECT: # pass 1` is green before the test exists and
+  green whatever the worker names it. Expect two or more matching tests
+  (`# pass 2`), or grep the TAP line of the test's own title; `doctor` and
+  `check` flag the `# pass 1` shape as they flag a malformed CHECK. Other
+  runners have their own version of this — which is what proving each CHECK
+  red is for, and why the ledger is read rather than assumed. Record the ledger in the draft:
   which CHECKs were proven failing, and which could not run here and why (an
   interactive runner, a minutes-long suite). The plan reviewer re-runs the
   runnable ones, and step 5 shows the ledger at the gate.
@@ -353,11 +361,29 @@ Rules that matter:
   tickets do not sum to a page that matches: what lies between two sections
   belongs to neither section's ticket, and in the epic this rule comes from,
   three drawn elements shipped missing with every ticket's own criteria green.
-  It goes last, because it can only compare a page every other ticket has
-  finished building. Check its actor like any other rule here: where the
+  It goes last among the tickets that build, because it can only compare a
+  page every other ticket has finished building — only the human
+  render-and-read ticket below follows it. Check its actor like any other rule here: where the
   declared delivery gives it a lane with no browser, it is a **human-owned
   ticket ordered before the release**, never a line owed to the release pull
   request — a criterion deferred to that pull request merges unperformed.
+- **A page epic schedules a human render-and-read ticket.** The whole-page
+  comparison is necessary and not sufficient: the differ decides computed
+  style, and what it cannot decide is **composition and behaviour** — which
+  items earn the six slots, whether a chip belongs where the design draws a
+  button, whether a table survives its longest row, what the page does when
+  it is used. In the epic this rule comes from, every difference a gate
+  caught was a computed-style value and every difference a human caught was
+  one of these — five of them, found by accident after the last ticket, in
+  ten commits no document records. So an epic that declares `Design sources:`
+  carries one **human-owned** ticket, after the whole-page fidelity ticket
+  and before the release: its criteria are the questions to answer with the
+  built page open beside the design (real data, every width, the
+  interactions), its status entry records what was seen, and what it finds
+  becomes tickets, not commits on the epic branch. It is human-owned in every
+  delivery mode — an unattended worker holds no browser and no judgement
+  about what a reader wants — so it is never a line owed to the release pull
+  request, where it would merge unperformed. Budget it; do not discover it.
 - **A plan that narrows what the design draws declares the removal.** When a
   ground rule or a scope line says an element the design draws will not be
   built, add it to `epics/<name>/design-map.json`'s `removed` list — the
@@ -410,8 +436,9 @@ signing off is the last reader before a worker builds against it.
 map's `removed` list, entry by entry, each with the rule that decided it —
 this is the one moment a human can say "no, that element stays" before a
 comparison starts printing it as a decision already taken. Name any
-UI-building ticket carrying no `COMPARE` criterion as **not ready**, and say
-which one closes the whole page.
+UI-building ticket carrying no `COMPARE` criterion as **not ready**, say
+which one closes the whole page, and **name the human render-and-read
+ticket** — who owns it, and that the release waits on it.
 
 **Name what the lane cannot do, and what nobody will collect**: which ground
 rules and criteria need an actor the declared delivery mode does not provide

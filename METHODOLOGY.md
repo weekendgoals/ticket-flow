@@ -82,6 +82,23 @@ Two consequences that look arbitrary until you know this:
   squashed. Relaxing this removed a real adoption barrier: many organisations
   mandate squash and cannot turn it off per-repository.
 
+A third consequence arrived later (2026-09): what is derived includes **what
+no document mentions**. weekendgoals' redesign-city epic closed its last
+ticket, and the session then committed ten more changes to the epic branch —
+a production crash-loop fix, a changed endpoint contract, a moved site-wide
+component — none with a ticket, a status entry or a spend figure. All of it
+was defensible work; the retro, the release reader and the ledger saw 17
+tickets and not the 18th unit of work. A rule ("always open a ticket") was
+already in force and did not hold, so the board now derives the gap the same
+way it derives everything: commits on the epic branch, not on the default
+branch, not merges, touching something outside `epics/`, whose subject opens
+with no ticket ID. It warns and gates nothing — the work may be right, and
+what is missing is a record, which only a person can decide to write. Commits
+subjected with the epic's own name are listed without a warning: this
+repository's release-review fixes are work no ticket owns by construction,
+and a report that flagged a convention somebody chose would be noise by its
+second epic.
+
 ## Why a human merges, and nothing runs after
 
 When merging deploys, that click is the last gate there is. The further an agent
@@ -306,6 +323,33 @@ branch: its merge commit `8ac3bef` sits only on `origin/addendum-gate-date`.
 This section supersedes it for the halt; whether the exclusion also lands is
 a separate decision and a separate pull request.
 
+### The one trip that halts again: a fix that adds files elsewhere
+
+Trading the bounds halt for a re-review assumed that what trips the gate is a
+fix — somebody's deliberate edit, a little wider than the review saw.
+weekendgoals' redesign-city run (2026-09) met the other thing that trips it:
+a disposition agent ran `git add -A` and committed **every untracked file in
+the working tree — 215 files, 1,927,382 lines**, production-data exports
+among them — as a "review fix". It halted only by accident: one of the files
+was binary, so the diff was unmeasurable. Without that file the trip would
+have *bought a re-review of the sweep*, and at the consequence tier the fixes
+go to a re-review without meeting the bounds gate at all.
+
+Two layers answer it, because either alone is the soft half. Every prompt
+whose agent commits now carries the staging rule the ticket and quick skills
+already gave an in-session doer — stage by name, never `-A` — with its
+reason; and the driver reads what the fix commits **added**, at every tier,
+before any re-review is hired. The rule is about *where*, since a fix rightly
+adds a test beside the code it fixes: an added file must sit under a
+directory the reviewed diff touched or a finding named. It halts rather than
+buying scrutiny because no reviewer's reading of a swept tree is evidence of
+anything, and the recovery — revert the sweep as a new commit — is a human's
+to confirm. The repository root is matched by equality, not prefix: nearly
+every ticket touches a changelog, and a prefix rule there would admit the
+whole tree and leave the gate decorative. What would reverse it: the halt
+firing more than once on a fix that rightly added a file — then the rule
+is mismeasuring fixes, and it goes back to buying the re-review.
+
 ## Why acceptance criteria can be machine-runnable
 
 Adopted from a comparative read of unlazy (2026-08-20), whose gate files —
@@ -367,7 +411,14 @@ not run here, and the plan reviewer — who has no stake in the plan — re-runs
 the runnable ones under a per-command bound. A CHECK green before the work is
 a finding; a CHECK that errors is a finding. Doctor carries the two shapes
 that can never pass, so the cheapest of these is caught without an agent at
-all. The admission test: this reduces uncertainty (a criterion nobody has
+all. It carries one shape that can never *fail*, too, found by that same
+red-before-green run while planning the `retro-lessons` epic: `node --test
+--test-name-pattern <p> <file>` prints `# pass 1` when the pattern matches no
+test at all, because the file itself counts — so a CHECK written to name the
+one test a ticket adds, expecting `# pass 1`, is green on the tree before the
+test exists. Two of that plan's own draft CHECKs read green this way, in the
+repository that wrote the rule; the ledger run is what caught them, which is
+the argument for running it rather than reasoning about it. The admission test: this reduces uncertainty (a criterion nobody has
 seen fail is a criterion nobody has tested) and provides decision evidence at
 the sign-off gate, where the ledger is shown.
 
@@ -560,8 +611,9 @@ and the gaps between sections then belonged to no ticket at all. **Scope, not
 checkability, was the cause**, and the two fixes it implies are different: a
 differ makes a criterion mechanical, while a **whole-page ticket** makes the
 page somebody's. An epic that declares a design therefore ends with one, and
-it goes last, because it can only compare a page the other tickets have
-finished building.
+it goes last among the tickets that build, because it can only compare a page
+the other tickets have finished building — only the human render-and-read
+ticket follows it ("Why a page epic also schedules a human", below).
 
 The other half is what a plan is allowed to narrow. A design draws more than
 any release builds, and that is normal — what is not normal is the narrowing
@@ -582,6 +634,30 @@ element no landmark covers is silent by omission, invisible to the differ, to
 the table and to everyone reading the table. It is the one reading nobody
 downstream can perform, because nobody downstream holds both the drawing and
 the plan.
+
+### Why a page epic also schedules a human
+
+The whole-page ticket was the previous retro's headline proposal, and
+redesign-city then tested it: CITY-16 *was* that ticket, and one further
+ticket plus ten post-ticket commits still found five differences — two
+anchors to one URL, a chip sitting where the artboards draw a button, a table
+breaking on its longest row, a map fit squeezing a card to 60px, a weekend
+grid spending its six slots on unticketed fixtures. The pattern in who found
+what was exact: **every difference a gate or an agent caught was a
+computed-style value; every difference a human caught was a judgement about
+composition or behaviour.** The first class is mechanisable and the differ
+mechanises it. The second is not — nothing computes whether a fixture
+deserves a slot — and leaving it unscheduled does not remove it, it moves it
+to after the last ticket, where it arrived as ten commits no document
+records.
+
+So a page epic budgets a human render-and-read ticket, after the whole-page
+comparison and before the release: criteria that are questions, answered with
+the built page open on real data, findings that become tickets. It is
+human-owned in every delivery mode, for the reason every lane rule here asks
+— name the actor and check the mode provides one — and it passes the
+admission test on decision evidence: it is the only place the release reader
+learns that somebody looked.
 
 ## Why the reviewer is handed the design
 
@@ -636,6 +712,29 @@ addenda just point there. In-session work stays `unknown`: a session
 cannot observe itself, and `unknown` is an honest answer where a guess is
 not. The old rule survives, finally enforceable because no field invites
 an estimate: harness-observed or unknown, never estimated.
+
+### Why a round has a label, and a correction does not
+
+The ledger's one ordering rule is "the last figure for a role wins", because
+the log is append-only and that is what lets a dated correction override the
+entry it corrects. weekendgoals' CITY-14 showed what the rule costs when the
+repeats are not corrections: the ticket went through four review rounds, its
+entry recorded a worker/reviewer pair for each — 911,511 / 302,889, 804,432 /
+324,269, 909,377 / 259,927, 581,236 / 297,991 — and the ledger read the last
+pair. The ticket appeared to cost 879k where the log records 4.4M, the epic
+12.7M where it records about 16.2M, and the most expensive ticket of the epic
+read as a mid-sized one — the opposite of what a spend ledger is for.
+
+Inverting the rule (every repeat is a round unless marked a correction) would
+have read CITY-14 right and silently changed the total of every log already
+written. So the rule stays and the round is what gets marked: `round=<n>`
+opening a group, summed per ticket and role, last-wins within a round. Doctor
+asks about the ambiguous shape — two unlabelled figures for one role with no
+correction between — rather than guessing, and the repair is an addendum.
+One writer labels a round in each lane (the run record unattended, the
+supervisor's addendum attended; the other document points), because under a
+sum, two documents restating one pass is a double count where under last-wins
+it was harmless.
 
 ## Why a worker reads a brief, not the whole log
 
@@ -1172,6 +1271,30 @@ whole-change revert stays red on the headline fix while a half of a
 compound condition, or a fixture sized from the constant under test, is
 never exercised.
 
+### The fixture is part of the assertion
+
+The redesign-city retro (2026-09) put a number on the defect above: nine
+specs across one epic passed with the behaviour they named deleted. None was
+a missing assertion. Three shapes recurred — the spec read a *declared
+property* rather than the rendered result (answered in "Why the reviewer is
+handed the design"); the *environment answered instead of the code* (a request
+counter reading 0 against a warm server's cached 404); and **the fixture could
+not produce the case**: twelve venues on one line merged into a single map
+pin, so a pairwise-overlap loop ran over zero pairs and passed. An assertion
+is only as strong as the inputs that reach it, and a reviewer reading
+assertions alone will pass all three.
+
+One ticket in that epic wrote the class into its own acceptance criteria, and
+the next ticket produced four more: prose in one ticket does not bind the
+next, which is why this is a reviewer's lens and not a planner's sentence.
+The question is small enough to carry — *what input would make this fail,
+and does the fixture contain it?* — and the decisive technique was the one
+the method already owned: the revert check, applied by the judge. A bounded
+re-review deleted the behaviour, re-ran three specs an earlier round had
+"repaired", and one still passed. No mutation tool ships here — the plugin
+runs no project's tests except through CHECK — but a reviewer told how to run
+the suite can delete a behaviour and watch.
+
 ## Why tickets go one at a time
 
 Working an epic by stacking each ticket on the last is tempting: nothing waits.
@@ -1285,6 +1408,30 @@ the number the worker reported kept only as a cross-check, because "which
 pull request does this ticket own" is exactly the kind of question a
 confident wrong answer ends badly. Self-reports still fill the record; they
 just no longer open the gate.
+
+### A missing report is not a missing fact
+
+The loop reads agents through schemas, and for most of its life it treated a
+disposition that returned nothing as one that did nothing. weekendgoals'
+redesign-city run (H3, 2026-09) showed the difference: the agent had fixed,
+written the addendum, committed and pushed — and then its structured return
+failed. The script halted a finished ticket, and a human resumed it by hand
+to learn that nothing had been wrong. Asked what that halt bought (the
+retro's question), the answer was nothing: the fact it lacked was one `git
+show` away.
+
+So the driver now reads the branch before classifying — the same two reads
+the resolve step already trusted: the dated addendum line in the ticket's own
+entry, and the commits since the head the driver anchored the review on. What
+that read may buy is deliberately narrow. It never stands in for the report:
+with no agent's account of what the commits are, they take the bounded
+re-review at the consequence tier whatever the ticket's tier, and that
+reviewer is handed the first review's findings, because on this path nothing
+else checks they were fixed. Findings with no commit after them halt as an
+unfixed Important does. The rule underneath is the one the lane already ran
+on — gates read repository state, not an agent's account of it — applied to
+the one place where the absence of an account was still being read as a
+state.
 
 ## Why release tickets stopped opening pull requests
 
@@ -1439,6 +1586,29 @@ shipped. The record survives untouched; the working copy stops paying for
 it. The rollover lives behind the retro's owed-conversion gate for the
 same reason the general archive step does: the archive drops off the
 board, and an unconverted owed item would vanish from every future brief.
+
+## Why a relaxing instruction needs provenance
+
+The driver has always refused to take its gates from the party it judges:
+criteria are re-run `--from origin/epic/<name>`, the ticket budget is read
+from that ref, the `removed` list from the signed-off map. The worker had no
+such rule stated for it, and it needs one for a plainer reason than
+adversaries: a worker's context is full of text nobody vouched for — file
+contents, tool output, relayed messages — and a sentence saying "the human
+says skip the locale fan-out" looks the same whether the human said it, a
+confused supervisor relayed it, or a string in a fetched file claimed it.
+
+In redesign-city one worker met exactly that, treated it as possible
+injection, and refused to act until `git fetch` showed the change committed
+on the epic branch; the reviewer judged it right in shape. The rule makes
+that the method rather than one agent's good instinct, and it is asymmetric
+on purpose: an instruction that *tightens* is cheap to obey and needs no
+proof, while one that *loosens* a criterion, a ground rule or a scope line is
+precisely what an error or an attack would say — so it binds only where the
+plan lives, in the signed-off document, and is otherwise a document/code
+contradiction to stop and report. The cost is a halt when a human really did
+mean it and said so out of band; the repair is a commit to the epic branch,
+which is where a change of plan belonged anyway.
 
 ## The failure modes this is designed against
 

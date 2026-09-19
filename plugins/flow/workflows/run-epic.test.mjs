@@ -38,7 +38,12 @@ async function drive(reply, args = ARGS, budget = null) {
   const logs = []
   const agent = async (prompt, opts) => {
     calls.push({ label: opts.label, phase: opts.phase, model: opts.model, agentType: opts.agentType, effort: opts.effort, schema: opts.schema, prompt })
-    const r = reply(opts.label, prompt)
+    let r = reply(opts.label, prompt)
+    // The added-files read runs whenever a disposition reports fix commits.
+    // A test that is not about it gets the quiet answer — the fixes added
+    // nothing — so each test still states only what it is about; the tests
+    // that ARE about it stub the label themselves.
+    if (r === undefined && opts.label.startsWith('fix-added:')) r = fixAddedNone
     if (r === undefined) throw new Error(`unplanned agent spawn: ${opts.label}`)
     return r
   }
@@ -57,6 +62,7 @@ const meter = step => {
   return { total: null, spent: () => (s += step), remaining: () => Infinity }
 }
 
+const fixAddedNone = { outcome: 'listed', addedFiles: [], detail: '' }
 const call = (r, label) => r.calls.find(c => c.label === label)
 
 // ---- stub replies -----------------------------------------------------------
@@ -520,7 +526,8 @@ test('an Important finding left unfixed halts before the merge', async () => {
 test('a disposition that failed or died halts the run', async () => {
   const failed = await drive(oneTicket({ 'disposition:PAY-1': { outcome: 'failed', addendumCommitted: false, detail: 'tests would not run' } }))
   assert.match(failed.out.haltedOn.stopCondition, /^BLOCKED/)
-  const dead = await drive(oneTicket({ 'disposition:PAY-1': null }))
+  // Died, and left nothing on the branch: the facts read finds no addendum.
+  const dead = await drive(oneTicket({ 'disposition:PAY-1': null, 'disposition-facts:PAY-1': { outcome: 'read', addendumMatches: 0, codeCommits: [], detail: '' } }))
   assert.match(dead.out.haltedOn.stopCondition, /^BLOCKED/)
   assert.ok(!dead.labels.some(l => l.startsWith('merge:')))
 })
@@ -884,7 +891,7 @@ test('at the consequence tier, fix commits earn exactly one re-review, and a cle
     }),
   )
   assert.deepEqual(r.labels, [
-    'refresh+select:1', 'worker:PAY-1', 'tier-facts:PAY-1', 'review:PAY-1', 'disposition:PAY-1', 're-review:PAY-1', 'accept:PAY-1', 'resolve:PAY-1', 'merge:PAY-1', 'verify:PAY-1',
+    'refresh+select:1', 'worker:PAY-1', 'tier-facts:PAY-1', 'review:PAY-1', 'disposition:PAY-1', 'fix-added:PAY-1', 're-review:PAY-1', 'accept:PAY-1', 'resolve:PAY-1', 'merge:PAY-1', 'verify:PAY-1',
     'refresh+select:2',
   ])
   assert.equal(r.out.outcome, 'completed')
@@ -1132,10 +1139,13 @@ test("a fix touching only a file the review's findings named is inside the bound
   assert.ok(r.labels.includes('merge:PAY-1'))
 })
 
-test('no usable head from the tier-facts step sends fixes to the bounded re-review instead — doubt goes up', async () => {
+test('no usable head from the tier-facts step, with fix commits to judge, halts as an unmeasured fix — doubt goes up', async () => {
   // The anchor is the driver's own read, so this is the step that can lose
-  // it. Nothing weakens: without an anchor the bounds gate cannot measure,
-  // and the fixes take the pass the consequence tier would have bought.
+  // it. Before the added-files gate a missing anchor sent the fixes to the
+  // bounded re-review; that pass reads the whole branch, which is the one
+  // thing a swept working tree must never be handed to. Without an anchor the
+  // run cannot read what the fixes added, and the stop condition says what
+  // happens then.
   const r = await drive(
     oneTicket({
       'tier-facts:PAY-1': { ...tierFactsCode, head: 'HEAD~1; rm -rf /' },
@@ -1144,16 +1154,19 @@ test('no usable head from the tier-facts step sends fixes to the bounded re-revi
       're-review:PAY-1': { important: [] },
     }),
   )
-  assert.equal(r.out.outcome, 'completed')
-  assert.equal(r.out.ticketRecords[0].reReviewRan, true)
-  assert.equal(r.out.ticketRecords[0].fixBoundsGated, false)
+  assert.equal(r.out.outcome, 'halted')
+  assert.match(r.out.haltedOn.stopCondition, /could not read which files the fix commits added/)
+  assert.match(r.out.haltedOn.detail, /no usable head to anchor the review on/)
+  assert.ok(!r.labels.some(l => /^(fix-added|re-review|accept|resolve|merge):/.test(l)), r.labels.join(' '))
   assert.equal(r.out.ticketRecords[0].reviewedHead, '')
   assert.ok(r.logs.some(l => /no usable head SHA from the tier-facts step/.test(l) && /doubt goes up/.test(l)))
-  // The unusable value never reaches a prompt: not the reviewer's range, not
-  // the resolve step's commands.
+  // The unusable value never reaches a prompt.
   assert.doesNotMatch(call(r, 'review:PAY-1').prompt, /rm -rf/)
-  assert.doesNotMatch(call(r, 'resolve:PAY-1').prompt, /rm -rf/)
+  assert.doesNotMatch(r.out.haltedOn.detail, /rm -rf/)
   assert.match(call(r, 'review:PAY-1').prompt, /Commit range: origin\/epic\/payments\.\.origin\/pay-1/)
+  // A clean review has no fix commits to measure, so a lost anchor costs it nothing.
+  const clean = await drive(oneTicket({ 'tier-facts:PAY-1': { ...tierFactsCode, head: '' } }))
+  assert.equal(clean.out.outcome, 'completed')
 })
 
 test('re-review range covers the fix commits, and differs from the first review range', async () => {
@@ -2370,7 +2383,7 @@ test('shadow reviewer: does not run on the re-review, of either kind', async () 
     're-review:PAY-1': { important: [] },
   })
   assert.deepEqual(r.labels, [
-    'refresh+select:1', 'worker:PAY-1', 'tier-facts:PAY-1', 'review:PAY-1', 'shadow:PAY-1', 'disposition:PAY-1', 're-review:PAY-1', 'accept:PAY-1', 'resolve:PAY-1', 'merge:PAY-1', 'verify:PAY-1',
+    'refresh+select:1', 'worker:PAY-1', 'tier-facts:PAY-1', 'review:PAY-1', 'shadow:PAY-1', 'disposition:PAY-1', 'fix-added:PAY-1', 're-review:PAY-1', 'accept:PAY-1', 'resolve:PAY-1', 'merge:PAY-1', 'verify:PAY-1',
     'refresh+select:2',
   ])
   assert.equal(r.calls.filter(c => c.label.startsWith('shadow:')).length, 1)
@@ -2604,4 +2617,240 @@ test('the shadow schema relays a null pre-existing owner, and REVIEW_SCHEMA stay
   assert.deepEqual(shadowSchema.properties.review.properties.important, reviewSchema.properties.important)
   // And the record carries the null owner as an empty identifier, not "null".
   assert.equal(r.out.ticketRecords[0].shadow.review.preExisting[0].owner, '')
+})
+
+// ---- RETRO-1: no agent sweeps the working tree -------------------------------
+// weekendgoals' redesign-city run: a disposition agent committed every
+// untracked file in the working tree — 215 files — as a review fix. No prompt
+// the driver sent said anything about staging, and the only gate that met the
+// sweep would have bought a re-review of it.
+
+const STAGING = /Never `git add -A`, `git add \.` or `git commit -a`/
+
+test('staging rule: the worker is told to stage only the paths it changed, by name', async () => {
+  const r = await drive(oneTicket())
+  const p = call(r, 'worker:PAY-1').prompt
+  assert.match(p, STAGING)
+  assert.match(p, /git add <path>/)
+  // The reason travels with the rule, or a later session "simplifies" it away.
+  assert.match(p, /Untracked files already in the working tree are somebody else's/)
+})
+
+test('staging rule: the disposition agent — the one that swept — is told the same', async () => {
+  const r = await drive(oneTicket({ 'review:PAY-1': reviewImportant, 'disposition:PAY-1': dispFixed, 'resolve:PAY-1': { ...resolvedOk, ...resolvedOkBounds } }))
+  assert.match(call(r, 'disposition:PAY-1').prompt, STAGING)
+})
+
+test('staging rule: every agent told it may commit carries the rule, and the read-only steps do not', async () => {
+  const r = await drive(oneTicket({ 'review:PAY-1': reviewImportant, 'disposition:PAY-1': dispFixed, 'resolve:PAY-1': { ...resolvedOk, ...resolvedOkBounds } }))
+  for (const c of r.calls) {
+    const commits = /git commit|Commit the addendum|write and commit the status entry/.test(c.prompt) && !/^(merge|refresh\+select):/.test(c.label)
+    if (commits) assert.match(c.prompt, STAGING, `${c.label} commits but is not told how to stage`)
+  }
+  for (const label of ['tier-facts:PAY-1', 'fix-added:PAY-1', 'accept:PAY-1', 'resolve:PAY-1', 'verify:PAY-1']) {
+    assert.doesNotMatch(call(r, label).prompt, STAGING, `${label} is read-only and needs no staging rule`)
+  }
+})
+
+const fixedRun = (over = {}) =>
+  oneTicket({ 'review:PAY-1': reviewImportant, 'disposition:PAY-1': dispFixed, 'resolve:PAY-1': { ...resolvedOk, ...resolvedOkBounds }, ...over })
+
+test('added files: a fix that adds a file where the ticket never worked halts before any merge agent exists', async () => {
+  const r = await drive(fixedRun({ 'fix-added:PAY-1': { outcome: 'listed', addedFiles: ['exports/prod-venues.csv', 'notes/scratch.xlsx'], detail: '' } }))
+  assert.equal(r.out.outcome, 'halted')
+  assert.match(r.out.haltedOn.stopCondition, /adds files where the ticket never worked/)
+  assert.match(r.out.haltedOn.detail, /exports\/prod-venues\.csv/)
+  assert.match(r.out.haltedOn.detail, /revert it as a NEW commit/)
+  assert.ok(!r.labels.some(l => /^(accept|resolve|merge|re-review):/.test(l)), r.labels.join(' '))
+  assert.deepEqual(r.out.ticketRecords[0].fixAddedFiles, ['exports/prod-venues.csv', 'notes/scratch.xlsx'])
+})
+
+test('added files: at the consequence tier the halt lands BEFORE the re-review is hired — a sweep is never handed to a reviewer', async () => {
+  const r = await drive(
+    fixedRun({
+      'worker:PAY-1': workerOk('PAY-1', { tier: 'consequence' }),
+      'fix-added:PAY-1': { outcome: 'listed', addedFiles: ['data/dump.json'], detail: '' },
+      're-review:PAY-1': { important: [] },
+    }),
+  )
+  assert.equal(r.out.outcome, 'halted')
+  assert.match(r.out.haltedOn.stopCondition, /adds files where the ticket never worked/)
+  assert.ok(!r.labels.includes('re-review:PAY-1'), r.labels.join(' '))
+})
+
+test('added files: a test beside the reviewed code is inside, and the existing bounds trip still decides it', async () => {
+  // tierFactsCode reviewed `src/a.ts`; the fix adds `src/a.test.ts`. Not a
+  // stray — but still outside `reviewedFiles`, so the bounds gate trips and
+  // buys the bounded re-review exactly as it did before this gate existed.
+  const r = await drive(
+    fixedRun({
+      'fix-added:PAY-1': { outcome: 'listed', addedFiles: ['src/a.test.ts'], detail: '' },
+      'resolve:PAY-1': { ...resolvedOk, reviewedFiles: ['src/a.ts'], fixFiles: ['src/a.ts', 'src/a.test.ts'], fixLines: 20 },
+      're-review:PAY-1': { important: [] },
+    }),
+  )
+  assert.equal(r.out.outcome, 'completed')
+  assert.equal(r.out.ticketRecords[0].fixBoundsTripped, true)
+  assert.ok(r.labels.includes('re-review:PAY-1'))
+})
+
+test('added files: a new subdirectory beside reviewed code is inside (a path prefix, not dirname equality), and so is a file a finding named', async () => {
+  const r = await drive(
+    fixedRun({
+      // `a.ts` is the finding's own file (reviewImportant), at the repository
+      // root; `src/fixtures/empty/token.json` sits under reviewed `src/`.
+      'fix-added:PAY-1': { outcome: 'listed', addedFiles: ['src/fixtures/empty/token.json', 'b.ts'], detail: '' },
+      'resolve:PAY-1': { ...resolvedOk, reviewedFiles: ['src/a.ts', 'src/fixtures/empty/token.json', 'b.ts'], fixFiles: ['src/a.ts'], fixLines: 5 },
+    }),
+  )
+  assert.equal(r.out.outcome, 'completed', JSON.stringify(r.out.haltedOn))
+})
+
+test('added files: a reviewed root-level file does not admit the whole tree — only other root-level files', async () => {
+  // Nearly every ticket touches a root file (a changelog); a prefix rule on
+  // the root would make every path "inside" and the gate decorative.
+  const r = await drive(
+    fixedRun({
+      'tier-facts:PAY-1': { outcome: 'listed', files: ['CHANGELOG.md'], head: 'abc1234def0', detail: '' },
+      'review:PAY-1': { ...reviewImportant, important: [{ ...reviewImportant.important[0], file: 'CHANGELOG.md', cite: 'CHANGELOG.md:3' }] },
+      'fix-added:PAY-1': { outcome: 'listed', addedFiles: ['exports/prod.csv'], detail: '' },
+    }),
+  )
+  assert.equal(r.out.outcome, 'halted')
+  assert.match(r.out.haltedOn.stopCondition, /adds files where the ticket never worked/)
+})
+
+test('added files: an unreadable answer halts as an unmeasured fix does, and the prompt reads the range from the driver anchor with the bounds exclusions', async () => {
+  for (const bad of [null, { outcome: 'command-failed', addedFiles: [], detail: 'fatal: bad revision' }, { outcome: 'listed' }]) {
+    const r = await drive(fixedRun({ 'fix-added:PAY-1': bad }))
+    assert.equal(r.out.outcome, 'halted')
+    assert.match(r.out.haltedOn.stopCondition, /could not read which files the fix commits added/)
+    assert.ok(!r.labels.some(l => /^(accept|resolve|merge):/.test(l)))
+  }
+  const ok = await drive(fixedRun(), { ...ARGS, fixBoundsExclude: ['src/messages/*.json'] })
+  const p = call(ok, 'fix-added:PAY-1').prompt
+  assert.match(p, /git diff --name-only --diff-filter=A abc1234def0\.\.origin\/pay-1 -- \. ':\(exclude\)epics' ':\(exclude,glob\)src\/messages\/\*\.json'/)
+  assert.equal(call(ok, 'fix-added:PAY-1').model, 'haiku')
+})
+
+// ---- RETRO-2: a disposition that landed is read as landed --------------------
+// weekendgoals' H3: the disposition's commits and addendum were pushed, its
+// structured return failed, and the script could not tell it from one that did
+// nothing. The git state is the fact; the return is a report of it.
+
+const landed = (codeCommits = ['PAY-1: reject empty token (review fix)']) => ({ outcome: 'read', addendumMatches: 1, codeCommits, detail: '' })
+const lostReport = (over = {}) => oneTicket({ 'review:PAY-1': reviewImportant, 'disposition:PAY-1': null, 'disposition-facts:PAY-1': landed(), 're-review:PAY-1': { important: [] }, ...over })
+
+test('recovered disposition: no report and no addendum on the pushed branch halts exactly as before', async () => {
+  const r = await drive(lostReport({ 'disposition-facts:PAY-1': { outcome: 'read', addendumMatches: 0, codeCommits: ['PAY-1: half a fix'], detail: '' } }))
+  assert.match(r.out.haltedOn.stopCondition, /^BLOCKED/)
+  assert.match(r.out.haltedOn.detail, /returned no report — the review is not on the record/)
+  assert.equal(r.out.ticketRecords[0].dispositionRecovered, false)
+  assert.ok(!r.labels.some(l => /^(re-review|accept|resolve|merge):/.test(l)))
+})
+
+test('recovered disposition: an addendum and fix commits on the branch go through the bounded re-review, at the consequence tier, and only then to the merge', async () => {
+  const r = await drive(lostReport())
+  assert.equal(r.out.outcome, 'completed', JSON.stringify(r.out.haltedOn))
+  // The sequence, not a flag: the merge exists only after the re-review ran.
+  const seq = r.labels.filter(l => /^(disposition|disposition-facts|fix-added|re-review|accept|resolve|merge):/.test(l))
+  assert.deepEqual(seq, ['disposition:PAY-1', 'disposition-facts:PAY-1', 'fix-added:PAY-1', 're-review:PAY-1', 'accept:PAY-1', 'resolve:PAY-1', 'merge:PAY-1'])
+  const rec = r.out.ticketRecords[0]
+  assert.equal(rec.dispositionRecovered, true)
+  assert.equal(rec.disposition, 'recovered from the branch')
+  assert.deepEqual(rec.fixedCommits, ['PAY-1: reject empty token (review fix)'])
+  assert.equal(rec.reReviewRan, true)
+  // A `normal`-tier ticket, yet judged at the consequence tier's price: no
+  // agent reported what these commits are, and the bounds gate is skipped.
+  assert.equal(rec.fixBoundsGated, false)
+  assert.equal(call(r, 're-review:PAY-1').effort, 'xhigh')
+  assert.match(r.logs.join('\n'), /returned no report, but its work is on the pushed branch/)
+})
+
+test('recovered disposition: an addendum but no code commit, against Important findings, halts on the Important finding — nothing fixed them', async () => {
+  const r = await drive(lostReport({ 'disposition-facts:PAY-1': landed([]) }))
+  assert.equal(r.out.haltedOn.stopCondition, 'an Important review finding it cannot fix')
+  assert.match(r.out.haltedOn.detail, /NO code commit since the reviewed head/)
+  assert.ok(!r.labels.some(l => /^(re-review|merge):/.test(l)))
+})
+
+test('recovered disposition: a facts read that returns nothing, fails, or has no anchor to measure from halts as before — and an Important in the recovered re-review halts too', async () => {
+  for (const bad of [null, { outcome: 'command-failed', addendumMatches: -1, codeCommits: [], detail: 'fatal' }, { outcome: 'read', codeCommits: [] }]) {
+    const r = await drive(lostReport({ 'disposition-facts:PAY-1': bad }))
+    assert.match(r.out.haltedOn.stopCondition, /^BLOCKED/)
+    assert.ok(!r.labels.some(l => l.startsWith('merge:')))
+  }
+  const noAnchor = await drive(lostReport({ 'tier-facts:PAY-1': { outcome: 'listed', files: ['src/a.ts'], head: '', detail: '' } }))
+  assert.match(noAnchor.out.haltedOn.stopCondition, /^BLOCKED/)
+  assert.ok(!noAnchor.labels.includes('disposition-facts:PAY-1'))
+  const stillBroken = await drive(lostReport({ 're-review:PAY-1': { important: [{ file: 'a.ts', cite: 'a.ts:12', summary: 'still fails open', confirmedOrPlausible: 'confirmed', failure: 'empty token passes' }] } }))
+  assert.equal(stillBroken.out.haltedOn.stopCondition, 'an Important review finding it cannot fix')
+  assert.ok(!stillBroken.labels.some(l => l.startsWith('merge:')))
+})
+
+test('recovered disposition: the re-review is handed the first review\'s findings — it is the only check that they were fixed — and an ordinary re-review is not', async () => {
+  const r = await drive(lostReport())
+  const p = call(r, 're-review:PAY-1').prompt
+  assert.match(p, /THE FIRST REVIEW'S IMPORTANT FINDINGS/)
+  assert.match(p, /guard fails open/)
+  assert.match(p, /returned NO report/)
+  const ordinary = await drive(
+    oneTicket({ 'worker:PAY-1': workerOk('PAY-1', { tier: 'consequence' }), 'review:PAY-1': reviewImportant, 'disposition:PAY-1': dispFixed, 're-review:PAY-1': { important: [] } }),
+  )
+  assert.doesNotMatch(call(ordinary, 're-review:PAY-1').prompt, /THE FIRST REVIEW'S IMPORTANT FINDINGS/)
+  // A clean review whose disposition lost its report: addendum landed, no
+  // code changed — nothing to re-review, and the ticket merges on the branch.
+  const clean = await drive(oneTicket({ 'disposition:PAY-1': null, 'disposition-facts:PAY-1': landed([]) }))
+  assert.equal(clean.out.outcome, 'completed')
+  assert.ok(!clean.labels.includes('re-review:PAY-1'))
+})
+
+// ---- RETRO-4: the release pull request has a door after a halted epic --------
+// Every run of one live epic halted; its tickets were finished by hand, and the
+// release pull request was then opened by a session that had no route to step
+// 7's body. Re-running the run is that route, when the board admits it.
+
+test('nothing left to start: an epic whose tickets are all integrated completes with no worker, reviewer, disposition or merge agent hired', async () => {
+  const r = await drive(label => (label === 'refresh+select:1' ? refreshed([]) : undefined))
+  assert.deepEqual(r.labels, ['refresh+select:1'])
+  assert.equal(r.out.outcome, 'completed')
+  assert.equal(r.out.haltedOn, null)
+  assert.equal(r.out.totals.ticketsIntegrated, 0)
+  assert.deepEqual(r.out.ticketRecords, [])
+})
+
+test('nothing left to start: that run still hands the session the release pull request — the refreshed epic branch and the instruction to open it', async () => {
+  const r = await drive(label => (label === 'refresh+select:1' ? refreshed([]) : undefined))
+  assert.match(r.out.finalRefresh, /^done:/)
+  assert.match(String(r.out.next), /release pull request/i)
+})
+
+// ---- RETRO-7: a relaxing instruction needs provenance ------------------------
+
+test('provenance: the worker is told a mid-run instruction that loosens a rule binds only when it is readable on the signed-off epic branch', async () => {
+  const r = await drive(oneTicket())
+  const p = call(r, 'worker:PAY-1').prompt
+  assert.match(p, /RELAXES A RULE NEEDS PROVENANCE/)
+  assert.match(p, /git show origin\/epic\/payments:epics\/payments\/tickets\.md/)
+  assert.match(p, /document\/code contradiction — stop and report/)
+})
+
+test('provenance: the rule is the worker\'s alone — no read-only step and no reviewer carries it', async () => {
+  const r = await drive(oneTicket())
+  for (const c of r.calls) if (c.label !== 'worker:PAY-1') assert.doesNotMatch(c.prompt, /NEEDS PROVENANCE/, c.label)
+})
+
+test('reviewed-file list: an empty entry does not admit the repository root — the sweep\'s own landing place', async () => {
+  // `git diff --name-only` ends with a newline; a proxy that reports the
+  // blank as a path hands the gate a file whose directory is the root.
+  const r = await drive(
+    fixedRun({
+      'tier-facts:PAY-1': { outcome: 'listed', files: ['src/a.ts', ''], head: 'abc1234def0', detail: '' },
+      'review:PAY-1': { ...reviewImportant, important: [{ ...reviewImportant.important[0], file: 'src/a.ts', cite: 'src/a.ts:12' }] },
+      'fix-added:PAY-1': { outcome: 'listed', addedFiles: ['club-town-research.csv', 'venue-city-verdicts.md', ''], detail: '' },
+    }),
+  )
+  assert.equal(r.out.outcome, 'halted')
+  assert.match(r.out.haltedOn.stopCondition, /adds files where the ticket never worked/)
+  assert.deepEqual(r.out.ticketRecords[0].fixAddedFiles, ['club-town-research.csv', 'venue-city-verdicts.md'])
 })

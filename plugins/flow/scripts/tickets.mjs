@@ -41,6 +41,10 @@
 //                                        log off a pushed branch, and an
 //                                        unreadable log exits nonzero rather
 //                                        than counting 0
+//   tickets.mjs owed <epic> [--json]     every owed item the epic's status log
+//                                        records and nothing has resolved —
+//                                        the release pull request's Owed
+//                                        section, printed rather than recalled
 //   tickets.mjs spend [epic] [--json]    the recorded token ledger per ticket
 //                                        and per epic, derived from the
 //                                        status log's Tokens lines, addendum
@@ -441,7 +445,21 @@ function parseChecks(body, designSources = null) {
       const last = checks[checks.length - 1]
       if (!last || last.expect !== null)
         problems.push({ line: i + 1, text: line.trim(), why: 'EXPECT with no CHECK line above it to attach to' })
-      else last.expect = e[1].trim()
+      else {
+        last.expect = e[1].trim()
+        // `node --test --test-name-pattern <p> <file>` prints `# pass 1` when
+        // the pattern matches NOTHING — the file itself counts as one passing
+        // test — and when it matches one. So this EXPECT is green before the
+        // ticket exists and green whatever the worker builds: the vacuous
+        // CHECK, in the spelling this plugin's own plans use. Measured on Node
+        // 22; two planning drafts shipped it before a ledger run caught them.
+        if (/--test-name-pattern\b/.test(last.check) && /^#\s*pass\s+1$/.test(last.expect))
+          problems.push({
+            line: i + 1,
+            text: line.trim(),
+            why: 'this CHECK parses and runs but proves nothing: under `--test-name-pattern`, node prints "# pass 1" when the pattern matches NO test (the file itself counts), so it is green before the ticket exists — expect two or more matching tests ("# pass 2"), or grep the TAP line of the test\'s own title',
+          })
+      }
     } else if (cmp) {
       const value = cmp[1].trim()
       const why = compareProblem(value, designSources)
@@ -1168,7 +1186,22 @@ const ROLE_PHRASE = new RegExp(`\\b(${ROLE_RE})\\s+tokens\\b[^:]{0,40}:\\s*(\\d[
 const ROLE_PAIR = new RegExp(`\\b(${ROLE_RE})=(\\d[\\d,]*|unknown)`, 'gi')
 const ROLE_UNKNOWN = new RegExp(`\\b(${ROLE_RE})\\s+unknown\\b`, 'gi')
 const TOKENS_LINE = /\*\*Tokens:\*\*\s*([^\n]*)/gi
-const RUN_GROUP = new RegExp(`\\b(${TICKET_ID})((?:\\s+(?:${ROLE_RE})=(?:\\d[\\d,]*|unknown))+)`, 'g')
+// A group may open with `round=<n>` — `CITY-14 round=2 worker=804432
+// reviewer=324269` — and rounds for a ticket and role are SUMMED, where every
+// other repeat is a correction and the last one wins. The label is what tells
+// them apart: a ticket reviewed four times spent four passes' tokens, and one
+// live entry recorded exactly that as four unlabelled pairs, of which the
+// ledger counted the last (879k of 4.4M). This one regex is used three times —
+// the group read, the strip that separates an entry's own bare pairs from
+// labelled groups, and doctor's only test for a parseable run record — so the
+// round label lives here, where all three move together.
+const ROLE_PAIRS = `((?:\\s+(?:${ROLE_RE})=(?:\\d[\\d,]*|unknown))+)`
+const RUN_GROUP = new RegExp(`\\b(${TICKET_ID})(?:\\s+round=(\\d+))?${ROLE_PAIRS}`, 'g')
+// The same label inside a ticket's own entry, where the ID is the heading's.
+const ENTRY_ROUND = new RegExp(`\\bround=(\\d+)${ROLE_PAIRS}`, 'gi')
+// What marks a repeated figure as a correction rather than a round: the dated
+// addendum corrections already take ("**Addendum — correction — …").
+const CORRECTION_MARK = /Addendum\b[^*]{0,80}\bcorrect/i
 const toNum = (s) => Number(s.replace(/,/g, ''))
 
 function parseSpend(epic) {
@@ -1179,7 +1212,7 @@ function parseSpend(epic) {
   // never where an old one can be found.
   const docs = [epic.statusDoc, epic.runsDoc].filter(Boolean)
   if (!docs.length) return byId
-  const rec = (id) => byId[id] || (byId[id] = { id, figures: {}, unknown: new Set(), source: null, note: null })
+  const rec = (id) => byId[id] || (byId[id] = { id, figures: {}, rounds: {}, repeats: [], unknown: new Set(), source: null, note: null })
   // Two files means two orders, so the ranking is stated rather than left to
   // whichever file is read last:
   //
@@ -1203,6 +1236,18 @@ function parseSpend(epic) {
     }
     r.source = source
   }
+  // A labelled round: last figure wins WITHIN the round (a correction to a
+  // round is that round written again), rounds are summed at the end, and
+  // `unknown` never erases a round's known figure — rule 1, per round.
+  const applyRound = (r, n, role, val, source) => {
+    role = role.toLowerCase()
+    const rounds = (r.rounds[role] ||= {})
+    if (/^unknown$/i.test(val)) {
+      if (n in rounds) return // an unknown that changed nothing keeps the known figure's source too
+      rounds[n] = null
+    } else rounds[n] = toNum(val)
+    r.source = source
+  }
   // Entries wrap at the house width, so phrases are matched over a region's
   // joined text, never line by line: "Worker tokens (implementation\nleg):".
   const flush = (region, text) => {
@@ -1214,12 +1259,37 @@ function parseSpend(epic) {
     // it names rather than the entry it landed in.
     for (const m of flat.matchAll(RUN_GROUP)) {
       const r = rec(m[1])
-      for (const p of m[2].matchAll(ROLE_PAIR)) apply(r, p[1], p[2], 'run-record')
+      for (const p of m[3].matchAll(ROLE_PAIR)) m[2] ? applyRound(r, m[2], p[1], p[2], 'run-record') : apply(r, p[1], p[2], 'run-record')
       r.unknown.delete('ticket')
     }
     if (region.id) {
       const r = rec(region.id)
-      const own = flat.replace(RUN_GROUP, ' ') // bare pairs and phrases belong to this entry; labelled groups do not
+      let own = flat.replace(RUN_GROUP, ' ') // bare pairs and phrases belong to this entry; labelled groups do not
+      for (const m of own.matchAll(ENTRY_ROUND)) for (const p of m[2].matchAll(ROLE_PAIR)) applyRound(r, m[1], p[1], p[2], 'log')
+      own = own.replace(ENTRY_ROUND, ' ')
+      // Two unlabelled known figures for one role in one entry are either a
+      // correction or two rounds, and only the first is what last-wins means.
+      // Doctor asks which, unless a correction addendum sits between them.
+      const seen = {}
+      const entryRepeats = []
+      const unlabelled = [...own.matchAll(ROLE_PHRASE), ...own.matchAll(ROLE_PAIR)]
+        .filter((m) => !/^unknown$/i.test(m[2]))
+        .sort((a, b) => a.index - b.index)
+      for (const m of unlabelled) {
+        const role = m[1].toLowerCase()
+        const prev = seen[role]
+        if (prev && !CORRECTION_MARK.test(own.slice(prev.index, m.index))) {
+          // Per entry, not per ticket: a ticket with two entries (a BLOCKED one,
+          // then a DONE one) must not have their figures read as one entry's.
+          let hit = entryRepeats.find((x) => x.role === role)
+          if (!hit) {
+            entryRepeats.push((hit = { role, figures: [toNum(prev[2])] }))
+            r.repeats.push(hit)
+          }
+          hit.figures.push(toNum(m[2]))
+        }
+        seen[role] = m
+      }
       for (const m of own.matchAll(ROLE_PHRASE)) apply(r, m[1], m[2], 'log')
       for (const m of own.matchAll(ROLE_PAIR)) apply(r, m[1], m[2], 'log')
       for (const m of own.matchAll(ROLE_UNKNOWN)) apply(r, m[1], 'unknown', 'log')
@@ -1254,6 +1324,23 @@ function parseSpend(epic) {
       if (region) text += `${line}\n`
     }
     flush(region, text)
+  }
+  // Rounds are summed last, over everything both files said. A role that has
+  // labelled rounds is their sum — the labelled reading wins over any
+  // unlabelled figure for the same role, and `mixed` says so for doctor. A
+  // round known only as `unknown` adds nothing and erases nothing.
+  for (const r of Object.values(byId)) {
+    r.mixed = []
+    for (const [role, rounds] of Object.entries(r.rounds)) {
+      const known = Object.values(rounds).filter((v) => v !== null)
+      if (!known.length) {
+        if (!(role in r.figures)) r.unknown.add(role)
+        continue
+      }
+      if (role in r.figures) r.mixed.push(role)
+      r.figures[role] = known.reduce((a, b) => a + b, 0)
+      r.unknown.delete(role)
+    }
   }
   return byId
 }
@@ -1327,7 +1414,7 @@ function spendReport(epicFilter) {
     const tickets = data.tickets
       .filter((t) => t.epic === epic.epic)
       .map((t) => {
-        const r = spend[t.id] || { figures: {}, unknown: new Set(), source: null, note: null }
+        const r = spend[t.id] || { figures: {}, rounds: {}, unknown: new Set(), source: null, note: null }
         const known = Object.values(r.figures)
         return {
           id: t.id,
@@ -1336,6 +1423,9 @@ function spendReport(epicFilter) {
           ...Object.fromEntries(SPEND_ROLES.map((role) => [role, r.figures[role] ?? null])),
           total: known.length ? known.reduce((a, b) => a + b, 0) : null,
           unknown: [...r.unknown].sort(),
+          // How many labelled rounds each summed role's figure adds up — absent
+          // roles were never labelled, so their figure is a single reading.
+          rounds: Object.fromEntries(Object.entries(r.rounds || {}).map(([role, rs]) => [role, Object.keys(rs).length])),
           source: r.source,
           note: r.note,
         }
@@ -1405,6 +1495,37 @@ function idsOnRef(ref) {
 
 const idsOnMain = () => idsOnRef(`origin/${defaultBranch}`)
 
+// Work on an epic branch that belongs to no ticket. A commit there whose
+// subject carries no ticket ID reaches no status entry, no spend line and no
+// reviewer — weekendgoals' redesign-city shipped ten of them, the fix for a
+// production crash loop among them, and its documents stop one day before the
+// epic does. Derived like everything else: the non-merge commits between the
+// default branch and the epic branch that touch anything outside `epics/`
+// (plan edits, status entries, run records and addenda are the epic's own
+// bookkeeping) and whose subject does not open with a ticket ID. `epicLevel`
+// marks the ones subjected `<epic-name>: …` — the convention for work no
+// ticket owns by construction, the release review's own fixes — which are
+// listed and never warned about: somebody chose that name. An epic whose
+// branch is gone or merged reads as none, which is what derived means.
+function unticketedCommits(epicName) {
+  const ref = [`origin/epic/${epicName}`, `epic/${epicName}`].find((r) => git(['rev-parse', '--verify', '--quiet', `${r}^{commit}`], { allowFail: true }))
+  if (!ref) return []
+  const out = git(
+    ['log', '--no-merges', '--format=%h%x09%s', '-n', String(MAIN_SCAN_LIMIT), `origin/${defaultBranch}..${ref}`, '--', ':(top)', ':(top,exclude)epics'],
+    { allowFail: true },
+  )
+  if (!out) return []
+  const ticketed = new RegExp(`^(${TICKET_ID})[:\\s]`)
+  return out
+    .split('\n')
+    .map((l) => {
+      const tab = l.indexOf('\t')
+      return { sha: l.slice(0, tab), subject: l.slice(tab + 1) }
+    })
+    .filter((c) => c.sha && !ticketed.test(c.subject))
+    .map((c) => ({ ...c, epicLevel: c.subject.startsWith(`${epicName}:`) }))
+}
+
 function commitsAhead(branch) {
   const n = git(['rev-list', '--count', `origin/${defaultBranch}..${branch}`], { allowFail: true })
   return n === null ? 0 : Number(n)
@@ -1449,7 +1570,10 @@ function board(epicFilter) {
   const onMain = idsOnMain()
 
   const tickets = []
+  const unticketed = {}
   for (const epic of epics) {
+    const loose = unticketedCommits(epic.epic)
+    if (loose.length) unticketed[epic.epic] = loose
     const status = parseStatus(epic)
     // Only release epics pay the extra log call, and only when their epic
     // branch exists on the remote — the remote, because integration is the
@@ -1472,6 +1596,7 @@ function board(epicFilter) {
     tickets,
     byId: Object.fromEntries(tickets.map((t) => [t.id, t])),
     duplicates,
+    unticketed,
     current: currentEpic(allEpics),
     prsAvailable: prs.available,
     onMainCapped: onMain.capped,
@@ -1564,6 +1689,15 @@ function printBoard(data, epicFilter) {
       const title = t.title.length > 46 ? t.title.slice(0, 45) + '…' : t.title
       console.log(
         `  ${t.id.padEnd(8)} ${title.padEnd(46)} ${BADGE[t.state]}` + (t.pr ? `  #${t.pr.number}` : ''),
+      )
+    }
+    const loose = data.unticketed[epic.epic] || []
+    if (loose.length) {
+      const named = loose.filter((c) => c.epicLevel).length
+      console.log(
+        `  ${C.dim}${loose.length} unticketed commit${loose.length === 1 ? '' : 's'} on epic/${epic.epic}` +
+          (named ? ` (${named} subjected "${epic.epic}: …")` : '') +
+          ` — work no status entry records; \`list ${epic.epic} --json\` names them${C.off}`,
       )
     }
     console.log()
@@ -1696,6 +1830,18 @@ function doctor() {
   const nearTicket = new RegExp(`^##\\s+[A-Za-z][A-Za-z0-9]*-\\d+`)
   const nearStatus = new RegExp(`^###\\s+[A-Za-z][A-Za-z0-9]*-\\d+`)
   for (const epic of epics) {
+    // Commits on the epic branch that name neither a ticket nor the epic: the
+    // shape nobody chose. A warn, never a fail — the work may be right; what
+    // is missing is its record, and the repair is to write one, never to
+    // rewrite history to add an ID.
+    const bare = unticketedCommits(epic.epic).filter((c) => !c.epicLevel)
+    if (bare.length) {
+      const shown = bare.slice(0, 3).map((c) => `${c.sha} "${c.subject}"`).join(', ')
+      add(
+        'warn',
+        `${epic.epic}: ${bare.length} commit${bare.length === 1 ? '' : 's'} on epic/${epic.epic} name${bare.length === 1 ? 's' : ''} no ticket and touch${bare.length === 1 ? 'es' : ''} code outside epics/ — ${shown}${bare.length > 3 ? `, and ${bare.length - 3} more` : ''}. Work there reaches no status entry, no spend line and no reviewer. Record it: add a ticket to ${epic.epic}/tickets.md with a status entry for what was done, or run a one-off through /flow:quick; work that belongs to the epic as a whole (a release review's fixes) is subjected "${epic.epic}: …", which is listed on the board and not warned about. Never rewrite pushed history to add an ID`,
+      )
+    }
     readFileSync(epic.ticketsDoc, 'utf8').split('\n').forEach((line, i) => {
       if (nearTicket.test(line) && !TICKET_HEADING.test(line))
         add('warn', `${epic.epic}/tickets.md:${i + 1} — heading will not parse as a ticket (needs "## <ID> — <name>", ID uppercase): ${line.trim()}`)
@@ -1742,6 +1888,19 @@ function doctor() {
       // brief that would say so is read by the next worker, not by the
       // session that wrote the line. Flagged here, where the writer looks.
       for (const n of parseOwed(epic).notes) add('warn', `${epic.epic}/status.md — ${n}`)
+      // A role's figure written twice in one entry with no round label and no
+      // correction between: spend keeps the last, which is right for a
+      // correction and wrong for a second review round. Ask, never guess.
+      const fmt = (n) => n.toLocaleString('en-US')
+      for (const r of Object.values(parseSpend(epic))) {
+        for (const rep of r.repeats)
+          add(
+            'warn',
+            `${epic.epic}/status.md (${r.id}) — ${rep.figures.length} unlabelled ${rep.role} figures in one entry (${rep.figures.map(fmt).join(', ')}) and no correction addendum between them: spend counts only the last, ${fmt(rep.figures[rep.figures.length - 1])}, where review rounds would total ${fmt(rep.figures.reduce((x, y) => x + y, 0))}. If they are rounds, append a dated addendum restating them with labels — "round=1 ${rep.role}=<n> … round=2 ${rep.role}=<n> …" — which spend sums; if the later one corrects the earlier, say so in a dated "Addendum — correction" between them. Never edit the entry`,
+          )
+        if (r.mixed.length)
+          add('warn', `${epic.epic} (${r.id}) — ${r.mixed.join(', ')} carr${r.mixed.length === 1 ? 'ies' : 'y'} both round-labelled and unlabelled figures; spend counts the labelled rounds' sum and ignores the unlabelled figure`)
+      }
       // And a closing line that closed nothing, flagged at the same door for
       // the same reason: the brief that reports it is read by the next worker,
       // not by the human who wrote the line, and only that human can repair it.
@@ -2114,6 +2273,40 @@ switch (cmd) {
     break
   }
 
+  case 'owed': {
+    // The epic-wide list `brief` already shows beside one ticket, on its own:
+    // what a release pull request's `## Owed` section is pasted from. A body
+    // that says "nothing owed" has to be one a command printed — one live
+    // release said it against 31 open items, because the session that opened
+    // it was recalling, not reading.
+    const known = discoverEpics()
+    const epic = known.find((e) => e.epic === arg)
+    if (!epic) {
+      console.error(
+        arg
+          ? `no epic "${arg}" under epics/ — known epics: ${known.map((e) => e.epic).join(', ') || '(none)'}`
+          : `owed needs an epic: tickets.mjs owed <epic> — known epics: ${known.map((e) => e.epic).join(', ') || '(none)'}`,
+      )
+      process.exit(1)
+    }
+    const { owed, notes } = parseOwed(epic)
+    if (json) emit({ epic: epic.epic, count: owed.length, owed, notes })
+    else {
+      console.log(`${C.bold}Owed — ${epic.epic}: recorded, not marked resolved${C.off}`)
+      if (!owed.length) console.log('none outstanding')
+      else {
+        let lead = null
+        for (const o of owed) {
+          if (o.lead && o.lead !== lead) console.log(`  ${C.dim}${o.lead}${C.off}`)
+          lead = o.lead || null
+          console.log(`  ${o.id} (${o.date}): ${o.text}`)
+        }
+      }
+      for (const n of notes) console.log(`  ${C.yellow}note:${C.off} ${n}`)
+    }
+    break
+  }
+
   case 'deviations': {
     // Every deviation one ticket's own entries recorded — closed or not, each
     // with its closing line when it has one. Two readers, one read: an
@@ -2383,6 +2576,7 @@ switch (cmd) {
           ]),
         ),
         duplicates: data.duplicates,
+        unticketed: data.unticketed,
         tickets: data.tickets.map(({ body, ...t }) => t),
       })
     } else printBoard(data, arg)

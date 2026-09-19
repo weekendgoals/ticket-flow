@@ -3443,3 +3443,283 @@ test('doctor says nothing about codex when no epic declares the runner', () => {
   const rows = doctorWith({}, crepo)
   assert.ok(!rows.some((r) => /codex/.test(r.msg)), rows.map((r) => r.msg).join('\n'))
 })
+
+// ── RETRO-3: unticketed commits on an epic branch ────────────────────────────
+// weekendgoals' redesign-city shipped ten commits no document mentions — the
+// fix for a production crash loop among them. Derived from git alone: what is
+// on the epic branch, not on the default branch, is not a merge, touches
+// something outside epics/, and opens with no ticket ID.
+const utmp = realpathSync(mkdtempSync(join(tmpdir(), 'tickets-unticketed-')))
+const uremote = join(utmp, 'remote.git')
+const urepo = join(utmp, 'repo')
+after(() => rmSync(utmp, { recursive: true, force: true }))
+git(utmp, 'init', '--bare', '--initial-branch=main', uremote)
+git(utmp, 'init', '--initial-branch=main', urepo)
+git(urepo, 'config', 'user.email', 'test@example.com')
+git(urepo, 'config', 'user.name', 'Test')
+git(urepo, 'config', 'commit.gpgsign', 'false')
+const uwrite = (rel, text) => {
+  mkdirSync(dirname(join(urepo, rel)), { recursive: true })
+  writeFileSync(join(urepo, rel), text)
+}
+const ucommit = (subject, ...paths) => {
+  git(urepo, 'add', ...paths)
+  git(urepo, 'commit', '-q', '-m', subject)
+}
+for (const [name, id] of [['rho', 'R'], ['tau', 'T']]) {
+  uwrite(`epics/${name}/tickets.md`, `# ${name} epic — tickets\n\nDelivery: release\n\n## ${id}-1 — the one ticket\n\n**Scope.** One.\n`)
+  uwrite(`epics/${name}/status.md`, `# ${name} epic — status log\n`)
+}
+uwrite('src/app.js', 'export const a = 1\n')
+ucommit('initial', 'epics', 'src/app.js')
+git(urepo, 'remote', 'add', 'origin', uremote)
+git(urepo, 'push', '-q', '-u', 'origin', 'main')
+git(urepo, 'remote', 'set-head', 'origin', 'main')
+// rho's epic branch: one ticketed commit, one epics-only commit with no ID,
+// one bare code commit, one subjected with the epic's name, and a refresh
+// merge from main that itself carries an ID-less commit made ON main.
+git(urepo, 'checkout', '-q', '-b', 'epic/rho')
+uwrite('src/r1.js', 'export const r1 = 1\n')
+ucommit('R-1: the one ticket', 'src/r1.js')
+uwrite('epics/rho/status.md', '# rho epic — status log\n\nA plan edit.\n')
+ucommit('re-plan the order after the probe', 'epics/rho/status.md')
+uwrite('src/env.js', 'import "dotenv/config"\n')
+ucommit('move dotenv to dependencies — the prod image prunes dev deps', 'src/env.js')
+uwrite('src/app.js', 'export const a = 2\n')
+ucommit('rho: release review fixes — the guard no longer fails open', 'src/app.js')
+git(urepo, 'checkout', '-q', 'main')
+uwrite('src/main-only.js', 'export const m = 1\n')
+ucommit('an unrelated change somebody merged to main', 'src/main-only.js')
+git(urepo, 'push', '-q', 'origin', 'main')
+git(urepo, 'checkout', '-q', 'epic/rho')
+git(urepo, 'merge', '-q', '--no-ff', 'main', '-m', 'Merge main into epic/rho')
+git(urepo, 'push', '-q', '-u', 'origin', 'epic/rho')
+git(urepo, 'checkout', '-q', 'main')
+const ulist = (...a) => JSON.parse(run(urepo, 'list', ...a, '--json'))
+
+test('unticketed: a code commit on the epic branch with no ID in its subject is reported, by sha and subject', () => {
+  const loose = ulist().unticketed.rho
+  assert.ok(Array.isArray(loose), 'the board JSON carries an unticketed map keyed by epic')
+  const bare = loose.find((c) => /dotenv/.test(c.subject))
+  assert.ok(bare, JSON.stringify(loose))
+  assert.match(bare.sha, /^[0-9a-f]{7,}$/)
+  assert.equal(bare.epicLevel, false)
+})
+
+test('unticketed: a ticketed commit, a merge, a commit from main the refresh brought in, and an epics-only commit are not reported', () => {
+  const subjects = ulist().unticketed.rho.map((c) => c.subject)
+  assert.deepEqual(subjects.sort(), ['move dotenv to dependencies — the prod image prunes dev deps', 'rho: release review fixes — the guard no longer fails open'])
+})
+
+test('unticketed: a commit subjected with the epic name is listed as epic-level, and doctor warns only on the one that names neither', () => {
+  const named = ulist().unticketed.rho.find((c) => c.subject.startsWith('rho:'))
+  assert.equal(named.epicLevel, true)
+  const rows = JSON.parse(run(urepo, 'doctor', '--json'))
+  const warn = rows.filter((r) => r.level === 'warn' && /name[s]? no ticket/.test(r.msg))
+  assert.equal(warn.length, 1, JSON.stringify(rows.map((r) => r.msg)))
+  assert.match(warn[0].msg, /^rho: 1 commit on epic\/rho names no ticket/)
+  assert.match(warn[0].msg, /dotenv/)
+  assert.doesNotMatch(warn[0].msg, /release review fixes/)
+  assert.match(warn[0].msg, /Never rewrite pushed history/)
+  // A warn, never a fail: doctor still exits 0 (run() would have thrown).
+})
+
+test('unticketed: an epic with no epic branch reports none and breaks nothing', () => {
+  const data = ulist()
+  assert.equal(data.unticketed.tau, undefined)
+  assert.ok(data.tickets.some((t) => t.id === 'T-1'))
+})
+
+test('unticketed: the board prints one line under the epic, with how many carry the epic name, and nothing under a clean epic', () => {
+  const out = run(urepo, 'list')
+  assert.match(out, /2 unticketed commits on epic\/rho \(1 subjected "rho: …"\)/)
+  assert.doesNotMatch(out, /unticketed commit[s]? on epic\/tau/)
+})
+
+// ── RETRO-4: `owed <epic>` — the release body's Owed section, printed ────────
+// One live release pull request said "Nothing owed" against 31 open items: the
+// session that opened it was recalling the log, not reading it.
+const owedRepo = join(tmp, 'owed-cmd')
+git(tmp, 'init', '--initial-branch=main', owedRepo)
+for (const [name, id] of [['psi', 'P'], ['chi', 'C']]) {
+  mkdirSync(join(owedRepo, `epics/${name}`), { recursive: true })
+  writeFileSync(join(owedRepo, `epics/${name}/tickets.md`), `# ${name}\n\nDelivery: release\n\n## ${id}-1 — first\n\n**Scope.** One.\n\n## ${id}-2 — second\n\n**Scope.** Two.\n`)
+}
+writeFileSync(
+  join(owedRepo, 'epics/psi/status.md'),
+  `# Psi epic — status log
+
+### P-1 — first — 2026-09-01 — DONE
+
+**Owed:** the full Cypress suite has not run green on the release head.
+
+### P-2 — second — 2026-09-02 — DONE
+
+**Owed:**
+- the production cacheability check, deferred to release;
+- lint is broken in four workspaces.
+
+**Resolves owed:** P-2.2 — lint fixed in a quick ticket.
+`,
+)
+writeFileSync(join(owedRepo, 'epics/chi/status.md'), '# Chi epic — status log\n\n### C-1 — first — 2026-09-01 — DONE\n\n**Owed:** Nothing.\n')
+
+test('owed command: prints every outstanding item of the epic with the entry that owes it', () => {
+  const out = run(owedRepo, 'owed', 'psi')
+  assert.match(out, /P-1 \(2026-09-01\): the full Cypress suite has not run green on the release head\./)
+  assert.match(out, /P-2\.1 \(2026-09-02\): the production cacheability check, deferred to release/)
+  const j = JSON.parse(run(owedRepo, 'owed', 'psi', '--json'))
+  assert.equal(j.epic, 'psi')
+  assert.equal(j.count, 2)
+  assert.deepEqual(j.owed.map((o) => o.id), ['P-1', 'P-2.1'])
+})
+
+test('owed command: honours Resolves owed — a discharged item never prints', () => {
+  assert.doesNotMatch(run(owedRepo, 'owed', 'psi'), /lint is broken/)
+})
+
+test('owed command: an epic that owes nothing says "none outstanding" and exits 0 — a printed zero, not an absent section', () => {
+  assert.match(run(owedRepo, 'owed', 'chi'), /none outstanding/)
+  assert.deepEqual(JSON.parse(run(owedRepo, 'owed', 'chi', '--json')).owed, [])
+})
+
+test('owed command: an unknown or missing epic is refused by naming the known ones', () => {
+  const unknown = runFail(owedRepo, 'owed', 'omega')
+  assert.equal(unknown.status, 1)
+  assert.match(unknown.stderr, /no epic "omega" under epics\/ — known epics: chi, psi|known epics: psi, chi/)
+  const missing = runFail(owedRepo, 'owed')
+  assert.equal(missing.status, 1)
+  assert.match(missing.stderr, /owed needs an epic/)
+})
+
+// ── RETRO-5: spend sums review rounds ────────────────────────────────────────
+// One live entry (CITY-14) recorded four worker/reviewer pairs, one per review
+// round, none labelled — and last-wins, which is right for a correction, read
+// 879k of the 4.4M it records. A `round=<n>` label is what tells a round from
+// a correction: rounds are summed, and within a round the last figure wins.
+const roundsRepo = (name, status, runs = null) => {
+  const dir = join(tmp, `rounds-${name}`)
+  git(tmp, 'init', '--initial-branch=main', dir)
+  mkdirSync(join(dir, 'epics/city'), { recursive: true })
+  writeFileSync(join(dir, 'epics/city/tickets.md'), '# City\n\nDelivery: release\n\n## CITY-14 — the map card\n\n**Scope.** One.\n\n## CITY-15 — derbies\n\n**Scope.** Two.\n')
+  writeFileSync(join(dir, 'epics/city/status.md'), `# City epic — status log\n\n${status}`)
+  if (runs) writeFileSync(join(dir, 'epics/city/runs.md'), `# City epic — run records\n\n${runs}`)
+  return dir
+}
+const spendOf = (dir, id) => JSON.parse(run(dir, 'spend', 'city', '--json')).epics[0].tickets.find((t) => t.id === id)
+// These fixtures have no remote, so doctor exits 1 on its own precondition
+// rows; the rows it printed are what is read here, whatever the exit code.
+const doctorWarns = (dir, re) => {
+  const failed = runFail(dir, 'doctor', '--json')
+  const rows = JSON.parse(failed ? failed.stdout : run(dir, 'doctor', '--json'))
+  return rows.filter((r) => r.level === 'warn' && re.test(r.msg))
+}
+const CITY14 = '### CITY-14 — the map card — 2026-09-16 — DONE\n\n**Built:** the card.\n\n**Owed:** Nothing.\n\n'
+
+test('spend rounds: four labelled rounds in one entry sum per role — CITY-14 reads 4.4M, not the last pair', () => {
+  const dir = roundsRepo('sum', `${CITY14}**Addendum — review — 2026-09-16:** round=1 worker=911,511 reviewer=302,889\n\n**Addendum — review — 2026-09-17:** round=2 worker=804432 reviewer=324269\n\n**Addendum — review — 2026-09-17:** round=3 worker=909377\nreviewer=259927\n\n**Addendum — review — 2026-09-18:** round=4 worker=581236 reviewer=297991\n`)
+  const t = spendOf(dir, 'CITY-14')
+  assert.equal(t.worker, 911511 + 804432 + 909377 + 581236)
+  assert.equal(t.reviewer, 302889 + 324269 + 259927 + 297991)
+  assert.equal(t.total, 4391632)
+  assert.deepEqual(t.rounds, { worker: 4, reviewer: 4 })
+})
+
+test('spend rounds: a round written again overrides that round only — a correction to a round is the round, restated', () => {
+  const dir = roundsRepo('restate', `${CITY14}round=1 worker=100 reviewer=10\n\nround=2 worker=200 reviewer=20\n\n**Addendum — correction — 2026-09-19:** round=1 worker=150\n`)
+  const t = spendOf(dir, 'CITY-14')
+  assert.equal(t.worker, 350)
+  assert.equal(t.reviewer, 30)
+})
+
+test('spend rounds: unlabelled repeats read exactly as before — the last figure for a role wins', () => {
+  const dir = roundsRepo('lastwins', `${CITY14}**Addendum — review — 2026-09-16:** Worker tokens (implementation leg): 911,511; Reviewer tokens: 302,889\n\n**Addendum — correction — 2026-09-17:** Worker tokens (implementation leg): 900,000\n`)
+  const t = spendOf(dir, 'CITY-14')
+  assert.equal(t.worker, 900000)
+  assert.equal(t.reviewer, 302889)
+  assert.deepEqual(t.rounds, {})
+})
+
+test('spend rounds: unknown inside a round never erases a known figure, and an all-unknown role stays unknown', () => {
+  const dir = roundsRepo('unknown', `${CITY14}round=1 worker=100 reviewer=unknown\n\nround=2 worker=unknown reviewer=unknown\n\nround=1 worker=unknown\n`)
+  const t = spendOf(dir, 'CITY-14')
+  assert.equal(t.worker, 100)
+  assert.equal(t.reviewer, null)
+  assert.ok(t.unknown.includes('reviewer'))
+})
+
+test('spend rounds: a run record whose groups carry round= is summed across records, and is not a doctor near-miss', () => {
+  const dir = roundsRepo(
+    'runs',
+    `${CITY14}**Tokens:** recorded in the run record\n`,
+    '### Run — 2026-09-16 — halted\n\n**Tokens:** CITY-14 round=1 worker=911511 reviewer=302889 disposition=50000\n\n### Run — 2026-09-17 (resumed) — halted\n\n**Tokens:** CITY-14 round=2 worker=804432 reviewer=324269 disposition=unknown\n',
+  )
+  const t = spendOf(dir, 'CITY-14')
+  assert.equal(t.worker, 911511 + 804432)
+  assert.equal(t.disposition, 50000)
+  assert.equal(t.source, 'run-record')
+  assert.deepEqual(doctorWarns(dir, /no machine-shaped group/), [])
+})
+
+test('repeated figure: four unlabelled pairs with no correction between them draw a doctor warn naming what spend counts and what rounds would total', () => {
+  const dir = roundsRepo('warn', `${CITY14}**Addendum — review — 2026-09-16:** worker=911511 reviewer=302889\n\n**Addendum — review — 2026-09-17:** worker=804432 reviewer=324269\n\n**Addendum — review — 2026-09-17:** worker=909377 reviewer=259927\n\n**Addendum — review — 2026-09-18:** worker=581236 reviewer=297991\n`)
+  const warns = doctorWarns(dir, /unlabelled (worker|reviewer) figures in one entry/)
+  assert.equal(warns.length, 2, JSON.stringify(warns))
+  const w = warns.find((r) => / worker figures/.test(r.msg)).msg
+  assert.match(w, /\(CITY-14\) — 4 unlabelled worker figures/)
+  assert.match(w, /spend counts only the last, 581,236/)
+  assert.match(w, /would total 3,206,556/)
+  assert.match(w, /round=1 worker=<n>/)
+  // And the ledger still reads what it always read — the warn changes no total.
+  assert.equal(spendOf(dir, 'CITY-14').worker, 581236)
+})
+
+test('repeated figure: a genuine dated correction is silent, and so are labelled rounds', () => {
+  const corrected = roundsRepo('quiet', `${CITY14}**Addendum — review — 2026-09-16:** worker=911511\n\n**Addendum — correction — 2026-09-17:** the meter was misread; worker=900000\n`)
+  assert.deepEqual(doctorWarns(corrected, /unlabelled \w[\w-]* figures/), [])
+  const labelled = roundsRepo('quiet2', `${CITY14}round=1 worker=1 reviewer=1\n\nround=2 worker=2 reviewer=2\n`)
+  assert.deepEqual(doctorWarns(labelled, /unlabelled \w[\w-]* figures|round-labelled and unlabelled/), [])
+})
+
+// ── RETRO-6: a name-pattern CHECK that expects `# pass 1` is vacuous ─────────
+// `node --test --test-name-pattern <p> <file>` prints `# pass 1` when the
+// pattern matches nothing: the file itself counts. Found planning the epic
+// this ticket belongs to — two of its own draft CHECKs read green that way.
+const vacuousRepo = (name, check, expect) => {
+  const dir = join(tmp, `vacuous-${name}`)
+  git(tmp, 'init', '--initial-branch=main', dir)
+  mkdirSync(join(dir, 'epics/nu'), { recursive: true })
+  writeFileSync(
+    join(dir, 'epics/nu/tickets.md'),
+    `# Nu\n\n## N-1 — first\n\n**Scope.** One.\n\n**Acceptance criteria.**\n- the behaviour is pinned by a test\n  CHECK: ${check}\n  EXPECT: ${expect}\n`,
+  )
+  writeFileSync(join(dir, 'epics/nu/status.md'), '# Nu epic — status log\n')
+  return dir
+}
+const vacuousRows = (dir) => {
+  const failed = runFail(dir, 'doctor', '--json')
+  return JSON.parse(failed ? failed.stdout : run(dir, 'doctor', '--json')).filter((r) => /proves nothing/.test(r.msg))
+}
+
+test('vacuous pass count: a --test-name-pattern CHECK expecting "# pass 1" is a doctor near-miss, with the repair in the message', () => {
+  const rows = vacuousRows(vacuousRepo('one', "node --test --test-name-pattern 'staging rule' suite.test.mjs", '# pass 1'))
+  assert.equal(rows.length, 1)
+  assert.equal(rows[0].level, 'warn')
+  assert.match(rows[0].msg, /nu\/tickets\.md \(N-1\)/)
+  assert.match(rows[0].msg, /matches NO test/)
+  assert.match(rows[0].msg, /# pass 2/)
+})
+
+test('vacuous pass count: the same shape fails the check gate as a malformed CHECK does — problems counted, allPassed false', () => {
+  const dir = vacuousRepo('gate', "node --test --test-name-pattern 'zz' suite.test.mjs || echo '# pass 1'", '# pass 1')
+  const failed = runFail(dir, 'check', 'N-1', '--json')
+  const ledger = JSON.parse(failed ? failed.stdout : run(dir, 'check', 'N-1', '--json'))
+  assert.equal(ledger.allPassed, false)
+  assert.ok(ledger.problems.length >= 1, JSON.stringify(ledger))
+})
+
+test('vacuous pass count: "# pass 2", "# pass 12", and a "# pass 1" with no name pattern are not flagged', () => {
+  assert.deepEqual(vacuousRows(vacuousRepo('two', "node --test --test-name-pattern 'x' s.test.mjs", '# pass 2')), [])
+  assert.deepEqual(vacuousRows(vacuousRepo('twelve', "node --test --test-name-pattern 'x' s.test.mjs", '# pass 12')), [])
+  assert.deepEqual(vacuousRows(vacuousRepo('whole', 'node --test one-test-file.test.mjs', '# pass 1')), [])
+})

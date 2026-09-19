@@ -60,6 +60,18 @@ Beyond correctness, look specifically for:
   is not coverage. This is the most common defect in agent-written code: the
   session that wrote the implementation wrote the test, so both encode the same
   misunderstanding.
+- **A fixture that cannot produce the case.** Of every test that is the sole
+  evidence for a criterion, ask: *what input would make this fail, and
+  does the fixture contain it?* A fixture that cannot reach the branch the test
+  names — twelve points on one line for an overlap loop, which then has no
+  pairs; a warm cache answering where the code should have — passes with the
+  behaviour deleted. One live epic's reviews found nine, and a criterion in
+  one ticket naming the class did not stop the next ticket producing four
+  more: prose does not bind the next ticket, a reviewer's lens does. Important
+  when nothing else pins the behaviour. Where the project's instruction file
+  says how to run the suite, delete the behaviour in a scratch copy of the
+  range, re-run the named test, and report what it showed — the ticket
+  skill's revert check, applied by the judge. You still fix nothing.
 - **A revert check that does not hold.** The Verified line names the test
   that fails with the source change reverted; open it and confirm it depends
   on the change. A named test that would pass without the change, or an

@@ -13,7 +13,7 @@ repository).
 
 | | |
 |---|---|
-| `/flow:epic <name> [source...]` | Turn a request, report or conversation into `epics/<name>/`. Sources are files, globs or URLs, saved into `context/`; with none, the conversation is the brief. The shape is agreed **before** the document is written, a fresh-context **plan reviewer** challenges the decomposition — holding the **design** too, where the epic declares one, so that an element the drawing has and the map does not is caught before sign-off — then it **stops for sign-off** and commits — no pull request. An epic that declares `Design sources:` writes `design-map.json` beside its tickets and **ends with a whole-page fidelity ticket**; what the plan deliberately does not build is declared in that map's `removed` list, where a comparison prints it as a decision instead of a hole. Both human gates render the plan as a **styled page** (`plan-page.mjs`, published as an artifact): one URL that evolves from shape checkpoint to sign-off, never committed |
+| `/flow:epic <name> [source...]` | Turn a request, report or conversation into `epics/<name>/`. Sources are files, globs or URLs, saved into `context/`; with none, the conversation is the brief. The shape is agreed **before** the document is written, a fresh-context **plan reviewer** challenges the decomposition — holding the **design** too, where the epic declares one, so that an element the drawing has and the map does not is caught before sign-off — then it **stops for sign-off** and commits — no pull request. An epic that declares `Design sources:` writes `design-map.json` beside its tickets and **ends with a whole-page fidelity ticket, then a human render-and-read ticket** (the differ decides computed style; composition and behaviour are a person's to judge, and the release waits on that ticket); what the plan deliberately does not build is declared in that map's `removed` list, where a comparison prints it as a decision instead of a hole. Both human gates render the plan as a **styled page** (`plan-page.mjs`, published as an artifact): one URL that evolves from shape checkpoint to sign-off, never committed |
 | `/flow:ticket <ID>` | One ticket end to end: branch, implement, verify, log, commit, review, fix, push, pull request. Runs **supervisor-mode by default** — a fresh-context worker implements from the documents and the supervisor hires the reviewer; `--interactive` runs in-session, once per session (a hook refuses a second interactive run; supervisor runs stay open) |
 | `/flow:run <epic>` | Run a `Delivery: release` epic end to end with nobody present: verifies sign-off happened, then hands the loop to a shipped **workflow script** — **code-controlled, agent-executed** — that takes the tickets in document order. Per ticket: refresh the epic branch and read the board, a **fresh-context worker** implements and stops at its pushed branch (**release tickets open no pull request of their own** — the release pull request at the end is the epic's only one), the **driver hires the reviewer** priced by a code-floored tier, a disposition agent fixes and records, fixes get one bounded re-review at the consequence tier — below it a code gate checks the fix diff stayed inside the files the review saw or its findings named and under a line budget, and a trip buys that same re-review at the consequence tier instead of halting (only a fix diff nothing could measure still halts) — the ticket's `CHECK`/`EXPECT` acceptance criteria are **re-run from the signed-off document** (`tickets.mjs check <ID> --from origin/epic/<name>`) and gated on in code, then the branch's review addendum, the departures its status entry records (**any `**Deviation:**` line halts the run — closed or not, because nobody present could have closed it**) and its exact head SHA are checked **in code before any agent that could merge exists**; only then does a merge agent merge that verified SHA — which cannot be retargeted — into the epic branch, and the board — not an agent — confirms the result. It halts on any stop condition, because each one is a code path rather than a judgment call. The session ends by **opening** the release pull request. Requires the Workflow tool; never merges toward the default branch |
 | `/flow:quick <description>` | The **cheap lane**: one small, low-risk piece of work, implemented **in-session** with a written scope, verification with counts, a short log entry and a pull request — and a fresh-context reviewer **only when behaviour changes** (prose-only diffs — documentation and comments, nothing a machine reads — get none; the PR is the review). Size- **and risk-gated**: auth, secrets, migrations and other consequential work is routed to `/flow:epic` at any size |
@@ -107,6 +107,17 @@ headings, git branches, commit subjects on the default branch, and `gh pr list`.
 Never add a status column anywhere — a hand-maintained mirror of a derivable fact
 drifts within days.
 
+The board also names **work that belongs to no ticket**. Under an epic whose
+branch carries them it prints one line — `2 unticketed commits on epic/<name>
+(1 subjected "<name>: …")` — and `list <epic> --json` lists them by sha and
+subject: the non-merge commits between the default branch and the epic branch
+that touch anything outside `epics/` and open with no ticket ID. Such a commit
+reaches no status entry, no spend line and no reviewer, however right it is.
+Work that belongs to the epic as a whole — a release review's fixes — is
+subjected `<epic-name>: …`; `/flow:doctor` warns only about commits that name
+neither a ticket nor their epic, and the repair is a record (a ticket with a
+status entry, or `/flow:quick`), never a rewritten history.
+
 **Keeping the default branch tidy.** The documents ride the same branches and
 pull requests as the code — that is what makes the record travel — but they
 need not dominate the diff or the language stats. Two practices, both optional:
@@ -151,7 +162,15 @@ epic's only one, and it is where the whole evidence trail reaches the
 human. The loop itself is a workflow script the plugin ships
 (`workflows/run-epic.mjs`), so every stop condition is code that returns
 rather than prose an agent could reason past. The human makes two decisions — approve the plan, approve the
-release — instead of clicking merge between every ticket. **The human gate
+release — instead of clicking merge between every ticket. The release body is **built from the log, at whichever door opens the pull
+request**: its `## Owed` section is pasted from `tickets.mjs owed <epic>` and
+its `## Unticketed commits` section from the board, both written even when
+empty, and it closes by asking the human for the release-PR addendum. A run
+that halted never reaches that step, so after the last ticket is finished by
+hand the route is re-running `/flow:run <epic>` — nothing left to start, it
+goes straight to the pull request — or, when the run refuses the board (an
+abandoned ticket reads `blocked`), opening it by hand following the run
+skill's step 7 section for section. **The human gate
 moves to the release pull request; it does not disappear.** Main never sees
 an agent merge in any mode — an unreviewed ticket is never merged anywhere.
 Release epics are bounded: roughly 3–6 tickets, days not weeks, a release
@@ -190,7 +209,10 @@ session has.
 A run **halts** rather than improvises: on a blocked ticket, an Important
 review finding it cannot fix, a document/code contradiction, a merge
 conflict, reviewer-spawn failure after its fallback, a permission prompt
-firing mid-run, or any failing command — with one tolerated exception: a
+firing mid-run, a review fix that adds files where the ticket never worked
+(the signature of `git add -A` sweeping somebody else's untracked files into
+the ticket — every agent the driver lets commit is told to stage by name, and
+this is the code floor under that sentence), or any failing command — with one tolerated exception: a
 404 or 403 from the two branch-protection probes is the answer that check
 exists to read, not a failure. Halting is the mechanism working —
 a run that pushes through is a run whose release pull request can no longer
