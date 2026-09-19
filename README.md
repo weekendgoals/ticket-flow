@@ -190,7 +190,10 @@ session has.
 A run **halts** rather than improvises: on a blocked ticket, an Important
 review finding it cannot fix, a document/code contradiction, a merge
 conflict, reviewer-spawn failure after its fallback, a permission prompt
-firing mid-run, or any failing command — with one tolerated exception: a
+firing mid-run, a review fix that adds files where the ticket never worked
+(the signature of `git add -A` sweeping somebody else's untracked files into
+the ticket — every agent the driver lets commit is told to stage by name, and
+this is the code floor under that sentence), or any failing command — with one tolerated exception: a
 404 or 403 from the two branch-protection probes is the answer that check
 exists to read, not a failure. Halting is the mechanism working —
 a run that pushes through is a run whose release pull request can no longer

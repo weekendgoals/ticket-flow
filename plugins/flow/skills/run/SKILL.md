@@ -383,7 +383,7 @@ enters your context from the loop:
                      reReviewRan, reReviewImportantCount,
                      reReviewFindings, reviewedHead,
                      reviewerReportedHead, fixBoundsGated,
-                     fixBoundsTripped, fixBoundsExclude,
+                     fixBoundsTripped, fixBoundsExclude, fixAddedFiles,
                      fixLines, acceptanceOutcome, acceptanceChecks,
                      acceptanceChecksPassed, acceptanceChecksSkipped,
                      acceptanceAllPassed,
@@ -461,6 +461,27 @@ that resumes past one. The run halts:
   halts on, because a re-review of a diff nothing measured proves nothing.
   What it measures is the fix diff minus `epics/` and the epic's `Fix bounds
   exclude:` globs, which sign-off approved as mechanical fan-out;
+- on **a review fix that adds files where the ticket never worked — a fix
+  commit created a file outside every directory the reviewed diff touched or
+  a finding named, or the run could not read which files the fix commits
+  added; that is the signature of a swept working tree, and it is never
+  handed to a reviewer to read**. Read at every tier, right after the
+  disposition and before any re-review is hired (`fix-added:<ID>`): one live
+  run's disposition agent committed every untracked file in the working tree
+  — 215 files, 1.9M lines — as a "review fix", and the only gate that met it
+  would have *bought a re-review* of them. A fix rightly adds a test beside
+  the code it fixes, so the rule is about where: "under" a reviewed directory
+  is a path prefix, except at the repository root, where a reviewed file
+  admits only other root-level files (nearly every ticket touches a
+  changelog, and a prefix rule there would admit the whole tree). Inside
+  those directories a new file keeps the bounds gate's consequence — a trip
+  buys the re-review. **Recovery**: `git show --stat
+  <reviewedHead>..origin/<branch>`; if the sweep is real, revert it as a
+  **new** commit on the ticket branch (never a rewrite — the review must stay
+  auditable against what was reviewed), then finish the ticket by hand per §
+  "Resuming after a halt", case 2. The record's `fixAddedFiles` lists what the
+  fixes added on every ticket, stray or not, so the retro can count how often
+  a fix adds anything;
 - on **a failed acceptance CHECK — a machine-runnable criterion whose
   command did not produce its expected result on the pushed branch, a
   criterion whose evidence is a skip, a CHECK line too malformed to run at

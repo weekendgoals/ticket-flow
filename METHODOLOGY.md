@@ -306,6 +306,33 @@ branch: its merge commit `8ac3bef` sits only on `origin/addendum-gate-date`.
 This section supersedes it for the halt; whether the exclusion also lands is
 a separate decision and a separate pull request.
 
+### The one trip that halts again: a fix that adds files elsewhere
+
+Trading the bounds halt for a re-review assumed that what trips the gate is a
+fix — somebody's deliberate edit, a little wider than the review saw.
+weekendgoals' redesign-city run (2026-09) met the other thing that trips it:
+a disposition agent ran `git add -A` and committed **every untracked file in
+the working tree — 215 files, 1,927,382 lines**, production-data exports
+among them — as a "review fix". It halted only by accident: one of the files
+was binary, so the diff was unmeasurable. Without that file the trip would
+have *bought a re-review of the sweep*, and at the consequence tier the fixes
+go to a re-review without meeting the bounds gate at all.
+
+Two layers answer it, because either alone is the soft half. Every prompt
+whose agent commits now carries the staging rule the ticket and quick skills
+already gave an in-session doer — stage by name, never `-A` — with its
+reason; and the driver reads what the fix commits **added**, at every tier,
+before any re-review is hired. The rule is about *where*, since a fix rightly
+adds a test beside the code it fixes: an added file must sit under a
+directory the reviewed diff touched or a finding named. It halts rather than
+buying scrutiny because no reviewer's reading of a swept tree is evidence of
+anything, and the recovery — revert the sweep as a new commit — is a human's
+to confirm. The repository root is matched by equality, not prefix: nearly
+every ticket touches a changelog, and a prefix rule there would admit the
+whole tree and leave the gate decorative. What would reverse it: the halt
+firing more than once on a fix that rightly added a file — then the rule
+is mismeasuring fixes, and it goes back to buying the re-review.
+
 ## Why acceptance criteria can be machine-runnable
 
 Adopted from a comparative read of unlazy (2026-08-20), whose gate files —

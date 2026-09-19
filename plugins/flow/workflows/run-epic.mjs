@@ -209,10 +209,23 @@ const STOP = {
   deviation:
     "a recorded deviation — the ticket's pushed status entry carries a `**Deviation:**` line, closed or not, because nobody present in an unattended run could have closed it; the run asks rather than records",
   ticketBudget: "a ticket's pass exceeding the epic's per-ticket token budget",
+  // Pinned whole by `check-invariants.mjs` against the run skill's step 5.
+  // It halts where a bounds trip would buy a re-review, because the shape it
+  // names is a sweep: weekendgoals' CITY run committed 215 untracked files as
+  // a "review fix", and the re-review that trip buys would have read 1.9M
+  // lines of somebody else's working tree.
+  fixAddedFiles:
+    'a review fix that adds files where the ticket never worked — a fix commit created a file outside every directory the reviewed diff touched or a finding named, or the run could not read which files the fix commits added; that is the signature of a swept working tree, and it is never handed to a reviewer to read',
 }
 
 // ---- agent contracts --------------------------------------------------------
 const NO_MAIN = `HARD RULE: nothing you do merges, pushes, or retargets toward the default branch (${defaultBranch}). Your entire write surface is ${epicBranch} (and, for a worker, its own ticket branch). Never push to ${defaultBranch}, never open or merge a pull request against it.`
+
+// Carried by every prompt whose agent commits. The ticket and quick skills
+// say this to an in-session doer; an agent the driver spawns reads a prompt,
+// and the one that swept 215 untracked files into a ticket had been told
+// nothing about staging at all.
+const STAGING_RULE = `STAGE ONLY WHAT YOU CHANGED, BY NAME: \`git add <path> [<path>…]\` for the files you edited or created, and nothing else. Never \`git add -A\`, \`git add .\` or \`git commit -a\`. Untracked files already in the working tree are somebody else's — scratch data, exports, another session's work — and a sweep commits them as this ticket's, where they ride into the release. Before each commit, read \`git status --short\` and check that every staged path is one you touched.`
 
 const PROMPT_RULE = `If any command you run would raise a permission prompt, do NOT wait on it: return immediately with outcome "permission-prompt" and name the command. An unattended run that needs to ask was not pre-authorized, and a run wedged on a prompt looks exactly like a run making progress.`
 
@@ -633,6 +646,22 @@ const DISPOSITION_SCHEMA = {
 // low-effort proxy would otherwise hold two JSONs with the same field names,
 // and swapped, the deviation gate reads a budget document as "no deviations".
 // The two payloads share no field name, and this schema keeps them apart.
+// What the fix commits ADDED, read before any re-review is hired. One fact,
+// one command; the driver already holds the reviewed file list (tier-facts).
+const FIX_ADDED_SCHEMA = {
+  type: 'object',
+  required: ['outcome', 'addedFiles'],
+  properties: {
+    outcome: { type: 'string', enum: ['listed', 'command-failed', 'permission-prompt'] },
+    addedFiles: {
+      type: 'array',
+      items: { type: 'string' },
+      description: 'Every path the command printed, verbatim, one per entry. [] when it printed nothing — that is an answer.',
+    },
+    detail: { type: 'string' },
+  },
+}
+
 const RESOLVE_SCHEMA = {
   type: 'object',
   required: ['outcome', 'ticketBudget', 'deviations', 'compared'],
@@ -1146,6 +1175,8 @@ Your worker label for this run is \`${workerLabel}\` — record it in the status
 
 The repository is at ${repoRoot}; the epic is \`${epic}\` and its branch is \`${epicBranch}\`. Everything else you need is in the epic's documents — start at \`${TICKETS} find ${id} --json\`, as the skill's step 1 says. Do NOT start another ticket, do not refresh the epic branch, and do not report on any ticket but this one.
 
+${STAGING_RULE}
+
 ${NO_MAIN}
 
 Report honestly: \`branch-pushed\` ONLY if you saw the push of \`${branch}\` succeed. If a stop condition fired — a document/code contradiction, a merge conflict, a permission prompt, anything that made the ticket undoable from its documents — write the status entry the skill requires and report it with the matching stopCondition. A halt is the mechanism working, not a failure; inventing progress past one is the only real failure.`,
@@ -1202,6 +1233,7 @@ Report honestly: \`branch-pushed\` ONLY if you saw the push of \`${branch}\` suc
     // The epic's `Fix bounds exclude:` globs as the gate applied them — [] is
     // "measured everything", and a retro can tell the two apart.
     fixBoundsExclude: [],
+    fixAddedFiles: null,
     fixLines: null,
     acceptanceOutcome: 'not reached',
     acceptanceChecks: null,
@@ -1600,6 +1632,8 @@ Nits: fix one only if it is trivial and in scope; otherwise record it in the add
 
 **An Important finding you cannot fix**: legitimate not-fixed reasons exist — out of scope and owned by a later ticket, the fix riskier than the bug, the premise wrong. But in an unattended run, accepting an unfixed Important finding is NOT yours to decide, whatever the reason. Report it in \`notFixed\`, report outcome "important-unfixed", still write and commit the addendum saying exactly that, and prepare nothing for merge. The driver halts there and a human decides — that is the mechanism working.
 
+${STAGING_RULE}
+
 ${PROMPT_RULE}
 
 ${NO_MAIN} You do not merge this branch; the driver does, after its own gate.`,
@@ -1696,6 +1730,80 @@ ${NO_MAIN} You do not merge this branch; the driver does, after its own gate.`,
       detail: `the disposition reported "${line(disposition.outcome)}" but did not commit the review addendum. An unreviewed-on-the-record ticket is never merged: the pull request stays open, and the log has to show the review before anything integrates.`,
     }
     break
+  }
+
+  // e2. What the fix commits ADDED — at every tier, before any re-review is
+  //     hired. The bounds gate below the consequence tier would catch a file
+  //     outside the reviewed set too, but a trip there BUYS a re-review, and
+  //     at the consequence tier the fixes go straight to one: either way a
+  //     swept working tree is handed to a reviewer to read. A fix rightly
+  //     adds a test beside the code it fixes, so the rule is about WHERE: an
+  //     added file must sit under a directory the reviewed diff touched or a
+  //     finding named. "Under" is a path prefix — a fixture in a new
+  //     subdirectory beside reviewed code is inside — except at the
+  //     repository root, where almost every ticket touches a file (a
+  //     changelog, a README) and a prefix rule would admit the whole tree:
+  //     a root-level file admits only other root-level files.
+  record.fixAddedFiles = null
+  if (record.fixedCommits.length > 0 && anchorHead) {
+    const addedPathspecs = [`':(exclude)epics'`, ...fixBoundsExclude.map(g => `':(exclude,glob)${g}'`)].join(' ')
+    const fixAdded = await agent(
+      `List the files the review-fix commits of ticket \`${id}\` ADDED, in the repository at ${repoRoot}. Read-only: you change nothing.
+
+\`\`\`bash
+git fetch origin ${branch}
+git diff --name-only --diff-filter=A ${anchorHead}..origin/${branch} -- . ${addedPathspecs}
+\`\`\`
+
+Report every path the second command printed as \`addedFiles\`, verbatim — \`[]\` when it printed nothing, which is an answer, not a failure. Outcome "listed" once both commands ran; "command-failed" only if one of them could not run (say which, with its error, in \`detail\`). You judge none of it; the driver checks the paths in code.
+
+${PROMPT_RULE}
+
+${NO_MAIN} You are read-only here in any case.`,
+      { label: `fix-added:${id}`, phase: 'Disposition', schema: FIX_ADDED_SCHEMA, effort: 'low', model: 'haiku' },
+    )
+    const where = `reading what ${id}'s review-fix commits added`
+    if (fixAdded && fixAdded.outcome === 'permission-prompt') {
+      halted = { ticket: id, stopCondition: STOP.permissionPrompt, where, detail: fence(line(fixAdded.detail || '(no detail)')) }
+      break
+    }
+    if (!fixAdded || fixAdded.outcome !== 'listed' || !Array.isArray(fixAdded.addedFiles)) {
+      halted = {
+        ticket: id,
+        stopCondition: STOP.fixAddedFiles,
+        where,
+        detail: `the run could not read which files the fix commits added (${fixAdded ? `the step reported ${fence(line(fixAdded.outcome || '(nothing)'))}: ${fence(line(fixAdded.detail || '(no detail)'))}` : 'the agent returned no report'}) — a fix nothing measured is never merged, and never handed to a reviewer first. Nothing merged.`,
+      }
+      break
+    }
+    const dirOf = f => (f.includes('/') ? f.slice(0, f.lastIndexOf('/')) : '')
+    const insideDirs = new Set(
+      (Array.isArray(tierFacts.files) ? tierFacts.files : [])
+        .map(f => line(f))
+        .concat(important.map(f => line(f.file || '')).filter(Boolean))
+        .map(dirOf),
+    )
+    const isInside = f => {
+      const d = dirOf(f)
+      if (d === '') return insideDirs.has('')
+      for (const dir of insideDirs) if (dir !== '' && (d === dir || d.startsWith(`${dir}/`))) return true
+      return false
+    }
+    record.fixAddedFiles = fixAdded.addedFiles.map(f => line(f))
+    const strays = record.fixAddedFiles.filter(f => !isInside(f))
+    if (strays.length) {
+      const shown = strays.slice(0, 12)
+      halted = {
+        ticket: id,
+        stopCondition: STOP.fixAddedFiles,
+        where,
+        detail: `${strays.length} file(s) added by the fix commits sit outside every directory the reviewed diff touched or a finding named: ${fence(shown.join(', '))}${strays.length > shown.length ? ` and ${strays.length - shown.length} more` : ''}. A review fix adds a file beside the code it fixes; files appearing elsewhere are usually untracked files swept in by \`git add -A\`. Nothing merged and no reviewer was hired to read them: inspect \`git show --stat ${anchorHead}..origin/${branch}\`, and if the sweep is real, revert it as a NEW commit on \`${branch}\` and finish the ticket by hand.`,
+      }
+      break
+    }
+    if (record.fixAddedFiles.length) log(`${id}: the fix commits added ${record.fixAddedFiles.length} file(s), all beside reviewed code — no stray additions.`)
+  } else if (record.fixedCommits.length > 0) {
+    log(`${id}: no usable review anchor, so what the fix commits added cannot be measured from one — the fixes take the bounded re-review, which reads the whole branch.`)
   }
 
   // f. Re-review — only when there were fixes, and only ONCE. A merged diff

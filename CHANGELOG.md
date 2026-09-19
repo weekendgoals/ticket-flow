@@ -8,6 +8,32 @@ with one version and date.
 
 ## Unreleased
 
+- **No agent the driver spawns sweeps the working tree into a ticket**
+  (`workflows/run-epic.mjs` and its suite, `skills/run/SKILL.md`,
+  `scripts/check-invariants.mjs`, README, METHODOLOGY § "The one trip that
+  halts again"). weekendgoals' redesign-city run had a disposition agent
+  commit every untracked file in the working tree — 215 files, 1.9M lines —
+  as a "review fix"; it halted only because one file was binary. Two changes.
+  The worker and disposition prompts now carry the **staging rule** the ticket
+  and quick skills already state for an in-session doer: `git add <path>` by
+  name, never `git add -A`, `git add .` or `git commit -a`, with the reason.
+  And a new read-only step, `fix-added:<ID>`, runs **at every tier, right
+  after the disposition and before any re-review is hired**, whenever the
+  disposition reports fix commits: it lists the files those commits added
+  (`--diff-filter=A` from the driver's review anchor, `epics/` and the `Fix
+  bounds exclude:` globs left out), and the driver **halts under a new stop
+  condition** — *a review fix that adds files where the ticket never worked*
+  — when one sits outside every directory the reviewed diff touched or a
+  finding named, or when the list cannot be read. A path prefix decides
+  "under", except at the repository root, where a reviewed file admits only
+  other root-level files. An added file beside reviewed code is unchanged: it
+  is still outside `reviewedFiles`, so the bounds gate trips and buys the
+  bounded re-review. Ticket records gain `fixAddedFiles`. **For installed
+  projects:** a run now hires one more fast-model agent per ticket that had
+  review fixes, and a run that used to buy a re-review of a swept tree halts
+  instead; the Codex worker runner was already safe (it refuses a tree that
+  is not clean, untracked files included) and is unchanged.
+
 - **Review fixes to the design-fidelity range, before release**
   (`scripts/tickets.mjs`, `workflows/run-epic.mjs`, `scripts/fidelity.mjs`,
   `skills/run/SKILL.md`, `skills/ticket/SKILL.md`, `skills/epic/SKILL.md`,

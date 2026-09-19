@@ -395,6 +395,11 @@ const PHRASES = [
     files: ['run', 'workflow'],
   },
   {
+    why: 'the added-files stop condition is one sentence in the skill and the script — the halt a run record quotes verbatim. Pinned whole: its second half ("or the run could not read which files the fix commits added") is the unmeasured case, and a copy that kept only the first would send a human looking for stray files in a run that never listed any',
+    re: /a review fix that adds files where the ticket never worked — a fix\s+commit created a file outside every directory the reviewed diff touched or\s+a finding named, or the run could not read which files the fix commits\s+added; that is the signature of a swept working tree, and it is never\s+handed to a reviewer to read/,
+    files: ['run', 'workflow'],
+  },
+  {
     why: "the merge-conflict stop condition is one sentence in the skill and the script — pinned because it was deleted from the skill's list by an edit that meant to add a bullet beside it (DEV-3's review), leaving `STOP.mergeConflict` live at three call sites and a human looking up a halt string the skill no longer carried. The general gap this one exposed — only some of the STOP sentences are pinned — is recorded for the retro; this entry holds the one that was actually lost",
     re: /a merge conflict — refreshing the epic branch, or anywhere else, including a ticket branch that will not merge into the epic branch/,
     files: ['run', 'workflow'],
