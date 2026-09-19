@@ -162,7 +162,15 @@ epic's only one, and it is where the whole evidence trail reaches the
 human. The loop itself is a workflow script the plugin ships
 (`workflows/run-epic.mjs`), so every stop condition is code that returns
 rather than prose an agent could reason past. The human makes two decisions — approve the plan, approve the
-release — instead of clicking merge between every ticket. **The human gate
+release — instead of clicking merge between every ticket. The release body is **built from the log, at whichever door opens the pull
+request**: its `## Owed` section is pasted from `tickets.mjs owed <epic>` and
+its `## Unticketed commits` section from the board, both written even when
+empty, and it closes by asking the human for the release-PR addendum. A run
+that halted never reaches that step, so after the last ticket is finished by
+hand the route is re-running `/flow:run <epic>` — nothing left to start, it
+goes straight to the pull request — or, when the run refuses the board (an
+abandoned ticket reads `blocked`), opening it by hand following the run
+skill's step 7 section for section. **The human gate
 moves to the release pull request; it does not disappear.** Main never sees
 an agent merge in any mode — an unreviewed ticket is never merged anywhere.
 Release epics are bounded: roughly 3–6 tickets, days not weeks, a release

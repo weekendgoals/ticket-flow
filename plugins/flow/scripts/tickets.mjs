@@ -41,6 +41,10 @@
 //                                        log off a pushed branch, and an
 //                                        unreadable log exits nonzero rather
 //                                        than counting 0
+//   tickets.mjs owed <epic> [--json]     every owed item the epic's status log
+//                                        records and nothing has resolved —
+//                                        the release pull request's Owed
+//                                        section, printed rather than recalled
 //   tickets.mjs spend [epic] [--json]    the recorded token ledger per ticket
 //                                        and per epic, derived from the
 //                                        status log's Tokens lines, addendum
@@ -2166,6 +2170,40 @@ switch (cmd) {
       console.log()
       console.log(`${C.bold}Ticket${C.off}`)
       console.log(out.body)
+    }
+    break
+  }
+
+  case 'owed': {
+    // The epic-wide list `brief` already shows beside one ticket, on its own:
+    // what a release pull request's `## Owed` section is pasted from. A body
+    // that says "nothing owed" has to be one a command printed — one live
+    // release said it against 31 open items, because the session that opened
+    // it was recalling, not reading.
+    const known = discoverEpics()
+    const epic = known.find((e) => e.epic === arg)
+    if (!epic) {
+      console.error(
+        arg
+          ? `no epic "${arg}" under epics/ — known epics: ${known.map((e) => e.epic).join(', ') || '(none)'}`
+          : `owed needs an epic: tickets.mjs owed <epic> — known epics: ${known.map((e) => e.epic).join(', ') || '(none)'}`,
+      )
+      process.exit(1)
+    }
+    const { owed, notes } = parseOwed(epic)
+    if (json) emit({ epic: epic.epic, count: owed.length, owed, notes })
+    else {
+      console.log(`${C.bold}Owed — ${epic.epic}: recorded, not marked resolved${C.off}`)
+      if (!owed.length) console.log('none outstanding')
+      else {
+        let lead = null
+        for (const o of owed) {
+          if (o.lead && o.lead !== lead) console.log(`  ${C.dim}${o.lead}${C.off}`)
+          lead = o.lead || null
+          console.log(`  ${o.id} (${o.date}): ${o.text}`)
+        }
+      }
+      for (const n of notes) console.log(`  ${C.yellow}note:${C.off} ${n}`)
     }
     break
   }

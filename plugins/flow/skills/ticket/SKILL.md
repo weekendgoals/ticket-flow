@@ -766,5 +766,15 @@ reads it.
   the next ticket in document order **only when you are the whole run**. The
   epic's stop conditions bind either way; halting on one is the mechanism
   working.
-- The release pull request is opened by the driver and merged by a human —
-  never by you.
+- The release pull request is opened by the **run skill's session** (its
+  step 7) and merged by a human — never by a worker, and never merged by any
+  agent. When you are an attended session and this was the epic's last
+  ticket: the route is **re-running `/flow:run <epic>`** — with nothing left
+  to start it completes with no worker or reviewer hired and goes straight to
+  the run skill's step 7, whose body carries the owed list (`tickets.mjs owed
+  <epic>`), the unticketed commits and the request for the release-PR
+  addendum. If the run skill's step 1 refuses the board (an ABANDONED ticket
+  reads `blocked`), the fallback is **opening it by hand, following the run
+  skill's step 7 section for section** — one live epic's hand-opened release
+  said "Nothing owed" against 31 open items because its session had no such
+  route.

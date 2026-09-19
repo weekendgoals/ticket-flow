@@ -736,8 +736,23 @@ there is one, and push.
 
 ## 7. End: open the release pull request — never merge it
 
-Only on `outcome: "completed"`. The loop's last refresh already brought
-`epic/<name>` current (`finalRefresh`); do not refresh again.
+On `outcome: "completed"` — the loop's last refresh already brought
+`epic/<name>` current (`finalRefresh`); do not refresh again — **or by hand,
+by an attended session, when every ticket is integrated and no run can reach
+this step.** That second door is not a courtesy. A run that halts never gets
+here; after the halted ticket is finished by hand, re-running `/flow:run
+<epic>` finds nothing left to start, completes with only the refresh hired,
+and lands here with the whole body — **use that route whenever step 1 admits
+the board.** It does not always: an ABANDONED ticket reads `blocked` and step
+1 refuses the run until a human re-plans the document, which is exactly the
+board one live epic ended on (16 integrated, 1 abandoned) — its release pull
+request was opened by a session with no route to this step, said "Nothing
+owed" against 31 open items, and asked nobody for the addendum. So this step
+is written to be executed **without a run result**: every section below names
+the command or the log passage it is read from, and a session opening the
+pull request by hand owes the same body, section for section. Refresh the
+epic branch first in that case (ticket skill step 3 — main is the source,
+never the target).
 
 ```bash
 gh pr create --base <default-branch> --head epic/<name> \
@@ -753,7 +768,8 @@ body, above everything else: *merge with a merge commit, never squash.*
 The body is the human's entire evidence base for the one decision they make
 in this mode. It carries:
 
-- every ticket: what it built, its verification counts, its review outcome
+- every ticket (from `ticketRecords`; by hand, from each ticket's status entry
+  and review addendum): what it built, its verification counts, its review outcome
   (found / fixed / not fixed with reasons), and **what stood between its fix
   commits and the merge** — the re-review (`reReviewRan`,
   `reReviewImportantCount`, `reReviewFindings`), the code bounds check
@@ -769,9 +785,25 @@ in this mode. It carries:
   report, and the human reading this body should know which those were;
 - every deploy precondition any ticket created (an environment variable, a
   migration, a script that runs after), collected from the status log;
+- **`## Owed`, pasted from the command, written even when empty**:
+
+  ```bash
+  node "${CLAUDE_PLUGIN_ROOT}/scripts/tickets.mjs" owed <epic>
+  ```
+
+  Every owed item the status log records and nothing has resolved, each with
+  the entry that owes it; "none outstanding" when that is what it prints. A
+  body that says nothing is owed must be one a command printed, never one a
+  session recalled — and an item the release itself discharges is discharged
+  in the log (`**Resolves owed:**`) first, so the command stops printing it;
+- **`## Unticketed commits`, written even when empty** — the epic's entry in
+  `tickets.mjs list <epic> --json`'s `unticketed` map, each commit by sha and
+  subject, "none" when the epic has no entry. These are the changes in this
+  release that no ticket, status entry, reviewer or spend figure covers; the
+  human reading the body is the first person to be told they exist;
 - **every pre-existing finding** the reviewers reported (the result's
   `preExisting`, with the ticket that met it and the owner the addendum
-  names) — a defect neither fixed nor handed to someone is one the project
+  names; by hand, read them from the review addenda in `status.md`) — a defect neither fixed nor handed to someone is one the project
   has forgotten, and this is the last place a human sees it;
 - when step 3 proceeded on a protection waiver, that fact, right under the
   never-squash line;
@@ -815,6 +847,13 @@ spend line and no reviewer; the board lists it as unticketed and `doctor`
 warns. If picking up after a halt turns up more work than the halted ticket's,
 it is a new ticket in `tickets.md` (or `/flow:quick`), not a commit on the epic
 branch.
+
+**When the last ticket is integrated, the release pull request is opened by
+re-running `/flow:run <epic>`**: with nothing left to start the run completes
+with only the refresh hired and goes straight to step 7 — body, owed list,
+unticketed commits and the addendum request included. When step 1 refuses the
+board (a `blocked` ticket, which is how an ABANDONED one reads), an attended
+session opens it by hand, following step 7 section for section.
 
 Three shapes are possible, and the halted ticket's **status entry** — the
 thing the board reads — is what tells them apart. Read them off the board,

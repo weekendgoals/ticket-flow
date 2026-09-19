@@ -3535,3 +3535,59 @@ test('unticketed: the board prints one line under the epic, with how many carry 
   assert.match(out, /2 unticketed commits on epic\/rho \(1 subjected "rho: …"\)/)
   assert.doesNotMatch(out, /unticketed commit[s]? on epic\/tau/)
 })
+
+// ── RETRO-4: `owed <epic>` — the release body's Owed section, printed ────────
+// One live release pull request said "Nothing owed" against 31 open items: the
+// session that opened it was recalling the log, not reading it.
+const owedRepo = join(tmp, 'owed-cmd')
+git(tmp, 'init', '--initial-branch=main', owedRepo)
+for (const [name, id] of [['psi', 'P'], ['chi', 'C']]) {
+  mkdirSync(join(owedRepo, `epics/${name}`), { recursive: true })
+  writeFileSync(join(owedRepo, `epics/${name}/tickets.md`), `# ${name}\n\nDelivery: release\n\n## ${id}-1 — first\n\n**Scope.** One.\n\n## ${id}-2 — second\n\n**Scope.** Two.\n`)
+}
+writeFileSync(
+  join(owedRepo, 'epics/psi/status.md'),
+  `# Psi epic — status log
+
+### P-1 — first — 2026-09-01 — DONE
+
+**Owed:** the full Cypress suite has not run green on the release head.
+
+### P-2 — second — 2026-09-02 — DONE
+
+**Owed:**
+- the production cacheability check, deferred to release;
+- lint is broken in four workspaces.
+
+**Resolves owed:** P-2.2 — lint fixed in a quick ticket.
+`,
+)
+writeFileSync(join(owedRepo, 'epics/chi/status.md'), '# Chi epic — status log\n\n### C-1 — first — 2026-09-01 — DONE\n\n**Owed:** Nothing.\n')
+
+test('owed command: prints every outstanding item of the epic with the entry that owes it', () => {
+  const out = run(owedRepo, 'owed', 'psi')
+  assert.match(out, /P-1 \(2026-09-01\): the full Cypress suite has not run green on the release head\./)
+  assert.match(out, /P-2\.1 \(2026-09-02\): the production cacheability check, deferred to release/)
+  const j = JSON.parse(run(owedRepo, 'owed', 'psi', '--json'))
+  assert.equal(j.epic, 'psi')
+  assert.equal(j.count, 2)
+  assert.deepEqual(j.owed.map((o) => o.id), ['P-1', 'P-2.1'])
+})
+
+test('owed command: honours Resolves owed — a discharged item never prints', () => {
+  assert.doesNotMatch(run(owedRepo, 'owed', 'psi'), /lint is broken/)
+})
+
+test('owed command: an epic that owes nothing says "none outstanding" and exits 0 — a printed zero, not an absent section', () => {
+  assert.match(run(owedRepo, 'owed', 'chi'), /none outstanding/)
+  assert.deepEqual(JSON.parse(run(owedRepo, 'owed', 'chi', '--json')).owed, [])
+})
+
+test('owed command: an unknown or missing epic is refused by naming the known ones', () => {
+  const unknown = runFail(owedRepo, 'owed', 'omega')
+  assert.equal(unknown.status, 1)
+  assert.match(unknown.stderr, /no epic "omega" under epics\/ — known epics: chi, psi|known epics: psi, chi/)
+  const missing = runFail(owedRepo, 'owed')
+  assert.equal(missing.status, 1)
+  assert.match(missing.stderr, /owed needs an epic/)
+})

@@ -2798,3 +2798,23 @@ test('recovered disposition: the re-review is handed the first review\'s finding
   assert.equal(clean.out.outcome, 'completed')
   assert.ok(!clean.labels.includes('re-review:PAY-1'))
 })
+
+// ---- RETRO-4: the release pull request has a door after a halted epic --------
+// Every run of one live epic halted; its tickets were finished by hand, and the
+// release pull request was then opened by a session that had no route to step
+// 7's body. Re-running the run is that route, when the board admits it.
+
+test('nothing left to start: an epic whose tickets are all integrated completes with no worker, reviewer, disposition or merge agent hired', async () => {
+  const r = await drive(label => (label === 'refresh+select:1' ? refreshed([]) : undefined))
+  assert.deepEqual(r.labels, ['refresh+select:1'])
+  assert.equal(r.out.outcome, 'completed')
+  assert.equal(r.out.haltedOn, null)
+  assert.equal(r.out.totals.ticketsIntegrated, 0)
+  assert.deepEqual(r.out.ticketRecords, [])
+})
+
+test('nothing left to start: that run still hands the session the release pull request — the refreshed epic branch and the instruction to open it', async () => {
+  const r = await drive(label => (label === 'refresh+select:1' ? refreshed([]) : undefined))
+  assert.match(r.out.finalRefresh, /^done:/)
+  assert.match(String(r.out.next), /release pull request/i)
+})

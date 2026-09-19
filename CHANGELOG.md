@@ -8,6 +8,28 @@ with one version and date.
 
 ## Unreleased
 
+- **The release body is built from the log, at either door**
+  (`scripts/tickets.mjs` and its suite, `workflows/run-epic.test.mjs`,
+  `skills/run/SKILL.md`, `skills/ticket/SKILL.md`, README). New subcommand
+  **`tickets.mjs owed <epic> [--json]`**: every owed item the epic's status
+  log records and nothing has resolved, each with the entry that owes it —
+  the list `brief` already computed beside one ticket, on its own; "none
+  outstanding" and exit 0 when empty, and an unknown epic is refused by
+  naming the known ones. The run skill's step 7 body gains **`## Owed`**
+  (pasted from that command) and **`## Unticketed commits`** (from the
+  board), each written even when empty. And step 7 now has **two doors**: it
+  is written to be executed without a run result, every section naming the
+  command or log passage it is read from, because a run that halts never
+  reaches it — after the last ticket is finished by hand the route is
+  re-running `/flow:run <epic>` (pinned by two driver tests: an epic with
+  nothing left to start completes with only the refresh hired), and when step
+  1 refuses the board — an ABANDONED ticket reads `blocked` — an attended
+  session opens the pull request by hand, section for section. The ticket
+  skill's step 10 names both routes and no longer says "the driver" opens the
+  release pull request (the run skill's session does). From weekendgoals'
+  redesign-city: a hand-opened release said "Nothing owed" against 31 open
+  items and asked nobody for the addendum.
+
 - **Unticketed commits show on the board** (`scripts/tickets.mjs` and its
   suite, `skills/ticket/SKILL.md`, `skills/run/SKILL.md`, README, METHODOLOGY
   § "Why state is derived"). For every epic whose `origin/epic/<name>` (or
