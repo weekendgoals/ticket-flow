@@ -75,16 +75,24 @@ Stop and report too if:
   does what the signed-off document says or it does not start: fix the line
   on `epic/<name>` first;
 - **the epic's last run record halted on "a failed acceptance CHECK after
-  the merge"** and nothing has been done about it. That halt un-merges
-  nothing, so every ticket it names reads `integrated`, the board shows
-  nothing wrong, and a plain re-run would find nothing left to start, call
-  the epic built and open the release pull request for a combination the run
-  itself proved broken. Read the last `### Run —` record in `runs.md`: if it
-  halted on that condition, start only when `tickets.md` on `epic/<name>`
-  carries a ticket that fixes the combination (and, where the code was at
-  fault, a `**Blocked by:**` line on the later of the two tickets) — and say
-  in the new run's record which ticket that is. § "Resuming after a halt"
-  shape 4;
+  the merge"** and that halt has not been cleared. It un-merges nothing, so
+  every ticket it names reads `integrated`, the board shows nothing wrong,
+  and a plain re-run would find nothing left to start, call the epic built
+  and open the release pull request for a combination the run itself proved
+  broken. Read the last `### Run —` record in `runs.md`. If it halted on that
+  condition, start **only when a dated line beneath that record says how it
+  was cleared** — exactly one of these two shapes, which § "Resuming after a
+  halt" shape 4 tells the human to write:
+
+  `**Addendum — post-merge halt cleared — <YYYY-MM-DD>:** environment — <what the worktree lacked, and the check re-run by hand with its counts>`
+
+  `**Addendum — post-merge halt cleared — <YYYY-MM-DD>:** fix ticket <ID> — <one line on what it repairs>`
+
+  and, for the second, when `<ID>` is a ticket in `tickets.md` on
+  `epic/<name>`. No such line: refuse, and say so with the record's heading.
+  The line is the test, not your judgment of whether "something was done" —
+  a refusal a session has to interpret is one it will interpret differently
+  next time. Quote the line in the new run's record;
 - `parallel` is 2 or 3 **and** `ticketBudget` is set — the script refuses the
   pair at launch (a per-ticket ceiling is a delta on one meter, and in a wave
   the delta is the wave's); say so now rather than let the Workflow call
@@ -311,7 +319,13 @@ branch**. Then it refreshes and asks the board again. Three things follow:
   *after* the merge, and a merged ticket may have edited `tickets.md` — so a
   ticket that had 2 CHECK criteria when it was accepted and has 0 (or 3) now
   is a halt, not "0/0, all passed". The reviewed party does not edit its
-  gate, and a sibling does not edit it for them.
+  gate, and a sibling does not edit it for them. **More than the count: the
+  criteria themselves are read from a ref pinned when the wave began**
+  (`refs/flow/wave-base/<id>`, written by the ticket's worktree step and
+  dropped with the worktree) — never from `origin/epic/<name>`, which after
+  the wave's first merge holds whatever merged tickets did to `tickets.md`. A
+  count cannot see N criteria swapped for N weaker ones; the ref makes the
+  swap irrelevant.
 - **The post-merge check runs in the ticket's own worktree**, moved
   (detached) to the merged epic head — not in the main checkout, which never
   saw the dependencies the wave's workers installed. Its halt says to rule
@@ -1236,13 +1250,24 @@ until something has been done about it.** First rule out the environment, as
 the halt says: the check ran in the named ticket's worktree (the script kept
 it, detached at the merged head), whose installed dependencies are the ones
 *its* branch needed — install what the sibling added and re-run
-`tickets.mjs check <ID> --from origin/epic/<name>` there by hand. If it
-passes, the halt was the instrument: say so in a dated addendum beneath the
-run record, remove the worktree, and re-run. If it fails, the plan declared
-two tickets independent that are not: add a ticket to `tickets.md` on
-`epic/<name>` that fixes the combination, give the later of the two a
-`**Blocked by:**` line so the plan stops claiming it, push, remove the
-worktree, and re-run — the fix ticket is simply the next ticket.
+`tickets.mjs check <ID> --from refs/flow/wave-base/<id>` there by hand — the
+ref the run pinned when the wave began, which is what the gate itself read;
+`origin/epic/<name>` by now holds whatever the wave's merges did to the
+criteria. **Either way, clear the halt with one dated line beneath the run
+record in `runs.md`, in the shape step 1 reads** — it is what lets the next
+run start, and without it step 1 refuses for ever:
+
+- it **passes**: the halt was the instrument. Write
+  `**Addendum — post-merge halt cleared — <date>:** environment — <what was
+  missing; the counts of the re-run>`, commit and push it on `epic/<name>`,
+  remove the worktree (`git worktree remove --force <path>`, then
+  `git update-ref -d refs/flow/wave-base/<id>`), and re-run;
+- it **fails**: the plan declared two tickets independent that are not. Add a
+  ticket to `tickets.md` on `epic/<name>` that fixes the combination, give
+  the later of the two a `**Blocked by:**` line so the plan stops claiming
+  it, write `**Addendum — post-merge halt cleared — <date>:** fix ticket <ID>
+  — <what it repairs>`, commit and push, remove the worktree and its ref, and
+  re-run — the fix ticket is simply the next ticket.
 
 **Never `resumeFromRunId`, in any of the four.** The Workflow runtime replays
 every unchanged `agent()` call from the run's prefix cache, live-running only

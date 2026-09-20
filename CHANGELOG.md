@@ -110,7 +110,11 @@ for prompt, and a test holds that.
   sail through to the release pull request. **It refuses a changed criteria
   count**: it reads criteria from the epic branch *after* the merge, so a
   ticket that deleted its own CHECK lines from `tickets.md` scored "0/0, all
-  passed" — the reviewed party editing its gate, by another door. **The
+  passed" — the reviewed party editing its gate, by another door — and, on
+  the confirming pass, reads the criteria themselves from
+  `refs/flow/wave-base/<id>`, a ref each ticket's worktree step pins at the
+  epic head the wave began from: a count cannot see N criteria swapped for N
+  weaker ones, or a ticket that went from none to some. **The
   setup step asks git which merge driver it will use** (`git check-attr`) and
   ends on the answer, instead of grepping the attributes file for our line:
   the last matching rule wins, so a broader rule below ours handed the log
@@ -124,8 +128,12 @@ for prompt, and a test holds that.
   line that will not parse); and **a post-merge halt left every ticket
   `integrated`, so a plain re-run could open the release pull request for a
   combination the run had proved broken** — step 1 now reads the last run
-  record and refuses until a fix ticket exists, and § Resuming has a fourth
-  shape for it. The setup sequence and the guard line are both cut out of the
+  record and refuses until a dated `**Addendum — post-merge halt cleared —**`
+  line beneath it says how (`environment — …` or `fix ticket <ID> — …`), and
+  § Resuming has a fourth shape that tells the human to write it. The line,
+  not a session's judgment, is the test: the first cut of the two rules
+  contradicted each other, and would have refused for ever after an
+  environment-only halt. The setup sequence and the guard line are both cut out of the
   driver and run by a real shell against real git in the suite.
 - **The plan reviewer reads every pair that could share a wave**
   (`agents/plan-reviewer.md`; README, METHODOLOGY, CLAUDE.md). When a draft

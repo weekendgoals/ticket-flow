@@ -1335,6 +1335,20 @@ for (let i = 0; i < MAX_TICKETS && ticketRecords.length < MAX_TICKETS && !halted
 // by the repository's own folder name, because two projects under one parent
 // directory may well both have an epic called `auth` — and a collision there
 // would halt one run with advice to remove the OTHER run's live worktree.
+// The signed-off document a wave's tickets were ACCEPTED against, pinned. The
+// post-merge gate must judge the criteria the ticket was accepted with, and
+// `origin/epic/<name>` stops being that the moment the wave's first merge is
+// pushed — a merged ticket may have edited tickets.md, its own criteria or a
+// sibling's. Comparing criteria COUNTS catches a deletion and nothing else:
+// N criteria swapped for N weaker ones pass it, and a ticket that went from
+// none to some is never looked at. So each ticket's worktree step writes a ref
+// of its own at the epic head the wave started from, and the gate reads
+// criteria `--from` that. One ref per ticket, not one per wave: parallel steps
+// writing a shared ref would race on its lock.
+function waveBaseRef(id) {
+  return `refs/flow/wave-base/${id.toLowerCase()}`
+}
+
 function worktreePath(id) {
   const repoName = repoRoot.replace(/\/+$/, '').split('/').pop() || 'repo'
   return `${repoRoot}/../.flow-worktrees/${repoName}/${epic}/${id.toLowerCase()}`
@@ -1388,9 +1402,10 @@ async function addWorktree(id) {
 
 \`\`\`bash
 git worktree add --detach "${root}" origin/${epicBranch}
+git update-ref ${waveBaseRef(id)} origin/${epicBranch}
 \`\`\`
 
-Do not retry, do not remove anything, do not pick another path. If the path already exists, that is a failure to report, not a thing to clean up: it may hold a halted run's evidence.
+The second command pins the epic branch as it stands now under a ref of this ticket's own — the run reads the ticket's signed-off criteria from it later, after other tickets have merged. Stop at the FIRST command that exits nonzero and report it. Do not retry, do not remove anything, do not pick another path. If the path already exists, that is a failure to report, not a thing to clean up: it may hold a halted run's evidence.
 
 ${PROMPT_RULE}`,
     { label: `worktree:${id}`, phase: 'Wave', schema: PLUMBING_SCHEMA, effort: 'low', model: 'haiku' },
@@ -1412,6 +1427,7 @@ async function removeWorktree(id) {
 
 \`\`\`bash
 git worktree remove --force "${root}"
+git update-ref -d ${waveBaseRef(id)}
 \`\`\`
 
 ${PROMPT_RULE}`,
@@ -2890,8 +2906,10 @@ async function postMergeCheck({ id, record, root }, mergedId) {
 \`\`\`bash
 git fetch origin ${epicBranch}
 git checkout --detach origin/${epicBranch}
-node "${pluginRoot}/scripts/tickets.mjs" check ${id} --from origin/${epicBranch} --json
+node "${pluginRoot}/scripts/tickets.mjs" check ${id} --from ${waveBaseRef(id)} --json
 \`\`\`
+
+The \`--from\` ref is deliberate and not yours to change: it is the signed-off document as it stood when this wave began — the criteria ${id} was accepted against — and NOT \`origin/${epicBranch}\`, which by now contains merges that may have edited those criteria.
 
 The first two commands move this worktree to the merged epic head — detached, because ${epicBranch} itself is checked out in the main repository and git allows a branch one working tree. It is THIS worktree and not the main checkout on purpose: the ticket's worker installed the project's dependencies here, and the main checkout never saw them.
 
@@ -2916,18 +2934,18 @@ ${NO_MAIN}`,
   record.postMergeChecks = total
   record.postMergeChecksPassed = passed
   const unreadable = total === null || passed === null || skipped === null || problems === null || typeof post.allPassed !== 'boolean'
-  // The criteria are read `--from` the epic branch AFTER the merge, and a
-  // merged ticket may have edited tickets.md — so the gate checks that it is
-  // still judging what was signed off. Pre-merge acceptance read the document
-  // before any of this wave's merges; a different count now means a ticket
-  // changed its own gate, or a sibling's, and 0/0 "all passed" is what a
-  // deleted criterion looks like. The reviewed party must not edit its gate.
+  // The criteria are read from the wave's base ref, so they are the ones the
+  // ticket was accepted with whatever the wave's merges did to tickets.md. The
+  // count is compared anyway, as the check on that: a different number means
+  // the ref was not what it should be (or a proxy read another document), and
+  // 0/0 "all passed" is what a missing criterion looks like. The reviewed
+  // party must not edit its gate — nor have it read from where it could.
   if (!unreadable && total !== record.acceptanceChecks)
     return {
       ticket: id,
       stopCondition: STOP.postMergeCheck,
       where,
-      detail: `${id} had ${record.acceptanceChecks} signed-off CHECK criteria when it was accepted, and the document on ${epicBranch} now gives it ${total} — tickets.md changed under a merge of this wave, so the post-merge gate would be judging criteria nobody signed off. ${mergedId} stays merged; nothing further starts. Look at what the wave's merges did to \`epics/${epic}/tickets.md\` (\`git log -p origin/${epicBranch} -- epics/${epic}/tickets.md\`).`,
+      detail: `${id} had ${record.acceptanceChecks} signed-off CHECK criteria when it was accepted, and the post-merge check found ${total} — it reads them from \`${waveBaseRef(id)}\`, the document as the wave began, so the two must agree, and a gate judging other criteria than the accepted ones judges nothing. ${mergedId} stays merged; nothing further starts. Check that ref (\`git show ${waveBaseRef(id)}:epics/${epic}/tickets.md\`) against what the wave's merges did to the document (\`git log -p origin/${epicBranch} -- epics/${epic}/tickets.md\`).`,
     }
   if (unreadable || post.allPassed !== true || problems > 0 || passed !== total || skipped > 0) {
     const failures = Array.isArray(post.failures) ? post.failures : []

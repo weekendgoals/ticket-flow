@@ -240,3 +240,34 @@ test("the wave's setup step, as emitted: it ends on the driver git will actually
     r.done()
   }
 })
+
+test("the wave's base ref: written from the main checkout, read from a linked worktree after the epic branch has moved — and it still shows the document as the wave began", () => {
+  // The post-merge gate reads a ticket's criteria `--from refs/flow/wave-base/<id>`.
+  // That only works if such a ref is shared between worktrees (it is: only
+  // HEAD-like refs are per-worktree) and keeps pointing at the old document
+  // once a merged ticket has rewritten tickets.md on the epic branch.
+  const r = workRepo()
+  try {
+    writeFileSync(join(r.work, 'epics/payments/tickets.md'), '## PAY-2 — thing\n\n- it works\n  CHECK: true\n')
+    r.git('add', '.')
+    r.git('commit', '-qm', 'payments: criteria')
+    r.git('push', '-q')
+    const tree = join(r.root, 'wt-pay-2')
+    r.git('worktree', 'add', '-q', '--detach', tree, 'origin/epic/payments')
+    r.git('update-ref', 'refs/flow/wave-base/pay-2', 'origin/epic/payments')
+    // A sibling merges and weakens PAY-2's criteria on the epic branch.
+    writeFileSync(join(r.work, 'epics/payments/tickets.md'), '## PAY-2 — thing\n\n- it works\n  CHECK: echo weakened\n')
+    r.git('commit', '-qam', 'PAY-1: edited a sibling’s gate')
+    r.git('push', '-q')
+    const inTree = (...a) => execFileSync('git', a, { cwd: tree, encoding: 'utf8', env: ENV })
+    inTree('fetch', '-q', 'origin', 'epic/payments')
+    inTree('checkout', '-q', '--detach', 'origin/epic/payments')
+    assert.match(inTree('show', 'origin/epic/payments:epics/payments/tickets.md'), /CHECK: echo weakened/)
+    assert.match(inTree('show', 'refs/flow/wave-base/pay-2:epics/payments/tickets.md'), /CHECK: true/, 'the criteria PAY-2 was accepted with')
+    r.git('worktree', 'remove', '--force', tree)
+    r.git('update-ref', '-d', 'refs/flow/wave-base/pay-2')
+    assert.equal(spawnSync('git', ['rev-parse', '--verify', '-q', 'refs/flow/wave-base/pay-2'], { cwd: r.work, env: ENV }).status, 1, 'dropped with the worktree')
+  } finally {
+    r.done()
+  }
+})

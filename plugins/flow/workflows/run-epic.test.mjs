@@ -3133,15 +3133,28 @@ test('wave: the later merge can break an EARLIER ticket — its criteria are re-
   assert.match(prompt, /In the working tree at \/repo\/\.\.\/\.flow-worktrees\/repo\/payments\/pay-1 .*after PAY-2 was merged into it.*tickets\.mjs" check PAY-1 /s)
 })
 
-test('wave: a merge that changed how many criteria a ticket has is not judged by the new number — the reviewed party must not edit its gate', async () => {
-  // PAY-2's branch deleted its own CHECK lines from tickets.md. Pre-merge
-  // acceptance read the signed-off document (2 criteria); after the merge the
-  // document on the epic branch gives it none, and 0/0 "all passed" is what a
-  // deleted criterion looks like.
-  const r = await drive(waveReply([refreshed(['PAY-1', 'PAY-2'])], { 'post-merge:PAY-2': acceptNone }), PAR(2))
-  assert.equal(r.out.outcome, 'halted')
-  assert.match(r.out.haltedOn.stopCondition, /^a failed acceptance CHECK after the merge/)
-  assert.match(r.out.haltedOn.detail, /PAY-2 had 2 signed-off CHECK criteria when it was accepted, and the document on epic\/payments now gives it 0 — tickets\.md changed under a merge of this wave/)
-  const grown = await drive(waveReply([refreshed(['PAY-1', 'PAY-2'])], { 'post-merge:PAY-1:after-PAY-2': { ...acceptOk, total: 3, passed: 3 } }), PAR(2))
-  assert.match(grown.out.haltedOn.detail, /PAY-1 had 2 signed-off CHECK criteria.*now gives it 3/, 'a sibling that edited another ticket’s criteria is the same finding')
+test('wave: the post-merge gate judges the criteria the ticket was ACCEPTED with — read from a ref pinned when the wave began, never from the merged branch', async () => {
+  const r = await drive(waveReply([refreshed(['PAY-1', 'PAY-2']), refreshed([])]), PAR(2))
+  assert.equal(r.out.outcome, 'completed')
+  const prompt = l => r.calls.find(c => c.label === l).prompt
+  // Pinned per ticket, before any pipeline runs and so before any merge of the wave…
+  assert.match(prompt('worktree:PAY-2'), /git worktree add --detach "[^"]+" origin\/epic\/payments\ngit update-ref refs\/flow\/wave-base\/pay-2 origin\/epic\/payments\n/)
+  // …read by both post-merge checks — after a merge, `origin/epic/payments` holds
+  // whatever the merged tickets did to tickets.md: N criteria swapped for N
+  // weaker ones would pass a count comparison, and 0 → N would never be looked at…
+  for (const l of ['post-merge:PAY-1:after-PAY-2', 'post-merge:PAY-2']) {
+    const id = l.split(':')[1]
+    assert.match(prompt(l), new RegExp(`check ${id} --from refs/flow/wave-base/${id.toLowerCase()} --json`), l)
+    assert.doesNotMatch(prompt(l), /check PAY-\d --from origin\//, l)
+  }
+  // …while PRE-merge acceptance still reads the live signed-off branch, which no merge of this wave has touched yet.
+  assert.match(prompt('accept:PAY-2'), /check PAY-2 --from origin\/epic\/payments --json/)
+  // …and dropped with the worktree.
+  assert.match(prompt('worktree-remove:PAY-2'), /git worktree remove --force "[^"]+"\ngit update-ref -d refs\/flow\/wave-base\/pay-2\n/)
+  // The count is still compared, as the check on the ref: a different number is a halt, never "0/0, all passed".
+  const fewer = await drive(waveReply([refreshed(['PAY-1', 'PAY-2'])], { 'post-merge:PAY-2': acceptNone }), PAR(2))
+  assert.match(fewer.out.haltedOn.stopCondition, /^a failed acceptance CHECK after the merge/)
+  assert.match(fewer.out.haltedOn.detail, /PAY-2 had 2 signed-off CHECK criteria when it was accepted, and the post-merge check found 0 — it reads them from `refs\/flow\/wave-base\/pay-2`/)
+  const more = await drive(waveReply([refreshed(['PAY-1', 'PAY-2'])], { 'post-merge:PAY-1:after-PAY-2': { ...acceptOk, total: 3, passed: 3 } }), PAR(2))
+  assert.match(more.out.haltedOn.detail, /PAY-1 had 2 signed-off CHECK criteria.*found 3/)
 })

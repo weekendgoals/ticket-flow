@@ -389,6 +389,11 @@ const PHRASES = [
     files: ['run', 'readme'],
   },
   {
+    why: "a post-merge halt leaves a board with nothing wrong on it, so the run skill's step 1 refuses a re-run until a dated line beneath the halted record says how it was cleared — and § Resuming's shape 4 is where the human is told to write that line. One spelling at both doors: the first cut had the refusal demand a fix ticket while the recovery prescribed an addendum, and would have refused for ever",
+    re: /\*\*Addendum — post-merge halt cleared — <(?:YYYY-MM-DD|date)>:\*\* environment — /,
+    files: ['run'],
+  },
+  {
     why: "a parallel run's evidence is one field written at one door and read at another — the run skill's run record carries a `**Waves:**` field while the run's directory and worktrees still exist, and the retro's ninth question reads it; a field nobody reads is ceremony, and a question with nothing to read reports nothing",
     re: /\*\*Waves:\*\*/,
     files: ['run', 'retro', 'methodology'],
