@@ -2270,6 +2270,33 @@ function doctor() {
           add('warn', `${epic.epic}/tickets.md:${i + 1} — ${current} carries a "Depends on" line (${value}), which nothing reads: this epic declares "Parallel: ${epic.parallel}", so a parallel run may start ${current} beside the work it depends on. If it is a dependency, write it as "**Blocked by:** <ID>[, <ID>]" on a line of its own`)
         })
       }
+      // In a parallel epic the status log is merged by a driver, several
+      // times a run, with nobody present — and every way that has gone wrong
+      // so far (git's `union`, a driver that silently did nothing) left
+      // entries that still PARSE: a heading with its closing fields gone, or
+      // moved under the next ticket's heading. The log's own rule is the
+      // tripwire: "the **Owed** line is required even when empty". An entry
+      // without one is a truncated entry until somebody shows otherwise, and
+      // an **Owed:** line that is not the last field of its entry is one that
+      // came from somewhere else. Scoped to epics that declare `Parallel:`,
+      // because older logs in installed projects have entries that simply
+      // predate the rule, and a plugin update must not start warning on them.
+      if (epic.parallel > 1 && epic.statusDoc) {
+        const log = readFileSync(epic.statusDoc, 'utf8').split('\n')
+        let open = null // { id, line, owed }
+        const close = () => {
+          if (open && open.owed !== 1)
+            add('warn', `${epic.epic}/status.md:${open.line} — ${open.id}'s entry has ${open.owed === 0 ? 'no' : open.owed} **Owed:** line${open.owed === 1 ? '' : 's'}; every entry carries exactly one, "Nothing." included. In an epic that declares "Parallel:" the log is merged by a driver between tickets, and a missing or doubled Owed line is what a bad merge of two entries looks like: compare this entry with the one on ${open.id}'s own branch (git show origin/${open.id.toLowerCase()}:epics/${epic.epic}/status.md) before trusting the log, the owed list or the release pull request's Owed section`)
+        }
+        log.forEach((line, i) => {
+          const h = line.match(STATUS_HEADING)
+          if (h || /^#{2,3}\s/.test(line)) {
+            close()
+            open = h ? { id: h[1], line: i + 1, owed: 0 } : null
+          } else if (open && /^\*\*Owed:?\*\*/.test(line)) open.owed++
+        })
+        close()
+      }
       // Stated as what the line is FOR, not as what a run does today: the
       // declaration is parsed here and applied by the run driver.
       if (epic.parallel > 1 && epic.delivery !== 'release')

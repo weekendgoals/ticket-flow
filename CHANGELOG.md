@@ -80,6 +80,26 @@ for prompt, and a test holds that.
   ticket that ran in a wave, and per-ticket figures come from
   `scripts/meter.mjs`, which reads per agent. The worker is told it is in a
   fresh worktree with nothing git does not track.
+- **The first parallel runs are asked for the evidence the release could not
+  gather** (`skills/run/SKILL.md`, `skills/retro/SKILL.md`,
+  `scripts/tickets.mjs` and its suite, `scripts/merge-append.test.mjs`,
+  `scripts/check-invariants.mjs`, METHODOLOGY). Waves shipped tested against
+  stubbed agents and real git, and against no real model, runtime or project.
+  So a run that went wide writes a **`**Waves:**` field** into its run record
+  while the evidence still exists — which tickets ran beside which, whether
+  the runtime really ran them concurrently (from the Time line's `wall`s),
+  what the board relayed against what the board says, whether the log is
+  whole, what the post-merge gate did, what the worktrees cost and left — and
+  the retro gains a **ninth question** that reads it and ends in a verdict:
+  does the next epic declare `Parallel:`, and at what number; defects in the
+  plugin's own machinery are flagged as candidate tickets for the plugin's
+  repository. **`doctor` flags, in epics that declare `Parallel:`, a status
+  entry with no `**Owed:**` line or more than one** — the shape both bad log
+  merges found in review left behind, entries that still parse — and says how
+  to compare the entry with the ticket's own branch; older logs are left
+  alone. And the merge guard's line is now cut out of the driver and run
+  under the system's own grep against a real repository, so CI checks it
+  under GNU grep on every push.
 - **The plan reviewer reads every pair that could share a wave**
   (`agents/plan-reviewer.md`; README, METHODOLOGY, CLAUDE.md). When a draft
   declares `Parallel:` 2 or 3, tickets declared independent that are not —

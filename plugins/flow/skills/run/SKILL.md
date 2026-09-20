@@ -798,9 +798,8 @@ Then the record itself:
 
 **Driver:** /flow:run, unattended, loop by `workflows/run-epic.mjs`<, and
 when the run went wide: "`Parallel: <n>` — waves: <IDs of wave 1> | <IDs of
-wave 2> | …", because which tickets ran beside which is what the retro needs
-to read a post-merge halt, and the Time line's `wall` figures overlap inside
-a wave>.
+wave 2> | …", from each record's `wave` — the **Waves:** field below carries
+the rest>.
 **Tickets this run:** <one line per ticket, in order, from `ticketRecords`:
 ID — worker agent — review tier and outcome (`importantCount` Important,
 `nitCount` nits, fixed or not) — what stood between the fixes and the merge:
@@ -889,6 +888,32 @@ by that addendum. A
 run that selected no ticket prints `**Time:** run=<n>s` and nothing else,
 which is a complete line and not a near-miss. Planning evidence, never a gate — no ticket halts on a
 duration.>
+
+**Waves:** <**required whenever the run went wide, omitted otherwise** —
+the evidence a parallel run leaves nowhere else, gathered now, while the
+run's directory and worktrees still exist, because the retro's ninth question
+reads it and cannot gather it later. Six facts, each observed, never assumed:
+(1) **which tickets ran beside which** — each record's `wave`; (2) **was it
+actually concurrent** — from the Time line: within a wave, do the tickets'
+`wall`s overlap (their sum well above the wave's span), or did the runtime
+serialise them; (3) **what the board relayed** — for each
+`refresh+select:<n>` in the run's `journal.jsonl`, its `waiting` array and
+`waitingCount`, beside what `tickets.mjs next <epic> --with-waiting` prints
+now for the tickets still unbuilt: a list that lost an entry on the way is a
+plugin defect even when the counts check caught it; (4) **is the log whole**
+— `node "${CLAUDE_PLUGIN_ROOT}/scripts/tickets.mjs" doctor` on
+`epic/<name>`, quoting any row about an entry's `**Owed:**` line, and one
+line confirming every integrated ticket has its entry; (5) **what the
+post-merge gate did** — per ticket merged after its wave's first:
+`postMergeChecksPassed`/`postMergeChecks`, or "no CHECK criteria"; (6)
+**what the worktrees cost and left** — `git worktree list` (anything under
+`.flow-worktrees` that the script did not say it was keeping is a defect),
+whether any ticket went BLOCKED or recorded a criterion as owed **because its
+worktree lacked something the usual checkout has**, and the Time line's
+`worker=` seconds against this project's serial runs where a record exists to
+compare. With `Worker runner: codex`, add whether the runner worked inside a
+linked worktree at all. Counts and quotations; where a fact could not be
+observed, say so — `unknown` is an answer here too.>
 
 **Halted on:** <`haltedOn.stopCondition` verbatim, with `haltedOn.ticket`
 and `haltedOn.where` — or "ran to completion". **When `alsoHalted` is not

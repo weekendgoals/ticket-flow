@@ -389,6 +389,11 @@ const PHRASES = [
     files: ['run', 'readme'],
   },
   {
+    why: "a parallel run's evidence is one field written at one door and read at another — the run skill's run record carries a `**Waves:**` field while the run's directory and worktrees still exist, and the retro's ninth question reads it; a field nobody reads is ceremony, and a question with nothing to read reports nothing",
+    re: /\*\*Waves:\*\*/,
+    files: ['run', 'retro', 'methodology'],
+  },
+  {
     why: "in a parallel epic a ticket with no Blocked by line is DECLARED INDEPENDENT — one rule at four doors: the epic skill that tells the planner, the plan reviewer that reads every pair that could share a wave, the run skill whose preflight refuses an unread dependency line, and the manual. A planner told and a reviewer not (or the reverse) is a wave nobody checked",
     re: /declared independent/,
     files: ['epic', 'planReviewer', 'run', 'readme'],

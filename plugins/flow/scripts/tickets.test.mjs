@@ -4206,3 +4206,19 @@ test('next --with-waiting hands the driver both lists as data and exits 0 — ev
   const o = JSON.parse(run(only, 'next', 'dep', '--with-waiting'))
   assert.deepEqual([o.ready, o.waiting.length], [[], 1])
 })
+
+// ── parallel tickets: the log's own rule is the tripwire for a bad merge ─────
+test('doctor: in a Parallel epic an entry with no Owed line, or two, is flagged as what a bad log merge looks like — and older logs are left alone', () => {
+  const e = (id, owed) => `### ${id} — ticket ${id} — 2026-09-20 — DONE\n\n**Built:** it.\n\n${owed}\n\n`
+  // What git's union driver actually produced in review: A's Owed line under B's heading.
+  const corrupted = `# Dep epic — status log\n\n${e('DEP-1', '**Verified:** 3 passing.')}${e('DEP-2', '**Owed:** DEP-3 inherits the migration.\n**Owed:** Nothing.')}${e('DEP-3', '**Owed:** Nothing.')}`
+  const mk = (name, preamble) => {
+    const dir = depsRepo(name, sec('DEP-1') + sec('DEP-2') + sec('DEP-3'), [], preamble)
+    writeFileSync(join(dir, 'epics/dep/status.md'), corrupted)
+    return dir
+  }
+  const warns = doctorWarns(mk('owed-parallel', 'Delivery: release\n\nParallel: 2'), /\*\*Owed:\*\* line/)
+  assert.deepEqual(warns.map((w) => w.msg.match(/status\.md:(\d+) — (DEP-\d)'s entry has (\w+) /).slice(1)), [['3', 'DEP-1', 'no'], ['9', 'DEP-2', '2']])
+  assert.match(warns[0].msg, /git show origin\/dep-1:epics\/dep\/status\.md/)
+  assert.deepEqual(doctorWarns(mk('owed-serial', 'Delivery: release'), /\*\*Owed:\*\* line/), [], 'a log that predates the rule is not a plugin update away from six new warns')
+})

@@ -154,3 +154,45 @@ test('mergeAppend: a missing final newline on ours does not glue two entries tog
   assert.equal(mergeAppend('a\n', 'a\nours\n', 'a\n\ntheirs\n'), 'a\nours\n\ntheirs\n')
   assert.equal(mergeAppend('a\n', 'b\n', 'a\nx\n'), null)
 })
+
+test("the wave's merge guard, exactly as the driver emits it, under THIS system's grep: a present entry passes, an absent one undoes the merge", () => {
+  // The line is cut out of run-epic.mjs, not retyped, and run by a real shell
+  // against a real repository — on CI that is GNU grep, locally BSD's. It must
+  // read a heading as loosely as the board does, tell PAY-2 from PAY-20, and,
+  // when the entry is missing, leave the epic branch LEVEL with origin: a bad
+  // merge left on the local branch is pushed by the next run's refresh.
+  const source = readFileSync(join(dirname(DRIVER), '..', 'workflows', 'run-epic.mjs'), 'utf8')
+  const cut = source.match(/\\ngrep -qE ([^`]*?exit 1; \})`/)
+  assert.ok(cut, 'the guard line is where this test expects it in run-epic.mjs')
+  const guard = `grep -qE ${cut[1]}`.replaceAll('${id}', 'PAY-2').replaceAll('${epicBranch}', 'epic/payments').replaceAll('${epic}', 'payments')
+  const root = mkdtempSync(join(tmpdir(), 'flow-guard-'))
+  const git = (cwd, ...a) => execFileSync('git', a, { cwd, encoding: 'utf8', env: ENV, stdio: ['ignore', 'pipe', 'pipe'] })
+  try {
+    git(root, 'init', '-q', '--bare', 'origin.git')
+    git(root, 'clone', '-q', 'origin.git', 'work')
+    const work = join(root, 'work')
+    git(work, 'config', 'user.email', 'test@example.com')
+    git(work, 'config', 'user.name', 'Test')
+    git(work, 'checkout', '-q', '-b', 'epic/payments')
+    mkdirSync(join(work, 'epics/payments'), { recursive: true })
+    writeFileSync(join(work, 'epics/payments/status.md'), '# log\n')
+    git(work, 'add', '.')
+    git(work, 'commit', '-qm', 'payments: the plan')
+    git(work, 'push', '-q', '-u', 'origin', 'epic/payments')
+    const ahead = () => Number(git(work, 'rev-list', '--count', 'origin/epic/payments..HEAD').trim())
+    const after = heading => {
+      appendFileSync(join(work, 'epics/payments/status.md'), `${heading}\n`)
+      git(work, 'commit', '-qam', 'a merge, stood in for')
+      const r = spawnSync('sh', ['-c', guard], { cwd: work, encoding: 'utf8', env: ENV })
+      const result = [r.status, ahead()]
+      git(work, 'reset', '-q', '--hard', 'origin/epic/payments')
+      return result
+    }
+    assert.deepEqual(after('### PAY-2 — thing — 2026-09-20 — DONE'), [0, 1], 'present: the merge stays, for the push')
+    assert.deepEqual(after('###  PAY-2— thing — 2026-09-20 — DONE'), [0, 1], 'as loosely as STATUS_HEADING reads it')
+    assert.deepEqual(after('### PAY-20 — other — 2026-09-20 — DONE'), [1, 0], 'PAY-20 is not PAY-2 — and the merge is undone')
+    assert.deepEqual(after('no heading at all'), [1, 0])
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})

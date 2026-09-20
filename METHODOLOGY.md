@@ -1443,6 +1443,25 @@ ceiling cannot be declared beside it either: it is a delta on one meter, and
 in a wave the delta is the wave's — a ceiling that silently cannot fire is
 worse than none, the rule the missing-meter refusal already stated.
 
+### What the release could not verify, and who is asked to
+
+Parallel runs shipped tested against stubbed agents and against real git,
+and against no real model, no real runtime and no real project. Five things
+were named as unverified at the release: whether the runtime's `parallel()`
+runs pipelines concurrently or queues them; whether a cheap shell proxy
+relays the board's `waiting` list faithfully (the counts cross-check is the
+guard if it does not); what a fresh worktree costs a project with real
+dependencies, and how often it blocks a ticket outright; whether the Codex
+runner works inside a linked worktree, where `.git` is a file; and the merge
+guard's grep under a grep that is not BSD's. None of them can be settled from
+inside this repository — so the plugin asks the first people who can see them.
+A run that went wide writes a **Waves:** field into its run record while the
+evidence still exists, the retro has a question that reads it and ends in a
+verdict on the next epic's `Parallel:` line, and `doctor` flags the one shape
+every bad log merge has taken so far: an entry whose `**Owed:**` line is
+missing or doubled. An unverified claim with a collection plan is a
+hypothesis; without one it is a hope.
+
 ## Why a dependency is a strict line, and a wait is a state
 
 Document order was the only dependency mechanism while every lane was serial,
