@@ -29,14 +29,30 @@ heading here. `check-invariants.mjs` holds both.
   **a post-merge gate** — every merge after a wave's first lands on a moved
   base, so the ticket's own CHECK criteria are re-run on the merged epic
   branch, and a failure halts with the ticket still merged (new stop
-  condition); **the union merge driver** for the epic's two append-only logs,
-  written once to the local `.git/info/attributes`, because every ticket
-  appends to the end of `status.md` and two branches from one head conflict
-  there on the second merge; **a halt in one pipeline does not un-pass its
+  condition), run in the ticket's own worktree moved to the merged head,
+  because that is where the project's dependencies were installed; **an
+  append merge driver for the status log** (new `scripts/merge-append.mjs`
+  and its suite, against real git) — every ticket appends to the end of
+  `status.md`, so two branches from one head conflict there on the second
+  merge; the driver keeps each side's appended text whole, base then ours
+  then theirs, fails on a side that did more than append, is named for the
+  epic's log in the local `.git/info/attributes` by one setup step and
+  defined on the merge command with `-c`, so nothing persists in config.
+  Deliberately **not** git's `union` driver, which the first cut used:
+  union is line-level and emits a shared line once, and review showed a
+  clean-looking merge moving one ticket's `**Owed:**` line under the next
+  ticket's heading; **a halt in one pipeline does not un-pass its
   siblings** — they integrate, then the run halts on the first halt in
-  document order with the rest in a new `alsoHalted`, halted tickets'
-  worktrees left in place; a failed integration merges nothing past it and
-  records the rest `passed, not merged`. Refused at launch: `parallel`
+  document order with the rest in a new `alsoHalted` — an integration halt
+  leads when there is one, since it is the one that touched the shared
+  branch; a failed integration merges nothing past it and records the rest
+  `passed, not merged`. A passed pipeline's worktree is always removed (left
+  behind it would hold the branch checked out and break the documented
+  recovery); a halted one's stays, its path logged with the command that
+  clears it and, under the Codex runner, the cancel spelled with the
+  worktree's path. Worktrees live at
+  `<repoRoot>/../.flow-worktrees/<repo folder>/<epic>/<id>`. Each record
+  carries the `wave` it ran in, and the 40-ticket backstop counts tickets. Refused at launch: `parallel`
   outside 1–3, and **`parallel` > 1 beside `Ticket budget:`** (in a wave the
   meter's delta is the wave's; a budget that appears mid-run is refused at the
   resolve step on the same terms) — `outputTokensObserved` is `null` for a
@@ -48,7 +64,9 @@ heading here. `check-invariants.mjs` holds both.
   `skills/run/SKILL.md`). `next`'s exit-1 refusal reached a run only as a
   shell proxy's report of an exit code, and an empty list means "open the
   release pull request". The select step now runs `next <epic>
-  --with-waiting` — `{ready, waiting}` as data, exit 0 — and the script halts
+  --with-waiting` — `{ready, waiting}` as data with the script's own
+  `readyCount`/`waitingCount` beside them, exit 0; a relayed report whose
+  arrays and counts disagree is refused — and the script halts
   on a new stop condition when nothing is ready and something waits, serial
   or parallel; a report with no `waiting` array is a contradiction, not an
   empty one. The run skill's step 1 refuses to start while `doctor` says a

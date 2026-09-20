@@ -46,8 +46,13 @@ go through the flow, one-off work goes through `/flow:quick` into
   shapes a real run wrote; the two CLI cases write a throwaway run directory
   to the OS temp dir. Nothing but Node, and **no test reads a real
   transcript** — those live under `~/.claude` and belong to whoever ran
-  them. And the run driver has
-  `node --test plugins/flow/workflows/run-epic.test.mjs` (`# pass 172`) —
+  them. The append merge driver has
+  `node --test plugins/flow/scripts/merge-append.test.mjs` (`# pass 6`) —
+  REAL git in throwaway repositories, the driver wired exactly as the run's
+  merge step wires it, because the driver it replaced (git's own `union`) was
+  also obviously right and corrupted every merge it touched; one test keeps
+  that failure on record. Needs `git` and nothing else. And the run driver has
+  `node --test plugins/flow/workflows/run-epic.test.mjs` (`# pass 173`) —
   which evaluates `run-epic.mjs`'s module body with stubbed agents and
   asserts the sequence, the gate branches and the halt mapping. It needs
   nothing but Node: no git, no network, no filesystem beyond the script.
@@ -80,7 +85,8 @@ go through the flow, one-off work goes through `/flow:quick` into
 - **Smoke:** `node plugins/flow/scripts/tickets.mjs doctor` — must exit 0 on
   this repo. `… list` shows the board.
 - **Syntax check:** `node --check plugins/flow/scripts/tickets.mjs`, and the
-  same for `scripts/fidelity.mjs` and `scripts/meter.mjs`. This does
+  same for `scripts/fidelity.mjs`, `scripts/meter.mjs` and
+  `scripts/merge-append.mjs`. This does
   **not** work on `plugins/flow/workflows/run-epic.mjs`: a workflow script is
   a module body with a top-level `return`, which the workflow runtime allows
   (`allowReturnOutsideFunction`) and `node --check` rejects. Parse it the way

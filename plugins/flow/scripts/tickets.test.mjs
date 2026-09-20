@@ -4198,6 +4198,7 @@ test('next --with-waiting hands the driver both lists as data and exits 0 — ev
   assert.equal(r.status, 0, 'the refusal is the driver’s to make, in code')
   const out = JSON.parse(r.stdout)
   assert.deepEqual(out.ready.map((t) => t.id), ['DEP-3'])
+  assert.deepEqual([out.readyCount, out.waitingCount], [1, 1], 'the counts the driver cross-checks the relayed lists against')
   assert.deepEqual(out.waiting.map((t) => [t.id, t.on, /DEP-9 is not a ticket/.test(t.problem), /^DEP-2 cannot start/.test(t.reason)]), [['DEP-2', ['DEP-9'], true, true]])
   // The plain form still refuses for everyone else once only the stuck one is left.
   const only = depsRepo('ww-only', sec('DEP-1') + sec('DEP-2', '**Blocked by:** DEP-9'), ['DEP-1'])

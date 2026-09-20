@@ -50,7 +50,7 @@ const SELECT_LABEL = /^refresh\+select:/
 // one wave overlap (so they sum to more than `run=`), and a wave's
 // `refresh+select` is counted with the first of its tickets to start, which
 // is the wave's first in document order unless the runtime started them
-// otherwise. `union:<epic>` names no ticket and is run overhead.
+// otherwise. `wave-setup:<epic>` names no ticket and is run overhead.
 const STEP_ROLE = { worker: 'worker', review: 'reviewer', disposition: 'disposition', 're-review': 're-review' }
 
 // One agent's transcript → { tokens, seconds, first, last, … }, each null when

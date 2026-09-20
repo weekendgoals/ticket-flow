@@ -75,7 +75,7 @@ const call = (r, label) => r.calls.find(c => c.label === label)
 // run only when BOTH are empty, so every stub of the board carries it.
 const refreshed = (tickets, waiting = []) => ({
   refresh: { outcome: 'refreshed', headSha: 'abc1234' },
-  next: { commandSucceeded: true, tickets: tickets.map(id => ({ id, title: `title ${id}` })), waiting: waiting.map(id => ({ id, reason: `${id} waits on PAY-0 (blocked)` })) },
+  next: { commandSucceeded: true, readyCount: tickets.length, waitingCount: waiting.length, tickets: tickets.map(id => ({ id, title: `title ${id}` })), waiting: waiting.map(id => ({ id, reason: `${id} waits on PAY-0 (blocked)` })) },
 })
 const workerOk = (id = 'PAY-1', over = {}) => ({
   ticket: id,
@@ -1706,7 +1706,7 @@ test('a board that reports success without a ticket array halts rather than endi
 })
 
 test('a ticket ID that does not match the plugin shape never reaches a prompt', async () => {
-  const r = await drive(oneTicket({ 'refresh+select:1': { refresh: { outcome: 'refreshed' }, next: { commandSucceeded: true, tickets: [{ id: 'pay 1; rm -rf /' }], waiting: [] } } }))
+  const r = await drive(oneTicket({ 'refresh+select:1': { refresh: { outcome: 'refreshed' }, next: { commandSucceeded: true, tickets: [{ id: 'pay 1; rm -rf /' }], waiting: [], readyCount: 1, waitingCount: 0 } } }))
   assert.match(r.out.haltedOn.stopCondition, /^a document\/code contradiction/)
   assert.equal(r.labels.length, 1)
 })
@@ -1732,7 +1732,7 @@ test('a board that never runs out of tickets is stopped by the run cap', async (
   const r = await drive(label => {
     if (label.startsWith('refresh+select:')) {
       n += 1
-      return { refresh: { outcome: 'refreshed', headSha: 'a' }, next: { commandSucceeded: true, tickets: [{ id: `PAY-${n}`, title: 'endless' }], waiting: [] } }
+      return { refresh: { outcome: 'refreshed', headSha: 'a' }, next: { commandSucceeded: true, tickets: [{ id: `PAY-${n}`, title: 'endless' }], waiting: [], readyCount: 1, waitingCount: 0 } }
     }
     if (label.startsWith('worker:')) return workerOk(label.split(':')[1])
     if (label.startsWith('tier-facts:')) return tierFactsCode
@@ -1835,7 +1835,7 @@ test('every halt quotes the agent words it carries inside a fence', async () => 
     ['refresh error', oneTicket({ 'refresh+select:1': { refresh: { outcome: 'command-failed', failedCommand: 'git push', detail: 'rejected: behind' }, next: null } }), /rejected: behind/],
     ['refresh conflict', oneTicket({ 'refresh+select:1': { refresh: { outcome: 'merge-conflict', mergeAborted: true, detail: 'CONFLICT in a.ts' }, next: null } }), /CONFLICT in a\.ts/],
     ['board failure', oneTicket({ 'refresh+select:1': { refresh: { outcome: 'refreshed' }, next: { commandSucceeded: false, tickets: [], failure: 'exit 1: boom' } } }), /exit 1: boom/],
-    ['unusable ticket id', oneTicket({ 'refresh+select:1': { refresh: { outcome: 'refreshed' }, next: { commandSucceeded: true, tickets: [{ id: 'pay 1' }], waiting: [] } } }), /pay 1/],
+    ['unusable ticket id', oneTicket({ 'refresh+select:1': { refresh: { outcome: 'refreshed' }, next: { commandSucceeded: true, tickets: [{ id: 'pay 1' }], waiting: [], readyCount: 1, waitingCount: 0 } } }), /pay 1/],
     ['merge failure', oneTicket({ 'merge:PAY-1': { outcome: 'failed', detail: 'CONFLICT: content conflict in a.ts' } }), /content conflict in a\.ts/],
     ['verify failure', oneTicket({ 'verify:PAY-1': { commandSucceeded: false, state: '', failure: 'exit 2: no such ticket' } }), /exit 2: no such ticket/],
   ]
@@ -2877,7 +2877,7 @@ const waveReply = (boards, over = {}) => (label, prompt) => {
   const sel = label.match(/^refresh\+select:(\d+)$/)
   if (sel) return boards[Number(sel[1]) - 1] ?? refreshed([])
   const [step, id] = label.split(':')
-  if (step === 'union' || step === 'worktree' || step === 'worktree-remove') return plumbingOk
+  if (step === 'wave-setup' || step === 'worktree' || step === 'worktree-remove') return plumbingOk
   if (step === 'worker') return workerOk(id)
   if (step === 'tier-facts') return tierFactsCode
   if (step === 'review') return reviewClean
@@ -2899,29 +2899,42 @@ test('wave: two ready tickets run side by side in worktrees, merge in document o
   assert.equal(r.out.outcome, 'completed', JSON.stringify(r.out.haltedOn || r.out.threw))
   // PAY-2's pipeline finishes first (PAY-1's worker is slow) — and merges second.
   assert.ok(r.labels.indexOf('resolve:PAY-2') < r.labels.indexOf('resolve:PAY-1'), 'the fixture really does finish PAY-2 first')
-  assert.deepEqual(only(r.labels, /^(union|merge|verify|post-merge|worktree-remove|refresh\+select):/), [
-    'refresh+select:1', 'union:payments',
-    'merge:PAY-1', 'verify:PAY-1', 'worktree-remove:PAY-1',
-    'merge:PAY-2', 'verify:PAY-2', 'post-merge:PAY-2', 'worktree-remove:PAY-2',
+  assert.deepEqual(only(r.labels, /^(wave-setup|merge|verify|post-merge|worktree-remove|refresh\+select):/), [
+    'refresh+select:1', 'wave-setup:payments',
+    'merge:PAY-1', 'verify:PAY-1',
+    'merge:PAY-2', 'verify:PAY-2', 'post-merge:PAY-2',
+    'worktree-remove:PAY-1', 'worktree-remove:PAY-2',
     'refresh+select:2', 'merge:PAY-3', 'verify:PAY-3',
     'refresh+select:3',
   ])
+  assert.ok(r.labels.indexOf('wave-setup:payments') < r.labels.indexOf('worktree:PAY-1'), 'the fetch and the merge driver come before any worktree')
   for (const id of ['PAY-1', 'PAY-2']) for (const l of pipelineOf(id)) assert.ok(r.labels.includes(l), l)
   assert.ok(!r.labels.includes('worktree:PAY-3'), 'a wave of one is the serial run: no worktree')
-  assert.deepEqual(r.out.ticketRecords.map(t => [t.id, t.result]), [['PAY-1', 'integrated'], ['PAY-2', 'integrated'], ['PAY-3', 'integrated']], 'records in document order, not completion order')
+  assert.deepEqual(r.out.ticketRecords.map(t => [t.id, t.result, t.wave]), [['PAY-1', 'integrated', 1], ['PAY-2', 'integrated', 1], ['PAY-3', 'integrated', 2]], 'records in document order, not completion order — and each says which pass it ran in')
   assert.deepEqual(r.out.alsoHalted, [])
   // Where each pipeline works: its worktree in a wave, the repository alone.
   const prompt = l => r.calls.find(c => c.label === l).prompt
   for (const step of ['worker', 'tier-facts', 'review', 'disposition', 'accept', 'resolve']) {
-    assert.match(prompt(`${step}:PAY-2`), /\/repo\/\.\.\/\.flow-worktrees\/payments\/pay-2/, step)
+    assert.match(prompt(`${step}:PAY-2`), /\/repo\/\.\.\/\.flow-worktrees\/repo\/payments\/pay-2/, step)
     assert.doesNotMatch(prompt(`${step}:PAY-3`), /\.flow-worktrees/, step)
   }
   assert.match(prompt('worker:PAY-1'), /fresh git worktree, not the project's usual checkout/)
   assert.doesNotMatch(prompt('worker:PAY-3'), /fresh git worktree/)
-  // Integration always happens in the repository itself, on the epic branch.
-  for (const l of ['merge:PAY-2', 'post-merge:PAY-2', 'union:payments']) assert.doesNotMatch(prompt(l), /In the repository at \/repo\/\.\./, l)
-  assert.match(prompt('worktree:PAY-1'), /git worktree add --detach "\/repo\/\.\.\/\.flow-worktrees\/payments\/pay-1" origin\/epic\/payments/)
-  assert.match(prompt('union:payments'), /epics\/payments\/status\.md' 'epics\/payments\/shadow-reviews\.md'.*merge=union/s)
+  // The merge happens in the repository itself, on the epic branch — and in a
+  // wave it names the append driver for the status log; a lone ticket's merge
+  // is the command it always was.
+  assert.match(prompt('merge:PAY-2'), /In the repository at \/repo, /)
+  assert.match(prompt('merge:PAY-2'), /git -c merge\.flow-append\.name="append-only log" -c merge\.flow-append\.driver='node "\/plugins\/flow\/scripts\/merge-append\.mjs" %O %A %B' merge --no-ff beefc0ffee42 /)
+  assert.match(prompt('merge:PAY-3'), /\ngit merge --no-ff beefc0ffee42 /)
+  // The post-merge gate runs where the dependencies were installed: the
+  // ticket's own worktree, moved to the merged head.
+  assert.match(prompt('post-merge:PAY-2'), /In the working tree at \/repo\/\.\.\/\.flow-worktrees\/repo\/payments\/pay-2 .*git checkout --detach origin\/epic\/payments/s)
+  // The path is namespaced by the repository's folder: two projects under one
+  // parent may both have an epic of this name.
+  assert.match(prompt('worktree:PAY-1'), /git worktree add --detach "\/repo\/\.\.\/\.flow-worktrees\/repo\/payments\/pay-1" origin\/epic\/payments/)
+  assert.doesNotMatch(prompt('worktree:PAY-1'), /git fetch/, 'one fetch, in the setup step: two at once race on the ref lock')
+  assert.match(prompt('wave-setup:payments'), /git fetch origin epic\/payments\n.*'epics\/payments\/status\.md merge=flow-append'/s)
+  assert.doesNotMatch(prompt('wave-setup:payments'), /union|shadow-reviews/)
 })
 
 test('wave: Parallel 1 is the serial run, agent for agent — and three tickets make one wave of three', async () => {
@@ -2933,7 +2946,12 @@ test('wave: Parallel 1 is the serial run, agent for agent — and three tickets 
   const three = await drive(waveReply([refreshed(['PAY-1', 'PAY-2', 'PAY-3', 'PAY-4']), refreshed(['PAY-4']), refreshed([])]), PAR(3))
   assert.deepEqual(only(three.labels, /^merge:/), ['merge:PAY-1', 'merge:PAY-2', 'merge:PAY-3', 'merge:PAY-4'])
   assert.deepEqual(only(three.labels, /^worktree:/).sort(), ['worktree:PAY-1', 'worktree:PAY-2', 'worktree:PAY-3'])
-  assert.deepEqual(only(three.labels, /^(union|post-merge):/), ['union:payments', 'post-merge:PAY-2', 'post-merge:PAY-3'], 'the union driver once; the post-merge gate for every merge onto a moved base')
+  assert.deepEqual(only(three.labels, /^(wave-setup|post-merge):/), ['wave-setup:payments', 'post-merge:PAY-2', 'post-merge:PAY-3'], 'the post-merge gate for every merge onto a moved base')
+  // Two multi-ticket waves in one run: the setup step still runs once.
+  const twoWaves = await drive(waveReply([refreshed(['PAY-1', 'PAY-2', 'PAY-3', 'PAY-4']), refreshed(['PAY-3', 'PAY-4']), refreshed([])]), PAR(2))
+  assert.equal(twoWaves.out.outcome, 'completed')
+  assert.deepEqual(only(twoWaves.labels, /^wave-setup:/), ['wave-setup:payments'])
+  assert.deepEqual(twoWaves.out.ticketRecords.map(t => t.wave), [1, 1, 2, 2])
 })
 
 test('wave: a halted pipeline does not un-pass its sibling — the sibling integrates, then the run halts and nothing new starts', async () => {
@@ -2943,7 +2961,12 @@ test('wave: a halted pipeline does not un-pass its sibling — the sibling integ
   assert.deepEqual(only(r.labels, /^(merge|refresh\+select):/), ['refresh+select:1', 'merge:PAY-2'])
   assert.ok(!r.labels.includes('post-merge:PAY-2'), 'PAY-2 is the first merge of its wave: its base did not move')
   assert.ok(!r.labels.includes('worktree-remove:PAY-1'), "a halted ticket's worktree is left for diagnosis")
-  assert.ok(r.logs.some(l => /Worktrees left in place.*pay-1.*git worktree remove --force/.test(l)))
+  assert.ok(r.labels.includes('worktree-remove:PAY-2'), 'a passed ticket holds nothing its pushed branch does not')
+  assert.ok(r.logs.some(l => /PAY-1: its worktree is left in place for diagnosis at \/repo\/\.\.\/\.flow-worktrees\/repo\/payments\/pay-1 .*git worktree remove --force/.test(l)))
+  assert.ok(!r.logs.some(l => /codex\.mjs/.test(l)), 'no Codex worker, no cancel command')
+  // With the Codex runner the halt names the cancel — spelled with the WORKTREE's path, which is how the runner finds its state.
+  const codex = await drive(waveReply([refreshed(['PAY-1', 'PAY-2'])], { 'worker:PAY-1': workerOk('PAY-1', { result: 'blocked', stopCondition: 'BLOCKED' }) }), { ...PAR(2), workerRunner: 'codex' })
+  assert.ok(codex.logs.some(l => /PAY-1: .*codex\.mjs" PAY-1 --epic payments .*--repo "\/repo\/\.\.\/\.flow-worktrees\/repo\/payments\/pay-1" .*--label worker:PAY-1 --cancel --json/.test(l)), codex.logs.join('\n'))
   assert.equal(r.out.ticketRecords.find(t => t.id === 'PAY-2').result, 'integrated')
   // Two halts: the run stops on the first in document order, and the other rides beside it.
   const both = await drive(
@@ -2959,7 +2982,7 @@ test('wave: tickets declared independent that are not — the later merge fails 
   const r = await drive(waveReply([refreshed(['PAY-1', 'PAY-2', 'PAY-3'])], { 'post-merge:PAY-2': { ...acceptOk, passed: 1, allPassed: false, failures: [{ criterion: 'totals add up', evidence: 'expected 3 got 4' }] } }), PAR(2))
   assert.equal(r.out.outcome, 'halted')
   assert.match(r.out.haltedOn.stopCondition, /^a failed acceptance CHECK after the merge/)
-  assert.match(r.out.haltedOn.detail, /1\/2 of PAY-2's signed-off CHECK criteria pass on epic\/payments after the merge.*where 2\/2 passed on its own branch.*declared independent and are not.*expected 3 got 4.*Blocked by/s)
+  assert.match(r.out.haltedOn.detail, /1\/2 of PAY-2's signed-off CHECK criteria pass on epic\/payments after the merge.*where 2\/2 passed on its own branch.*expected 3 got 4.*Rule out the environment first.*declared independent and are not.*Blocked by/s)
   assert.equal(r.out.ticketRecords.find(t => t.id === 'PAY-2').result, 'integrated', 'nothing un-merges')
   assert.ok(!r.labels.includes('refresh+select:2'))
   // A report the gate cannot read fails closed; a ticket with no CHECK criteria has nothing to re-run.
@@ -2976,18 +2999,31 @@ test('wave: a failed integration merges nothing past it, and says which passed t
   assert.deepEqual(only(r.labels, /^merge:/), ['merge:PAY-1'])
   assert.equal(r.out.ticketRecords.find(t => t.id === 'PAY-2').result, 'passed, not merged')
   assert.ok(r.logs.some(l => /PAY-2: passed every gate and was NOT merged/.test(l)))
+  // Both pipelines PASSED, so both worktrees go: left behind, each would hold
+  // its ticket's branch checked out, and the documented recovery of PAY-2
+  // (`/flow:ticket PAY-2`) would die on `git checkout pay-2`.
+  assert.deepEqual(only(r.labels, /^worktree-remove:/), ['worktree-remove:PAY-1', 'worktree-remove:PAY-2'])
+  // An integration halt leads, whatever the document order: it is the one that
+  // touched the shared branch, and its detail is what says whether a merge was aborted.
+  const mixed = await drive(
+    waveReply([refreshed(['PAY-1', 'PAY-2'])], { 'merge:PAY-2': { outcome: 'failed', detail: 'CONFLICT (content): Merge conflict in src/a.ts' }, 'worker:PAY-1': workerOk('PAY-1', { result: 'blocked', stopCondition: 'BLOCKED' }) }),
+    PAR(2),
+  )
+  assert.deepEqual([mixed.out.haltedOn.ticket, mixed.out.alsoHalted.map(h => h.ticket)], ['PAY-2', ['PAY-1']])
+  assert.match(mixed.out.haltedOn.stopCondition, /^a merge conflict/)
 })
 
 test('wave: a worktree path left by a halted run halts that ticket with the command that clears it; a pipeline that throws, or vanishes, is a halt with words', async () => {
   const left = await drive(waveReply([refreshed(['PAY-1', 'PAY-2'])], { 'worktree:PAY-2': { outcome: 'failed', failedCommand: 'git worktree add', detail: "fatal: '/repo/../.flow-worktrees/payments/pay-2' already exists" } }), PAR(2))
   assert.equal(left.out.haltedOn.ticket, 'PAY-2')
-  assert.match(left.out.haltedOn.detail, /already exists.*look at what it holds, then remove it with `git worktree remove --force "\/repo\/\.\.\/\.flow-worktrees\/payments\/pay-2"`/s)
+  assert.match(left.out.haltedOn.detail, /already exists.*look at what it holds, then remove it with `git worktree remove --force "\/repo\/\.\.\/\.flow-worktrees\/repo\/payments\/pay-2"`/s)
+  assert.ok(!left.logs.some(l => /PAY-2: its worktree is left in place/.test(l)), 'a worktree that was never created is not reported as left behind')
   assert.ok(!left.labels.includes('worker:PAY-2'))
   assert.deepEqual(only(left.labels, /^merge:/), ['merge:PAY-1'], 'its sibling still integrates')
   const threw = await drive(waveReply([refreshed(['PAY-1', 'PAY-2'])], { 'tier-facts:PAY-2': () => { throw new Error('agent type not found') } }), PAR(2))
   assert.match(threw.out.haltedOn.detail, /the pipeline threw before it could report.*agent type not found/s)
-  // The union driver is set before anything starts, and its failure starts nothing.
-  const union = await drive(waveReply([refreshed(['PAY-1', 'PAY-2'])], { 'union:payments': { outcome: 'permission-prompt', failedCommand: 'mkdir -p' } }), PAR(2))
+  // The setup step runs before anything starts, and its failure starts nothing.
+  const union = await drive(waveReply([refreshed(['PAY-1', 'PAY-2'])], { 'wave-setup:payments': { outcome: 'permission-prompt', failedCommand: 'mkdir -p' } }), PAR(2))
   assert.match(union.out.haltedOn.stopCondition, /^a permission prompt/)
   assert.deepEqual(only(union.labels, /^(worktree|worker):/), [])
   // A worktree that will not remove is said, with the command, and halts nothing.
@@ -3009,6 +3045,13 @@ test('waiting: an empty ready list with tickets still waiting is a halt, never "
   assert.equal(fine.out.outcome, 'completed')
   const blind = await drive(waveReply([{ refresh: { outcome: 'refreshed' }, next: { commandSucceeded: true, tickets: [] } }]))
   assert.match(blind.out.haltedOn.detail, /returned no `waiting` array/)
+  // A proxy that echoed an empty list beside the script's own count of two has
+  // switched the gate off; the counts are how the driver notices.
+  const dropped = await drive(waveReply([{ refresh: { outcome: 'refreshed' }, next: { commandSucceeded: true, tickets: [], waiting: [], readyCount: 0, waitingCount: 2 } }]))
+  assert.equal(dropped.out.outcome, 'halted')
+  assert.match(dropped.out.haltedOn.detail, /does not add up: 0 ready ticket\(s\) reported beside readyCount .*0.*, 0 waiting beside waitingCount .*2/s)
+  const uncounted = await drive(waveReply([{ refresh: { outcome: 'refreshed' }, next: { commandSucceeded: true, tickets: [], waiting: [] } }]))
+  assert.match(uncounted.out.haltedOn.detail, /does not add up/, 'a report with no counts at all is refused too')
 })
 
 test('launch: Parallel outside 1–3 is refused, and so is Parallel beside a Ticket budget — at launch and when the budget appears mid-run', async () => {
@@ -3029,4 +3072,18 @@ test('wave: the meter is the wave\'s, so no ticket in one is handed a figure tha
   const r = await drive(waveReply([refreshed(['PAY-1', 'PAY-2', 'PAY-3']), refreshed(['PAY-3']), refreshed([])]), PAR(2), meter)
   assert.deepEqual(r.out.ticketRecords.map(t => [t.id, t.outputTokensObserved === null]), [['PAY-1', true], ['PAY-2', true], ['PAY-3', false]])
   assert.ok(r.logs.some(l => /Wave 1: \d+ output tokens by the runtime meter across the whole wave — per-ticket figures come from the run's transcripts/.test(l)))
+})
+
+test('wave: the run cap counts TICKETS, not passes — an endless board at Parallel 3 stops at 40, with the last wave cut to fit', async () => {
+  let n = 0
+  const endless = () => {
+    const ids = [1, 2, 3].map(k => `PAY-${n * 3 + k}`)
+    n += 1
+    return refreshed(ids)
+  }
+  const r = await drive((label, prompt) => (label.startsWith('refresh+select:') ? endless() : waveReply([])(label, prompt)), PAR(3))
+  assert.equal(r.out.outcome, 'halted')
+  assert.match(r.out.haltedOn.stopCondition, /^a document\/code contradiction/)
+  assert.equal(r.out.ticketRecords.length, 40, 'not 120')
+  assert.deepEqual(r.out.ticketRecords.slice(-1).map(t => t.wave), [14], 'thirteen waves of three, and one ticket of the fourteenth')
 })

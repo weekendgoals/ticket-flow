@@ -5,8 +5,8 @@ export const meta = {
   whenToUse:
     'Invoked by the flow:run skill AFTER it has resolved the epic, refused anything but Delivery: release, verified the sign-off traces on origin/epic/<name>, and checked the permission surface and branch protection (or its recorded waiver). Requires args {epic, defaultBranch, repoRoot, pluginRoot, today, workerModel?, workerRunner?, reviewerModel?, shadowReviewer?, consequencePaths?, fixBoundsExclude?, ticketBudget?, parallel?}. Returns {outcome: "completed"|"halted", haltedOn, ticketRecords, ...}; the calling session writes the run record and opens the release pull request. The driver hires the reviewer — the party under review never picks its judge — and the merge gate is a code check on the reviewer\'s structured findings. The script never merges, pushes, or retargets toward the default branch, and never opens or merges the release pull request.',
   phases: [
-    { title: 'Wave', detail: "only when the epic declares Parallel: 2 or 3 — the union merge driver for the epic's append-only logs, and one git worktree per ticket of the wave, added before its pipeline and removed after its merge" },
     { title: 'Refresh + select', detail: 'merge the default branch into epic/<name>, then read the next startable ticket — one agent, one command sequence' },
+    { title: 'Wave', detail: "only when the epic declares Parallel: 2 or 3 — once per run, the merge driver for the epic's append-only status log; then one git worktree per ticket of the wave, added before its pipeline and removed after it" },
     { title: 'Ticket', detail: 'one fresh-context worker per ticket, stopping at its pushed branch — release tickets open no pull request of their own' },
     { title: 'Review', detail: "the driver hires the judge, priced by the worker's reported tier floored in code by the diff's own file list — and, at the consequence tier of an epic that declares a shadow reviewer, one blind Codex review of the same packet that gates nothing" },
     { title: 'Disposition', detail: 'fix Important findings, record pre-existing ones, commit the addendum — a merge precondition' },
@@ -35,7 +35,7 @@ const today = ARGS && ARGS.today
 
 if (!epic || !defaultBranch || !repoRoot || !pluginRoot || !today) {
   throw new Error(
-    'flow-run-epic requires args: {epic, defaultBranch, repoRoot, pluginRoot, today, workerModel?, workerRunner?, reviewerModel?, shadowReviewer?, consequencePaths?, fixBoundsExclude?, ticketBudget?} — e.g. {epic:"payments", defaultBranch:"main", repoRoot:"/Users/x/proj", pluginRoot:"/Users/x/.claude/plugins/.../flow", today:"2026-08-11"}. The flow:run skill supplies all of them from its steps 1-3; run it only after those steps have passed.',
+    'flow-run-epic requires args: {epic, defaultBranch, repoRoot, pluginRoot, today, workerModel?, workerRunner?, reviewerModel?, shadowReviewer?, consequencePaths?, fixBoundsExclude?, ticketBudget?, parallel?} — e.g. {epic:"payments", defaultBranch:"main", repoRoot:"/Users/x/proj", pluginRoot:"/Users/x/.claude/plugins/.../flow", today:"2026-08-11"}. The flow:run skill supplies all of them from its steps 1-3; run it only after those steps have passed.',
   )
 }
 
@@ -287,8 +287,10 @@ const REFRESH_NEXT_SCHEMA = {
     next: {
       type: ['object', 'null'],
       description: 'what the board command printed — null when the refresh did not fully succeed, because then you must not run it at all',
-      required: ['commandSucceeded', 'tickets', 'waiting'],
+      required: ['commandSucceeded', 'tickets', 'waiting', 'readyCount', 'waitingCount'],
       properties: {
+        readyCount: { type: 'integer', description: 'the `readyCount` number the command printed, exactly as printed' },
+        waitingCount: { type: 'integer', description: 'the `waitingCount` number the command printed, exactly as printed' },
         commandSucceeded: { type: 'boolean', description: 'true only if the command exited 0 and printed parseable JSON' },
         waiting: {
           type: 'array',
@@ -995,7 +997,8 @@ const seen = new Set()
 // Halts beyond the first, when a wave produced more than one: `haltedOn` stays
 // the single halt the run stopped on, and these ride beside it.
 const alsoHalted = []
-let unionWritten = false
+let waveSetupDone = false
+let waveNo = 0
 
 log(`Driving ${epicBranch} unattended: one ticket at a time, in document order — worker, then a reviewer the DRIVER hires, then disposition, then the merge. ${defaultBranch} is never a target; the run's entire merge surface is ${epicBranch}.`)
 
@@ -1031,7 +1034,7 @@ STEP 2 — only when \`refresh.outcome\` is "refreshed", run exactly:
 ${TICKETS} next ${epic} --with-waiting
 \`\`\`
 
-It prints one JSON object with two arrays: \`ready\` — the startable tickets in document order (possibly empty) — and \`waiting\` — tickets the plan holds back (possibly empty). Report \`ready\` verbatim under \`next.tickets\` and \`waiting\` verbatim under \`next.waiting\` — every id and title, in the printed order — and nothing you inferred. If step 1 did not fully succeed, set \`next\` to null; you are reading a derived board, not acting on it.
+It prints one JSON object with two arrays: \`ready\` — the startable tickets in document order (possibly empty) — and \`waiting\` — tickets the plan holds back (possibly empty). Report \`ready\` verbatim under \`next.tickets\`, \`waiting\` verbatim under \`next.waiting\`, and the two numbers \`readyCount\` and \`waitingCount\` exactly as printed — every id and title, in the printed order — and nothing you inferred. If step 1 did not fully succeed, set \`next\` to null; you are reading a derived board, not acting on it.
 
 ${PROMPT_RULE}
 
@@ -1071,7 +1074,7 @@ const refreshHalt = (r, where) => {
   return { stopCondition: STOP.nonzeroExit, where, detail: `a command in the refresh sequence exited nonzero:${quoted(`${line(r.failedCommand)} — ${line(r.detail)}`)}` }
 }
 
-for (let i = 0; i < MAX_TICKETS && !halted; i++) {
+for (let i = 0; i < MAX_TICKETS && ticketRecords.length < MAX_TICKETS && !halted; i++) {
   // The meter snapshot for this pass: refresh through verify. Between agent
   // calls the session is awaiting this workflow, so the delta is, to a close
   // approximation, this ticket's own output-token spend.
@@ -1096,17 +1099,17 @@ for (let i = 0; i < MAX_TICKETS && !halted; i++) {
       ? {
           ticket: null,
           stopCondition: next.permissionPrompt ? STOP.permissionPrompt : STOP.nonzeroExit,
-          where: `\`tickets.mjs next ${epic} --json\``,
+          where: `\`tickets.mjs next ${epic} --with-waiting\``,
           detail: failure || '(the agent reported the command failed but quoted nothing)',
         }
-      : { ticket: null, stopCondition: STOP.nonzeroExit, where: `\`tickets.mjs next ${epic} --json\``, detail: 'the agent returned no report on the board command' }
+      : { ticket: null, stopCondition: STOP.nonzeroExit, where: `\`tickets.mjs next ${epic} --with-waiting\``, detail: 'the agent returned no report on the board command' }
     break
   }
   if (!Array.isArray(next.tickets)) {
     halted = {
       ticket: null,
       stopCondition: STOP.contradiction,
-      where: `\`tickets.mjs next ${epic} --json\``,
+      where: `\`tickets.mjs next ${epic} --with-waiting\``,
       detail: 'the board command reported success but returned no ticket array — an empty board and an unreported one are not the same fact, and only one of them is safe to end a run on',
     }
     break
@@ -1123,6 +1126,19 @@ for (let i = 0; i < MAX_TICKETS && !halted; i++) {
       stopCondition: STOP.contradiction,
       where: `\`tickets.mjs next ${epic} --with-waiting\``,
       detail: 'the board command reported success but returned no `waiting` array — "no ticket is waiting" and "nobody reported" are not the same fact, and a run that ends on the second may release an epic with work unbuilt',
+    }
+    break
+  }
+  // The lists arrive through a proxy's report, and the run ends on their being
+  // empty — so the script's own counts ride beside them, and a report whose
+  // arrays and counts disagree is refused: `waiting: []` beside
+  // `waitingCount: 2` is a gate switched off by a careless echo.
+  if (next.readyCount !== next.tickets.length || next.waitingCount !== next.waiting.length) {
+    halted = {
+      ticket: null,
+      stopCondition: STOP.contradiction,
+      where: `\`tickets.mjs next ${epic} --with-waiting\``,
+      detail: `the board report does not add up: ${next.tickets.length} ready ticket(s) reported beside readyCount ${fence(line(JSON.stringify(next.readyCount ?? null)))}, ${next.waiting.length} waiting beside waitingCount ${fence(line(JSON.stringify(next.waitingCount ?? null)))} — a list that lost an entry on its way here could end the run with work unbuilt, so nothing proceeds on it`,
     }
     break
   }
@@ -1147,7 +1163,8 @@ for (let i = 0; i < MAX_TICKETS && !halted; i++) {
   // so two tickets in one wave are two tickets the plan declared independent.
   // A serial run is a wave of one, and takes the path it always took.
   const wave = []
-  for (const ticket of next.tickets.slice(0, parallelMax)) {
+  // The 40-ticket backstop counts TICKETS, so a wave is cut to what is left of it.
+  for (const ticket of next.tickets.slice(0, Math.min(parallelMax, MAX_TICKETS - ticketRecords.length))) {
     const id = String(ticket.id || '').trim()
     if (!TICKET_ID.test(id)) {
       halted = {
@@ -1180,13 +1197,17 @@ for (let i = 0; i < MAX_TICKETS && !halted; i++) {
   // wide: pipelines may run side by side, integration is always one at a time.
   if (wave.length === 1) {
     const { id, branch, ticket } = wave[0]
+    waveNo++
     log(`Ticket ${ticketRecords.length + 1}: ${id}${ticket.title ? ` — ${line(ticket.title)}` : ''}`)
     const ticketRun = await runTicket({ id, branch, ticket, spentAtStart, root: repoRoot, solo: true })
+    // Which pass of the loop this ticket ran in: what lets the run record say
+    // which tickets ran beside which, in a run that mixed waves and lone ones.
+    if (ticketRun.record) ticketRun.record.wave = waveNo
     if (ticketRun.halted) {
       halted = ticketRun.halted
       break
     }
-    const integrationHalt = await integrateTicket({ ...ticketRun, baseMoved: false })
+    const integrationHalt = await integrateTicket({ ...ticketRun, baseMoved: false, inWave: false, root: repoRoot })
     if (integrationHalt) {
       halted = integrationHalt
       break
@@ -1195,19 +1216,18 @@ for (let i = 0; i < MAX_TICKETS && !halted; i++) {
   }
 
   // ── a wave of more than one ────────────────────────────────────────────────
-  log(`Wave ${i + 1}: ${wave.map(w => w.id).join(', ')} side by side — each pipeline in its own worktree; their merges follow one at a time, in document order.`)
-  // Every ticket appends its status entry to the END of the same log, so two
-  // branches cut from one epic head conflict there on the second merge, every
-  // time. Git's built-in `union` driver keeps both sides' lines, which is the
-  // correct merge of an append-only file — set for this epic's logs only, in
-  // the repository's own `info/attributes` (local, never committed), and once.
-  if (!unionWritten) {
-    const union = await writeUnionAttributes()
-    if (union) {
-      halted = union
+  waveNo++
+  log(`Wave ${waveNo}: ${wave.map(w => w.id).join(', ')} side by side — each pipeline in its own worktree; their merges follow one at a time, in document order.`)
+  // Once per run, before any wave's pipelines: the merge driver for the epic's
+  // status log (see `waveSetup`). Nothing starts if it cannot be set, because
+  // without it the wave's second merge conflicts in that log, every time.
+  if (!waveSetupDone) {
+    const setup = await waveSetup()
+    if (setup) {
+      halted = setup
       break
     }
-    unionWritten = true
+    waveSetupDone = true
   }
   const waveSpentAtStart = spentAtStart
   const runs = await parallel(
@@ -1216,7 +1236,7 @@ for (let i = 0; i < MAX_TICKETS && !halted; i++) {
       // null, and a halt with no words is a run nobody can diagnose.
       try {
         const tree = await addWorktree(w.id)
-        if (tree.halted) return { ...w, record: null, recordSpend: null, halted: tree.halted }
+        if (tree.halted) return { ...w, record: null, recordSpend: null, halted: tree.halted, noTree: true }
         return await runTicket({ ...w, spentAtStart: null, root: tree.root, solo: false })
       } catch (e) {
         return {
@@ -1239,75 +1259,115 @@ for (let i = 0; i < MAX_TICKETS && !halted; i++) {
         halted: { ticket: w.id, stopCondition: STOP.nonzeroExit, where: `${w.id}'s pipeline`, detail: 'the pipeline returned no report — what it did is unknown, and nothing merges on a guess' },
       },
   )
-  for (const r of results) if (r.record) ticketRecords.push(r.record)
-  if (METER) log(`Wave ${i + 1}: ${METER.spent() - waveSpentAtStart} output tokens by the runtime meter across the whole wave — per-ticket figures come from the run's transcripts (scripts/meter.mjs), not from this meter.`)
+  for (const r of results) {
+    if (!r.record) continue
+    r.record.wave = waveNo
+    ticketRecords.push(r.record)
+  }
+  if (METER) log(`Wave ${waveNo}: ${METER.spent() - waveSpentAtStart} output tokens by the runtime meter across the whole wave — per-ticket figures come from the run's transcripts (scripts/meter.mjs), not from this meter.`)
 
   // A halt in one pipeline does not un-pass its siblings: they are independent
   // by the plan's own declaration and cleared every gate a serial run has, so
   // they integrate — and THEN the run halts, and nothing new starts.
-  const halts = results.filter(r => r.halted).map(r => r.halted)
+  const pipelineHalts = results.filter(r => r.halted).map(r => r.halted)
+  let integrationHalt = null
   let baseMoved = false
-  for (const r of results.filter(x => !x.halted)) {
-    const integrationHalt = await integrateTicket({ ...r, baseMoved })
-    if (integrationHalt) {
-      halts.push(integrationHalt)
-      // Nothing merges past a failed integration: the epic branch is no longer
-      // the branch the remaining pipelines were judged against.
-      for (const rest of results.filter(x => !x.halted && x.record && x.record.result !== 'integrated' && x !== r)) {
-        rest.record.result = 'passed, not merged'
-        log(`${rest.id}: passed every gate and was NOT merged — the run halted first. Its branch is pushed; the run skill's § "Resuming after a halt" finishes it.`)
-      }
-      break
-    }
+  const passed = results.filter(x => !x.halted)
+  for (const r of passed) {
+    integrationHalt = await integrateTicket({ ...r, baseMoved, inWave: true, root: worktreePath(r.id) })
+    if (integrationHalt) break
     baseMoved = true
-    await removeWorktree(r.id)
   }
+  if (integrationHalt) {
+    // Nothing merges past a failed integration: the epic branch is no longer
+    // the branch the remaining pipelines were judged against.
+    for (const rest of passed.filter(x => x.record && x.record.result !== 'integrated' && x.id !== integrationHalt.ticket)) {
+      rest.record.result = 'passed, not merged'
+      log(`${rest.id}: passed every gate and was NOT merged — the run halted first. Its branch is pushed; the run skill's § "Resuming after a halt" finishes it.`)
+    }
+  }
+  // A ticket whose pipeline PASSED has nothing in its worktree that is not on
+  // its pushed branch — entry committed, addendum committed — so its worktree
+  // goes whether or not it integrated. Left behind it would hold the ticket's
+  // branch checked out, and git refuses `git checkout <branch>` anywhere else
+  // while it does: the documented recovery of a `passed, not merged` ticket
+  // (`/flow:ticket <ID>`) would die on its first command.
+  for (const r of passed) await removeWorktree(r.id)
+  // A ticket whose pipeline HALTED may hold the only copy of what went wrong —
+  // uncommitted work, a half-written entry — so its worktree stays, and the
+  // run says where, and how to clear it, and (with the Codex runner) how to
+  // stop a worker that may still be editing it: the runner's state is keyed
+  // on the path it was given, which in a wave is the worktree's.
+  const kept = results.filter(r => r.halted && !r.noTree).map(r => r.id)
+  for (const id of kept)
+    log(
+      `${id}: its worktree is left in place for diagnosis at ${worktreePath(id)} — look, then \`git worktree remove --force "${worktreePath(id)}"\` before re-running (a path left behind refuses the next run's worktree of the same name, and holds the ticket's branch checked out).` +
+        (workerRunner === 'codex' ? ` FIRST, because a Codex worker is detached and may still be editing that tree: \`node "${pluginRoot}/scripts/runners/codex.mjs" ${id} --epic ${epic} --epic-branch ${epicBranch} --default-branch ${defaultBranch} --repo "${worktreePath(id)}" --plugin "${pluginRoot}" --label worker:${id} --cancel --json\` — with the WORKTREE's path: the runner finds its state by the repository path it was given, so the run skill's cancel, spelled with the main checkout, reports nothing to cancel.` : ''),
+    )
+  // The integration halt leads: it is the one that touched the shared branch,
+  // and the one whose detail may say a merge was not aborted — which the
+  // session must read before it checks anything out.
+  const halts = [...(integrationHalt ? [integrationHalt] : []), ...pipelineHalts]
   if (halts.length) {
     halted = halts[0]
     alsoHalted.push(...halts.slice(1))
-    const kept = results.filter(r => r.halted).map(r => r.id)
-    if (kept.length) log(`Worktrees left in place for diagnosis: ${kept.map(id => worktreePath(id)).join(', ')} — remove each with \`git worktree remove --force <path>\` before re-running.`)
     break
   }
 }
 
-// ── worktrees and the union driver — a wave's plumbing ───────────────────────
+// ── worktrees and the log's merge driver — a wave's plumbing ─────────────────
 // Outside the repository, beside it: a worktree inside the working tree would
-// show up as untracked files in every `git status` a worker runs.
+// show up as untracked files in every `git status` a worker runs. Namespaced
+// by the repository's own folder name, because two projects under one parent
+// directory may well both have an epic called `auth` — and a collision there
+// would halt one run with advice to remove the OTHER run's live worktree.
 function worktreePath(id) {
-  return `${repoRoot}/../.flow-worktrees/${epic}/${id.toLowerCase()}`
+  const repoName = repoRoot.replace(/\/+$/, '').split('/').pop() || 'repo'
+  return `${repoRoot}/../.flow-worktrees/${repoName}/${epic}/${id.toLowerCase()}`
 }
 
-async function writeUnionAttributes() {
-  const r = await agent(
-    `In the repository at ${repoRoot}, run exactly this sequence and report what it did:
-
-\`\`\`bash
-A="$(git rev-parse --git-common-dir)/info/attributes"
-mkdir -p "$(dirname "$A")"
-for p in 'epics/${epic}/status.md' 'epics/${epic}/shadow-reviews.md'; do grep -qxF "$p merge=union" "$A" 2>/dev/null || echo "$p merge=union" >> "$A"; done
-cat "$A"
-\`\`\`
-
-That is the whole task: it tells git to merge this epic's two append-only logs by keeping both sides' lines. The file is the repository's local \`info/attributes\` — never committed, never pushed. Change no other file.
-
-${PROMPT_RULE}`,
-    { label: `union:${epic}`, phase: 'Wave', schema: PLUMBING_SCHEMA, effort: 'low', model: 'haiku' },
-  )
-  return r && r.outcome === 'done' ? null : plumbingHalt(r, null, `setting the union merge driver for ${epic}'s logs`)
-}
-
-async function addWorktree(id) {
-  const root = worktreePath(id)
+// Every ticket appends its status entry to the END of the same log, so two
+// branches cut from one epic head conflict there on the second merge, every
+// time. The merge of an append-only file is "base, then what ours added, then
+// what theirs added, each WHOLE" — which is `scripts/merge-append.mjs`, and is
+// NOT git's built-in `union` driver: union is line-level, emits a shared line
+// once, and so reported clean merges while moving one ticket's `**Owed:**`
+// line under another ticket's heading. This step only names the driver for
+// this epic's log, in the repository's local `info/attributes` (never
+// committed); the driver itself is defined on the merge command with `-c`,
+// so nothing persists in the repository's config, and a later merge without
+// it falls back to git's ordinary one. The fetch is here, once, because two
+// worktree steps fetching the same ref at the same moment race on its lock.
+async function waveSetup() {
   const r = await agent(
     `In the repository at ${repoRoot}, run exactly this sequence and report what it did:
 
 \`\`\`bash
 git fetch origin ${epicBranch}
+A="$(git rev-parse --git-common-dir)/info/attributes"
+mkdir -p "$(dirname "$A")"
+grep -qxF 'epics/${epic}/status.md merge=flow-append' "$A" 2>/dev/null || echo 'epics/${epic}/status.md merge=flow-append' >> "$A"
+cat "$A"
+\`\`\`
+
+That is the whole task: it names the merge driver for this epic's append-only status log. The file is the repository's local \`info/attributes\` — never committed, never pushed. Change no other file. Stop at the FIRST command that exits nonzero and report it.
+
+${PROMPT_RULE}`,
+    { label: `wave-setup:${epic}`, phase: 'Wave', schema: PLUMBING_SCHEMA, effort: 'low', model: 'haiku' },
+  )
+  return r && r.outcome === 'done' ? null : plumbingHalt(r, null, `preparing ${epic} for a wave (the fetch, and the status log's merge driver)`)
+}
+
+async function addWorktree(id) {
+  const root = worktreePath(id)
+  const r = await agent(
+    `In the repository at ${repoRoot}, run exactly this command and report what it did:
+
+\`\`\`bash
 git worktree add --detach "${root}" origin/${epicBranch}
 \`\`\`
 
-Stop at the FIRST command that exits nonzero and report it — do not retry, do not remove anything, do not pick another path. If the path already exists, that is a failure to report, not a thing to clean up: it may hold a halted run's evidence.
+Do not retry, do not remove anything, do not pick another path. If the path already exists, that is a failure to report, not a thing to clean up: it may hold a halted run's evidence.
 
 ${PROMPT_RULE}`,
     { label: `worktree:${id}`, phase: 'Wave', schema: PLUMBING_SCHEMA, effort: 'low', model: 'haiku' },
@@ -1319,9 +1379,9 @@ ${PROMPT_RULE}`,
   return { root, halted: h }
 }
 
-// After the ticket is integrated, so a failure here un-merges nothing and
-// halts nothing: it is said, with the command, because a path left behind
-// refuses the NEXT run's worktree of the same name.
+// A failure here un-merges nothing and halts nothing: it is said, with the
+// command, because a path left behind refuses the NEXT run's worktree of the
+// same name and holds the ticket's branch checked out.
 async function removeWorktree(id) {
   const root = worktreePath(id)
   const r = await agent(
@@ -2795,8 +2855,17 @@ ${NO_MAIN} You are read-only here in any case: the two fetches update remote-tra
 // verified SHA, the board's confirmation, and the budget check. Returns the
 // halt, or null. Always serial — it is the only code that touches the epic
 // branch between refreshes.
-async function integrateTicket({ id, branch, record, recordSpend, resolvedHead, baseMoved }) {
+// `inWave` changes two things and only two: the merge names the append driver
+// for the epic's status log (a serial run's merge is the command it always
+// was), and `root` — the ticket's own worktree — is where the post-merge gate
+// runs.
+async function integrateTicket({ id, branch, record, recordSpend, resolvedHead, baseMoved, inWave, root }) {
   let halted = null
+  // Defined on the command, never in the repository's config: nothing persists,
+  // and a later hand merge without it falls back to git's ordinary driver.
+  const mergeCommand = inWave
+    ? `git -c merge.flow-append.name="append-only log" -c merge.flow-append.driver='node "${pluginRoot}/scripts/merge-append.mjs" %O %A %B' merge --no-ff ${resolvedHead} -m "Merge ${branch} into ${epicBranch}"`
+    : `git merge --no-ff ${resolvedHead} -m "Merge ${branch} into ${epicBranch}"`
   // h. Merge — the one sanctioned agent merge, and its surface is the epic
   //    branch only. A fixed git sequence on a SHA this code verified, by an
   //    agent with nothing to decide: release tickets have no pull request,
@@ -2809,7 +2878,7 @@ async function integrateTicket({ id, branch, record, recordSpend, resolvedHead, 
 \`\`\`bash
 git checkout ${epicBranch}
 git pull --ff-only
-git merge --no-ff ${resolvedHead} -m "Merge ${branch} into ${epicBranch}"
+${mergeCommand}
 git push origin ${epicBranch}
 \`\`\`
 
@@ -2890,19 +2959,24 @@ ${PROMPT_RULE}`,
   // The plan declared the two independent — this is where that declaration is
   // checked, with the ticket's own signed-off criteria, re-run on the merged
   // branch. After the merge and not before, because only the merge produces
-  // the thing to check; like the budget halt, it un-merges nothing — it stops
+  // the thing to check — and in the ticket's own worktree, moved to the merged
+  // head, because that is where the project's dependencies were installed;
+  // the main checkout never saw them, and a check run there fails on a missing
+  // module and blames the plan. Like the budget halt, it un-merges nothing — it stops
   // the run from building on a combination that does not hold. A ticket with
   // no CHECK criteria has nothing to re-run, and a wave's first merge lands on
   // a base that did not move.
   if (baseMoved && record.acceptanceChecks > 0) {
     const post = await agent(
-      `In the repository at ${repoRoot}, re-run ticket ${id}'s machine-runnable acceptance checks on the epic branch it was just merged into, and report what the command printed. Run exactly this sequence:
+      `In the working tree at ${root} — ticket ${id}'s own worktree — re-run its machine-runnable acceptance checks on the epic branch it was just merged into, and report what the command printed. Run exactly this sequence:
 
 \`\`\`bash
-git checkout ${epicBranch}
-git pull --ff-only
+git fetch origin ${epicBranch}
+git checkout --detach origin/${epicBranch}
 node "${pluginRoot}/scripts/tickets.mjs" check ${id} --from origin/${epicBranch} --json
 \`\`\`
+
+The first two commands move this worktree to the merged epic head — detached, because ${epicBranch} itself is checked out in the main repository and git allows a branch one working tree. It is THIS worktree and not the main checkout on purpose: the ticket's worker installed the project's dependencies here, and the main checkout never saw them.
 
 The check command exits 0 when every check passed AND every criterion parsed, and 1 otherwise — an exit of 1 is a RESULT to report, not a failure of your step: outcome is "ran" whenever the command printed its JSON. Report the ledger's fields exactly as printed. Fix nothing, re-run nothing, change no file.
 
@@ -2934,7 +3008,7 @@ ${NO_MAIN}`,
         where,
         detail: unreadable
           ? `the post-merge check reported "ran" but no usable counts or verdict — a gate that cannot read its own evidence fails closed. ${id} is merged; nothing further starts.`
-          : `${passed}/${total} of ${id}'s signed-off CHECK criteria pass on ${epicBranch} after the merge (${skipped} skipped, ${problems} malformed), where ${record.acceptanceChecksPassed}/${record.acceptanceChecks} passed on its own branch — the tickets of this wave were declared independent and are not: ${quoted} ${id} stays merged; fix forward on ${epicBranch} through a ticket, and give the later ticket a \`**Blocked by:**\` line.`,
+          : `${passed}/${total} of ${id}'s signed-off CHECK criteria pass on ${epicBranch} after the merge (${skipped} skipped, ${problems} malformed), where ${record.acceptanceChecksPassed}/${record.acceptanceChecks} passed on its own branch: ${quoted} Rule out the environment first — the check ran in ${id}'s worktree, whose installed dependencies are the ones ITS branch needed, and a sibling merged before it may have added one. If the failure is in the code, the tickets of this wave were declared independent and are not. ${id} stays merged; fix forward on ${epicBranch} through a ticket, and give the later ticket a \`**Blocked by:**\` line.`,
       }
     }
     log(`${id}: post-merge checks ${passed}/${total} on ${epicBranch} — the combination holds.`)

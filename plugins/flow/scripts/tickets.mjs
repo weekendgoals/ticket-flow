@@ -3057,6 +3057,12 @@ switch (cmd) {
     // refuses in code. Humans and every other caller keep the refusal.
     if (argv.includes('--with-waiting')) {
       emit({
+        // The counts are a cross-check, not a convenience: the driver learns
+        // these lists through a shell proxy's report, and a proxy that returns
+        // `waiting: []` for a list that was not empty would switch the gate
+        // off. The driver refuses a report whose counts and arrays disagree.
+        readyCount: open.length,
+        waitingCount: waiting.length,
         ready: open.map((t) => ({ id: t.id, title: t.title, epic: t.epic })),
         waiting: waiting.map((t) => ({ id: t.id, title: t.title, epic: t.epic, on: t.waitingOn, problem: t.dependencyProblem, reason: waitingReason(t, data.byId) })),
       })
