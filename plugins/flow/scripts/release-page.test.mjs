@@ -63,7 +63,10 @@ const check = (over = {}) => ({
   skipped: 0,
   problems: 0,
   allPassed: true,
-  tickets: [{ id: 'PAY-1', total: 2, passed: 2, skipped: 0, checks: [], compares: [], problems: [], criteriaChanged: null }],
+  dirty: [],
+  orphanIds: [],
+  shared: false,
+  tickets: [{ id: 'PAY-1', total: 2, passed: 2, skipped: 0, checks: [{ status: 'passed', check: 'true', evidence: 'exit 0' }, { status: 'passed', check: 'npm test', evidence: '14 passed' }], compares: [], problems: [], criteriaChanged: null }],
   notLanded: [{ id: 'PAY-2', state: 'todo' }],
   removedSinceSignoff: [],
   ...over,
@@ -103,6 +106,12 @@ test('the verdict is recomputed, never taken on the report\'s word — every way
   notGreen(check({ head: null }), 'a ledger that does not say which commit it is about')
   notGreen(check({ epic: 'refunds' }), 'another epic\'s ledger')
   notGreen(check({ tickets: [] }), 'a ledger with no ticket in it')
+  notGreen({ epic: 'payments', head: HEAD, allPassed: true, tickets: [{ id: 'PAY-1' }] }, 'a report with no counts in it — undefined === undefined is not a pass')
+  notGreen(check({ tickets: [{ id: 'PAY-1', total: 2, passed: 2, skipped: 0, compares: [], problems: [], criteriaChanged: null, checks: [{ status: 'passed' }, { status: 'failed', check: 'x', evidence: 'exit 1' }] }] }), 'passing counters beside a failed row')
+  notGreen(check({ dirty: [' M src/pay.ts'] }), 'uncommitted tracked changes when the check ran')
+  assert.match(renderRelease(data(), { check: check({ dirty: [' M src/pay.ts'] }) }), /Tracked files were modified and uncommitted when this check ran.*src\/pay\.ts/)
+  assert.match(renderRelease(data(), { check: check({ orphanIds: ['PAY-9'] }) }), /a ticket ID no document knows.*PAY-9/)
+  assert.match(renderRelease(data(), { check: check({ shared: true }) }), /check-epic --each/)
   notGreen(check({ tickets: [{ id: 'PAY-1', total: 1, passed: 1, skipped: 0, checks: [], compares: [], problems: [{ line: 9, why: 'malformed', text: 'CHECK' }], criteriaChanged: null }] }), 'a malformed criterion')
   assert.doesNotMatch(renderRelease(data({ head: null }), { check: check() }), /class="verdict ok"/)
   // a landed ticket the ledger does not carry was checked by nobody — said, and badged on the ticket
@@ -121,9 +130,10 @@ test('a ledger from before the run-record commit still describes this head — a
   // The run record is committed AFTER the pull request opens, so it can name it.
   const moved = check({ head: 'e'.repeat(40) })
   const ok = renderRelease(data(), { check: moved, recordOnlySince: true })
-  assert.match(ok, /class="verdict ok">Passed/)
-  assert.match(ok, /the only files changed since are this epic's run record, which no check reads/)
-  assert.match(ok, /checks 2\/2 at head/)
+  assert.match(ok, /class="verdict ok">Passed at eeeeeeeee, one commit before this head/)
+  assert.match(ok, /before this epic's run record was committed — the only files changed since/)
+  assert.match(ok, /checks 2\/2 at eeeeeeeee, one commit before this head/, 'the ledger is evidence about THAT commit, and the page says which')
+  assert.doesNotMatch(ok, /checks 2\/2 at head/)
   const stale = renderRelease(data(), { check: moved })
   assert.match(stale, /NOT A CHECK OF THIS RELEASE/)
   assert.match(stale, /badge s-bad">checks 2\/2 — not at this head/, 'a badge that says "at head" about another commit is the page lying')
@@ -154,7 +164,9 @@ test('a failed check names the ticket, the command and its evidence', () => {
 test('criteria that differ from sign-off, and a section that is gone, are shown with a green ledger', () => {
   const html = renderRelease(data(), {
     check: check({
-      tickets: [{ id: 'PAY-1', total: 1, passed: 1, skipped: 0, checks: [], compares: [{ compare: 'designs/pay.html @ 1440' }], problems: [], criteriaChanged: { was: ['CHECK: npm test — EXPECT: 14 passed'], now: ['CHECK: npm test — EXPECT: passed'] } }],
+      total: 1,
+      passed: 1,
+      tickets: [{ id: 'PAY-1', total: 1, passed: 1, skipped: 0, checks: [{ status: 'passed', check: 'npm test', evidence: 'passed' }], compares: [{ compare: 'designs/pay.html @ 1440' }], problems: [], criteriaChanged: { was: ['CHECK: npm test — EXPECT: 14 passed'], now: ['CHECK: npm test — EXPECT: passed'] } }],
       removedSinceSignoff: [{ id: 'PAY-0', was: ['CHECK: npm run e2e'] }],
     }),
   })

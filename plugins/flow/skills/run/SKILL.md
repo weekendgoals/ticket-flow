@@ -380,22 +380,32 @@ branch**. Then it refreshes and asks the board again. Three things follow:
 start and nothing waiting, the script does not return `completed` yet. A
 ticket's `CHECK` criteria pass before *its* merge — and, in a wave, after
 each merge of that wave — and then never again: not after a later wave's
-merges, not after the last refresh merged the default branch in. So it asks
-the board which tickets have landed (`release-list:<epic>` —
-`tickets.mjs check-epic <epic> --list`, with the script's own count beside
-the list, refused when they disagree) and re-runs each one's checks at the
-epic head (`release-check:<epic>:<ID>` — the epic before the ID, so the run
-meter reads these as overhead and not as that ticket's work — one shell call
-per ticket, each reporting the branch it ran on, which the script compares
-with `epic/<name>` in code; one per ticket because a whole
-epic's suites in one call can outlive the ten minutes a proxy's shell allows
-and a command killed there loses its answer). That covers tickets an earlier
+merges, not after the last refresh merged the default branch in. So one
+step (`release-list:<epic>`) fetches the epic branch, reports **the commit
+the remote is at** — the one the pull request will carry, and another
+session may have pushed since the last refresh — and asks the board which
+tickets have landed (`tickets.mjs check-epic <epic> --list`, the script's
+own count beside the list, refused when they disagree). Then each landed
+ticket's checks are re-run (`release-check:<epic>:<ID>` — the epic before
+the ID, so the run meter reads these as overhead and not as that ticket's
+work), one shell call per ticket, because a whole epic's suites in one call
+can outlive the ten minutes a proxy's shell allows and a command killed
+there loses its answer. Each reports the commit it ran at and whether the
+tree was clean, and the script compares both in code: checks that passed at
+another commit, or against uncommitted edits, are not evidence about this
+release. **Where they run depends on where the tickets were built.** A
+serial run built them in the main checkout, so its dependencies are there.
+A parallel run built them in worktrees that are gone by now, and the main
+checkout never saw what they installed — so a wave run makes one more
+worktree, at the release commit (`release-worktree:<epic>`), sets it up
+from `epics/worktree.json` exactly as each ticket's was, checks there, and
+removes it when the check passes. That covers tickets an earlier
 run or a hand integrated too. Criteria are read from the checkout — the epic
 head's own `tickets.md`, so a mid-epic re-plan counts; what differs from
 sign-off is shown to the human in step 7's body, where someone who can tell
 a re-plan from a dodge reads it. `COMPARE` criteria are not re-run (there is
 no browser), and step 7 says so. The ledger rides in the result as
-`releaseCheck`.
+`releaseCheck` — `{head, tickets: [{id, total, passed, skipped}]}`.
 
 `ticketBudget` is the **launch-time** value, and the only one of these the
 script does not keep: the ceiling is **re-read at every refresh** of the
@@ -792,9 +802,11 @@ that resumes past one. The run halts:
   whatever was added and then makes this check again. No addendum
   is owed, unlike the post-merge halt, because nothing about the board is
   misleading in the meantime: no release pull request exists. After a
-  parallel run, rule out the environment first — the tickets installed
-  their dependencies in worktrees, and the main checkout may lack what a
-  later one added;
+  parallel run the check ran in its own worktree
+  (`../.flow-worktrees/<repo>/<epic>/release`), which a halt leaves in place:
+  rule out the environment first — a project with no `epics/worktree.json`
+  gets a bare worktree, and every check that needs a dependency fails there
+  — and remove it (`git worktree remove --force <path>`) before the re-run;
 - on **a nonzero exit from any command the run issues as a step, except
   those this skill explicitly marks tolerated** — the one tolerated shape is
   a 404 or 403 from step 3's protection probes, which run in session before
@@ -1018,8 +1030,9 @@ run that selected no ticket prints `**Time:** run=<n>s` and nothing else,
 which is a complete line and not a near-miss. Planning evidence, never a gate — no ticket halts on a
 duration.>
 
-**Release check:** <from the result's `releaseCheck`: each landed ticket as
-`<ID> <passed>/<total>`, in the order checked — "PAY-1 2/2, PAY-2 3/3" — or
+**Release check:** <from the result's `releaseCheck`: the commit it was made
+at (`head`, shortened) and each of its `tickets` as `<ID> <passed>/<total>`,
+in the order checked — "at 3f2a9c1: PAY-1 2/2, PAY-2 3/3" — or
 "not reached: the run halted" when it is `null`. When the run halted ON the
 release check, the list stops at the ticket that failed. No `worker=` or
 `wall=` group belongs on this line: `spend` reads those wherever they sit.>
@@ -1152,11 +1165,26 @@ in this mode. It carries:
   text from the saved file:
 
   ```bash
+  git fetch origin epic/<name>
   node "${CLAUDE_PLUGIN_ROOT}/scripts/tickets.mjs" check-epic <epic> --json > <scratchpad>/check-<epic>.json; echo "exit $?"
   node "${CLAUDE_PLUGIN_ROOT}/scripts/tickets.mjs" check-epic <epic> --render <scratchpad>/check-<epic>.json
   ```
 
-  on `epic/<name>` at the head the pull request will carry. The first command
+  on `epic/<name>` at the head the pull request will carry — **fetch first**:
+  the command compares this checkout with `origin/epic/<name>` as your
+  repository last saw it, and a push from another session since then would
+  make "at the remote head" true of a commit nobody is releasing. It refuses
+  a checkout that is ahead of, behind or diverged from that head (and says
+  which, because the repair differs), and one with **uncommitted changes to
+  tracked files** — the checks read the working tree, so an uncommitted fix
+  would certify the pushed commit. **Add `--each` when any `CHECK` in the epic
+  writes state** (a migration, a build step): by default a command several
+  tickets share runs once, which is right for a test suite and wrong for a
+  probe that an intervening command changes the answer to. **Run it as a
+  background command when the epic's suites are long**: it is one invocation
+  for the whole epic, your shell tool kills a foreground command at ten
+  minutes, and a killed run leaves a file that cannot be rendered — wait for
+  it, then read the exit code it printed. The first command
   is the run (and its exit code is the gate — the `;` is deliberate, so a
   nonzero exit does not stop you reading it); the second runs nothing and
   prints the ledger the body carries. The walkthrough below reads the same
@@ -1235,14 +1263,22 @@ in this mode. It carries:
   page's "last run record" is the previous run's — or says there was none.
   Re-run the same command with the same saved check and republish: the
   renderer asks git what changed since the check was taken, and when it is
-  only this epic's `runs.md` and `shadow-reviews.md` — which no check reads —
-  it says so and keeps the ledger; if anything else changed, it draws the
+  only this epic's `runs.md` and `shadow-reviews.md` it keeps the ledger and
+  says exactly what it is — *passed at `<sha>`, one commit before this head* —
+  never "at head": a `CHECK` that reads git history or the epic's own records
+  could answer differently now, and if this epic has one, run the check
+  again instead. If anything else changed, it draws the
   ledger as *not a check of this release*, and the honest repair is to run
   the check again. **The page adds to the body and replaces none of it**:
   GitHub is where the merge is decided, and a link can rot where the body
   cannot. Neither the JSON nor the page is ever committed — it is a view of
   git, the status log and the run record, and a committed view is a mirror
-  somebody has to keep true;
+  somebody has to keep true. **Read the page before you publish it, and
+  do not share it wider than the pull request**: it quotes status entries,
+  the run record, commit subjects and the output of failed checks verbatim,
+  and a `CHECK` that prints an environment value when it fails has printed
+  it onto this page. Escaping stops markup, not a secret — and a criterion
+  that can print one is a criterion to fix;
 
 `ticketRecords` indexes those facts; the committed status log and its
 addenda are what travel in this pull request, so where the two differ the

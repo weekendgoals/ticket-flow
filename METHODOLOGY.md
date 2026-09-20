@@ -1412,6 +1412,18 @@ by an agent — was not taken: it is a second planning document, and an agent
 filling a table with prose is the narration the CHECK format exists to
 replace.
 
+A check is only evidence about the thing it ran against, and the first cut
+was loose about that in three ways a second model found. It compared branch
+names, and a remote-tracking ref can be stale, so "at the remote head" could
+be true of a commit nobody was releasing: the check now fetches, pins the
+remote's commit, and every step reports the commit it ran at. It read the
+working tree, so an uncommitted fix certified the pushed commit: a dirty tree
+is refused. And it ran in the main checkout, which after a parallel run has
+none of the dependencies the tickets installed in their worktrees — every
+successful wave run that added one would have halted here, and halted again
+on the re-run; a wave run now checks in a worktree of its own, set up the way
+each ticket's was.
+
 Two decisions carry reasons worth keeping. **Criteria come from the epic
 head, not from a pin at sign-off**: a human who re-plans a ticket mid-epic
 has changed the contract on purpose, and a pin would check the release

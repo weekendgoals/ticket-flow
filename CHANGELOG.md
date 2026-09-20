@@ -37,6 +37,25 @@ heading here. `check-invariants.mjs` holds both.
   `--render <report.json>` runs nothing and prints a saved `--json` report as
   the text ledger, so step 7's body and its walkthrough share one run of the
   suites.
+- **A read-only Codex pass over the release check found ten things two
+  Claude rounds had not, all taken.** A successful parallel run halted at the
+  release check every time its tickets had added a dependency — the main
+  checkout never saw what the worktrees installed — so a wave run now checks
+  in a worktree of its own at the release commit, set up from
+  `epics/worktree.json`, removed when the check passes. The list step fetches
+  the epic branch and reports the commit the remote is at, and every check
+  reports the commit it ran at and whether the tree was clean, judged in
+  code (a branch name was not enough: the remote-tracking ref could be stale,
+  and uncommitted edits were judged as if pushed). `check-epic` refuses
+  uncommitted changes to tracked files, says whether the checkout is ahead,
+  behind or diverged (the advertised `git pull` could not repair "ahead"),
+  names ticket IDs that commits carry and no document knows (a ticket added
+  after sign-off and deleted again was on no list), and gains `--each` for
+  epics whose checks write state; `--render` and the page recompute the
+  verdict from the rows and require the counts to be there. A ledger from
+  before the run record's commit is labelled *passed at `<sha>`, one commit
+  before this head*, never "at head". Step 7 fetches first, runs long suites
+  in the background, and says what the published page quotes verbatim.
 - **The release walkthrough — `scripts/release-page.mjs <epic> [--check
   <check-epic.json>] [--out <file>]`** renders one self-contained page for
   the person deciding a release merge: the never-squash rule and the size,

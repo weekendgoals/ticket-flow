@@ -22,7 +22,7 @@ go through the flow, one-off work goes through `/flow:quick` into
 ## Commands
 
 - **Tests:** `node --test plugins/flow/scripts/tickets.test.mjs` — expect
-  every test passing (`# pass 189`, `# fail 0` as of 2026-09-20; the count
+  every test passing (`# pass 191`, `# fail 0` as of 2026-09-20; the count
   grows, the fail line does not). The suite builds a throwaway git repo in a
   temp dir; it needs `git` on PATH and nothing else. The session-guard hook
   has its own suite:
@@ -234,7 +234,10 @@ test file path explicitly.
   from the signed-off document (`--from origin/epic/<name>`) as a code merge
   gate — because the reviewed party must not edit its own gate — and once
   more for every landed ticket at the epic head before it reports
-  `completed` (the release check; `check-epic` is the same check by hand):
+  `completed` (the release check; `check-epic` is the same check by hand —
+  both judge the COMMIT the remote epic branch is at, fetched, with a clean
+  tree, and a parallel run checks in a set-up worktree of its own because
+  the main checkout never saw what the tickets installed):
   there the criteria are the head's own, so a mid-epic re-plan counts, and
   what differs from sign-off is shown to the human rather than gated on. A format
   change moves the parser, the skills and the driver in the same commit;

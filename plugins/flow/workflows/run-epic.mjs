@@ -603,6 +603,7 @@ const RELEASE_LIST_SCHEMA = {
     outcome: { type: 'string', enum: ['done', 'failed', 'permission-prompt'], description: '"done" whenever the command printed its JSON — including when it exited 1 because nothing has landed; "failed" when it printed no JSON; "permission-prompt" if the command raised one.' },
     landed: { type: 'array', items: { type: 'string' }, description: 'the `landed` array of the printed JSON, verbatim: ticket ids in the printed order. [] when it is empty.' },
     landedCount: { type: 'integer', description: 'the `landedCount` field of the printed JSON, verbatim — never a count you made yourself.' },
+    remoteHead: { type: 'string', description: 'what `git rev-parse origin/<epic branch>` printed after the fetch, verbatim: forty hex characters.' },
     detail: { type: 'string', description: 'when outcome is not "done": the exit code and the first lines of stderr. "" otherwise.' },
   },
 }
@@ -653,14 +654,17 @@ const ACCEPT_SCHEMA = {
   },
 }
 
-// The release check's report: the acceptance ledger, plus the branch the
-// checks ran on — a fact the driver judges in code, because checks that
-// passed on another branch are not evidence about this release.
+// The release check's report: the acceptance ledger, plus the commit the
+// checks ran at and whether the tree was clean — facts the driver judges in
+// code against the remote head it fetched, because checks that passed at
+// another commit, or against uncommitted edits, are not evidence about this
+// release.
 const RELEASE_CHECK_SCHEMA = {
   ...ACCEPT_SCHEMA,
   properties: {
     ...ACCEPT_SCHEMA.properties,
-    branch: { type: 'string', description: 'what `git rev-parse --abbrev-ref HEAD` printed, verbatim — the branch the checks ran on. Never the branch you were told to expect.' },
+    head: { type: 'string', description: 'what `git rev-parse HEAD` printed, verbatim — the commit the checks ran at. Never the commit you were told to expect.' },
+    dirty: { type: 'string', description: 'what `git status --porcelain --untracked-files=no` printed, verbatim — "" when it printed nothing.' },
   },
 }
 
@@ -3183,8 +3187,9 @@ if (!halted && ticketRecords.length >= MAX_TICKETS) {
 // a dozen different commits and none of them the one being released. Here it
 // is made once, about the head the release pull request will carry.
 //
-// Two kinds of step, both shell proxies: one asks the board which tickets
-// landed (with its own count beside the list, refused if they disagree — an
+// Two kinds of step, both shell proxies: one fetches the epic branch, reports
+// the commit it is at — the one the pull request will carry — and asks the
+// board which tickets landed (with its own count beside the list, refused if they disagree — an
 // echo that dropped an ID is a ticket nobody checked), then one `check <ID>`
 // per landed ticket, in the main checkout, which the loop's last refresh left
 // on the epic head. Per ticket and not `check-epic` in one call: a whole
@@ -3209,10 +3214,12 @@ async function releaseCheck() {
     `In the repository at ${repoRoot}, run exactly this command and report what it printed:
 
 \`\`\`bash
+git fetch origin ${epicBranch}
+git rev-parse origin/${epicBranch}
 ${TICKETS} check-epic ${epic} --list
 \`\`\`
 
-It runs nothing: it prints one JSON object naming the tickets of \`${epic}\` that are merged into \`${epicBranch}\` (\`landed\`, in document order) and how many there are (\`landedCount\`). Report \`landed\` verbatim — every id, in the printed order — and \`landedCount\` exactly as printed; never count the list yourself. It exits 1 when nothing has landed: that is a RESULT to report (outcome "done", an empty list, a count of 0), not a failure of your step.
+Report what the second command printed — forty hex characters — verbatim as \`remoteHead\`: it is the commit the release pull request will carry, fetched now because another session may have pushed since this run's last refresh. The third command runs nothing: it prints one JSON object naming the tickets of \`${epic}\` that are merged into \`${epicBranch}\` (\`landed\`, in document order) and how many there are (\`landedCount\`). Report \`landed\` verbatim — every id, in the printed order — and \`landedCount\` exactly as printed; never count the list yourself. It exits 1 when nothing has landed: that is a RESULT to report (outcome "done", an empty list, a count of 0), not a failure of your step.
 
 ${PROMPT_RULE}`,
     { label: `release-list:${epic}`, phase: 'Release check', schema: RELEASE_LIST_SCHEMA, effort: 'low', model: 'haiku' },
@@ -3220,6 +3227,13 @@ ${PROMPT_RULE}`,
   if (listed && listed.outcome === 'permission-prompt') return { ticket: null, stopCondition: STOP.permissionPrompt, where, detail: fence(line(listed.detail || '(no command named)')) }
   if (!listed || listed.outcome !== 'done' || !Array.isArray(listed.landed))
     return { ticket: null, stopCondition: STOP.nonzeroExit, where, detail: listed ? `the board could not say which tickets landed:${line(listed.detail) ? ` ${fence(line(listed.detail))}` : ' (no detail quoted)'}` : 'the agent asked which tickets landed returned no report — which tickets to check is unknown, and a release is not opened on a guess' }
+  // The commit the pull request will carry, as of now. Every check below must
+  // have run AT it: a branch name would not do — this checkout's epic branch
+  // and the remote's can differ, and "the right branch" at the wrong commit
+  // certifies something nobody is releasing.
+  const remoteHead = line(listed.remoteHead).trim()
+  if (!/^[0-9a-f]{40}$/.test(remoteHead))
+    return { ticket: null, stopCondition: STOP.contradiction, where, detail: `the release check could not learn which commit \`origin/${epicBranch}\` is at — reported: ${fence(line(listed.remoteHead || '(nothing)'))}. Without it there is no saying what the checks below would be evidence about.` }
   const ids = listed.landed.map(x => String(x || '').trim())
   if (listed.landedCount !== ids.length || ids.some(x => !TICKET_ID.test(x)) || new Set(ids).size !== ids.length)
     return { ticket: null, stopCondition: STOP.contradiction, where, detail: `the list of landed tickets does not add up: ${ids.length} id(s) reported beside landedCount ${fence(line(JSON.stringify(listed.landedCount ?? null)))} — ${fence(line(ids.join(', ') || '(none)'))}. A ticket dropped from this list is a ticket nobody checked.` }
@@ -3230,17 +3244,47 @@ ${PROMPT_RULE}`,
   if (!ids.length || missing.length)
     return { ticket: null, stopCondition: STOP.contradiction, where, detail: !ids.length ? `the board reports no ticket of ${epic} merged into ${epicBranch}, and the loop ended as if the epic were built — there is nothing here to release` : `this run integrated ${missing.join(', ')} and the board's list of landed tickets does not carry ${missing.length === 1 ? 'it' : 'them'}` }
 
+  // WHERE the checks run. A serial run's tickets were built in the main
+  // checkout, so its dependencies are there. A parallel run's were built in
+  // worktrees that are gone by now, and the main checkout never saw what they
+  // installed — checked there, every successful parallel run whose tickets
+  // added a dependency halted here, and re-running halted again. So a wave run
+  // checks in a worktree of its own at the release head, set up the way every
+  // ticket's was (\`epics/worktree.json\`), and removes it when the check passes.
+  let root = repoRoot
+  if (parallelMax > 1) {
+    root = worktreePath('release')
+    const made = await agent(
+      `In the repository at ${repoRoot}, run exactly this sequence and report what it did:
+
+\`\`\`bash
+git worktree add --detach "${root}" ${remoteHead}
+${WORKTREE_SETUP} --repo "${repoRoot}" --worktree "${root}"
+\`\`\`
+
+The first makes a worktree at the commit the release will carry; the second applies the project's own \`epics/worktree.json\` to it — local files copied in, then its setup commands (a dependency install, usually) — and with no such file prints that there is nothing to set up and exits 0. It stops itself at eight minutes: give it your shell tool's longest timeout, and never run it in the background. Stop at the FIRST command that exits nonzero and report it, with the lines the second printed from \`FAILED at\` on, verbatim. If the path already exists, that is a failure to report, not a thing to clean up.
+
+${PROMPT_RULE}`,
+      { label: `release-worktree:${epic}`, phase: 'Release check', schema: PLUMBING_SCHEMA, effort: 'low', model: 'haiku' },
+    )
+    if (!made || made.outcome !== 'done') {
+      const h = plumbingHalt(made, null, `${where} — making the worktree the checks run in, at ${root}`)
+      if (h.stopCondition === STOP.nonzeroExit) h.detail += ` If the path is left over from a halted run, remove it with \`git worktree remove --force "${root}"\` and re-run \`/flow:run ${epic}\`; if its setup failed, repair \`epics/worktree.json\` on \`${epicBranch}\` first.`
+      return h
+    }
+  }
   const ledger = []
   for (const id of ids) {
     const r = await agent(
-      `In the repository at ${repoRoot} — the main checkout, on \`${epicBranch}\` as the run's last refresh left it — re-run ticket ${id}'s machine-runnable acceptance checks at that head, and report what the command printed. Run exactly this sequence:
+      `In the working tree at ${root} — ${parallelMax > 1 ? "the release check's own worktree, at the commit the release will carry" : `the main checkout, on \`${epicBranch}\` as the run's last refresh left it`} — re-run ticket ${id}'s machine-runnable acceptance checks there, and report what the command printed. Run exactly this sequence, from that directory:
 
 \`\`\`bash
-git rev-parse --abbrev-ref HEAD
+git rev-parse HEAD
+git status --porcelain --untracked-files=no
 ${TICKETS} check ${id} --json
 \`\`\`
 
-The first command must print \`${epicBranch}\`; report what it printed, verbatim, as \`branch\`. If it prints anything else, stop there and report outcome "command-failed" with what it printed — never check out a branch yourself. The check command exits 0 when every check passed AND every criterion parsed, and 1 otherwise — an exit of 1 is a RESULT to report, not a failure of your step: outcome is "ran" whenever the command printed its JSON. Give the check command your shell tool's longest timeout. Report the ledger's fields exactly as printed. Fix nothing, re-run nothing, change no file.
+Report what the first command printed, verbatim, as \`head\` — it must be \`${remoteHead}\` — and what the second printed as \`dirty\` ("" when it printed nothing, which is what it should print). If either is not as expected, stop there and report outcome "command-failed" with what was printed — never check out, reset or stash anything yourself. The check command exits 0 when every check passed AND every criterion parsed, and 1 otherwise — an exit of 1 is a RESULT to report, not a failure of your step: outcome is "ran" whenever the command printed its JSON. Give the check command your shell tool's longest timeout. Report the ledger's fields exactly as printed. Fix nothing, re-run nothing, change no file.
 
 ${PROMPT_RULE}
 
@@ -3252,8 +3296,8 @@ ${NO_MAIN}`,
       return { ticket: id, stopCondition: STOP.nonzeroExit, where, detail: r ? `${id}'s release check did not run:${line(r.detail) ? ` ${fence(line(r.detail))}` : ' (no detail quoted)'}` : `the agent re-running ${id}'s checks returned no report — whether ${id} still holds at the release head is unknown` }
     // Judged here, not only asked for in the prompt: checks that passed on some
     // other branch say nothing about the head the release will carry.
-    if (line(r.branch).trim() !== epicBranch)
-      return { ticket: id, stopCondition: STOP.contradiction, where, detail: `${id}'s release check ran on ${fence(line(r.branch || '(no branch reported)'))}, not on \`${epicBranch}\` — the main checkout is not where the run's last refresh left it, and checks that pass somewhere else are not evidence about this release.` }
+    if (line(r.head).trim() !== remoteHead || line(r.dirty).trim() !== '')
+      return { ticket: id, stopCondition: STOP.contradiction, where, detail: `${id}'s release check ran at ${fence(line(r.head || '(no commit reported)'))}${line(r.dirty).trim() ? ` with uncommitted changes (${fence(line(r.dirty))})` : ''}, and the release will carry \`${remoteHead}\` clean — ${parallelMax > 1 ? 'the worktree is not what it was made as' : `the main checkout is not where the run's last refresh left it, or \`origin/${epicBranch}\` moved since`}. Checks that pass somewhere else are not evidence about this release.` }
     const n = v => (Number.isInteger(v) && v >= 0 ? v : null)
     const [total, passed, skipped, problems] = [n(r.total), n(r.passed), n(r.skipped), n(r.problems)]
     ledger.push({ id, total, passed, skipped })
@@ -3270,12 +3314,27 @@ ${NO_MAIN}`,
         ticket: id,
         stopCondition: STOP.releaseCheck,
         where,
-        detail: `${id} is merged, and at the head the release would carry its acceptance checks read ${passed}/${total}${skipped ? `, ${skipped} skipped` : ''}${problems ? `, ${problems} malformed` : ''}${r.allPassed !== green ? ` (the report's own verdict, ${JSON.stringify(r.allPassed)}, disagrees with its counts)` : ''} — they passed before its merge, so something that landed after it, or the default branch the last refresh merged in, broke what ${id} built.${quoted} Nothing un-merges and no release pull request is opened. See it with \`${TICKETS} check ${id}\` on \`${epicBranch}\`${parallelMax > 1 ? ` — and rule out the environment first: this run's tickets installed their dependencies in worktrees, and the main checkout may simply lack what a later ticket added` : ''}. The repair is forward, and where it goes depends on what broke it. Something in this epic: add a ticket that fixes it to \`epics/${epic}/tickets.md\` on \`${epicBranch}\`, push, and re-run \`/flow:run ${epic}\` — that run builds the ticket and then makes this check again. The default branch: fix it there first (it is broken there too), and the re-run's refresh brings the fix in. Either way passing this check is what clears the halt; nothing else is owed.`,
+        detail: `${id} is merged, and at the head the release would carry its acceptance checks read ${passed}/${total}${skipped ? `, ${skipped} skipped` : ''}${problems ? `, ${problems} malformed` : ''}${r.allPassed !== green ? ` (the report's own verdict, ${JSON.stringify(r.allPassed)}, disagrees with its counts)` : ''} — they passed before its merge, so something that landed after it, or the default branch the last refresh merged in, broke what ${id} built.${quoted} Nothing un-merges and no release pull request is opened. See it with \`${TICKETS} check ${id}\` on \`${epicBranch}\`${parallelMax > 1 ? ` — it ran in the release check's own worktree, ${root}, set up from \`epics/worktree.json\` and left in place for you to look at (rule out the environment first: a project with no such file gets a bare worktree; remove it with \`git worktree remove --force "${root}"\` before the re-run)` : ''}. The repair is forward, and where it goes depends on what broke it. Something in this epic: add a ticket that fixes it to \`epics/${epic}/tickets.md\` on \`${epicBranch}\`, push, and re-run \`/flow:run ${epic}\` — that run builds the ticket and then makes this check again. The default branch: fix it there first (it is broken there too), and the re-run's refresh brings the fix in. Either way passing this check is what clears the halt; nothing else is owed.`,
         ledger,
       }
     }
   }
-  return { ledger }
+  if (parallelMax > 1) {
+    // Best effort, like a ticket's: a path left behind refuses the next run's
+    // worktree of the same name, so a failure is said with the command.
+    const gone = await agent(
+      `In the repository at ${repoRoot}, run exactly this command and report what it did:
+
+\`\`\`bash
+git worktree remove --force "${root}"
+\`\`\`
+
+${PROMPT_RULE}`,
+      { label: `release-worktree-remove:${epic}`, phase: 'Release check', schema: PLUMBING_SCHEMA, effort: 'low', model: 'haiku' },
+    )
+    if (!gone || gone.outcome !== 'done') log(`the release check's worktree at ${root} was NOT removed (${gone ? line(gone.detail || gone.outcome) : 'no report'}) — remove it with \`git worktree remove --force "${root}"\` before the next run.`)
+  }
+  return { ledger, head: remoteHead }
 }
 
 // Whether the LOOP halted: the release check runs after the last refresh, so a
@@ -3284,7 +3343,7 @@ const loopHalted = halted
 let releaseLedger = null
 if (!halted) {
   const rc = await releaseCheck()
-  releaseLedger = rc.ledger || null
+  releaseLedger = rc.ledger ? { head: rc.head || null, tickets: rc.ledger } : null
   if (rc.stopCondition) halted = { ticket: rc.ticket, stopCondition: rc.stopCondition, where: rc.where, detail: rc.detail }
 }
 
