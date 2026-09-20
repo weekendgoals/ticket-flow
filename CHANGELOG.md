@@ -12,6 +12,15 @@ heading here. `check-invariants.mjs` holds both.
 
 ## Unreleased
 
+## 2.2.0 — 2026-09-20
+
+Parallel tickets. An epic may declare `Parallel: 2` or `3`, and an unattended
+run then works the board's ready set in waves — pipelines side by side in
+git worktrees, merges one at a time in document order — with a strict
+`**Blocked by:**` line keeping a ticket out of a wave it must not share.
+Minor: every epic without the two new lines runs exactly as it did, prompt
+for prompt, and a test holds that.
+
 - **`Parallel: 2|3` — an unattended run works the ready set in waves**
   (`workflows/run-epic.mjs` and its suite; `scripts/tickets.mjs` and its
   suite; `scripts/meter.mjs` and its suite; `skills/run/SKILL.md`;
@@ -21,7 +30,7 @@ heading here. `check-invariants.mjs` holds both.
   (`next` already leaves out every ticket whose `**Blocked by:**` blockers
   have not landed) and runs their pipelines — worker through the resolve
   step's gates — side by side, **each in its own git worktree** at
-  `<repoRoot>/../.flow-worktrees/<epic>/<id>`; then integrates them **one at a
+  `<repoRoot>/../.flow-worktrees/<repo folder>/<epic>/<id>`; then integrates them **one at a
   time in document order**, whichever finished first; then refreshes and asks
   again. The loop body became two functions for this — `runTicket` (touches
   only the ticket's branch) and `integrateTicket` (touches the epic branch) —
@@ -39,7 +48,11 @@ heading here. `check-invariants.mjs` holds both.
   epic's log in the local `.git/info/attributes` by one setup step and
   defined on the merge command with `-c`, so nothing persists in config.
   It acts only on its `--driver` flag and fails closed, and a wave's merge
-  greps the merged log for the ticket's entry heading **before it pushes** —
+  greps the merged log for the ticket's entry heading **before it pushes —
+  and undoes the merge (`git reset --hard origin/epic/<name>`) when it is not
+  there**, since a bad merge left on the local branch is pushed by the next
+  run's refresh; the run halts on a nonzero exit that says so, never on "a
+  merge conflict" —
   a driver that does nothing still exits 0 and git calls that a clean merge
   with theirs discarded, which a path comparison that a symlinked plugin
   directory made false did once, in review.
@@ -126,7 +139,10 @@ heading here. `check-invariants.mjs` holds both.
   "## Unreleased" in a sentence — so the count started from the prose and was
   right only because the preamble holds no entries. Anchored to the heading
   line; the ceiling test now tops `Unreleased` up to the ceiling instead of
-  assuming it starts empty, which it does not on any working branch.
+  assuming it starts empty, which it does not on any working branch. Its
+  tests no longer name a version either — they read `plugin.json` and build
+  their fixtures from whatever release the repository is at — because the
+  first release stamped after them broke them.
 
 ## 2.1.0 — 2026-09-19
 

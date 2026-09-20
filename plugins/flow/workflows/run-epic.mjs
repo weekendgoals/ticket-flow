@@ -2930,13 +2930,17 @@ ${NO_MAIN} This merge into ${epicBranch} is the only merge you perform.`,
         ? { stopCondition: STOP.nonzeroExit, detail: 'the merge agent returned no report — the merge cannot be assumed to have happened' }
         : merged.outcome === 'permission-prompt'
           ? { stopCondition: STOP.permissionPrompt, detail: quoted.trim() || '(no command named)' }
-          : /conflict/i.test(errorText)
-            ? { stopCondition: STOP.mergeConflict, detail: `merging ${branch} into ${epicBranch} conflicted:${quoted}` }
-            : /MERGED LOG LOST THE ENTRY/.test(errorText)
-              ? {
+          // The specific marker first: an agent's free text may well say "no
+          // conflict" on its way to reporting the lost entry, and a halt filed
+          // as a conflict sends the human to `git merge --abort`, which has
+          // nothing to abort — the sequence already reset the branch.
+          : /MERGED LOG LOST THE ENTRY/.test(errorText)
+            ? {
                   stopCondition: STOP.nonzeroExit,
                   detail: `${id}'s branch merged into ${epicBranch} and the merged status log did not contain ${id}'s entry — the log's merge driver did not do its work (a driver that does nothing still exits 0, and git then keeps the epic branch's side and drops the ticket's). The sequence undid the merge locally (\`git reset --hard origin/${epicBranch}\`) and pushed nothing, so ${epicBranch} is where it was; check \`git status -sb\` shows it level with origin before anything else. Then find out why \`scripts/merge-append.mjs\` did not run — \`node\` on the merge agent's PATH, the plugin path in the merge command — and re-run.${quoted}`,
                 }
+            : /conflict/i.test(errorText)
+              ? { stopCondition: STOP.mergeConflict, detail: `merging ${branch} into ${epicBranch} conflicted:${quoted}` }
               : { stopCondition: STOP.nonzeroExit, detail: `the merge sequence did not merge ${id}'s verified head ${resolvedHead} (${line(merged.outcome)}):${quoted}` }),
     }
     return halted

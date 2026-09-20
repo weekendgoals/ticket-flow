@@ -456,15 +456,24 @@ test('retro lenses: the render-and-read ticket planned by the epic skill and unc
 })
 
 // ── releases: the version moves when the batch is stamped ────────────────────
+// Nothing here names a version: the fixtures are built from whatever release
+// the repository is at, so stamping the next one cannot break its own checker.
+const CURRENT = JSON.parse(readFileSync(join(repoRoot, 'plugins/flow/.claude-plugin/plugin.json'), 'utf8')).version
+const [MAJOR] = CURRENT.split('.').map(Number)
+const NEXT = `${MAJOR + 1}.0.0`
+const OLDER = `${MAJOR - 1}.0.0`
+const CURRENT_HEADING = readFileSync(join(repoRoot, 'CHANGELOG.md'), 'utf8').match(new RegExp(`^## ${CURRENT.replace(/\./g, '\\.')} — \\d{4}-\\d{2}-\\d{2}$`, 'm'))[0]
+const re = v => v.replace(/\./g, '\\.')
+
 test('release: a version that is not the newest stamped heading fails, in either direction', () => {
   const bumped = copyRepo()
-  mutate(bumped, 'plugins/flow/.claude-plugin/plugin.json', '"version": "2.1.0"', '"version": "2.2.0"')
+  mutate(bumped, 'plugins/flow/.claude-plugin/plugin.json', `"version": "${CURRENT}"`, `"version": "${NEXT}"`)
   const b = run(bumped)
   assert.equal(b.status, 1, b.out)
-  assert.match(b.out, /says 2\.2\.0 and the newest stamped release .* is 2\.1\.0/)
+  assert.match(b.out, new RegExp(`says ${re(NEXT)} and the newest stamped release .* is ${re(CURRENT)}`))
   const stamped = copyRepo()
-  mutate(stamped, 'CHANGELOG.md', '## 2.1.0 — 2026-09-19', '## 2.2.0 — 2026-10-01\n\n## 2.1.0 — 2026-09-19')
-  assert.match(run(stamped).out, /says 2\.1\.0 and the newest stamped release .* is 2\.2\.0/)
+  mutate(stamped, 'CHANGELOG.md', CURRENT_HEADING, `## ${NEXT} — 2099-01-01\n\n${CURRENT_HEADING}`)
+  assert.match(run(stamped).out, new RegExp(`says ${re(CURRENT)} and the newest stamped release .* is ${re(NEXT)}`))
 })
 
 test('release: a backlog past the ceiling fails and says how to stamp it; a malformed or misordered heading fails', () => {
@@ -483,10 +492,10 @@ test('release: a backlog past the ceiling fails and says how to stamp it; a malf
   mutate(atCeiling, 'CHANGELOG.md', '\n## Unreleased\n', entries(30))
   assert.equal(run(atCeiling).status, 0, 'thirty is allowed')
   const malformed = copyRepo()
-  mutate(malformed, 'CHANGELOG.md', '## 2.1.0 — 2026-09-19', '## v2.1.0 (2026-09-19)')
+  mutate(malformed, 'CHANGELOG.md', CURRENT_HEADING, `## v${CURRENT} (2099-01-01)`)
   assert.match(run(malformed).out, /release heading that is not/)
   const misordered = copyRepo()
-  mutate(misordered, 'CHANGELOG.md', '## 2.1.0 — 2026-09-19', '## 1.9.0 — 2026-09-19')
+  mutate(misordered, 'CHANGELOG.md', CURRENT_HEADING, `## ${OLDER} — 2099-01-01`)
   assert.match(run(misordered).out, /not newest-first/)
 })
 

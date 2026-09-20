@@ -443,7 +443,9 @@ decomposition caught after sign-off costs every ticket built on it.
 
 Spawn `flow:plan-reviewer` with the **Agent** tool — `model`: the draft's
 own `Planner model:` line when it declares one, otherwise omit the parameter
-so the agent definition's pinned model applies; `effort: high`. Give it the
+so the agent definition's pinned model applies; `effort: high`. Give it
+**the plugin's root path** (`${CLAUDE_PLUGIN_ROOT}`, resolved — the reviewer
+runs `tickets.mjs check` and `doctor` and the script is on no PATH), the
 draft `epics/<name>/tickets.md`, the `context/` directory, the root
 instruction file and each in-scope area's, and one line on what was
 requested. **When the draft declares `Design sources:`, give it those paths

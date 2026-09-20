@@ -229,7 +229,9 @@ the serial one it always was. With `2` or `3` the script works the board's
 have not landed, so two tickets in one wave are two the plan declared
 independent — and runs their pipelines (worker through the resolve step's
 gates) side by side, **each in its own git worktree** at
-`<repoRoot>/../.flow-worktrees/<epic>/<id>`, because every step of a pipeline
+`<repoRoot>/../.flow-worktrees/<repo folder>/<epic>/<id>` (the id lowercased;
+namespaced by the repository's folder because two projects under one parent
+may both have an epic called `auth`), because every step of a pipeline
 checks branches out and two cannot share a working tree. Then it integrates
 them **one at a time, in document order**, whichever finished first: the merge
 by verified SHA, the board's confirmation, and — for every merge after the
@@ -308,8 +310,10 @@ the same reason acceptance runs `check --from origin/epic/<name>`.
 Everything else here (`reviewerModel`, `shadowReviewer`, `consequencePaths`,
 `fixBoundsExclude`, the models) stays fixed at what you passed.
 
-**What the script does**, per ticket, in document order, until
-`tickets.mjs next <epic> --json` comes back empty:
+**What the script does**, per ticket, in document order (per *wave* under
+`Parallel:` — above), until `tickets.mjs next <epic> --with-waiting` reports
+nothing ready **and nothing waiting** — an empty ready list beside a waiting
+ticket is a halt, not an ending:
 
 - **Refreshes `epic/<name>` from the default branch and reads the board** in
   one agent. A conflict aborts the merge and halts — reconciling main with

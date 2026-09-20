@@ -3019,6 +3019,10 @@ test('wave: a failed integration merges nothing past it, and says which passed t
   // whose recovery (`git merge --abort`) has nothing to abort here.
   const lost = await drive(waveReply([refreshed(['PAY-1', 'PAY-2'])], { 'merge:PAY-2': { outcome: 'failed', detail: 'MERGED LOG LOST THE ENTRY of PAY-2 - merge undone locally, nothing pushed' } }), PAR(2))
   assert.match(lost.out.haltedOn.stopCondition, /^a nonzero exit/)
+  // …even when the agent's own words mention a conflict on the way: the marker is read first.
+  const chatty = await drive(waveReply([refreshed(['PAY-1', 'PAY-2'])], { 'merge:PAY-2': { outcome: 'failed', detail: 'git merge reported no conflict; then: MERGED LOG LOST THE ENTRY of PAY-2 - merge undone locally, nothing pushed' } }), PAR(2))
+  assert.match(chatty.out.haltedOn.stopCondition, /^a nonzero exit/)
+  assert.match(chatty.out.haltedOn.detail, /did not contain PAY-2's entry/)
   assert.match(lost.out.haltedOn.detail, /did not contain PAY-2's entry.*undid the merge locally \(`git reset --hard origin\/epic\/payments`\) and pushed nothing.*merge-append\.mjs/s)
   assert.match(mixed.out.haltedOn.stopCondition, /^a merge conflict/)
 })

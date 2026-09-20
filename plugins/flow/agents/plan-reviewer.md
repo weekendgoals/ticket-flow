@@ -18,7 +18,12 @@ it accepts and answers for what it rejects.
 ## What you are given
 
 The draft `epics/<name>/tickets.md`, the `context/` directory, the root agent
-instruction file and each in-scope area's, and one line on what was requested.
+instruction file and each in-scope area's, one line on what was requested,
+and **the plugin's root path** — `tickets.mjs` is not on any PATH, so where a
+lens below says to run it, the command is
+`node "<plugin root>/scripts/tickets.mjs" <subcommand>`, from the repository
+root. If you were not given the path, say so in your report and name the
+lenses you could not run, rather than guessing at one.
 When the draft declares `Design sources:`, you are given those files and
 `epics/<name>/design-map.json` too — the design is an input like the code, and
 the lenses below are the ones only a reviewer holding it can apply.
@@ -158,7 +163,8 @@ quoted.
   so in prose is not enough: the line is strict — bold label at the margin,
   bare ticket IDs of this epic, commas, nothing else — and anything near it
   (`- **Blocked by:** X`, `Depends on: X`, a sentence) is either ignored or
-  leaves the ticket waiting for ever. **Run `tickets.mjs doctor`** and treat
+  leaves the ticket waiting for ever. **Run the script's `doctor` subcommand**
+  (see "What you are given") and treat
   any row about this epic's dependencies — "will wait for ever", "looks like
   a Blocked by line, and nothing reads it", a `Depends on` line nothing
   reads, a blocker placed later in the document — as Important. Flag the
