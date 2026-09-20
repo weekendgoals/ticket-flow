@@ -143,6 +143,31 @@ quoted.
   work.
 - **A dependency hiding in prose.** Ticket three's scope quietly assumes ticket
   five's output, or two tickets own the same file and will collide.
+- **Tickets declared independent that are not — when the draft declares
+  `Parallel:` 2 or 3, this is a lens of its own, and not ready is its
+  verdict.** In a parallel epic a ticket with no `**Blocked by:**` line is
+  *declared independent* of every other unstarted ticket: an unattended run
+  may start it beside any of them, in a separate worktree, and merge the two
+  without either having seen the other. So for **every pair that could share
+  a wave** — two tickets neither of which blocks the other, directly or
+  through a chain — read both Scope sections against the code and ask: do
+  they edit the same file? Does one read, call or migrate what the other
+  creates or changes — a schema, a shared type, a route table, a translation
+  catalog, a lockfile, generated code? Does one's CHECK exercise the other's
+  area? A yes needs a `**Blocked by:**` on the later of the two, and saying
+  so in prose is not enough: the line is strict — bold label at the margin,
+  bare ticket IDs of this epic, commas, nothing else — and anything near it
+  (`- **Blocked by:** X`, `Depends on: X`, a sentence) is either ignored or
+  leaves the ticket waiting for ever. **Run `tickets.mjs doctor`** and treat
+  any row about this epic's dependencies — "will wait for ever", "looks like
+  a Blocked by line, and nothing reads it", a `Depends on` line nothing
+  reads, a blocker placed later in the document — as Important. Flag the
+  reverse too: a chain of `Blocked by:` lines that serialises an epic
+  declared parallel buys nothing, and `Parallel:` beside `Ticket budget:` is
+  a pair the run refuses at launch. The run's only net under this lens is a
+  post-merge re-run of each ticket's own CHECKs — it catches a combination
+  that breaks a criterion somebody wrote, and nothing else — so a pair you
+  cannot clear by reading is a pair that gets the line.
 - **Work the request implies that no ticket owns**, and tickets for problems
   the code shows do not exist.
 - **The wrong delivery.** A `Delivery: release` epic that violates its own

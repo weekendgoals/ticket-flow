@@ -28,7 +28,7 @@ go through the flow, one-off work goes through `/flow:quick` into
   has its own suite:
   `node --test plugins/flow/hooks/ticket-session-guard.test.mjs` (`# pass 14`
   on the same terms). The invariant checker has
-  `node --test plugins/flow/scripts/check-invariants.test.mjs` (`# pass 37`),
+  `node --test plugins/flow/scripts/check-invariants.test.mjs` (`# pass 38`),
   The board renderer has
   `node --test plugins/flow/scripts/board.test.mjs` (`# pass 9`) and the
   plan-page renderer `node --test plugins/flow/scripts/plan-page.test.mjs`
@@ -82,7 +82,7 @@ go through the flow, one-off work goes through `/flow:quick` into
   phrases). Run it whenever a skill, agent, hook or doctrine document changes —
   it is presence and equality only, so contradictions in meaning still need
   review. Its suite: `node --test plugins/flow/scripts/check-invariants.test.mjs`
-  (`# pass 37` on the same terms).
+  (`# pass 38` on the same terms).
 - **Smoke:** `node plugins/flow/scripts/tickets.mjs doctor` — must exit 0 on
   this repo. `… list` shows the board.
 - **Syntax check:** `node --check plugins/flow/scripts/tickets.mjs`, and the
@@ -119,6 +119,21 @@ test file path explicitly.
   first invariant: zero dependencies, stores nothing, and a figure it cannot
   observe is `unknown`, never an estimate. A ticket's git commit span is
   never reported as its `wall` — commits begin when the work is nearly over.
+- **A parallel run changes WHERE a pipeline runs and nothing it must pass.**
+  `run-epic.mjs` splits at the one line that matters — `runTicket` touches
+  only the ticket's branch and may run side by side, in its own worktree;
+  `integrateTicket` touches the epic branch and is always one at a time, in
+  document order, whichever pipeline finished first. Three things must stay
+  true, and the driver's suite pins each: **`Parallel:` absent or `1` is the
+  old run, prompt for prompt** (epics planned when document order was the
+  only dependency mechanism must not go wide on a plugin update); **timing
+  decides nothing** (records and merges in wave order — a test delays one
+  pipeline); and **a halt is returned by a pipeline, never thrown**, because
+  `parallel()` turns a throw into a bare `null`. New module-level mutable
+  state written inside `runTicket` is a race: the only one there is,
+  `ticketBudget`, is unreachable under `Parallel:` because the pair is
+  refused. Hoisted function declarations may be called by the loop above
+  them; a `const` they use may not live below it (that was a TDZ crash once).
 - **A merge driver that does nothing is a clean merge that loses data.**
   Git keeps ours and drops theirs when a driver exits 0 without writing, and
   reports no conflict. So `scripts/merge-append.mjs` acts on its `--driver`

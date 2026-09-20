@@ -389,6 +389,11 @@ const PHRASES = [
     files: ['run', 'readme'],
   },
   {
+    why: "in a parallel epic a ticket with no Blocked by line is DECLARED INDEPENDENT — one rule at four doors: the epic skill that tells the planner, the plan reviewer that reads every pair that could share a wave, the run skill whose preflight refuses an unread dependency line, and the manual. A planner told and a reviewer not (or the reverse) is a wave nobody checked",
+    re: /declared independent/,
+    files: ['epic', 'planReviewer', 'run', 'readme'],
+  },
+  {
     why: "the Blocked by line is one strict format in the parser, the template that teaches it, and the manual — a template that drifted to a tolerant spelling (`Depends on:`, trailing prose) would teach lines that leave their tickets waiting for ever",
     re: /\*\*Blocked by:\*\* <ID>\[, <ID>\]/,
     files: ['epic', 'script', 'readme'],

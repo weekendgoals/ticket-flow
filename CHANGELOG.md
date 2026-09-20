@@ -67,6 +67,16 @@ heading here. `check-invariants.mjs` holds both.
   ticket that ran in a wave, and per-ticket figures come from
   `scripts/meter.mjs`, which reads per agent. The worker is told it is in a
   fresh worktree with nothing git does not track.
+- **The plan reviewer reads every pair that could share a wave**
+  (`agents/plan-reviewer.md`; README, METHODOLOGY, CLAUDE.md). When a draft
+  declares `Parallel:` 2 or 3, tickets declared independent that are not —
+  the same file, a schema or shared type one creates and the other reads, a
+  lockfile, a CHECK that exercises the other's area — are **not ready**, the
+  repair is a strict `**Blocked by:**` line on the later ticket, and any
+  `doctor` row about the epic's dependencies is Important. The run's own net
+  under that declaration is only the post-merge CHECK re-run, so the real
+  gate is here. Report-only, as ever: the reviewer names the pair and the
+  line, the planner writes it.
 - **The driver refuses to call an epic built while tickets wait — in code**
   (`workflows/run-epic.mjs`, `scripts/tickets.mjs next --with-waiting`,
   `skills/run/SKILL.md`). `next`'s exit-1 refusal reached a run only as a

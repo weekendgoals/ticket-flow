@@ -1380,6 +1380,69 @@ That is why serial-to-main stopped being the universal default: the record
 showed disciplined users stacking anyway (Q-10–Q-17), which was the rule
 mismeasuring their throughput needs, not the users misbehaving.
 
+## Why a run goes wide in waves
+
+The pain was measured, not imagined: a three-ticket run held its lane for 39
+minutes on its first ticket with nothing else able to start, though the other
+two touched different parts of the code. The serial loop was never a claim
+that tickets depend on each other — it was the consequence of every step
+checking branches out in one working tree. Give each pipeline a worktree and
+the constraint is gone; what is left to decide is how much of the run may
+overlap, and the answer is "everything that touches only the ticket's own
+branch, and nothing that touches the epic's". So the loop body was split
+along exactly that line — `runTicket`, `integrateTicket` — in a commit that
+changed no behaviour, and a wave runs the first side by side and the second
+one at a time.
+
+**Waves, not a rolling scheduler.** A rolling scheduler — start a new ticket
+the moment a slot frees — wastes less wall-clock: in a wave a fast ticket
+waits for the slowest. It was not built, because a wave is a *barrier*, and a
+barrier is what makes the run deterministic: the same board gives the same
+waves, the merges happen in document order whichever pipeline finished first
+(a test delays one to prove timing decides nothing), and every refresh and
+every board read happens with nothing in flight. A rolling scheduler merges
+in completion order, refreshes the epic branch under running pipelines, and
+turns "which tickets ran against which base" into a question only the
+timestamps can answer. The time ledger now measures each ticket's wall, so
+whether the barrier's wait matters is something a retro can read instead of
+guess; if it does, that is the evidence a rolling scheduler would need.
+
+**Opt-in, and a cap of three.** `Parallel:` is a declaration because it
+changes what the absence of a `**Blocked by:**` line means — every epic
+planned before it existed relied on document order, and must not go wide on
+a plugin update; a test holds `Parallel: 1` and no line at all to the same
+prompts, byte for byte. Three, because the number that limits a release epic
+was never machines: it is the one human reading the release pull request.
+
+**What nobody judged.** Each ticket of a wave is reviewed and accepted
+against the epic branch as it stood when the wave began. The second merge
+lands on a branch the first has changed, and that combination has been seen
+by no reviewer and run by no check. The plan declared the two independent;
+the run's net under that declaration is to re-run the later ticket's own
+signed-off CHECKs on the merged branch. It is a thin net — it catches a
+combination that breaks a criterion somebody wrote, and nothing else — which
+is why the real gate is upstream, in the plan reviewer's lens, and why the
+post-merge halt tells the human to give the later ticket a `**Blocked by:**`
+line: the run has just disproved something the plan said. It un-merges
+nothing, like the budget halt, because nothing un-merges.
+
+**A halt does not un-pass a sibling.** Tickets in one wave are independent by
+declaration and each cleared every gate a serial run has, so a sibling's halt
+is no evidence against them: they integrate, and then the run stops. The
+alternative — hold everything when anything halts — leaves passed work
+unmerged for no reason a human could give, and makes every recovery longer.
+What a halt does stop is anything *new*. An integration halt leads the
+report when there is one, because it is the halt that touched the shared
+branch and the one whose detail may say a merge was left unaborted.
+
+**What the wave costs, said plainly.** A fresh worktree has what git tracks
+and nothing else, so every worker installs the project again, and a project
+whose verification needs local state that cannot be reproduced from the
+repository should not declare `Parallel:` at all. The per-ticket token
+ceiling cannot be declared beside it either: it is a delta on one meter, and
+in a wave the delta is the wave's — a ceiling that silently cannot fire is
+worse than none, the rule the missing-meter refusal already stated.
+
 ## Why a dependency is a strict line, and a wait is a state
 
 Document order was the only dependency mechanism while every lane was serial,
@@ -1809,6 +1872,12 @@ time.
   checkout. Built and never used; an untested parallel launcher is worse than
   none. Practitioner accounts converge on three to five concurrent agents as the
   ceiling, and the constraint named every time is review bandwidth, not machines.
+  **Parallelism came back (2026-09) as something else**: not a launcher beside
+  the flow but a mode of the run driver, behind the same gates, tested by the
+  driver's own suite — see § "Why a run goes wide in waves". What stays
+  removed is what made the first one worse than none: a second way to start
+  tickets that nothing exercised. The ceiling it names is the one the
+  `Parallel:` line enforces.
 - **Deploy preconditions as a ticket field.** The risk is real — a fail-closed
   guard whose secret is missing takes the system down — but a dedicated field was
   more structure than it earned. It belongs in the pull request body.

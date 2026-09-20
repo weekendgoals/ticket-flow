@@ -505,3 +505,11 @@ test('blocked by: a parser gone tolerant fails, and so does a template the parse
   assert.equal(d.status, 1, d.out)
   assert.match(d.out, /Blocked by/)
 })
+
+test('parallel: the plan reviewer losing the independence lens fails — a planner told and a reviewer not is a wave nobody checked', () => {
+  const root = copyRepo()
+  mutate(root, 'plugins/flow/agents/plan-reviewer.md', 'declared independent', 'assumed unrelated')
+  const r = run(root)
+  assert.equal(r.status, 1, r.out)
+  assert.match(r.out, /plan-reviewer\.md.*DECLARED INDEPENDENT/s)
+})

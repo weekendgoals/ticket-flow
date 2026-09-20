@@ -218,6 +218,31 @@ exists to read, not a failure. Halting is the mechanism working —
 a run that pushes through is a run whose release pull request can no longer
 be trusted.
 
+**A run is serial unless the epic says otherwise.** With `Parallel: 2` (or
+`3`) in the preamble it works the board's *ready* set in **waves**: up to
+that many tickets' pipelines — worker, review, disposition, acceptance, the
+merge gates — side by side, each in its own git worktree beside the
+repository (`../.flow-worktrees/<repo>/<epic>/<id>`), and then their merges
+**one at a time, in document order**, whichever finished first; then it
+refreshes and asks the board again. `**Blocked by:**` lines are what keep a
+ticket out of a wave it must not share, which is why in a parallel epic a
+ticket *without* one is declared independent, and why the plan reviewer reads
+every pair that could share a wave. Four things exist because of waves, and a
+serial run has none of them: the status log is merged by the plugin's own
+append driver (`scripts/merge-append.mjs` — every ticket appends to the end
+of one file, and git's `union` driver, which looks made for that, silently
+moves lines between entries); each merge after a wave's first is followed by
+**that ticket's CHECKs re-run on the merged epic branch**, since nobody
+judged the combination; a halt in one pipeline lets its passed siblings
+integrate before the run stops; and `Ticket budget:` cannot be declared,
+because a per-ticket ceiling is a delta on one meter. Two practical costs to
+know before declaring it: a fresh worktree has nothing git does not track —
+no installed dependencies, no build output, no local `.env` — so every
+ticket's worker installs the project again, and a project whose verification
+needs unreproducible local state will see BLOCKED tickets; and the ceiling is
+3 because what a wave produces still has to be reviewed by one human at the
+release pull request.
+
 Two things are **environment setup, not plugin code**. Both must exist
 before the first unattended run — protection alone may instead be waived by
 the human at sign-off, the waiver recorded as a decision in the epic's
