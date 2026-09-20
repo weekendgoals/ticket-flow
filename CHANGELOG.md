@@ -12,6 +12,14 @@ heading here. `check-invariants.mjs` holds both.
 
 ## Unreleased
 
+## 2.3.0 — 2026-09-20
+
+Two additions a parallel run and a fidelity comparison were missing. A
+project may say what a fresh worktree needs (`epics/worktree.json`), and a
+design map may say where each landmark is drawn (`source`, `widths`), so a
+landmark on neither side can fail. Minor: both are additive — no file and no
+fields means no change, and a serial run is the old run, prompt for prompt.
+
 - **A read-only Codex pass over this batch found seven things five Claude
   rounds had not, all taken.** In `worktree-setup.mjs`: a symbolic link is
   never read from or written through (containment is asked of the
