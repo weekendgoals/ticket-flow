@@ -1210,6 +1210,28 @@ in this mode. It carries:
   `/flow:quick`, never as a direct commit. Either way the line is theirs to
   write; you do not draft it for them.
 
+- **the walkthrough's link, right under the never-squash line** — the same
+  evidence laid out to be read, one section per ticket in the order they
+  were built. Render it on `epic/<name>` from the release check you just
+  ran, so the suites run once:
+
+  ```bash
+  node "${CLAUDE_PLUGIN_ROOT}/scripts/tickets.mjs" check-epic <epic> --json > <scratchpad>/check-<epic>.json
+  node "${CLAUDE_PLUGIN_ROOT}/scripts/release-page.mjs" <epic> --check <scratchpad>/check-<epic>.json --out <scratchpad>/release-<epic>.html
+  ```
+
+  (`check-epic`'s exit code is still the gate: a nonzero exit opens nothing,
+  but render the page anyway — it shows the human what failed.) Publish it as
+  an artifact and put the URL in the body (no artifact surface: send the
+  file, and say in the body that a walkthrough was sent). **The page adds
+  to the body and replaces none of it**: GitHub is where the merge is
+  decided, and a link can rot where the body cannot. Neither the JSON nor
+  the page is ever committed — it is a view of git, the status log and the
+  run record, and a committed view is a mirror somebody has to keep true. If
+  the branch moves before the merge, render it again: the page says which
+  commit it describes, and refuses to show a ledger from another one as
+  green;
+
 `ticketRecords` indexes those facts; the committed status log and its
 addenda are what travel in this pull request, so where the two differ the
 log wins and the difference is worth a line in the body.

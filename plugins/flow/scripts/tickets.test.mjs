@@ -2609,6 +2609,39 @@ test('check-epic names a ticket sign-off knew and the document no longer does, r
   assert.match(run(rel, 'check-epic', 'rc'), /sign-off [0-9a-f]{12}/)
 })
 
+test('release derives the walkthrough\'s data: entries split at their own fields, commits by ticket, owed, deviations, the last run record', () => {
+  const rel = releaseRepo('rc-release')
+  writeFileSync(
+    join(rel, 'epics/rc/status.md'),
+    '# RC — status log\n\n### RC-1 — the greeting — 2026-09-10 — DONE\n\nsome lead text\n\n**Built:** the greeting,\nin `greeting.txt`.\n\n**Verified:** `cat greeting.txt`\n\n**@ 1440:** not a field of the entry — body of Verified\n\n**Deviation:** a file, not an endpoint — nobody asked for a server\n\n**Owed:** translate the greeting\n\n**Addendum — review — 2026-09-10 — clean.**\n\nNothing found.\n\n### RC-2 — the farewell — 2026-09-11 — DONE\n\n**Built:** the farewell.\n\n**Owed:** Nothing.\n',
+  )
+  writeFileSync(join(rel, 'epics/rc/runs.md'), '# RC — runs\n\n### Run — 2026-09-10 — halted\n\nfirst\n\n### Run — 2026-09-11 — completed\n\n**Tickets this run:** RC-2\n')
+  git(rel, 'add', '.')
+  git(rel, 'commit', '-m', 'rc run record — 2026-09-11')
+  git(rel, 'push', 'origin', 'epic/rc')
+  const out = JSON.parse(run(rel, 'release', 'rc', '--json'))
+  assert.equal(out.branch, 'epic/rc')
+  assert.match(out.head, /^[0-9a-f]{40}$/)
+  assert.match(out.diffstat, /files? changed/)
+  assert.equal(out.webUrl, null, 'a remote that is not GitHub gives no links, not a broken one')
+  const [r1, r2, r3] = out.tickets
+  assert.deepEqual([r1.id, r1.state, r2.state, r3.state], ['RC-1', 'integrated', 'integrated', 'todo'])
+  assert.deepEqual(r1.entries[0].fields.map((f) => f.label), ['Built', 'Verified', 'Deviation', 'Owed', 'Addendum — review — 2026-09-10 — clean.'])
+  assert.equal(r1.entries[0].fields[0].text, 'the greeting,\nin `greeting.txt`.')
+  assert.match(r1.entries[0].fields[1].text, /\*\*@ 1440:\*\* not a field of the entry/, 'only the entry\'s own labels split it')
+  assert.equal(r1.entries[0].fields[4].text, 'Nothing found.')
+  assert.deepEqual(r1.deviations.map((d) => [d.entry, d.closed]), [['RC-1', false]])
+  assert.deepEqual(r1.commits.map((c) => c.subject), ['RC-1: build it'])
+  assert.match(r1.commits[0].stat, /1 file changed/)
+  assert.deepEqual(r2.entries.map((e) => e.outcome), ['DONE'])
+  assert.deepEqual(r3.entries, [])
+  assert.deepEqual(out.otherCommits.map((c) => c.subject), ['rc run record — 2026-09-11'], 'merge commits are left out; what is left with no ticket of this epic is listed')
+  assert.deepEqual(out.owed.map((o) => [o.id, o.text]), [['RC-1', 'translate the greeting']])
+  assert.deepEqual(out.lastRun, { heading: 'Run — 2026-09-11 — completed', text: '**Tickets this run:** RC-2' })
+  assert.match(run(rel, 'release', 'rc'), /RC-1 .*integrated.* — 1 entry, 1 commit\(s\), 1 deviation\(s\)/)
+  assert.equal(runFail(rel, 'release').status, 2)
+})
+
 test('check-epic with nothing landed is not a release that passed, and an unknown epic or no epic is refused', () => {
   const rel = join(tmp, 'rc-empty')
   git(tmp, 'init', '--initial-branch=main', rel)

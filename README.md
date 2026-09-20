@@ -235,6 +235,16 @@ epic head and halts — no release pull request — if one no longer passes.
 `tickets.mjs check-epic <epic>` is the same check by hand, and also shows
 any ticket whose criteria changed since sign-off.
 
+**The release pull request comes with a walkthrough.** `release-page.mjs
+<epic> --check <check-epic.json>` renders one self-contained page for the
+person deciding the merge: the never-squash rule and the size, the release
+check's ledger (with any criteria that changed since sign-off), then one
+section per ticket in build order — built, verified, compared, deviations,
+owed, review addenda, commits — then what is still owed, the commits no
+ticket covers, and the last run record. It is derived from git, the status
+log and the run record, published as an artifact and linked from the body;
+it is never committed, and it replaces nothing in the body.
+
 **A run is serial unless the epic says otherwise.** With `Parallel: 2` (or
 `3`) in the preamble it works the board's *ready* set in **waves**: up to
 that many tickets' pipelines — worker, review, disposition, acceptance, the

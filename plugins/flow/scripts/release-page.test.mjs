@@ -1,0 +1,155 @@
+// release-page.test.mjs — pure rendering over fixture JSON, in the shapes
+// `tickets.mjs release --json` and `check-epic --json` print. No git, no
+// browser, nothing but Node: what is held here is what a reader must never be
+// misled about — an absent or stale ledger drawn as a green one — and the
+// anchors a later comment layer attaches to.
+
+import { test } from 'node:test'
+import assert from 'node:assert/strict'
+import { spawnSync } from 'node:child_process'
+import { join, dirname } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { renderRelease } from './release-page.mjs'
+
+const SCRIPT = join(dirname(fileURLToPath(import.meta.url)), 'release-page.mjs')
+const HEAD = 'a'.repeat(40)
+
+const data = (over = {}) => ({
+  epic: 'payments',
+  delivery: 'release',
+  defaultBranch: 'main',
+  head: HEAD,
+  branch: 'epic/payments',
+  webUrl: 'https://github.com/acme/shop',
+  diffstat: '12 files changed, 340 insertions(+), 20 deletions(-)',
+  tickets: [
+    {
+      id: 'PAY-1',
+      title: 'the <checkout> form',
+      state: 'integrated',
+      entries: [
+        {
+          heading: 'PAY-1 — the checkout form — 2026-09-10 — DONE',
+          date: '2026-09-10',
+          outcome: 'DONE',
+          fields: [
+            { label: 'Built', text: 'the form, in `src/checkout.tsx`\nand its <b>tests</b>' },
+            { label: 'Tokens', text: 'worker=1200' },
+            { label: 'Verified', text: '`npm test` — 14 passed' },
+            { label: 'Owed', text: 'Nothing.' },
+          ],
+        },
+      ],
+      deviations: [{ entry: 'PAY-1', item: 'PAY-1', text: 'a modal, not a page', closed: false, closedBy: null }],
+      commits: [{ sha: 'b'.repeat(40), subject: 'PAY-1: the form', ticket: 'PAY-1', stat: '3 files changed, 90 insertions(+)' }],
+    },
+    { id: 'PAY-2', title: 'refunds', state: 'todo', entries: [], deviations: [], commits: [] },
+  ],
+  otherCommits: [{ sha: 'c'.repeat(40), subject: 'payments run record — 2026-09-11', ticket: null, stat: '1 file changed' }],
+  owed: [{ id: 'PAY-1', date: '2026-09-10', text: 'rotate the `STRIPE_KEY`' }],
+  owedNotes: [],
+  lastRun: { heading: 'Run — 2026-09-11 — completed', text: '**Tickets this run:** PAY-1' },
+  ...over,
+})
+
+const check = (over = {}) => ({
+  epic: 'payments',
+  head: HEAD,
+  headIsRemote: true,
+  signoff: 'd'.repeat(40),
+  shallow: false,
+  total: 2,
+  passed: 2,
+  skipped: 0,
+  problems: 0,
+  allPassed: true,
+  tickets: [{ id: 'PAY-1', total: 2, passed: 2, skipped: 0, checks: [], compares: [], problems: [], criteriaChanged: null }],
+  notLanded: [{ id: 'PAY-2', state: 'todo' }],
+  removedSinceSignoff: [],
+  ...over,
+})
+
+test('the page opens with a <title>, the merge rule and the size, and names what has not landed', () => {
+  const html = renderRelease(data(), { check: check() })
+  assert.ok(html.startsWith('<title>payments — release walkthrough</title>'), 'the fragment shape the Artifact publisher expects')
+  assert.match(html, /Merge with a merge commit — never squash/)
+  assert.match(html, /12 files changed, 340 insertions\(\+\), 20 deletions\(-\)/)
+  assert.match(html, /1 not landed: PAY-2 \(todo\)/)
+})
+
+test('every ticket and every fixed section carries a stable anchor — a comment layer attaches to them', () => {
+  const html = renderRelease(data(), { check: check() })
+  for (const id of ['t-PAY-1', 't-PAY-2', 'release-check', 'owed', 'other-commits', 'last-run', 'merge-rule', 'size']) assert.match(html, new RegExp(`id="${id}"`), id)
+  assert.match(html, /<a href="#t-PAY-1">PAY-1<\/a>/)
+})
+
+test('an absent release check is said, in the place its ledger would be — never drawn as a pass', () => {
+  const html = renderRelease(data())
+  assert.match(html, /The release check was not supplied to this page/)
+  assert.doesNotMatch(html, /class="verdict ok"/)
+  assert.doesNotMatch(html, /checks \d+\/\d+ at head/)
+})
+
+test('a ledger taken at another commit is not a check of this release, whatever it says', () => {
+  const html = renderRelease(data(), { check: check({ head: 'e'.repeat(40) }) })
+  assert.match(html, /This ledger was taken at <code>eeeeeeeeeeee<\/code> and the page describes <code>aaaaaaaaaaaa<\/code>/)
+  assert.doesNotMatch(html, /class="verdict ok"/, 'a green verdict about another commit is not shown green here')
+})
+
+test('a failed check names the ticket, the command and its evidence', () => {
+  const failed = check({
+    allPassed: false,
+    passed: 1,
+    tickets: [{ id: 'PAY-1', total: 2, passed: 1, skipped: 0, compares: [], problems: [], criteriaChanged: null, checks: [{ status: 'passed', check: 'true', evidence: 'exit 0' }, { status: 'failed', check: 'npm test -- refunds', evidence: 'exit 1 — 2 failing' }] }],
+  })
+  const html = renderRelease(data(), { check: failed })
+  assert.match(html, /class="verdict bad">FAILED — 1\/2 checks/)
+  assert.match(html, /<code>npm test -- refunds<\/code><br><span class="dim">exit 1 — 2 failing<\/span>/)
+  assert.match(html, /checks 1\/2 at head/)
+})
+
+test('criteria that differ from sign-off, and a section that is gone, are shown with a green ledger', () => {
+  const html = renderRelease(data(), {
+    check: check({
+      tickets: [{ id: 'PAY-1', total: 1, passed: 1, skipped: 0, checks: [], compares: [{ compare: 'designs/pay.html @ 1440' }], problems: [], criteriaChanged: { was: ['CHECK: npm test — EXPECT: 14 passed'], now: ['CHECK: npm test — EXPECT: passed'] } }],
+      removedSinceSignoff: [{ id: 'PAY-0', was: ['CHECK: npm run e2e'] }],
+    }),
+  })
+  assert.match(html, /id="criteria-changed"/)
+  assert.match(html, /was: CHECK: npm test — EXPECT: 14 passed/)
+  assert.match(html, /now: CHECK: npm test — EXPECT: passed/)
+  assert.match(html, /<b>PAY-0<\/b> — in the signed-off document, gone from this one; checked nowhere/)
+  assert.match(html, /1 <code>COMPARE<\/code> criterion\(s\) were not re-verified at this commit/)
+})
+
+test('an entry is shown as written: escaped, line breaks kept, the deciding fields open and the rest folded', () => {
+  const html = renderRelease(data(), { check: check() })
+  assert.match(html, /and its &lt;b&gt;tests&lt;\/b&gt;/, 'status-log text is never trusted as markup')
+  assert.match(html, /the &lt;checkout&gt; form/)
+  assert.match(html, /the form, in <code>src\/checkout\.tsx<\/code>\nand its/)
+  assert.match(html, /<details open><summary>Built<\/summary>/)
+  assert.match(html, /<details><summary>Tokens<\/summary>/)
+  assert.match(html, /1 deviation\(s\), 1 open/)
+  assert.match(html, /<a href="https:\/\/github\.com\/acme\/shop\/commit\/b{40}"><code>b{9}<\/code><\/a> PAY-1: the form/)
+  assert.match(html, /no status entry — nothing records what this ticket built/, 'PAY-2 has none, and the page says so')
+})
+
+test('owed items, unticketed commits and the last run record are there, and their absence is said', () => {
+  const html = renderRelease(data(), { check: check() })
+  assert.match(html, /rotate the <code>STRIPE_KEY<\/code>/)
+  assert.match(html, /payments run record — 2026-09-11/)
+  assert.match(html, /Run — 2026-09-11 — completed/)
+  const bare = renderRelease(data({ owed: [], otherCommits: [], lastRun: null, webUrl: null }), { check: check() })
+  assert.match(bare, /None outstanding\./)
+  assert.match(bare, /no run record — this epic was not built by an unattended run/)
+  assert.doesNotMatch(bare, /<a href="null/)
+  assert.match(bare, /<code>b{9}<\/code> PAY-1: the form/, 'no web URL, no link — the sha is still shown')
+})
+
+test('the CLI refuses no epic, a --check it cannot read, and a ledger of another epic', () => {
+  const cli = (...args) => spawnSync(process.execPath, [SCRIPT, ...args], { encoding: 'utf8' })
+  assert.equal(cli().status, 2)
+  assert.equal(cli('payments', '--check').status, 2)
+  const unreadable = cli('payments', '--check', join(dirname(SCRIPT), 'no-such-file.json'))
+  assert.notEqual(unreadable.status, 0)
+})

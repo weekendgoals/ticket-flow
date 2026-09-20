@@ -22,7 +22,7 @@ go through the flow, one-off work goes through `/flow:quick` into
 ## Commands
 
 - **Tests:** `node --test plugins/flow/scripts/tickets.test.mjs` — expect
-  every test passing (`# pass 185`, `# fail 0` as of 2026-09-20; the count
+  every test passing (`# pass 186`, `# fail 0` as of 2026-09-20; the count
   grows, the fail line does not). The suite builds a throwaway git repo in a
   temp dir; it needs `git` on PATH and nothing else. The session-guard hook
   has its own suite:
@@ -32,7 +32,9 @@ go through the flow, one-off work goes through `/flow:quick` into
   The board renderer has
   `node --test plugins/flow/scripts/board.test.mjs` (`# pass 9`) and the
   plan-page renderer `node --test plugins/flow/scripts/plan-page.test.mjs`
-  (`# pass 8`) — both pure rendering tests over fixture JSON, no git
+  (`# pass 8`), and the release walkthrough
+  `node --test plugins/flow/scripts/release-page.test.mjs` (`# pass 9`) —
+  all three pure rendering tests over fixture JSON, no git
   needed. The fidelity differ has
   `node --test plugins/flow/scripts/fidelity.test.mjs` (`# pass 54`) — the
   diff driven through the CLI over the committed fixture reports under
@@ -91,7 +93,8 @@ go through the flow, one-off work goes through `/flow:quick` into
   this repo. `… list` shows the board.
 - **Syntax check:** `node --check plugins/flow/scripts/tickets.mjs`, and the
   same for `scripts/fidelity.mjs`, `scripts/meter.mjs`,
-  `scripts/merge-append.mjs` and `scripts/worktree-setup.mjs`. This does
+  `scripts/merge-append.mjs`, `scripts/worktree-setup.mjs` and
+  `scripts/release-page.mjs`. This does
   **not** work on `plugins/flow/workflows/run-epic.mjs`: a workflow script is
   a module body with a top-level `return`, which the workflow runtime allows
   (`allowReturnOutsideFunction`) and `node --check` rejects. Parse it the way

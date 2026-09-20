@@ -34,6 +34,21 @@ heading here. `check-invariants.mjs` holds both.
   repeats runs each time, as `check <ID>` runs it; marks `COMPARE` criteria not re-verified; exits 1 when anything
   failed, was skipped or did not parse, and when nothing has landed.
   `--list` runs nothing and prints the landed IDs with their count.
+- **The release walkthrough — `scripts/release-page.mjs <epic> [--check
+  <check-epic.json>] [--out <file>]`** renders one self-contained page for
+  the person deciding a release merge: the never-squash rule and the size,
+  the release check's ledger with criteria changed since sign-off, one
+  section per ticket in build order (entries as written, deciding fields
+  open, deviations, commits linked to GitHub), owed items, commits no ticket
+  covers, the last run record. Its data is the new **`tickets.mjs release
+  <epic> [--json]`** — entries split at the entry's own field labels, commits
+  by ticket with their stat, owed, deviations, the last run record — derived,
+  never stored. An absent release check, or one taken at another commit, is
+  said where the ledger would be and never drawn green. Every ticket section
+  and fixed section has a stable anchor. Run skill step 7 renders and
+  publishes it and links it from the body, which it adds to and never
+  replaces; METHODOLOGY § "Why the release pull request gets a page as well
+  as a body".
 - Run skill: the release check in step 4, its stop condition in step 5, a
   `**Release check:**` line in the run record, and `## Release check` in the
   release pull request body from both doors. METHODOLOGY § "Why the run ends

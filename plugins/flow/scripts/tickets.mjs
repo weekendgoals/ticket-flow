@@ -40,6 +40,11 @@
 //                                        distinct command run once, criteria that
 //                                        differ from sign-off shown; --list runs
 //                                        nothing and prints the landed IDs
+//   tickets.mjs release <epic> [--json]  what the release walkthrough shows that
+//                                        this script can derive — entries by
+//                                        field, commits by ticket, owed,
+//                                        deviations, the last run record;
+//                                        rendered by release-page.mjs
 //   tickets.mjs compared <ID> [--json] [--log-from <ref>]
 //                                        how many `**Compared:**` fidelity
 //                                        tables the ticket's own status
@@ -3231,6 +3236,104 @@ switch (cmd) {
       )
     }
     process.exit(allPassed ? 0 : 1)
+  }
+
+  case 'release': {
+    // Everything the release walkthrough shows that this script can derive —
+    // one JSON object, for `release-page.mjs` to render. It lives here, not in
+    // the renderer, for the reason `compared` does: entries are found by
+    // STATUS_HEADING and fields by ENTRY_FIELD, and a second copy of either in
+    // another file is a parser that drifts. Nothing is stored and nothing is
+    // composed by hand: the page is a view of git, the status log and the run
+    // record, regenerated on demand. It runs no CHECK — `check-epic --json` is
+    // minutes of test suites, so its output is handed to the renderer as a
+    // file rather than run twice.
+    if (!arg) {
+      console.error('usage: tickets.mjs release <epic> [--json]')
+      process.exit(2)
+    }
+    const data = board(arg)
+    requireKnownEpic(data, arg)
+    const epic = data.epics.find((e) => e.epic === arg)
+    const mine = data.tickets.filter((t) => t.epic === arg)
+    const statusText = epic.statusDoc ? readFileSync(epic.statusDoc, 'utf8') : ''
+    // A ticket's entries: every region under one of its headings (the entry
+    // and any re-entry), split into fields at the entry's own labels. Text
+    // before the first label of a region is kept as its `lead`.
+    const entriesOf = (id) => {
+      const out = []
+      let cur = null
+      let field = null
+      for (const line of statusText.split('\n')) {
+        const h = line.match(STATUS_HEADING)
+        if (h || /^#{1,3}\s/.test(line)) {
+          cur = h && h[1] === id ? { heading: line.replace(/^#+\s*/, '').trim(), date: h[3], outcome: h[4], fields: [] } : null
+          if (cur) out.push(cur)
+          field = null
+          continue
+        }
+        if (!cur) continue
+        const f = line.match(/^\*\*([^*]+?)(?::\*\*|\*\*)\s?(.*)$/)
+        if (f && ENTRY_FIELD.test(line)) {
+          field = { label: f[1].replace(/:$/, '').trim(), text: f[2] }
+          cur.fields.push(field)
+        } else if (field) field.text += `\n${line}`
+      }
+      for (const e of out) for (const f of e.fields) f.text = f.text.trim()
+      return out
+    }
+    const range = `origin/${defaultBranch}..HEAD`
+    const log = git(['log', '--no-merges', '--reverse', '--format=%H%x09%s', range], { allowFail: true }) || ''
+    const commits = log.split('\n').filter(Boolean).map((l) => {
+      const [sha, ...rest] = l.split('\t')
+      const subject = rest.join('\t')
+      const m = subject.match(/^([A-Z][A-Z0-9]*-\d+)[:\s]/)
+      const stat = (git(['show', '--shortstat', '--format=', sha], { allowFail: true }) || '').trim()
+      return { sha, subject, ticket: m ? m[1] : null, stat }
+    })
+    const remote = (git(['remote', 'get-url', 'origin'], { allowFail: true }) || '').trim()
+    const web = remote.match(/github\.com[:/]([^/]+\/[^/]+?)(?:\.git)?$/)
+    const { deviations } = parseDeviations(epic)
+    const { owed, notes: owedNotes } = parseOwed(epic)
+    // The latest run record, verbatim: what the run said about itself, halts
+    // included. Quoted rather than parsed — its grammar belongs to `spend`.
+    let lastRun = null
+    if (epic.runsDoc && existsSync(epic.runsDoc)) {
+      const lines = readFileSync(epic.runsDoc, 'utf8').split('\n')
+      const starts = lines.map((l, i) => (RUN_HEADING.test(l) ? i : -1)).filter((i) => i !== -1)
+      if (starts.length) lastRun = { heading: lines[starts[starts.length - 1]].replace(/^#+\s*/, '').trim(), text: lines.slice(starts[starts.length - 1] + 1).join('\n').trim() }
+    }
+    const out = {
+      epic: arg,
+      delivery: epic.delivery,
+      defaultBranch,
+      head: (git(['rev-parse', 'HEAD'], { allowFail: true }) || '').trim() || null,
+      branch: (git(['rev-parse', '--abbrev-ref', 'HEAD'], { allowFail: true }) || '').trim() || null,
+      webUrl: web ? `https://github.com/${web[1]}` : null,
+      diffstat: (git(['diff', '--shortstat', `origin/${defaultBranch}...HEAD`], { allowFail: true }) || '').trim(),
+      tickets: mine.map((t) => ({
+        id: t.id,
+        title: t.title,
+        state: t.state,
+        entries: entriesOf(t.id),
+        deviations: deviations.filter((d) => d.entry === t.id),
+        commits: commits.filter((c) => c.ticket === t.id),
+      })),
+      // Commits in the release that carry no ticket of this epic: run records,
+      // plan edits, another epic's work that came in with a refresh.
+      otherCommits: commits.filter((c) => !mine.some((t) => t.id === c.ticket)),
+      owed,
+      owedNotes,
+      lastRun,
+    }
+    if (json) emit(out)
+    else {
+      console.log(`${C.bold}${arg}${C.off} ${C.dim}— release data at ${out.head ? out.head.slice(0, 12) : '(no HEAD)'}; render it with release-page.mjs${C.off}`)
+      console.log(`${out.diffstat || 'no diff against the default branch'}`)
+      for (const t of out.tickets) console.log(`  ${t.id} ${C.dim}${t.state}${C.off} — ${t.entries.length} entr${t.entries.length === 1 ? 'y' : 'ies'}, ${t.commits.length} commit(s), ${t.deviations.length} deviation(s)`)
+      console.log(`  ${out.otherCommits.length} commit(s) with no ticket of this epic · ${owed.length} owed`)
+    }
+    break
   }
 
   case 'next': {

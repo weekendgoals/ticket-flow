@@ -1423,6 +1423,34 @@ addendum to clear**, unlike the post-merge halt: there, tickets read
 `integrated` while the epic is broken and a re-run could open the release;
 here the re-run *is* the check, so the state cannot be walked past.
 
+## Why the release pull request gets a page as well as a body
+
+A release epic moves the human gate to one pull request, which makes it the
+largest diff in the methodology and the only thing a human approves. Its body
+was already complete — every ticket, every review outcome, what is owed — and
+completeness was the problem: it is prose a session wrote at the end of a
+long run, in the order the run happened, and a reader deciding a merge wants
+a different order: is it safe to merge at all, does it still pass, then
+ticket by ticket. HumanLayer ships a walkthrough page with any large pull
+request for the same reason.
+
+The page is a **view**, and everything about it follows from that. Its data
+comes from one command (`tickets.mjs release`) that reads git, the status
+log and the run record, so nobody composes it and nothing in it can disagree
+with the record. It is never committed, because a committed view is a mirror
+someone must keep true — the failure this plugin exists to avoid. It does not
+replace the body, because GitHub is where the merge is decided and a link can
+rot. And it must never flatter: a release check that was not supplied, or was
+taken at another commit, is said in the place the ledger would be, because a
+page that drew an absent ledger as a green one would be worse than no page.
+
+Status entries are shown as written, not re-rendered: parsing their Markdown
+would be a second reading of the record, and the first is the one that was
+reviewed. What the page adds is order and folding — the fields a merge
+decision turns on are open, the rest are one click away — and stable anchors
+per ticket, which is where a comment layer can attach later without the page
+changing shape.
+
 ## Why a run goes wide in waves
 
 The pain was measured, not imagined: a three-ticket run held its lane for 39
