@@ -555,6 +555,18 @@ whole map passed with a note. Two answers to one state is the shape a gate
 gets routed around, so the agreement is now a row of its own: the plan, the
 design and the page concur, which is evidence, not the absence of it.
 
+The opposite silence — a landmark on neither side that nobody declared removed
+— stayed a note for a release, and the first attempt to fail it repeated the
+mistake above: it failed under `--landmarks` and passed over the whole map,
+so the recovery from exit 1 was to drop the flag. The note was not laziness.
+A map may span several design sources and an element may be drawn at one
+width only, so the differ could not tell a missing element from one that was
+never meant to be there. What was missing was planning's word on where each
+landmark is drawn, so the map carries it (`source`, `widths`), optional and
+read from the signed-off ref like removals: where the map says a landmark is
+drawn, silence fails, with the flag or without; where it says nothing, the
+differ keeps saying what it knows, which is a note.
+
 ## Why a missing comparison stops the merge
 
 A criterion nobody performs is worse than no criterion: it is a gate that
@@ -1451,9 +1463,11 @@ report when there is one, because it is the halt that touched the shared
 branch and the one whose detail may say a merge was left unaborted.
 
 **What the wave costs, said plainly.** A fresh worktree has what git tracks
-and nothing else, so every worker installs the project again, and a project
-whose verification needs local state that cannot be reproduced from the
-repository should not declare `Parallel:` at all. The per-ticket token
+and nothing else, so the project is installed again for every ticket — by
+`epics/worktree.json` where the project wrote one (§ "Why a worktree is set
+up by a file and not by the worker"), by each worker's guess where it did not
+— and a project whose verification needs state neither a copied file nor a
+setup command can reproduce should not declare `Parallel:` at all. The per-ticket token
 ceiling cannot be declared beside it either: it is a delta on one meter, and
 in a wave the delta is the wave's — a ceiling that silently cannot fire is
 worse than none, the rule the missing-meter refusal already stated.
@@ -1476,6 +1490,34 @@ verdict on the next epic's `Parallel:` line, and `doctor` flags the one shape
 every bad log merge has taken so far: an entry whose `**Owed:**` line is
 missing or doubled. An unverified claim with a collection plan is a
 hypothesis; without one it is a hope.
+
+
+## Why a worktree is set up by a file and not by the worker
+
+Waves shipped with a known weakness, written into the run skill as a warning:
+a fresh worktree has what git tracks and nothing else, so each worker was told
+to install what the project's instructions say. That is a guess, made once per
+ticket, by the party whose verification depends on the answer — and the two
+things a worktree most often lacks are the two a worker is worst placed to
+supply: a dependency install it has to infer, and a local `.env` it was
+(rightly) told never to copy from another checkout.
+
+So the project says it once, in `epics/worktree.json`, and a script applies
+it at the step that makes the worktree — before any worker exists, so a
+failed install halts a ticket that has spent nothing. It is a project-level
+file because what a checkout needs is a fact about the repository, not about
+an epic: in every epic's preamble it would be repeated, and the one that
+forgot it would get bare worktrees without anyone deciding so. It is read as
+committed on the epic branch, because commands that run unattended should be
+commands somebody pushed and a reviewer can read. And the copy refuses a file
+git does not ignore, in code: the files worth copying are secrets, a wave
+worker commits with `git add`, and "be careful" in a prompt is not a gate.
+The idea is borrowed — HumanLayer's workspace config lists setup commands and
+files to copy for the same reason — and cut down to what passes the admission
+test here: it constrains blast radius (a copied secret is kept from a commit
+by accident — not from a hostile `setup` line, which can do anything and is
+what reviewing a pushed file is for) and
+reduces uncertainty (every worktree of a wave is set up the same way).
 
 ## Why a dependency is a strict line, and a wait is a state
 

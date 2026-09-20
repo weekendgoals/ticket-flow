@@ -12,6 +12,87 @@ heading here. `check-invariants.mjs` holds both.
 
 ## Unreleased
 
+## 2.3.0 — 2026-09-20
+
+Two additions a parallel run and a fidelity comparison were missing. A
+project may say what a fresh worktree needs (`epics/worktree.json`), and a
+design map may say where each landmark is drawn (`source`, `widths`), so a
+landmark on neither side can fail. Minor: both are additive — no file and no
+fields means no change, and a serial run is the old run, prompt for prompt.
+
+- **A read-only Codex pass over this batch found seven things five Claude
+  rounds had not, all taken.** In `worktree-setup.mjs`: a symbolic link is
+  never read from or written through (containment is asked of the
+  filesystem, not the path's spelling); every copied file is asked about
+  again after the last copy and after the last setup command, and one git
+  would now stage is removed before the failure is reported (a later `copy`
+  entry can be a nested `.gitignore` that un-ignores an earlier one); the
+  budget covers the copies too. In `fidelity.mjs`: a `--map` that carries
+  scope run without `--removed-from` is refused — dropping two flags turned a
+  failing row back into a note — and any run without a signed-off map says
+  so in a note the review skill treats as Important. In `tickets.mjs
+  compared`: an empty fenced block is still an empty field. The run skill's
+  worktree preflight applies to `Parallel:` 2 or 3 only, never to a serial
+  epic. And the Codex worker's worktree paragraph is added only in a linked
+  worktree whose branch carries the file: unconditional, it changed every
+  serial run's prompt and told a worker with vendored packages it could
+  install nothing. Its confirming pass found the fixes incomplete, and
+  those are taken too: the script states its threat model (accident, not
+  malice — `setup` already runs anything that was pushed; hard links and
+  races are not defended); the ignore re-check is a sweep that runs on every
+  failure, repeats until nothing changes, deletes only on git's plain "not
+  ignored" and never through a link, and says `NOT CHECKED` when git could
+  not answer; a committed `epics/worktree.json` that is a symbolic link is
+  refused; a fenced table whose first line starts with `#` counts; and the
+  Codex paragraph rides on a `--wave` flag from the driver, not on the
+  checkout's shape, which a user's own linked worktree shares.
+- **`epics/worktree.json` — a project says what a fresh worktree needs, and a
+  parallel run applies it** (new `scripts/worktree-setup.mjs` and its suite;
+  `workflows/run-epic.mjs`'s `worktree:<ID>` step runs it after the ref is
+  pinned). `{"copy": [...], "setup": [...]}`: `copy` files come from the main
+  checkout, `setup` commands run in the worktree, the file is read as
+  committed on the epic branch. A file git does not ignore is never copied;
+  any failure halts that ticket before a worker is hired, with the recovery
+  in the halt; the whole setup has an eight-minute budget, because the step
+  is one shell call that is killed at ten with its answer lost; `.git/` paths
+  are refused by shape. The Codex worker's prompt (`runners/codex.mjs`) says
+  what the run already applied — it has no network, so the file (or
+  packages vendored in the repository) is where its dependencies come from. The run skill's preflight validates the file under `Parallel:`
+  (`--validate - --repo`, after its own fetch: shape, plus a `copy` file this
+  machine lacks or git does not ignore), the epic skill says to write it before declaring
+  `Parallel:`, and the wave worker's prompt says what was already applied.
+  **Additive: no file, no change — and a serial run is the old run, prompt
+  for prompt** (a test holds it).
+
+- **A design map may say where each landmark is drawn — `source` and
+  `widths`, both optional — and a landmark on neither side then fails**
+  (`scripts/fidelity.mjs`: an `unmatched` row, exit 1, the same with
+  `--landmarks` and without; new `--source <design source>` flag). Silence on
+  both sides was only a note, because a map may span several design sources
+  and an element may be drawn at one width alone. Scope is read from
+  `--removed-from`'s signed-off map only, like removals; `source` may be a
+  list, for a landmark several sources draw. A scoped map refuses a run with
+  no `--source`, a `--source` the map names nowhere (the refusal says the
+  comparison goes owed when the path is right and planning left the source
+  unscoped), `--source` without `--removed-from`, width-scoped landmarks
+  against reports with no width, and a landmark it draws here that `--map`
+  no longer declares — renamed or dropped on the ticket branch, it was
+  otherwise never looked for. Every one of these reads the whole signed-off
+  map, never the `--landmarks` selection: judged per selection, each was
+  dodged in review by adding or dropping the flag. A selection the map says
+  is not drawn here (`LANDMARKS: menu` at a width menu is not drawn at) is
+  exit 0 with the note that explains it, not "nothing was compared". And a
+  scoped run's first note says what it was asked — source, width, landmarks
+  — so a `--source` copied from the wrong `COMPARE` line is readable in the
+  pasted table; the review skill reads it first. The "nothing was compared"
+  refusal still fires unless the map explains *all* of the silence. **Additive:
+  a map without the two fields reads exactly as it did** — text and exit codes
+  byte for byte when `--removed-from` is passed, as every lane is told to;
+  its `--json` gains `elsewhere` and `unmatched` counts. Epic skill teaches the fields; ticket,
+  quick and review skills pass `--source`; `check-invariants.mjs` holds the
+  two running lanes to it; METHODOLOGY § the differ records why the first
+  attempt (fail only under `--landmarks`) was the two-answers shape.
+
 ## 2.2.1 — 2026-09-20
 
 Two fidelity passes that carried no evidence. Patch: no format changes; a

@@ -23,15 +23,17 @@
 //
 //   fidelity.mjs extract
 //   fidelity.mjs diff <design.json> <page.json> --map <design-map.json>
-//                     [--removed-from <design-map.json>] [--landmarks a,b]
-//                     [--json]
+//                     [--removed-from <design-map.json>] [--source <design source>]
+//                     [--landmarks a,b] [--json]
 //
 // The design map is JSON — the differ reads it directly, and a Markdown table
 // would need a second parser for a file only a script reads:
 //
 //   { "landmarks": [ { "name": "hero",
 //                      "design": "<selector in the design source>",
-//                      "page":   "<selector in the built page>" } ],
+//                      "page":   "<selector in the built page>",
+//                      "source": "<optional: design source path, or a list>",
+//                      "widths": [<optional: viewport widths it is drawn at>] } ],
 //     "removed":   [ { "name": "promo", "by": "<the deciding rule>",
 //                      "date": "YYYY-MM-DD" } ] }
 //
@@ -52,6 +54,12 @@
 // describes neither report is not evidence that a page matches its design,
 // and a pair of reports taken at different viewport widths, since two widths
 // are two pages and a clean table between them would be luck.
+// A landmark on neither side is a failing `unmatched` row when the signed-off
+// map scopes it (`source`, `widths`) to the source and width being compared,
+// and a note when the map does not say. A scoped map adds refusals under exit
+// 2: no `--source`, one the map names nowhere, `--source` without
+// `--removed-from`, width scope against reports with no width, and a landmark
+// it draws here that `--map` no longer declares.
 // One case that looks like the last is not it: a landmark the signed-off
 // `removed` list names, absent from the design and the page alike, is the two
 // sides AGREEING with the plan. It prints a `removed by …` row with `absent`
@@ -218,6 +226,21 @@ export function validateMap(map, label) {
     for (const key of ['name', 'design', 'page']) {
       if (typeof l[key] !== 'string' || !l[key].trim()) throw new UsageError(`${at}${l.name ? ` ("${l.name}")` : ''} has no "${key}"`)
     }
+    // Scope is optional and additive: a map written before it existed reads
+    // exactly as it did. Checked here rather than where it is used, so a
+    // misspelt width is refused by entry and not read as "drawn nowhere".
+    // `source` is a path or a list of them: a header drawn on every page is
+    // one landmark, and a single string forced it to belong to one page and be
+    // "drawn elsewhere" on all the others.
+    const srcs = Array.isArray(l.source) ? l.source : [l.source]
+    if (l.source !== undefined && (!srcs.length || srcs.some((x) => typeof x !== 'string' || !x.trim()))) {
+      throw new UsageError(`${at} ("${l.name}"): "source" must be a design source path, or a non-empty array of them`)
+    }
+    // Integers, because a report's width is one: 393.5 would never equal it,
+    // and the landmark would read as drawn nowhere.
+    if (l.widths !== undefined && (!Array.isArray(l.widths) || !l.widths.length || l.widths.some((w) => !Number.isInteger(w) || w <= 0))) {
+      throw new UsageError(`${at} ("${l.name}"): "widths" must be a non-empty array of viewport widths in whole px`)
+    }
     if (seen.has(l.name)) throw new UsageError(`${at}: "${l.name}" is declared twice`)
     seen.add(l.name)
   })
@@ -261,9 +284,29 @@ const DECLARED_REMOVAL = new Set(['removed', 'removed-absent'])
 
 // One row per difference; notes are not rows, because they say something about
 // the comparison rather than about the page, and only rows decide the exit code.
-export function diffReports(design, page, { landmarks, removed = [], only = null, mapHasRemoved = false, removedFrom = null }) {
+//
+// `scope` is the signed-off map's word on WHERE a landmark is drawn: name →
+// { source?, widths? }. It is what lets a landmark that matched on neither side
+// fail — and fail the same way whatever `--landmarks` says. Without it that
+// state is only a note, because a map may span several design sources and an
+// element may exist at one width alone, so silence on both sides is sometimes
+// the right answer; a rule that failed it under `--landmarks` and passed it
+// over the whole map was tried, and is the two-answers shape a gate gets
+// routed around. Scope comes from the signed-off map for the reason removals
+// do: the map on the ticket branch is the file the reviewed party edits, and
+// deleting a `source` line would otherwise be how a missing element passes.
+// Whether the signed-off map draws a landmark in this source at this width.
+// One predicate, because the differ asks it twice — of a landmark silent on
+// both sides, and of one the branch's map no longer declares — and two copies
+// would drift into two answers.
+export const drawnHere = (sc, source, width) => (!sc.source || sc.source.includes(source)) && (!sc.widths || sc.widths.includes(width))
+
+export function diffReports(design, page, { landmarks, removed = [], only = null, mapHasRemoved = false, removedFrom = null, scope = new Map(), source = null }) {
   const rows = []
   const notes = []
+  const width = design.viewportWidth ?? page.viewportWidth ?? null
+  const elsewhere = []
+  let silent = 0
   const declared = new Map(removed.map((r) => [r.name, r]))
   const list = only ? landmarks.filter((l) => only.includes(l.name)) : landmarks
   const row = (landmark, property, d, p, kind) => rows.push({ landmark, property, design: d, page: p, kind })
@@ -305,6 +348,14 @@ export function diffReports(design, page, { landmarks, removed = [], only = null
         row(l.name, 'presence', 'absent', `removed by ${gone.by}, ${gone.date}`, 'removed-absent')
         continue
       }
+      const sc = scope.get(l.name)
+      if (sc) {
+        if (drawnHere(sc, source, width)) {
+          row(l.name, 'presence', 'absent', `absent — the signed-off map draws it ${[sc.source && `in ${sc.source.join(', ')}`, sc.widths && `at ${sc.widths.join(', ')}`].filter(Boolean).join(' ')}`, 'unmatched')
+          silent++
+        } else elsewhere.push(l.name)
+        continue
+      }
       unmatched.push(l.name)
       continue
     }
@@ -336,8 +387,9 @@ export function diffReports(design, page, { landmarks, removed = [], only = null
     notes.push('the --map file carries a "removed" list; it is never honoured, because --map is the file the ticket under review edits — pass the signed-off map as --removed-from to read its removals')
   }
   if (unmatched.length) notes.push(`matched nothing on either side, so nothing was compared: ${unmatched.join(', ')}`)
-  const compared = list.length - unmatched.length
-  return { rows, notes, compared, exit: rows.length === 0 || rows.every((r) => DECLARED_REMOVAL.has(r.kind)) ? 0 : 1 }
+  if (elsewhere.length) notes.push(`not drawn ${source ? `in ${source} ` : ''}${width != null ? `at ${width} ` : ''}by the signed-off map, and on neither side: ${elsewhere.join(', ')}`)
+  const compared = list.length - unmatched.length - elsewhere.length - silent
+  return { rows, notes, compared, elsewhere: elsewhere.length, unmatched: unmatched.length, exit: rows.length === 0 || rows.every((r) => DECLARED_REMOVAL.has(r.kind)) ? 0 : 1 }
 }
 
 // The table is plain text with no colour: it is pasted into a status entry's
@@ -371,7 +423,8 @@ export function renderTable(result) {
 const USAGE = `usage:
   fidelity.mjs extract
   fidelity.mjs diff <design.json> <page.json> --map <design-map.json>
-                    [--removed-from <design-map.json>] [--landmarks a,b] [--json]`
+                    [--removed-from <design-map.json>] [--source <design source>]
+                    [--landmarks a,b] [--json]`
 
 export function run(argv) {
   const cmd = argv[0]
@@ -381,7 +434,7 @@ export function run(argv) {
   }
   if (cmd !== 'diff') throw new UsageError(`${cmd ? `unknown command "${cmd}"` : 'no command'}\n${USAGE}`)
 
-  const flags = { '--map': null, '--removed-from': null, '--landmarks': null }
+  const flags = { '--map': null, '--removed-from': null, '--landmarks': null, '--source': null }
   const positional = []
   let json = false
   for (let i = 1; i < argv.length; i++) {
@@ -406,7 +459,24 @@ export function run(argv) {
   const design = validateReport(readJson(positional[0], 'design report'), 'design', 'design report')
   const page = validateReport(readJson(positional[1], 'page report'), 'page', 'page report')
   const map = validateMap(readJson(flags['--map'], '--map'), '--map')
-  const removed = flags['--removed-from'] ? validateMap(readJson(flags['--removed-from'], '--removed-from'), '--removed-from').removed : []
+  const signed = flags['--removed-from'] ? validateMap(readJson(flags['--removed-from'], '--removed-from'), '--removed-from') : null
+  const removed = signed ? signed.removed : []
+  const scope = new Map(
+    (signed ? signed.landmarks : [])
+      .filter((l) => l.source || l.widths)
+      .map((l) => [l.name, { source: l.source ? [].concat(l.source) : null, widths: l.widths || null }]),
+  )
+  // Scope lives in the signed-off map, so `--source` without it is a question
+  // nothing can answer — and answered silently it was the old pass with a new
+  // flag on it.
+  // The same silence the other way round: a --map that carries scope, run
+  // with no signed-off map, would have every scoped landmark read as unscoped
+  // — drop two flags and the missing element is a note again. --map's own
+  // scope is never HONOURED, but it is evidence that a signed-off one exists.
+  if (!signed && map.landmarks.some((l) => l.source || l.widths)) {
+    throw new UsageError('the --map file scopes landmarks (source/widths) and no --removed-from was given — scope is read from the signed-off map only, so this run would ignore all of it. Pass --removed-from <the signed-off map> and --source.')
+  }
+  if (flags['--source'] && !signed) throw new UsageError('--source needs --removed-from <the signed-off map>: where a landmark is drawn is read from that file, never from --map')
 
   let only = null
   // `!== null`, not truthiness: `--landmarks ""` is a list of no names, not the
@@ -438,10 +508,47 @@ export function run(argv) {
     )
   }
 
+  // A scoped map asks two questions this run must be able to answer — which
+  // source, which width — and guessing either would decide a landmark is
+  // "drawn elsewhere", which is the silent pass scope exists to end.
+  //
+  // Both refusals read EVERY source the signed-off map names, never the
+  // `--landmarks` selection: judged per selection, a header shared by two
+  // pages was refused under `--landmarks header` and compared over the whole
+  // map — two answers to one state, with "drop the flag" as the recovery.
+  const sources = [...new Set([...scope.values()].flatMap((sc) => sc.source || []))]
+  const source = flags['--source']
+  if (sources.length && !source) {
+    throw new UsageError(`the signed-off map scopes landmarks by design source (${sources.join(', ')}) — pass --source <the COMPARE line's path> so the differ knows which one these reports are of`)
+  }
+  if (source && sources.length && !sources.includes(source)) {
+    throw new UsageError(
+      `--source "${source}" is a source the signed-off map scopes no landmark to; it names: ${sources.join(', ')}. ` +
+        "If the path is misspelt, correct it. If it is the COMPARE line's path character for character, the signed-off map left this design source unscoped — that is planning's to repair, not this branch's: record the comparison as owed and say so.",
+    )
+  }
+  const width = design.viewportWidth ?? page.viewportWidth ?? null
+  if ([...scope.values()].some((sc) => sc.widths) && width == null) {
+    throw new UsageError('the signed-off map scopes landmarks by width and neither report carries a viewportWidth — extract them again with `fidelity.mjs extract`')
+  }
+  // The landmarks that get compared come from --map, which the ticket under
+  // review edits — so a scoped landmark renamed or deleted there would simply
+  // never be looked for. Everything the signed-off map draws here must still
+  // be declared, WHATEVER --landmarks says: skipped under the flag, the
+  // refusal was dodged by naming every landmark --map still had, which is the
+  // same selection as no flag at all and got the other answer.
+  const declaredNames = new Set(map.landmarks.map((l) => l.name))
+  const goneFromMap = [...scope].filter(([name, sc]) => drawnHere(sc, source, width) && !declaredNames.has(name) && !removed.some((r) => r.name === name)).map(([name]) => name)
+  if (goneFromMap.length) {
+    throw new UsageError(`the signed-off map draws ${goneFromMap.join(', ')} here and --map does not declare ${goneFromMap.length === 1 ? 'it' : 'them'} — a landmark is renamed or dropped by planning, in the signed-off map, never on the branch whose page it measures`)
+  }
+
   const result = diffReports(design, page, {
     landmarks: map.landmarks,
     removed,
     only,
+    scope,
+    source,
     mapHasRemoved: (map.removed || []).length > 0,
     removedFrom: flags['--removed-from'],
   })
@@ -449,7 +556,17 @@ export function run(argv) {
   // side there is no evidence at all, and exit 0 under "no differences" is the
   // silent pass this differ exists to prevent. It is refused as unreadable
   // input, because that is what a map whose selectors describe neither report is.
-  if (result.compared === 0) {
+  // A scoped landmark silent on both sides is a row, and rows are evidence of
+  // a failure — so that table prints, under exit 1, rather than this refusal.
+  // Nor does it fire on silence the signed-off map explains: `LANDMARKS: menu`
+  // on a `COMPARE … @ 393, 1440` line, with menu drawn at 393 only, is a 1440
+  // run with nothing to compare and nothing wrong — refused here, it told the
+  // worker to fix selectors that were fine, while the whole map passed. But
+  // only when the map explains ALL of the silence: one not-drawn-here landmark
+  // beside others that simply matched nothing is still a run with no evidence,
+  // and letting it through printed "no differences — 0 landmarks compared"
+  // under exit 0 for reports of the wrong page.
+  if (result.compared === 0 && result.rows.length === 0 && !(result.elsewhere > 0 && result.unmatched === 0)) {
     throw new UsageError(
       `nothing was compared — no landmark ${only ? 'named by --landmarks ' : ''}matched on either side${map.landmarks.length ? '' : ' (the map declares no landmarks)'}. ` +
         'A map whose selectors match neither report is not a page that matches its design.' +
@@ -460,6 +577,19 @@ export function run(argv) {
           ? ' The --map file carries a "removed" list, which is never honoured — if these landmarks were removed on purpose, pass the signed-off map as --removed-from.'
           : ''),
     )
+  }
+  // A scoped run says what it was asked, in the text that gets pasted into
+  // **Compared:** — the reports carry no source, so a `--source` copied from
+  // the wrong COMPARE line reads every landmark of the right one as "drawn
+  // elsewhere", and only the reader holding the ticket's lines can see it.
+  // And a run with no signed-off map at all says so in the same place: the
+  // ticket skill calls --removed-from "not optional", and a table produced
+  // without it read no removals and no scope — which a reader can only know if
+  // the table tells them.
+  if (!signed) result.notes.unshift('no --removed-from was given: removals and landmark scope were read from nowhere — this table is not the comparison the ticket skill asks for')
+  if (scope.size) {
+    result.asked = { source: source || null, width, landmarks: only }
+    result.notes.unshift(`compared as ${source ? `source ${source}` : 'no source'}${width != null ? ` at ${width}` : ''}, ${only ? `landmarks ${only.join(', ')}` : 'every landmark in the map'} — check it against the ticket's COMPARE and LANDMARKS lines`)
   }
   return { stdout: json ? JSON.stringify(result, null, 2) : renderTable(result), code: result.exit }
 }

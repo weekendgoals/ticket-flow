@@ -311,7 +311,16 @@ function checkCompareTemplate() {
       throw new Error(
         `${FILES[key]} teaches the COMPARE comparison without naming \`--removed-from\` — removals would then be read from the map the ticket under review edits, which is the failure the separate file exists to prevent`,
       )
+    // A scoped map refuses a run that does not say which design source it is
+    // of, so a lane that teaches the differ without `--source` teaches a
+    // command that exits 2 on every epic whose map is scoped.
+    if (!norm(read(key)).includes('--source'))
+      throw new Error(`${FILES[key]} teaches the COMPARE comparison without naming \`--source\` — the differ refuses a scoped map without it, and an unscoped run is how a landmark on neither side stays a note`)
   }
+  // The reviewer re-runs the same command, so it is held to the same flag: a
+  // re-run that exits 2 on every scoped epic is a claim nobody re-checks.
+  if (FILES.review && !norm(read('review')).includes('--source'))
+    throw new Error(`${FILES.review} re-runs the differ without naming \`--source\` — on a scoped map that re-run is refused, and the table goes unchecked`)
 }
 
 // ── 4. The guard's refusal message is the one the ticket skill advertises ────
@@ -609,7 +618,7 @@ const CHECKS = [
   ['the two risk lists cover the same trigger set', checkRiskLists],
   ['skill heading templates match the parser regexes', checkTemplates],
   ["the epic skill's Blocked by template parses, and the parse is strict", checkBlockedByTemplate],
-  ["the COMPARE criterion's template matches its parser, and both lanes name --removed-from", checkCompareTemplate],
+  ["the COMPARE criterion's template matches its parser, and every lane that runs the differ names --removed-from and --source", checkCompareTemplate],
   ['hook refusal message quoted verbatim by the ticket skill', checkRefusalMessage],
   ['load-bearing doctrine phrases present everywhere required', checkPhrases],
   ["plugin.json names the newest stamped release, and Unreleased is under its ceiling", checkRelease],

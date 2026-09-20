@@ -195,6 +195,7 @@ if (parallelMax > 1 && ticketBudget !== null) {
 
 const epicBranch = `epic/${epic}`
 const TICKETS = `node "${pluginRoot}/scripts/tickets.mjs"`
+const WORKTREE_SETUP = `node "${pluginRoot}/scripts/worktree-setup.mjs"`
 // Ticket IDs are the plugin's load-bearing shape: [A-Z][A-Z0-9]*-\d+, branches
 // are the lowercased ID. An ID that does not match never reaches a prompt.
 const TICKET_ID = /^[A-Z][A-Z0-9]*-\d+$/
@@ -1403,9 +1404,10 @@ async function addWorktree(id) {
 \`\`\`bash
 git worktree add --detach "${root}" origin/${epicBranch}
 git update-ref ${waveBaseRef(id)} origin/${epicBranch}
+${WORKTREE_SETUP} --repo "${repoRoot}" --worktree "${root}"
 \`\`\`
 
-The second command pins the epic branch as it stands now under a ref of this ticket's own — the run reads the ticket's signed-off criteria from it later, after other tickets have merged. Stop at the FIRST command that exits nonzero and report it. Do not retry, do not remove anything, do not pick another path. If the path already exists, that is a failure to report, not a thing to clean up: it may hold a halted run's evidence.
+The second command pins the epic branch as it stands now under a ref of this ticket's own — the run reads the ticket's signed-off criteria from it later, after other tickets have merged. The third applies the project's own \`epics/worktree.json\`, as committed on the epic branch — local files copied in from this checkout, then its setup commands (a dependency install, usually) run inside the worktree; with no such file it prints that there is nothing to set up and exits 0. It can take minutes — it stops itself at eight, inside your shell tool's ten-minute ceiling, so that a slow install ends as a failure with words rather than a killed command: give it your shell tool's longest timeout, and never run it in the background. Stop at the FIRST command that exits nonzero and report it — for the third, with the lines it printed from \`FAILED at\` on, verbatim. Do not retry, do not remove anything, do not pick another path. If the path already exists, that is a failure to report, not a thing to clean up: it may hold a halted run's evidence.
 
 ${PROMPT_RULE}`,
     { label: `worktree:${id}`, phase: 'Wave', schema: PLUMBING_SCHEMA, effort: 'low', model: 'haiku' },
@@ -1413,7 +1415,7 @@ ${PROMPT_RULE}`,
   if (r && r.outcome === 'done') return { root, halted: null }
   const h = plumbingHalt(r, id, `creating ${id}'s worktree at ${root}`)
   if (h.stopCondition === STOP.nonzeroExit)
-    h.detail += ` If the path is left over from a halted run, look at what it holds, then remove it with \`git worktree remove --force "${root}"\` and re-run.`
+    h.detail += ` If the path is left over from a halted run, look at what it holds, then remove it with \`git worktree remove --force "${root}"\` and re-run. If what failed is the worktree's setup, the worktree exists and is half set up: see the failure again by re-running \`${WORKTREE_SETUP} --repo "${repoRoot}" --worktree "${root}"\`, repair \`epics/worktree.json\` on \`${epicBranch}\` (or the file it could not copy), push, remove the worktree with the command above, and re-run — nothing of ${id} was started.`
   return { root, halted: h }
 }
 
@@ -1519,7 +1521,7 @@ async function runTicket({ id, branch, ticket, spentAtStart, root, solo }) {
   const SHELL_CEILING_MS = 600000
   const runnerWaits = Math.ceil(RUNNER_TIMEOUT_MS / RUNNER_WAIT_SLICE_MS) + 1
   const runnerBase = workerRunner === 'codex'
-    ? `node "${pluginRoot}/scripts/runners/codex.mjs" ${id} --epic ${epic} --epic-branch ${epicBranch} --default-branch ${defaultBranch} --repo "${root}" --plugin "${pluginRoot}" --label ${workerLabel}${workerModel ? ` --model ${workerModel}` : ''} --timeout ${RUNNER_TIMEOUT_MS} --json`
+    ? `node "${pluginRoot}/scripts/runners/codex.mjs" ${id} --epic ${epic} --epic-branch ${epicBranch} --default-branch ${defaultBranch} --repo "${root}" --plugin "${pluginRoot}" --label ${workerLabel}${workerModel ? ` --model ${workerModel}` : ''}${solo ? '' : ' --wave'} --timeout ${RUNNER_TIMEOUT_MS} --json`
     : null
   const worker = runnerBase
     ? await agent(
@@ -1565,7 +1567,7 @@ REPORT THE REVIEW TIER for your own diff, from the ticket skill's step 7 table: 
 
 A DEPARTURE FROM WHAT YOUR DOCUMENTS SHOW goes on its own \`**Deviation:**\` line in the status entry, one line per departure, as the skill's step 6 says. A missed estimate — a line count, a size — and a change made in answer to a review finding are not departures: the first goes under \`**Decisions:**\` with its figure, the second in the review addendum, as step 6 says. **The \`**Deviations closed:**\` line that closes one is never yours to write** — not for any departure, including one you fixed yourself in this ticket; record the fix as a deviation like any other. The driver halts before the merge on every \`**Deviation:**\` line your entry carries, closed or not, and a human decides what happens to it. That halt is the mechanism working, not something to avoid by leaving a departure unrecorded.
 
-${solo ? '' : `**You are working in a fresh git worktree, not the project's usual checkout.** Other tickets of this epic are being implemented at the same time in worktrees of their own; never touch a path outside ${root}. Everything the usual checkout has that git does not track is absent here — installed dependencies, build output, local environment files — so install what the project's instructions say to install before you verify anything. If verification needs something that cannot be reproduced from the repository (a local \`.env\`, a running service), record the criterion as owed or stop BLOCKED; do not copy files in from another checkout.
+${solo ? '' : `**You are working in a fresh git worktree, not the project's usual checkout.** Other tickets of this epic are being implemented at the same time in worktrees of their own; never touch a path outside ${root}. Everything the usual checkout has that git does not track is absent here — installed dependencies, build output, local environment files — except what the project's \`epics/worktree.json\` lists: when the branch carries that file, its \`copy\` files are already here and its \`setup\` commands have already run in this worktree, so read it before installing anything. Whatever it does not cover (or everything, when there is no such file), install as the project's instructions say before you verify anything. If verification needs something that cannot be reproduced from the repository (a local \`.env\`, a running service), record the criterion as owed or stop BLOCKED; do not copy files in from another checkout.
 
 `}Your worker label for this run is \`${workerLabel}\` — record it in the status entry's Mode line (\`autonomous — driver-spawned worker ${workerLabel}\`), because the run record names the same label and those two lines together are what makes "the driver never implements" auditable after the fact. Report no token figure anywhere: you cannot see your own counter, and the session observes every agent's spend from the run's own transcripts after the run — your status entry's Tokens line reads \`recorded in the run record\`.
 

@@ -2603,9 +2603,21 @@ function comparedIn(text, id) {
     // that did the work halted by a gate saying it had not. An unknown label
     // is therefore body — the error this direction can make is counting a
     // field that says little, which the reviewer reads anyway.
+    // A fence marker is a container, not content: an empty fenced block under
+    // the label is still a field nobody filled in, and a table INSIDE a fence
+    // counts on its first line — whatever that line looks like: `# hand-written
+    // comparison @ 1440` inside a fence is a table's caption, not a heading, and
+    // read as one it made a filled field empty. An unclosed fence still cannot
+    // swallow the next field or the next ticket: those two close it regardless.
     let body = rest
+    let fenced = false
     for (let j = i + 1; !body && j < lines.length; j++) {
-      if (/^#{1,6}\s/.test(lines[j]) || ENTRY_FIELD.test(lines[j])) break
+      if (ENTRY_FIELD.test(lines[j]) || STATUS_HEADING.test(lines[j])) break
+      if (/^\s*(```|~~~)/.test(lines[j])) {
+        fenced = !fenced
+        continue
+      }
+      if (!fenced && /^#{1,6}\s/.test(lines[j])) break
       body = lines[j].trim()
     }
     found.push({ line: i + 1, text: rest, empty: !body })

@@ -2149,6 +2149,7 @@ test("the codex proxy starts the runner once and waits in slices inside its shel
   const start = p.match(/^node "\/plugins\/flow\/scripts\/runners\/codex\.mjs" (.*) --start$/m)
   const wait = p.match(/^node "\/plugins\/flow\/scripts\/runners\/codex\.mjs" (.*) --wait --max-wait 540000$/m)
   assert.ok(start, 'the --start command, on its own line')
+  assert.doesNotMatch(p, /--wave/, 'a serial run never tells the runner it is in a wave: the runner would add a paragraph about a setup that never ran')
   assert.ok(wait, 'the --wait command, on its own line, with its slice')
   assert.equal(start[1], wait[1], '--start and --wait carry identical arguments, so they resolve the same state directory')
   assert.equal(start[1], 'PAY-1 --epic payments --epic-branch epic/payments --default-branch main --repo "/repo" --plugin "/plugins/flow" --label worker:PAY-1 --timeout 3600000 --json')
@@ -2934,6 +2935,12 @@ test('wave: two ready tickets run side by side in worktrees, merge in document o
   // parent may both have an epic of this name.
   assert.match(prompt('worktree:PAY-1'), /git worktree add --detach "\/repo\/\.\.\/\.flow-worktrees\/repo\/payments\/pay-1" origin\/epic\/payments/)
   assert.doesNotMatch(prompt('worktree:PAY-1'), /git fetch/, 'one fetch, in the setup step: two at once race on the ref lock')
+  // The project's own word on what a fresh worktree needs, applied by a
+  // script at the door the worktree is made at — after the ref is pinned, so a
+  // failed install leaves nothing the next step depends on unpinned.
+  assert.match(prompt('worktree:PAY-1'), /git update-ref refs\/flow\/wave-base\/pay-1 origin\/epic\/payments\nnode "[^"]+\/scripts\/worktree-setup\.mjs" --repo "\/repo" --worktree "\/repo\/\.\.\/\.flow-worktrees\/repo\/payments\/pay-1"\n```/)
+  assert.match(prompt('worker:PAY-1'), /epics\/worktree\.json.*have already run in this worktree, so read it before installing anything/s)
+  assert.ok(!r.labels.includes('worktree:PAY-3') && !/worktree\.json|worktree-setup/.test(prompt('worker:PAY-3')), 'a wave of one is the serial run, prompt for prompt: no worktree, no setup, no sentence about either')
   assert.match(prompt('wave-setup:payments'), /git fetch origin epic\/payments\n.*'epics\/payments\/status\.md merge=flow-append'/s)
   // The step asks GIT which driver it will use, and ends on that answer: our
   // line can be in the file and outranked by a later rule.
@@ -2977,6 +2984,9 @@ test('wave: a halted pipeline does not un-pass its sibling — the sibling integ
   const codex = await drive(waveReply([refreshed(['PAY-1', 'PAY-2'])], { 'worker:PAY-1': workerOk('PAY-1', { result: 'blocked', stopCondition: 'BLOCKED' }) }), { ...PAR(2), workerRunner: 'codex' })
   assert.ok(codex.logs.some(l => /PAY-1: .*codex\.mjs" PAY-1 --epic payments .*--repo "\/repo\/\.\.\/\.flow-worktrees\/repo\/payments\/pay-1" .*--label worker:PAY-1 --cancel --json/.test(l)), codex.logs.join('\n'))
   assert.equal(r.out.ticketRecords.find(t => t.id === 'PAY-2').result, 'integrated')
+  // The runner is TOLD it is a wave — it adds its worktree paragraph on that
+  // word and not on the checkout's shape, which a user's own linked worktree shares.
+  assert.match(codex.calls.find(c => c.label === 'worker:PAY-2').prompt, /codex\.mjs" PAY-2 .*--label worker:PAY-2 --wave --timeout \d+ --json --start$/m)
   // Two halts: the run stops on the first in document order, and the other rides beside it.
   const both = await drive(
     waveReply([refreshed(['PAY-1', 'PAY-2'])], { 'worker:PAY-1': workerOk('PAY-1', { result: 'blocked', stopCondition: 'BLOCKED' }), 'accept:PAY-2': { ...acceptOk, passed: 1, allPassed: false } }),
@@ -3041,6 +3051,9 @@ test('wave: a worktree path left by a halted run halts that ticket with the comm
   assert.match(left.out.haltedOn.detail, /already exists.*look at what it holds, then remove it with `git worktree remove --force "\/repo\/\.\.\/\.flow-worktrees\/repo\/payments\/pay-2"`/s)
   assert.ok(!left.logs.some(l => /PAY-2: its worktree is left in place/.test(l)), 'a worktree that was never created is not reported as left behind')
   assert.ok(!left.labels.includes('worker:PAY-2'))
+  const setup = await drive(waveReply([refreshed(['PAY-1', 'PAY-2'])], { 'worktree:PAY-2': { outcome: 'failed', failedCommand: 'node worktree-setup.mjs', detail: 'FAILED at setup: npm ci\nexited 1' } }), PAR(2))
+  assert.match(setup.out.haltedOn.detail, /FAILED at setup: npm ci.*the worktree exists and is half set up.*repair `epics\/worktree\.json` on `epic\/payments`.*nothing of PAY-2 was started/s)
+  assert.ok(!setup.labels.includes('worker:PAY-2'), 'no worker is hired into a worktree nobody finished setting up')
   assert.deepEqual(only(left.labels, /^merge:/), ['merge:PAY-1'], 'its sibling still integrates')
   const threw = await drive(waveReply([refreshed(['PAY-1', 'PAY-2'])], { 'tier-facts:PAY-2': () => { throw new Error('agent type not found') } }), PAR(2))
   assert.match(threw.out.haltedOn.detail, /the pipeline threw before it could report.*agent type not found/s)

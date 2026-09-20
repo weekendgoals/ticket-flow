@@ -272,6 +272,217 @@ test('a landmark absent from both sides and declared nowhere is still uncompared
   assert.equal(only.code, 2, 'a selection of nothing but undeclared absences is still refused')
 })
 
+// ── scope: where the signed-off map says a landmark is drawn ────────────────
+
+const scoped = ({ width = 1440, signedLandmarks, treeLandmarks } = {}) => {
+  const landmarks = signedLandmarks || [
+    { name: 'hero', design: '#hero', page: '.masthead', source: 'designs/city.html' },
+    { name: 'ghost', design: '#ghost', page: '#ghost', source: 'designs/city.html' },
+    { name: 'menu', design: '#menu', page: '#menu', source: 'designs/city.html', widths: [393] },
+    { name: 'team', design: '#team', page: '#team', source: 'designs/about.html' },
+  ]
+  const absent = { found: false, order: null, childCount: null, props: {} }
+  const report = (side) => ({
+    side,
+    viewportWidth: width,
+    landmarks: { hero: { found: true, order: 1, childCount: 0, props: { display: 'block' } }, ghost: absent, menu: absent, team: absent },
+  })
+  return {
+    design: tmp('design.json', report('design')),
+    page: tmp('page.json', report('page')),
+    map: tmp('design-map.json', { landmarks: treeLandmarks || landmarks }),
+    signed: tmp('signed-map.json', { landmarks }),
+  }
+}
+
+test('a landmark the signed-off map draws here, on neither side, fails — with --landmarks and without, the same', () => {
+  const f = scoped()
+  const whole = cli('diff', f.design, f.page, '--map', f.map, '--removed-from', f.signed, '--source', 'designs/city.html', '--json')
+  const named = cli('diff', f.design, f.page, '--map', f.map, '--removed-from', f.signed, '--source', 'designs/city.html', '--landmarks', 'hero,ghost', '--json')
+  for (const r of [whole, named]) {
+    assert.equal(r.code, 1, 'one state, one answer — two was the shape a gate gets routed around')
+    const { rows, compared } = JSON.parse(r.out)
+    assert.deepEqual(rows.map((x) => [x.landmark, x.kind]), [['ghost', 'unmatched']])
+    assert.match(rows[0].page, /the signed-off map draws it in designs\/city\.html/)
+    assert.equal(compared, 1, 'hero; a silent landmark is not a compared one')
+  }
+  const { notes } = JSON.parse(whole.out)
+  assert.ok(notes.some((n) => /not drawn in designs\/city\.html at 1440 by the signed-off map/.test(n) && /menu, team/.test(n)), 'another width and another source are silence the map explains')
+  const alone = cli('diff', f.design, f.page, '--map', f.map, '--removed-from', f.signed, '--source', 'designs/city.html', '--landmarks', 'ghost')
+  assert.equal(alone.code, 1, 'a row is evidence of a failure: the table prints rather than "nothing was compared"')
+  assert.match(alone.out, /ghost\s+presence\s+absent/)
+})
+
+test('a landmark scoped to a width fails at that width', () => {
+  const f = scoped({ width: 393 })
+  const { rows } = JSON.parse(cli('diff', f.design, f.page, '--map', f.map, '--removed-from', f.signed, '--source', 'designs/city.html', '--json').out)
+  assert.deepEqual(rows.map((x) => x.landmark), ['ghost', 'menu'])
+  assert.match(rows[1].page, /at 393/)
+})
+
+test('scope is read from the signed-off map only: deleting it on the ticket branch changes nothing', () => {
+  const stripped = [
+    { name: 'hero', design: '#hero', page: '.masthead' },
+    { name: 'ghost', design: '#ghost', page: '#ghost' },
+    { name: 'menu', design: '#menu', page: '#menu' },
+    { name: 'team', design: '#team', page: '#team' },
+  ]
+  const f = scoped({ treeLandmarks: stripped })
+  assert.equal(cli('diff', f.design, f.page, '--map', f.map, '--removed-from', f.signed, '--source', 'designs/city.html').code, 1)
+  // and the other way round: scope written only into the working tree's map is not honoured
+  const g = scoped({ signedLandmarks: stripped, treeLandmarks: undefined })
+  const tree = tmp('design-map.json', { landmarks: [{ name: 'hero', design: '#hero', page: '.masthead' }, { name: 'ghost', design: '#ghost', page: '#ghost', source: 'designs/city.html' }, { name: 'menu', design: '#menu', page: '#menu' }, { name: 'team', design: '#team', page: '#team' }] })
+  assert.equal(cli('diff', g.design, g.page, '--map', tree, '--removed-from', g.signed).code, 0, 'an unscoped signed-off map reads exactly as it did: a note')
+})
+
+test('a scoped map refuses a run that cannot say which source or width it is', () => {
+  const f = scoped()
+  const noSource = cli('diff', f.design, f.page, '--map', f.map, '--removed-from', f.signed)
+  assert.equal(noSource.code, 2)
+  assert.match(noSource.err, /pass --source/)
+  const typo = cli('diff', f.design, f.page, '--map', f.map, '--removed-from', f.signed, '--source', 'designs/City.html')
+  assert.equal(typo.code, 2, 'a misspelt source would read every scoped landmark as drawn elsewhere — the silent pass again')
+  assert.match(typo.err, /it names: designs\/city\.html, designs\/about\.html/)
+  assert.match(typo.err, /record the comparison as owed/, 'the recovery a refused worker can actually perform')
+  const widthless = scoped({ width: null })
+  const noWidth = cli('diff', widthless.design, widthless.page, '--map', widthless.map, '--removed-from', widthless.signed, '--source', 'designs/city.html')
+  assert.equal(noWidth.code, 2)
+  assert.match(noWidth.err, /neither report carries a viewportWidth/)
+})
+
+test('a landmark shared by two sources gets one answer, with --landmarks and without', () => {
+  // A single-string `source` forced a shared header to belong to one page, and
+  // a refusal judged per selection refused `--landmarks header` on the other
+  // while the whole map compared — drop the flag, get a table.
+  const landmarks = [
+    { name: 'header', design: 'header', page: 'header', source: ['designs/home.html', 'designs/team.html'] },
+    { name: 'hero', design: '#hero', page: '#hero', source: 'designs/home.html' },
+    { name: 'team', design: '#team', page: '#team', source: 'designs/team.html' },
+  ]
+  const found = { found: true, order: 1, childCount: 0, props: { display: 'block' } }
+  const absent = { found: false, order: null, childCount: null, props: {} }
+  const report = (side, header) => ({ side, viewportWidth: 1440, landmarks: { header, hero: absent, team: { ...found, order: 2 } } })
+  const map = tmp('design-map.json', { landmarks })
+  const signed = tmp('signed-map.json', { landmarks })
+  const args = (h) => ['diff', tmp('design.json', report('design', h)), tmp('page.json', report('page', h)), '--map', map, '--removed-from', signed, '--source', 'designs/team.html']
+  assert.equal(cli(...args(found), '--landmarks', 'header').code, 0)
+  assert.equal(cli(...args(found)).code, 0, 'hero is drawn in home.html, so its silence here is explained')
+  assert.equal(cli(...args(absent), '--landmarks', 'header').code, 1, 'team.html draws the header too')
+  assert.equal(cli(...args(absent)).code, 1)
+  // a selection holding no landmark scoped to --source is still checked against every source the map names
+  const typo = cli(...args(found).slice(0, -1), 'designs/Team.html', '--landmarks', 'header')
+  assert.equal(typo.code, 2)
+})
+
+test('a scoped landmark renamed or dropped in --map is refused, not quietly never looked for', () => {
+  const f = scoped()
+  const without = (name, rename) =>
+    tmp('design-map.json', {
+      landmarks: [
+        { name: 'hero', design: '#hero', page: '.masthead' },
+        { name: 'ghost', design: '#ghost', page: '#ghost' },
+      ].filter((l) => l.name !== name || rename).map((l) => (l.name === name && rename ? { ...l, name: rename } : l)),
+    })
+  for (const tree of [without('ghost'), without('ghost', 'ghost2')]) {
+    const r = cli('diff', f.design, f.page, '--map', tree, '--removed-from', f.signed, '--source', 'designs/city.html')
+    assert.equal(r.code, 2)
+    assert.match(r.err, /the signed-off map draws ghost here and --map does not declare it/)
+  }
+  // menu (393 only) and team (another source) are not drawn here, so their absence from --map is nothing
+  // ...and the refusal does not depend on --landmarks: naming every landmark
+  // --map still has is the same selection as no flag, and once got exit 0.
+  for (const [tree, names] of [[without('ghost'), 'hero'], [without('ghost', 'ghost2'), 'hero,ghost2']]) {
+    const r = cli('diff', f.design, f.page, '--map', tree, '--removed-from', f.signed, '--source', 'designs/city.html', '--landmarks', names)
+    assert.equal(r.code, 2, names)
+    assert.match(r.err, /--map does not declare it/)
+  }
+})
+
+test('a selection the signed-off map says is not drawn here is explained silence, not "fix your selectors"', () => {
+  // `LANDMARKS: menu` under `COMPARE … @ 393, 1440`, menu drawn at 393 only: the 1440 run.
+  const f = scoped()
+  const named = cli('diff', f.design, f.page, '--map', f.map, '--removed-from', f.signed, '--source', 'designs/city.html', '--landmarks', 'menu')
+  assert.equal(named.code, 0, named.err)
+  assert.match(named.out, /no differences — 0 landmarks compared/)
+  assert.match(named.out, /note: not drawn in designs\/city\.html at 1440 by the signed-off map, and on neither side: menu/)
+  // the map must explain ALL of the silence: menu beside a landmark that just matched nothing is no evidence
+  const mixed = [
+    { name: 'menu', design: '#menu', page: '#menu', widths: [393] },
+    { name: 'x', design: '#nope', page: '#nope2' },
+  ]
+  const absent = { found: false, order: null, childCount: null, props: {} }
+  const rep = (side) => tmp(`${side}.json`, { side, viewportWidth: 1440, landmarks: { menu: absent, x: absent } })
+  const m = tmp('design-map.json', { landmarks: mixed })
+  for (const extra of [[], ['--landmarks', 'menu,x']]) {
+    const r = cli('diff', rep('design'), rep('page'), '--map', m, '--removed-from', tmp('signed-map.json', { landmarks: mixed }), ...extra)
+    assert.equal(r.code, 2, 'one explained landmark does not disarm the refusal for the rest')
+    assert.match(r.err, /nothing was compared/)
+  }
+  // an UNSCOPED selection of nothing is still refused: nobody explained that silence
+  const g = bothAbsent()
+  assert.equal(cli('diff', g.design, g.page, '--map', g.map, '--removed-from', g.signed, '--landmarks', 'ghost').code, 2)
+})
+
+test('a scoped run says what it was asked, so a --source from the wrong COMPARE line is readable in the pasted table', () => {
+  const f = scoped()
+  // the reports are of city.html; the command claims about.html and names only city's landmarks
+  const r = cli('diff', f.design, f.page, '--map', f.map, '--removed-from', f.signed, '--source', 'designs/about.html', '--landmarks', 'hero,ghost')
+  assert.equal(r.code, 0, 'the differ cannot know — reports carry no source')
+  assert.match(r.out, /note: compared as source designs\/about\.html at 1440, landmarks hero, ghost — check it against the ticket's COMPARE and LANDMARKS lines/)
+  const j = JSON.parse(cli('diff', f.design, f.page, '--map', f.map, '--removed-from', f.signed, '--source', 'designs/city.html', '--json').out)
+  assert.deepEqual(j.asked, { source: 'designs/city.html', width: 1440, landmarks: null })
+  assert.ok(j.rows.some((x) => x.kind === 'unmatched'))
+  // an unscoped map prints exactly what it printed before scope existed
+  const g = bothAbsent()
+  assert.doesNotMatch(cli('diff', g.design, g.page, '--map', g.map, '--removed-from', g.signed).out, /compared as/)
+})
+
+test('a run that drops --removed-from cannot drop the scope with it', () => {
+  // Codex's finding: the worker picks the command line, and removing two flags
+  // turned a failing `unmatched` row back into a note with no provenance.
+  const f = scoped()
+  const both = cli('diff', f.design, f.page, '--map', f.map, '--landmarks', 'hero,ghost')
+  assert.equal(both.code, 2)
+  assert.match(both.err, /the --map file scopes landmarks .* no --removed-from was given/)
+  // with the scope stripped from --map as well, --source alone is still refused...
+  const stripped = tmp('design-map.json', { landmarks: [{ name: 'hero', design: '#hero', page: '.masthead' }, { name: 'ghost', design: '#ghost', page: '#ghost' }] })
+  const r = cli('diff', f.design, f.page, '--map', stripped, '--source', 'designs/city.html')
+  assert.equal(r.code, 2)
+  assert.match(r.err, /--source needs --removed-from/)
+  // ...and with every flag gone the table itself says what it is not
+  const bare = cli('diff', f.design, f.page, '--map', stripped)
+  assert.equal(bare.code, 0, 'the differ cannot know a signed-off map exists')
+  assert.match(bare.out, /note: no --removed-from was given: removals and landmark scope were read from nowhere/)
+})
+
+test('a landmark both declared removed and scoped is the honoured removal; width-only scope needs no --source', () => {
+  const landmarks = [
+    { name: 'hero', design: '#hero', page: '#hero' },
+    { name: 'promo', design: '#promo', page: '#promo', widths: [1440] },
+    { name: 'menu', design: '#menu', page: '#menu', widths: [1440] },
+  ]
+  const absent = { found: false, order: null, childCount: null, props: {} }
+  // only the page report carries a width
+  const report = (side) => ({ side, viewportWidth: side === 'page' ? 1440 : null, landmarks: { hero: { found: true, order: 1, childCount: 0, props: {} }, promo: absent, menu: absent } })
+  const map = tmp('design-map.json', { landmarks })
+  const signed = tmp('signed-map.json', { landmarks, removed: [{ name: 'promo', by: 'ground rule 2', date: '2026-09-18' }] })
+  const r = cli('diff', tmp('design.json', report('design')), tmp('page.json', report('page')), '--map', map, '--removed-from', signed, '--json')
+  assert.equal(r.code, 1)
+  const { rows, compared } = JSON.parse(r.out)
+  assert.deepEqual(rows.map((x) => [x.landmark, x.kind]), [['promo', 'removed-absent'], ['menu', 'unmatched']])
+  assert.equal(compared, 2)
+})
+
+test('a malformed scope is refused by entry', () => {
+  const bad = (extra) => tmp('design-map.json', { landmarks: [{ name: 'hero', design: '#hero', page: '#hero', ...extra }] })
+  const f = scoped()
+  for (const [extra, re] of [[{ source: '' }, /"source" must be a design source path/], [{ source: [] }, /"source" must be a design source path/], [{ widths: [] }, /"widths" must be a non-empty array/], [{ widths: ['393'] }, /"widths" must be a non-empty array/], [{ widths: [393.5] }, /whole px/]]) {
+    const r = cli('diff', f.design, f.page, '--map', bad(extra))
+    assert.equal(r.code, 2)
+    assert.match(r.err, re)
+  }
+})
+
 test('swapped landmarks differ in order', () => {
   const { rows } = rowsOf()
   assert.equal(rowFor(rows, 'aside', 'order').kind, 'order')
@@ -366,7 +577,10 @@ test('a diff far larger than the pipe buffer arrives whole', () => {
   assert.equal(r.code, 1)
   const table = cli('diff', d, p, '--map', m)
   assert.ok(table.out.length > 65536, `the table came through at only ${table.out.length} bytes`)
-  assert.match(table.out.trimEnd().split('\n').pop(), /1800 differences — 600 landmarks compared/, 'the last line printed is the last line received')
+  // the run passes no --removed-from, so the last line is the note that says so — after the summary
+  const tailLines = table.out.trimEnd().split('\n').slice(-2)
+  assert.match(tailLines[0], /1800 differences — 600 landmarks compared/)
+  assert.match(tailLines[1], /^note: no --removed-from was given/, 'the last line printed is the last line received')
 })
 
 // The same flush rule on the other stream. A refusal that names thousands of

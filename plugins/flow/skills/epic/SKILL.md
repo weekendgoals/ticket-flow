@@ -213,7 +213,16 @@ epic a ticket without one is **declared independent** of every other
 unstarted ticket — so before writing this line, check each pair that could
 share a wave for files both would edit, and give the later one a
 `**Blocked by:**`. The ceiling is 3 because the constraint is review
-bandwidth, not machines. Parsed by the board today; the run driver applies
+bandwidth, not machines. **Before writing it, look for `epics/worktree.json`
+and write it if the project has none**: each ticket of a wave works in a
+fresh git worktree with no installed dependencies and no local `.env`, and
+that file — `{"copy": ["<git-ignored local files every worktree needs>"],
+"setup": ["<the install command>", "…"]}`, project-level, shared by every
+epic — is what the run applies to each one, inside an eight-minute budget
+per worktree (the step is one shell call with a ten-minute ceiling), so
+prefer the install that uses a warm cache. Without it every worker guesses
+the install for itself. Commit it with the epic's documents so it is on
+`epic/<name>` at sign-off; the run reads it from there. Parsed by the board today; the run driver applies
 it, and refuses it together with `Ticket budget:` (a per-ticket ceiling
 cannot be metered while tickets share the clock).
 
@@ -351,10 +360,29 @@ Rules that matter:
   ```json
   { "landmarks": [ { "name": "hero",
                      "design": "<selector in the design source>",
-                     "page":   "<selector in the built page>" } ],
+                     "page":   "<selector in the built page>",
+                     "source": "<OPTIONAL: the Design sources path that draws it, or a list of them>",
+                     "widths": ["<OPTIONAL: the widths it is drawn at, as numbers — [393]>"] } ],
     "removed":   [ { "name": "promo", "by": "<the deciding rule>",
                      "date": "YYYY-MM-DD" } ] }
   ```
+
+  **`source` and `widths` say where the design draws a landmark, and they are
+  what lets a missing one fail.** A landmark that matches on neither side is
+  only a note when the map is silent — with several design sources, or an
+  element drawn at one width alone, silence is sometimes correct and the
+  differ cannot tell. Scoped, it is a failing row wherever the map says the
+  landmark is drawn, and explained silence everywhere else. `widths` is
+  optional (absent means every width); `source` is the `COMPARE` line's path,
+  character for character, or a list of them for a landmark several sources
+  draw (a shared header is one landmark, not one per page). **Scope one
+  landmark by `source` and scope every design source's landmarks** — the
+  differ refuses a `--source` the map names nowhere, because a misspelt one
+  would read every landmark as drawn elsewhere, and a worker refused that way
+  cannot repair a signed-off map: the comparison goes owed. Like `removed`,
+  scope is read only from the signed-off ref: deleting a `source` line on a
+  ticket branch changes nothing, and a scoped landmark renamed or dropped
+  from the branch's map is refused rather than never looked for.
 
   A worker edits the `page` selectors — they are written before the page
   exists — so **the `removed` list is planning's and nobody else's**: it is

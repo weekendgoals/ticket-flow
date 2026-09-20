@@ -182,6 +182,10 @@ test('a good run: the runner branches, Codex edits the tree, the runner commits 
   assert.ok(p.startsWith('A driver spawned you for this one ticket.'))
   assert.match(p, new RegExp(`READ FIRST, IN FULL: ${PLUGIN}/skills/ticket/SKILL.md`))
   assert.match(p, /GIT IS NOT YOURS/)
+  // An ordinary checkout is a serial run, and a serial run's prompt is the one
+  // it always was: the worktree paragraph exists only in a linked worktree
+  // whose branch carries epics/worktree.json.
+  assert.doesNotMatch(p, /FRESH WORKTREE|worktree\.json/)
   assert.match(p, /already created and checked out `r-1` from `epic\/rho`/)
   assert.match(p, /do NOT run `git checkout`, `git add`, `git commit` or `git push`/)
   assert.match(p, /DO NOT run step 7 \(review\), step 8 \(fix and addendum\) or step 10/)
@@ -676,4 +680,26 @@ test('a hung git fetch or git push times out into a report instead of hanging a 
   assert.match(p.out.detail, /git push -u origin r-17 failed: timed out after 1000 ms \(--git-timeout\)/)
   assert.equal(p.out.runner.pushed, false)
   assert.ok(p.ms < 10000, `returned in ${p.ms} ms, not after the transport's 20 s`)
+})
+
+test('the worktree paragraph rides on --wave AND the file: the driver says it is a wave, the branch says there was a setup', () => {
+  // Guessed from the checkout's shape (a linked worktree), it was told to a
+  // serial session in a user's own worktree, about a setup that never ran.
+  // Last in the file on purpose: it commits to the shared fixture's epic branch.
+  git(repo, 'checkout', '-q', 'epic/rho')
+  runRunner('R-17', 'crash', ['--wave'])
+  assert.match(readFileSync(promptFile, 'utf8'), /ticket R-17 of/)
+  assert.doesNotMatch(readFileSync(promptFile, 'utf8'), /FRESH WORKTREE/, '--wave with no epics/worktree.json: nothing was applied, so nothing is said')
+  git(repo, 'checkout', '-q', 'epic/rho')
+  writeFileSync(join(repo, 'epics/worktree.json'), '{"setup":["true"]}')
+  git(repo, 'add', 'epics/worktree.json')
+  git(repo, 'commit', '-q', '-m', 'rho: worktree setup')
+  git(repo, 'push', '-q', 'origin', 'epic/rho')
+  runRunner('R-18', 'crash')
+  assert.match(readFileSync(promptFile, 'utf8'), /ticket R-18 of/)
+  assert.doesNotMatch(readFileSync(promptFile, 'utf8'), /FRESH WORKTREE/, 'the file without --wave is a serial run: the prompt it always had')
+  git(repo, 'checkout', '-q', 'epic/rho')
+  runRunner('R-19', 'crash', ['--wave'])
+  assert.match(readFileSync(promptFile, 'utf8'), /ticket R-19 of/)
+  assert.match(readFileSync(promptFile, 'utf8'), /THIS IS A PARALLEL RUN'S FRESH WORKTREE, ALREADY SET UP\..*epics\/worktree\.json/s)
 })
