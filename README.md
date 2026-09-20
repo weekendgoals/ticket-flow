@@ -168,7 +168,7 @@ its `## Unticketed commits` section from the board, both written even when
 empty, and it closes by asking the human for the release-PR addendum. A run
 that halted never reaches that step, so after the last ticket is finished by
 hand the route is re-running `/flow:run <epic>` — nothing left to start, it
-goes straight to the pull request — or, when the run refuses the board (an
+makes the release check and goes to the pull request — or, when the run refuses the board (an
 abandoned ticket reads `blocked`), opening it by hand following the run
 skill's step 7 section for section. **The human gate
 moves to the release pull request; it does not disappear.** Main never sees
@@ -226,6 +226,28 @@ from a commit); `setup` commands run inside the worktree. It is read as
 committed on the epic branch, so what runs is what was pushed. Without the
 file a worktree has only what git tracks and each worker installs what it
 thinks the project needs.
+
+**A run ends by checking what it is about to release.** Each ticket's
+`CHECK` criteria pass before its own merge; nothing re-ran them after the
+tickets that came later, or after `main` was merged into the epic. So before
+it reports `completed`, the run re-runs every landed ticket's checks at the
+epic head and halts — no release pull request — if one no longer passes.
+`tickets.mjs check-epic <epic>` is the same check by hand — it fetches the
+epic branch, refuses a checkout that is not at the remote's commit or has
+uncommitted changes, and also shows any ticket whose criteria changed since
+sign-off. After a parallel run both happen in a worktree set up from
+`epics/worktree.json`, because the main checkout never saw what the tickets
+installed.
+
+**The release pull request comes with a walkthrough.** `release-page.mjs
+<epic> --check <check-epic.json>` renders one self-contained page for the
+person deciding the merge: the never-squash rule and the size, the release
+check's ledger (with any criteria that changed since sign-off), then one
+section per ticket in build order — built, verified, compared, deviations,
+owed, review addenda, commits — then what is still owed, the commits no
+ticket covers, and the last run record. It is derived from git, the status
+log and the run record, published as an artifact and linked from the body;
+it is never committed, and it replaces nothing in the body.
 
 **A run is serial unless the epic says otherwise.** With `Parallel: 2` (or
 `3`) in the preamble it works the board's *ready* set in **waves**: up to

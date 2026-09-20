@@ -22,7 +22,7 @@ go through the flow, one-off work goes through `/flow:quick` into
 ## Commands
 
 - **Tests:** `node --test plugins/flow/scripts/tickets.test.mjs` — expect
-  every test passing (`# pass 180`, `# fail 0` as of 2026-09-20; the count
+  every test passing (`# pass 191`, `# fail 0` as of 2026-09-20; the count
   grows, the fail line does not). The suite builds a throwaway git repo in a
   temp dir; it needs `git` on PATH and nothing else. The session-guard hook
   has its own suite:
@@ -32,7 +32,9 @@ go through the flow, one-off work goes through `/flow:quick` into
   The board renderer has
   `node --test plugins/flow/scripts/board.test.mjs` (`# pass 9`) and the
   plan-page renderer `node --test plugins/flow/scripts/plan-page.test.mjs`
-  (`# pass 8`) — both pure rendering tests over fixture JSON, no git
+  (`# pass 8`), and the release walkthrough
+  `node --test plugins/flow/scripts/release-page.test.mjs` (`# pass 13`) —
+  all three pure rendering tests over fixture JSON, no git
   needed. The fidelity differ has
   `node --test plugins/flow/scripts/fidelity.test.mjs` (`# pass 54`) — the
   diff driven through the CLI over the committed fixture reports under
@@ -42,7 +44,7 @@ go through the flow, one-off work goes through `/flow:quick` into
   closure reference fails here instead of inside somebody's page. It needs
   nothing but Node, and **no test may launch or drive a browser** — the plugin
   owns none, which is why it installs anywhere. The run meter has
-  `node --test plugins/flow/scripts/meter.test.mjs` (`# pass 17`) — tokens
+  `node --test plugins/flow/scripts/meter.test.mjs` (`# pass 18`) — tokens
   and time metered off journal and transcript text built in the test, in the
   shapes a real run wrote; the two CLI cases write a throwaway run directory
   to the OS temp dir. Nothing but Node, and **no test reads a real
@@ -57,7 +59,7 @@ go through the flow, one-off work goes through `/flow:quick` into
   real git again, real linked worktrees in throwaway directories, because the
   refusal that matters asks git a question (`check-ignore`, where `.git` is a
   file). Needs `git`, POSIX `sh` and `sleep` (the budget case). And the run driver has
-  `node --test plugins/flow/workflows/run-epic.test.mjs` (`# pass 175`) —
+  `node --test plugins/flow/workflows/run-epic.test.mjs` (`# pass 180`) —
   which evaluates `run-epic.mjs`'s module body with stubbed agents and
   asserts the sequence, the gate branches and the halt mapping. It needs
   nothing but Node: no git, no network, no filesystem beyond the script.
@@ -91,7 +93,8 @@ go through the flow, one-off work goes through `/flow:quick` into
   this repo. `… list` shows the board.
 - **Syntax check:** `node --check plugins/flow/scripts/tickets.mjs`, and the
   same for `scripts/fidelity.mjs`, `scripts/meter.mjs`,
-  `scripts/merge-append.mjs` and `scripts/worktree-setup.mjs`. This does
+  `scripts/merge-append.mjs`, `scripts/worktree-setup.mjs` and
+  `scripts/release-page.mjs`. This does
   **not** work on `plugins/flow/workflows/run-epic.mjs`: a workflow script is
   a module body with a top-level `return`, which the workflow runtime allows
   (`allowReturnOutsideFunction`) and `node --check` rejects. Parse it the way
@@ -129,7 +132,9 @@ test file path explicitly.
   `integrateTicket` touches the epic branch and is always one at a time, in
   document order, whichever pipeline finished first. Three things must stay
   true, and the driver's suite pins each: **`Parallel:` absent or `1` is the
-  old run, prompt for prompt** (epics planned when document order was the
+  old run, prompt for prompt, through every ticket** — what follows the loop,
+  the release check, is new in both, and a parallel run's adds one step, the
+  worktree it checks in — (epics planned when document order was the
   only dependency mechanism must not go wide on a plugin update); **timing
   decides nothing** (records and merges in wave order — a test delays one
   pipeline); and **a halt is returned by a pipeline, never thrown**, because
@@ -149,7 +154,7 @@ test file path explicitly.
   Do not move that refusal into a prompt, and do not make a
   partial setup exit 0 — the worker would verify against something nobody
   chose. No file means no change, and the step exists only under
-  `Parallel:`, so a serial run stays the old run, prompt for prompt.
+  `Parallel:`, so a serial run's tickets stay the old run, prompt for prompt.
 - **A merge driver that does nothing is a clean merge that loses data.**
   Git keeps ours and drops theirs when a driver exits 0 without writing, and
   reports no conflict. So `scripts/merge-append.mjs` acts on its `--driver`
@@ -228,7 +233,15 @@ test file path explicitly.
   <ID>`, with doctor near-miss coverage), the epic skill's template teaches
   them, the ticket and quick skills run them, and the run driver re-runs them
   from the signed-off document (`--from origin/epic/<name>`) as a code merge
-  gate — because the reviewed party must not edit its own gate. A format
+  gate — because the reviewed party must not edit its own gate — and once
+  more for every landed ticket at the epic head before it reports
+  `completed` (the release check; `check-epic` is the same check by hand —
+  both fetch, judge the COMMIT the remote epic branch is at, with a tree that
+  was clean before anything ran, and run every line of every ticket; after a
+  parallel run both run in one set-up release worktree, because the main
+  checkout never saw what the tickets installed):
+  there the criteria are the head's own, so a mid-epic re-plan counts, and
+  what differs from sign-off is shown to the human rather than gated on. A format
   change moves the parser, the skills and the driver in the same commit;
   `check-invariants.mjs` holds the coupling.
 

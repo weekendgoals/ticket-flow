@@ -27,6 +27,8 @@ const source = readFileSync(scriptPath, 'utf8').replace(/^export const meta/m, '
 const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor
 const body = new AsyncFunction('agent', 'parallel', 'pipeline', 'log', 'phase', 'args', 'budget', source)
 
+// The commit the release check's stubbed fetch reports the remote epic branch at.
+const REL_HEAD = 'f'.repeat(40)
 const ARGS = { epic: 'payments', defaultBranch: 'main', repoRoot: '/repo', pluginRoot: '/plugins/flow', today: '2026-08-11' }
 
 // Drive the module body with scripted agent replies. `reply(label, prompt)`
@@ -46,6 +48,16 @@ async function drive(reply, args = ARGS, budget = null) {
     // nothing — so each test still states only what it is about; the tests
     // that ARE about it stub the label themselves.
     if (r === undefined && opts.label.startsWith('fix-added:')) r = fixAddedNone
+    // The release check runs at the end of every run that did not halt. The
+    // same rule: a test that is not about it gets the quiet answer — the board
+    // lists exactly what this run integrated, and every ticket's checks still
+    // pass — and the tests that ARE about it stub the labels themselves.
+    if (r === undefined && opts.label.startsWith('release-worktree')) r = { outcome: 'done', detail: '' }
+    if (r === undefined && opts.label.startsWith('release-list:')) {
+      const landed = [...new Set(calls.filter(c => c.label.startsWith('merge:')).map(c => c.label.slice('merge:'.length)))]
+      r = landed.length ? { outcome: 'done', landed, landedCount: landed.length, remoteHead: REL_HEAD, localHead: REL_HEAD } : { outcome: 'done', landed: ['PAY-0'], landedCount: 1, remoteHead: REL_HEAD, localHead: REL_HEAD }
+    }
+    if (r === undefined && opts.label.startsWith('release-check:')) r = { outcome: 'ran', head: REL_HEAD, dirty: '', total: 1, passed: 1, skipped: 0, problems: 0, compares: 0, allPassed: true, failures: [] }
     if (r === undefined) throw new Error(`unplanned agent spawn: ${opts.label}`)
     return r
   }
@@ -196,6 +208,7 @@ test('the happy path runs refresh+select -> worker -> review -> disposition -> a
     'refresh+select:1', 'worker:PAY-1', 'tier-facts:PAY-1', 'review:PAY-1', 'disposition:PAY-1', 'accept:PAY-1', 'resolve:PAY-1', 'merge:PAY-1', 'verify:PAY-1',
     'refresh+select:2', 'worker:PAY-2', 'tier-facts:PAY-2', 'review:PAY-2', 'disposition:PAY-2', 'accept:PAY-2', 'resolve:PAY-2', 'merge:PAY-2', 'verify:PAY-2',
     'refresh+select:3',
+    'release-list:payments', 'release-check:payments:PAY-1', 'release-check:payments:PAY-2',
   ])
   assert.equal(r.out.outcome, 'completed')
   assert.equal(r.out.totals.ticketsIntegrated, 2)
@@ -900,6 +913,7 @@ test('at the consequence tier, fix commits earn exactly one re-review, and a cle
   assert.deepEqual(r.labels, [
     'refresh+select:1', 'worker:PAY-1', 'tier-facts:PAY-1', 'review:PAY-1', 'disposition:PAY-1', 'fix-added:PAY-1', 're-review:PAY-1', 'accept:PAY-1', 'resolve:PAY-1', 'merge:PAY-1', 'verify:PAY-1',
     'refresh+select:2',
+    'release-list:payments', 'release-check:payments:PAY-1',
   ])
   assert.equal(r.out.outcome, 'completed')
   const rec = r.out.ticketRecords[0]
@@ -2137,7 +2151,7 @@ test('Worker runner: codex swaps the worker for a shell proxy that runs the runn
   assert.equal(rec.workerModel, 'codex:gpt-5-codex')
   assert.deepEqual(rec.workerUsage, usage)
   // Everything after the worker is unchanged: the review, the gate, the merge.
-  assert.deepEqual(r.labels.slice(1), ['worker:PAY-1', 'tier-facts:PAY-1', 'review:PAY-1', 'disposition:PAY-1', 'accept:PAY-1', 'resolve:PAY-1', 'merge:PAY-1', 'verify:PAY-1', 'refresh+select:2'])
+  assert.deepEqual(r.labels.slice(1), ['worker:PAY-1', 'tier-facts:PAY-1', 'review:PAY-1', 'disposition:PAY-1', 'accept:PAY-1', 'resolve:PAY-1', 'merge:PAY-1', 'verify:PAY-1', 'refresh+select:2', 'release-list:payments', 'release-check:payments:PAY-1'])
 })
 
 test("the codex proxy starts the runner once and waits in slices inside its shell tool's 600000 ms ceiling, bounded by the runner's own timeout", async () => {
@@ -2315,6 +2329,7 @@ test('shadow reviewer: runs after the review and before the disposition on a con
   assert.deepEqual(r.labels, [
     'refresh+select:1', 'worker:PAY-1', 'tier-facts:PAY-1', 'review:PAY-1', 'shadow:PAY-1', 'disposition:PAY-1', 'accept:PAY-1', 'resolve:PAY-1', 'merge:PAY-1', 'verify:PAY-1',
     'refresh+select:2',
+    'release-list:payments', 'release-check:payments:PAY-1',
   ])
   assert.equal(r.out.outcome, 'completed')
   // A shell proxy, the worker runner's pattern: fast model, no agent type.
@@ -2393,6 +2408,7 @@ test('shadow reviewer: does not run on the re-review, of either kind', async () 
   assert.deepEqual(r.labels, [
     'refresh+select:1', 'worker:PAY-1', 'tier-facts:PAY-1', 'review:PAY-1', 'shadow:PAY-1', 'disposition:PAY-1', 'fix-added:PAY-1', 're-review:PAY-1', 'accept:PAY-1', 'resolve:PAY-1', 'merge:PAY-1', 'verify:PAY-1',
     'refresh+select:2',
+    'release-list:payments', 'release-check:payments:PAY-1',
   ])
   assert.equal(r.calls.filter(c => c.label.startsWith('shadow:')).length, 1)
   assert.equal(r.out.ticketRecords[0].reReviewRan, true)
@@ -2482,6 +2498,7 @@ test('shadow reviewer: Important findings over a clean Claude review follow the 
   assert.deepEqual(r.labels, [
     'refresh+select:1', 'worker:PAY-1', 'tier-facts:PAY-1', 'review:PAY-1', 'shadow:PAY-1', 'disposition:PAY-1', 'accept:PAY-1', 'resolve:PAY-1', 'merge:PAY-1', 'verify:PAY-1',
     'refresh+select:2',
+    'release-list:payments', 'release-check:payments:PAY-1',
   ])
   assert.equal(call(r, 'disposition:PAY-1').model, 'haiku')
   assert.equal(call(r, 'disposition:PAY-1').effort, 'low')
@@ -2814,13 +2831,128 @@ test('recovered disposition: the re-review is handed the first review\'s finding
 })
 
 // ---- RETRO-4: the release pull request has a door after a halted epic --------
+// ── the release check ────────────────────────────────────────────────────────
+// A ticket's checks pass before its own merge and nothing re-ran them after the
+// merges that came later or after the default branch was merged in. The run
+// ends by making that claim once, about the head the release will carry.
+
+const relList = (...ids) => ({ outcome: 'done', landed: ids, landedCount: ids.length, remoteHead: REL_HEAD, localHead: REL_HEAD })
+const relPass = { outcome: 'ran', head: REL_HEAD, dirty: '', total: 2, passed: 2, skipped: 0, problems: 0, compares: 0, allPassed: true, failures: [] }
+
+test('release check: every landed ticket is checked at the head, including ones an earlier run integrated, and the ledger rides in the result', async () => {
+  // PAY-0 was integrated by an earlier run; this run builds PAY-1 only.
+  const r = await drive(oneTicket({ 'release-list:payments': relList('PAY-0', 'PAY-1'), 'release-check:payments:PAY-0': relPass, 'release-check:payments:PAY-1': relPass }))
+  assert.equal(r.out.outcome, 'completed', JSON.stringify(r.out.haltedOn))
+  assert.deepEqual(r.labels.slice(-3), ['release-list:payments', 'release-check:payments:PAY-0', 'release-check:payments:PAY-1'])
+  assert.deepEqual(r.out.releaseCheck, { head: REL_HEAD, root: null, tickets: [{ id: 'PAY-0', total: 2, passed: 2, skipped: 0 }, { id: 'PAY-1', total: 2, passed: 2, skipped: 0 }] })
+  const p = r.calls.find(c => c.label === 'release-check:payments:PAY-1').prompt
+  assert.match(p, /git rev-parse HEAD\ngit status --porcelain --untracked-files=no\nnode "\/plugins\/flow\/scripts\/tickets\.mjs" check PAY-1 --json\n```/)
+  assert.match(p, new RegExp(`it must be \\\`${REL_HEAD}\\\``), 'the commit the release will carry, fetched by the list step — a branch name would not do')
+  assert.match(p, /In the working tree at \/repo — the main checkout/, 'a serial run built its tickets in the main checkout, so its dependencies are there')
+  assert.ok(!r.labels.some(l => l.startsWith('release-worktree')), 'and it makes no worktree')
+  assert.doesNotMatch(p, /--from/, 'criteria are the epic head\'s own document: a mid-epic re-plan counts, and check-epic shows what changed since sign-off')
+  assert.match(p, /never check out, reset or stash anything yourself/)
+  assert.match(r.calls.find(c => c.label === 'release-list:payments').prompt, /git fetch origin epic\/payments && git rev-parse origin\/epic\/payments && git rev-parse HEAD\nnode "[^"]+" check-epic payments --list\n```/)
+  assert.equal(r.calls.find(c => c.label === 'release-check:payments:PAY-1').model, 'haiku')
+  // The epic sits BEFORE the id so the meter, which files `<role>:<ID>` under that ticket, reads these as run overhead.
+  assert.ok(r.labels.filter(l => l.startsWith('release-')).every(l => !/^[^:]+:[A-Z][A-Z0-9]*-\d+/.test(l)))
+})
+
+test('release check: a landed ticket whose checks no longer pass halts the run with no release, names the ticket, and says how the halt clears', async () => {
+  const r = await drive((label) => {
+    if (label === 'refresh+select:1') return refreshed([])
+    if (label === 'release-list:payments') return relList('PAY-1', 'PAY-2')
+    if (label === 'release-check:payments:PAY-1') return { ...relPass, passed: 1, allPassed: false, failures: ['cat greeting.txt — output does not contain "hello"'] }
+    return undefined
+  })
+  assert.equal(r.out.outcome, 'halted')
+  assert.equal(r.out.haltedOn.ticket, 'PAY-1')
+  assert.match(r.out.haltedOn.stopCondition, /^a failed release check — every ticket is merged/)
+  assert.match(r.out.haltedOn.detail, /PAY-1 is merged.*read 1\/2.*something that landed after it, or the default branch the last refresh merged in.*does not contain "hello".*Nothing un-merges and no release pull request is opened.*add a ticket that fixes it to `epics\/payments\/tickets\.md` on `epic\/payments`.*re-run `\/flow:run payments`.*The default branch: fix it there first/s)
+  assert.ok(!r.labels.includes('release-check:payments:PAY-2'), 'it stops at the first failure: the human is coming anyway')
+  assert.match(r.out.finalRefresh, /^done:/, 'the refresh DID happen — a halt after it must not make the record say otherwise')
+  assert.deepEqual(r.out.releaseCheck, { head: REL_HEAD, root: null, tickets: [{ id: 'PAY-1', total: 2, passed: 1, skipped: 0 }] }, 'a failed ledger keeps the commit it is evidence about')
+  assert.doesNotMatch(r.out.haltedOn.detail, /worktrees/, 'a serial run is not told about worktrees')
+  // a skip is not a pass here either, and a verdict that disagrees with its counts is refused
+  const skip = await drive((label) => (label === 'refresh+select:1' ? refreshed([]) : label === 'release-list:payments' ? relList('PAY-1') : label === 'release-check:payments:PAY-1' ? { ...relPass, passed: 1, skipped: 1, allPassed: false } : undefined))
+  assert.match(skip.out.haltedOn.detail, /1\/2, 1 skipped/)
+  const liar = await drive((label) => (label === 'refresh+select:1' ? refreshed([]) : label === 'release-list:payments' ? relList('PAY-1') : label === 'release-check:payments:PAY-1' ? { ...relPass, passed: 1, allPassed: true } : undefined))
+  assert.match(liar.out.haltedOn.detail, /disagrees with its counts/)
+})
+
+test('release check: a list that does not add up, omits what this run integrated, or is empty is a contradiction — a dropped id is a ticket nobody checked', async () => {
+  const only = (list) => drive((label) => (label === 'refresh+select:1' ? refreshed([]) : label === 'release-list:payments' ? list : undefined))
+  const miscounted = await only({ outcome: 'done', landed: ['PAY-1'], landedCount: 2, remoteHead: REL_HEAD, localHead: REL_HEAD })
+  assert.match(miscounted.out.haltedOn.detail, /1 id\(s\) reported beside landedCount .*\b2\b/s)
+  assert.deepEqual(miscounted.labels, ['refresh+select:1', 'release-list:payments'])
+  assert.match((await only({ outcome: 'done', landed: ['PAY-1', 'PAY-1'], landedCount: 2, remoteHead: REL_HEAD, localHead: REL_HEAD })).out.haltedOn.detail, /does not add up/)
+  assert.match((await only({ outcome: 'done', landed: ['pay 1'], landedCount: 1, remoteHead: REL_HEAD, localHead: REL_HEAD })).out.haltedOn.detail, /does not add up/)
+  assert.match((await only(relList())).out.haltedOn.detail, /there is nothing here to release/)
+  assert.match((await only(null)).out.haltedOn.detail, /returned no report/)
+  assert.match((await only({ outcome: 'failed', detail: 'exit 2' })).out.haltedOn.detail, /could not say which tickets landed.*exit 2/s)
+  // this run integrated PAY-1 (the quiet single-ticket script), and the board's list leaves it out
+  const dropped = await drive((label) => (label === 'release-list:payments' ? relList('PAY-9') : oneTicket()(label)))
+  assert.equal(dropped.out.outcome, 'halted')
+  assert.match(dropped.out.haltedOn.detail, /this run integrated PAY-1 and the board's list of landed tickets does not carry it/)
+})
+
+test('release check: a check step that did not run, or a ledger that cannot be read, never reads as a pass; a halted loop never reaches it', async () => {
+  const one = (reply) => drive((label) => (label === 'refresh+select:1' ? refreshed([]) : label === 'release-list:payments' ? relList('PAY-1') : label === 'release-check:payments:PAY-1' ? reply : undefined))
+  assert.match((await one(null)).out.haltedOn.detail, /whether PAY-1 still holds at the release head is unknown/)
+  assert.match((await one({ outcome: 'command-failed', detail: 'HEAD is main' })).out.haltedOn.detail, /did not run.*HEAD is main/s)
+  assert.match((await one({ outcome: 'ran', head: REL_HEAD, dirty: '', total: 2 })).out.haltedOn.detail, /no usable ledger/)
+  assert.doesNotMatch((await one({ outcome: 'ran', head: REL_HEAD, dirty: '', total: 2 })).out.haltedOn.stopCondition, /release check/, 'nobody knows whether a check failed, so the halt does not say one did')
+  // the commit and the clean tree are judged in code, not only asked for in the prompt
+  const elsewhere = await one({ ...relPass, head: 'a'.repeat(40) })
+  assert.match(elsewhere.out.haltedOn.detail, /ran at .*a{40}.*the release will carry `f{40}` clean/s)
+  assert.match((await one({ ...relPass, head: undefined })).out.haltedOn.detail, /no commit reported/)
+  assert.match((await one({ ...relPass, dirty: ' M src/pay.ts' })).out.haltedOn.detail, /with uncommitted changes .*src\/pay\.ts/s)
+  assert.match((await one({ ...relPass, dirty: undefined })).out.haltedOn.detail, /without saying whether the tree was clean/, 'an unreported fact never satisfies the gate')
+  // the list is read from this checkout's document: if the remote moved past it, a ticket another session landed would go unchecked
+  const movedOn = await drive((label) => (label === 'refresh+select:1' ? refreshed([]) : label === 'release-list:payments' ? { ...relList('PAY-1'), remoteHead: 'b'.repeat(40) } : undefined))
+  assert.match(movedOn.out.haltedOn.detail, /`origin\/epic\/payments` is at `b{40}` and the main checkout is at .*f{40}.*re-run `\/flow:run payments`/s)
+  assert.deepEqual(movedOn.labels, ['refresh+select:1', 'release-list:payments'])
+  // and a list step that cannot say which commit the remote is at ends the check before it starts
+  const noHead = await drive((label) => (label === 'refresh+select:1' ? refreshed([]) : label === 'release-list:payments' ? { outcome: 'done', landed: ['PAY-1'], landedCount: 1 } : undefined))
+  assert.match(noHead.out.haltedOn.detail, /could not learn which commit `origin\/epic\/payments` is at/)
+  assert.equal((await one({ outcome: 'permission-prompt', detail: 'node' })).out.haltedOn.stopCondition.startsWith('a permission prompt'), true)
+  const halted = await drive(oneTicket({ 'worker:PAY-1': workerOk('PAY-1', { result: 'blocked', stopCondition: 'BLOCKED' }) }))
+  assert.equal(halted.out.outcome, 'halted')
+  assert.ok(!halted.labels.some(l => l.startsWith('release-')), 'a run that halted releases nothing, so it checks nothing')
+  assert.equal(halted.out.releaseCheck, null)
+})
+
+test('release check: after a parallel run the halt says to rule out the environment first', async () => {
+  const r = await drive((label) => {
+    if (label === 'release-check:payments:PAY-2') return { ...relPass, passed: 0, allPassed: false }
+    return waveReply([refreshed(['PAY-1', 'PAY-2']), refreshed([])])(label)
+  }, PAR(2))
+  assert.equal(r.out.haltedOn.ticket, 'PAY-2')
+  assert.match(r.out.haltedOn.detail, /it ran in the release check's own worktree, \/repo\/\.\.\/\.flow-worktrees\/repo\/payments\/release, set up from `epics\/worktree\.json` and left in place: look THERE, not in the main checkout/)
+  // A wave's tickets installed their dependencies in worktrees that are gone; checked in the main checkout,
+  // every parallel run whose tickets added one halted here, and halted again on the re-run.
+  const made = r.calls.find(c => c.label === 'release-worktree:payments').prompt
+  assert.match(made, new RegExp(`git worktree add --detach "/repo/\\.\\./\\.flow-worktrees/repo/payments/release" ${REL_HEAD}\nnode "[^"]+/scripts/worktree-setup\\.mjs" --repo "/repo" --worktree "[^"]+/release"\n`))
+  assert.match(r.calls.find(c => c.label === 'release-check:payments:PAY-1').prompt, /In the working tree at \/repo\/\.\.\/\.flow-worktrees\/repo\/payments\/release — the release check's own worktree/)
+  const clean = await drive(waveReply([refreshed(['PAY-1', 'PAY-2']), refreshed([])]), PAR(2))
+  assert.equal(clean.out.outcome, 'completed', JSON.stringify(clean.out.haltedOn))
+  // Left in place on a pass too: step 7's own check-epic runs THERE — in the main checkout the mandatory second check failed where this one passed.
+  assert.ok(!clean.labels.some(l => l.startsWith('release-worktree-remove')))
+  assert.equal(clean.out.releaseCheck.root, '/repo/../.flow-worktrees/repo/payments/release')
+  const setupFailed = await drive((label) => (label === 'release-worktree:payments' ? { outcome: 'failed', failedCommand: 'node worktree-setup.mjs', detail: 'FAILED at setup: npm ci' } : waveReply([refreshed(['PAY-1', 'PAY-2']), refreshed([])])(label)), PAR(2))
+  assert.match(setupFailed.out.haltedOn.detail, /FAILED at setup: npm ci.*repair `epics\/worktree\.json` on `epic\/payments` first/s)
+  assert.ok(!setupFailed.labels.some(l => l.startsWith('release-check:')), 'no check runs in a worktree nobody finished setting up')
+})
+
 // Every run of one live epic halted; its tickets were finished by hand, and the
 // release pull request was then opened by a session that had no route to step
 // 7's body. Re-running the run is that route, when the board admits it.
 
 test('nothing left to start: an epic whose tickets are all integrated completes with no worker, reviewer, disposition or merge agent hired', async () => {
   const r = await drive(label => (label === 'refresh+select:1' ? refreshed([]) : undefined))
-  assert.deepEqual(r.labels, ['refresh+select:1'])
+  // ...and the release check is the first thing such a run does: the tickets an
+  // earlier run (or a hand) integrated are checked at the head all the same.
+  assert.deepEqual(r.labels, ['refresh+select:1', 'release-list:payments', 'release-check:payments:PAY-0'])
   assert.equal(r.out.outcome, 'completed')
   assert.equal(r.out.haltedOn, null)
   assert.equal(r.out.totals.ticketsIntegrated, 0)

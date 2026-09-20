@@ -1392,6 +1392,83 @@ That is why serial-to-main stopped being the universal default: the record
 showed disciplined users stacking anyway (Q-10–Q-17), which was the rule
 mismeasuring their throughput needs, not the users misbehaving.
 
+## Why the run ends by checking what it is about to release
+
+Every gate the run had judged a ticket on its way in. A ticket's checks ran
+on its branch before its merge, and in a wave once more after each merge of
+that wave — and then never again. Nothing re-ran them after a later ticket
+merged, and nothing after the last refresh merged the default branch into the
+epic. So the release pull request's claim that every ticket was green was a
+claim about a dozen different commits, none of them the one the human was
+asked to merge. A second agent reviewing this plugin against HumanLayer's
+said so, and running the first cut of `check-epic` on this repository's own
+shipped `run-lane-hardening` epic found a check that no longer passed.
+
+The release check makes the claim once, about the right commit. It is
+deliberately small: the criteria already exist, the parser and the ledger
+already exist, and "run them again at the head" adds no document for anyone
+to keep true. The larger proposal — a requirement-to-evidence matrix, judged
+by an agent — was not taken: it is a second planning document, and an agent
+filling a table with prose is the narration the CHECK format exists to
+replace.
+
+A check is only evidence about the thing it ran against, and the first cut
+was loose about that in three ways a second model found. It compared branch
+names, and a remote-tracking ref can be stale, so "at the remote head" could
+be true of a commit nobody was releasing: the check now fetches, pins the
+remote's commit, and every step reports the commit it ran at. It read the
+working tree, so an uncommitted fix certified the pushed commit: a dirty tree
+is refused. And it ran in the main checkout, which after a parallel run has
+none of the dependencies the tickets installed in their worktrees — every
+successful wave run that added one would have halted here, and halted again
+on the re-run; a wave run now checks in a worktree of its own, set up the way
+each ticket's was, and the session's own check runs in the same one. The
+confirming pass then found the fixes patched rather than closed — a dirty
+tree asked about after the checks (which cannot tell a pre-existing edit from
+a file a check regenerated), a fetch the skill asked for and the command did
+not perform, sharing of command runs that could disagree with the per-ticket
+gate — and those were answered by moving each question to the one place it
+can be asked: before anything runs, inside the command, and by default.
+
+Two decisions carry reasons worth keeping. **Criteria come from the epic
+head, not from a pin at sign-off**: a human who re-plans a ticket mid-epic
+has changed the contract on purpose, and a pin would check the release
+against a document nobody holds any more. What the pin protected against — a
+later ticket loosening an earlier one's `EXPECT` — is *shown* instead, was
+and now, in the release body, because the script cannot tell a re-plan from
+a dodge and the person deciding the release can. And **the halt needs no
+addendum to clear**, unlike the post-merge halt: there, tickets read
+`integrated` while the epic is broken and a re-run could open the release;
+here the re-run *is* the check, so the state cannot be walked past.
+
+## Why the release pull request gets a page as well as a body
+
+A release epic moves the human gate to one pull request, which makes it the
+largest diff in the methodology and the only thing a human approves. Its body
+was already complete — every ticket, every review outcome, what is owed — and
+completeness was the problem: it is prose a session wrote at the end of a
+long run, in the order the run happened, and a reader deciding a merge wants
+a different order: is it safe to merge at all, does it still pass, then
+ticket by ticket. HumanLayer ships a walkthrough page with any large pull
+request for the same reason.
+
+The page is a **view**, and everything about it follows from that. Its data
+comes from one command (`tickets.mjs release`) that reads git, the status
+log and the run record, so nobody composes it and nothing in it can disagree
+with the record. It is never committed, because a committed view is a mirror
+someone must keep true — the failure this plugin exists to avoid. It does not
+replace the body, because GitHub is where the merge is decided and a link can
+rot. And it must never flatter: a release check that was not supplied, or was
+taken at another commit, is said in the place the ledger would be, because a
+page that drew an absent ledger as a green one would be worse than no page.
+
+Status entries are shown as written, not re-rendered: parsing their Markdown
+would be a second reading of the record, and the first is the one that was
+reviewed. What the page adds is order and folding — the fields a merge
+decision turns on are open, the rest are one click away — and stable anchors
+per ticket, which is where a comment layer can attach later without the page
+changing shape.
+
 ## Why a run goes wide in waves
 
 The pain was measured, not imagined: a three-ticket run held its lane for 39

@@ -54,6 +54,26 @@ test('a run that selected no ticket prints a total and a run time, and no group'
   assert.equal(timeLine(r), '**Time:** run=28s')
 })
 
+test('the release check is run overhead: it gives no ticket a group, and stretches no ticket\'s wall', () => {
+  // The driver spells these `release-check:<epic>:<ID>`, the epic before the
+  // id, because a `<role>:<ID>` label is filed under that ticket — and filed
+  // there, a release check run at the END of the run stretched RC-2's wall to
+  // the whole run and gave RC-1, which an earlier run built, a group in this
+  // run's lines. A re-run with nothing to start must still print no group.
+  const journal = jsonl([
+    started('refresh+select:1', 'a'), started('worker:RC-2', 'b'), started('merge:RC-2', 'c'),
+    started('refresh+select:2', 'd'), started('release-list:rc', 'e'), started('release-check:rc:RC-1', 'f'), started('release-check:rc:RC-2', 'g'),
+  ])
+  const spans = { a: [0, 10], b: [10, 1200], c: [1200, 1220], d: [1220, 1240], e: [1240, 1250], f: [1250, 3000], g: [3000, 5000] }
+  const r = meter(journal, (id) => transcript(...spans[id], usage(0, 10, 100), `msg_${id}`))
+  assert.match(timeLine(r), /RC-2 [^—]*wall=1220s/)
+  assert.doesNotMatch(timeLine(r), /RC-1/)
+  assert.doesNotMatch(tokensLine(r), /RC-1/)
+  assert.match(timeLine(r), /run=5000s/)
+  const idle = meter(jsonl([started('refresh+select:1', 'a'), started('release-list:rc', 'e'), started('release-check:rc:RC-1', 'f')]), (id) => transcript(...spans[id], usage(0, 10, 100), `msg_${id}`))
+  assert.doesNotMatch(timeLine(idle), /RC-1|wall=/, 'a run that selected no ticket still prints no group')
+})
+
 test('cache reads are left out of the token figure', () => {
   assert.equal(readTranscript(transcript(0, 1, usage(1, 1, 1, 5_000_000))).tokens, 3)
 })

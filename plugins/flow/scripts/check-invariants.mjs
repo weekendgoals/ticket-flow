@@ -438,6 +438,11 @@ const PHRASES = [
     files: ['run', 'workflow'],
   },
   {
+    why: "the release-check stop condition is one sentence in the skill and the script — the run's last gate, the only one that judges the assembled epic, and a halt the run record quotes verbatim; \"nothing un-merges, and no release pull request is opened\" is the half a paraphrase drops",
+    re: /a failed release check — every ticket is merged, the epic branch carries the default branch, and a landed ticket's acceptance CHECK no longer passes at that head; nothing un-merges, and no release pull request is opened on evidence that went stale/,
+    files: ['run', 'workflow'],
+  },
+  {
     why: "the post-merge stop condition is one sentence in the skill and the script — the only gate that checks a wave's declaration of independence, and like the budget halt it un-merges nothing, which both documents must say in the same words",
     re: /a failed acceptance CHECK after the merge — a ticket merged onto an epic branch that had moved since it branched, and its signed-off criteria no longer pass on the combination; the ticket stays merged and nothing further starts/,
     files: ['run', 'workflow'],

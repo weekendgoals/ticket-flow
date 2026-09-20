@@ -376,6 +376,46 @@ branch**. Then it refreshes and asks the board again. Three things follow:
   per-ticket figures come from the transcripts, which are per agent whatever
   ran beside them.
 
+**The run ends with the release check.** When the loop finds nothing left to
+start and nothing waiting, the script does not return `completed` yet. A
+ticket's `CHECK` criteria pass before *its* merge — and, in a wave, after
+each merge of that wave — and then never again: not after a later wave's
+merges, not after the last refresh merged the default branch in. So one
+step (`release-list:<epic>`) fetches the epic branch, reports **the commit
+the remote is at** — the one the pull request will carry, and another
+session may have pushed since the last refresh — and the commit the main
+checkout is at, which must be the same one (the list of landed tickets is
+read from this checkout's document, so if the remote moved past it a ticket
+another session landed would be released unchecked: the run halts and the
+re-run's refresh brings it in); then it asks the board which
+tickets have landed (`tickets.mjs check-epic <epic> --list`, the script's
+own count beside the list, refused when they disagree). Then each landed
+ticket's checks are re-run (`release-check:<epic>:<ID>` — the epic before
+the ID, so the run meter reads these as overhead and not as that ticket's
+work), one shell call per ticket, because a whole epic's suites in one call
+can outlive the ten minutes a proxy's shell allows and a command killed
+there loses its answer. Each reports the commit it ran at and whether the
+tree was clean, and the script compares both in code: checks that passed at
+another commit, or against uncommitted edits, are not evidence about this
+release. **Where they run depends on where the tickets were built.** A
+serial run built them in the main checkout, so its dependencies are there.
+A parallel run built them in worktrees that are gone by now, and the main
+checkout never saw what they installed — so a wave run makes one more
+worktree, at the release commit (`release-worktree:<epic>`), sets it up
+from `epics/worktree.json` exactly as each ticket's was, checks there, and
+**leaves it in place** — its path rides in the result as
+`releaseCheck.root` — because step 7's own `check-epic` needs the same
+environment, and in the main checkout that mandatory second check failed
+where this one had passed. Step 7 removes it. That covers tickets an earlier
+run or a hand integrated too. Criteria are read from the checkout — the epic
+head's own `tickets.md`, so a mid-epic re-plan counts; what differs from
+sign-off is shown to the human in step 7's body, where someone who can tell
+a re-plan from a dodge reads it. `COMPARE` criteria are not re-run (there is
+no browser), and step 7 says so. The ledger rides in the result as
+`releaseCheck` — `{head, root, tickets: [{id, total, passed, skipped}]}`,
+`root` being the release worktree's path after a parallel run and `null`
+after a serial one.
+
 `ticketBudget` is the **launch-time** value, and the only one of these the
 script does not keep: the ceiling is **re-read at every refresh** of the
 epic's signed-off document. Concretely, each ticket's **resolve step** — the
@@ -760,6 +800,24 @@ that resumes past one. The run halts:
   halt it un-merges nothing. The repair is forward: a ticket that fixes the
   combination on `epic/<name>`, and a `**Blocked by:**` line on the later of
   the two so the plan stops claiming what the run disproved;
+- on **a failed release check — every ticket is merged, the epic branch carries the default branch, and a landed ticket's acceptance CHECK no longer passes at that head; nothing un-merges, and no release pull request is opened on evidence that went stale** —
+  the run's last gate, and the only one that judges the thing being released
+  rather than a ticket on its way in. It names the ticket whose check broke,
+  which is rarely the ticket at fault: something that landed after it, or
+  the default branch, changed what it built. The repair is forward, and
+  "Resuming after a halt" shape 5 says where it goes — a ticket added to
+  this epic's `tickets.md`, or a fix on the default branch first — and
+  **re-running `/flow:run <epic>` is what clears it**: that run builds
+  whatever was added and then makes this check again. No addendum
+  is owed, unlike the post-merge halt, because nothing about the board is
+  misleading in the meantime: no release pull request exists. After a
+  parallel run the check ran in its own worktree
+  (`../.flow-worktrees/<repo>/<epic>/release`), which a halt leaves in place:
+  look there and not in the main checkout, and rule out the environment
+  first — a project with no `epics/worktree.json` gets a bare worktree, and
+  every check that needs a dependency fails there — and remove it
+  (`git worktree remove --force <path>`) before the re-run, which makes its
+  own and halts on a path that already exists;
 - on **a nonzero exit from any command the run issues as a step, except
   those this skill explicitly marks tolerated** — the one tolerated shape is
   a 404 or 403 from step 3's protection probes, which run in session before
@@ -983,6 +1041,13 @@ run that selected no ticket prints `**Time:** run=<n>s` and nothing else,
 which is a complete line and not a near-miss. Planning evidence, never a gate — no ticket halts on a
 duration.>
 
+**Release check:** <from the result's `releaseCheck`: the commit it was made
+at (`head`, shortened — kept when the check failed too) and each of its `tickets` as `<ID> <passed>/<total>`,
+in the order checked — "at 3f2a9c1: PAY-1 2/2, PAY-2 3/3" — or
+"not reached: the run halted" when it is `null`. When the run halted ON the
+release check, the list stops at the ticket that failed. No `worker=` or
+`wall=` group belongs on this line: `spend` reads those wherever they sit.>
+
 **Waves:** <**required whenever the run went wide, omitted otherwise** —
 the evidence a parallel run leaves nowhere else, gathered now, while the
 run's directory and worktrees still exist, because the retro's ninth question
@@ -1067,7 +1132,8 @@ On `outcome: "completed"` — the loop's last refresh already brought
 by an attended session, when every ticket is integrated and no run can reach
 this step.** That second door is not a courtesy. A run that halts never gets
 here; after the halted ticket is finished by hand, re-running `/flow:run
-<epic>` finds nothing left to start, completes with only the refresh hired,
+<epic>` finds nothing left to start, hires the refresh and then the release
+check (every landed ticket's checks at the epic head — it can halt there),
 and lands here with the whole body — **use that route whenever step 1 admits
 the board.** It does not always: an ABANDONED ticket reads `blocked` and step
 1 refuses the run until a human re-plans the document, which is exactly the
@@ -1105,6 +1171,62 @@ in this mode. It carries:
 - the release's size up front — `git diff --stat
   origin/<default-branch>...epic/<name>` — a release too large to review is
   a fact the human sees before approving;
+- **`## Release check`, pasted from the command, from both doors — and the
+  suites run once for it.** Run the check as JSON, save it, and print the
+  text from the saved file:
+
+  ```bash
+  node "${CLAUDE_PLUGIN_ROOT}/scripts/tickets.mjs" check-epic <epic> --json > <scratchpad>/check-<epic>.json; echo "exit $?"
+  node "${CLAUDE_PLUGIN_ROOT}/scripts/tickets.mjs" check-epic <epic> --render <scratchpad>/check-<epic>.json
+  ```
+
+  **Where: in the environment the tickets were built in.** After a serial
+  run, or by hand on a serial epic, that is the main checkout on
+  `epic/<name>`. After a parallel run it is the release worktree the script
+  left for you — **`cd` to the result's `releaseCheck.root` first** — because
+  the main checkout never saw what the tickets installed in their worktrees,
+  and the check that passed there fails here for want of a dependency. By
+  hand on an epic that declares `Parallel:` 2 or 3, make that worktree
+  yourself: `git fetch origin epic/<name> && git worktree add --detach
+  <path> origin/epic/<name>`, then `node
+  "${CLAUDE_PLUGIN_ROOT}/scripts/worktree-setup.mjs" --repo <main checkout>
+  --worktree <path>`. **Remove it when step 7 is done** (`git worktree remove
+  --force <path>`): a leftover halts the next run at the same path.
+
+  The command guards what it is evidence about, before it runs anything: it
+  **fetches** `origin/epic/<name>` itself and refuses a checkout that is
+  ahead of, behind or diverged from that head (saying which, because the
+  repair differs) or whose fetch failed; and it refuses **uncommitted
+  changes to tracked files**, running nothing — the checks read the working
+  tree, so an uncommitted fix would certify the pushed commit. It runs every
+  line of every ticket, exactly as the script's per-ticket steps did; add
+  `--share` only when every `CHECK` in the epic is a read-only probe (a test
+  suite several tickets name then runs once — and a probe that an
+  intervening command changes the answer to gets the stale answer, which is
+  why it is not the default). **Run it as a background command when the
+  epic's suites are long**: it is one invocation for the whole epic, your
+  shell tool kills a foreground command at ten minutes, and a killed run
+  leaves a file that cannot be rendered — wait for it, then read the exit
+  code it printed. The first command
+  is the run (and its exit code is the gate — the `;` is deliberate, so a
+  nonzero exit does not stop you reading it); the second runs nothing and
+  prints the ledger the body carries. The walkthrough below reads the same
+  file, so one run serves all three — after the script's own release check
+  that is already twice, and a third was minutes of suites for nothing.
+  After a completed run it repeats what the script's check passed, and adds
+  what that check does not report: **every ticket whose criteria differ from
+  sign-off, was and now** — a later ticket that loosened an earlier one's
+  `EXPECT` is green in every ledger and visible only here — every `COMPARE`
+  criterion, marked not re-verified at the release commit, and every ticket
+  sign-off knew whose section is gone from the document, which is on no
+  other list. **Open nothing on a nonzero exit, from either door** — render
+  the walkthrough anyway and **send it to the human as a file, never
+  published**: it shows what broke, and the output of a failed check is the
+  one thing on that page that was never committed anywhere — a `CHECK` that
+  prints an environment value when it fails has printed it there. By hand it is the gate itself — that door had no check of the
+  assembled epic at all. After a completed run it is the backstop: the
+  script's check reached you through shell proxies' reports, and this is
+  the one run of it you watched;
 - the run record summary, including which agent ran each ticket — and any
   ticket whose record carries `dispositionRecovered: true`, by name: it
   merged on what the branch showed and a re-review, not on a disposition's
@@ -1148,11 +1270,47 @@ in this mode. It carries:
   `/flow:quick`, never as a direct commit. Either way the line is theirs to
   write; you do not draft it for them.
 
+- **the walkthrough's link, right under the never-squash line** — the same
+  evidence laid out to be read, one section per ticket in the order they
+  were built. Render it on `epic/<name>` from the saved release check:
+
+  ```bash
+  node "${CLAUDE_PLUGIN_ROOT}/scripts/release-page.mjs" <epic> --check <scratchpad>/check-<epic>.json --out <scratchpad>/release-<epic>.html
+  ```
+
+  Publish it as an artifact and put the URL in the body (no artifact
+  surface: send the file, and say in the body that a walkthrough was sent).
+  **Render it twice, to the same file path, so the URL is one URL.** The
+  first render is before the pull request exists, because the body needs the
+  link. The second is **after step 6's run record is committed and pushed**:
+  that commit moves the head the pull request carries, and until then the
+  page's "last run record" is the previous run's — or says there was none.
+  Re-run the same command with the same saved check and republish: the
+  renderer asks git what changed since the check was taken, and when it is
+  only this epic's `runs.md` and `shadow-reviews.md` it keeps the ledger and
+  says exactly what it is — *passed at `<sha>`, one commit before this head* —
+  never "at head": a `CHECK` that reads git history or the epic's own records
+  could answer differently now, and if this epic has one, run the check
+  again instead. If anything else changed, it draws the
+  ledger as *not a check of this release*, and the honest repair is to run
+  the check again. **The page adds to the body and replaces none of it**:
+  GitHub is where the merge is decided, and a link can rot where the body
+  cannot. Neither the JSON nor the page is ever committed — it is a view of
+  git, the status log and the run record, and a committed view is a mirror
+  somebody has to keep true. **Publish only a page whose release check is
+  green.** A green page quotes what the pull request's readers can already
+  read in the repository — status entries, the run record, commit subjects —
+  and no check output at all; a failing one quotes failed checks' output
+  verbatim, which is where a secret can be, and it goes to the human as a
+  file (above). Read it before you publish it either way;
+
 `ticketRecords` indexes those facts; the committed status log and its
 addenda are what travel in this pull request, so where the two differ the
 log wins and the difference is worth a line in the body.
 
-Then append the run record (step 6), print the pull request URL, and stop.
+Then append the run record (step 6), render and republish the walkthrough
+once more (above — the head just moved), print the pull request URL and the
+walkthrough's, and stop.
 **You do not merge it, approve it, or comment on it. No agent does.** The
 human gate moved here, and everything this run did was structured to keep
 this one click trustworthy.
@@ -1175,13 +1333,14 @@ it is a new ticket in `tickets.md` (or `/flow:quick`), not a commit on the epic
 branch.
 
 **When the last ticket is integrated, the release pull request is opened by
-re-running `/flow:run <epic>`**: with nothing left to start the run completes
-with only the refresh hired and goes straight to step 7 — body, owed list,
+re-running `/flow:run <epic>`**: with nothing left to start the run hires the
+refresh, makes the release check (it can halt there — shape 5), and then
+goes to step 7 — body, owed list,
 unticketed commits and the addendum request included. When step 1 refuses the
 board (a `blocked` ticket, which is how an ABANDONED one reads), an attended
 session opens it by hand, following step 7 section for section.
 
-Four shapes are possible, and for the first three the halted ticket's **status entry** — the
+Five shapes are possible, and for the first three the halted ticket's **status entry** — the
 thing the board reads — is what tells them apart. Read them off the board,
 not off the halt's narrative: the worker writes its entry and pushes its
 branch (steps 1–6 and step 9) *before* the driver hires a reviewer, so most
@@ -1305,7 +1464,27 @@ run start, and without it step 1 refuses for ever:
   — <what it repairs>`, commit and push, remove the worktree and its ref, and
   re-run — the fix ticket is simply the next ticket.
 
-**Never `resumeFromRunId`, in any of the four.** The Workflow runtime replays
+**5. Everything reads `integrated`, and the run halted on the release check**
+— *a failed release check*, serial and parallel runs alike. It looks like
+shape 4 on the board and is not recovered like it: **no addendum is owed**,
+because no release pull request exists and none can be opened past this
+halt — the re-run makes the same check again before it reports `completed`.
+The halt names the ticket whose check broke, which is rarely the ticket at
+fault. **After a parallel run the check ran in the release worktree the halt
+names, left in place: diagnose there, not in the main checkout, and remove
+it (`git worktree remove --force <path>`) before the re-run**, which makes
+its own and halts on a path that already exists. Find what broke it
+(`tickets.mjs check <ID>` on `epic/<name>`, or in that worktree, then
+`git log` since that ticket's merge) and repair forward, in the place it
+broke: **something in this epic** — add a ticket that fixes it to
+`epics/<name>/tickets.md` on `epic/<name>`, push, and re-run `/flow:run
+<epic>`, which builds that ticket and then checks again; **the default
+branch** — fix it there first, where it is broken too (`/flow:quick`, merged
+by a human), and the re-run's refresh brings the fix in. A `/flow:quick`
+ticket cannot repair the first kind: it branches from the default branch,
+and the broken code is not there yet.
+
+**Never `resumeFromRunId`, in any of the five.** The Workflow runtime replays
 every unchanged `agent()` call from the run's prefix cache, live-running only
 from the first edited call onward — and a run halts precisely because
 something *outside* the script changed: the plugin, the environment, the

@@ -33,6 +33,7 @@ jobs:
           node --check plugins/flow/scripts/meter.mjs
           node --check plugins/flow/scripts/merge-append.mjs
           node --check plugins/flow/scripts/worktree-setup.mjs
+          node --check plugins/flow/scripts/release-page.mjs
           node --check plugins/flow/hooks/ticket-session-guard.mjs
       - name: parse run-epic.mjs the way the workflow runtime does
         run: |
@@ -48,6 +49,7 @@ jobs:
           node --test plugins/flow/scripts/meter.test.mjs
           node --test plugins/flow/scripts/merge-append.test.mjs
           node --test plugins/flow/scripts/worktree-setup.test.mjs
+          node --test plugins/flow/scripts/release-page.test.mjs
           node --test plugins/flow/workflows/run-epic.test.mjs
           node --test plugins/flow/scripts/runners/codex.test.mjs
           node --test plugins/flow/scripts/runners/codex-review.test.mjs
