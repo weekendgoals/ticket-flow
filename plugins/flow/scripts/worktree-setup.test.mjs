@@ -5,7 +5,7 @@
 
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { after, test } from 'node:test'
@@ -120,6 +120,63 @@ test('a copy that names a directory, or that the filesystem refuses, fails with 
   assert.equal(r.code, 1, r.err)
   assert.match(r.out, /FAILED at copy blocked\.env\n\w+: /)
   assert.equal(r.err, '')
+})
+
+test('a symbolic link is never read from and never written through', () => {
+  const outside = join(base, 'outside-secret')
+  writeFileSync(outside, 'OUTSIDE=1\n')
+  // the source is a link out of the checkout
+  const src = project('symlink-source', { config: { copy: ['.env'] }, files: {} })
+  symlinkSync(outside, join(src.repo, '.env'))
+  const a = cli(...src.args)
+  assert.equal(a.code, 1)
+  assert.match(a.out, /is a symbolic link/)
+  assert.ok(!existsSync(join(src.worktree, '.env')))
+  // a directory on the way is a link out of the checkout
+  const dirLink = project('symlink-dir', { config: { copy: ['local/.env'] }, gitignore: 'local\n.env\n', files: {} })
+  mkdirSync(join(base, 'elsewhere'), { recursive: true })
+  writeFileSync(join(base, 'elsewhere/.env'), 'ELSEWHERE=1\n')
+  symlinkSync(join(base, 'elsewhere'), join(dirLink.repo, 'local'))
+  assert.equal(cli(...dirLink.args).code, 1)
+  // the destination is a link left in the worktree (a re-run after a halt)
+  const dst = project('symlink-dest', { config: { copy: ['.env'] } })
+  const target = join(base, 'overwritten')
+  writeFileSync(target, 'KEEP\n')
+  symlinkSync(target, join(dst.worktree, '.env'))
+  const b = cli(...dst.args)
+  assert.equal(b.code, 1)
+  assert.match(b.out, /the copy would be written to its target/)
+  assert.equal(readFileSync(target, 'utf8'), 'KEEP\n')
+})
+
+test('a later copy that un-ignores an earlier one fails the setup and removes what git would now stage', () => {
+  // local/.gitignore, copied second, carries `!.env` — each copy passed its own check when it was made
+  const p = project('unignore', {
+    config: { copy: ['local/.env', 'local/.gitignore'] },
+    gitignore: '.env\nlocal/.gitignore\n',
+    files: { 'local/.env': 'SECRET=1\n', 'local/.gitignore': '!.env\n' },
+  })
+  const r = cli(...p.args)
+  assert.equal(r.code, 1, r.out)
+  assert.match(r.out, /git no longer ignores local\/\.env in the worktree/)
+  assert.ok(!existsSync(join(p.worktree, 'local/.env')), 'removed: left in place it is one `git add -A` from a commit')
+  git(p.worktree, 'add', '-A')
+  assert.doesNotMatch(git(p.worktree, 'status', '--porcelain'), /\.env$/m)
+  // and a setup command that rewrites the rules is caught the same way
+  const s = project('unignore-setup', { config: { copy: ['.env'], setup: ["echo '!.env' >> .gitignore"] } })
+  const out = cli(...s.args)
+  assert.equal(out.code, 1)
+  assert.match(out.out, /re-checked after setup/)
+  assert.ok(!existsSync(join(s.worktree, '.env')))
+})
+
+test('the budget is one clock: copies are inside it too', () => {
+  const p = project('copy-budget', { config: { copy: ['.env'], setup: ['echo ran > marker'] } })
+  const r = cli(...p.args, '--budget-ms', '1')
+  assert.equal(r.code, 1)
+  // one millisecond is spent before the first copy or during it — either way it is a FAILED line, never exit 0
+  assert.match(r.out, /FAILED at (copy \.env|setup: echo ran > marker)\n/)
+  assert.ok(!existsSync(join(p.worktree, 'marker')))
 })
 
 test('the setup has a budget that ends before the shell call around it does, and says so', () => {

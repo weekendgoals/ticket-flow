@@ -66,7 +66,7 @@ Stop and report too if:
   on. Both are fixed in `tickets.md`, committed and pushed to `epic/<name>`,
   before the run — the doctor row names the line. Refused here, in session,
   because the script has no way to run doctor;
-- **the epic declares `Parallel:` and the project's `epics/worktree.json`
+- **the epic declares `Parallel:` 2 or 3 and the project's `epics/worktree.json`
   will not read, or would fail on this machine** — `git fetch origin
   epic/<name>` first (this check reads the pushed branch, and step 2's fetch
   has not run yet), then ask whether the branch carries the file, `git
@@ -83,7 +83,9 @@ Stop and report too if:
   the first check, an absent file reaches the validator as empty input and is
   refused as malformed JSON — a refusal of the one state that is fine.) Unchecked, the malformed file halts every ticket of the first wave
   at its worktree step, one launch too late. An absent file is not a refusal:
-  the worktrees are bare and the workers are told so;
+  the worktrees are bare and the workers are told so. Nor is `Parallel: 1`
+  or no line at all — that run makes no worktree, never reads the file, and
+  must not be refused over it;
 - **a declaration line of this epic will not parse** — the same doctor run
   carries a row for `epics/<name>/tickets.md` saying a line "looks like a
   declaration line but will not parse, so it silently defaults". `Parallel:

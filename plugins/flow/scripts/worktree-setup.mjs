@@ -23,7 +23,12 @@
 // A file git does not ignore is never copied. The files worth copying are
 // secrets, and an untracked, un-ignored `.env` in a worktree is one `git add
 // -A` from a commit on the ticket's branch — so the refusal is here, at the
-// door the copy walks through, and not a sentence in a worker's prompt.
+// door the copy walks through, and not a sentence in a worker's prompt. The
+// question is asked again after the last copy and after the last setup command
+// (a later copy can be a nested .gitignore that un-ignores an earlier one), and
+// a file git would now stage is removed before the failure is reported. A
+// symbolic link is never read from and never written through: containment is
+// asked of the filesystem, not of the path's spelling.
 //
 // Exit: 0 when everything listed was applied, or when there is no
 // `epics/worktree.json` at all (a project that declares nothing gets the
@@ -36,7 +41,7 @@
 // Zero dependencies, no configuration beyond that file, stores nothing.
 
 import { spawnSync } from 'node:child_process'
-import { copyFileSync, existsSync, mkdirSync, readFileSync, statSync } from 'node:fs'
+import { copyFileSync, existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, rmSync, statSync } from 'node:fs'
 import { dirname, isAbsolute, join, normalize, resolve, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
@@ -81,6 +86,18 @@ export function validateConfig(config, label = CONFIG) {
   return { copy: copy.map((p) => normalize(p)), setup }
 }
 
+// Containment is asked of the FILESYSTEM, not of the path's spelling: a `.env`
+// that is a symlink to a file outside the checkout passes every lexical check
+// and is read from wherever it points, and an ignored symlink left in the
+// worktree redirects the write the same way.
+const inside = (root, p) => {
+  const r = realpathSync(root)
+  const q = realpathSync(p)
+  return q === r || q.startsWith(r + sep)
+}
+
+const ignoredIn = (worktree, rel, timeout) => spawnSync('git', ['-C', worktree, 'check-ignore', '-q', '--', rel], { encoding: 'utf8', timeout }).status === 0
+
 const tail = (text, n = 20) => String(text || '').trimEnd().split('\n').slice(-n).join('\n')
 
 // The whole setup has one clock, and it ends before the caller's does: the
@@ -105,35 +122,55 @@ export function apply({ repo, worktree, log = () => {}, budgetMs = BUDGET_MS }) 
   const copied = []
   const ran = []
 
+  const fail = (step, detail) => ({ configured: true, copied, ran, failure: { step, detail } })
+  // A copy that was safe when it was made can stop being safe: a later `copy`
+  // entry may be a nested .gitignore that un-ignores an earlier one, and a
+  // setup command may rewrite ignore rules. So what was copied is asked about
+  // again at the end, and a file git would now stage is REMOVED before the
+  // failure is reported — left in place it is exactly the secret one `git add
+  // -A` from a commit that the first check exists to prevent.
+  const recheck = (when) => {
+    const exposed = copied.filter((rel) => !ignoredIn(worktree, rel))
+    if (!exposed.length) return null
+    for (const rel of exposed) rmSync(join(worktree, rel), { force: true })
+    return fail(`copy (re-checked ${when})`, `git no longer ignores ${exposed.join(', ')} in the worktree — something ${when === 'after the copies' ? 'copied after it' : 'a setup command did'} changed the ignore rules. Removed from the worktree; fix ${CONFIG} on the epic branch.`)
+  }
+
   for (const rel of copy) {
     const from = join(repo, rel)
     const to = join(worktree, rel)
+    // The budget is one clock for the whole script, copies included.
+    const left = deadline - Date.now()
+    if (left <= 0) return fail(`copy ${rel}`, `never started: the setup's ${budgetMs / 1000}-second budget was spent before it.`)
     if (!existsSync(from) || !statSync(from).isFile()) {
-      return { configured: true, copied, ran, failure: { step: `copy ${rel}`, detail: `${from} is not a file in the main checkout. ${CONFIG} lists what every worktree needs; a file that is optional on this machine does not belong in it.` } }
+      return fail(`copy ${rel}`, `${from} is not a file in the main checkout. ${CONFIG} lists what every worktree needs; a file that is optional on this machine does not belong in it.`)
+    }
+    if (lstatSync(from).isSymbolicLink() || !inside(repo, from)) {
+      return fail(`copy ${rel}`, `${from} is a symbolic link, or is reached through one that leaves the checkout — it would be read from wherever it points. List the real file.`)
     }
     // Asked of the WORKTREE's git, because that is the tree a worker will run
     // `git add` in. Exit 0 is "ignored"; anything else — not ignored, tracked,
     // or git failing — is a refusal, since only one answer makes the copy safe.
-    const ignored = spawnSync('git', ['-C', worktree, 'check-ignore', '-q', '--', rel], { encoding: 'utf8' })
-    if (ignored.status !== 0) {
-      return {
-        configured: true,
-        copied,
-        ran,
-        failure: { step: `copy ${rel}`, detail: `git does not ignore ${rel} in the worktree, so a copy of it would be one \`git add -A\` from a commit on the ticket's branch. Add it to .gitignore on the epic branch, or take it out of ${CONFIG}.` },
-      }
+    if (!ignoredIn(worktree, rel, left)) {
+      return fail(`copy ${rel}`, `git does not ignore ${rel} in the worktree, so a copy of it would be one \`git add -A\` from a commit on the ticket's branch. Add it to .gitignore on the epic branch, or take it out of ${CONFIG}.`)
     }
     // A filesystem error is a failed copy like any other — exit 1 with a
     // `FAILED at` line the proxy is told to relay, not a stack on stderr.
     try {
       mkdirSync(dirname(to), { recursive: true })
+      if (!inside(worktree, dirname(to))) return fail(`copy ${rel}`, `${dirname(to)} resolves outside the worktree (a symbolic link on the way) — nothing is written through it.`)
+      // A leftover symlink at the destination (a re-run after a halt) would
+      // send the write to its target.
+      if (lstatSync(to, { throwIfNoEntry: false })?.isSymbolicLink()) return fail(`copy ${rel}`, `${to} is a symbolic link in the worktree — the copy would be written to its target. Remove it.`)
       copyFileSync(from, to)
     } catch (e) {
-      return { configured: true, copied, ran, failure: { step: `copy ${rel}`, detail: `${e.code || 'error'}: ${e.message}` } }
+      return fail(`copy ${rel}`, `${e.code || 'error'}: ${e.message}`)
     }
     copied.push(rel)
     log(`copied ${rel}`)
   }
+  const afterCopies = recheck('after the copies')
+  if (afterCopies) return afterCopies
 
   for (const command of setup) {
     const left = deadline - Date.now()
@@ -166,6 +203,8 @@ export function apply({ repo, worktree, log = () => {}, budgetMs = BUDGET_MS }) 
     }
     ran.push(command)
   }
+  const afterSetup = setup.length ? recheck('after setup') : null
+  if (afterSetup) return afterSetup
   return { configured: true, copied, ran, failure: null }
 }
 

@@ -1056,6 +1056,14 @@ test('compared does not count a field nobody filled in', () => {
   assert.equal(JSON.parse(run(dir, 'compared', 'V-2', '--json')).compared, 1, 'the table follows on the next lines')
   const v3 = JSON.parse(run(dir, 'compared', 'V-3', '--json'))
   assert.equal(v3.compared, 0, 'a label closed by the end of the file')
+  // an empty fenced block is a container with nothing in it; a table inside a fence counts
+  const fenced =
+    '# Vision epic — status log\n\n' +
+    '### V-1 — the landing page — 2026-09-10 — DONE\n\n**Compared:**\n\n```\n```\n\n**Owed:** Nothing.\n\n' +
+    '### V-2 — the results list — 2026-09-12 — DONE\n\n**Compared:**\n\n```\nno differences — 6 landmarks compared\n```\n\n**Owed:** Nothing.\n'
+  const fdir = visionRepo('compared-fenced', fenced)
+  assert.equal(JSON.parse(run(fdir, 'compared', 'V-1', '--json')).compared, 0)
+  assert.equal(JSON.parse(run(fdir, 'compared', 'V-2', '--json')).compared, 1)
   assert.deepEqual(v3.empty.map((e) => e.empty), [true])
 })
 

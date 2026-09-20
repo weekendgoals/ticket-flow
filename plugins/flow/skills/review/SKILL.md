@@ -117,7 +117,9 @@ and you are the only fresh context that can check it.**
   opens with a `compared as …` note, read its source, width and landmarks
   against the ticket's `COMPARE` and `LANDMARKS` lines first: a `--source`
   copied from another line reads this one's missing landmarks as drawn
-  elsewhere, and **a table asked the wrong question is Important**), never
+  elsewhere, and **a table asked the wrong question is Important** — as is one
+  whose notes say `no --removed-from was given`, which read no removals and
+  no scope at all), never
   from the working tree's copy, which is the file this ticket edits. **A table
   the re-run contradicts is Important.**
 - **Otherwise, audit the table against the design source's own markup and say

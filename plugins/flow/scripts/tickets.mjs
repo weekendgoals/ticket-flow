@@ -2606,6 +2606,10 @@ function comparedIn(text, id) {
     let body = rest
     for (let j = i + 1; !body && j < lines.length; j++) {
       if (/^#{1,6}\s/.test(lines[j]) || ENTRY_FIELD.test(lines[j])) break
+      // A fence marker is a container, not content: an empty fenced block
+      // under the label is still a field nobody filled in. A table INSIDE a
+      // fence counts on its first line.
+      if (/^\s*(```|~~~)/.test(lines[j])) continue
       body = lines[j].trim()
     }
     found.push({ line: i + 1, text: rest, empty: !body })

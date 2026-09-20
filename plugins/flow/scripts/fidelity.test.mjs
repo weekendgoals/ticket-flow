@@ -437,11 +437,22 @@ test('a scoped run says what it was asked, so a --source from the wrong COMPARE 
   assert.doesNotMatch(cli('diff', g.design, g.page, '--map', g.map, '--removed-from', g.signed).out, /compared as/)
 })
 
-test('--source without --removed-from is refused: scope would be read from nowhere', () => {
+test('a run that drops --removed-from cannot drop the scope with it', () => {
+  // Codex's finding: the worker picks the command line, and removing two flags
+  // turned a failing `unmatched` row back into a note with no provenance.
   const f = scoped()
-  const r = cli('diff', f.design, f.page, '--map', f.map, '--source', 'designs/city.html')
+  const both = cli('diff', f.design, f.page, '--map', f.map, '--landmarks', 'hero,ghost')
+  assert.equal(both.code, 2)
+  assert.match(both.err, /the --map file scopes landmarks .* no --removed-from was given/)
+  // with the scope stripped from --map as well, --source alone is still refused...
+  const stripped = tmp('design-map.json', { landmarks: [{ name: 'hero', design: '#hero', page: '.masthead' }, { name: 'ghost', design: '#ghost', page: '#ghost' }] })
+  const r = cli('diff', f.design, f.page, '--map', stripped, '--source', 'designs/city.html')
   assert.equal(r.code, 2)
   assert.match(r.err, /--source needs --removed-from/)
+  // ...and with every flag gone the table itself says what it is not
+  const bare = cli('diff', f.design, f.page, '--map', stripped)
+  assert.equal(bare.code, 0, 'the differ cannot know a signed-off map exists')
+  assert.match(bare.out, /note: no --removed-from was given: removals and landmark scope were read from nowhere/)
 })
 
 test('a landmark both declared removed and scoped is the honoured removal; width-only scope needs no --source', () => {
@@ -566,7 +577,10 @@ test('a diff far larger than the pipe buffer arrives whole', () => {
   assert.equal(r.code, 1)
   const table = cli('diff', d, p, '--map', m)
   assert.ok(table.out.length > 65536, `the table came through at only ${table.out.length} bytes`)
-  assert.match(table.out.trimEnd().split('\n').pop(), /1800 differences — 600 landmarks compared/, 'the last line printed is the last line received')
+  // the run passes no --removed-from, so the last line is the note that says so — after the summary
+  const tailLines = table.out.trimEnd().split('\n').slice(-2)
+  assert.match(tailLines[0], /1800 differences — 600 landmarks compared/)
+  assert.match(tailLines[1], /^note: no --removed-from was given/, 'the last line printed is the last line received')
 })
 
 // The same flush rule on the other stream. A refusal that names thousands of

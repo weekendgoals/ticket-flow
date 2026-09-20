@@ -469,6 +469,13 @@ export function run(argv) {
   // Scope lives in the signed-off map, so `--source` without it is a question
   // nothing can answer — and answered silently it was the old pass with a new
   // flag on it.
+  // The same silence the other way round: a --map that carries scope, run
+  // with no signed-off map, would have every scoped landmark read as unscoped
+  // — drop two flags and the missing element is a note again. --map's own
+  // scope is never HONOURED, but it is evidence that a signed-off one exists.
+  if (!signed && map.landmarks.some((l) => l.source || l.widths)) {
+    throw new UsageError('the --map file scopes landmarks (source/widths) and no --removed-from was given — scope is read from the signed-off map only, so this run would ignore all of it. Pass --removed-from <the signed-off map> and --source.')
+  }
   if (flags['--source'] && !signed) throw new UsageError('--source needs --removed-from <the signed-off map>: where a landmark is drawn is read from that file, never from --map')
 
   let only = null
@@ -575,6 +582,11 @@ export function run(argv) {
   // **Compared:** — the reports carry no source, so a `--source` copied from
   // the wrong COMPARE line reads every landmark of the right one as "drawn
   // elsewhere", and only the reader holding the ticket's lines can see it.
+  // And a run with no signed-off map at all says so in the same place: the
+  // ticket skill calls --removed-from "not optional", and a table produced
+  // without it read no removals and no scope — which a reader can only know if
+  // the table tells them.
+  if (!signed) result.notes.unshift('no --removed-from was given: removals and landmark scope were read from nowhere — this table is not the comparison the ticket skill asks for')
   if (scope.size) {
     result.asked = { source: source || null, width, landmarks: only }
     result.notes.unshift(`compared as ${source ? `source ${source}` : 'no source'}${width != null ? ` at ${width}` : ''}, ${only ? `landmarks ${only.join(', ')}` : 'every landmark in the map'} — check it against the ticket's COMPARE and LANDMARKS lines`)

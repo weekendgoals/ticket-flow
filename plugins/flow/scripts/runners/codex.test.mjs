@@ -182,6 +182,10 @@ test('a good run: the runner branches, Codex edits the tree, the runner commits 
   assert.ok(p.startsWith('A driver spawned you for this one ticket.'))
   assert.match(p, new RegExp(`READ FIRST, IN FULL: ${PLUGIN}/skills/ticket/SKILL.md`))
   assert.match(p, /GIT IS NOT YOURS/)
+  // An ordinary checkout is a serial run, and a serial run's prompt is the one
+  // it always was: the worktree paragraph exists only in a linked worktree
+  // whose branch carries epics/worktree.json.
+  assert.doesNotMatch(p, /FRESH WORKTREE|worktree\.json/)
   assert.match(p, /already created and checked out `r-1` from `epic\/rho`/)
   assert.match(p, /do NOT run `git checkout`, `git add`, `git commit` or `git push`/)
   assert.match(p, /DO NOT run step 7 \(review\), step 8 \(fix and addendum\) or step 10/)

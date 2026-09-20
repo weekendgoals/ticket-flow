@@ -12,6 +12,23 @@ heading here. `check-invariants.mjs` holds both.
 
 ## Unreleased
 
+- **A read-only Codex pass over this batch found seven things five Claude
+  rounds had not, all taken.** In `worktree-setup.mjs`: a symbolic link is
+  never read from or written through (containment is asked of the
+  filesystem, not the path's spelling); every copied file is asked about
+  again after the last copy and after the last setup command, and one git
+  would now stage is removed before the failure is reported (a later `copy`
+  entry can be a nested `.gitignore` that un-ignores an earlier one); the
+  budget covers the copies too. In `fidelity.mjs`: a `--map` that carries
+  scope run without `--removed-from` is refused — dropping two flags turned a
+  failing row back into a note — and any run without a signed-off map says
+  so in a note the review skill treats as Important. In `tickets.mjs
+  compared`: an empty fenced block is still an empty field. The run skill's
+  worktree preflight applies to `Parallel:` 2 or 3 only, never to a serial
+  epic. And the Codex worker's worktree paragraph is added only in a linked
+  worktree whose branch carries the file: unconditional, it changed every
+  serial run's prompt and told a worker with vendored packages it could
+  install nothing.
 - **`epics/worktree.json` — a project says what a fresh worktree needs, and a
   parallel run applies it** (new `scripts/worktree-setup.mjs` and its suite;
   `workflows/run-epic.mjs`'s `worktree:<ID>` step runs it after the ref is

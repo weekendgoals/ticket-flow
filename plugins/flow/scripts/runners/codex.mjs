@@ -189,6 +189,19 @@ const WORKER_SCHEMA = {
 }
 
 // ---- the prompt -------------------------------------------------------------
+// One paragraph exists only where it is true: a parallel run's worktree (a
+// linked worktree, where \`.git\` is a file) whose branch carries the project's
+// worktree setup. Everywhere else — every serial run — the prompt is the one it
+// was, word for word; an unconditional paragraph changed all of them, and told
+// a worker with vendored wheels it could install nothing.
+let worktreeNote = ''
+try {
+  if (statSync(join(repoRoot, '.git')).isFile() && existsSync(join(repoRoot, 'epics/worktree.json'))) {
+    worktreeNote =
+      "THIS IS A PARALLEL RUN'S FRESH WORKTREE, ALREADY SET UP. Before starting you, the run applied the project's `epics/worktree.json` — its `copy` files are here and its `setup` commands (the dependency install) have run — so read that file to know what you have. You have no network: what is not here and cannot be had offline makes its criterion owed, in those words; never passed, and never worked around.\n\n"
+  }
+} catch {}
+
 // The driver's Claude-worker prompt, adapted for a runner that cannot load a
 // plugin skill by name and a sandbox that has no network.
 const prompt = `A driver spawned you for this one ticket. You are the implementing worker for ticket ${id} of the \`${epic}\` epic, running under the Ticket Flow methodology. You are working from documents, not from any conversation.
@@ -199,9 +212,7 @@ RUN: steps 1–6 — resolve (\`node "${pluginRoot}/scripts/tickets.mjs" find ${
 
 GIT IS NOT YOURS. Your sandbox keeps \`.git\` read-only and has no network, so every git write the skill names is done by the runner, not by you: the runner already ran \`git fetch origin --prune\` and already created and checked out \`${branch}\` from \`${epicBranch}\` — you are on it now — and after you finish it commits everything you left in the working tree under a \`${id}: …\` subject and pushes \`${branch}\`, observing the result itself. So: skip step 3's branch commands, do NOT run \`git checkout\`, \`git add\`, \`git commit\` or \`git push\` (they will fail), skip every fetch, pull and \`gh\` command, and open no pull request — a release ticket has none of its own. Reading git (\`git log\`, \`git diff\`, \`git status\`, \`git show\`) is fine. Stay inside the ticket's scope: the runner commits the whole tree, so anything you touch outside scope ships.
 
-DEPENDENCIES ARE WHAT IS ALREADY HERE. With no network you can install nothing. When this checkout is a parallel run's fresh worktree, and the branch carries an \`epics/worktree.json\`, the run applied it before starting you — its \`copy\` files are here and its \`setup\` commands (the dependency install) have run — so read that file, if there is one, to know what you have. A criterion whose verification needs something that is not here is recorded as owed, in those words; never as passed, and never worked around.
-
-DO NOT run step 7 (review), step 8 (fix and addendum) or step 10 (the gate and the merge). The driver hires the reviewer once your branch is pushed, gates on its findings, and merges. You do not review your own work, you do not merge, and you spawn no agents — the party under review never picks its judge.
+${worktreeNote}DO NOT run step 7 (review), step 8 (fix and addendum) or step 10 (the gate and the merge). The driver hires the reviewer once your branch is pushed, gates on its findings, and merges. You do not review your own work, you do not merge, and you spawn no agents — the party under review never picks its judge.
 
 REPORT THE REVIEW TIER for your own diff, from the ticket skill's step 7 table: \`prose\` (documentation and code comments only — nothing any runtime, parser, test or agent reads), \`consequence\` (the risk list: authentication or authorization boundaries, secrets, crypto, network exposure, migrations, anything that deletes or rewrites data, payments or billing, anything that can fail open), or \`normal\` (everything else, including configuration, user-facing strings, CLI output and agent/skill instructions). One line of why. When in doubt, the higher tier — the driver floors the tier in code from your branch's changed files, so your report can raise the review's price but never lower it.
 

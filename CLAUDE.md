@@ -53,7 +53,7 @@ go through the flow, one-off work goes through `/flow:quick` into
   merge step wires it, because the driver it replaced (git's own `union`) was
   also obviously right and corrupted every merge it touched; one test keeps
   that failure on record. Needs `git` and nothing else. The worktree setup has
-  `node --test plugins/flow/scripts/worktree-setup.test.mjs` (`# pass 12`) —
+  `node --test plugins/flow/scripts/worktree-setup.test.mjs` (`# pass 15`) —
   real git again, real linked worktrees in throwaway directories, because the
   refusal that matters asks git a question (`check-ignore`, where `.git` is a
   file). Needs `git`, POSIX `sh` and `sleep` (the budget case). And the run driver has
@@ -143,7 +143,10 @@ test file path explicitly.
   worktree — the epic branch as committed — never from the main checkout's
   working tree, and refuses to copy a file `git check-ignore` does not call
   ignored: the files worth copying are secrets, and a wave worker commits
-  with `git add`. Do not move that refusal into a prompt, and do not make a
+  with `git add`. It asks again after the last copy and the last setup
+  command (a later copy can un-ignore an earlier one) and removes what git
+  would now stage; it never reads from or writes through a symbolic link.
+  Do not move that refusal into a prompt, and do not make a
   partial setup exit 0 — the worker would verify against something nobody
   chose. No file means no change, and the step exists only under
   `Parallel:`, so a serial run stays the old run, prompt for prompt.
