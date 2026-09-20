@@ -7,7 +7,7 @@
 
 import { test, after } from 'node:test'
 import assert from 'node:assert/strict'
-import { execFileSync } from 'node:child_process'
+import { execFileSync, spawnSync } from 'node:child_process'
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync, realpathSync, readFileSync, chmodSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { tmpdir } from 'node:os'
@@ -139,6 +139,7 @@ Consequence paths: src/auth/**, migrations/** — the risk list as globs.
 Fix bounds exclude: src/messages/*.json — translation fan-outs never count toward fix bounds.
 
 Ticket budget: 250000 — the run halts after any ticket spending past this.
+Parallel: 2 — two independent tickets side by side, never more.
 
 ## G-1 — expand the schema
 
@@ -1768,8 +1769,8 @@ test('the Delivery line parses tolerantly and exposes in find and list', () => {
   assert.equal(a.delivery, 'incremental')
 
   const data = JSON.parse(run(repo, 'list', '--json'))
-  assert.deepEqual(data.modes.gamma, { delivery: 'release', reviewerModel: 'opus', workerModel: 'sonnet', workerRunner: 'codex', shadowReviewer: 'codex', plannerModel: 'fable', consequencePaths: ['src/auth/**', 'migrations/**'], fixBoundsExclude: ['src/messages/*.json'], designSources: null, ticketBudget: 250000 })
-  assert.deepEqual(data.modes.alpha, { delivery: 'incremental', reviewerModel: null, workerModel: null, workerRunner: null, shadowReviewer: null, plannerModel: null, consequencePaths: null, fixBoundsExclude: null, designSources: null, ticketBudget: null })
+  assert.deepEqual(data.modes.gamma, { delivery: 'release', reviewerModel: 'opus', workerModel: 'sonnet', workerRunner: 'codex', shadowReviewer: 'codex', plannerModel: 'fable', consequencePaths: ['src/auth/**', 'migrations/**'], fixBoundsExclude: ['src/messages/*.json'], designSources: null, ticketBudget: 250000, parallel: 2 })
+  assert.deepEqual(data.modes.alpha, { delivery: 'incremental', reviewerModel: null, workerModel: null, workerRunner: null, shadowReviewer: null, plannerModel: null, consequencePaths: null, fixBoundsExclude: null, designSources: null, ticketBudget: null, parallel: null })
 })
 
 test('a Worker model line pins the implementer; absent, workers inherit the session', () => {
@@ -1798,7 +1799,7 @@ test('an unrecognised or near-miss Delivery line warns instead of silently defau
     assert.equal(data.modes.misdeclared.delivery, 'continuous', 'the raw value is exposed, not coerced')
     assert.deepEqual(
       data.modes['fancy-delivery'],
-      { delivery: 'incremental', reviewerModel: null, workerModel: null, workerRunner: null, shadowReviewer: null, plannerModel: null, consequencePaths: null, fixBoundsExclude: null, designSources: null, ticketBudget: null },
+      { delivery: 'incremental', reviewerModel: null, workerModel: null, workerRunner: null, shadowReviewer: null, plannerModel: null, consequencePaths: null, fixBoundsExclude: null, designSources: null, ticketBudget: null, parallel: null },
       'a formatted Delivery line reads as absent, so the default applies',
     )
     const rows = JSON.parse(run(repo, 'doctor', '--json'))
@@ -1825,7 +1826,7 @@ test('the retired two-line syntax is flagged, not silently ignored', () => {
     const data = JSON.parse(run(repo, 'list', '--json'))
     assert.deepEqual(
       data.modes.oldstyle,
-      { delivery: 'incremental', reviewerModel: null, workerModel: null, workerRunner: null, shadowReviewer: null, plannerModel: null, consequencePaths: null, fixBoundsExclude: null, designSources: null, ticketBudget: null },
+      { delivery: 'incremental', reviewerModel: null, workerModel: null, workerRunner: null, shadowReviewer: null, plannerModel: null, consequencePaths: null, fixBoundsExclude: null, designSources: null, ticketBudget: null, parallel: null },
       'the dead labels parse as nothing; the delivery default applies',
     )
     const rows = JSON.parse(run(repo, 'doctor', '--json'))
@@ -2089,7 +2090,7 @@ test('an epic with no declaration lines defaults to incremental delivery', () =>
   writeFileSync(join(repo, 'epics/delta/tickets.md'), '# Delta\n\n## D-1 — bare epic\n\n**Scope.** Bare.\n')
   try {
     const data = JSON.parse(run(repo, 'list', '--json'))
-    assert.deepEqual(data.modes.delta, { delivery: 'incremental', reviewerModel: null, workerModel: null, workerRunner: null, shadowReviewer: null, plannerModel: null, consequencePaths: null, fixBoundsExclude: null, designSources: null, ticketBudget: null })
+    assert.deepEqual(data.modes.delta, { delivery: 'incremental', reviewerModel: null, workerModel: null, workerRunner: null, shadowReviewer: null, plannerModel: null, consequencePaths: null, fixBoundsExclude: null, designSources: null, ticketBudget: null, parallel: null })
   } finally {
     rmSync(join(repo, 'epics/delta'), { recursive: true, force: true })
   }
@@ -2103,7 +2104,7 @@ test('the Delivery line parses case-insensitively', () => {
   )
   try {
     const data = JSON.parse(run(repo, 'list', '--json'))
-    assert.deepEqual(data.modes.shout, { delivery: 'release', reviewerModel: null, workerModel: null, workerRunner: null, shadowReviewer: null, plannerModel: null, consequencePaths: null, fixBoundsExclude: null, designSources: null, ticketBudget: null })
+    assert.deepEqual(data.modes.shout, { delivery: 'release', reviewerModel: null, workerModel: null, workerRunner: null, shadowReviewer: null, plannerModel: null, consequencePaths: null, fixBoundsExclude: null, designSources: null, ticketBudget: null, parallel: null })
   } finally {
     rmSync(join(repo, 'epics/shout'), { recursive: true, force: true })
   }
@@ -2128,7 +2129,7 @@ test('a value-less label line reads as absent, never the next paragraph\'s first
     const data = JSON.parse(run(repo, 'list', '--json'))
     assert.deepEqual(
       data.modes.bare,
-      { delivery: 'incremental', reviewerModel: null, workerModel: null, workerRunner: null, shadowReviewer: null, plannerModel: null, consequencePaths: null, fixBoundsExclude: null, designSources: null, ticketBudget: null },
+      { delivery: 'incremental', reviewerModel: null, workerModel: null, workerRunner: null, shadowReviewer: null, plannerModel: null, consequencePaths: null, fixBoundsExclude: null, designSources: null, ticketBudget: null, parallel: null },
       'a value-less label must read as absent (incremental default / null), never scavenge prose',
     )
     // And doctor's near-miss wording is true of these lines: they will not
@@ -3945,4 +3946,279 @@ test('time: the scan-cap note prints for an untimed ticket even when no commit s
   assert.match(run(dir, 'spend', 'city'), /Commit spans scanned only the last 4000 commits/)
   // …and an uncapped repo says nothing of the kind.
   assert.doesNotMatch(run(roundsRepo('uncapped', `${CITY14}**Tokens:** unknown\n`), 'spend', 'city'), /scanned only/)
+})
+
+// ── parallel tickets, stage 1: `**Blocked by:**` and the waiting state ───────
+// The plan's statement about order. What these pin is the strictness that the
+// first dependency graph lacked: a line that is about blocking and will not
+// parse is a named problem — the ticket waits, the board says why, doctor
+// names the line, and `next` refuses rather than report an epic as built.
+const depsRepo = (name, sections, landed = [], preamble = 'Delivery: incremental') => {
+  const dir = join(tmp, `deps-${name}`)
+  git(tmp, 'init', '--initial-branch=main', dir)
+  identified(dir)
+  mkdirSync(join(dir, 'epics/dep'), { recursive: true })
+  writeFileSync(join(dir, 'epics/dep/tickets.md'), `# Dep\n\n${preamble}\n\n${sections}`)
+  git(dir, 'add', '.')
+  git(dir, 'commit', '-m', 'dep: the plan')
+  for (const id of landed) git(dir, 'commit', '--allow-empty', '-m', `${id}: landed`)
+  // Shipped is read off the REMOTE default branch, so the fixture has one.
+  git(tmp, 'init', '--bare', '--initial-branch=main', `${dir}.git`)
+  git(dir, 'remote', 'add', 'origin', `${dir}.git`)
+  git(dir, 'push', '-u', 'origin', 'main')
+  return dir
+}
+const sec = (id, blockedBy) => `## ${id} — ticket ${id}\n\n**Scope.** Work.\n\n${blockedBy === undefined ? '' : `${blockedBy}\n\n`}`
+const depBoard = (dir) => Object.fromEntries(JSON.parse(run(dir, 'list', 'dep', '--json')).tickets.map((t) => [t.id, t]))
+const depWarns = (dir) => doctorWarns(dir, /wait for ever|comes? later in the document|"Parallel:/)
+
+test('blocked by: an unlanded blocker makes a ticket wait, next leaves it out, and landing the blocker frees it', () => {
+  const plan = sec('DEP-1') + sec('DEP-2', '**Blocked by:** DEP-1') + sec('DEP-3') + sec('DEP-4', '**Blocked by:** DEP-1, DEP-3')
+  const before = depsRepo('wait', plan)
+  const b = depBoard(before)
+  assert.deepEqual([b['DEP-1'].state, b['DEP-2'].state, b['DEP-3'].state, b['DEP-4'].state], ['todo', 'waiting', 'todo', 'waiting'])
+  assert.deepEqual(b['DEP-4'].blockedBy, ['DEP-1', 'DEP-3'])
+  assert.deepEqual(b['DEP-4'].waitingOn, ['DEP-1', 'DEP-3'])
+  assert.deepEqual(JSON.parse(run(before, 'next', 'dep', '--json')).map((t) => t.id), ['DEP-1', 'DEP-3'], 'the ready set, in document order')
+  assert.match(run(before, 'list', 'dep'), /DEP-2 .*waiting on DEP-1/)
+  const after = depBoard(depsRepo('freed', plan, ['DEP-1']))
+  assert.deepEqual([after['DEP-1'].state, after['DEP-2'].state, after['DEP-4'].state], ['shipped', 'todo', 'waiting'])
+  assert.deepEqual(after['DEP-4'].waitingOn, ['DEP-3'], 'only what has not landed')
+  assert.deepEqual(depWarns(before), [], 'a well-formed plan draws no dependency warn')
+})
+
+test('blocked by: find reports the wait at the door a lane checks before it branches', () => {
+  const dir = depsRepo('find', sec('DEP-1') + sec('DEP-2', '**Blocked by:** DEP-1'), [], 'Delivery: release\n\nParallel: 3')
+  const f = JSON.parse(run(dir, 'find', 'DEP-2', '--json'))
+  assert.equal(f.state, 'waiting')
+  assert.deepEqual([f.blockedBy, f.waitingOn, f.dependencyProblem, f.parallel], [['DEP-1'], ['DEP-1'], null, 3])
+})
+
+test('blocked by: a line that will not parse is a named problem, never a guess — the ticket waits, doctor names the line, prose elsewhere is left alone', () => {
+  const shapes = {
+    prose: '**Blocked by:** DEP-1 once its API settles',
+    unbold: 'Blocked by: DEP-1',
+    hyphen: '**Blocked-by:** DEP-1',
+    and: '**Blocked by:** DEP-1 and DEP-3',
+  }
+  for (const [name, line] of Object.entries(shapes)) {
+    const dir = depsRepo(`near-${name}`, sec('DEP-1') + sec('DEP-2', line) + sec('DEP-3'))
+    const t = depBoard(dir)['DEP-2']
+    assert.equal(t.state, 'waiting', name)
+    assert.match(t.dependencyProblem, /will not parse/, name)
+    const warns = depWarns(dir)
+    assert.equal(warns.length, 1, name)
+    assert.match(warns[0].msg, /tickets\.md:13 — DEP-2 will wait for ever: a Blocked by line that will not parse/, name)
+  }
+  const prose = depsRepo('near-not', sec('DEP-1') + sec('DEP-2', 'This ticket is not blocked by anything, and nothing depends on it.'))
+  assert.equal(depBoard(prose)['DEP-2'].state, 'todo', 'a sentence that mentions blocking does not OPEN with the label')
+  assert.deepEqual(depWarns(prose), [])
+})
+
+test('blocked by: the removed graph\'s "Depends on" spelling is inert — an old document reads as it did — and is mentioned only under Parallel', () => {
+  // The shapes a live installed epic carries on unstarted tickets.
+  const old = sec('DEP-1', '**Depends on:** nothing · **Blocks:** DEP-2') + sec('DEP-2', '**Depends on:** DEP-1') + sec('DEP-3', '**Depends on:** nothing')
+  const serial = depsRepo('depends-serial', old)
+  assert.deepEqual(Object.values(depBoard(serial)).map((t) => [t.state, t.dependencyProblem]), [['todo', null], ['todo', null], ['todo', null]])
+  assert.deepEqual(JSON.parse(run(serial, 'next', 'dep', '--json')).map((t) => t.id), ['DEP-1', 'DEP-2', 'DEP-3'])
+  assert.deepEqual(doctorWarns(serial, /Depends on/), [])
+  const parallel = depsRepo('depends-parallel', old, [], 'Delivery: release\n\nParallel: 2')
+  assert.equal(depBoard(parallel)['DEP-2'].state, 'todo', 'still inert: doctor speaks, the board does not change')
+  const warns = doctorWarns(parallel, /Depends on/)
+  assert.equal(warns.length, 1, '"nothing" is a statement of independence; only the real dependency is named')
+  assert.match(warns[0].msg, /tickets\.md:17 — DEP-2 carries a "Depends on" line \(DEP-1\), which nothing reads/)
+})
+
+test('blocked by: an unknown ID, a self-reference and a cycle each wait for ever and say so; a later blocker only draws a note', () => {
+  const unknown = depsRepo('unknown', sec('DEP-1') + sec('DEP-2', '**Blocked by:** OTHER-7'))
+  assert.match(depBoard(unknown)['DEP-2'].dependencyProblem, /OTHER-7 is not a ticket of this epic/)
+  const self = depsRepo('self', sec('DEP-1', '**Blocked by:** DEP-1'))
+  assert.match(depBoard(self)['DEP-1'].dependencyProblem, /blocked by itself/)
+  const cycle = depsRepo('cycle', sec('DEP-1', '**Blocked by:** DEP-3') + sec('DEP-2', '**Blocked by:** DEP-1') + sec('DEP-3', '**Blocked by:** DEP-2') + sec('DEP-4'))
+  const c = depBoard(cycle)
+  for (const id of ['DEP-1', 'DEP-2', 'DEP-3']) assert.match(c[id].dependencyProblem, /dependency cycle: .*→/, id)
+  assert.equal(c['DEP-4'].state, 'todo', 'a ticket off the cycle is untouched')
+  assert.equal(depWarns(cycle).filter((w) => /cycle/.test(w.msg)).length, 3)
+  const later = depsRepo('later', sec('DEP-1', '**Blocked by:** DEP-2') + sec('DEP-2'))
+  assert.equal(depBoard(later)['DEP-1'].dependencyProblem, null)
+  assert.equal(depBoard(later)['DEP-1'].state, 'waiting', 'it is a real wait, and DEP-2 can start')
+  assert.match(depWarns(later)[0].msg, /DEP-1 is blocked by DEP-2, which comes later in the document/)
+})
+
+test('blocked by: next refuses out loud when tickets wait and none can start — an empty list would read as "the epic is built"', () => {
+  const stuck = depsRepo('stuck', sec('DEP-1') + sec('DEP-2', '**Blocked by:** DEP-9'), ['DEP-1'])
+  for (const flags of [['--json'], []]) {
+    const r = runFail(stuck, 'next', 'dep', ...flags)
+    assert.equal(r.status, 1)
+    assert.equal(r.stdout, '', 'nothing on stdout a driver could read as an empty board')
+    assert.match(r.stderr, /nothing can start, and 1 ticket is still waiting/)
+    assert.match(r.stderr, /DEP-2 cannot start: DEP-9 is not a ticket of this epic/)
+  }
+  assert.match(run(stuck, 'list', 'dep'), /Nothing can start — 1 ticket waiting/)
+  // …and a finished epic still says so, with exit 0.
+  const built = depsRepo('built', sec('DEP-1') + sec('DEP-2', '**Blocked by:** DEP-1'), ['DEP-1', 'DEP-2'])
+  assert.deepEqual(JSON.parse(run(built, 'next', 'dep', '--json')), [])
+})
+
+test('blocked by: work on a waiting ticket is reported as work — only an unstarted ticket waits', () => {
+  const dir = depsRepo('started', sec('DEP-1') + sec('DEP-2', '**Blocked by:** DEP-1'))
+  git(dir, 'checkout', '-b', 'dep-2')
+  git(dir, 'commit', '--allow-empty', '-m', 'DEP-2: started early')
+  git(dir, 'checkout', 'main')
+  const t = depBoard(dir)['DEP-2']
+  assert.equal(t.state, 'in-progress')
+  assert.deepEqual(t.waitingOn, ['DEP-1'], 'the wait is still reported; the state is the work')
+})
+
+test('Parallel: 1–3 parse, anything else reads as absent and is flagged, and the line is inert on an incremental epic', () => {
+  const modes = (dir) => JSON.parse(run(dir, 'list', 'dep', '--json')).modes.dep
+  assert.equal(modes(depsRepo('par-3', sec('DEP-1'), [], 'Delivery: release\n\nParallel: 3 — the ceiling')).parallel, 3)
+  assert.equal(modes(depsRepo('par-1', sec('DEP-1'), [], 'Delivery: release\n\nParallel: 1')).parallel, 1)
+  for (const bad of ['Parallel: 4', 'Parallel: 0', 'Parallel: many', 'Parallel: 2x']) {
+    const dir = depsRepo(`par-${bad.replace(/\W+/g, '')}`, sec('DEP-1'), [], `Delivery: release\n\n${bad}`)
+    assert.equal(modes(dir).parallel, null, bad)
+    assert.equal(doctorWarns(dir, /looks like a declaration line but will not parse/).length, 1, bad)
+  }
+  const prose = depsRepo('par-prose', sec('DEP-1'), [], 'Delivery: release\n\nParallel work is what this epic is about.')
+  assert.deepEqual(doctorWarns(prose, /looks like a declaration line/), [], 'a sentence opening with the word is not the label')
+  assert.equal(depWarns(depsRepo('par-inc', sec('DEP-1'), [], 'Delivery: incremental\n\nParallel: 2')).length, 1)
+})
+
+// ── parallel tickets, stage 1: what the first review found ───────────────────
+test('blocked by: prose that merely begins with the words is prose — a wrapped sentence, a bullet, an indented line stall nothing', () => {
+  const prose = [
+    '**Scope.**\n- The import is delayed because it is\nblocked by the vendor API, which ships in Q3.',
+    '**Not in scope.**\n- Blocked by: nothing. The vendor API is out of scope here.',
+  ]
+  prose.forEach((body, i) => {
+    const dir = depsRepo(`prose-${i}`, sec('DEP-1') + sec('DEP-2', body))
+    const t = depBoard(dir)['DEP-2']
+    assert.deepEqual([t.state, t.blockedBy, t.dependencyProblem], ['todo', [], null], body)
+    assert.deepEqual(depWarns(dir), [], body)
+  })
+})
+
+test('blocked by: "nothing" in a planner\'s words, and the template\'s own placeholder, read as no line at all', () => {
+  for (const line of ['**Blocked by:** nothing', '**Blocked by:** none.', '**Blocked by:** n/a', '**Blocked by:** —', 'Blocked by: nothing', '**Blocked by:** <ID>[, <ID>]']) {
+    const dir = depsRepo(`nothing-${line.replace(/\W+/g, '') || 'empty'}-${line.length}`, sec('DEP-1') + sec('DEP-2', line))
+    const t = depBoard(dir)['DEP-2']
+    assert.deepEqual([t.state, t.dependencyProblem], ['todo', null], line)
+    assert.deepEqual(depWarns(dir), [], line)
+  }
+  // …and a word that is NOT one of them is still a problem — as is an EMPTY
+  // label, which is an interrupted edit and not a statement of independence.
+  for (const line of ['**Blocked by:**', 'Blocked by:'])
+    assert.match(depBoard(depsRepo(`empty-${line.length}`, sec('DEP-1') + sec('DEP-2', line)))['DEP-2'].dependencyProblem, /will not parse/, line)
+  assert.match(depBoard(depsRepo('nothing-not', sec('DEP-1') + sec('DEP-2', '**Blocked by:** nothing yet')))['DEP-2'].dependencyProblem, /will not parse/)
+})
+
+test('blocked by: a fenced block is a quotation, repeated IDs are one, and doctor points at the malformed line when a ticket has both', () => {
+  const fenced = depsRepo('fenced', sec('DEP-1') + sec('DEP-2', 'The format:\n\n```markdown\n**Blocked by:** DEP-1\n**Blocked by:** DEP-1 once it settles\n```'))
+  assert.deepEqual([depBoard(fenced)['DEP-2'].state, depBoard(fenced)['DEP-2'].blockedBy], ['todo', []])
+  assert.deepEqual(depWarns(fenced), [])
+  const twice = depsRepo('twice', sec('DEP-1') + sec('DEP-2', '**Blocked by:** DEP-1, DEP-1\n\n**Blocked by:** DEP-1'))
+  assert.deepEqual(depBoard(twice)['DEP-2'].blockedBy, ['DEP-1'])
+  const both = depsRepo('both', sec('DEP-1') + sec('DEP-2', '**Blocked by:** DEP-1\n\n**Blocked by:** DEP-1 once the API settles'))
+  assert.match(depWarns(both)[0].msg, /tickets\.md:15 — DEP-2 will wait for ever/, 'line 13 is the good line; 15 is the one to fix')
+})
+
+test('blocked by: doctor finds a mid-line "Depends on" field under Parallel, and leaves a landed ticket\'s alone', () => {
+  // The shape the live security epic writes: one field among several.
+  const field = (dep) => `**Closes:** F2 · **Severity:** Medium (was Critical before DEP-1) · **Depends on:** ${dep}`
+  const plan = sec('DEP-1', field('nothing')) + sec('DEP-2', field('DEP-1 ✅')) + sec('DEP-3', field('DEP-1 ✅'))
+  const dir = depsRepo('midline', plan, ['DEP-1', 'DEP-2'], 'Delivery: incremental\n\nParallel: 2')
+  const warns = doctorWarns(dir, /Depends on/)
+  assert.equal(warns.length, 1, 'DEP-1 says nothing, DEP-2 has landed, DEP-3 is the one a parallel run could start early')
+  assert.match(warns[0].msg, /DEP-3 carries a "Depends on" line \(DEP-1\)/)
+})
+
+test('next with no epic names a stuck epic without hiding it or failing for it; brief says do not start', () => {
+  const dir = depsRepo('two-epics', sec('DEP-1') + sec('DEP-2', '**Blocked by:** DEP-9'), ['DEP-1'])
+  mkdirSync(join(dir, 'epics/free'), { recursive: true })
+  writeFileSync(join(dir, 'epics/free/tickets.md'), '# Free\n\n## FR-1 — free\n\n**Scope.** Work.\n')
+  const all = sh(dir, process.execPath, [SCRIPT, 'next', '--json'])
+  assert.deepEqual(JSON.parse(all).map((t) => t.id), ['FR-1'])
+  const r = spawnSync(process.execPath, [SCRIPT, 'next', '--json'], { cwd: dir, encoding: 'utf8', env: ENV })
+  assert.equal(r.status, 0, 'another epic can start, so the board-wide question succeeds')
+  assert.match(r.stderr, /dep has tickets waiting and none that can start:\n {2}DEP-2 cannot start/)
+  assert.equal(runFail(dir, 'next', 'dep', '--json').status, 1, 'asked about the stuck epic itself, it refuses')
+  assert.match(run(dir, 'brief', 'DEP-2'), /DEP-2 cannot start: DEP-9 is not a ticket of this epic.* — do not start it/)
+})
+
+// ── parallel tickets, stage 1: what the second review found ──────────────────
+const unreadWarns = (dir) => doctorWarns(dir, /looks like a Blocked by line, and nothing reads it/)
+
+test('blocked by: a dependency stated off the margin changes no state and is never silent — and reads the same wherever it sits', () => {
+  const shapes = ['- **Blocked by:** DEP-1', '1. **Blocked by:** DEP-1', '> **Blocked by:** DEP-1', '__Blocked by:__ DEP-1', '*Blocked by:* DEP-1', '  **Blocked by:** DEP-1', '  Blocked by: DEP-1 — quoted from an old plan']
+  shapes.forEach((line, i) => {
+    // First in the section, and below Scope: one spelling, one reading.
+    // `first` is built by hand: `sec()` always opens with **Scope.**, and the
+    // case that broke was a line that is the section's VERY first — where a
+    // whole-body trim ate its indent and made it a real dependency.
+    const sections = { first: `## DEP-2 — ticket DEP-2\n\n${line}\n\n**Scope.** Work.\n\n`, below: sec('DEP-2', line) }
+    for (const [where, section] of Object.entries(sections)) {
+      const dir = depsRepo(`unread-${i}-${where}`, sec('DEP-1') + section, [], 'Delivery: release\n\nParallel: 2')
+      const t = depBoard(dir)['DEP-2']
+      assert.deepEqual([t.state, t.blockedBy, t.dependencyProblem], ['todo', [], null], `${line} (${where})`)
+      const warns = unreadWarns(dir)
+      assert.equal(warns.length, 1, `${line} (${where})`)
+      assert.match(warns[0].msg, /DEP-2 may be started beside the work this line names/, line)
+    }
+  })
+  // The strict line, and prose naming no ticket, draw nothing.
+  assert.deepEqual(unreadWarns(depsRepo('unread-strict', sec('DEP-1') + sec('DEP-2', '**Blocked by:** DEP-1'))), [])
+  assert.deepEqual(unreadWarns(depsRepo('unread-prose', sec('DEP-1') + sec('DEP-2', '- Blocked by: nothing. The vendor API is out of scope here.'))), [])
+})
+
+test('blocked by: doctor skips a closed fence when it picks the line, and says so when a fence that never closes swallows a real one', () => {
+  const closed = depsRepo('fence-closed', sec('DEP-1') + sec('DEP-2', '```markdown\n**Blocked by:** DEP-1 once it settles\n```\n\n**Blocked by:** DEP-1 and DEP-3'))
+  assert.match(depWarns(closed)[0].msg, /tickets\.md:17 — DEP-2 will wait for ever/, 'line 13 is the quoted example; 17 is the one to fix')
+  const open = depsRepo('fence-open', sec('DEP-1') + sec('DEP-2', '```bash\nnpm test\n\n**Blocked by:** DEP-1'))
+  assert.deepEqual(depBoard(open)['DEP-2'].blockedBy, [], 'the parser sees a fence')
+  assert.match(unreadWarns(open)[0].msg, /tickets\.md:16 .*after a code fence that never closes/)
+})
+
+test('blocked by: the Depends on mention is for a FIELD outside a fence, never the phrase in a sentence', () => {
+  const plan = sec('DEP-1') + sec('DEP-2', '- The review asked why this ticket **Depends on:** DEP-1 at all, so record it.\n\n```markdown\n**Depends on:** DEP-1\n```') + sec('DEP-3', '**Severity:** High · **Depends on:** DEP-1')
+  const warns = doctorWarns(depsRepo('depends-field', plan, [], 'Delivery: release\n\nParallel: 2'), /Depends on/)
+  assert.deepEqual(warns.map((w) => w.msg.match(/(DEP-\d) carries/)[1]), ['DEP-3'])
+})
+
+test('next with no epic does not announce a healthy epic as stuck because one of its tickets waits', () => {
+  const dir = depsRepo('healthy', sec('DEP-1') + sec('DEP-2', '**Blocked by:** DEP-1'))
+  const r = spawnSync(process.execPath, [SCRIPT, 'next', '--json'], { cwd: dir, encoding: 'utf8', env: ENV })
+  assert.deepEqual([r.status, r.stderr], [0, ''])
+  assert.deepEqual(JSON.parse(r.stdout).map((t) => t.id), ['DEP-1'])
+})
+
+// ── parallel tickets, stage 2: the driver's form of `next` ───────────────────
+test('next --with-waiting hands the driver both lists as data and exits 0 — even when nothing can start', () => {
+  const stuck = depsRepo('ww-stuck', sec('DEP-1') + sec('DEP-2', '**Blocked by:** DEP-9') + sec('DEP-3', '**Blocked by:** DEP-1'), ['DEP-1'])
+  const r = spawnSync(process.execPath, [SCRIPT, 'next', 'dep', '--with-waiting'], { cwd: stuck, encoding: 'utf8', env: ENV })
+  assert.equal(r.status, 0, 'the refusal is the driver’s to make, in code')
+  const out = JSON.parse(r.stdout)
+  assert.deepEqual(out.ready.map((t) => t.id), ['DEP-3'])
+  assert.deepEqual([out.readyCount, out.waitingCount], [1, 1], 'the counts the driver cross-checks the relayed lists against')
+  assert.deepEqual(out.waiting.map((t) => [t.id, t.on, /DEP-9 is not a ticket/.test(t.problem), /^DEP-2 cannot start/.test(t.reason)]), [['DEP-2', ['DEP-9'], true, true]])
+  // The plain form still refuses for everyone else once only the stuck one is left.
+  const only = depsRepo('ww-only', sec('DEP-1') + sec('DEP-2', '**Blocked by:** DEP-9'), ['DEP-1'])
+  assert.equal(runFail(only, 'next', 'dep', '--json').status, 1)
+  const o = JSON.parse(run(only, 'next', 'dep', '--with-waiting'))
+  assert.deepEqual([o.ready, o.waiting.length], [[], 1])
+})
+
+// ── parallel tickets: the log's own rule is the tripwire for a bad merge ─────
+test('doctor: in a Parallel epic an entry with no Owed line, or two, is flagged as what a bad log merge looks like — and older logs are left alone', () => {
+  const e = (id, owed) => `### ${id} — ticket ${id} — 2026-09-20 — DONE\n\n**Built:** it.\n\n${owed}\n\n`
+  // What git's union driver actually produced in review: A's Owed line under B's heading.
+  const corrupted = `# Dep epic — status log\n\n${e('DEP-1', '**Verified:** 3 passing.')}${e('DEP-2', '**Owed:** DEP-3 inherits the migration.\n**Owed:** Nothing.')}${e('DEP-3', '**Owed:** Nothing.')}`
+  const mk = (name, preamble) => {
+    const dir = depsRepo(name, sec('DEP-1') + sec('DEP-2') + sec('DEP-3'), [], preamble)
+    writeFileSync(join(dir, 'epics/dep/status.md'), corrupted)
+    return dir
+  }
+  const warns = doctorWarns(mk('owed-parallel', 'Delivery: release\n\nParallel: 2'), /\*\*Owed:\*\* line/)
+  assert.deepEqual(warns.map((w) => w.msg.match(/status\.md:(\d+) — (DEP-\d)'s entry has (\w+) /).slice(1)), [['3', 'DEP-1', 'no'], ['9', 'DEP-2', '2']])
+  assert.match(warns[0].msg, /git show origin\/dep-1:epics\/dep\/status\.md/)
+  assert.deepEqual(doctorWarns(mk('owed-serial', 'Delivery: release'), /\*\*Owed:\*\* line/), [], 'a log that predates the rule is not a plugin update away from six new warns')
 })

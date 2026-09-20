@@ -66,7 +66,7 @@ shadow reviewer, anything in `context/`, and the shipped work itself:
 instruction files for the areas the epic touched, as they are **now**, read
 from under `repoRoot`.
 
-## 4. Mine it — eight questions
+## 4. Mine it — nine questions
 
 - **Did it work?** The **Outcome** line named an observable change, its
   evidence and a reversal condition — check them: achieved (cite the
@@ -145,6 +145,33 @@ from under `repoRoot`.
   not fire: name which door should have caught it, and propose the change
   there. An epic with no release pull request — attended, or halted before the
   end: say so and move on.
+- **What did going wide buy, and what did it cost?** Only for an epic whose
+  run records carry a **Waves:** field (it declared `Parallel:` 2 or 3); any
+  other epic: say "ran serially" and move on. Read every such record's Waves
+  field, Time line and halts, and answer in counts. **Bought:** the
+  wall-clock the barrier saved — each wave's span against the sum of its
+  tickets' `wall`s — and whether the runtime ran the pipelines concurrently
+  at all. **Cost:** every halt that exists only because of waves (a
+  post-merge CHECK failure, a worktree that would not add, a lost-entry merge
+  guard, a counts contradiction), each classified as the halts question
+  classifies them — and a post-merge failure that was the *environment* (a
+  dependency the worktree lacked) is **plugin/environment**, while one that
+  was the code is **plan**: two tickets the plan declared independent were
+  not, which is a finding against the plan review's independence lens too.
+  Every ticket that went BLOCKED, or recorded a criterion as owed, because a
+  fresh worktree lacked what the usual checkout has. The worker seconds
+  against this project's serial runs — the reinstall is paid per ticket.
+  **Integrity:** is the log whole (the record's doctor line; any entry
+  flagged for its `**Owed:**` line is a corrupted merge until shown
+  otherwise, and is Important whatever else the retro finds), did any relayed
+  board list differ from the board, were worktrees left that the script did
+  not say it was keeping. End with a one-line verdict — **does the next epic
+  declare `Parallel:`, and at what number** — and flag every defect in the
+  plugin's own machinery as transferable, a candidate ticket for the
+  plugin's repository. The first live parallel runs are owed this in full:
+  the plugin shipped these paths tested against stubs and real git, and
+  against no real agent, no real runtime cap and no real project's
+  dependencies.
 
 ## 5. Propose — the miner drafts, the invoking session gates
 

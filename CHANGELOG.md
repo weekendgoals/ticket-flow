@@ -12,6 +12,193 @@ heading here. `check-invariants.mjs` holds both.
 
 ## Unreleased
 
+## 2.2.0 — 2026-09-20
+
+Parallel tickets. An epic may declare `Parallel: 2` or `3`, and an unattended
+run then works the board's ready set in waves — pipelines side by side in
+git worktrees, merges one at a time in document order — with a strict
+`**Blocked by:**` line keeping a ticket out of a wave it must not share.
+Minor: every epic without the two new lines runs exactly as it did, prompt
+for prompt, and a test holds that.
+
+- **`Parallel: 2|3` — an unattended run works the ready set in waves**
+  (`workflows/run-epic.mjs` and its suite; `scripts/tickets.mjs` and its
+  suite; `scripts/meter.mjs` and its suite; `skills/run/SKILL.md`;
+  `scripts/check-invariants.mjs`; CLAUDE.md). Absent or `1` the run is the
+  serial one it was, prompt for prompt — a test holds the two equal. With 2
+  or 3, each pass takes the first `parallel` tickets of the board's READY set
+  (`next` already leaves out every ticket whose `**Blocked by:**` blockers
+  have not landed) and runs their pipelines — worker through the resolve
+  step's gates — side by side, **each in its own git worktree** at
+  `<repoRoot>/../.flow-worktrees/<repo folder>/<epic>/<id>`; then integrates them **one at a
+  time in document order**, whichever finished first; then refreshes and asks
+  again. The loop body became two functions for this — `runTicket` (touches
+  only the ticket's branch) and `integrateTicket` (touches the epic branch) —
+  lifted in a commit of their own that changes no behaviour. New with a wave:
+  **a post-merge gate** — every merge after a wave's first lands on a moved
+  base, so the ticket's own CHECK criteria are re-run on the merged epic
+  branch, and a failure halts with the ticket still merged (new stop
+  condition), run in the ticket's own worktree moved to the merged head,
+  because that is where the project's dependencies were installed; **an
+  append merge driver for the status log** (new `scripts/merge-append.mjs`
+  and its suite, against real git) — every ticket appends to the end of
+  `status.md`, so two branches from one head conflict there on the second
+  merge; the driver keeps each side's appended text whole, base then ours
+  then theirs, fails on a side that did more than append, is named for the
+  epic's log in the local `.git/info/attributes` by one setup step and
+  defined on the merge command with `-c`, so nothing persists in config.
+  It acts only on its `--driver` flag and fails closed, and a wave's merge
+  greps the merged log for the ticket's entry heading **before it pushes —
+  and undoes the merge (`git reset --hard origin/epic/<name>`) when it is not
+  there**, since a bad merge left on the local branch is pushed by the next
+  run's refresh; the run halts on a nonzero exit that says so, never on "a
+  merge conflict" —
+  a driver that does nothing still exits 0 and git calls that a clean merge
+  with theirs discarded, which a path comparison that a symlinked plugin
+  directory made false did once, in review.
+  Deliberately **not** git's `union` driver, which the first cut used:
+  union is line-level and emits a shared line once, and review showed a
+  clean-looking merge moving one ticket's `**Owed:**` line under the next
+  ticket's heading; **a halt in one pipeline does not un-pass its
+  siblings** — they integrate, then the run halts on the first halt in
+  document order with the rest in a new `alsoHalted` — an integration halt
+  leads when there is one, since it is the one that touched the shared
+  branch; a failed integration merges nothing past it and records the rest
+  `passed, not merged`. A passed pipeline's worktree is always removed (left
+  behind it would hold the branch checked out and break the documented
+  recovery — except after a failed post-merge check, whose worktree is the
+  one its halt says to look at, detached and holding no branch); a halted
+  one's stays, its path logged with the command that
+  clears it and, under the Codex runner, the cancel spelled with the
+  worktree's path. Worktrees live at
+  `<repoRoot>/../.flow-worktrees/<repo folder>/<epic>/<id>`. Each record
+  carries the `wave` it ran in, and the 40-ticket backstop counts tickets. Refused at launch: `parallel`
+  outside 1–3, and **`parallel` > 1 beside `Ticket budget:`** (in a wave the
+  meter's delta is the wave's — and a `pluginRoot` with a single quote in
+  it, which the wave's merge command cannot spell; a budget that appears mid-run is refused at the
+  resolve step on the same terms) — `outputTokensObserved` is `null` for a
+  ticket that ran in a wave, and per-ticket figures come from
+  `scripts/meter.mjs`, which reads per agent. The worker is told it is in a
+  fresh worktree with nothing git does not track.
+- **The first parallel runs are asked for the evidence the release could not
+  gather** (`skills/run/SKILL.md`, `skills/retro/SKILL.md`,
+  `scripts/tickets.mjs` and its suite, `scripts/merge-append.test.mjs`,
+  `scripts/check-invariants.mjs`, METHODOLOGY). Waves shipped tested against
+  stubbed agents and real git, and against no real model, runtime or project.
+  So a run that went wide writes a **`**Waves:**` field** into its run record
+  while the evidence still exists — which tickets ran beside which, whether
+  the runtime really ran them concurrently (from the Time line's `wall`s),
+  what the board relayed against what the board says, whether the log is
+  whole, what the post-merge gate did, what the worktrees cost and left — and
+  the retro gains a **ninth question** that reads it and ends in a verdict:
+  does the next epic declare `Parallel:`, and at what number; defects in the
+  plugin's own machinery are flagged as candidate tickets for the plugin's
+  repository. **`doctor` flags, in epics that declare `Parallel:`, a status
+  entry with no `**Owed:**` line or more than one** — the shape both bad log
+  merges found in review left behind, entries that still parse — and says how
+  to compare the entry with the ticket's own branch; older logs are left
+  alone. And the merge guard's line is now cut out of the driver and run
+  under the system's own grep against a real repository, so CI checks it
+  under GNU grep on every push.
+- **A second opinion on waves, from a different model — eight findings, all
+  taken** (`workflows/run-epic.mjs` and its suite,
+  `scripts/merge-append.test.mjs`, `skills/run/SKILL.md`, METHODOLOGY). After
+  nine review rounds by Claude reviewers found no more, the branch was given
+  to OpenAI's Codex, read-only. **The post-merge gate re-runs every ticket of
+  the wave that is on the epic branch, not only the newcomer** — a later
+  ticket that passes its own criteria and breaks an earlier one's used to
+  sail through to the release pull request. **It refuses a changed criteria
+  count**: it reads criteria from the epic branch *after* the merge, so a
+  ticket that deleted its own CHECK lines from `tickets.md` scored "0/0, all
+  passed" — the reviewed party editing its gate, by another door — and, on
+  the confirming pass, reads the criteria themselves from
+  `refs/flow/wave-base/<id>`, a ref each ticket's worktree step pins at the
+  epic head the wave began from: a count cannot see N criteria swapped for N
+  weaker ones, or a ticket that went from none to some. **The
+  setup step asks git which merge driver it will use** (`git check-attr`) and
+  ends on the answer, instead of grepping the attributes file for our line:
+  the last matching rule wins, so a broader rule below ours handed the log
+  back to `union` with the heading guard none the wiser. **The merge guard
+  undoes the merge to `ORIG_HEAD`**, not `origin/epic/<name>`: `pull
+  --ff-only` succeeds when local is ahead, and a commit made on the epic
+  branch mid-run would have been destroyed with the merge. The run skill's
+  Codex cancel command showed the repository's path directly under the
+  sentence saying a wave needs the worktree's; `Parallel: 4` parsed as absent
+  and ran serially instead of being refused (step 1 now refuses a declaration
+  line that will not parse); and **a post-merge halt left every ticket
+  `integrated`, so a plain re-run could open the release pull request for a
+  combination the run had proved broken** — step 1 now reads the last run
+  record and refuses until a dated `**Addendum — post-merge halt cleared —**`
+  line beneath it says how (`environment — …` or `fix ticket <ID> — …`), and
+  § Resuming has a fourth shape that tells the human to write it. The line,
+  not a session's judgment, is the test: the first cut of the two rules
+  contradicted each other, and would have refused for ever after an
+  environment-only halt. The setup sequence and the guard line are both cut out of the
+  driver and run by a real shell against real git in the suite.
+- **The plan reviewer reads every pair that could share a wave**
+  (`agents/plan-reviewer.md`; README, METHODOLOGY, CLAUDE.md). When a draft
+  declares `Parallel:` 2 or 3, tickets declared independent that are not —
+  the same file, a schema or shared type one creates and the other reads, a
+  lockfile, a CHECK that exercises the other's area — are **not ready**, the
+  repair is a strict `**Blocked by:**` line on the later ticket, and any
+  `doctor` row about the epic's dependencies is Important. The run's own net
+  under that declaration is only the post-merge CHECK re-run, so the real
+  gate is here. Report-only, as ever: the reviewer names the pair and the
+  line, the planner writes it.
+- **The driver refuses to call an epic built while tickets wait — in code**
+  (`workflows/run-epic.mjs`, `scripts/tickets.mjs next --with-waiting`,
+  `skills/run/SKILL.md`). `next`'s exit-1 refusal reached a run only as a
+  shell proxy's report of an exit code, and an empty list means "open the
+  release pull request". The select step now runs `next <epic>
+  --with-waiting` — `{ready, waiting}` as data with the script's own
+  `readyCount`/`waitingCount` beside them, exit 0; a relayed report whose
+  arrays and counts disagree is refused — and the script halts
+  on a new stop condition when nothing is ready and something waits, serial
+  or parallel; a report with no `waiting` array is a contradiction, not an
+  empty one. The run skill's step 1 refuses to start while `doctor` says a
+  ticket of the epic will wait for ever, and — under `Parallel:` — while it
+  says a Blocked-by-looking line or a `Depends on` field is unread.
+- **`**Blocked by:**` and the `waiting` state** (`scripts/tickets.mjs` and
+  its suite; `skills/epic/SKILL.md`, `skills/ticket/SKILL.md`;
+  `scripts/board.mjs`; `scripts/check-invariants.mjs`; README, METHODOLOGY,
+  CLAUDE.md). A ticket section may carry `**Blocked by:** <ID>[, <ID>]` —
+  bare IDs of the same epic, strictly parsed. An unstarted ticket whose
+  blockers are not all `integrated`/`shipped` reads **`waiting`** and is left
+  out of `next`; `find --json` gains `blockedBy`, `waitingOn`,
+  `dependencyProblem` (and `parallel`), and the ticket skill stops on a
+  waiting ticket. The label must open the line at the margin, bold or with
+  its colon; prose that merely begins with the words, anything in a fenced
+  block, `**Blocked by:** nothing` and the template's unedited placeholder
+  read as no line (an empty label is a problem). A dependency stated off the
+  margin — bulleted, indented, quoted, underscore-bold — or swallowed by a
+  fence that never closes changes no state and draws a `doctor` warn that the
+  line is unread, which under `Parallel:` says the ticket may start beside
+  the work it names. A line that almost parses (`Blocked by: X`,
+  trailing prose, "and"), an unknown ID, a self-reference or a cycle is a
+  named problem: the ticket waits, the board row says so, `doctor` warns with
+  the line number, and **`next <epic>` now exits 1 when tickets are waiting
+  and none can start** (board-wide `next` names a stuck epic on stderr and
+  fails only when nothing anywhere can start) — the run driver reads an empty `next` as "the epic is built",
+  which must never be said with work unbuilt. `doctor` also notes a blocker
+  placed later in the document. Epics with no such line behave exactly as
+  before — including ones carrying the removed graph's `Depends on:` lines,
+  which stay inert (a live epic has `**Depends on:** nothing` on unstarted
+  tickets) and are mentioned by `doctor` only under `Parallel:`. `brief` prints the wait. The preamble gains an
+  optional **`Parallel: 1|2|3`** line — parsed, exposed in `find`/`list`
+  JSON and near-miss-flagged; the run driver's use of it lands with the
+  driver change in this same release, and until then a run is serial
+  whatever the line says.
+- **The release checker reads the `Unreleased` heading, not the phrase**
+  (`scripts/check-invariants.mjs` and its suite). `checkRelease` found the
+  section with a plain text search, and this file's own preamble quotes
+  "## Unreleased" in a sentence — so the count started from the prose and was
+  right only because the preamble holds no entries. Anchored to the heading
+  line; the ceiling test now tops `Unreleased` up to the ceiling instead of
+  assuming it starts empty, which it does not on any working branch. Its
+  tests no longer name a version either — they read `plugin.json` and build
+  their fixtures from whatever release the repository is at — because the
+  first release stamped after them broke them.
+
 ## 2.1.0 — 2026-09-19
 
 Everything since 2.0.0, stamped in one batch because nothing had said when a

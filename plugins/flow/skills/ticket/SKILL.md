@@ -88,6 +88,13 @@ verification — plus `delivery` (`release` or `incremental`, incremental when
 absent; decides steps 3, 9 and 10), `reviewerModel` (step 7) and
 `workerModel` (step 0).
 
+**Stop and report if `state` is `waiting`.** The plan says this ticket must
+not start yet: `waitingOn` names the blockers that have not landed, and
+`dependencyProblem`, when set, is a `**Blocked by:**` line that cannot be
+read — fixed in `tickets.md`, never worked around. A waiting ticket is not
+started on the human's say-so in passing; if the plan is wrong, the plan is
+edited, because every other lane reads the same line.
+
 **Stop and report if:** the ID does not resolve (it prints the IDs it knows;
 do not guess); `isCurrentFolderEpic` is false and the project uses one
 checkout per epic; or the working tree has uncommitted changes you did not
@@ -664,7 +671,9 @@ step 10.
 ## 10. Stop — or, in a release epic, integrate and continue
 
 **Incremental:** print the pull request URL and
-`node "${CLAUDE_PLUGIN_ROOT}/scripts/tickets.mjs" next`. Then stop; nothing
+`node "${CLAUDE_PLUGIN_ROOT}/scripts/tickets.mjs" next`. (A nonzero exit
+there is a report, not a failure of this ticket: tickets are `waiting` and
+none can start — relay what it printed.) Then stop; nothing
 runs after the merge. No agent merge happens here, so there is none to refuse:
 a departure's door was step 9's pull request body, where the human who merges
 reads it.

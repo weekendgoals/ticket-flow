@@ -218,6 +218,31 @@ exists to read, not a failure. Halting is the mechanism working —
 a run that pushes through is a run whose release pull request can no longer
 be trusted.
 
+**A run is serial unless the epic says otherwise.** With `Parallel: 2` (or
+`3`) in the preamble it works the board's *ready* set in **waves**: up to
+that many tickets' pipelines — worker, review, disposition, acceptance, the
+merge gates — side by side, each in its own git worktree beside the
+repository (`../.flow-worktrees/<repo>/<epic>/<id>`), and then their merges
+**one at a time, in document order**, whichever finished first; then it
+refreshes and asks the board again. `**Blocked by:**` lines are what keep a
+ticket out of a wave it must not share, which is why in a parallel epic a
+ticket *without* one is declared independent, and why the plan reviewer reads
+every pair that could share a wave. Four things exist because of waves, and a
+serial run has none of them: the status log is merged by the plugin's own
+append driver (`scripts/merge-append.mjs` — every ticket appends to the end
+of one file, and git's `union` driver, which looks made for that, silently
+moves lines between entries); each merge after a wave's first is followed by
+**that ticket's CHECKs re-run on the merged epic branch**, since nobody
+judged the combination; a halt in one pipeline lets its passed siblings
+integrate before the run stops; and `Ticket budget:` cannot be declared,
+because a per-ticket ceiling is a delta on one meter. Two practical costs to
+know before declaring it: a fresh worktree has nothing git does not track —
+no installed dependencies, no build output, no local `.env` — so every
+ticket's worker installs the project again, and a project whose verification
+needs unreproducible local state will see BLOCKED tickets; and the ceiling is
+3 because what a wave produces still has to be reviewed by one human at the
+release pull request.
+
 Two things are **environment setup, not plugin code**. Both must exist
 before the first unattended run — protection alone may instead be waived by
 the human at sign-off, the waiver recorded as a decision in the epic's
@@ -344,6 +369,7 @@ first after the colon, prose after it ignored), every near-miss flagged by
 | `Consequence paths:` | `src/auth/**, migrations/**` | globs that force the consequence review tier in a run — the code floor under the worker's self-reported tier | tier floor still applies (docs-only vs code), globs add nothing |
 | `Fix bounds exclude:` | `src/messages/*.json` | globs the run's fix-bounds gate leaves out of the review-fix diff (as it already leaves out `epics/`) — for files a fix fans out into mechanically, translation catalogs being the canonical case | every fixed file counts toward the bounds |
 | `Design sources:` | `designs/City Desktop.html, designs/map.html` | the files holding what the design draws — anything a browser can render and `getComputedStyle` can read; repository-relative, and free to live outside the epic's `context/`. This is what hands the design to the brief and to both reviewers. The one line that carries **no prose**: the whole text between commas is the path, because designers name files with spaces in them | no design is declared, and nothing downstream is handed one |
+| `Parallel:` | `2` | the most tickets an unattended release run may have in flight at once — `2` or `3`; the ceiling is review bandwidth, not machines. In a parallel epic a ticket with no `**Blocked by:**` line is declared independent of the others. Parsed by the board and near-miss-flagged by `doctor`; applied by the run driver, which refuses it together with `Ticket budget:` | a serial run, one ticket at a time, exactly as before the line existed |
 | `Ticket budget:` | `250k` | per-ticket output-token ceiling in a run (a shadow review's spend is left out); an over-budget ticket stays merged and the run halts before the next. The only line a run re-reads: each ticket's resolve step fetches the epic branch and reads the signed-off document from it before the merge, so raising it mid-run (committed and pushed) governs the running ticket, and a ticket branch cannot raise its own ceiling; removing the line keeps the last ceiling and logs that it did | no ceiling; per-ticket spend still recorded when the runtime meters it |
 
 ## Reading the board
@@ -356,7 +382,29 @@ first after the colon, prose after it ignored), every near-miss flagged by
 | `done, unpushed` | Status log says DONE but nothing shipped — the loop stalled |
 | `in progress` | Local branch with commits, no pull request |
 | `blocked` | Status log records BLOCKED or ABANDONED |
-| `todo` | Not started |
+| `waiting` | Not started, and its `**Blocked by:**` line names a ticket that is not `integrated` or `shipped` yet — or the line cannot be read, which `doctor` names. Left out of `next`; ends by itself when the blocker lands |
+| `todo` | Not started, and free to start |
+
+**Order is document order; `**Blocked by:** <ID>[, <ID>]` says what may not
+overtake what.** The line is optional, sits in a ticket's own section, and is
+strict — bare IDs of the same epic, commas, nothing else — because the
+tolerant dependency parser this plugin once had stalled tickets silently on
+prose. The label opens the line, bold, at the margin — a sentence that merely
+begins "blocked by the vendor…" is prose, as is anything in a fenced block
+(one that closes: a line lost behind a fence that never closes is reported);
+`**Blocked by:** nothing` and the template's unedited placeholder read as no
+line (an empty label is an interrupted edit, and a problem); a dependency
+stated off the margin — on a bullet, indented, quoted, or bold with
+underscores — changes no state and is never silent: `doctor` says the line is
+unread, and that under `Parallel:` its ticket may start beside the work it
+names; and the removed `Depends on:` spelling is inert, so old documents read
+as they did. A line that almost parses, an unknown ID, a self-reference or a cycle
+leaves the ticket `waiting` with the reason on the board and in `doctor`, and
+`tickets.mjs next <epic>` exits nonzero when tickets are waiting and none can start
+(asked about the whole board, `next` names a stuck epic on stderr and still
+lists what other epics can start — it fails only when nothing anywhere can):
+to the run driver an empty list means "the epic is built — open the release",
+and that must never be said of an epic with work unbuilt.
 
 Before starting a ticket, the board script's `brief [ID]` subcommand prints
 everything in one place: the ticket's full section from its epic's

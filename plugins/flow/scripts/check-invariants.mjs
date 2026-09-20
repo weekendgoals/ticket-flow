@@ -211,6 +211,7 @@ function parserRegexes() {
   return {
     ticketHeading: build(grab(/const TICKET_HEADING = new RegExp\(`([^`]+)`\)/, 'TICKET_HEADING')),
     statusHeading: build(grab(/const STATUS_HEADING = new RegExp\(\s*`([^`]+)`,?\s*\)/, 'STATUS_HEADING')),
+    blockedBy: build(grab(/const BLOCKED_BY_LINE = new RegExp\(`([^`]+)`\)/, 'BLOCKED_BY_LINE')),
     outcomes: grab(/const KNOWN_OUTCOMES = new Set\(\[([^\]]+)\]\)/, 'KNOWN_OUTCOMES')
       .split(',')
       .map((s) => s.trim().replace(/'/g, '')),
@@ -388,6 +389,26 @@ const PHRASES = [
     files: ['run', 'readme'],
   },
   {
+    why: "a post-merge halt leaves a board with nothing wrong on it, so the run skill's step 1 refuses a re-run until a dated line beneath the halted record says how it was cleared — and § Resuming's shape 4 is where the human is told to write that line. One spelling at both doors: the first cut had the refusal demand a fix ticket while the recovery prescribed an addendum, and would have refused for ever",
+    re: /\*\*Addendum — post-merge halt cleared — <(?:YYYY-MM-DD|date)>:\*\* environment — /,
+    files: ['run'],
+  },
+  {
+    why: "a parallel run's evidence is one field written at one door and read at another — the run skill's run record carries a `**Waves:**` field while the run's directory and worktrees still exist, and the retro's ninth question reads it; a field nobody reads is ceremony, and a question with nothing to read reports nothing",
+    re: /\*\*Waves:\*\*/,
+    files: ['run', 'retro', 'methodology'],
+  },
+  {
+    why: "in a parallel epic a ticket with no Blocked by line is DECLARED INDEPENDENT — one rule at four doors: the epic skill that tells the planner, the plan reviewer that reads every pair that could share a wave, the run skill whose preflight refuses an unread dependency line, and the manual. A planner told and a reviewer not (or the reverse) is a wave nobody checked",
+    re: /declared independent/,
+    files: ['epic', 'planReviewer', 'run', 'readme'],
+  },
+  {
+    why: "the Blocked by line is one strict format in the parser, the template that teaches it, and the manual — a template that drifted to a tolerant spelling (`Depends on:`, trailing prose) would teach lines that leave their tickets waiting for ever",
+    re: /\*\*Blocked by:\*\* <ID>\[, <ID>\]/,
+    files: ['epic', 'script', 'readme'],
+  },
+  {
     why: "the run record's Time groups are what `tickets.mjs spend` parses — seconds with their unit, closed by the wall. The unit is load-bearing: a bare `worker=<n>` is a token figure, so a template that dropped the `s` would pour durations into the token ledger",
     re: /worker=<n>s reviewer=<n>s[\s\S]{0,80}wall=<n>s/,
     files: ['run', 'readme', 'script', 'meter'],
@@ -400,6 +421,16 @@ const PHRASES = [
   {
     why: 'the fix-bounds stop condition is one sentence in the skill and the script — since a bounds trip buys a re-review instead of a halt, the only fix that still halts is one nothing could measure, and both documents must say so in the same words. Pinned whole, not by its first clause: what it now excludes is as load-bearing as what it names',
     re: /no usable fix-diff facts from the resolve step, or a fix whose changed lines cannot be counted; an unmeasurable fix is never merged/,
+    files: ['run', 'workflow'],
+  },
+  {
+    why: "the waiting stop condition is one sentence in the skill and the script — the halt that keeps a run from opening a release pull request for an epic with work unbuilt; a retro that cannot match the record's quoted condition to the skill's files the halt as something else",
+    re: /tickets still waiting and none that can start — every unstarted ticket is held by a `\*\*Blocked by:\*\*` line whose blocker has not landed, or by one that cannot be read; the epic is NOT built, and no release pull request is opened/,
+    files: ['run', 'workflow'],
+  },
+  {
+    why: "the post-merge stop condition is one sentence in the skill and the script — the only gate that checks a wave's declaration of independence, and like the budget halt it un-merges nothing, which both documents must say in the same words",
+    re: /a failed acceptance CHECK after the merge — a ticket merged onto an epic branch that had moved since it branched, and its signed-off criteria no longer pass on the combination; the ticket stays merged and nothing further starts/,
     files: ['run', 'workflow'],
   },
   {
@@ -546,10 +577,30 @@ function checkRelease() {
   })
   if (parsed[0].join('.') !== version)
     throw new Error(`${FILES.plugin} says ${version} and the newest stamped release in ${FILES.changelog} is ${parsed[0].join('.')} — a release bumps both in one commit`)
-  const unreleased = log.slice(log.indexOf('## Unreleased'), log.indexOf(`## ${stamped[0]}`))
+  // Anchored to the heading LINE: this file's preamble quotes "## Unreleased"
+  // in a sentence, and a plain indexOf finds that first.
+  const unreleased = log.slice(log.search(/^## Unreleased$/m), log.search(new RegExp(`^## ${stamped[0].replace(/[.]/g, '\\.')}$`, 'm')))
   const entries = (unreleased.match(/^- \*\*/gm) || []).length
   if (entries > UNRELEASED_CEILING)
     throw new Error(`${entries} entries under "## Unreleased" (ceiling ${UNRELEASED_CEILING}) — stamp the batch in this pull request: rename the heading to "## <version> — <date>", add a fresh "## Unreleased" above it, and bump ${FILES.plugin} (CLAUDE.md § Invariants)`)
+}
+
+// The Blocked by line is strict by design, and a string-presence check cannot
+// hold that: the template's spelling could sit in three documents while the
+// regex behind it went tolerant. So the epic skill's template line is run
+// through the parser's own regex — instantiated it must parse, and the same
+// line with a trailing sentence must NOT, because tolerance here is the
+// removed dependency graph's failure coming back.
+function checkBlockedByTemplate() {
+  const { blockedBy } = parserRegexes()
+  const lines = fences(read('epic')).flatMap((b) => b.split('\n')).filter((l) => /^\*\*Blocked by:\*\*/.test(l))
+  if (!lines.length) throw new Error(`no "**Blocked by:**" template line in a fenced block of ${FILES.epic}`)
+  for (const raw of lines) {
+    const line = raw.replace('<ID>[, <ID>]', 'SEC-3, SEC-4')
+    if (!blockedBy.test(line)) throw new Error(`the epic skill's template no longer matches BLOCKED_BY_LINE: "${raw}"`)
+    if (blockedBy.test(`${line} once its API settles`)) throw new Error('BLOCKED_BY_LINE accepts prose after the IDs — the parse must stay strict (CLAUDE.md § Invariants)')
+    if (blockedBy.test(line.replace('**Blocked by:**', '**Depends on:**'))) throw new Error('BLOCKED_BY_LINE accepts the removed "Depends on" spelling')
+  }
 }
 
 const CHECKS = [
@@ -557,6 +608,7 @@ const CHECKS = [
   ["the run log's Rules block is the status log's, verbatim", checkRunLogRules],
   ['the two risk lists cover the same trigger set', checkRiskLists],
   ['skill heading templates match the parser regexes', checkTemplates],
+  ["the epic skill's Blocked by template parses, and the parse is strict", checkBlockedByTemplate],
   ["the COMPARE criterion's template matches its parser, and both lanes name --removed-from", checkCompareTemplate],
   ['hook refusal message quoted verbatim by the ticket skill', checkRefusalMessage],
   ['load-bearing doctrine phrases present everywhere required', checkPhrases],

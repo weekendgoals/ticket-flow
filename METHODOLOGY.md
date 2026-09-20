@@ -1380,6 +1380,206 @@ That is why serial-to-main stopped being the universal default: the record
 showed disciplined users stacking anyway (Q-10–Q-17), which was the rule
 mismeasuring their throughput needs, not the users misbehaving.
 
+## Why a run goes wide in waves
+
+The pain was measured, not imagined: a three-ticket run held its lane for 39
+minutes on its first ticket with nothing else able to start, though the other
+two touched different parts of the code. The serial loop was never a claim
+that tickets depend on each other — it was the consequence of every step
+checking branches out in one working tree. Give each pipeline a worktree and
+the constraint is gone; what is left to decide is how much of the run may
+overlap, and the answer is "everything that touches only the ticket's own
+branch, and nothing that touches the epic's". So the loop body was split
+along exactly that line — `runTicket`, `integrateTicket` — in a commit that
+changed no behaviour, and a wave runs the first side by side and the second
+one at a time.
+
+**Waves, not a rolling scheduler.** A rolling scheduler — start a new ticket
+the moment a slot frees — wastes less wall-clock: in a wave a fast ticket
+waits for the slowest. It was not built, because a wave is a *barrier*, and a
+barrier is what makes the run deterministic: the same board gives the same
+waves, the merges happen in document order whichever pipeline finished first
+(a test delays one to prove timing decides nothing), and every refresh and
+every board read happens with nothing in flight. A rolling scheduler merges
+in completion order, refreshes the epic branch under running pipelines, and
+turns "which tickets ran against which base" into a question only the
+timestamps can answer. The time ledger now measures each ticket's wall, so
+whether the barrier's wait matters is something a retro can read instead of
+guess; if it does, that is the evidence a rolling scheduler would need.
+
+**Opt-in, and a cap of three.** `Parallel:` is a declaration because it
+changes what the absence of a `**Blocked by:**` line means — every epic
+planned before it existed relied on document order, and must not go wide on
+a plugin update; a test holds `Parallel: 1` and no line at all to the same
+prompts, byte for byte. Three, because the number that limits a release epic
+was never machines: it is the one human reading the release pull request.
+
+**What nobody judged.** Each ticket of a wave is reviewed and accepted
+against the epic branch as it stood when the wave began. The second merge
+lands on a branch the first has changed, and that combination has been seen
+by no reviewer and run by no check. The plan declared the two independent;
+the run's net under that declaration is to re-run the later ticket's own
+signed-off CHECKs on the merged branch. It is a thin net — it catches a
+combination that breaks a criterion somebody wrote, and nothing else — which
+is why the real gate is upstream, in the plan reviewer's lens, and why the
+post-merge halt tells the human to give the later ticket a `**Blocked by:**`
+line: the run has just disproved something the plan said. It un-merges
+nothing, like the budget halt, because nothing un-merges.
+
+**The net, widened once.** A reviewer from a different model found the hole
+in the first cut of that gate that nine rounds of same-model review had not:
+it re-ran only the *newcomer's* criteria, and the commoner break runs the
+other way — the later ticket is fine and the earlier one no longer is. So
+after each merge onto a moved base the run re-runs every ticket of the wave
+that is on the epic branch. The same review found the gate reading its
+criteria from the epic branch *after* the merge, where a merged ticket may
+have edited them: "0/0, all passed" is what a deleted criterion looks like,
+so the count must be the one the ticket was accepted with. And it found that
+the halt, which un-merges nothing, left a board with nothing wrong on it — a
+re-run could walk straight to the release pull request — so the run's own
+record is now read at the door. The general point is the one the plugin
+already makes about tickets: the party that built a thing reviews it worst,
+and that is as true of a model family as of a session.
+
+**A halt does not un-pass a sibling.** Tickets in one wave are independent by
+declaration and each cleared every gate a serial run has, so a sibling's halt
+is no evidence against them: they integrate, and then the run stops. The
+alternative — hold everything when anything halts — leaves passed work
+unmerged for no reason a human could give, and makes every recovery longer.
+What a halt does stop is anything *new*. An integration halt leads the
+report when there is one, because it is the halt that touched the shared
+branch and the one whose detail may say a merge was left unaborted.
+
+**What the wave costs, said plainly.** A fresh worktree has what git tracks
+and nothing else, so every worker installs the project again, and a project
+whose verification needs local state that cannot be reproduced from the
+repository should not declare `Parallel:` at all. The per-ticket token
+ceiling cannot be declared beside it either: it is a delta on one meter, and
+in a wave the delta is the wave's — a ceiling that silently cannot fire is
+worse than none, the rule the missing-meter refusal already stated.
+
+### What the release could not verify, and who is asked to
+
+Parallel runs shipped tested against stubbed agents and against real git,
+and against no real model, no real runtime and no real project. Five things
+were named as unverified at the release: whether the runtime's `parallel()`
+runs pipelines concurrently or queues them; whether a cheap shell proxy
+relays the board's `waiting` list faithfully (the counts cross-check is the
+guard if it does not); what a fresh worktree costs a project with real
+dependencies, and how often it blocks a ticket outright; whether the Codex
+runner works inside a linked worktree, where `.git` is a file; and the merge
+guard's grep under a grep that is not BSD's. None of them can be settled from
+inside this repository — so the plugin asks the first people who can see them.
+A run that went wide writes a **Waves:** field into its run record while the
+evidence still exists, the retro has a question that reads it and ends in a
+verdict on the next epic's `Parallel:` line, and `doctor` flags the one shape
+every bad log merge has taken so far: an entry whose `**Owed:**` line is
+missing or doubled. An unverified claim with a collection plan is a
+hypothesis; without one it is a hope.
+
+## Why a dependency is a strict line, and a wait is a state
+
+Document order was the only dependency mechanism while every lane was serial,
+and it was enough: the board proposes the first unstarted ticket, so nothing
+overtakes anything. A lane that starts tickets side by side needs the one fact
+order cannot carry — which tickets may **not** run beside which — and that is
+what earns `**Blocked by:**` its place under the admission test: it constrains
+blast radius. It failed that test for as long as nothing could overtake — and
+taken alone it still would: the format was built one stage ahead of the lane
+that needs it, and the two reach the default branch in one pull request, which
+is the same departure, on the same condition, that a criterion format is
+allowed inside one release epic. A `Blocked by:` with no lane to obey it
+never exists on `main`.
+
+The line is strict because the first version was tolerant and the tolerance
+was its failure: a dependency written as prose read as a hard blocker, the
+ticket stalled, and nothing said so. A parser has two wrong guesses available
+for a line it cannot read — "no blockers", which starts a ticket beside the
+work it depends on, and "blocked", which stalls silently. So it makes neither:
+an unreadable line is a **named problem** — and because a problem stalls a
+ticket, the set of lines that count as "about blocking" is kept as small as
+the mistake it exists to catch: the label, bold or with its colon, opening a
+line at the margin. The first cut took any line that began with the words,
+and a wrapped sentence — "…because it is / blocked by the vendor API" —
+stalled its ticket for ever. Prose wraps; a label does not start mid-bullet.
+But a small near set has its own failure, which the second review found: a
+dependency stated on a bullet, in a quote or with underscore bold fell out of
+both patterns and was read as no line — and in a `Parallel:` epic no line
+means "declared independent", so the parser was making the unsafe guess it
+exists not to make. Such a line still changes no state (a bullet must stall
+nothing), and it is never silent: `doctor` says it is unread, and what that
+means for the run. The body's first line also keeps its indent, because
+trimming the section whole made one spelling a dependency at the top of a
+section and nothing below it.
+
+`nothing`, the template's unedited placeholder, anything inside a fence (a
+line swallowed by one that never closes draws the unread warn) and
+the removed `Depends on:` spelling all read as no line at all, the last
+because a format that arrives in every installed project overnight must read
+old documents as it found them. The ticket waits, because that is
+the safe direction; the board row, `find` and `doctor` all carry the sentence,
+because a safe stall nobody hears about is the old bug; and `next` exits
+nonzero when tickets wait and none can start, because the run driver reads an
+empty `next` as "the epic is built — open the release", and the worst outcome
+available here is a release pull request for an epic with work unbuilt. That
+refusal is at `next` and not only in `doctor` for the usual reason: `next` is
+the command the guarded actor runs.
+
+`waiting` is a state and not a flavour of `blocked` because they are
+different kinds of fact. `blocked` is an outcome a worker recorded — something
+went wrong and a human must look. `waiting` is the plan's own statement about
+order; it ends by itself when the blocker lands, and it applies only to a
+ticket nobody has started — once there is work on a branch, the board reports
+the work, because the plan's order is by then history.
+
+## Why a wave merges its log by appending, and not by union
+
+Every ticket appends its status entry to the end of one file. Serially that
+never conflicts: each ticket branches from an epic head that already carries
+the entry before it. A wave cuts several branches from ONE head, so every
+merge after the first conflicts at the log's tail, every time, with nobody
+present to resolve it.
+
+Git ships a driver that looks made for this — `merge=union`, "keep both
+sides' lines" — and the first cut of the wave used it. It was the design's
+riskiest assumption, named as such, and built on anyway without being run; a
+reviewer ran it. Union is a LINE-level merge: a line both sides share is
+emitted once. Two status entries share most of their tail — `**Decisions:**
+none.`, `**Owed:**`, every blank line — so git reported a clean merge in
+which the first entry had lost its closing fields and its `**Owed:**` line
+sat under the second ticket's heading. An obligation changed owner. `owed`,
+`brief` and `doctor` all read the result without complaint, because a
+truncated entry is still a well-formed one. That is the worst shape a
+failure can have here: silent, plausible, and in the one document the
+release pull request's Owed section is built from.
+
+So the driver is the plugin's own, and its rule is the file's own: both sides
+only appended, therefore the merge is the base, then what ours added, then
+what theirs added, **each kept whole**. A side that did anything else has
+broken the log's rule, and the driver says so by failing — a conflict, a
+halt, a human. It is defined on the merge command (`git -c …`) and only named
+in the repository's local `info/attributes`, so nothing persists that a
+later hand merge would trip over.
+
+Its second review found the same failure shape one layer down. The file
+decided whether it was being *run* by comparing two spellings of its own
+path, one symlink-resolved and one not; under a symlinked plugin directory
+they differed, the body never executed, the process exited 0 — and git,
+handed a driver that did nothing, kept ours, discarded theirs and called the
+merge clean. A whole entry gone instead of half of one. Two rules came out
+of that. **A merge driver acts on an explicit flag and fails closed**: told
+to act and unable to, it exits nonzero. And **the wave checks its own
+merge**: after merging, before pushing, the ticket's entry heading must be in
+the merged log — because "the driver silently did nothing" must not reach the
+remote *whatever* causes it next time. That guard had its own review, and its
+first cut was a delay, not a barrier: it stopped the push and left the bad
+merge on the local branch, where the next run's refresh would fast-forward
+nothing and push it. So the same line undoes the merge; and it matches a
+heading as loosely as the board's parser does, because a guard stricter than
+what it defends is a false halt waiting for a worker who typed two spaces. The general lesson is older than this
+repository: an assumption about what git does is tested against git, in a
+throwaway repository, before anything is built on it.
+
 ## Why the run loop is code, not prose
 
 The unattended lane's guarantees were originally sentences a driver session
@@ -1424,7 +1624,11 @@ and the conflict has nowhere to happen. The alternative considered was a
 `merge=union` attribute on `epics/*/status.md`: one line, but per-project
 configuration a doctor probe can only nag about, and union also *hides* an
 overlapping edit — which an append-only log forbids — instead of surfacing
-it as a conflict. The records written before the split stay in `status.md`
+it as a conflict. (Parallel waves brought the same conflict back between
+*ticket* branches, where no second file can dissolve it, and the question
+was reopened with real git: `union` turned out worse than that sentence
+says — see § "Why a wave merges its log by appending, and not by union".)
+The records written before the split stay in `status.md`
 and are still read there, because rewriting an append-only log to tidy it is
 the one thing the log's rules do not allow.
 
@@ -1707,6 +1911,12 @@ time.
   checkout. Built and never used; an untested parallel launcher is worse than
   none. Practitioner accounts converge on three to five concurrent agents as the
   ceiling, and the constraint named every time is review bandwidth, not machines.
+  **Parallelism came back (2026-09) as something else**: not a launcher beside
+  the flow but a mode of the run driver, behind the same gates, tested by the
+  driver's own suite — see § "Why a run goes wide in waves". What stays
+  removed is what made the first one worse than none: a second way to start
+  tickets that nothing exercised. The ceiling it names is the one the
+  `Parallel:` line enforces.
 - **Deploy preconditions as a ticket field.** The risk is real — a fail-closed
   guard whose secret is missing takes the system down — but a dedicated field was
   more structure than it earned. It belongs in the pull request body.
@@ -1719,4 +1929,8 @@ time.
   cross-epic cases. The shape to reach for if a parallel lane ever lands:
   bare-ID `Blocked by:` lines parsed strictly, doctor near-miss coverage,
   and a `waiting` board state — the strict parse being exactly what the
-  first version lacked.
+  first version lacked. **That lane landed (2026-09), and this is the shape
+  it took** — see § "Why a dependency is a strict line, and a wait is a
+  state". What stays removed is everything the first version had beyond
+  that: tolerant parsing, automatic stacking, and a dependency that could
+  stall a ticket without a sentence saying why.

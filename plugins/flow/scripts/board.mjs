@@ -36,6 +36,7 @@ const STATES = [
   ['done', 'done, unpushed'],
   ['in-progress', 'in progress'],
   ['blocked', 'blocked'],
+  ['waiting', 'waiting'],
   ['todo', 'todo'],
 ]
 const LABEL = Object.fromEntries(STATES)
@@ -141,7 +142,7 @@ ${rows}
   .tokens .dim { margin-left:0.15rem; }
   .badge { font-size:0.72rem; border-radius:99px; padding:0.1rem 0.55rem; background:var(--chip); white-space:nowrap; }
   .s-shipped { color:var(--ok); } .s-integrated { color:var(--info); } .s-in-review { color:var(--info); }
-  .s-done, .s-in-progress { color:var(--warn); } .s-blocked { color:var(--bad); } .s-todo { color:var(--muted); }
+  .s-done, .s-in-progress { color:var(--warn); } .s-blocked { color:var(--bad); } .s-waiting, .s-todo { color:var(--muted); }
   .empty, .dim { color:var(--muted); }
   a { color:var(--accent); }
   ul.next { padding-left:1.2rem; } ul.next li { margin:0.3rem 0; }

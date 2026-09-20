@@ -206,6 +206,17 @@ path, because designers name files with spaces in them (`City Desktop.html`)
 and nothing could tell a trailing sentence from a filename. `/flow:doctor`
 warns about a declared path that does not exist, by its full name.
 
+`Parallel: <n>` — `2` or `3`: the most tickets an unattended run may have
+in flight at once. Absent, or `1`, is the serial run. It is an opt-in because
+it changes what the absence of a `**Blocked by:**` line means: in a parallel
+epic a ticket without one is **declared independent** of every other
+unstarted ticket — so before writing this line, check each pair that could
+share a wave for files both would edit, and give the later one a
+`**Blocked by:**`. The ceiling is 3 because the constraint is review
+bandwidth, not machines. Parsed by the board today; the run driver applies
+it, and refuses it together with `Ticket budget:` (a per-ticket ceiling
+cannot be metered while tickets share the clock).
+
 `Ticket budget: <n>` — e.g. `250k` or `1m`: a per-ticket output-token
 ceiling for unattended runs; the driver halts after any ticket that exceeds
 it (the ticket stays merged), so a runaway ticket is a signal, not a bill.
@@ -237,6 +248,10 @@ Then one section per ticket:
 ```markdown
 ## <ID> — <short name>
 
+<OPTIONAL — delete the next line unless this ticket must not start before
+another ticket of this epic is integrated; most tickets carry none>
+**Blocked by:** <ID>[, <ID>]
+
 **Scope.**
 - <what to build, concretely — files, functions, behaviours>
 
@@ -257,6 +272,31 @@ Rules that matter:
 
 - **Stable short IDs prefixed by epic** — `SEC-3`, `DATA-7`. They prefix
   every commit, name every branch, and are how shipped state is detected.
+- **`**Blocked by:** <ID>[, <ID>]` is optional, and strict.** Write it only
+  where a ticket must not start before another of **this epic's** tickets is
+  integrated — it builds on that ticket's code, or the two edit the same
+  files. The label opens the line, bold, at the margin; then bare ticket
+  IDs, commas, and **nothing else on the line**: no "once its API settles",
+  no "and". No bullet, no indent, no quote mark, and asterisks for the bold:
+  `- **Blocked by:** DEP-1` changes nothing on the board, and `doctor` says
+  the line is unread — which in a `Parallel:` epic means the ticket may be
+  started beside the work it names. (`**Blocked by:** nothing` and the
+  template's own unedited placeholder read as no line at all — neither
+  states a dependency; an **empty** label is an interrupted edit, and
+  waits.) (`Depends on:` is read by nothing — it
+  is the removed graph's spelling, left inert so old documents read as they
+  did; `doctor` mentions it only in an epic that declares `Parallel:`.) The strictness is the
+  design — the dependency graph this plugin once had parsed tolerantly, and a
+  dependency written as prose stalled its ticket with nothing saying why. A
+  line that is about blocking and does not parse is a named problem: the
+  ticket reads `waiting` on the board, `doctor` names the line, and `next`
+  refuses rather than report the epic as built. Put the reason in the Scope
+  bullets, where prose belongs. A blocked ticket reads `waiting` until every
+  blocker is `integrated` or `shipped`, and `next` leaves it out — so no
+  lane can overtake the plan. A wait on **another epic's** work is an Owed
+  line's job, never this line's. Run `/flow:doctor` before sign-off: an
+  unknown ID, a self-reference, a cycle and a blocker placed later in the
+  document are all flagged there.
 - **Document order is the intended order.** The board proposes the first
   unstarted ticket by position, so put the de-risking probe or the live
   regression first; if the plan rests on an unproven assumption, ticket one
@@ -403,7 +443,9 @@ decomposition caught after sign-off costs every ticket built on it.
 
 Spawn `flow:plan-reviewer` with the **Agent** tool — `model`: the draft's
 own `Planner model:` line when it declares one, otherwise omit the parameter
-so the agent definition's pinned model applies; `effort: high`. Give it the
+so the agent definition's pinned model applies; `effort: high`. Give it
+**the plugin's root path** (`${CLAUDE_PLUGIN_ROOT}`, resolved — the reviewer
+runs `tickets.mjs check` and `doctor` and the script is on no PATH), the
 draft `epics/<name>/tickets.md`, the `context/` directory, the root
 instruction file and each in-scope area's, and one line on what was
 requested. **When the draft declares `Design sources:`, give it those paths

@@ -45,6 +45,13 @@
 //                                        records and nothing has resolved —
 //                                        the release pull request's Owed
 //                                        section, printed rather than recalled
+//   tickets.mjs next [epic] --with-waiting
+//                                        the run driver's form of `next`:
+//                                        {ready, waiting} as JSON, always exit
+//                                        0 — so "tickets wait and none can
+//                                        start" reaches the driver as data it
+//                                        refuses on in code, never only as an
+//                                        exit code relayed by a shell proxy
 //   tickets.mjs spend [epic] [--json]    the recorded token ledger per ticket
 //                                        and per epic, derived from the
 //                                        status log's Tokens lines, addendum
@@ -230,6 +237,22 @@ function parsePreambleText(doc) {
     // that does not exist, and this script never opens them.
     designSources: grabTextList('Design sources'),
     ticketBudget: budget,
+    // "Parallel" is the epic's opt-in to running independent tickets side by
+    // side in an unattended run: the most that may be in flight at once, 2 or
+    // 3. Absent — and `1` — is the serial run every epic had before the line
+    // existed, which is the point of making it a declaration: an epic written
+    // when document order was the only dependency mechanism must not turn
+    // parallel because the plugin updated. The ceiling is 3 because the
+    // constraint practitioners name every time is review bandwidth, not
+    // machines. A value outside 1–3 parses as absent and doctor flags the
+    // line, like a budget with an unknown suffix. This script only parses it;
+    // applying it is the run driver's job, and until the driver reads the
+    // line a run is serial whatever it says.
+    parallel: (() => {
+      const v = grab('Parallel', '\\d+(?=\\s|$)')
+      const n = v ? parseInt(v, 10) : null
+      return n >= 1 && n <= 3 ? n : null
+    })(),
   }
 }
 
@@ -302,12 +325,154 @@ function parseTicketSections(text, epicName) {
       current.body.push(line)
     }
   }
-  for (const t of tickets) t.body = t.body.join('\n').trim()
+  // Blank lines are trimmed from the ends, never the first line's indent: a
+  // whole-body `.trim()` made `  **Blocked by:** DEP-1` a real dependency when
+  // it was the section's first line and nothing at all anywhere below it —
+  // one spelling, read by position.
+  for (const t of tickets) t.body = t.body.join('\n').replace(/^(?:[^\S\n]*\n)+/, '').replace(/\s+$/, '')
   return tickets
 }
 
 function parseTickets(epic) {
   return parseTicketSections(readFileSync(epic.ticketsDoc, 'utf8'), epic.epic)
+}
+
+// ── dependencies ─────────────────────────────────────────────────────────────
+// A ticket that must not start before another is integrated says so on one
+// line of its own section:
+//
+//   **Blocked by:** RUN-1, RUN-3
+//
+// Bare IDs and commas and NOTHING else — that strictness is the whole design.
+// The first dependency graph this plugin had (removed; METHODOLOGY § "Things
+// that were built and removed") parsed `Depends on:` tolerantly, and a
+// dependency written as prose read as a hard blocker and stalled its ticket
+// with nothing saying why. So here a line that is about blocking and does not
+// parse is a PROBLEM with a name, never a guess in either direction: the
+// ticket waits (starting it early is the unsafe direction), the board says it
+// is waiting on a line that will not parse, doctor flags the line, and `next`
+// refuses out loud when nothing else can start. Document order stays the
+// intended order; this line only says which tickets may NOT overtake which.
+const BLOCKED_BY_LINE = new RegExp(`^\\*\\*Blocked by:\\*\\*[^\\S\\n]*(${TICKET_ID}(?:[^\\S\\n]*,[^\\S\\n]*${TICKET_ID})*)[^\\S\\n]*$`)
+// What a human writes when they mean that line — and ONLY that. The label
+// must open the line at column 0, and be either bold (`**Blocked by…`) or
+// followed by its colon (`Blocked by:`). The first cut took any line that
+// merely began with the words, after any indent or bullet, and stalled a
+// ticket for ever on a wrapped sentence — "…because it is / blocked by the
+// vendor API" — and on a Not-in-scope bullet. Prose wraps; a label does not
+// start mid-bullet. A near line is a problem, so the near set is kept as small
+// as the mistake it exists to catch.
+const BLOCKED_BY_NEAR = /^(?:\*\*Blocked[ -]by\b|Blocked[ -]by\s*:)/i
+// Two near lines that are NOT problems, because neither states a dependency:
+// "nothing" in the words a planner uses for it — the same words the `Depends
+// on` check honours, since `**Blocked by:** nothing` stalling while
+// `**Depends on:** nothing` did not was the same sentence read two ways — and
+// the epic skill's own placeholder, left in by a planner who had no blocker
+// to write. Both read as no line at all.
+// An EMPTY label is not one of them: it is an interrupted edit, not a
+// statement of independence, and under `Parallel:` the difference is whether
+// a ticket may be started beside another — so it is a problem, and waits.
+const BLOCKED_BY_NOTHING = /^(?:nothing|none|n\/a|[—–-])\s*\.?$/i
+const BLOCKED_BY_PLACEHOLDER = /^<ID>(?:\[, <ID>\])?$/
+// → { ids } for the strict line, { malformed } for a near line that states
+// something unreadable, null for everything else.
+function classifyBlockedBy(line) {
+  const m = line.match(BLOCKED_BY_LINE)
+  if (m) return { ids: m[1].split(',').map((x) => x.trim()) }
+  if (!BLOCKED_BY_NEAR.test(line)) return null
+  const rest = line.replace(/^\**Blocked[ -]by\**\s*:?\**/i, '').trim()
+  if (BLOCKED_BY_NOTHING.test(rest) || BLOCKED_BY_PLACEHOLDER.test(rest)) return null
+  return { malformed: line.trim() }
+}
+// The near set is small on purpose, and what it leaves out must not be left
+// SILENT: `- **Blocked by:** DEP-1`, `> **Blocked by:** DEP-1`, `__Blocked
+// by:__ DEP-1` are a planner stating a dependency, and nothing reads them —
+// which in an epic that declares `Parallel:` means the ticket is "declared
+// independent" and may start beside the work it depends on. That is the
+// unsafe guess. So such a line changes no state (a bullet stalls nothing) and
+// doctor says it is unread: the label, emphasised or with its colon, after an
+// indent, a quote mark or a bullet — or with the wrong emphasis at the margin
+// — followed somewhere by a ticket ID. No ticket ID, no warn: "- Blocked by:
+// nothing, the vendor API is out of scope" is prose.
+const BLOCKED_BY_UNREAD = new RegExp(`^[\\s>]*(?:(?:[-*+]|\\d+[.)])\\s+)?(?:[*_]{1,2}Blocked[ -]by\\b|Blocked[ -]by\\s*:).*\\b${TICKET_ID}\\b`, 'i')
+function unreadBlockedBy(line) {
+  return !classifyBlockedBy(line) && !BLOCKED_BY_NOTHING.test(line.replace(/^.*?Blocked[ -]by[*_]*\s*:?[*_]*/i, '').trim()) && BLOCKED_BY_UNREAD.test(line)
+}
+// A fenced block is a quotation: a ticket that DOCUMENTS this format (this
+// repository's own will) must not be blocked by its example.
+const FENCE = /^\s*(```|~~~)/
+// `Depends on:` is NOT near, and changes no ticket's state. It is the removed
+// dependency graph's spelling, and documents written under it are still in
+// installed projects as prose — one live epic carries `**Depends on:**
+// nothing` on four tickets, and reading that as a broken dependency left two
+// unstarted tickets waiting for ever the moment the plugin updated. A format
+// that arrives in every installed project overnight must read old documents
+// as it found them. So the old spelling is inert, and doctor mentions it only
+// where an unread dependency can hurt: an epic that declares `Parallel:`.
+// Searched for anywhere in the line, not anchored: the live documents write it
+// mid-line, as one field among several — `**Closes:** F2 · **Severity:** … ·
+// **Depends on:** SEC-1 ✅` — and an anchored pattern was blind to the only
+// shape the warn exists for. But it is a FIELD: at the start of the line or
+// after a `·` separator, never mid-sentence ("…asked why this ticket
+// **Depends on:** DEP-1 at all" is prose). The value runs to the next `·`.
+const DEPENDS_ON_LINE = /(?:^|·\s*)(?:\*\*Depends[ -]on:?\*\*\s*:?|Depends[ -]on\s*:)\s*([^·]*)/i
+
+function parseBlockedBy(body) {
+  const ids = []
+  const malformed = []
+  let fenced = false
+  for (const line of body.split('\n')) {
+    if (FENCE.test(line)) fenced = !fenced
+    if (fenced) continue
+    const c = classifyBlockedBy(line)
+    if (c?.ids) ids.push(...c.ids)
+    else if (c?.malformed) malformed.push(c.malformed)
+  }
+  return { ids: [...new Set(ids)], malformed }
+}
+
+// Every ticket's blockers, checked against its own epic's tickets, in one
+// pass: `problems[id]` is the sentence the board, doctor and `next` all print.
+// Same-epic only — a wait on another epic's work is an Owed line's job, and
+// `next <epic>` never loads another epic's board anyway.
+function resolveDependencies(epicTickets) {
+  const ids = new Set(epicTickets.map((t) => t.id))
+  const order = new Map(epicTickets.map((t, i) => [t.id, i]))
+  const deps = {}
+  const problems = {}
+  const notes = {}
+  for (const t of epicTickets) {
+    const { ids: blockers, malformed } = parseBlockedBy(t.body)
+    deps[t.id] = blockers
+    const unknown = blockers.filter((b) => !ids.has(b))
+    if (malformed.length) problems[t.id] = `a Blocked by line that will not parse ("${malformed[0]}") — needs "**Blocked by:** <ID>[, <ID>]", bare ticket IDs and nothing else on the line`
+    else if (blockers.includes(t.id)) problems[t.id] = `it is blocked by itself`
+    else if (unknown.length) problems[t.id] = `${unknown.join(', ')} ${unknown.length === 1 ? 'is' : 'are'} not a ticket of this epic — a wait on another epic's work is carried by an Owed line, not a Blocked by`
+    // Not a problem, and still worth a sentence: the board proposes tickets in
+    // document order, so a blocker placed later reads as a plan whose order
+    // and whose dependencies disagree.
+    const later = blockers.filter((b) => ids.has(b) && order.get(b) > order.get(t.id))
+    if (later.length) notes[t.id] = `blocked by ${later.join(', ')}, which ${later.length === 1 ? 'comes' : 'come'} later in the document — document order is the intended order, so either the order or the line is wrong`
+  }
+  // Cycles, over the edges that name real tickets. Every ticket on a cycle
+  // gets the problem — each of them is the one a human may open first.
+  const state = {}
+  const stack = []
+  const visit = (id) => {
+    if (state[id] === 'done') return
+    if (state[id] === 'open') {
+      const cycle = stack.slice(stack.indexOf(id))
+      for (const c of cycle) problems[c] ||= `a dependency cycle: ${[...cycle, id].join(' → ')}`
+      return
+    }
+    state[id] = 'open'
+    stack.push(id)
+    for (const b of deps[id]) if (ids.has(b) && b !== id) visit(b)
+    stack.pop()
+    state[id] = 'done'
+  }
+  for (const t of epicTickets) visit(t.id)
+  return { deps, problems, notes }
 }
 
 // ── acceptance checks ────────────────────────────────────────────────────────
@@ -1717,7 +1882,12 @@ function commitsAhead(branch) {
 
 // ── state resolution ─────────────────────────────────────────────────────────
 
-const STATES = ['shipped', 'integrated', 'in-review', 'done', 'in-progress', 'blocked', 'todo']
+// `waiting` is a `todo` ticket whose `**Blocked by:**` line names a ticket
+// that is not integrated yet — or whose line cannot be read. It is not
+// `blocked`, which is an OUTCOME a worker recorded; waiting is a plan's
+// statement about order, and it ends by itself when the blocker lands.
+const STATES = ['shipped', 'integrated', 'in-review', 'done', 'in-progress', 'blocked', 'waiting', 'todo']
+const LANDED = new Set(['shipped', 'integrated'])
 
 function resolveState(ticket, status, branches, prs, onMain, onEpicBranch) {
   const branch = branchNameFor(ticket.id)
@@ -1763,8 +1933,21 @@ function board(epicFilter) {
     // branch exists on the remote — the remote, because integration is the
     // driver's push, and a local-only epic branch proves nothing.
     const onEpicBranch = epic.delivery === 'release' ? idsOnRef(`origin/epic/${epic.epic}`).ids : NO_IDS
-    for (const t of parseTickets(epic)) {
-      tickets.push({ ...t, ...resolveState(t, status, branches, prs, onMain.ids, onEpicBranch) })
+    const parsed = parseTickets(epic)
+    const { deps, problems, notes } = resolveDependencies(parsed)
+    const resolved = parsed.map((t) => ({ ...t, ...resolveState(t, status, branches, prs, onMain.ids, onEpicBranch) }))
+    const stateOf = Object.fromEntries(resolved.map((t) => [t.id, t.state]))
+    for (const t of resolved) {
+      t.blockedBy = deps[t.id]
+      // What it still waits on: blockers that have not landed. A blocker that
+      // is not a ticket here never lands, which is why it is a problem too.
+      t.waitingOn = deps[t.id].filter((b) => !LANDED.has(stateOf[b]))
+      t.dependencyProblem = problems[t.id] || null
+      t.dependencyNote = notes[t.id] || null
+      // Only a ticket nobody has started can wait: once there is work on it,
+      // the board reports the work, and the plan's order is history.
+      if (t.state === 'todo' && (t.waitingOn.length || t.dependencyProblem)) t.state = 'waiting'
+      tickets.push(t)
     }
   }
 
@@ -1788,6 +1971,13 @@ function board(epicFilter) {
   }
 }
 
+// Why a waiting ticket waits, in the words every surface prints: the board
+// row, `find`, doctor, and `next` when it refuses.
+function waitingReason(t, byId) {
+  if (t.dependencyProblem) return `${t.id} cannot start: ${t.dependencyProblem}`
+  return `${t.id} waits on ${t.waitingOn.map((b) => `${b} (${byId[b]?.state ?? 'unknown'})`).join(', ')}`
+}
+
 // ── output ───────────────────────────────────────────────────────────────────
 
 const C = process.stdout.isTTY
@@ -1801,6 +1991,7 @@ const BADGE = {
   done: `${C.yellow}done, unpushed${C.off}`,
   'in-progress': `${C.yellow}in progress${C.off}`,
   blocked: `${C.red}blocked${C.off}`,
+  waiting: `${C.dim}waiting${C.off}`,
   todo: `${C.dim}todo${C.off}`,
 }
 
@@ -1872,7 +2063,9 @@ function printBoard(data, epicFilter) {
     for (const t of ts) {
       const title = t.title.length > 46 ? t.title.slice(0, 45) + '…' : t.title
       console.log(
-        `  ${t.id.padEnd(8)} ${title.padEnd(46)} ${BADGE[t.state]}` + (t.pr ? `  #${t.pr.number}` : ''),
+        `  ${t.id.padEnd(8)} ${title.padEnd(46)} ${BADGE[t.state]}` +
+          (t.state === 'waiting' ? `${C.dim} ${t.dependencyProblem ? '— its Blocked by line is a problem (doctor names it)' : `on ${t.waitingOn.join(', ')}`}${C.off}` : '') +
+          (t.pr ? `  #${t.pr.number}` : ''),
       )
     }
     const loose = data.unticketed[epic.epic] || []
@@ -1894,7 +2087,13 @@ function printBoard(data, epicFilter) {
     // Unconditional: the empty board returned at the top of this function, so
     // there are always tickets here (dead false branch removed — Q-15's
     // review noted it, Q-17's pass touched this function).
-    console.log('Nothing left to start.')
+    const waiting = data.tickets.filter((t) => t.state === 'waiting')
+    if (!waiting.length) console.log('Nothing left to start.')
+    else {
+      // Not "nothing left": work remains and none of it may begin.
+      console.log(`${C.bold}Nothing can start${C.off} — ${waiting.length} ticket${waiting.length === 1 ? '' : 's'} waiting:`)
+      for (const t of waiting) console.log(`  ${waitingReason(t, data.byId)}`)
+    }
     return
   }
   console.log(`${C.bold}Next up${C.off}`)
@@ -1966,15 +2165,143 @@ function doctor() {
   // old two-line syntax ("Release mode:" / "Run mode:") is in the near set
   // deliberately: those labels parse as nothing at all now, and a preamble
   // written in them would silently run incremental.
-  const declNear = /^[^A-Za-z]*\b(delivery|(reviewer|worker|planner)\s+model|worker\s+runner|shadow\s+reviewer|consequence\s+paths|fix\s+bounds\s+exclude|design\s+sources|ticket\s+budget|(release|run)\s+mode)\b/i
-  const declStrict = /^Delivery\s*:\s*[A-Za-z-]+|^(Reviewer|Worker|Planner) model\s*:\s*[A-Za-z0-9._-]+|^Worker runner\s*:\s*[A-Za-z-]+|^Shadow reviewer\s*:\s*[A-Za-z-]+|^Consequence paths\s*:\s*\S+|^Fix bounds exclude\s*:\s*\S+|^Design sources\s*:\s*\S+|^Ticket budget\s*:\s*\d+[km]?(\s|$)/i
+  const declNear = /^[^A-Za-z]*\b(delivery|(reviewer|worker|planner)\s+model|worker\s+runner|shadow\s+reviewer|consequence\s+paths|fix\s+bounds\s+exclude|design\s+sources|ticket\s+budget|parallel(?=\s*:)|(release|run)\s+mode)\b/i
+  const declStrict = /^Delivery\s*:\s*[A-Za-z-]+|^(Reviewer|Worker|Planner) model\s*:\s*[A-Za-z0-9._-]+|^Worker runner\s*:\s*[A-Za-z-]+|^Shadow reviewer\s*:\s*[A-Za-z-]+|^Consequence paths\s*:\s*\S+|^Fix bounds exclude\s*:\s*\S+|^Design sources\s*:\s*\S+|^Ticket budget\s*:\s*\d+[km]?(\s|$)|^Parallel\s*:\s*[1-3](\s|$)/i
   for (const epic of epics) {
     if (!DELIVERIES.has(epic.delivery))
       add('warn', `${epic.epic}: unrecognised delivery "${epic.delivery}" (known: release, incremental) — skills reading it will not know how this epic ships`)
     readFileSync(epic.ticketsDoc, 'utf8').split(/^##\s/m)[0].split('\n').forEach((line, i) => {
       if (declNear.test(line) && !declStrict.test(line))
-        add('warn', `${epic.epic}/tickets.md:${i + 1} — looks like a declaration line but will not parse, so it silently defaults (needs "Delivery: release|incremental" / "Reviewer model: <value>" / "Worker model: <value>" / "Worker runner: claude|codex" / "Shadow reviewer: codex" / "Planner model: <value>" / "Consequence paths: <glob>[, <glob>]" / "Fix bounds exclude: <glob>[, <glob>]" / "Design sources: <path>[, <path>]" / "Ticket budget: <digits, optional k or m suffix>" — label at line start, no formatting, value on the label's own line; "Release mode:"/"Run mode:" are not read at all): ${line.trim()}`)
+        add('warn', `${epic.epic}/tickets.md:${i + 1} — looks like a declaration line but will not parse, so it silently defaults (needs "Delivery: release|incremental" / "Reviewer model: <value>" / "Worker model: <value>" / "Worker runner: claude|codex" / "Shadow reviewer: codex" / "Planner model: <value>" / "Consequence paths: <glob>[, <glob>]" / "Fix bounds exclude: <glob>[, <glob>]" / "Design sources: <path>[, <path>]" / "Ticket budget: <digits, optional k or m suffix>" / "Parallel: 1|2|3" — label at line start, no formatting, value on the label's own line; "Release mode:"/"Run mode:" are not read at all): ${line.trim()}`)
     })
+    // Dependencies. A `**Blocked by:**` line that will not parse, names a
+    // ticket this epic does not have, or closes a cycle leaves its ticket
+    // `waiting` for ever — the safe direction, and a silent one unless it is
+    // said here. `next` refuses at the driver's door; this is where a human
+    // planning the epic hears about it, with the line number.
+    {
+      const parsed = parseTickets(epic)
+      const { problems, notes } = resolveDependencies(parsed)
+      const lines = readFileSync(epic.ticketsDoc, 'utf8').split('\n')
+      // The line a problem is about: the malformed one when that is the
+      // problem (a ticket may carry a good line AND a bad one, and pointing at
+      // the good one sends the reader to the wrong place), else the first
+      // line that parsed. Fenced blocks are skipped, as the parser skips them.
+      const lineOf = (id) => {
+        let inTicket = false
+        let fenced = false
+        let firstValid = null
+        for (let i = 0; i < lines.length; i++) {
+          const h = lines[i].match(TICKET_HEADING)
+          if (h) {
+            inTicket = h[1] === id
+            fenced = false
+            continue
+          }
+          if (!inTicket) continue
+          if (FENCE.test(lines[i])) fenced = !fenced
+          if (fenced) continue
+          const c = classifyBlockedBy(lines[i])
+          if (c?.malformed) return i + 1
+          if (c?.ids && firstValid === null) firstValid = i + 1
+        }
+        return firstValid
+      }
+      const at = (id) => (lineOf(id) ? `:${lineOf(id)}` : '')
+      for (const [id, problem] of Object.entries(problems)) add('warn', `${epic.epic}/tickets.md${at(id)} — ${id} will wait for ever: ${problem}`)
+      for (const [id, note] of Object.entries(notes)) if (!problems[id]) add('warn', `${epic.epic}/tickets.md${at(id)} — ${id} is ${note}`)
+      // The removed graph's `Depends on` spelling is inert everywhere (see
+      // DEPENDS_ON_LINE). The one place it is worth a sentence is an epic that
+      // declares `Parallel:`, on a ticket that has not landed: there an unread
+      // dependency is a ticket that may be started beside what it depends on.
+      // A landed ticket's line is history, and a warn on it is noise.
+      // Which lines sit inside a fence, per ticket section. `toggled` is what
+      // the parser sees (a fence opens and closes as it goes); `closed` counts
+      // only a fence that actually closes before the section ends — an
+      // unclosed one swallows every later line of its section for the parser,
+      // and the unread-line warn below is how a real line lost that way gets
+      // said.
+      const owner = []
+      const toggled = []
+      const closed = []
+      {
+        let current = null
+        let open = -1
+        lines.forEach((line, i) => {
+          const h = line.match(TICKET_HEADING)
+          if (h) {
+            current = h[1]
+            open = -1
+          }
+          owner[i] = current
+          if (!h && FENCE.test(line)) {
+            if (open < 0) open = i
+            else {
+              for (let k = open; k <= i; k++) closed[k] = true
+              open = -1
+            }
+            toggled[i] = true
+          } else toggled[i] = open >= 0
+        })
+      }
+      lines.forEach((line, i) => {
+        // Inside a fence that never closes, even the strict line is unread.
+        const swallowed = toggled[i] && !closed[i] && !FENCE.test(line) && classifyBlockedBy(line)
+        if (!owner[i] || closed[i] || !(swallowed || unreadBlockedBy(line))) return
+        add(
+          'warn',
+          `${epic.epic}/tickets.md:${i + 1} — ${owner[i]} has a line that looks like a Blocked by line, and nothing reads it${toggled[i] ? ' (it sits after a code fence that never closes)' : ''}: "${line.trim()}". The line is read only as "**Blocked by:** <ID>[, <ID>]" opening a line at the margin — no bullet, no indent, no quote mark, bold with asterisks.` +
+            (epic.parallel > 1 ? ` This epic declares "Parallel: ${epic.parallel}", where a ticket with no such line is declared independent: ${owner[i]} may be started beside the work this line names.` : ''),
+        )
+      })
+      if (epic.parallel > 1) {
+        let landed = null
+        lines.forEach((line, i) => {
+          const current = owner[i]
+          const m = current && !toggled[i] && line.match(DEPENDS_ON_LINE)
+          if (!m) return
+          // "nothing" / "none" / "—" is a statement of independence, which is
+          // what the absence of a Blocked by line already says. Status glyphs
+          // a human appended to the value (`SEC-1 ✅`) are not part of it.
+          const value = (m[1] ?? '').replace(/[\s*✅✓☑️❌⛔️🚧]+$/u, '').trim()
+          if (!value || BLOCKED_BY_NOTHING.test(value)) return
+          landed ??= new Set(board(epic.epic).tickets.filter((t) => LANDED.has(t.state)).map((t) => t.id))
+          if (landed.has(current)) return
+          add('warn', `${epic.epic}/tickets.md:${i + 1} — ${current} carries a "Depends on" line (${value}), which nothing reads: this epic declares "Parallel: ${epic.parallel}", so a parallel run may start ${current} beside the work it depends on. If it is a dependency, write it as "**Blocked by:** <ID>[, <ID>]" on a line of its own`)
+        })
+      }
+      // In a parallel epic the status log is merged by a driver, several
+      // times a run, with nobody present — and every way that has gone wrong
+      // so far (git's `union`, a driver that silently did nothing) left
+      // entries that still PARSE: a heading with its closing fields gone, or
+      // moved under the next ticket's heading. The log's own rule is the
+      // tripwire: "the **Owed** line is required even when empty". An entry
+      // without one is a truncated entry until somebody shows otherwise, and
+      // an **Owed:** line that is not the last field of its entry is one that
+      // came from somewhere else. Scoped to epics that declare `Parallel:`,
+      // because older logs in installed projects have entries that simply
+      // predate the rule, and a plugin update must not start warning on them.
+      if (epic.parallel > 1 && epic.statusDoc) {
+        const log = readFileSync(epic.statusDoc, 'utf8').split('\n')
+        let open = null // { id, line, owed }
+        const close = () => {
+          if (open && open.owed !== 1)
+            add('warn', `${epic.epic}/status.md:${open.line} — ${open.id}'s entry has ${open.owed === 0 ? 'no' : open.owed} **Owed:** line${open.owed === 1 ? '' : 's'}; every entry carries exactly one, "Nothing." included. In an epic that declares "Parallel:" the log is merged by a driver between tickets, and a missing or doubled Owed line is what a bad merge of two entries looks like: compare this entry with the one on ${open.id}'s own branch (git show origin/${open.id.toLowerCase()}:epics/${epic.epic}/status.md) before trusting the log, the owed list or the release pull request's Owed section`)
+        }
+        log.forEach((line, i) => {
+          const h = line.match(STATUS_HEADING)
+          if (h || /^#{2,3}\s/.test(line)) {
+            close()
+            open = h ? { id: h[1], line: i + 1, owed: 0 } : null
+          } else if (open && /^\*\*Owed:?\*\*/.test(line)) open.owed++
+        })
+        close()
+      }
+      // Stated as what the line is FOR, not as what a run does today: the
+      // declaration is parsed here and applied by the run driver.
+      if (epic.parallel > 1 && epic.delivery !== 'release')
+        add('warn', `${epic.epic}: "Parallel: ${epic.parallel}" is declared on an incremental epic — the line is for an unattended release run, the only lane with more than one ticket in flight, so it does nothing here`)
+    }
     // A declared design source that is not there is the whole declaration
     // failing quietly: the line parses, every reader is handed a path, and
     // whoever opens it finds nothing — so the comparison it exists for is
@@ -2307,6 +2634,14 @@ function ticketFacts(data, t) {
     fixBoundsExclude: epic.fixBoundsExclude,
     designSources: epic.designSources,
     ticketBudget: epic.ticketBudget,
+    parallel: epic.parallel,
+    // The plan's statement about order: what this ticket is blocked by, what
+    // of that has not landed yet, and the problem sentence when its line
+    // cannot be read. `state` is "waiting" while either holds and the ticket
+    // is unstarted — the door a lane checks before it branches.
+    blockedBy: t.blockedBy,
+    waitingOn: t.waitingOn,
+    dependencyProblem: t.dependencyProblem,
     repoRoot,
     epicDir: epic.dir,
     ticketsDoc: epic.ticketsDoc,
@@ -2438,6 +2773,14 @@ switch (cmd) {
           (out.pr ? ` · PR #${out.pr.number} (${out.pr.state})` : '') +
           C.off,
       )
+      // Said before anything else a worker reads: a brief is what a lane opens
+      // on its way to starting the ticket.
+      if (out.blockedBy.length || out.dependencyProblem)
+        console.log(
+          out.state === 'waiting'
+            ? `${C.yellow}${waitingReason(t, data.byId)} — do not start it${C.off}`
+            : `${C.dim}blocked by ${out.blockedBy.join(', ')}${out.waitingOn.length ? ` — ${out.waitingOn.join(', ')} not landed` : ' — all landed'}${C.off}`,
+        )
       console.log()
       console.log(`${C.bold}Epic preamble${C.off}`)
       console.log(out.preamble)
@@ -2716,7 +3059,58 @@ switch (cmd) {
   case 'next': {
     const data = board(arg || null)
     requireKnownEpic(data, arg)
+    // Startable means unstarted AND not waiting: a ticket whose blockers have
+    // not landed is left out, so a lane that takes the first of this list —
+    // or, in a parallel run, the first few — can never overtake the plan.
     const open = data.tickets.filter((t) => t.state === 'todo')
+    const waiting = data.tickets.filter((t) => t.state === 'waiting')
+    // The refusal lives here because this is the command the run driver runs
+    // between tickets: an empty list means "the epic is built, open the
+    // release", and with tickets still waiting that would release an epic
+    // with work unbuilt. So empty-with-waiting is an ERROR, with the reasons,
+    // and the driver's nonzero-exit stop condition does the rest.
+    // Stuck is a fact about ONE epic: it has tickets waiting and none ready.
+    // Asked about one epic — the driver's call — that is the refusal. Asked
+    // about the whole board, a stuck epic must neither be hidden behind another
+    // epic's ready tickets nor fail a question nobody asked about it: it is
+    // said on stderr, and the exit is nonzero only when nothing anywhere can
+    // start.
+    // `--with-waiting` is the run driver's form, and it changes HOW the fact
+    // travels, not what it is: `{ready, waiting}` as data, exit 0, the wait
+    // reasons included. The refusal below is an exit code, and the driver has
+    // no shell — it learns an exit code from a shell proxy's report of one. An
+    // empty `ready` with a non-empty `waiting` must halt a run even if that
+    // proxy reports the exit wrongly, so the driver is handed both lists and
+    // refuses in code. Humans and every other caller keep the refusal.
+    if (argv.includes('--with-waiting')) {
+      emit({
+        // The counts are a cross-check, not a convenience: the driver learns
+        // these lists through a shell proxy's report, and a proxy that returns
+        // `waiting: []` for a list that was not empty would switch the gate
+        // off. The driver refuses a report whose counts and arrays disagree.
+        readyCount: open.length,
+        waitingCount: waiting.length,
+        ready: open.map((t) => ({ id: t.id, title: t.title, epic: t.epic })),
+        waiting: waiting.map((t) => ({ id: t.id, title: t.title, epic: t.epic, on: t.waitingOn, problem: t.dependencyProblem, reason: waitingReason(t, data.byId) })),
+      })
+      break
+    }
+    const stuck = data.epics
+      .map((e) => e.epic)
+      .filter((name) => !open.some((t) => t.epic === name) && waiting.some((t) => t.epic === name))
+    if (!arg && open.length && stuck.length)
+      console.error(
+        `tickets: ${stuck.join(', ')} ${stuck.length === 1 ? 'has' : 'have'} tickets waiting and none that can start:\n` +
+          waiting.filter((t) => stuck.includes(t.epic)).map((t) => `  ${waitingReason(t, data.byId)}`).join('\n'),
+      )
+    if (!open.length && waiting.length) {
+      console.error(
+        `tickets: nothing can start, and ${waiting.length} ticket${waiting.length === 1 ? ' is' : 's are'} still waiting — this is not "nothing left to start":\n` +
+          waiting.map((t) => `  ${waitingReason(t, data.byId)}`).join('\n') +
+          `\nA blocker that is blocked, halted or unmerged holds everything behind it: finish or re-plan it. A Blocked by line that will not parse is fixed in tickets.md — \`doctor\` names the line.`,
+      )
+      process.exit(1)
+    }
     if (json) emit(open.map((t) => ({ id: t.id, title: t.title, epic: t.epic })))
     else if (!open.length) console.log('nothing left to start')
     else for (const t of open) console.log(`${t.id.padEnd(8)} ${t.title}`)
@@ -2790,7 +3184,7 @@ switch (cmd) {
         modes: Object.fromEntries(
           data.epics.map((e) => [
             e.epic,
-            { delivery: e.delivery, reviewerModel: e.reviewerModel, workerModel: e.workerModel, workerRunner: e.workerRunner, shadowReviewer: e.shadowReviewer, plannerModel: e.plannerModel, consequencePaths: e.consequencePaths, fixBoundsExclude: e.fixBoundsExclude, designSources: e.designSources, ticketBudget: e.ticketBudget },
+            { delivery: e.delivery, reviewerModel: e.reviewerModel, workerModel: e.workerModel, workerRunner: e.workerRunner, shadowReviewer: e.shadowReviewer, plannerModel: e.plannerModel, consequencePaths: e.consequencePaths, fixBoundsExclude: e.fixBoundsExclude, designSources: e.designSources, ticketBudget: e.ticketBudget, parallel: e.parallel },
           ]),
         ),
         duplicates: data.duplicates,

@@ -332,7 +332,7 @@ test('shadow runner: the prompt carries the driver’s packet body and reviewer 
   assert.equal(r.out.outcome, 'reviewed')
   const prompt = readFileSync(rec.prompt, 'utf8')
   const worktree = read(rec.checkout).dir
-  const inputs = { TICKETS: `node "${PLUGIN}/scripts/tickets.mjs"`, id: 'R-1', epic: 'rho', branch: 'r-1', repoRoot: worktree }
+  const inputs = { TICKETS: `node "${PLUGIN}/scripts/tickets.mjs"`, id: 'R-1', epic: 'rho', branch: 'r-1', repoRoot: worktree, root: worktree }
   const evaluate = (text) => new Function(...Object.keys(inputs), `return \`${text}\``)(...Object.values(inputs))
 
   const driverBody = evaluate(templateLiteral('packetBody'))

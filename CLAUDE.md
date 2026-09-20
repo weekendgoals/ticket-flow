@@ -3,7 +3,8 @@
 A Claude Code plugin marketplace with one plugin, `flow` (`plugins/flow/`):
 skills and agents that run work as epics and tickets, plus `tickets.mjs`, the
 script that derives the board from git, `workflows/run-epic.mjs`, the
-workflow script that holds `/flow:run`'s ticket loop, and one session hook
+workflow script that holds `/flow:run`'s ticket loop, `scripts/merge-append.mjs`,
+the git merge driver a parallel run merges the status log with, and one session hook
 (the in-session-work guard, whose only state is a per-session marker in the
 OS temp dir). `README.md` is the user-facing manual;
 `METHODOLOGY.md` is reasoning only and contains no rules — if it contradicts a
@@ -21,13 +22,13 @@ go through the flow, one-off work goes through `/flow:quick` into
 ## Commands
 
 - **Tests:** `node --test plugins/flow/scripts/tickets.test.mjs` — expect
-  every test passing (`# pass 159`, `# fail 0` as of 2026-09-19; the count
+  every test passing (`# pass 178`, `# fail 0` as of 2026-09-20; the count
   grows, the fail line does not). The suite builds a throwaway git repo in a
   temp dir; it needs `git` on PATH and nothing else. The session-guard hook
   has its own suite:
   `node --test plugins/flow/hooks/ticket-session-guard.test.mjs` (`# pass 14`
   on the same terms). The invariant checker has
-  `node --test plugins/flow/scripts/check-invariants.test.mjs` (`# pass 36`),
+  `node --test plugins/flow/scripts/check-invariants.test.mjs` (`# pass 38`),
   The board renderer has
   `node --test plugins/flow/scripts/board.test.mjs` (`# pass 9`) and the
   plan-page renderer `node --test plugins/flow/scripts/plan-page.test.mjs`
@@ -41,13 +42,18 @@ go through the flow, one-off work goes through `/flow:quick` into
   closure reference fails here instead of inside somebody's page. It needs
   nothing but Node, and **no test may launch or drive a browser** — the plugin
   owns none, which is why it installs anywhere. The run meter has
-  `node --test plugins/flow/scripts/meter.test.mjs` (`# pass 16`) — tokens
+  `node --test plugins/flow/scripts/meter.test.mjs` (`# pass 17`) — tokens
   and time metered off journal and transcript text built in the test, in the
   shapes a real run wrote; the two CLI cases write a throwaway run directory
   to the OS temp dir. Nothing but Node, and **no test reads a real
   transcript** — those live under `~/.claude` and belong to whoever ran
-  them. And the run driver has
-  `node --test plugins/flow/workflows/run-epic.test.mjs` (`# pass 163`) —
+  them. The append merge driver has
+  `node --test plugins/flow/scripts/merge-append.test.mjs` (`# pass 11`) —
+  REAL git in throwaway repositories, the driver wired exactly as the run's
+  merge step wires it, because the driver it replaced (git's own `union`) was
+  also obviously right and corrupted every merge it touched; one test keeps
+  that failure on record. Needs `git` and nothing else. And the run driver has
+  `node --test plugins/flow/workflows/run-epic.test.mjs` (`# pass 175`) —
   which evaluates `run-epic.mjs`'s module body with stubbed agents and
   asserts the sequence, the gate branches and the halt mapping. It needs
   nothing but Node: no git, no network, no filesystem beyond the script.
@@ -76,11 +82,12 @@ go through the flow, one-off work goes through `/flow:quick` into
   phrases). Run it whenever a skill, agent, hook or doctrine document changes —
   it is presence and equality only, so contradictions in meaning still need
   review. Its suite: `node --test plugins/flow/scripts/check-invariants.test.mjs`
-  (`# pass 36` on the same terms).
+  (`# pass 38` on the same terms).
 - **Smoke:** `node plugins/flow/scripts/tickets.mjs doctor` — must exit 0 on
   this repo. `… list` shows the board.
 - **Syntax check:** `node --check plugins/flow/scripts/tickets.mjs`, and the
-  same for `scripts/fidelity.mjs` and `scripts/meter.mjs`. This does
+  same for `scripts/fidelity.mjs`, `scripts/meter.mjs` and
+  `scripts/merge-append.mjs`. This does
   **not** work on `plugins/flow/workflows/run-epic.mjs`: a workflow script is
   a module body with a top-level `return`, which the workflow runtime allows
   (`allowReturnOutsideFunction`) and `node --check` rejects. Parse it the way
@@ -112,12 +119,54 @@ test file path explicitly.
   first invariant: zero dependencies, stores nothing, and a figure it cannot
   observe is `unknown`, never an estimate. A ticket's git commit span is
   never reported as its `wall` — commits begin when the work is nearly over.
+- **A parallel run changes WHERE a pipeline runs and nothing it must pass.**
+  `run-epic.mjs` splits at the one line that matters — `runTicket` touches
+  only the ticket's branch and may run side by side, in its own worktree;
+  `integrateTicket` touches the epic branch and is always one at a time, in
+  document order, whichever pipeline finished first. Three things must stay
+  true, and the driver's suite pins each: **`Parallel:` absent or `1` is the
+  old run, prompt for prompt** (epics planned when document order was the
+  only dependency mechanism must not go wide on a plugin update); **timing
+  decides nothing** (records and merges in wave order — a test delays one
+  pipeline); and **a halt is returned by a pipeline, never thrown**, because
+  `parallel()` turns a throw into a bare `null`. New module-level mutable
+  state written inside `runTicket` is a race: the only one there is,
+  `ticketBudget`, is unreachable under `Parallel:` because the pair is
+  refused. Hoisted function declarations may be called by the loop above
+  them; a `const` they use may not live below it (that was a TDZ crash once).
+- **A merge driver that does nothing is a clean merge that loses data.**
+  Git keeps ours and drops theirs when a driver exits 0 without writing, and
+  reports no conflict. So `scripts/merge-append.mjs` acts on its `--driver`
+  flag — never on a comparison of its own path, which a symlinked plugin
+  directory once made false — and exits nonzero whenever it is told to act
+  and cannot; and the wave's merge step greps the merged log for the
+  ticket's entry heading **before it pushes**. Never replace it with git's
+  `union` driver: union is line-level, emits a shared line once, and moved one
+  ticket's `**Owed:**` line under another's heading in a merge git called
+  clean. Any assumption about git's behaviour is tested against real git in a
+  throwaway repository (`merge-append.test.mjs` does) before it is built on.
 - **The heading regexes are load-bearing and shared.** `TICKET_HEADING` and
   `STATUS_HEADING` are used by both the parsers and `doctor`'s near-miss
   detection — that coupling is the point. If a heading format changes, the
   templates in `skills/epic/SKILL.md`, `skills/ticket/SKILL.md` and
   `skills/quick/SKILL.md` must change in the same commit, and a test must
   cover the new shape.
+- **`**Blocked by:**` is strict, and an unreadable line is a named problem —
+  never a guess.** `BLOCKED_BY_LINE` takes bare same-epic IDs and commas and
+  nothing else; a line whose label opens it at the margin and does not parse
+  (`BLOCKED_BY_NEAR` — keep that set small: a near line stalls a ticket, and
+  the first cut stalled one on a wrapped sentence — and never silent either:
+  a dependency stated off the margin is what `BLOCKED_BY_UNREAD` makes
+  `doctor` say, because under `Parallel:` an unread line is a ticket
+  "declared independent") leaves the ticket `waiting` with a sentence the board,
+  `find`, `doctor` and `next` all print. Do not make the parse tolerant: the
+  removed dependency graph was, and prose stalled tickets silently. And
+  `next` must keep exiting nonzero when tickets wait and none can start — the
+  run driver reads an empty list as "the epic is built, open the release".
+  The epic skill's template moves with the regex in the same commit;
+  `check-invariants.mjs` runs the template through the regex and fails if
+  the parse goes tolerant. The removed `Depends on:` spelling stays inert:
+  a live installed epic carries it on unstarted tickets.
 - **Ticket IDs match `[A-Z][A-Z0-9]*-\d+`**, branches are the lowercased ID,
   and shipped detection reads `^<ID>[:\s]` off commit subjects on the default
   branch. Changing any of these breaks every installed project's board.

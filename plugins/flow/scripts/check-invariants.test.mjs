@@ -456,30 +456,69 @@ test('retro lenses: the render-and-read ticket planned by the epic skill and unc
 })
 
 // ── releases: the version moves when the batch is stamped ────────────────────
+// Nothing here names a version: the fixtures are built from whatever release
+// the repository is at, so stamping the next one cannot break its own checker.
+const CURRENT = JSON.parse(readFileSync(join(repoRoot, 'plugins/flow/.claude-plugin/plugin.json'), 'utf8')).version
+const [MAJOR] = CURRENT.split('.').map(Number)
+const NEXT = `${MAJOR + 1}.0.0`
+const OLDER = `${MAJOR - 1}.0.0`
+const CURRENT_HEADING = readFileSync(join(repoRoot, 'CHANGELOG.md'), 'utf8').match(new RegExp(`^## ${CURRENT.replace(/\./g, '\\.')} — \\d{4}-\\d{2}-\\d{2}$`, 'm'))[0]
+const re = v => v.replace(/\./g, '\\.')
+
 test('release: a version that is not the newest stamped heading fails, in either direction', () => {
   const bumped = copyRepo()
-  mutate(bumped, 'plugins/flow/.claude-plugin/plugin.json', '"version": "2.1.0"', '"version": "2.2.0"')
+  mutate(bumped, 'plugins/flow/.claude-plugin/plugin.json', `"version": "${CURRENT}"`, `"version": "${NEXT}"`)
   const b = run(bumped)
   assert.equal(b.status, 1, b.out)
-  assert.match(b.out, /says 2\.2\.0 and the newest stamped release .* is 2\.1\.0/)
+  assert.match(b.out, new RegExp(`says ${re(NEXT)} and the newest stamped release .* is ${re(CURRENT)}`))
   const stamped = copyRepo()
-  mutate(stamped, 'CHANGELOG.md', '## 2.1.0 — 2026-09-19', '## 2.2.0 — 2026-10-01\n\n## 2.1.0 — 2026-09-19')
-  assert.match(run(stamped).out, /says 2\.1\.0 and the newest stamped release .* is 2\.2\.0/)
+  mutate(stamped, 'CHANGELOG.md', CURRENT_HEADING, `## ${NEXT} — 2099-01-01\n\n${CURRENT_HEADING}`)
+  assert.match(run(stamped).out, new RegExp(`says ${re(CURRENT)} and the newest stamped release .* is ${re(NEXT)}`))
 })
 
 test('release: a backlog past the ceiling fails and says how to stamp it; a malformed or misordered heading fails', () => {
+  // Unreleased is rarely empty on a working branch, so the fixture tops it up
+  // to the ceiling rather than assuming it starts at zero.
+  const log = readFileSync(join(repoRoot, 'CHANGELOG.md'), 'utf8')
+  const at = log.search(/^## Unreleased$/m)
+  const have = (log.slice(at, log.indexOf('\n## ', at + 1)).match(/^- \*\*/gm) || []).length
+  const entries = (n) => `\n## Unreleased\n\n${Array.from({ length: n - have }, (_, i) => `- **Entry ${i}** (x).`).join('\n')}\n`
   const backlog = copyRepo()
-  mutate(backlog, 'CHANGELOG.md', '## Unreleased\n', `## Unreleased\n\n${Array.from({ length: 31 }, (_, i) => `- **Entry ${i}** (x).`).join('\n')}\n`)
+  mutate(backlog, 'CHANGELOG.md', '\n## Unreleased\n', entries(31))
   const r = run(backlog)
   assert.equal(r.status, 1, r.out)
   assert.match(r.out, /31 entries under "## Unreleased" \(ceiling 30\) — stamp the batch in this pull request/)
   const atCeiling = copyRepo()
-  mutate(atCeiling, 'CHANGELOG.md', '## Unreleased\n', `## Unreleased\n\n${Array.from({ length: 30 }, (_, i) => `- **Entry ${i}** (x).`).join('\n')}\n`)
+  mutate(atCeiling, 'CHANGELOG.md', '\n## Unreleased\n', entries(30))
   assert.equal(run(atCeiling).status, 0, 'thirty is allowed')
   const malformed = copyRepo()
-  mutate(malformed, 'CHANGELOG.md', '## 2.1.0 — 2026-09-19', '## v2.1.0 (2026-09-19)')
+  mutate(malformed, 'CHANGELOG.md', CURRENT_HEADING, `## v${CURRENT} (2099-01-01)`)
   assert.match(run(malformed).out, /release heading that is not/)
   const misordered = copyRepo()
-  mutate(misordered, 'CHANGELOG.md', '## 2.1.0 — 2026-09-19', '## 1.9.0 — 2026-09-19')
+  mutate(misordered, 'CHANGELOG.md', CURRENT_HEADING, `## ${OLDER} — 2099-01-01`)
   assert.match(run(misordered).out, /not newest-first/)
+})
+
+// ── parallel tickets: the Blocked by line is strict, and the checker holds it ─
+test('blocked by: a parser gone tolerant fails, and so does a template the parser rejects', () => {
+  // The removed dependency graph's failure coming back: prose accepted after
+  // the IDs. A string-presence check would pass this; the regex run does not.
+  const tolerant = copyRepo()
+  mutate(tolerant, 'plugins/flow/scripts/tickets.mjs', '${TICKET_ID})*)[^\\\\S\\\\n]*$`)', '${TICKET_ID})*)`)')
+  const t = run(tolerant)
+  assert.equal(t.status, 1, t.out)
+  assert.match(t.out, /accepts prose after the IDs/)
+  const drifted = copyRepo()
+  mutate(drifted, 'plugins/flow/skills/epic/SKILL.md', '**Blocked by:** <ID>[, <ID>]\n\n**Scope.**', '**Blocked by:** <ID> and <ID>\n\n**Scope.**')
+  const d = run(drifted)
+  assert.equal(d.status, 1, d.out)
+  assert.match(d.out, /Blocked by/)
+})
+
+test('parallel: the plan reviewer losing the independence lens fails — a planner told and a reviewer not is a wave nobody checked', () => {
+  const root = copyRepo()
+  mutate(root, 'plugins/flow/agents/plan-reviewer.md', 'declared independent', 'assumed unrelated')
+  const r = run(root)
+  assert.equal(r.status, 1, r.out)
+  assert.match(r.out, /plan-reviewer\.md.*DECLARED INDEPENDENT/s)
 })
