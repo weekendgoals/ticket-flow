@@ -389,7 +389,7 @@ export function diffReports(design, page, { landmarks, removed = [], only = null
   if (unmatched.length) notes.push(`matched nothing on either side, so nothing was compared: ${unmatched.join(', ')}`)
   if (elsewhere.length) notes.push(`not drawn ${source ? `in ${source} ` : ''}${width != null ? `at ${width} ` : ''}by the signed-off map, and on neither side: ${elsewhere.join(', ')}`)
   const compared = list.length - unmatched.length - elsewhere.length - silent
-  return { rows, notes, compared, elsewhere: elsewhere.length, exit: rows.length === 0 || rows.every((r) => DECLARED_REMOVAL.has(r.kind)) ? 0 : 1 }
+  return { rows, notes, compared, elsewhere: elsewhere.length, unmatched: unmatched.length, exit: rows.length === 0 || rows.every((r) => DECLARED_REMOVAL.has(r.kind)) ? 0 : 1 }
 }
 
 // The table is plain text with no colour: it is pasted into a status entry's
@@ -554,8 +554,12 @@ export function run(argv) {
   // Nor does it fire on silence the signed-off map explains: `LANDMARKS: menu`
   // on a `COMPARE … @ 393, 1440` line, with menu drawn at 393 only, is a 1440
   // run with nothing to compare and nothing wrong — refused here, it told the
-  // worker to fix selectors that were fine, while the whole map passed.
-  if (result.compared === 0 && result.rows.length === 0 && result.elsewhere === 0) {
+  // worker to fix selectors that were fine, while the whole map passed. But
+  // only when the map explains ALL of the silence: one not-drawn-here landmark
+  // beside others that simply matched nothing is still a run with no evidence,
+  // and letting it through printed "no differences — 0 landmarks compared"
+  // under exit 0 for reports of the wrong page.
+  if (result.compared === 0 && result.rows.length === 0 && !(result.elsewhere > 0 && result.unmatched === 0)) {
     throw new UsageError(
       `nothing was compared — no landmark ${only ? 'named by --landmarks ' : ''}matched on either side${map.landmarks.length ? '' : ' (the map declares no landmarks)'}. ` +
         'A map whose selectors match neither report is not a page that matches its design.' +

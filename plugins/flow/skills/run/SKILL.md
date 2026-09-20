@@ -76,7 +76,10 @@ Stop and report too if:
   "$(git rev-parse --show-toplevel)"`; refuse on a nonzero exit of that last
   command, with what it printed. It reads the file's shape and, against this
   checkout, the two failures shape cannot show: a `copy` file this machine
-  does not have, and one git does not ignore. (Piped without
+  does not have, and one git does not ignore. ("This checkout" is wherever
+  the session sits, which is also the `repoRoot` the run copies from — in a
+  linked worktree of your own, that worktree, not the repository's first
+  checkout.) (Piped without
   the first check, an absent file reaches the validator as empty input and is
   refused as malformed JSON — a refusal of the one state that is fine.) Unchecked, the malformed file halts every ticket of the first wave
   at its worktree step, one launch too late. An absent file is not a refusal:

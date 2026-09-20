@@ -405,6 +405,19 @@ test('a selection the signed-off map says is not drawn here is explained silence
   assert.equal(named.code, 0, named.err)
   assert.match(named.out, /no differences — 0 landmarks compared/)
   assert.match(named.out, /note: not drawn in designs\/city\.html at 1440 by the signed-off map, and on neither side: menu/)
+  // the map must explain ALL of the silence: menu beside a landmark that just matched nothing is no evidence
+  const mixed = [
+    { name: 'menu', design: '#menu', page: '#menu', widths: [393] },
+    { name: 'x', design: '#nope', page: '#nope2' },
+  ]
+  const absent = { found: false, order: null, childCount: null, props: {} }
+  const rep = (side) => tmp(`${side}.json`, { side, viewportWidth: 1440, landmarks: { menu: absent, x: absent } })
+  const m = tmp('design-map.json', { landmarks: mixed })
+  for (const extra of [[], ['--landmarks', 'menu,x']]) {
+    const r = cli('diff', rep('design'), rep('page'), '--map', m, '--removed-from', tmp('signed-map.json', { landmarks: mixed }), ...extra)
+    assert.equal(r.code, 2, 'one explained landmark does not disarm the refusal for the rest')
+    assert.match(r.err, /nothing was compared/)
+  }
   // an UNSCOPED selection of nothing is still refused: nobody explained that silence
   const g = bothAbsent()
   assert.equal(cli('diff', g.design, g.page, '--map', g.map, '--removed-from', g.signed, '--landmarks', 'ghost').code, 2)

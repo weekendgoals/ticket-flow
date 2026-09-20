@@ -50,8 +50,10 @@ heading here. `check-invariants.mjs` holds both.
   exit 0 with the note that explains it, not "nothing was compared". And a
   scoped run's first note says what it was asked — source, width, landmarks
   — so a `--source` copied from the wrong `COMPARE` line is readable in the
-  pasted table; the review skill reads it first. **Additive: a map without the two
-  fields reads exactly as it did.** Epic skill teaches the fields; ticket,
+  pasted table; the review skill reads it first. The "nothing was compared"
+  refusal still fires unless the map explains *all* of the silence. **Additive:
+  a map without the two fields reads exactly as it did** — text and exit codes
+  byte for byte; its `--json` gains `elsewhere` and `unmatched` counts. Epic skill teaches the fields; ticket,
   quick and review skills pass `--source`; `check-invariants.mjs` holds the
   two running lanes to it; METHODOLOGY § the differ records why the first
   attempt (fail only under `--landmarks`) was the two-answers shape.

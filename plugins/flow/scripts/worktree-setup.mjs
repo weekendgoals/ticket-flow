@@ -46,6 +46,7 @@ class UsageError extends Error {}
 
 const USAGE = `usage:
   worktree-setup.mjs --repo <main checkout> --worktree <worktree root> [--json]
+                     [--budget-ms <n>]   (default 480000; the tests shorten it)
   worktree-setup.mjs --validate <file | -> [--repo <main checkout>]`
 
 // Refused by entry, for the reason the design map is: "malformed config" over
@@ -71,7 +72,8 @@ export function validateConfig(config, label = CONFIG) {
     // `.git/hooks/x.env` through the check below. In a linked worktree `.git`
     // is a file and the copy merely crashes; pointed at an ordinary clone it
     // would write a hook. Refused by shape, not by luck.
-    if (n.split(sep)[0] === '.git') throw new UsageError(`${at} ("${p}") is inside .git — nothing there is a file a worktree needs copied`)
+    // Lower-cased: on a case-insensitive filesystem `.GIT` is the same directory.
+    if (n.split(sep)[0].toLowerCase() === '.git') throw new UsageError(`${at} ("${p}") is inside .git — nothing there is a file a worktree needs copied`)
   })
   setup.forEach((c, i) => {
     if (typeof c !== 'string' || !c.trim()) throw new UsageError(`${label}: setup[${i}] is not a command`)
@@ -134,9 +136,15 @@ export function apply({ repo, worktree, log = () => {}, budgetMs = BUDGET_MS }) 
   }
 
   for (const command of setup) {
-    log(`$ ${command}`)
     const left = deadline - Date.now()
-    const r = left > 0 ? spawnSync('sh', ['-c', command], { cwd: worktree, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, timeout: left, killSignal: 'SIGKILL' }) : { status: null, error: { code: 'ETIMEDOUT' } }
+    const budget = `${budgetMs / 1000}-second budget`
+    const why = "it exists because the run's worktree step is one shell call that is killed at ten minutes with its answer lost"
+    const fix = 'Make the setup faster (an offline or cached install), or do not declare Parallel: on this project.'
+    if (left <= 0) {
+      return { configured: true, copied, ran, failure: { step: `setup: ${command}`, detail: `never started: the setup's ${budget} was spent by the commands before it — ${why}. ${fix}` } }
+    }
+    log(`$ ${command}`)
+    const r = spawnSync('sh', ['-c', command], { cwd: worktree, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, timeout: left, killSignal: 'SIGKILL' })
     if (r.error && r.error.code === 'ETIMEDOUT') {
       return {
         configured: true,
@@ -144,7 +152,7 @@ export function apply({ repo, worktree, log = () => {}, budgetMs = BUDGET_MS }) 
         ran,
         failure: {
           step: `setup: ${command}`,
-          detail: `the setup's ${Math.round(budgetMs / 1000)}-second budget ran out — it exists because the run's worktree step is one shell call that is killed at ten minutes with its answer lost. Processes the command started may still be running in ${worktree}; check before removing it. Make the setup faster (an offline or cached install), or do not declare Parallel: on this project.\n${tail(`${r.stdout || ''}\n${r.stderr || ''}`)}`,
+          detail: `the setup's ${budget} ran out — ${why}. Processes the command started may still be running in ${worktree} (the kill reaches the shell, not what it left in the background); check before removing it. ${fix}\n${tail(`${r.stdout || ''}\n${r.stderr || ''}`)}`,
         },
       }
     }

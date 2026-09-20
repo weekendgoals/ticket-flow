@@ -126,8 +126,11 @@ test('the setup has a budget that ends before the shell call around it does, and
   const p = project('slow', { config: { setup: ['echo started', 'sleep 5', 'echo never > marker'] }, gitignore: 'marker\n.env\n' })
   const r = cli(...p.args, '--budget-ms', '400')
   assert.equal(r.code, 1)
-  assert.match(r.out, /FAILED at setup: sleep 5\nthe setup's 0-second budget ran out — it exists because the run's worktree step is one shell call/)
+  assert.match(r.out, /FAILED at setup: sleep 5\nthe setup's 0\.4-second budget ran out — it exists because the run's worktree step is one shell call/)
   assert.ok(!existsSync(join(p.worktree, 'marker')))
+  const spent = project('spent', { config: { setup: ['sleep 1', 'echo never > marker'] }, gitignore: 'marker\n.env\n' })
+  const s = cli(...spent.args, '--budget-ms', '300')
+  assert.match(s.out, /FAILED at setup: sleep 1/, 'the command that ran out the clock is the one named')
   assert.equal(cli(...p.args, '--budget-ms', 'soon').code, 2)
 })
 
@@ -160,6 +163,7 @@ test('a config it cannot read as the documented shape is exit 2, by entry', () =
     [{ copy: ['/etc/passwd'] }, /must be a path inside the repository/],
     [{ copy: ['a/../../b'] }, /must be a path inside the repository/],
     [{ copy: ['.git/hooks/pre-commit.env'] }, /is inside \.git/],
+    [{ copy: ['.GIT/hooks/pre-commit.env'] }, /is inside \.git/],
     [{ setup: [''] }, /setup\[0\] is not a command/],
   ]) {
     const p = project(`bad-${Math.random().toString(36).slice(2)}`, { config })
