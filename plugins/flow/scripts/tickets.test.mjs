@@ -1064,6 +1064,14 @@ test('compared does not count a field nobody filled in', () => {
   const fdir = visionRepo('compared-fenced', fenced)
   assert.equal(JSON.parse(run(fdir, 'compared', 'V-1', '--json')).compared, 0)
   assert.equal(JSON.parse(run(fdir, 'compared', 'V-2', '--json')).compared, 1)
+  // inside a fence a `#` line is a caption, not a heading — and an UNCLOSED fence still ends at the next ticket
+  const caption =
+    '# Vision epic — status log\n\n' +
+    '### V-1 — the landing page — 2026-09-10 — DONE\n\n**Compared:**\n```text\n# hand-written comparison @ 1440\nhero  width  100px  120px\n```\n**Owed:** Nothing.\n\n' +
+    '### V-2 — the results list — 2026-09-12 — DONE\n\n**Compared:**\n```\n\n### V-3 — the footer — 2026-09-13 — DONE\n\n**Built:** the footer.\n'
+  const cdir = visionRepo('compared-caption', caption)
+  assert.equal(JSON.parse(run(cdir, 'compared', 'V-1', '--json')).compared, 1)
+  assert.equal(JSON.parse(run(cdir, 'compared', 'V-2', '--json')).compared, 0, "an unclosed fence does not reach into the next ticket's entry")
   assert.deepEqual(v3.empty.map((e) => e.empty), [true])
 })
 

@@ -681,3 +681,25 @@ test('a hung git fetch or git push times out into a report instead of hanging a 
   assert.equal(p.out.runner.pushed, false)
   assert.ok(p.ms < 10000, `returned in ${p.ms} ms, not after the transport's 20 s`)
 })
+
+test('the worktree paragraph rides on --wave AND the file: the driver says it is a wave, the branch says there was a setup', () => {
+  // Guessed from the checkout's shape (a linked worktree), it was told to a
+  // serial session in a user's own worktree, about a setup that never ran.
+  // Last in the file on purpose: it commits to the shared fixture's epic branch.
+  git(repo, 'checkout', '-q', 'epic/rho')
+  runRunner('R-17', 'crash', ['--wave'])
+  assert.match(readFileSync(promptFile, 'utf8'), /ticket R-17 of/)
+  assert.doesNotMatch(readFileSync(promptFile, 'utf8'), /FRESH WORKTREE/, '--wave with no epics/worktree.json: nothing was applied, so nothing is said')
+  git(repo, 'checkout', '-q', 'epic/rho')
+  writeFileSync(join(repo, 'epics/worktree.json'), '{"setup":["true"]}')
+  git(repo, 'add', 'epics/worktree.json')
+  git(repo, 'commit', '-q', '-m', 'rho: worktree setup')
+  git(repo, 'push', '-q', 'origin', 'epic/rho')
+  runRunner('R-18', 'crash')
+  assert.match(readFileSync(promptFile, 'utf8'), /ticket R-18 of/)
+  assert.doesNotMatch(readFileSync(promptFile, 'utf8'), /FRESH WORKTREE/, 'the file without --wave is a serial run: the prompt it always had')
+  git(repo, 'checkout', '-q', 'epic/rho')
+  runRunner('R-19', 'crash', ['--wave'])
+  assert.match(readFileSync(promptFile, 'utf8'), /ticket R-19 of/)
+  assert.match(readFileSync(promptFile, 'utf8'), /THIS IS A PARALLEL RUN'S FRESH WORKTREE, ALREADY SET UP\..*epics\/worktree\.json/s)
+})

@@ -30,6 +30,15 @@
 // symbolic link is never read from and never written through: containment is
 // asked of the filesystem, not of the path's spelling.
 //
+// WHAT THIS GUARDS AGAINST IS ACCIDENT, NOT MALICE. `setup` runs whatever the
+// committed file says, so a hostile `epics/worktree.json` needs no trick with
+// links to read a secret or delete a file — it can just do it, and the defence
+// against that is the review every pushed file gets. The checks below are for
+// the honest project: a `.env` nobody ignored, a symlink somebody forgot, a
+// nested .gitignore that un-ignores its neighbour. Hard links, and a path
+// swapped between a check and the copy it guards, are outside that and are
+// not defended.
+//
 // Exit: 0 when everything listed was applied, or when there is no
 // `epics/worktree.json` at all (a project that declares nothing gets the
 // worktree it always got); 1 when a copy or a command failed, or the setup's
@@ -96,7 +105,14 @@ const inside = (root, p) => {
   return q === r || q.startsWith(r + sep)
 }
 
-const ignoredIn = (worktree, rel, timeout) => spawnSync('git', ['-C', worktree, 'check-ignore', '-q', '--', rel], { encoding: 'utf8', timeout }).status === 0
+// Three answers, not two: 0 ignored, 1 not ignored, anything else is git
+// failing (a path beyond a symbolic link, a timeout) — which is never "ignored"
+// for the copy, and never grounds to DELETE anything in the cleanup.
+const ignoreState = (worktree, rel, timeout) => {
+  const s = spawnSync('git', ['-C', worktree, 'check-ignore', '-q', '--', rel], { encoding: 'utf8', timeout }).status
+  return s === 0 ? 'ignored' : s === 1 ? 'exposed' : 'unknown'
+}
+const ignoredIn = (worktree, rel, timeout) => ignoreState(worktree, rel, timeout) === 'ignored'
 
 const tail = (text, n = 20) => String(text || '').trimEnd().split('\n').slice(-n).join('\n')
 
@@ -112,6 +128,9 @@ export function apply({ repo, worktree, log = () => {}, budgetMs = BUDGET_MS }) 
   const deadline = Date.now() + budgetMs
   const file = join(worktree, CONFIG)
   if (!existsSync(file)) return { configured: false, copied: [], ran: [], failure: null }
+  // What runs is what was pushed: a committed symlink would run whatever its
+  // target says today.
+  if (lstatSync(file).isSymbolicLink()) throw new UsageError(`${CONFIG} is a symbolic link — the setup runs only what is committed on the epic branch`)
   let config
   try {
     config = JSON.parse(readFileSync(file, 'utf8'))
@@ -122,18 +141,43 @@ export function apply({ repo, worktree, log = () => {}, budgetMs = BUDGET_MS }) 
   const copied = []
   const ran = []
 
-  const fail = (step, detail) => ({ configured: true, copied, ran, failure: { step, detail } })
   // A copy that was safe when it was made can stop being safe: a later `copy`
   // entry may be a nested .gitignore that un-ignores an earlier one, and a
   // setup command may rewrite ignore rules. So what was copied is asked about
-  // again at the end, and a file git would now stage is REMOVED before the
-  // failure is reported — left in place it is exactly the secret one `git add
-  // -A` from a commit that the first check exists to prevent.
+  // again — after the copies, after setup, and ON EVERY FAILURE, because a
+  // halted run leaves the worktree in place for a human, with whatever is in
+  // it. A file git would now stage is removed before anything is reported;
+  // left behind it is exactly the secret one `git add -A` from a commit.
+  // Removing one file can expose another (the ignore file that was hiding it),
+  // so it repeats until nothing changes. It deletes only on git's plain "not
+  // ignored", only a real file inside the worktree, and never through a link.
+  const sweep = () => {
+    const removed = []
+    const unknown = new Set()
+    for (let changed = true; changed; ) {
+      changed = false
+      for (const rel of copied.filter((r) => !removed.includes(r))) {
+        const state = ignoreState(worktree, rel)
+        if (state === 'unknown') unknown.add(rel)
+        if (state !== 'exposed') continue
+        const to = join(worktree, rel)
+        try {
+          if (inside(worktree, dirname(to)) && lstatSync(to).isFile()) rmSync(to)
+        } catch {}
+        removed.push(rel)
+        changed = true
+      }
+    }
+    return { removed, unknown: [...unknown].filter((r) => !removed.includes(r)) }
+  }
+  const sweptNote = ({ removed, unknown }) =>
+    (removed.length ? `\nRemoved from the worktree, because git no longer ignores ${removed.length === 1 ? 'it' : 'them'} there: ${removed.join(', ')}.` : '') +
+    (unknown.length ? `\nNOT CHECKED — git could not say whether it ignores ${unknown.join(', ')} (a path moved, or behind a link); look before running \`git add\` in ${worktree}.` : '')
+  const fail = (step, detail) => ({ configured: true, copied, ran, failure: { step, detail: detail + sweptNote(sweep()) } })
   const recheck = (when) => {
-    const exposed = copied.filter((rel) => !ignoredIn(worktree, rel))
-    if (!exposed.length) return null
-    for (const rel of exposed) rmSync(join(worktree, rel), { force: true })
-    return fail(`copy (re-checked ${when})`, `git no longer ignores ${exposed.join(', ')} in the worktree — something ${when === 'after the copies' ? 'copied after it' : 'a setup command did'} changed the ignore rules. Removed from the worktree; fix ${CONFIG} on the epic branch.`)
+    const swept = sweep()
+    if (!swept.removed.length && !swept.unknown.length) return null
+    return { configured: true, copied, ran, failure: { step: `copy (re-checked ${when})`, detail: `something ${when === 'after the copies' ? 'copied later' : 'a setup command did'} changed what git ignores in the worktree; fix ${CONFIG} on the epic branch.${sweptNote(swept)}` } }
   }
 
   for (const rel of copy) {
@@ -145,7 +189,8 @@ export function apply({ repo, worktree, log = () => {}, budgetMs = BUDGET_MS }) 
     if (!existsSync(from) || !statSync(from).isFile()) {
       return fail(`copy ${rel}`, `${from} is not a file in the main checkout. ${CONFIG} lists what every worktree needs; a file that is optional on this machine does not belong in it.`)
     }
-    if (lstatSync(from).isSymbolicLink() || !inside(repo, from)) {
+    const real = realpathSync(from).slice(realpathSync(repo).length + 1)
+    if (lstatSync(from).isSymbolicLink() || !inside(repo, from) || real.split(sep)[0].toLowerCase() === '.git') {
       return fail(`copy ${rel}`, `${from} is a symbolic link, or is reached through one that leaves the checkout — it would be read from wherever it points. List the real file.`)
     }
     // Asked of the WORKTREE's git, because that is the tree a worker will run
@@ -169,6 +214,8 @@ export function apply({ repo, worktree, log = () => {}, budgetMs = BUDGET_MS }) 
     copied.push(rel)
     log(`copied ${rel}`)
   }
+  // Copy-only configs have no later deadline check to catch an overrun.
+  if (copy.length && Date.now() > deadline) return fail('copy', `the copies outran the setup's ${budgetMs / 1000}-second budget.`)
   const afterCopies = recheck('after the copies')
   if (afterCopies) return afterCopies
 
@@ -178,28 +225,15 @@ export function apply({ repo, worktree, log = () => {}, budgetMs = BUDGET_MS }) 
     const why = "it exists because the run's worktree step is one shell call that is killed at ten minutes with its answer lost"
     const fix = 'Make the setup faster (an offline or cached install), or do not declare Parallel: on this project.'
     if (left <= 0) {
-      return { configured: true, copied, ran, failure: { step: `setup: ${command}`, detail: `never started: the setup's ${budget} was spent by the commands before it — ${why}. ${fix}` } }
+      return fail(`setup: ${command}`, `never started: the setup's ${budget} was spent by the commands before it — ${why}. ${fix}`)
     }
     log(`$ ${command}`)
     const r = spawnSync('sh', ['-c', command], { cwd: worktree, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, timeout: left, killSignal: 'SIGKILL' })
     if (r.error && r.error.code === 'ETIMEDOUT') {
-      return {
-        configured: true,
-        copied,
-        ran,
-        failure: {
-          step: `setup: ${command}`,
-          detail: `the setup's ${budget} ran out — ${why}. Processes the command started may still be running in ${worktree} (the kill reaches the shell, not what it left in the background); check before removing it. ${fix}\n${tail(`${r.stdout || ''}\n${r.stderr || ''}`)}`,
-        },
-      }
+      return fail(`setup: ${command}`, `the setup's ${budget} ran out — ${why}. Processes the command started may still be running in ${worktree} (the kill reaches the shell, not what it left in the background); check before removing it. ${fix}\n${tail(`${r.stdout || ''}\n${r.stderr || ''}`)}`)
     }
     if (r.status !== 0) {
-      return {
-        configured: true,
-        copied,
-        ran,
-        failure: { step: `setup: ${command}`, detail: `exited ${r.status === null ? `on signal ${r.signal}` : r.status}${r.error ? ` (${r.error.message})` : ''}\n${tail(`${r.stdout || ''}\n${r.stderr || ''}`)}` },
-      }
+      return fail(`setup: ${command}`, `exited ${r.status === null ? `on signal ${r.signal}` : r.status}${r.error ? ` (${r.error.message})` : ''}\n${tail(`${r.stdout || ''}\n${r.stderr || ''}`)}`)
     }
     ran.push(command)
   }

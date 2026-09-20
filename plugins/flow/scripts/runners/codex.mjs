@@ -97,7 +97,7 @@ const flags = {}
 const positional = []
 for (let i = 0; i < argv.length; i++) {
   const a = argv[i]
-  if (a === '--json' || a === '--network' || a === '--start' || a === '--wait' || a === '--cancel' || a === '--background') flags[a.slice(2)] = true
+  if (a === '--json' || a === '--network' || a === '--start' || a === '--wait' || a === '--cancel' || a === '--background' || a === '--wave') flags[a.slice(2)] = true
   else if (a.startsWith('--')) flags[a.slice(2)] = argv[++i]
   else positional.push(a)
 }
@@ -189,14 +189,16 @@ const WORKER_SCHEMA = {
 }
 
 // ---- the prompt -------------------------------------------------------------
-// One paragraph exists only where it is true: a parallel run's worktree (a
-// linked worktree, where \`.git\` is a file) whose branch carries the project's
-// worktree setup. Everywhere else — every serial run — the prompt is the one it
+// One paragraph exists only where it is true: the driver says this is a wave
+// (\`--wave\` — it made the worktree and ran the setup itself) and the branch
+// carries the project's worktree setup. Guessing it from the checkout's shape
+// was tried: a serial session in a linked worktree of the user's own has the
+// same shape, and was told a setup had run that never did. Everywhere else — every serial run — the prompt is the one it
 // was, word for word; an unconditional paragraph changed all of them, and told
 // a worker with vendored wheels it could install nothing.
 let worktreeNote = ''
 try {
-  if (statSync(join(repoRoot, '.git')).isFile() && existsSync(join(repoRoot, 'epics/worktree.json'))) {
+  if (flags.wave && existsSync(join(repoRoot, 'epics/worktree.json'))) {
     worktreeNote =
       "THIS IS A PARALLEL RUN'S FRESH WORKTREE, ALREADY SET UP. Before starting you, the run applied the project's `epics/worktree.json` — its `copy` files are here and its `setup` commands (the dependency install) have run — so read that file to know what you have. You have no network: what is not here and cannot be had offline makes its criterion owed, in those words; never passed, and never worked around.\n\n"
   }
@@ -508,6 +510,7 @@ if (mode === 'start') {
     if (model) childArgs.push('--model', model)
     if (flags.codex) childArgs.push('--codex', codexBin)
     if (flags.network) childArgs.push('--network')
+    if (flags.wave) childArgs.push('--wave')
     // detached: a new session and process group, so neither this process
     // exiting nor a kill aimed at the shell command's group reaches it.
     // stdio on a log file, so no pipe the caller reads stays held open.

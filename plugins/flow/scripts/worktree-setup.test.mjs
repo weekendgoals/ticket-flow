@@ -158,7 +158,7 @@ test('a later copy that un-ignores an earlier one fails the setup and removes wh
   })
   const r = cli(...p.args)
   assert.equal(r.code, 1, r.out)
-  assert.match(r.out, /git no longer ignores local\/\.env in the worktree/)
+  assert.match(r.out, /Removed from the worktree, because git no longer ignores it there: local\/\.env/)
   assert.ok(!existsSync(join(p.worktree, 'local/.env')), 'removed: left in place it is one `git add -A` from a commit')
   git(p.worktree, 'add', '-A')
   assert.doesNotMatch(git(p.worktree, 'status', '--porcelain'), /\.env$/m)
@@ -168,6 +168,54 @@ test('a later copy that un-ignores an earlier one fails the setup and removes wh
   assert.equal(out.code, 1)
   assert.match(out.out, /re-checked after setup/)
   assert.ok(!existsSync(join(s.worktree, '.env')))
+})
+
+test('the sweep runs on EVERY failure, repeats until nothing changes, and never deletes on git failing', () => {
+  // a halted run leaves the worktree in place: the same two copies, then a third that fails
+  const early = project('sweep-early', {
+    config: { copy: ['local/.env', 'local/.gitignore', 'missing.env'] },
+    gitignore: '.env\nlocal/.gitignore\n',
+    files: { 'local/.env': 'SECRET=1\n', 'local/.gitignore': '!.env\n' },
+  })
+  const e = cli(...early.args)
+  assert.equal(e.code, 1)
+  assert.match(e.out, /FAILED at copy missing\.env/)
+  assert.ok(!existsSync(join(early.worktree, 'local/.env')), 'the early return does not leave the exposed secret behind')
+  // removing one file can expose another: the nested ignore file that was hiding the secret
+  const cascade = project('sweep-cascade', {
+    config: { copy: ['local/nested/.env', 'local/nested/.gitignore', 'local/.gitignore'] },
+    gitignore: '.env\n.gitignore\n',
+    files: { 'local/nested/.env': 'SECRET=1\n', 'local/nested/.gitignore': '.env\n!.gitignore\n', 'local/.gitignore': '!nested/.env\n' },
+  })
+  assert.equal(cli(...cascade.args).code, 1)
+  git(cascade.worktree, 'add', '-A')
+  assert.doesNotMatch(git(cascade.worktree, 'status', '--porcelain'), /\.env$/m, 'nothing the cleanup left is a staged secret')
+  // git failing is not "not ignored": a setup command that puts the copied file behind a link deletes nothing outside
+  const outside = join(base, 'sweep-outside')
+  mkdirSync(outside, { recursive: true })
+  writeFileSync(join(outside, '.env'), 'KEEP\n')
+  const linked = project('sweep-link', { config: { copy: ['local/.env'], setup: [`mv local local.saved && ln -s "${outside}" local`] }, gitignore: '.env\nlocal\nlocal.saved\n', files: { 'local/.env': 'S=1\n' } })
+  const l = cli(...linked.args)
+  assert.equal(readFileSync(join(outside, '.env'), 'utf8'), 'KEEP\n', 'never deleted through a link')
+  assert.equal(l.code, 1)
+  assert.match(l.out, /NOT CHECKED — git could not say/)
+})
+
+test('a committed epics/worktree.json that is a symbolic link is refused: what runs is what was pushed', () => {
+  const repo = join(base, 'config-link', 'repo')
+  const worktree = join(base, 'config-link', 'wt')
+  mkdirSync(join(repo, 'epics'), { recursive: true })
+  git(repo, 'init', '-q', '--initial-branch=main')
+  const target = join(base, 'config-link', 'outside.json')
+  writeFileSync(target, JSON.stringify({ setup: ['echo ran > marker'] }))
+  symlinkSync(target, join(repo, 'epics/worktree.json'))
+  git(repo, 'add', '-A')
+  git(repo, 'commit', '-q', '-m', 'init')
+  git(repo, 'worktree', 'add', '-q', '--detach', worktree, 'HEAD')
+  const r = cli('--repo', repo, '--worktree', worktree)
+  assert.equal(r.code, 2)
+  assert.match(r.err, /is a symbolic link/)
+  assert.ok(!existsSync(join(worktree, 'marker')))
 })
 
 test('the budget is one clock: copies are inside it too', () => {

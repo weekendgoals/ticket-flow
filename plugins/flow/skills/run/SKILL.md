@@ -301,7 +301,8 @@ branch**. Then it refreshes and asks the board again. Three things follow:
   and loses its answer, so the script stops itself first and says so — a
   project whose install cannot finish in that time from a warm cache is not
   one to declare `Parallel:` on. A `Worker runner: codex` worker has no
-  network at all, so for it this file is the only way a worktree gets
+  network at all, so for it this file — or packages vendored in the
+  repository — is the only way a worktree gets
   dependencies. With no such file the worker is told
   the worktree is bare and installs what the project's instructions say — a
   guess made once per ticket, which is what the file replaces. What neither

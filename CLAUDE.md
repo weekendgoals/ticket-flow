@@ -53,7 +53,7 @@ go through the flow, one-off work goes through `/flow:quick` into
   merge step wires it, because the driver it replaced (git's own `union`) was
   also obviously right and corrupted every merge it touched; one test keeps
   that failure on record. Needs `git` and nothing else. The worktree setup has
-  `node --test plugins/flow/scripts/worktree-setup.test.mjs` (`# pass 15`) —
+  `node --test plugins/flow/scripts/worktree-setup.test.mjs` (`# pass 17`) —
   real git again, real linked worktrees in throwaway directories, because the
   refusal that matters asks git a question (`check-ignore`, where `.git` is a
   file). Needs `git`, POSIX `sh` and `sleep` (the budget case). And the run driver has
@@ -62,7 +62,7 @@ go through the flow, one-off work goes through `/flow:quick` into
   asserts the sequence, the gate branches and the halt mapping. It needs
   nothing but Node: no git, no network, no filesystem beyond the script.
   The Codex worker runner has
-  `node --test plugins/flow/scripts/runners/codex.test.mjs` (`# pass 21`) —
+  `node --test plugins/flow/scripts/runners/codex.test.mjs` (`# pass 22`) —
   a stub `codex` binary that speaks the real CLI's JSONL protocol drives
   the runner through a throwaway git repo; it needs `git` plus POSIX `sh`,
   `ps` and `sleep` (the detachment, cancel, hung-pid and hung-transport

@@ -28,7 +28,16 @@ heading here. `check-invariants.mjs` holds both.
   epic. And the Codex worker's worktree paragraph is added only in a linked
   worktree whose branch carries the file: unconditional, it changed every
   serial run's prompt and told a worker with vendored packages it could
-  install nothing.
+  install nothing. Its confirming pass found the fixes incomplete, and
+  those are taken too: the script states its threat model (accident, not
+  malice — `setup` already runs anything that was pushed; hard links and
+  races are not defended); the ignore re-check is a sweep that runs on every
+  failure, repeats until nothing changes, deletes only on git's plain "not
+  ignored" and never through a link, and says `NOT CHECKED` when git could
+  not answer; a committed `epics/worktree.json` that is a symbolic link is
+  refused; a fenced table whose first line starts with `#` counts; and the
+  Codex paragraph rides on a `--wave` flag from the driver, not on the
+  checkout's shape, which a user's own linked worktree shares.
 - **`epics/worktree.json` — a project says what a fresh worktree needs, and a
   parallel run applies it** (new `scripts/worktree-setup.mjs` and its suite;
   `workflows/run-epic.mjs`'s `worktree:<ID>` step runs it after the ref is
@@ -39,8 +48,8 @@ heading here. `check-invariants.mjs` holds both.
   in the halt; the whole setup has an eight-minute budget, because the step
   is one shell call that is killed at ten with its answer lost; `.git/` paths
   are refused by shape. The Codex worker's prompt (`runners/codex.mjs`) says
-  what is already installed — it has no network, so the file is its only
-  source of dependencies. The run skill's preflight validates the file under `Parallel:`
+  what the run already applied — it has no network, so the file (or
+  packages vendored in the repository) is where its dependencies come from. The run skill's preflight validates the file under `Parallel:`
   (`--validate - --repo`, after its own fetch: shape, plus a `copy` file this
   machine lacks or git does not ignore), the epic skill says to write it before declaring
   `Parallel:`, and the wave worker's prompt says what was already applied.
@@ -70,7 +79,8 @@ heading here. `check-invariants.mjs` holds both.
   pasted table; the review skill reads it first. The "nothing was compared"
   refusal still fires unless the map explains *all* of the silence. **Additive:
   a map without the two fields reads exactly as it did** — text and exit codes
-  byte for byte; its `--json` gains `elsewhere` and `unmatched` counts. Epic skill teaches the fields; ticket,
+  byte for byte when `--removed-from` is passed, as every lane is told to;
+  its `--json` gains `elsewhere` and `unmatched` counts. Epic skill teaches the fields; ticket,
   quick and review skills pass `--source`; `check-invariants.mjs` holds the
   two running lanes to it; METHODOLOGY § the differ records why the first
   attempt (fail only under `--landmarks`) was the two-answers shape.

@@ -1521,7 +1521,7 @@ async function runTicket({ id, branch, ticket, spentAtStart, root, solo }) {
   const SHELL_CEILING_MS = 600000
   const runnerWaits = Math.ceil(RUNNER_TIMEOUT_MS / RUNNER_WAIT_SLICE_MS) + 1
   const runnerBase = workerRunner === 'codex'
-    ? `node "${pluginRoot}/scripts/runners/codex.mjs" ${id} --epic ${epic} --epic-branch ${epicBranch} --default-branch ${defaultBranch} --repo "${root}" --plugin "${pluginRoot}" --label ${workerLabel}${workerModel ? ` --model ${workerModel}` : ''} --timeout ${RUNNER_TIMEOUT_MS} --json`
+    ? `node "${pluginRoot}/scripts/runners/codex.mjs" ${id} --epic ${epic} --epic-branch ${epicBranch} --default-branch ${defaultBranch} --repo "${root}" --plugin "${pluginRoot}" --label ${workerLabel}${workerModel ? ` --model ${workerModel}` : ''}${solo ? '' : ' --wave'} --timeout ${RUNNER_TIMEOUT_MS} --json`
     : null
   const worker = runnerBase
     ? await agent(

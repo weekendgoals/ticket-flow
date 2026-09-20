@@ -1514,7 +1514,9 @@ git does not ignore, in code: the files worth copying are secrets, a wave
 worker commits with `git add`, and "be careful" in a prompt is not a gate.
 The idea is borrowed — HumanLayer's workspace config lists setup commands and
 files to copy for the same reason — and cut down to what passes the admission
-test here: it constrains blast radius (a secret cannot reach a commit) and
+test here: it constrains blast radius (a copied secret is kept from a commit
+by accident — not from a hostile `setup` line, which can do anything and is
+what reviewing a pushed file is for) and
 reduces uncertainty (every worktree of a wave is set up the same way).
 
 ## Why a dependency is a strict line, and a wait is a state

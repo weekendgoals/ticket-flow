@@ -2149,6 +2149,7 @@ test("the codex proxy starts the runner once and waits in slices inside its shel
   const start = p.match(/^node "\/plugins\/flow\/scripts\/runners\/codex\.mjs" (.*) --start$/m)
   const wait = p.match(/^node "\/plugins\/flow\/scripts\/runners\/codex\.mjs" (.*) --wait --max-wait 540000$/m)
   assert.ok(start, 'the --start command, on its own line')
+  assert.doesNotMatch(p, /--wave/, 'a serial run never tells the runner it is in a wave: the runner would add a paragraph about a setup that never ran')
   assert.ok(wait, 'the --wait command, on its own line, with its slice')
   assert.equal(start[1], wait[1], '--start and --wait carry identical arguments, so they resolve the same state directory')
   assert.equal(start[1], 'PAY-1 --epic payments --epic-branch epic/payments --default-branch main --repo "/repo" --plugin "/plugins/flow" --label worker:PAY-1 --timeout 3600000 --json')
@@ -2983,6 +2984,9 @@ test('wave: a halted pipeline does not un-pass its sibling — the sibling integ
   const codex = await drive(waveReply([refreshed(['PAY-1', 'PAY-2'])], { 'worker:PAY-1': workerOk('PAY-1', { result: 'blocked', stopCondition: 'BLOCKED' }) }), { ...PAR(2), workerRunner: 'codex' })
   assert.ok(codex.logs.some(l => /PAY-1: .*codex\.mjs" PAY-1 --epic payments .*--repo "\/repo\/\.\.\/\.flow-worktrees\/repo\/payments\/pay-1" .*--label worker:PAY-1 --cancel --json/.test(l)), codex.logs.join('\n'))
   assert.equal(r.out.ticketRecords.find(t => t.id === 'PAY-2').result, 'integrated')
+  // The runner is TOLD it is a wave — it adds its worktree paragraph on that
+  // word and not on the checkout's shape, which a user's own linked worktree shares.
+  assert.match(codex.calls.find(c => c.label === 'worker:PAY-2').prompt, /codex\.mjs" PAY-2 .*--label worker:PAY-2 --wave --timeout \d+ --json --start$/m)
   // Two halts: the run stops on the first in document order, and the other rides beside it.
   const both = await drive(
     waveReply([refreshed(['PAY-1', 'PAY-2'])], { 'worker:PAY-1': workerOk('PAY-1', { result: 'blocked', stopCondition: 'BLOCKED' }), 'accept:PAY-2': { ...acceptOk, passed: 1, allPassed: false } }),
