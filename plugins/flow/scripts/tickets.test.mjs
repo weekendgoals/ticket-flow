@@ -2585,6 +2585,30 @@ test('check-epic shows criteria that differ from sign-off — a gate weakened by
   assert.match(run(rel, 'check-epic', 'rc'), /criteria differ from sign-off[\s\S]*was: CHECK: cat greeting\.txt.*EXPECT: hello\n\s+now: .*EXPECT: hel\n/)
 })
 
+test('check-epic names a ticket sign-off knew and the document no longer does, refuses a checkout behind the remote, and reruns a command a ticket repeats', () => {
+  const rel = releaseRepo('rc-removed')
+  // a later commit deletes RC-1's section — the quietest way to weaken its gate — and breaks what it built
+  const doc = readFileSync(join(rel, 'epics/rc/tickets.md'), 'utf8')
+  writeFileSync(join(rel, 'epics/rc/tickets.md'), doc.replace(/## RC-1 [\s\S]*?(?=## RC-2)/, '').replace('EXPECT: hel\n', 'EXPECT: hel\n- twice\n  CHECK: echo tick >> ticks.log\n- twice again\n  CHECK: echo tick >> ticks.log\n'))
+  writeFileSync(join(rel, '.gitignore'), 'runs.log\nticks.log\n')
+  git(rel, 'add', '.')
+  git(rel, 'commit', '-m', 'RC-2: tidy the plan')
+  // local is now one commit ahead of origin: the release would not carry this head
+  const behind = runFail(rel, 'check-epic', 'rc', '--json')
+  assert.equal(JSON.parse(behind.stdout).headIsRemote, false)
+  assert.equal(JSON.parse(behind.stdout).allPassed, false)
+  assert.match(runFail(rel, 'check-epic', 'rc').stdout, /the release pull request carries the remote head/)
+  git(rel, 'push', 'origin', 'epic/rc')
+  rmSync(join(rel, 'ticks.log'), { force: true })
+  const out = JSON.parse(run(rel, 'check-epic', 'rc', '--json'))
+  assert.equal(out.headIsRemote, true)
+  assert.deepEqual(out.removedSinceSignoff, [{ id: 'RC-1', was: ['CHECK: cat greeting.txt; echo ran >> runs.log — EXPECT: hello'] }])
+  assert.deepEqual(out.tickets.map((t) => t.id), ['RC-2'])
+  assert.equal(readFileSync(join(rel, 'ticks.log'), 'utf8'), 'tick\ntick\n', 'a command ONE ticket repeats runs each time, as `check <ID>` runs it')
+  assert.match(run(rel, 'check-epic', 'rc'), /in the signed-off document and gone from this one[\s\S]*RC-1: CHECK: cat greeting\.txt/)
+  assert.match(run(rel, 'check-epic', 'rc'), /sign-off [0-9a-f]{12}/)
+})
+
 test('check-epic with nothing landed is not a release that passed, and an unknown epic or no epic is refused', () => {
   const rel = join(tmp, 'rc-empty')
   git(tmp, 'init', '--initial-branch=main', rel)

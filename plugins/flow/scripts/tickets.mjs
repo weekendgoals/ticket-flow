@@ -3152,10 +3152,21 @@ switch (cmd) {
     const signedText = signoff ? git(['show', `${signoff}:${rel}`], { allowFail: true }) : null
     const signedSections = signedText ? parseTicketSections(signedText, arg) : []
     const signedSources = signedText ? parsePreambleText(signedText).designSources : null
+    // Shared ACROSS tickets, never within one: a ticket that says `CHECK: mkdir
+    // out` twice means two runs, and `check <ID>` — the gate the driver uses —
+    // gives it two. So a ticket reads what earlier tickets ran, and adds its
+    // own commands to the pool only when it is done. (A command that is not
+    // idempotent across tickets still differs from running each ticket alone;
+    // the driver's per-ticket steps are the gate, and this is the summary.)
     const ran = new Map()
     const rows = landed.map((t) => {
       const { checks, compares, problems } = parseChecks(t.body, epic.designSources)
-      const results = runChecks(checks, ran)
+      const own = new Map()
+      const results = checks.map((c, idx) => {
+        const pool = ran.has(c.check) ? ran : own.has(c.check) ? null : own
+        return { ...runChecks([c], pool)[0], n: idx + 1 }
+      })
+      for (const [k, v] of own) if (!ran.has(k)) ran.set(k, v)
       const now = criteriaOf(t.body, epic.designSources)
       const was = signedSections.find((x) => x.id === t.id)
       const before = was ? criteriaOf(was.body, signedSources) : null
@@ -3171,18 +3182,33 @@ switch (cmd) {
         criteriaChanged: before === null ? (signoff ? { was: null, now } : null) : JSON.stringify(before) === JSON.stringify(now) ? null : { was: before, now },
       }
     })
+    // A landed ticket's gate can be weakened more quietly than by editing it:
+    // by deleting its section. It is then on no list at all — not landed, not
+    // checked, not "changed" — so every ticket sign-off knew and the document
+    // no longer does is named, with the criteria it took with it.
+    const removedSinceSignoff = signedSections.filter((x) => !mine.some((t) => t.id === x.id)).map((x) => ({ id: x.id, was: criteriaOf(x.body, signedSources) }))
+    // By hand this command IS the gate, and the pull request carries the
+    // REMOTE head: a local branch one commit behind a breaking push is green
+    // about a commit nobody is releasing.
+    const remoteRef = epic.delivery === 'release' ? `origin/epic/${arg}` : null
+    const remoteHead = remoteRef ? (git(['rev-parse', '--verify', '--quiet', remoteRef], { allowFail: true }) || '').trim() || null : null
+    const shallow = (git(['rev-parse', '--is-shallow-repository'], { allowFail: true }) || '').trim() === 'true'
     const sum = (k) => rows.reduce((a, r) => a + r[k], 0)
     const problems = rows.reduce((a, r) => a + r.problems.length, 0)
     const total = sum('total')
     const passed = sum('passed')
     const skipped = sum('skipped')
     // Nothing landed is not a release that passed its check.
-    const allPassed = landed.length > 0 && passed === total && problems === 0
     const head = (git(['rev-parse', 'HEAD'], { allowFail: true }) || '').trim() || null
+    const headIsRemote = remoteHead === null ? null : head === remoteHead
+    const allPassed = landed.length > 0 && passed === total && problems === 0 && headIsRemote !== false
     if (json) {
-      emit({ epic: arg, head, signoff, total, passed, skipped, problems, allPassed, commandsRun: ran.size, tickets: rows, notLanded })
+      emit({ epic: arg, head, remoteHead, headIsRemote, signoff, shallow, total, passed, skipped, problems, allPassed, commandsRun: ran.size, tickets: rows, notLanded, removedSinceSignoff })
     } else {
-      console.log(`${C.bold}${arg}${C.off} ${C.dim}— release check at ${head ? head.slice(0, 12) : '(no HEAD)'}${C.off}`)
+      console.log(`${C.bold}${arg}${C.off} ${C.dim}— release check at ${head ? head.slice(0, 12) : '(no HEAD)'} — sign-off ${signoff ? signoff.slice(0, 12) : 'not found in this history'}${C.off}`)
+      if (headIsRemote === false)
+        console.log(`${C.red}this checkout is at ${head ? head.slice(0, 12) : '(no HEAD)'} and ${remoteRef} is at ${remoteHead.slice(0, 12)} — the release pull request carries the remote head, so this is not a check of it. \`git checkout epic/${arg} && git pull --ff-only\`, then run it again.${C.off}`)
+      if (shallow) console.log(`${C.yellow}this is a shallow clone: the sign-off commit found may only be the clone's boundary, so "criteria differ from sign-off" can be silently empty. \`git fetch --unshallow\` to trust it.${C.off}`)
       if (!landed.length) console.log(`${C.red}no ticket of ${arg} is integrated or shipped — there is nothing to release${C.off}`)
       const MARK = { passed: `${C.green}✓${C.off}`, skipped: `${C.yellow}↓${C.off}`, failed: `${C.red}✗${C.off}` }
       for (const r of rows) {
@@ -3195,6 +3221,8 @@ switch (cmd) {
         if (r.criteriaChanged)
           console.log(`  ${C.yellow}criteria differ from sign-off (${signoff.slice(0, 12)})${C.off}\n      was: ${r.criteriaChanged.was ? r.criteriaChanged.was.join(' | ') || '(none)' : '(ticket not in the signed-off document)'}\n      now: ${r.criteriaChanged.now.join(' | ') || '(none)'}`)
       }
+      if (removedSinceSignoff.length)
+        console.log(`\n${C.yellow}in the signed-off document and gone from this one — not checked, not listed anywhere else:${C.off}\n${removedSinceSignoff.map((x) => `  ${x.id}: ${x.was.join(' | ') || '(no criteria)'}`).join('\n')}`)
       if (notLanded.length) console.log(`\n${C.yellow}not integrated, so not checked:${C.off} ${notLanded.map((t) => `${t.id} (${t.state})`).join(', ')}`)
       console.log(
         `\n${passed}/${total} checks passed across ${rows.length} ticket(s), ${ran.size} distinct command(s) run` +

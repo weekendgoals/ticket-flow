@@ -22,7 +22,7 @@ go through the flow, one-off work goes through `/flow:quick` into
 ## Commands
 
 - **Tests:** `node --test plugins/flow/scripts/tickets.test.mjs` — expect
-  every test passing (`# pass 184`, `# fail 0` as of 2026-09-20; the count
+  every test passing (`# pass 185`, `# fail 0` as of 2026-09-20; the count
   grows, the fail line does not). The suite builds a throwaway git repo in a
   temp dir; it needs `git` on PATH and nothing else. The session-guard hook
   has its own suite:
@@ -42,7 +42,7 @@ go through the flow, one-off work goes through `/flow:quick` into
   closure reference fails here instead of inside somebody's page. It needs
   nothing but Node, and **no test may launch or drive a browser** — the plugin
   owns none, which is why it installs anywhere. The run meter has
-  `node --test plugins/flow/scripts/meter.test.mjs` (`# pass 17`) — tokens
+  `node --test plugins/flow/scripts/meter.test.mjs` (`# pass 18`) — tokens
   and time metered off journal and transcript text built in the test, in the
   shapes a real run wrote; the two CLI cases write a throwaway run directory
   to the OS temp dir. Nothing but Node, and **no test reads a real
@@ -129,7 +129,8 @@ test file path explicitly.
   `integrateTicket` touches the epic branch and is always one at a time, in
   document order, whichever pipeline finished first. Three things must stay
   true, and the driver's suite pins each: **`Parallel:` absent or `1` is the
-  old run, prompt for prompt** (epics planned when document order was the
+  old run, prompt for prompt, through every ticket** — what follows the loop,
+  the release check, is the same steps in both — (epics planned when document order was the
   only dependency mechanism must not go wide on a plugin update); **timing
   decides nothing** (records and merges in wave order — a test delays one
   pipeline); and **a halt is returned by a pipeline, never thrown**, because
@@ -149,7 +150,7 @@ test file path explicitly.
   Do not move that refusal into a prompt, and do not make a
   partial setup exit 0 — the worker would verify against something nobody
   chose. No file means no change, and the step exists only under
-  `Parallel:`, so a serial run stays the old run, prompt for prompt.
+  `Parallel:`, so a serial run's tickets stay the old run, prompt for prompt.
 - **A merge driver that does nothing is a clean merge that loses data.**
   Git keeps ours and drops theirs when a driver exits 0 without writing, and
   reports no conflict. So `scripts/merge-append.mjs` acts on its `--driver`

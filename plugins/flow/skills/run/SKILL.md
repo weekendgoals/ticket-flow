@@ -384,7 +384,10 @@ merges, not after the last refresh merged the default branch in. So it asks
 the board which tickets have landed (`release-list:<epic>` —
 `tickets.mjs check-epic <epic> --list`, with the script's own count beside
 the list, refused when they disagree) and re-runs each one's checks at the
-epic head (`release-check:<ID>`, one shell call per ticket, because a whole
+epic head (`release-check:<epic>:<ID>` — the epic before the ID, so the run
+meter reads these as overhead and not as that ticket's work — one shell call
+per ticket, each reporting the branch it ran on, which the script compares
+with `epic/<name>` in code; one per ticket because a whole
 epic's suites in one call can outlive the ten minutes a proxy's shell allows
 and a command killed there loses its answer). That covers tickets an earlier
 run or a hand integrated too. Criteria are read from the checkout — the epic
@@ -782,10 +785,11 @@ that resumes past one. The run halts:
   the run's last gate, and the only one that judges the thing being released
   rather than a ticket on its way in. It names the ticket whose check broke,
   which is rarely the ticket at fault: something that landed after it, or
-  the default branch, changed what it built. The repair is forward — a
-  ticket that fixes it on `epic/<name>` (`/flow:quick` for a small one) —
-  and **re-running `/flow:run <epic>` is what clears it**: with nothing left
-  to start, the release check is the first thing that run does. No addendum
+  the default branch, changed what it built. The repair is forward, and
+  "Resuming after a halt" shape 5 says where it goes — a ticket added to
+  this epic's `tickets.md`, or a fix on the default branch first — and
+  **re-running `/flow:run <epic>` is what clears it**: that run builds
+  whatever was added and then makes this check again. No addendum
   is owed, unlike the post-merge halt, because nothing about the board is
   misleading in the meantime: no release pull request exists. After a
   parallel run, rule out the environment first — the tickets installed
@@ -1104,7 +1108,8 @@ On `outcome: "completed"` — the loop's last refresh already brought
 by an attended session, when every ticket is integrated and no run can reach
 this step.** That second door is not a courtesy. A run that halts never gets
 here; after the halted ticket is finished by hand, re-running `/flow:run
-<epic>` finds nothing left to start, completes with only the refresh hired,
+<epic>` finds nothing left to start, hires the refresh and then the release
+check (every landed ticket's checks at the epic head — it can halt there),
 and lands here with the whole body — **use that route whenever step 1 admits
 the board.** It does not always: an ABANDONED ticket reads `blocked` and step
 1 refuses the run until a human re-plans the document, which is exactly the
@@ -1154,9 +1159,14 @@ in this mode. It carries:
   whose criteria differ from sign-off, was and now** — a later ticket that
   loosened an earlier one's `EXPECT` is green in every ledger and visible
   only here — and every `COMPARE` criterion, marked not re-verified at the
-  release commit. **By hand it is the gate itself**: a session opening the
-  pull request without a run result runs it first and opens nothing on a
-  nonzero exit — that door had no check of the assembled epic at all;
+  release commit — and every ticket sign-off knew whose section is gone
+  from the document, which is on no other list. **Open nothing on a nonzero
+  exit, from either door.** By hand it is the gate itself — that door had no
+  check of the assembled epic at all. After a completed run it is the
+  backstop: the script's check reached you through shell proxies' reports,
+  and this is the one run of it you watched. It also refuses a checkout
+  that is not at `origin/epic/<name>`'s head, because the pull request
+  carries the remote's;
 - the run record summary, including which agent ran each ticket — and any
   ticket whose record carries `dispositionRecovered: true`, by name: it
   merged on what the branch showed and a re-review, not on a disposition's
@@ -1227,13 +1237,14 @@ it is a new ticket in `tickets.md` (or `/flow:quick`), not a commit on the epic
 branch.
 
 **When the last ticket is integrated, the release pull request is opened by
-re-running `/flow:run <epic>`**: with nothing left to start the run completes
-with only the refresh hired and goes straight to step 7 — body, owed list,
+re-running `/flow:run <epic>`**: with nothing left to start the run hires the
+refresh, makes the release check (it can halt there — shape 5), and then
+goes to step 7 — body, owed list,
 unticketed commits and the addendum request included. When step 1 refuses the
 board (a `blocked` ticket, which is how an ABANDONED one reads), an attended
 session opens it by hand, following step 7 section for section.
 
-Four shapes are possible, and for the first three the halted ticket's **status entry** — the
+Five shapes are possible, and for the first three the halted ticket's **status entry** — the
 thing the board reads — is what tells them apart. Read them off the board,
 not off the halt's narrative: the worker writes its entry and pushes its
 branch (steps 1–6 and step 9) *before* the driver hires a reviewer, so most
@@ -1357,7 +1368,23 @@ run start, and without it step 1 refuses for ever:
   — <what it repairs>`, commit and push, remove the worktree and its ref, and
   re-run — the fix ticket is simply the next ticket.
 
-**Never `resumeFromRunId`, in any of the four.** The Workflow runtime replays
+**5. Everything reads `integrated`, and the run halted on the release check**
+— *a failed release check*, serial and parallel runs alike. It looks like
+shape 4 on the board and is not recovered like it: **no addendum is owed**,
+because no release pull request exists and none can be opened past this
+halt — the re-run makes the same check again before it reports `completed`.
+The halt names the ticket whose check broke, which is rarely the ticket at
+fault. Find what broke it (`tickets.mjs check <ID>` on `epic/<name>`, then
+`git log` since that ticket's merge) and repair forward, in the place it
+broke: **something in this epic** — add a ticket that fixes it to
+`epics/<name>/tickets.md` on `epic/<name>`, push, and re-run `/flow:run
+<epic>`, which builds that ticket and then checks again; **the default
+branch** — fix it there first, where it is broken too (`/flow:quick`, merged
+by a human), and the re-run's refresh brings the fix in. A `/flow:quick`
+ticket cannot repair the first kind: it branches from the default branch,
+and the broken code is not there yet.
+
+**Never `resumeFromRunId`, in any of the five.** The Workflow runtime replays
 every unchanged `agent()` call from the run's prefix cache, live-running only
 from the first edited call onward — and a run halts precisely because
 something *outside* the script changed: the plugin, the environment, the

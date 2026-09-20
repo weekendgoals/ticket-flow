@@ -35,7 +35,10 @@ import { pathToFileURL } from 'node:url'
 // as `SPEND_ROLES` in tickets.mjs, which parses what this prints.
 export const ROLES = ['worker', 'reviewer', 'disposition', 're-review', 'proxies']
 const TICKET_ID = '[A-Z][A-Z0-9]*-\\d+'
-// `worker:FND-2`, `re-review:FND-2`, `refresh+select:4:retry`.
+// `worker:FND-2`, `re-review:FND-2`, `refresh+select:4:retry`. The driver's
+// release check is spelled `release-check:<epic>:<ID>` so that it does NOT
+// match: it runs after the loop, for every landed ticket, and filed under a
+// ticket it stretched that ticket's wall to the end of the run.
 const TICKET_LABEL = new RegExp(`^([^:]+):(${TICKET_ID})(?::.*)?$`)
 const SELECT_LABEL = /^refresh\+select:/
 // Every step that is not one of the four named roles is a shell proxy — the

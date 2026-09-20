@@ -168,7 +168,7 @@ its `## Unticketed commits` section from the board, both written even when
 empty, and it closes by asking the human for the release-PR addendum. A run
 that halted never reaches that step, so after the last ticket is finished by
 hand the route is re-running `/flow:run <epic>` — nothing left to start, it
-goes straight to the pull request — or, when the run refuses the board (an
+makes the release check and goes to the pull request — or, when the run refuses the board (an
 abandoned ticket reads `blocked`), opening it by hand following the run
 skill's step 7 section for section. **The human gate
 moves to the release pull request; it does not disappear.** Main never sees

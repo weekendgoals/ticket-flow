@@ -653,6 +653,17 @@ const ACCEPT_SCHEMA = {
   },
 }
 
+// The release check's report: the acceptance ledger, plus the branch the
+// checks ran on — a fact the driver judges in code, because checks that
+// passed on another branch are not evidence about this release.
+const RELEASE_CHECK_SCHEMA = {
+  ...ACCEPT_SCHEMA,
+  properties: {
+    ...ACCEPT_SCHEMA.properties,
+    branch: { type: 'string', description: 'what `git rev-parse --abbrev-ref HEAD` printed, verbatim — the branch the checks ran on. Never the branch you were told to expect.' },
+  },
+}
+
 const DISPOSITION_SCHEMA = {
   type: 'object',
   required: ['outcome', 'addendumCommitted'],
@@ -3183,6 +3194,12 @@ if (!halted && ticketRecords.length >= MAX_TICKETS) {
 // changed since sign-off is shown to the human by `check-epic`, in the release
 // body, where someone who can tell a re-plan from a dodge reads it.
 //
+// The labels are `release-check:<epic>:<ID>`, with the epic BEFORE the ID, on
+// purpose: `scripts/meter.mjs` files any `<role>:<ID>` step under that ticket,
+// and a release check filed there stretched the ticket's `wall` to the end of
+// the run and gave tickets an earlier run built a group in this run's lines.
+// Spelled this way they are run overhead, which is what they are.
+//
 // It covers tickets an EARLIER run integrated too: a re-run after a halt finds
 // nothing to start and lands here, which is also how this halt clears — fix
 // forward on the epic branch, re-run, and the check is the first thing it does.
@@ -3223,21 +3240,27 @@ git rev-parse --abbrev-ref HEAD
 ${TICKETS} check ${id} --json
 \`\`\`
 
-The first command must print \`${epicBranch}\`; if it prints anything else, stop and report outcome "command-failed" with what it printed — never check out a branch yourself. The check command exits 0 when every check passed AND every criterion parsed, and 1 otherwise — an exit of 1 is a RESULT to report, not a failure of your step: outcome is "ran" whenever the command printed its JSON. Give the check command your shell tool's longest timeout. Report the ledger's fields exactly as printed. Fix nothing, re-run nothing, change no file.
+The first command must print \`${epicBranch}\`; report what it printed, verbatim, as \`branch\`. If it prints anything else, stop there and report outcome "command-failed" with what it printed — never check out a branch yourself. The check command exits 0 when every check passed AND every criterion parsed, and 1 otherwise — an exit of 1 is a RESULT to report, not a failure of your step: outcome is "ran" whenever the command printed its JSON. Give the check command your shell tool's longest timeout. Report the ledger's fields exactly as printed. Fix nothing, re-run nothing, change no file.
 
 ${PROMPT_RULE}
 
 ${NO_MAIN}`,
-      { label: `release-check:${id}`, phase: 'Release check', schema: ACCEPT_SCHEMA, effort: 'low', model: 'haiku' },
+      { label: `release-check:${epic}:${id}`, phase: 'Release check', schema: RELEASE_CHECK_SCHEMA, effort: 'low', model: 'haiku' },
     )
     if (r && r.outcome === 'permission-prompt') return { ticket: id, stopCondition: STOP.permissionPrompt, where, detail: fence(line(r.detail || '(no command named)')) }
     if (!r || r.outcome !== 'ran')
       return { ticket: id, stopCondition: STOP.nonzeroExit, where, detail: r ? `${id}'s release check did not run:${line(r.detail) ? ` ${fence(line(r.detail))}` : ' (no detail quoted)'}` : `the agent re-running ${id}'s checks returned no report — whether ${id} still holds at the release head is unknown` }
+    // Judged here, not only asked for in the prompt: checks that passed on some
+    // other branch say nothing about the head the release will carry.
+    if (line(r.branch).trim() !== epicBranch)
+      return { ticket: id, stopCondition: STOP.contradiction, where, detail: `${id}'s release check ran on ${fence(line(r.branch || '(no branch reported)'))}, not on \`${epicBranch}\` — the main checkout is not where the run's last refresh left it, and checks that pass somewhere else are not evidence about this release.` }
     const n = v => (Number.isInteger(v) && v >= 0 ? v : null)
     const [total, passed, skipped, problems] = [n(r.total), n(r.passed), n(r.skipped), n(r.problems)]
     ledger.push({ id, total, passed, skipped })
+    // Not STOP.releaseCheck: that sentence says a check no longer passes, and
+    // here nobody knows whether it does.
     if (total === null || passed === null || skipped === null || problems === null || typeof r.allPassed !== 'boolean')
-      return { ticket: id, stopCondition: STOP.releaseCheck, where, detail: `${id}'s release check report carries no usable ledger (total, passed, skipped, problems as counts and allPassed as a boolean) — an unreadable ledger is never a pass.`, ledger }
+      return { ticket: id, stopCondition: STOP.contradiction, where, detail: `${id}'s release check report carries no usable ledger (total, passed, skipped, problems as counts and allPassed as a boolean) — an unreadable ledger is never a pass.`, ledger }
     // The counts decide, not the proxy's echo of the verdict — and the verdict
     // must agree with them, as at the acceptance gate.
     const green = passed === total && problems === 0 && skipped === 0
@@ -3247,7 +3270,7 @@ ${NO_MAIN}`,
         ticket: id,
         stopCondition: STOP.releaseCheck,
         where,
-        detail: `${id} is merged, and at the head the release would carry its acceptance checks read ${passed}/${total}${skipped ? `, ${skipped} skipped` : ''}${problems ? `, ${problems} malformed` : ''}${r.allPassed !== green ? ` (the report's own verdict, ${JSON.stringify(r.allPassed)}, disagrees with its counts)` : ''} — they passed before its merge, so something that landed after it, or the default branch the last refresh merged in, broke what ${id} built.${quoted} Nothing un-merges and no release pull request is opened. See it with \`${TICKETS} check ${id}\` on \`${epicBranch}\`${parallelMax > 1 ? ` — and rule out the environment first: this run's tickets installed their dependencies in worktrees, and the main checkout may simply lack what a later ticket added` : ''}. The repair is forward: fix it on \`${epicBranch}\` as a ticket of its own, then re-run \`/flow:run ${epic}\` — with nothing left to start, this check is the first thing that run does, and passing it is what clears this halt.`,
+        detail: `${id} is merged, and at the head the release would carry its acceptance checks read ${passed}/${total}${skipped ? `, ${skipped} skipped` : ''}${problems ? `, ${problems} malformed` : ''}${r.allPassed !== green ? ` (the report's own verdict, ${JSON.stringify(r.allPassed)}, disagrees with its counts)` : ''} — they passed before its merge, so something that landed after it, or the default branch the last refresh merged in, broke what ${id} built.${quoted} Nothing un-merges and no release pull request is opened. See it with \`${TICKETS} check ${id}\` on \`${epicBranch}\`${parallelMax > 1 ? ` — and rule out the environment first: this run's tickets installed their dependencies in worktrees, and the main checkout may simply lack what a later ticket added` : ''}. The repair is forward, and where it goes depends on what broke it. Something in this epic: add a ticket that fixes it to \`epics/${epic}/tickets.md\` on \`${epicBranch}\`, push, and re-run \`/flow:run ${epic}\` — that run builds the ticket and then makes this check again. The default branch: fix it there first (it is broken there too), and the re-run's refresh brings the fix in. Either way passing this check is what clears the halt; nothing else is owed.`,
         ledger,
       }
     }
