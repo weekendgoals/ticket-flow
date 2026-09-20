@@ -12,6 +12,26 @@ heading here. `check-invariants.mjs` holds both.
 
 ## Unreleased
 
+## 2.2.1 — 2026-09-20
+
+Two fidelity passes that carried no evidence. Patch: no format changes; a
+comparison that was performed correctly reads exactly as it did.
+
+- **`fidelity.mjs diff` refuses reports taken at different viewport widths**
+  (exit 2; it was a note under exit 0). Two widths are two pages — media
+  queries answered differently on each side — and a 1440-against-375 pair
+  printed "no differences". A report that carries no width is not refused:
+  absence is not a mismatch, and a width that is not a number is refused by
+  name rather than compared.
+- **`tickets.mjs compared` no longer counts an empty `**Compared:**` field**
+  — a label with nothing on its line and nothing under it before the next
+  of the entry's own fields, a heading or the end of the file (a bold
+  sub-label such as `**@ 1440:**` is body, not a field). A bare label
+  satisfied the run driver's presence gate. Still counting, never judging: a pasted table, `owed —` and
+  `hand-written —` count as before, and the JSON gains an `empty` array
+  beside `tables` (additive; `compared` stays the driver's field).
+- Ticket and quick skills: the differ's exit codes name the width refusal.
+
 ## 2.2.0 — 2026-09-20
 
 Parallel tickets. An epic may declare `Parallel: 2` or `3`, and an unattended

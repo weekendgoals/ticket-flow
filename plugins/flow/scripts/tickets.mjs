@@ -2576,16 +2576,39 @@ function readStatusLog(epic, rel, logFromRef, what) {
 // ticket. Every heading closes the region, which is what the driver's own
 // `awk '/^### /{f=/^### <ID> /} f'` does, so an entry's addenda count and the
 // next entry's do not.
+const ENTRY_FIELD = /^\*\*(?:(?:Built|Verified|Compared|Decisions|Deviation|Deviations closed|Owed|Resolves owed|Revert check|Mode|Tokens|Time):\*\*|Addendum\b)/
+
 function comparedIn(text, id) {
   const found = []
   let entry = null
-  text.split('\n').forEach((line, i) => {
+  const lines = text.split('\n')
+  lines.forEach((line, i) => {
     if (/^#{1,6}\s/.test(line)) {
       const m = line.match(STATUS_HEADING)
       entry = m ? m[1] : null
       return
     }
-    if (entry === id && /^\*\*Compared:\*\*/.test(line)) found.push({ line: i + 1, text: line.slice('**Compared:**'.length).trim() })
+    if (entry !== id || !/^\*\*Compared:\*\*/.test(line)) return
+    const rest = line.slice('**Compared:**'.length).trim()
+    // A pasted table starts on the lines below the label, so an empty label
+    // line is normal — but a label with nothing under it either, before the
+    // next field, heading or end of file, is a field nobody filled in. That is
+    // still counting and not judging: what the field SAYS is the reviewer's,
+    // whether it says anything at all is this script's. It counted once, and a
+    // bare label satisfied the driver's gate.
+    //
+    // Only a heading or one of the entry's OWN field labels closes the field.
+    // "Any bold label" did once, in review: a two-width comparison recorded as
+    // `**@ 1440:**` and `**@ 393:**` tables read as empty, and that is a ticket
+    // that did the work halted by a gate saying it had not. An unknown label
+    // is therefore body — the error this direction can make is counting a
+    // field that says little, which the reviewer reads anyway.
+    let body = rest
+    for (let j = i + 1; !body && j < lines.length; j++) {
+      if (/^#{1,6}\s/.test(lines[j]) || ENTRY_FIELD.test(lines[j])) break
+      body = lines[j].trim()
+    }
+    found.push({ line: i + 1, text: rest, empty: !body })
   })
   return found
 }
@@ -2938,7 +2961,9 @@ switch (cmd) {
     const epic = data.epics.find((e) => e.epic === t.epic)
     const rel = `epics/${t.epic}/status.md`
     const text = readStatusLog(epic, rel, logFromRef, 'no comparison')
-    const found = comparedIn(text, t.id)
+    const all = comparedIn(text, t.id)
+    const found = all.filter((f) => !f.empty)
+    const empty = all.filter((f) => f.empty)
     if (json)
       emit({
         ticket: t.id,
@@ -2947,11 +2972,13 @@ switch (cmd) {
         logFrom: logFromRef,
         compared: found.length,
         tables: found,
+        empty,
       })
     else {
       const where = logFromRef ? `${rel} at ${logFromRef}` : epic.statusDoc
       console.log(`${C.bold}${t.id}${C.off} ${C.dim}— ${t.epic} — ${where}${C.off}\n${found.length} \`**Compared:**\` field(s) recorded`)
       for (const f of found) console.log(`  line ${f.line}: ${f.text.slice(0, 200) || '(the table follows on the next lines)'}`)
+      for (const f of empty) console.log(`  line ${f.line}: an empty \`**Compared:**\` field — not counted: a label with no table, no \`owed —\` and no \`hand-written —\` under it records nothing`)
     }
     break
   }

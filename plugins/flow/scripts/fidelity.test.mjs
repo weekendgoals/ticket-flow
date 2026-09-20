@@ -531,10 +531,18 @@ test('landmarks that matched nothing on either side are noted, and are not diffe
   assert.ok(result.notes.some((n) => /matched nothing/.test(n)))
 })
 
-test('reports taken at different viewport widths are noted, because the comparison is not one page', () => {
+test('reports taken at different viewport widths are refused, because the comparison is not one page', () => {
   const landmarks = [{ name: 'a', design: '#a', page: '#a' }]
-  const side = (viewportWidth) => ({ viewportWidth, landmarks: { a: { found: true, order: 1, childCount: 0, props: { width: '900px' } } } })
-  const result = diffReports(side(1440), side(393), { landmarks })
-  assert.deepEqual(result.rows, [])
-  assert.ok(result.notes.some((n) => /different viewport widths \(design 1440, page 393\)/.test(n)))
+  const side = (s, viewportWidth) => ({ side: s, viewportWidth, landmarks: { a: { found: true, order: 1, childCount: 0, props: { width: '900px' } } } })
+  const map = tmp('design-map.json', { landmarks })
+  const r = cli('diff', tmp('design.json', side('design', 1440)), tmp('page.json', side('page', 393)), '--map', map)
+  assert.equal(r.code, 2, 'identical rows at two widths printed "no differences" under exit 0 once')
+  assert.match(r.err, /different viewport widths \(design 1440, page 393\)/)
+  assert.equal(r.out.trim(), '', 'no table — a table is what gets pasted into **Compared:**')
+  // A report with no width is not a mismatch: hand-built reports and older extractors carry none.
+  const ok = cli('diff', tmp('design.json', side('design', null)), tmp('page.json', side('page', 393)), '--map', map)
+  assert.equal(ok.code, 0)
+  const text = cli('diff', tmp('design.json', side('design', '393')), tmp('page.json', side('page', 393)), '--map', map)
+  assert.equal(text.code, 2)
+  assert.match(text.err, /"viewportWidth" must be a number or null/)
 })
