@@ -1435,6 +1435,49 @@ order; it ends by itself when the blocker lands, and it applies only to a
 ticket nobody has started — once there is work on a branch, the board reports
 the work, because the plan's order is by then history.
 
+## Why a wave merges its log by appending, and not by union
+
+Every ticket appends its status entry to the end of one file. Serially that
+never conflicts: each ticket branches from an epic head that already carries
+the entry before it. A wave cuts several branches from ONE head, so every
+merge after the first conflicts at the log's tail, every time, with nobody
+present to resolve it.
+
+Git ships a driver that looks made for this — `merge=union`, "keep both
+sides' lines" — and the first cut of the wave used it. It was the design's
+riskiest assumption, named as such, and built on anyway without being run; a
+reviewer ran it. Union is a LINE-level merge: a line both sides share is
+emitted once. Two status entries share most of their tail — `**Decisions:**
+none.`, `**Owed:**`, every blank line — so git reported a clean merge in
+which the first entry had lost its closing fields and its `**Owed:**` line
+sat under the second ticket's heading. An obligation changed owner. `owed`,
+`brief` and `doctor` all read the result without complaint, because a
+truncated entry is still a well-formed one. That is the worst shape a
+failure can have here: silent, plausible, and in the one document the
+release pull request's Owed section is built from.
+
+So the driver is the plugin's own, and its rule is the file's own: both sides
+only appended, therefore the merge is the base, then what ours added, then
+what theirs added, **each kept whole**. A side that did anything else has
+broken the log's rule, and the driver says so by failing — a conflict, a
+halt, a human. It is defined on the merge command (`git -c …`) and only named
+in the repository's local `info/attributes`, so nothing persists that a
+later hand merge would trip over.
+
+Its second review found the same failure shape one layer down. The file
+decided whether it was being *run* by comparing two spellings of its own
+path, one symlink-resolved and one not; under a symlinked plugin directory
+they differed, the body never executed, the process exited 0 — and git,
+handed a driver that did nothing, kept ours, discarded theirs and called the
+merge clean. A whole entry gone instead of half of one. Two rules came out
+of that. **A merge driver acts on an explicit flag and fails closed**: told
+to act and unable to, it exits nonzero. And **the wave checks its own
+merge**: after merging, before pushing, the ticket's entry heading must be in
+the merged log — because "the driver silently did nothing" must not reach the
+remote *whatever* causes it next time. The general lesson is older than this
+repository: an assumption about what git does is tested against git, in a
+throwaway repository, before anything is built on it.
+
 ## Why the run loop is code, not prose
 
 The unattended lane's guarantees were originally sentences a driver session
@@ -1479,7 +1522,11 @@ and the conflict has nowhere to happen. The alternative considered was a
 `merge=union` attribute on `epics/*/status.md`: one line, but per-project
 configuration a doctor probe can only nag about, and union also *hides* an
 overlapping edit — which an append-only log forbids — instead of surfacing
-it as a conflict. The records written before the split stay in `status.md`
+it as a conflict. (Parallel waves brought the same conflict back between
+*ticket* branches, where no second file can dissolve it, and the question
+was reopened with real git: `union` turned out worse than that sentence
+says — see § "Why a wave merges its log by appending, and not by union".)
+The records written before the split stay in `status.md`
 and are still read there, because rewriting an append-only log to tidy it is
 the one thing the log's rules do not allow.
 

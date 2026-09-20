@@ -3,7 +3,8 @@
 A Claude Code plugin marketplace with one plugin, `flow` (`plugins/flow/`):
 skills and agents that run work as epics and tickets, plus `tickets.mjs`, the
 script that derives the board from git, `workflows/run-epic.mjs`, the
-workflow script that holds `/flow:run`'s ticket loop, and one session hook
+workflow script that holds `/flow:run`'s ticket loop, `scripts/merge-append.mjs`,
+the git merge driver a parallel run merges the status log with, and one session hook
 (the in-session-work guard, whose only state is a per-session marker in the
 OS temp dir). `README.md` is the user-facing manual;
 `METHODOLOGY.md` is reasoning only and contains no rules — if it contradicts a
@@ -47,7 +48,7 @@ go through the flow, one-off work goes through `/flow:quick` into
   to the OS temp dir. Nothing but Node, and **no test reads a real
   transcript** — those live under `~/.claude` and belong to whoever ran
   them. The append merge driver has
-  `node --test plugins/flow/scripts/merge-append.test.mjs` (`# pass 6`) —
+  `node --test plugins/flow/scripts/merge-append.test.mjs` (`# pass 8`) —
   REAL git in throwaway repositories, the driver wired exactly as the run's
   merge step wires it, because the driver it replaced (git's own `union`) was
   also obviously right and corrupted every merge it touched; one test keeps
@@ -118,6 +119,17 @@ test file path explicitly.
   first invariant: zero dependencies, stores nothing, and a figure it cannot
   observe is `unknown`, never an estimate. A ticket's git commit span is
   never reported as its `wall` — commits begin when the work is nearly over.
+- **A merge driver that does nothing is a clean merge that loses data.**
+  Git keeps ours and drops theirs when a driver exits 0 without writing, and
+  reports no conflict. So `scripts/merge-append.mjs` acts on its `--driver`
+  flag — never on a comparison of its own path, which a symlinked plugin
+  directory once made false — and exits nonzero whenever it is told to act
+  and cannot; and the wave's merge step greps the merged log for the
+  ticket's entry heading **before it pushes**. Never replace it with git's
+  `union` driver: union is line-level, emits a shared line once, and moved one
+  ticket's `**Owed:**` line under another's heading in a merge git called
+  clean. Any assumption about git's behaviour is tested against real git in a
+  throwaway repository (`merge-append.test.mjs` does) before it is built on.
 - **The heading regexes are load-bearing and shared.** `TICKET_HEADING` and
   `STATUS_HEADING` are used by both the parsers and `doctor`'s near-miss
   detection — that coupling is the point. If a heading format changes, the

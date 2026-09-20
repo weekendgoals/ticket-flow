@@ -181,6 +181,12 @@ if (ARGS.parallel != null) {
 // delta on it is a ticket's spend only while that ticket is the only thing
 // running. In a wave the delta is the wave's. The same rule as the missing
 // meter above: a ceiling that silently cannot fire is worse than none.
+// The wave's merge command carries the plugin's path inside a single-quoted
+// `-c` value, so a path with a single quote in it cannot be spelled there —
+// refused here, in words, rather than as a shell syntax error at the merge.
+if (parallelMax > 1 && pluginRoot.includes("'")) {
+  throw new Error(`args.parallel is ${parallelMax} and args.pluginRoot contains a single quote (${JSON.stringify(pluginRoot)}) — the wave's merge command cannot quote it. Run serially, or install the plugin under a path without one.`)
+}
 if (parallelMax > 1 && ticketBudget !== null) {
   throw new Error(
     `args.parallel is ${parallelMax} and args.ticketBudget is set — a per-ticket token ceiling cannot be enforced while tickets share the meter. Remove the epic's \`Ticket budget:\` line or its \`Parallel:\` line.`,
@@ -972,7 +978,7 @@ let halted = null // {stopCondition, ticket, where, detail}
 let lastRefreshSha = null // set by the refresh that found no ticket left: it is
                           // already the last refresh before the release, so the
                           // ending does not pay for a second one.
-// A wave's plumbing steps (the union driver, a worktree added or removed)
+// A wave's plumbing steps (the setup step, a worktree added or removed)
 // report through one schema. Declared here, above the loop, and not beside
 // the functions that use them further down: a function declaration is hoisted,
 // a `const` is not, and the loop calls those functions before the script
@@ -1292,7 +1298,13 @@ for (let i = 0; i < MAX_TICKETS && ticketRecords.length < MAX_TICKETS && !halted
   // branch checked out, and git refuses `git checkout <branch>` anywhere else
   // while it does: the documented recovery of a `passed, not merged` ticket
   // (`/flow:ticket <ID>`) would die on its first command.
-  for (const r of passed) await removeWorktree(r.id)
+  // One exception: a ticket that failed its POST-MERGE check keeps its
+  // worktree, because that is the tree the halt tells the human to look at
+  // ("rule out the environment first"). It was detached onto the epic head
+  // for the check, so it holds no branch and blocks no recovery.
+  const postMergeFailed = integrationHalt && integrationHalt.stopCondition === STOP.postMergeCheck ? integrationHalt.ticket : null
+  for (const r of passed) if (r.id !== postMergeFailed) await removeWorktree(r.id)
+  if (postMergeFailed) log(`${postMergeFailed}: its worktree is left in place at ${worktreePath(postMergeFailed)}, detached at ${epicBranch}'s merged head — it is where the failing check ran. Remove it with \`git worktree remove --force "${worktreePath(postMergeFailed)}"\` when done.`)
   // A ticket whose pipeline HALTED may hold the only copy of what went wrong —
   // uncommitted work, a half-written entry — so its worktree stays, and the
   // run says where, and how to clear it, and (with the Codex runner) how to
@@ -2863,8 +2875,14 @@ async function integrateTicket({ id, branch, record, recordSpend, resolvedHead, 
   let halted = null
   // Defined on the command, never in the repository's config: nothing persists,
   // and a later hand merge without it falls back to git's ordinary driver.
+  // The wave's merge is followed by a check of its own result, before the push:
+  // the ticket's entry heading must be in the merged log. A merge driver that
+  // does nothing still exits 0 — git then keeps ours and drops theirs, and
+  // calls it clean — and that failure shape must never reach the remote
+  // whatever causes it. `grep -q` exits 1, the sequence stops, nothing is
+  // pushed, and the run halts on the merge step.
   const mergeCommand = inWave
-    ? `git -c merge.flow-append.name="append-only log" -c merge.flow-append.driver='node "${pluginRoot}/scripts/merge-append.mjs" %O %A %B' merge --no-ff ${resolvedHead} -m "Merge ${branch} into ${epicBranch}"`
+    ? `git -c merge.flow-append.name="append-only log" -c merge.flow-append.driver='node "${pluginRoot}/scripts/merge-append.mjs" --driver %O %A %B' merge --no-ff ${resolvedHead} -m "Merge ${branch} into ${epicBranch}"\ngrep -q "^### ${id} " "epics/${epic}/status.md"`
     : `git merge --no-ff ${resolvedHead} -m "Merge ${branch} into ${epicBranch}"`
   // h. Merge — the one sanctioned agent merge, and its surface is the epic
   //    branch only. A fixed git sequence on a SHA this code verified, by an

@@ -2924,7 +2924,8 @@ test('wave: two ready tickets run side by side in worktrees, merge in document o
   // wave it names the append driver for the status log; a lone ticket's merge
   // is the command it always was.
   assert.match(prompt('merge:PAY-2'), /In the repository at \/repo, /)
-  assert.match(prompt('merge:PAY-2'), /git -c merge\.flow-append\.name="append-only log" -c merge\.flow-append\.driver='node "\/plugins\/flow\/scripts\/merge-append\.mjs" %O %A %B' merge --no-ff beefc0ffee42 /)
+  assert.match(prompt('merge:PAY-2'), /git -c merge\.flow-append\.name="append-only log" -c merge\.flow-append\.driver='node "\/plugins\/flow\/scripts\/merge-append\.mjs" --driver %O %A %B' merge --no-ff beefc0ffee42 .*\ngrep -q "\^### PAY-2 " "epics\/payments\/status\.md"\ngit push origin epic\/payments/)
+  assert.doesNotMatch(prompt('merge:PAY-3'), /grep -q|flow-append/, "a lone ticket's merge is the sequence it always was")
   assert.match(prompt('merge:PAY-3'), /\ngit merge --no-ff beefc0ffee42 /)
   // The post-merge gate runs where the dependencies were installed: the
   // ticket's own worktree, moved to the merged head.
@@ -2984,6 +2985,9 @@ test('wave: tickets declared independent that are not — the later merge fails 
   assert.match(r.out.haltedOn.stopCondition, /^a failed acceptance CHECK after the merge/)
   assert.match(r.out.haltedOn.detail, /1\/2 of PAY-2's signed-off CHECK criteria pass on epic\/payments after the merge.*where 2\/2 passed on its own branch.*expected 3 got 4.*Rule out the environment first.*declared independent and are not.*Blocked by/s)
   assert.equal(r.out.ticketRecords.find(t => t.id === 'PAY-2').result, 'integrated', 'nothing un-merges')
+  // The halt says "look at the worktree the check ran in" — so that one stays.
+  assert.deepEqual(only(r.labels, /^worktree-remove:/), ['worktree-remove:PAY-1'])
+  assert.ok(r.logs.some(l => /PAY-2: its worktree is left in place at .*pay-2, detached at epic\/payments's merged head/.test(l)))
   assert.ok(!r.labels.includes('refresh+select:2'))
   // A report the gate cannot read fails closed; a ticket with no CHECK criteria has nothing to re-run.
   const blind = await drive(waveReply([refreshed(['PAY-1', 'PAY-2'])], { 'post-merge:PAY-2': { outcome: 'ran' } }), PAR(2))
@@ -3050,6 +3054,9 @@ test('waiting: an empty ready list with tickets still waiting is a halt, never "
   const dropped = await drive(waveReply([{ refresh: { outcome: 'refreshed' }, next: { commandSucceeded: true, tickets: [], waiting: [], readyCount: 0, waitingCount: 2 } }]))
   assert.equal(dropped.out.outcome, 'halted')
   assert.match(dropped.out.haltedOn.detail, /does not add up: 0 ready ticket\(s\) reported beside readyCount .*0.*, 0 waiting beside waitingCount .*2/s)
+  const miscounted = await drive(waveReply([{ refresh: { outcome: 'refreshed' }, next: { commandSucceeded: true, tickets: [{ id: 'PAY-1' }, { id: 'PAY-2' }], waiting: [], readyCount: 3, waitingCount: 0 } }]))
+  assert.match(miscounted.out.haltedOn.detail, /does not add up: 2 ready ticket\(s\) reported beside readyCount .*3/s, 'a ready ticket lost on the way is a ticket the run would never build')
+  assert.deepEqual(miscounted.labels, ['refresh+select:1'])
   const uncounted = await drive(waveReply([{ refresh: { outcome: 'refreshed' }, next: { commandSucceeded: true, tickets: [], waiting: [] } }]))
   assert.match(uncounted.out.haltedOn.detail, /does not add up/, 'a report with no counts at all is refused too')
 })
@@ -3060,6 +3067,8 @@ test('launch: Parallel outside 1–3 is refused, and so is Parallel beside a Tic
   const pair = await drive(waveReply([]), { ...PAR(2), ticketBudget: 250000 }, meter)
   assert.match(pair.out.threw, /per-ticket token ceiling cannot be enforced while tickets share the meter/)
   assert.deepEqual(pair.labels, [], 'refused before any agent is spawned')
+  assert.match((await drive(waveReply([]), { ...PAR(2), pluginRoot: "/Users/o'brien/flow" })).out.threw, /pluginRoot contains a single quote/)
+  assert.equal((await drive(waveReply([refreshed(['PAY-1']), refreshed([])]), { ...ARGS, pluginRoot: "/Users/o'brien/flow" })).out.outcome, 'completed', 'a serial run never spells that command, and is not refused')
   assert.equal((await drive(waveReply([refreshed(['PAY-1']), refreshed([])]), { ...PAR(1), ticketBudget: 250000 }, meter)).out.outcome, 'completed', 'Parallel: 1 is serial, and a serial run meters')
   const midRun = await drive(waveReply([refreshed(['PAY-1', 'PAY-2'])], { 'resolve:PAY-2': { ...resolvedFor('PAY-2'), ticketBudget: 250000 } }), PAR(2), meter)
   assert.equal(midRun.out.haltedOn.ticket, 'PAY-2')

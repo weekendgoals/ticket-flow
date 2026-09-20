@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // merge-append.mjs — a git merge driver for an append-only log.
 //
-//   git -c merge.flow-append.driver='node merge-append.mjs %O %A %B' merge …
+//   git -c merge.flow-append.driver='node merge-append.mjs --driver %O %A %B' merge …
 //   (with `<path> merge=flow-append` in .git/info/attributes)
 //
 // An epic's status log is appended to by every ticket, at the end. Two ticket
@@ -20,15 +20,28 @@
 //
 // The rule here is the file's own: BOTH sides only appended. So the merge is
 // the base, then everything ours added, then everything theirs added — each
-// side's new text kept WHOLE, in that order, which is document order because
-// the driver merges tickets in document order. A side that did anything but
+// side's new text kept WHOLE, in that order — which is document order, because
+// the run merges a wave's tickets in document order. (A ticket branch that
+// merged the epic branch into itself mid-ticket, which workers are told not
+// to do, never reaches this driver for the log: git resolves it as theirs,
+// nothing is lost, and only the entries' order follows the merges.) A side that did anything but
 // append (an edited entry, a deleted line) is not something this can merge,
 // and it says so by failing: git records a conflict, and the run halts on its
 // merge-conflict stop condition with a human's attention, which is right.
 //
-// git calls it with three paths: %O the common ancestor, %A ours (also where
-// the result is written), %B theirs. Exit 0 = merged, nonzero = conflict.
-// Zero dependencies; reads three files and writes one.
+// git calls it with `--driver` and three paths: %O the common ancestor, %A
+// ours (also where the result is written), %B theirs. Exit 0 = merged,
+// nonzero = conflict. Zero dependencies; reads three files and writes one.
+//
+// `--driver` is what makes this file act, and nothing else is. A merge driver
+// that exits 0 having done nothing is the worst thing it can be: git takes
+// ours as the result, theirs is discarded, and the merge reads as clean. The
+// first cut decided "am I the program being run?" by comparing
+// `import.meta.url` with `process.argv[1]` — one realpath-resolved, the other
+// not — so under any symlinked plugin path the comparison failed, the body
+// never ran, and a whole status entry vanished from a clean-looking merge.
+// An explicit flag cannot be wrong about a path. And it fails CLOSED: run with
+// the flag and anything but three readable files, it exits nonzero.
 
 import { readFileSync, writeFileSync } from 'node:fs'
 
@@ -42,10 +55,11 @@ export function mergeAppend(base, ours, theirs) {
   return ours + seam + added
 }
 
-if (import.meta.url === new URL(`file://${process.argv[1]}`).href) {
-  const [base, ours, theirs] = process.argv.slice(2)
+const flag = process.argv.indexOf('--driver')
+if (flag !== -1) {
+  const [base, ours, theirs] = process.argv.slice(flag + 1)
   if (!base || !ours || !theirs) {
-    console.error('merge-append: usage: merge-append.mjs %O %A %B — a git merge driver; see the header of this file')
+    console.error('merge-append: usage: merge-append.mjs --driver %O %A %B — a git merge driver; see the header of this file')
     process.exit(2)
   }
   const merged = mergeAppend(readFileSync(base, 'utf8'), readFileSync(ours, 'utf8'), readFileSync(theirs, 'utf8'))

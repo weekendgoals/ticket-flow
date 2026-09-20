@@ -10,7 +10,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { execFileSync, spawnSync } from 'node:child_process'
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, appendFileSync, rmSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, appendFileSync, rmSync, symlinkSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -24,7 +24,7 @@ const BASE = '# E epic — status log\n\n## Baseline — 2026-09-19\n\nstart\n'
 const entry = (id, owed = 'Nothing.') => `\n### ${id} — thing ${id} — 2026-09-19 — DONE\n\n**Built:** the ${id} thing.\n\n**Verified:** 11 passing.\n\n**Decisions:** none.\n\n**Owed:** ${owed}\n`
 const addendum = id => `\n**Addendum — review — 2026-09-19 — opus/high:** ${id} clean; nothing deferred. Tokens: recorded in the run record\n`
 
-function repo(attribute = 'flow-append') {
+function repo(attribute = 'flow-append', driver = DRIVER) {
   const dir = mkdtempSync(join(tmpdir(), 'flow-merge-'))
   const git = (...a) => execFileSync('git', a, { cwd: dir, encoding: 'utf8', env: ENV, stdio: ['ignore', 'pipe', 'pipe'] })
   git('init', '-q', '--initial-branch=epic')
@@ -42,7 +42,7 @@ function repo(attribute = 'flow-append') {
     git('checkout', '-q', 'epic')
   }
   // The merge exactly as the run driver's merge step issues it.
-  const merge = name => spawnSync('git', ['-c', 'merge.flow-append.name=append-only log', '-c', `merge.flow-append.driver=node "${DRIVER}" %O %A %B`, 'merge', '--no-ff', '-q', name, '-m', `Merge ${name}`], { cwd: dir, encoding: 'utf8', env: ENV })
+  const merge = name => spawnSync('git', ['-c', 'merge.flow-append.name=append-only log', '-c', `merge.flow-append.driver=node "${driver}" --driver %O %A %B`, 'merge', '--no-ff', '-q', name, '-m', `Merge ${name}`], { cwd: dir, encoding: 'utf8', env: ENV })
   return { dir, git, branch, merge, log: () => readFileSync(join(dir, LOG), 'utf8'), done: () => rmSync(dir, { recursive: true, force: true }) }
 }
 
@@ -107,13 +107,43 @@ test('a side that edited the log instead of appending is a real conflict, and th
   }
 })
 
-test('without the -c driver the attribute is inert: git falls back to its ordinary merge, so a leftover line harms nothing', () => {
+test('reached through a SYMLINKED path the driver still runs — a driver that exits 0 having done nothing drops the whole entry from a clean merge', () => {
+  // The first cut asked "am I the program being run?" by comparing
+  // import.meta.url (realpath-resolved) with process.argv[1] (as given); under
+  // a symlinked plugin path they differ, the body never ran, git kept ours, and
+  // B-2's entry was gone. `--driver` cannot be wrong about a path.
+  const link = join(mkdtempSync(join(tmpdir(), 'flow-link-')), 'scripts')
+  symlinkSync(dirname(DRIVER), link)
+  const r = repo('flow-append', join(link, 'merge-append.mjs'))
+  try {
+    r.branch('a-1', entry('A-1'))
+    r.branch('b-2', entry('B-2'))
+    assert.equal(r.merge('a-1').status, 0)
+    assert.equal(r.merge('b-2').status, 0)
+    assert.equal(r.log(), BASE + entry('A-1') + entry('B-2'))
+  } finally {
+    r.done()
+  }
+})
+
+test('it fails CLOSED: told to act and handed anything but three readable files, it exits nonzero and git records a conflict', () => {
+  assert.equal(spawnSync('node', [DRIVER, '--driver'], { encoding: 'utf8' }).status, 2)
+  assert.notEqual(spawnSync('node', [DRIVER, '--driver', '/nonexistent/o', '/nonexistent/a', '/nonexistent/b'], { encoding: 'utf8' }).status, 0)
+  // Without the flag it is a module and does nothing — which is why the flag,
+  // and not the file's path, is what the merge command relies on.
+  assert.equal(spawnSync('node', [DRIVER, 'x', 'y', 'z'], { encoding: 'utf8' }).status, 0)
+})
+
+test('without the -c driver the attribute is inert: git falls back to its ordinary merge, which conflicts the ordinary way on the second branch', () => {
   const r = repo()
   try {
     r.branch('a-1', entry('A-1'))
-    const plain = spawnSync('git', ['merge', '--no-ff', '-q', 'a-1', '-m', 'm'], { cwd: r.dir, encoding: 'utf8', env: ENV })
-    assert.equal(plain.status, 0)
-    assert.equal(r.log(), BASE + entry('A-1'))
+    r.branch('b-2', entry('B-2'))
+    const plain = name => spawnSync('git', ['merge', '--no-ff', '-q', name, '-m', 'm'], { cwd: r.dir, encoding: 'utf8', env: ENV })
+    assert.equal(plain('a-1').status, 0)
+    const second = plain('b-2')
+    assert.notEqual(second.status, 0, 'no silent merge: the fallback is a visible conflict')
+    assert.match(second.stdout + second.stderr, /CONFLICT/)
   } finally {
     r.done()
   }

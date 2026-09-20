@@ -251,7 +251,7 @@ branch**. Then it refreshes and asks the board again. Three things follow:
   merge=flow-append` to the repository's local `.git/info/attributes` — never
   committed, never pushed — and a wave's merges name the driver on the
   command itself (`git -c merge.flow-append.driver='node
-  …/scripts/merge-append.mjs %O %A %B' merge …`), so nothing lands in the
+  …/scripts/merge-append.mjs --driver %O %A %B' merge …`), so nothing lands in the
   repository's config. The driver's rule is the file's own: both sides only
   appended, so the result is the base, then what the epic branch added, then
   what the ticket added, **each kept whole**; a side that edited a line
@@ -261,11 +261,20 @@ branch**. Then it refreshes and asks the board again. Three things follow:
   clean-looking merge moved one ticket's `**Owed:**` line under the next
   ticket's heading. The attribute line stays after the run and is inert: a
   merge that does not define the driver falls back to git's ordinary one.
+- **A wave's merge checks its own result before it pushes**: the sequence
+  ends `grep -q "^### <ID> " epics/<name>/status.md` ahead of the push, so a
+  merged log that lost the ticket's entry — the shape every failure of a
+  merge driver takes, since a driver that does nothing still exits 0 and git
+  calls that clean — stops the sequence unpushed and halts the run on the
+  merge step.
 - **The post-merge check runs in the ticket's own worktree**, moved
   (detached) to the merged epic head — not in the main checkout, which never
   saw the dependencies the wave's workers installed. Its halt says to rule
   the environment out first: a sibling merged before it may have added a
-  dependency that worktree does not have.
+  dependency that worktree does not have. **That worktree is the one a
+  passed pipeline keeps**: it is where the failing check ran, it is detached
+  (so it holds no branch and blocks no recovery), and the script logs its
+  path with the command that removes it.
 - **The meter is the wave's.** `outputTokensObserved` is `null` for a ticket
   that ran in a wave, and the script logs the wave's delta instead — which is
   why `parallel` and `ticketBudget` cannot be declared together. Step 6's
@@ -675,7 +684,8 @@ finishes it like any ticket a run left behind.
 
 **Worktrees after a halt.** A ticket whose pipeline *passed* has nothing in
 its worktree that is not on its pushed branch, so the script removes it
-whether or not the ticket integrated — left behind it would hold the ticket's
+whether or not the ticket integrated (the one exception is a failed
+post-merge check, above) — left behind it would hold the ticket's
 branch checked out, and git refuses `git checkout <branch>` anywhere else
 while it does, which is the first command of the recovery. A ticket whose
 pipeline *halted* may hold the only copy of what went wrong, so its worktree

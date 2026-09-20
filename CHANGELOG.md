@@ -38,6 +38,11 @@ heading here. `check-invariants.mjs` holds both.
   then theirs, fails on a side that did more than append, is named for the
   epic's log in the local `.git/info/attributes` by one setup step and
   defined on the merge command with `-c`, so nothing persists in config.
+  It acts only on its `--driver` flag and fails closed, and a wave's merge
+  greps the merged log for the ticket's entry heading **before it pushes** —
+  a driver that does nothing still exits 0 and git calls that a clean merge
+  with theirs discarded, which a path comparison that a symlinked plugin
+  directory made false did once, in review.
   Deliberately **not** git's `union` driver, which the first cut used:
   union is line-level and emits a shared line once, and review showed a
   clean-looking merge moving one ticket's `**Owed:**` line under the next
@@ -48,13 +53,16 @@ heading here. `check-invariants.mjs` holds both.
   branch; a failed integration merges nothing past it and records the rest
   `passed, not merged`. A passed pipeline's worktree is always removed (left
   behind it would hold the branch checked out and break the documented
-  recovery); a halted one's stays, its path logged with the command that
+  recovery — except after a failed post-merge check, whose worktree is the
+  one its halt says to look at, detached and holding no branch); a halted
+  one's stays, its path logged with the command that
   clears it and, under the Codex runner, the cancel spelled with the
   worktree's path. Worktrees live at
   `<repoRoot>/../.flow-worktrees/<repo folder>/<epic>/<id>`. Each record
   carries the `wave` it ran in, and the 40-ticket backstop counts tickets. Refused at launch: `parallel`
   outside 1–3, and **`parallel` > 1 beside `Ticket budget:`** (in a wave the
-  meter's delta is the wave's; a budget that appears mid-run is refused at the
+  meter's delta is the wave's — and a `pluginRoot` with a single quote in
+  it, which the wave's merge command cannot spell; a budget that appears mid-run is refused at the
   resolve step on the same terms) — `outputTokensObserved` is `null` for a
   ticket that ran in a wave, and per-ticket figures come from
   `scripts/meter.mjs`, which reads per agent. The worker is told it is in a
