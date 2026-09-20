@@ -34,11 +34,12 @@
 //                                        ledger; --from reads the criteria
 //                                        from a git ref (the signed-off
 //                                        document) instead of the working tree
-//   tickets.mjs check-epic <epic> [--json] [--each] [--list] [--render <report.json>]
+//   tickets.mjs check-epic <epic> [--json] [--share] [--list] [--render <report.json>]
 //                                        the release check: every landed ticket's
-//                                        CHECK criteria on this checkout, each
-//                                        distinct command run once, criteria that
-//                                        differ from sign-off shown; --list runs
+//                                        CHECK criteria on this checkout, clean
+//                                        and at the fetched remote head; criteria
+//                                        that differ from sign-off shown; --share
+//                                        runs a command tickets share once; --list runs
 //                                        nothing and prints the landed IDs;
 //                                        --render prints a saved --json report
 //   tickets.mjs release <epic> [--json]  what the release walkthrough shows that
@@ -2604,9 +2605,10 @@ function checkEpicGreen(r) {
   const int = (v) => Number.isInteger(v) && v >= 0
   const rows = Array.isArray(r.tickets) ? r.tickets : []
   return (
-    r.allPassed === true && int(r.total) && int(r.passed) && r.passed === r.total && r.problems === 0 && r.skipped === 0 &&
-    r.headIsRemote !== false && !(r.dirty || []).length && rows.length > 0 &&
-    rows.every((t) => int(t.total) && t.passed === t.total && Array.isArray(t.checks) && t.checks.length === t.total && t.checks.every((c) => c.status === 'passed') && !(t.problems || []).length) &&
+    r.allPassed === true && typeof r.head === 'string' && /^[0-9a-f]{40}$/.test(r.head) &&
+    int(r.total) && int(r.passed) && r.passed === r.total && r.problems === 0 && r.skipped === 0 &&
+    (r.delivery !== 'release' || (r.fetched === true && r.headIsRemote === true)) && r.headIsRemote !== false && !(r.dirty || []).length && rows.length > 0 &&
+    rows.every((t) => int(t.total) && t.passed === t.total && !t.skipped && Array.isArray(t.checks) && t.checks.length === t.total && t.checks.every((c) => c.status === 'passed') && !(t.problems || []).length) &&
     rows.reduce((a, t) => a + t.total, 0) === r.total
   )
 }
@@ -2623,10 +2625,15 @@ function printCheckEpic(r) {
           : `the two have diverged — reconcile them by hand before anything is released`
     console.log(`${C.red}this checkout is at ${r.head ? r.head.slice(0, 12) : '(no HEAD)'} and ${remoteRef} is at ${String(r.remoteHead).slice(0, 12)} — the release pull request carries the remote head, so this is not a check of it: ${fix}, then run it again.${C.off}`)
   }
+  if (r.delivery === 'release' && r.fetched !== true)
+    console.log(`${C.red}\`git fetch origin epic/${r.epic}\` failed, so nobody knows which commit the release pull request would carry — this is not a check of it. Fix the remote (or the network) and run it again.${C.off}`)
+  else if (r.delivery === 'release' && r.headIsRemote !== true && r.headIsRemote !== false)
+    console.log(`${C.red}there is no ${remoteRef}: a release epic's branch is pushed at sign-off, and without it there is nothing this checkout could be the head of.${C.off}`)
   if ((r.dirty || []).length)
-    console.log(`${C.red}tracked files are modified and not committed, so what was checked is not the commit being released:${C.off}\n${r.dirty.map((l) => `  ${l}`).join('\n')}\n  commit or discard them, then run it again.`)
+    console.log(`${C.red}tracked files were modified and not committed BEFORE anything ran, so what would be checked is not the commit being released — nothing was run:${C.off}\n${r.dirty.map((l) => `  ${l}`).join('\n')}\n  commit or discard them, then run it again.`)
   if (r.shallow) console.log(`${C.yellow}this is a shallow clone: the sign-off commit found may only be the clone's boundary, so "criteria differ from sign-off" can be silently empty. \`git fetch --unshallow\` to trust it.${C.off}`)
   if (!r.tickets.length) console.log(`${C.red}no ticket of ${r.epic} is integrated or shipped — there is nothing to release${C.off}`)
+  else if (r.total === 0) console.log(`${C.yellow}no landed ticket carries a CHECK criterion, so nothing was run — "passed" here says only that nothing failed to parse${C.off}`)
   const MARK = { passed: `${C.green}✓${C.off}`, skipped: `${C.yellow}↓${C.off}`, failed: `${C.red}✗${C.off}` }
   for (const t of r.tickets) {
     console.log(`\n${C.bold}${t.id}${C.off} ${C.dim}${t.passed}/${t.total}${t.compares.length ? ` — ${t.compares.length} COMPARE not re-verified here` : ''}${C.off}`)
@@ -2644,7 +2651,7 @@ function printCheckEpic(r) {
     console.log(`\n${C.yellow}commits in this release carry a ticket ID no document knows — a ticket whose section was deleted is checked by nobody:${C.off} ${r.orphanIds.join(', ')}`)
   if (r.notLanded.length) console.log(`\n${C.yellow}not integrated, so not checked:${C.off} ${r.notLanded.map((t) => `${t.id} (${t.state})`).join(', ')}`)
   console.log(
-    `\n${r.passed}/${r.total} checks passed across ${r.tickets.length} ticket(s), ${r.commandsRun} command run(s)${r.shared === false ? ' (--each: nothing shared between tickets)' : ' (a command several tickets share ran once — use --each when any CHECK writes state)'}` +
+    `\n${r.passed}/${r.total} checks passed across ${r.tickets.length} ticket(s), ${r.commandsRun} command run(s)${r.shared ? ' (--share: a command several tickets name ran once — right for test suites, wrong when any CHECK writes state)' : ''}` +
       (r.skipped ? ` — ${r.skipped} skipped, which does not pass` : '') +
       (r.problems ? ` — ${r.problems} malformed line(s), which fail` : ''),
   )
@@ -3185,7 +3192,7 @@ switch (cmd) {
     // who decides the release. Evidence, not a gate: the script cannot tell a
     // re-plan from a dodge, and a reader can.
     if (!arg) {
-      console.error('usage: tickets.mjs check-epic <epic> [--json] [--each] [--list] [--render <report.json>]')
+      console.error('usage: tickets.mjs check-epic <epic> [--json] [--share] [--list] [--render <report.json>]')
       process.exit(2)
     }
     // `--render <file>` runs nothing either: it prints a saved `--json` report
@@ -3246,20 +3253,43 @@ switch (cmd) {
     // idempotent across tickets still differs from running each ticket alone;
     // the driver's per-ticket steps are the gate, and this is the summary.)
     //
-    // Sharing assumes a CHECK is a read-only probe. One that changes state —
-    // `sh migrate.sh`, then a probe another ticket already ran — gets the
-    // earlier answer, and a failure hides behind it. `--each` shares nothing
-    // and runs every line, exactly as `check <ID>` does; it is what to use by
-    // hand, where this command is the gate, whenever any criterion of the epic
-    // writes anything. `shared` in the report says which kind of run it was.
-    const each = process.argv.includes('--each')
+    // Sharing is OPT-IN (`--share`), because it assumes every CHECK is a
+    // read-only probe: one that changes state — `sh migrate.sh`, then a probe
+    // another ticket already ran — gets the earlier answer, and a failure
+    // hides behind it. The default runs every line of every ticket, exactly as
+    // `check <ID>` and the driver's per-ticket steps do, so this command and
+    // the unattended gate cannot disagree. `--share` is the fast path for an
+    // epic whose criteria are all test suites; `shared` in the report says
+    // which kind of run it was, and the walkthrough repeats it.
+    const each = !process.argv.includes('--share')
+    // Both questions about WHAT is being checked are asked before anything
+    // runs, and a wrong answer runs nothing.
+    //
+    // Tracked files modified and uncommitted: the criteria and the commands
+    // read the working tree, so an uncommitted fix — or an uncommitted deletion
+    // of a CHECK line — would be judged and the pushed commit certified. Asked
+    // BEFORE the checks, because afterwards it cannot tell a pre-existing edit
+    // from a file a CHECK regenerated (a build that rewrites a tracked
+    // `dist/version.json` is not somebody's uncommitted work, and a check that
+    // restores the file it read would hide one that was). Tracked files only:
+    // what git ignores or has never seen is the project's own.
+    const dirty = (git(['status', '--porcelain', '--untracked-files=no'], { allowFail: true }) || '').split('\n').filter(Boolean)
+    // The remote head is FETCHED here, not trusted as last seen: another
+    // session may have pushed, and "at the remote head" about a stale tracking
+    // ref certifies a commit nobody is releasing. A fetch that fails leaves
+    // the question unanswered, which is not a yes.
+    const remoteRef = epic.delivery === 'release' ? `origin/epic/${arg}` : null
+    const fetched = remoteRef ? git(['fetch', '--quiet', 'origin', `epic/${arg}`], { allowFail: true }) !== null : null
     const ran = new Map()
     let executions = 0
     const rows = landed.map((t) => {
       const { checks, compares, problems } = parseChecks(t.body, epic.designSources)
       const own = new Map()
       const used = new Set()
-      const results = checks.map((c, idx) => {
+      // A dirty tree runs nothing: results about somebody's uncommitted edits
+      // are not results about the release, and printing them invites reading
+      // them as if they were.
+      const results = dirty.length ? [] : checks.map((c, idx) => {
         // Only the FIRST use within this ticket may come from another ticket's
         // run (or seed the pool); every repeat runs, whoever ran it before.
         const first = !used.has(c.check)
@@ -3275,7 +3305,7 @@ switch (cmd) {
       return {
         id: t.id,
         state: t.state,
-        total: results.length,
+        total: checks.length,
         passed: results.filter((r) => r.passed).length,
         skipped: results.filter((r) => r.status === 'skipped').length,
         checks: results,
@@ -3292,19 +3322,15 @@ switch (cmd) {
     // By hand this command IS the gate, and the pull request carries the
     // REMOTE head: a local branch one commit behind a breaking push is green
     // about a commit nobody is releasing.
-    const remoteRef = epic.delivery === 'release' ? `origin/epic/${arg}` : null
     const remoteHead = remoteRef ? (git(['rev-parse', '--verify', '--quiet', remoteRef], { allowFail: true }) || '').trim() || null : null
-    // Criteria and commands read the WORKING TREE, and the comparison above is
-    // between commits: an uncommitted fix — or an uncommitted deletion of a
-    // CHECK line — would be judged, and the pushed commit certified. Tracked
-    // files only; what git ignores or has never seen is the project's own
-    // (installed dependencies, build output).
-    const dirty = (git(['status', '--porcelain', '--untracked-files=no'], { allowFail: true }) || '').split('\n').filter(Boolean)
     // Commits in this release whose subject carries a ticket ID that NO
     // document knows. A ticket added after sign-off and deleted again is in
     // neither the document nor the signed-off one, so `removedSinceSignoff`
     // cannot see it — but its commits are still here, under its ID.
-    const knownIds = new Set(data.tickets.map((t) => t.id))
+    // Every epic's documents, not only this one's: a quick ticket cherry-picked
+    // onto the epic is known to `epics/quick/`, and saying no document knows
+    // it would be this command being wrong about the repository.
+    const knownIds = new Set(board(null).tickets.map((t) => t.id))
     const orphanIds = [
       ...new Set(
         (git(['log', '--no-merges', '--format=%s', `origin/${defaultBranch}..HEAD`], { allowFail: true }) || '')
@@ -3326,8 +3352,12 @@ switch (cmd) {
     // wrong one leaves the reader where they were.
     const isAncestor = (a, b) => spawnSync('git', ['merge-base', '--is-ancestor', a, b], { cwd: repoRoot }).status === 0
     const headRelation = headIsRemote !== false || !head ? null : isAncestor(remoteHead, head) ? 'ahead' : isAncestor(head, remoteHead) ? 'behind' : 'diverged'
-    const allPassed = landed.length > 0 && passed === total && problems === 0 && skipped === 0 && headIsRemote !== false && dirty.length === 0
-    const report = { epic: arg, head, remoteHead, headIsRemote, headRelation, dirty, signoff, shallow, shared: !each, total, passed, skipped, problems, allPassed, commandsRun: executions, tickets: rows, notLanded, removedSinceSignoff, orphanIds }
+    // For a release epic the remote head must be KNOWN and equal: a missing
+    // `origin/epic/<name>`, or a fetch that failed, is a release nobody can
+    // say this checkout describes.
+    const atRemote = epic.delivery !== 'release' || (fetched === true && headIsRemote === true)
+    const allPassed = landed.length > 0 && passed === total && problems === 0 && skipped === 0 && atRemote && dirty.length === 0
+    const report = { epic: arg, delivery: epic.delivery, notRun: dirty.length > 0, head, remoteHead, fetched, headIsRemote, headRelation, dirty, signoff, shallow, shared: !each, total, passed, skipped, problems, allPassed, commandsRun: executions, tickets: rows, notLanded, removedSinceSignoff, orphanIds }
     if (json) emit(report)
     else printCheckEpic(report)
     process.exit(allPassed ? 0 : 1)

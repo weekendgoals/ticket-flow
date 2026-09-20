@@ -1422,7 +1422,13 @@ is refused. And it ran in the main checkout, which after a parallel run has
 none of the dependencies the tickets installed in their worktrees — every
 successful wave run that added one would have halted here, and halted again
 on the re-run; a wave run now checks in a worktree of its own, set up the way
-each ticket's was.
+each ticket's was, and the session's own check runs in the same one. The
+confirming pass then found the fixes patched rather than closed — a dirty
+tree asked about after the checks (which cannot tell a pre-existing edit from
+a file a check regenerated), a fetch the skill asked for and the command did
+not perform, sharing of command runs that could disagree with the per-ticket
+gate — and those were answered by moving each question to the one place it
+can be asked: before anything runs, inside the command, and by default.
 
 Two decisions carry reasons worth keeping. **Criteria come from the epic
 head, not from a pin at sign-off**: a human who re-plans a ticket mid-epic

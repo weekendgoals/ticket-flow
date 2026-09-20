@@ -232,8 +232,12 @@ thinks the project needs.
 tickets that came later, or after `main` was merged into the epic. So before
 it reports `completed`, the run re-runs every landed ticket's checks at the
 epic head and halts — no release pull request — if one no longer passes.
-`tickets.mjs check-epic <epic>` is the same check by hand, and also shows
-any ticket whose criteria changed since sign-off.
+`tickets.mjs check-epic <epic>` is the same check by hand — it fetches the
+epic branch, refuses a checkout that is not at the remote's commit or has
+uncommitted changes, and also shows any ticket whose criteria changed since
+sign-off. After a parallel run both happen in a worktree set up from
+`epics/worktree.json`, because the main checkout never saw what the tickets
+installed.
 
 **The release pull request comes with a walkthrough.** `release-page.mjs
 <epic> --check <check-epic.json>` renders one self-contained page for the

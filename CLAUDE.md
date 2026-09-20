@@ -33,7 +33,7 @@ go through the flow, one-off work goes through `/flow:quick` into
   `node --test plugins/flow/scripts/board.test.mjs` (`# pass 9`) and the
   plan-page renderer `node --test plugins/flow/scripts/plan-page.test.mjs`
   (`# pass 8`), and the release walkthrough
-  `node --test plugins/flow/scripts/release-page.test.mjs` (`# pass 12`) —
+  `node --test plugins/flow/scripts/release-page.test.mjs` (`# pass 13`) —
   all three pure rendering tests over fixture JSON, no git
   needed. The fidelity differ has
   `node --test plugins/flow/scripts/fidelity.test.mjs` (`# pass 54`) — the
@@ -133,7 +133,8 @@ test file path explicitly.
   document order, whichever pipeline finished first. Three things must stay
   true, and the driver's suite pins each: **`Parallel:` absent or `1` is the
   old run, prompt for prompt, through every ticket** — what follows the loop,
-  the release check, is the same steps in both — (epics planned when document order was the
+  the release check, is new in both, and a parallel run's adds one step, the
+  worktree it checks in — (epics planned when document order was the
   only dependency mechanism must not go wide on a plugin update); **timing
   decides nothing** (records and merges in wave order — a test delays one
   pipeline); and **a halt is returned by a pipeline, never thrown**, because
@@ -235,9 +236,10 @@ test file path explicitly.
   gate — because the reviewed party must not edit its own gate — and once
   more for every landed ticket at the epic head before it reports
   `completed` (the release check; `check-epic` is the same check by hand —
-  both judge the COMMIT the remote epic branch is at, fetched, with a clean
-  tree, and a parallel run checks in a set-up worktree of its own because
-  the main checkout never saw what the tickets installed):
+  both fetch, judge the COMMIT the remote epic branch is at, with a tree that
+  was clean before anything ran, and run every line of every ticket; after a
+  parallel run both run in one set-up release worktree, because the main
+  checkout never saw what the tickets installed):
   there the criteria are the head's own, so a mid-epic re-plan counts, and
   what differs from sign-off is shown to the human rather than gated on. A format
   change moves the parser, the skills and the driver in the same commit;

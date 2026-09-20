@@ -2542,9 +2542,16 @@ function releaseRepo(name, { r2Breaks = false, weaken = false } = {}) {
   return rel
 }
 
-test('check-epic runs every landed ticket\'s checks at the head, once per distinct command', () => {
+test('check-epic runs every landed ticket\'s checks at the head; --share runs a command several tickets name once', () => {
   const rel = releaseRepo('rc-green')
-  const out = JSON.parse(run(rel, 'check-epic', 'rc', '--json'))
+  // the default shares nothing: every line of every ticket runs, exactly as `check <ID>` and the driver's steps run it
+  const plain = JSON.parse(run(rel, 'check-epic', 'rc', '--json'))
+  assert.equal(plain.shared, false)
+  assert.equal(plain.commandsRun, 3)
+  assert.equal(plain.fetched, true, 'the remote head is fetched, not trusted as last seen')
+  assert.equal(readFileSync(join(rel, 'runs.log'), 'utf8'), 'ran\nran\n')
+  rmSync(join(rel, 'runs.log'))
+  const out = JSON.parse(run(rel, 'check-epic', 'rc', '--share', '--json'))
   assert.equal(out.allPassed, true)
   assert.deepEqual(out.tickets.map((t) => [t.id, t.passed, t.total]), [['RC-1', 1, 1], ['RC-2', 2, 2]])
   assert.deepEqual(out.notLanded, [{ id: 'RC-3', state: 'todo' }], 'a ticket that never started is named, not run, and not a failure')
@@ -2553,7 +2560,8 @@ test('check-epic runs every landed ticket\'s checks at the head, once per distin
   assert.equal(readFileSync(join(rel, 'runs.log'), 'utf8'), 'ran\n', 'the shared command ran ONCE and was judged against each EXPECT')
   assert.match(out.head, /^[0-9a-f]{40}$/)
   assert.equal(out.tickets.every((t) => t.criteriaChanged === null), true)
-  assert.match(run(rel, 'check-epic', 'rc'), /3\/3 checks passed across 2 ticket\(s\), 2 command run\(s\)/)
+  assert.match(run(rel, 'check-epic', 'rc', '--share'), /3\/3 checks passed across 2 ticket\(s\), 2 command run\(s\) \(--share/)
+  assert.match(run(rel, 'check-epic', 'rc'), /3\/3 checks passed across 2 ticket\(s\), 3 command run\(s\)\n?$/)
 })
 
 test('check-epic fails when a later ticket broke an earlier one\'s check, and names the ticket it broke', () => {
@@ -2664,7 +2672,7 @@ test('check-epic --render prints a saved report and runs nothing; a repeat insid
   const saved = join(rel, 'report.json')
   writeFileSync(saved, run(rel, 'check-epic', 'rc', '--json'))
   rmSync(join(rel, 'runs.log'))
-  assert.match(run(rel, 'check-epic', 'rc', '--render', saved), /3\/3 checks passed across 2 ticket\(s\), 2 command run\(s\)/)
+  assert.match(run(rel, 'check-epic', 'rc', '--render', saved), /3\/3 checks passed across 2 ticket\(s\), 3 command run\(s\)/)
   assert.ok(!existsSync(join(rel, 'runs.log')), 'one run of the suites, saved, read twice — --render ran nothing')
   const other = join(rel, 'other.json')
   writeFileSync(other, JSON.stringify({ ...JSON.parse(readFileSync(saved, 'utf8')), epic: 'nope' }))
@@ -2679,8 +2687,9 @@ test('check-epic --render prints a saved report and runs nothing; a repeat insid
   git(rel, 'add', 'epics/rc/tickets.md')
   git(rel, 'commit', '-m', 'RC-2: repeat a check')
   git(rel, 'push', 'origin', 'epic/rc')
-  run(rel, 'check-epic', 'rc', '--json')
-  assert.equal(readFileSync(join(rel, 'runs.log'), 'utf8'), 'ran\nran\n', 'once for RC-1 (shared with RC-2\'s first use), once more for RC-2\'s repeat')
+  rmSync(join(rel, 'runs.log'), { force: true })
+  run(rel, 'check-epic', 'rc', '--share', '--json')
+  assert.equal(readFileSync(join(rel, 'runs.log'), 'utf8'), 'ran\nran\n', 'under --share: once for RC-1 (shared with RC-2\'s first use), once more for RC-2\'s repeat')
 })
 
 test('the walkthrough keeps a ledger taken just before the run-record commit, and refuses one taken before anything else changed', () => {
@@ -2713,10 +2722,12 @@ test('check-epic refuses uncommitted tracked changes, names a ticket ID no docum
   writeFileSync(join(rel, 'greeting.txt'), 'hello\n')
   const dirty = runFail(rel, 'check-epic', 'rc', '--json')
   const d = JSON.parse(dirty.stdout)
-  assert.equal(d.passed, d.total, 'every check passes against the working tree…')
-  assert.equal(d.allPassed, false, '…and the pushed commit is not certified by it')
+  assert.equal(d.notRun, true, 'asked BEFORE anything runs: results about uncommitted edits are not results about the release')
+  assert.equal(d.passed, 0)
+  assert.equal(d.allPassed, false)
+  assert.ok(!existsSync(join(rel, 'runs.log')), 'nothing ran')
   assert.deepEqual(d.dirty.map((l) => l.trim()), ['M greeting.txt'])
-  assert.match(runFail(rel, 'check-epic', 'rc').stdout, /tracked files are modified and not committed/)
+  assert.match(runFail(rel, 'check-epic', 'rc').stdout, /tracked files were modified and not committed BEFORE anything ran/)
   git(rel, 'checkout', 'greeting.txt')
   // ahead of origin: the recovery is a push, and `git pull --ff-only` would change nothing
   git(rel, 'commit', '--allow-empty', '-m', 'RC-9: a ticket whose section nobody wrote')
@@ -2728,12 +2739,14 @@ test('check-epic refuses uncommitted tracked changes, names a ticket ID no docum
   const out = JSON.parse(runFail(rel, 'check-epic', 'rc', '--json').stdout)
   assert.deepEqual(out.orphanIds, ['RC-9'])
   assert.match(runFail(rel, 'check-epic', 'rc').stdout, /carry a ticket ID no document knows[^\n]*RC-9/)
-  // --each: the shared command runs for each ticket that names it
-  rmSync(join(rel, 'runs.log'), { force: true })
-  const each = JSON.parse(runFail(rel, 'check-epic', 'rc', '--each', '--json').stdout)
-  assert.equal(each.shared, false)
-  assert.equal(each.commandsRun, 3)
-  assert.equal(readFileSync(join(rel, 'runs.log'), 'utf8'), 'ran\nran\n')
+  // a check that rewrites a tracked file is not somebody's uncommitted work: dirtiness is asked before the run, not after
+  assert.deepEqual(out.dirty, [])
+  // a fetch that fails leaves "which commit would be released?" unanswered, which is not a yes
+  git(rel, 'remote', 'set-url', 'origin', join(tmp, 'no-such-remote.git'))
+  const offline = JSON.parse(runFail(rel, 'check-epic', 'rc', '--json').stdout)
+  assert.equal(offline.fetched, false)
+  assert.equal(offline.allPassed, false)
+  assert.match(runFail(rel, 'check-epic', 'rc').stdout, /`git fetch origin epic\/rc` failed, so nobody knows which commit the release pull request would carry/)
 })
 
 test('check-epic --render recomputes the verdict: a saved report cannot be greener than its rows', () => {

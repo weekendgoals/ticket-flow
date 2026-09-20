@@ -16,46 +16,49 @@ heading here. `check-invariants.mjs` holds both.
   ticket's `CHECK` criteria at the epic head, and opens no release on a
   failure** (`workflows/run-epic.mjs`: `release-list:<epic>` then one
   `release-check:<epic>:<ID>` per ticket — spelled so `meter.mjs` reads them
-  as run overhead, with a test — each reporting the branch it ran on, judged
-  in code; new stop condition *a failed release
+  as run overhead, with a test; new stop condition *a failed release
   check*, pinned by `check-invariants.mjs`; result field `releaseCheck`). A
   ticket's checks passed before its own merge and nothing re-ran them after
   later merges or after the default branch was merged in. It covers tickets
   an earlier run or a hand integrated, and re-running `/flow:run` is what
-  clears the halt. **This changes every run, serial ones included: two kinds
-  of step are hired after the loop.**
+  clears the halt. **This changes every run, serial ones included: steps are
+  hired after the loop.**
 - **`tickets.mjs check-epic <epic> [--json] [--list]`** — the same check as
   one command, for step 7's body and for a session opening the release pull
-  request by hand, which had no check of the assembled epic at all. Runs each
-  distinct command once and judges it against every ticket's own `EXPECT`;
-  lists every ticket whose criteria differ from the sign-off commit, was and
+  request by hand, which had no check of the assembled epic at all. Lists every ticket whose criteria differ from the sign-off commit, was and
   now, and every ticket sign-off knew whose section is gone; refuses a
-  checkout that is not at the remote epic branch's head; a command one ticket
-  repeats runs each time, as `check <ID>` runs it; marks `COMPARE` criteria not re-verified; exits 1 when anything
+  checkout that is not at the remote epic branch's head; marks `COMPARE` criteria not re-verified; exits 1 when anything
   failed, was skipped or did not parse, and when nothing has landed.
   `--list` runs nothing and prints the landed IDs with their count;
   `--render <report.json>` runs nothing and prints a saved `--json` report as
   the text ledger, so step 7's body and its walkthrough share one run of the
   suites.
-- **A read-only Codex pass over the release check found ten things two
-  Claude rounds had not, all taken.** A successful parallel run halted at the
-  release check every time its tickets had added a dependency — the main
-  checkout never saw what the worktrees installed — so a wave run now checks
-  in a worktree of its own at the release commit, set up from
-  `epics/worktree.json`, removed when the check passes. The list step fetches
-  the epic branch and reports the commit the remote is at, and every check
-  reports the commit it ran at and whether the tree was clean, judged in
-  code (a branch name was not enough: the remote-tracking ref could be stale,
-  and uncommitted edits were judged as if pushed). `check-epic` refuses
-  uncommitted changes to tracked files, says whether the checkout is ahead,
-  behind or diverged (the advertised `git pull` could not repair "ahead"),
-  names ticket IDs that commits carry and no document knows (a ticket added
-  after sign-off and deleted again was on no list), and gains `--each` for
-  epics whose checks write state; `--render` and the page recompute the
-  verdict from the rows and require the counts to be there. A ledger from
-  before the run record's commit is labelled *passed at `<sha>`, one commit
-  before this head*, never "at head". Step 7 fetches first, runs long suites
-  in the background, and says what the published page quotes verbatim.
+- **Two read-only Codex passes over the release check, after two Claude
+  rounds: ten findings, then the gaps in the fixes — all taken, the second
+  time structurally rather than one by one.** (1) A successful parallel run
+  halted at the release check whenever its tickets had added a dependency —
+  the main checkout never saw what the worktrees installed — so a wave run
+  checks in a worktree of its own at the release commit
+  (`release-worktree:<epic>`), set up from `epics/worktree.json` and **left
+  in place**: step 7's own check runs there too (`releaseCheck.root`), and
+  step 7 removes it. (2) A check is evidence about what it ran against: the
+  list step fetches (chained, so a failed fetch cannot leave a stale commit
+  behind it), reports the remote's commit and the checkout's, which must be
+  one commit — the list is read from this checkout's document — and every
+  check reports the commit it ran at and whether the tree was clean, judged
+  in code; an unreported fact never passes. (3) `check-epic` fetches for
+  itself, refuses uncommitted tracked changes **before running anything**,
+  says ahead / behind / diverged, names ticket IDs commits carry and no
+  document of any epic knows, and **runs every line of every ticket by
+  default** — sharing a command across tickets is `--share`, opt-in, because
+  it is wrong when a `CHECK` writes state, and the default now cannot
+  disagree with the script's per-ticket gate. (4) `--render` and the page
+  recompute the verdict from the rows by one rule; a badge is never greener
+  than the verdict; a ledger from before the run record's commit reads
+  *passed at `<sha>`, N commits before this head* (ancestry and count asked
+  of git), never "at head". (5) A failing page is sent as a file and never
+  published: failed checks' output is the one thing on it that was never
+  committed, and where a secret could be.
 - **The release walkthrough — `scripts/release-page.mjs <epic> [--check
   <check-epic.json>] [--out <file>]`** renders one self-contained page for
   the person deciding a release merge: the never-squash rule and the size,

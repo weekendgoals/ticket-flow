@@ -109,9 +109,12 @@ test('the verdict is recomputed, never taken on the report\'s word — every way
   notGreen({ epic: 'payments', head: HEAD, allPassed: true, tickets: [{ id: 'PAY-1' }] }, 'a report with no counts in it — undefined === undefined is not a pass')
   notGreen(check({ tickets: [{ id: 'PAY-1', total: 2, passed: 2, skipped: 0, compares: [], problems: [], criteriaChanged: null, checks: [{ status: 'passed' }, { status: 'failed', check: 'x', evidence: 'exit 1' }] }] }), 'passing counters beside a failed row')
   notGreen(check({ dirty: [' M src/pay.ts'] }), 'uncommitted tracked changes when the check ran')
-  assert.match(renderRelease(data(), { check: check({ dirty: [' M src/pay.ts'] }) }), /Tracked files were modified and uncommitted when this check ran.*src\/pay\.ts/)
+  const dirtyPage = renderRelease(data(), { check: check({ dirty: [' M src/pay.ts'] }) })
+  assert.match(dirtyPage, /Tracked files were modified and uncommitted, so nothing was run.*src\/pay\.ts/)
+  assert.match(dirtyPage, /badge s-bad">checks 2\/2 — not evidence about this release/, 'a badge is never greener than the verdict above it')
+  notGreen(check({ delivery: 'release', fetched: false }), 'the fetch of the epic branch failed')
   assert.match(renderRelease(data(), { check: check({ orphanIds: ['PAY-9'] }) }), /a ticket ID no document knows.*PAY-9/)
-  assert.match(renderRelease(data(), { check: check({ shared: true }) }), /check-epic --each/)
+  assert.match(renderRelease(data(), { check: check({ shared: true }) }), /Run with <code>--share<\/code>/)
   notGreen(check({ tickets: [{ id: 'PAY-1', total: 1, passed: 1, skipped: 0, checks: [], compares: [], problems: [{ line: 9, why: 'malformed', text: 'CHECK' }], criteriaChanged: null }] }), 'a malformed criterion')
   assert.doesNotMatch(renderRelease(data({ head: null }), { check: check() }), /class="verdict ok"/)
   // a landed ticket the ledger does not carry was checked by nobody — said, and badged on the ticket
@@ -126,14 +129,23 @@ test('the verdict is recomputed, never taken on the report\'s word — every way
   assert.match(malformed, /badge s-bad">checks 1\/1 at head/)
 })
 
+test('an epic with no CHECK criteria at all passes, and the page says that nothing was run', () => {
+  const none = check({ total: 0, passed: 0, tickets: [{ id: 'PAY-1', total: 0, passed: 0, skipped: 0, checks: [], compares: [], problems: [], criteriaChanged: null }] })
+  const html = renderRelease(data(), { check: none })
+  assert.match(html, /class="verdict ok">Passed — 0\/0 checks/)
+  assert.match(html, /so nothing was run: this "passed" says only that nothing failed to parse/)
+  assert.doesNotMatch(renderRelease(data(), { check: check() }), /so nothing was run/)
+})
+
 test('a ledger from before the run-record commit still describes this head — and only then', () => {
   // The run record is committed AFTER the pull request opens, so it can name it.
   const moved = check({ head: 'e'.repeat(40) })
-  const ok = renderRelease(data(), { check: moved, recordOnlySince: true })
+  const ok = renderRelease(data(), { check: moved, recordOnlySince: 1 })
   assert.match(ok, /class="verdict ok">Passed at eeeeeeeee, one commit before this head/)
   assert.match(ok, /before this epic's run record was committed — the only files changed since/)
   assert.match(ok, /checks 2\/2 at eeeeeeeee, one commit before this head/, 'the ledger is evidence about THAT commit, and the page says which')
   assert.doesNotMatch(ok, /checks 2\/2 at head/)
+  assert.match(renderRelease(data(), { check: moved, recordOnlySince: 3 }), /Passed at eeeeeeeee, 3 commits before this head/, 'the distance is counted, not assumed')
   const stale = renderRelease(data(), { check: moved })
   assert.match(stale, /NOT A CHECK OF THIS RELEASE/)
   assert.match(stale, /badge s-bad">checks 2\/2 — not at this head/, 'a badge that says "at head" about another commit is the page lying')
