@@ -2902,7 +2902,7 @@ test('wave: two ready tickets run side by side in worktrees, merge in document o
   assert.deepEqual(only(r.labels, /^(wave-setup|merge|verify|post-merge|worktree-remove|refresh\+select):/), [
     'refresh+select:1', 'wave-setup:payments',
     'merge:PAY-1', 'verify:PAY-1',
-    'merge:PAY-2', 'verify:PAY-2', 'post-merge:PAY-2',
+    'merge:PAY-2', 'verify:PAY-2', 'post-merge:PAY-1:after-PAY-2', 'post-merge:PAY-2',
     'worktree-remove:PAY-1', 'worktree-remove:PAY-2',
     'refresh+select:2', 'merge:PAY-3', 'verify:PAY-3',
     'refresh+select:3',
@@ -2924,7 +2924,7 @@ test('wave: two ready tickets run side by side in worktrees, merge in document o
   // wave it names the append driver for the status log; a lone ticket's merge
   // is the command it always was.
   assert.match(prompt('merge:PAY-2'), /In the repository at \/repo, /)
-  assert.match(prompt('merge:PAY-2'), /git -c merge\.flow-append\.name="append-only log" -c merge\.flow-append\.driver='node "\/plugins\/flow\/scripts\/merge-append\.mjs" --driver %O %A %B' merge --no-ff beefc0ffee42 .*\ngrep -qE "\^###\[\[:space:\]\]\+PAY-2\(\[\^A-Za-z0-9\]\|\$\)" "epics\/payments\/status\.md" \|\| \{ echo "MERGED LOG LOST THE ENTRY of PAY-2[^"]*"; git reset --hard "origin\/epic\/payments"; exit 1; \}\ngit push origin epic\/payments/)
+  assert.match(prompt('merge:PAY-2'), /git -c merge\.flow-append\.name="append-only log" -c merge\.flow-append\.driver='node "\/plugins\/flow\/scripts\/merge-append\.mjs" --driver %O %A %B' merge --no-ff beefc0ffee42 .*\ngrep -qE "\^###\[\[:space:\]\]\+PAY-2\(\[\^A-Za-z0-9\]\|\$\)" "epics\/payments\/status\.md" \|\| \{ echo "MERGED LOG LOST THE ENTRY of PAY-2[^"]*"; git reset --hard ORIG_HEAD; exit 1; \}\ngit push origin epic\/payments/)
   assert.doesNotMatch(prompt('merge:PAY-3'), /grep -q|flow-append/, "a lone ticket's merge is the sequence it always was")
   assert.match(prompt('merge:PAY-3'), /\ngit merge --no-ff beefc0ffee42 /)
   // The post-merge gate runs where the dependencies were installed: the
@@ -2935,7 +2935,11 @@ test('wave: two ready tickets run side by side in worktrees, merge in document o
   assert.match(prompt('worktree:PAY-1'), /git worktree add --detach "\/repo\/\.\.\/\.flow-worktrees\/repo\/payments\/pay-1" origin\/epic\/payments/)
   assert.doesNotMatch(prompt('worktree:PAY-1'), /git fetch/, 'one fetch, in the setup step: two at once race on the ref lock')
   assert.match(prompt('wave-setup:payments'), /git fetch origin epic\/payments\n.*'epics\/payments\/status\.md merge=flow-append'/s)
-  assert.doesNotMatch(prompt('wave-setup:payments'), /union|shadow-reviews/)
+  // The step asks GIT which driver it will use, and ends on that answer: our
+  // line can be in the file and outranked by a later rule.
+  assert.match(prompt('wave-setup:payments'), /test "\$\(git check-attr merge -- 'epics\/payments\/status\.md' \| sed 's\/\.\*: merge: \/\/'\)" = flow-append\n```/)
+  // Its COMMANDS never name the driver this one replaced (its prose explains why a stale `merge=union` line is outranked).
+  assert.doesNotMatch(prompt('wave-setup:payments').match(/```bash\n([\s\S]*?)```/)[1], /union|shadow-reviews/)
 })
 
 test('wave: Parallel 1 is the serial run, agent for agent — and three tickets make one wave of three', async () => {
@@ -2947,7 +2951,11 @@ test('wave: Parallel 1 is the serial run, agent for agent — and three tickets 
   const three = await drive(waveReply([refreshed(['PAY-1', 'PAY-2', 'PAY-3', 'PAY-4']), refreshed(['PAY-4']), refreshed([])]), PAR(3))
   assert.deepEqual(only(three.labels, /^merge:/), ['merge:PAY-1', 'merge:PAY-2', 'merge:PAY-3', 'merge:PAY-4'])
   assert.deepEqual(only(three.labels, /^worktree:/).sort(), ['worktree:PAY-1', 'worktree:PAY-2', 'worktree:PAY-3'])
-  assert.deepEqual(only(three.labels, /^(wave-setup|post-merge):/), ['wave-setup:payments', 'post-merge:PAY-2', 'post-merge:PAY-3'], 'the post-merge gate for every merge onto a moved base')
+  assert.deepEqual(
+    only(three.labels, /^(wave-setup|post-merge):/),
+    ['wave-setup:payments', 'post-merge:PAY-1:after-PAY-2', 'post-merge:PAY-2', 'post-merge:PAY-1:after-PAY-3', 'post-merge:PAY-2:after-PAY-3', 'post-merge:PAY-3'],
+    'after every merge onto a moved base: the criteria of EVERY ticket of the wave on the epic branch so far, the earlier ones first',
+  )
   // Two multi-ticket waves in one run: the setup step still runs once.
   const twoWaves = await drive(waveReply([refreshed(['PAY-1', 'PAY-2', 'PAY-3', 'PAY-4']), refreshed(['PAY-3', 'PAY-4']), refreshed([])]), PAR(2))
   assert.equal(twoWaves.out.outcome, 'completed')
@@ -3023,7 +3031,7 @@ test('wave: a failed integration merges nothing past it, and says which passed t
   const chatty = await drive(waveReply([refreshed(['PAY-1', 'PAY-2'])], { 'merge:PAY-2': { outcome: 'failed', detail: 'git merge reported no conflict; then: MERGED LOG LOST THE ENTRY of PAY-2 - merge undone locally, nothing pushed' } }), PAR(2))
   assert.match(chatty.out.haltedOn.stopCondition, /^a nonzero exit/)
   assert.match(chatty.out.haltedOn.detail, /did not contain PAY-2's entry/)
-  assert.match(lost.out.haltedOn.detail, /did not contain PAY-2's entry.*undid the merge locally \(`git reset --hard origin\/epic\/payments`\) and pushed nothing.*merge-append\.mjs/s)
+  assert.match(lost.out.haltedOn.detail, /did not contain PAY-2's entry.*undid the merge locally \(`git reset --hard ORIG_HEAD`\) and pushed nothing.*where it stood before the merge.*merge-append\.mjs/s)
   assert.match(mixed.out.haltedOn.stopCondition, /^a merge conflict/)
 })
 
@@ -3105,4 +3113,35 @@ test('wave: the run cap counts TICKETS, not passes — an endless board at Paral
   assert.match(r.out.haltedOn.stopCondition, /^a document\/code contradiction/)
   assert.equal(r.out.ticketRecords.length, 40, 'not 120')
   assert.deepEqual(r.out.ticketRecords.slice(-1).map(t => t.wave), [14], 'thirteen waves of three, and one ticket of the fourteenth')
+})
+
+test('wave: the later merge can break an EARLIER ticket — its criteria are re-run too, and the halt names both', async () => {
+  const r = await drive(
+    waveReply([refreshed(['PAY-1', 'PAY-2', 'PAY-3'])], { 'post-merge:PAY-1:after-PAY-2': { ...acceptOk, passed: 1, allPassed: false, failures: [{ criterion: 'totals add up', evidence: 'expected 3 got 4' }] } }),
+    PAR(2),
+  )
+  assert.equal(r.out.outcome, 'halted')
+  assert.match(r.out.haltedOn.stopCondition, /^a failed acceptance CHECK after the merge/)
+  assert.equal(r.out.haltedOn.ticket, 'PAY-1', 'the ticket whose criteria broke — not the one whose merge broke them')
+  assert.match(r.out.haltedOn.where, /PAY-1's acceptance checks on epic\/payments, after PAY-2 merged/)
+  assert.match(r.out.haltedOn.detail, /1\/2 of PAY-1's signed-off CHECK criteria pass on epic\/payments after PAY-2 merged.*PAY-1 and PAY-2 stay merged/s)
+  assert.ok(!r.labels.includes('post-merge:PAY-2'), 'the run stops at the first broken combination')
+  assert.ok(!r.labels.includes('refresh+select:2'))
+  // PAY-1's worktree is the one the halt says to look at, so it is the one kept.
+  assert.deepEqual(only(r.labels, /^worktree-remove:/), ['worktree-remove:PAY-2'])
+  const prompt = r.calls.find(c => c.label === 'post-merge:PAY-1:after-PAY-2').prompt
+  assert.match(prompt, /In the working tree at \/repo\/\.\.\/\.flow-worktrees\/repo\/payments\/pay-1 .*after PAY-2 was merged into it.*tickets\.mjs" check PAY-1 /s)
+})
+
+test('wave: a merge that changed how many criteria a ticket has is not judged by the new number — the reviewed party must not edit its gate', async () => {
+  // PAY-2's branch deleted its own CHECK lines from tickets.md. Pre-merge
+  // acceptance read the signed-off document (2 criteria); after the merge the
+  // document on the epic branch gives it none, and 0/0 "all passed" is what a
+  // deleted criterion looks like.
+  const r = await drive(waveReply([refreshed(['PAY-1', 'PAY-2'])], { 'post-merge:PAY-2': acceptNone }), PAR(2))
+  assert.equal(r.out.outcome, 'halted')
+  assert.match(r.out.haltedOn.stopCondition, /^a failed acceptance CHECK after the merge/)
+  assert.match(r.out.haltedOn.detail, /PAY-2 had 2 signed-off CHECK criteria when it was accepted, and the document on epic\/payments now gives it 0 — tickets\.md changed under a merge of this wave/)
+  const grown = await drive(waveReply([refreshed(['PAY-1', 'PAY-2'])], { 'post-merge:PAY-1:after-PAY-2': { ...acceptOk, total: 3, passed: 3 } }), PAR(2))
+  assert.match(grown.out.haltedOn.detail, /PAY-1 had 2 signed-off CHECK criteria.*now gives it 3/, 'a sibling that edited another ticket’s criteria is the same finding')
 })

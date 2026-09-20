@@ -155,44 +155,88 @@ test('mergeAppend: a missing final newline on ours does not glue two entries tog
   assert.equal(mergeAppend('a\n', 'b\n', 'a\nx\n'), null)
 })
 
-test("the wave's merge guard, exactly as the driver emits it, under THIS system's grep: a present entry passes, an absent one undoes the merge", () => {
-  // The line is cut out of run-epic.mjs, not retyped, and run by a real shell
-  // against a real repository — on CI that is GNU grep, locally BSD's. It must
-  // read a heading as loosely as the board does, tell PAY-2 from PAY-20, and,
-  // when the entry is missing, leave the epic branch LEVEL with origin: a bad
-  // merge left on the local branch is pushed by the next run's refresh.
-  const source = readFileSync(join(dirname(DRIVER), '..', 'workflows', 'run-epic.mjs'), 'utf8')
-  const cut = source.match(/\\ngrep -qE ([^`]*?exit 1; \})`/)
-  assert.ok(cut, 'the guard line is where this test expects it in run-epic.mjs')
-  const guard = `grep -qE ${cut[1]}`.replaceAll('${id}', 'PAY-2').replaceAll('${epicBranch}', 'epic/payments').replaceAll('${epic}', 'payments')
-  const root = mkdtempSync(join(tmpdir(), 'flow-guard-'))
+// The two shell sequences a wave relies on are cut out of run-epic.mjs, not
+// retyped, and run by a real shell against a real repository — on CI under GNU
+// tools, locally under BSD's.
+const RUN_EPIC = readFileSync(join(dirname(DRIVER), '..', 'workflows', 'run-epic.mjs'), 'utf8')
+const instantiate = text => text.replaceAll('${id}', 'PAY-2').replaceAll('${epicBranch}', 'epic/payments').replaceAll('${epic}', 'payments').replaceAll('\\`', '`').replaceAll('\\$', '$')
+function workRepo() {
+  const root = mkdtempSync(join(tmpdir(), 'flow-wave-'))
   const git = (cwd, ...a) => execFileSync('git', a, { cwd, encoding: 'utf8', env: ENV, stdio: ['ignore', 'pipe', 'pipe'] })
+  git(root, 'init', '-q', '--bare', 'origin.git')
+  git(root, 'clone', '-q', 'origin.git', 'work')
+  const work = join(root, 'work')
+  git(work, 'config', 'user.email', 'test@example.com')
+  git(work, 'config', 'user.name', 'Test')
+  git(work, 'checkout', '-q', '-b', 'epic/payments')
+  mkdirSync(join(work, 'epics/payments'), { recursive: true })
+  writeFileSync(join(work, 'epics/payments/status.md'), '# log\n')
+  git(work, 'add', '.')
+  git(work, 'commit', '-qm', 'payments: the plan')
+  git(work, 'push', '-q', '-u', 'origin', 'epic/payments')
+  return { root, work, git: (...a) => git(work, ...a), done: () => rmSync(root, { recursive: true, force: true }) }
+}
+
+test("the wave's merge guard, as emitted: a present entry passes; an absent one takes the merge back to where the branch STOOD — a local commit survives", () => {
+  // It must read a heading as loosely as the board does, tell PAY-2 from
+  // PAY-20, and undo the merge with ORIG_HEAD — not `origin/<epic>`: `pull
+  // --ff-only` succeeds when local is ahead, so a commit a human made on the
+  // epic branch mid-run is on local and not on origin, and a reset to origin
+  // would destroy it together with the merge.
+  const cut = RUN_EPIC.match(/\\ngrep -qE ([^`]*?exit 1; \})`/)
+  assert.ok(cut, 'the guard line is where this test expects it in run-epic.mjs')
+  const guard = instantiate(`grep -qE ${cut[1]}`)
+  assert.match(guard, /git reset --hard ORIG_HEAD/)
+  const r = workRepo()
   try {
-    git(root, 'init', '-q', '--bare', 'origin.git')
-    git(root, 'clone', '-q', 'origin.git', 'work')
-    const work = join(root, 'work')
-    git(work, 'config', 'user.email', 'test@example.com')
-    git(work, 'config', 'user.name', 'Test')
-    git(work, 'checkout', '-q', '-b', 'epic/payments')
-    mkdirSync(join(work, 'epics/payments'), { recursive: true })
-    writeFileSync(join(work, 'epics/payments/status.md'), '# log\n')
-    git(work, 'add', '.')
-    git(work, 'commit', '-qm', 'payments: the plan')
-    git(work, 'push', '-q', '-u', 'origin', 'epic/payments')
-    const ahead = () => Number(git(work, 'rev-list', '--count', 'origin/epic/payments..HEAD').trim())
+    writeFileSync(join(r.work, 'NOTES.md'), 'a human committed this on the epic branch while the run was going\n')
+    r.git('add', '.')
+    r.git('commit', '-qm', 'payments: a local commit origin has not seen')
+    const local = r.git('rev-parse', 'HEAD').trim()
     const after = heading => {
-      appendFileSync(join(work, 'epics/payments/status.md'), `${heading}\n`)
-      git(work, 'commit', '-qam', 'a merge, stood in for')
-      const r = spawnSync('sh', ['-c', guard], { cwd: work, encoding: 'utf8', env: ENV })
-      const result = [r.status, ahead()]
-      git(work, 'reset', '-q', '--hard', 'origin/epic/payments')
+      r.git('checkout', '-q', '-b', 'pay-2', 'epic/payments')
+      appendFileSync(join(r.work, 'epics/payments/status.md'), `${heading}\n`)
+      r.git('commit', '-qam', 'PAY-2: work')
+      r.git('checkout', '-q', 'epic/payments')
+      r.git('merge', '-q', '--no-ff', 'pay-2', '-m', 'Merge pay-2') // a real merge: this is what sets ORIG_HEAD
+      const run = spawnSync('sh', ['-c', guard], { cwd: r.work, encoding: 'utf8', env: ENV })
+      const result = [run.status, r.git('rev-parse', 'HEAD').trim() === local ? 'merge undone, local commit kept' : 'merge in place']
+      r.git('reset', '-q', '--hard', local)
+      r.git('branch', '-q', '-D', 'pay-2')
       return result
     }
-    assert.deepEqual(after('### PAY-2 — thing — 2026-09-20 — DONE'), [0, 1], 'present: the merge stays, for the push')
-    assert.deepEqual(after('###  PAY-2— thing — 2026-09-20 — DONE'), [0, 1], 'as loosely as STATUS_HEADING reads it')
-    assert.deepEqual(after('### PAY-20 — other — 2026-09-20 — DONE'), [1, 0], 'PAY-20 is not PAY-2 — and the merge is undone')
-    assert.deepEqual(after('no heading at all'), [1, 0])
+    assert.deepEqual(after('### PAY-2 — thing — 2026-09-20 — DONE'), [0, 'merge in place'])
+    assert.deepEqual(after('###  PAY-2— thing — 2026-09-20 — DONE'), [0, 'merge in place'], 'as loosely as STATUS_HEADING reads it')
+    assert.deepEqual(after('### PAY-20 — other — 2026-09-20 — DONE'), [1, 'merge undone, local commit kept'], 'PAY-20 is not PAY-2')
+    assert.deepEqual(after('no heading at all'), [1, 'merge undone, local commit kept'])
   } finally {
-    rmSync(root, { recursive: true, force: true })
+    r.done()
+  }
+})
+
+test("the wave's setup step, as emitted: it ends on the driver git will actually USE — a later rule that outranks our line is outranked back", () => {
+  // In a gitattributes file the LAST matching line wins. The first cut grepped
+  // the file for our line and skipped the append when it was there — so with
+  // `epics/** merge=union` below it, git would merge the log with the very
+  // driver this one replaced, and the heading guard would pass.
+  const cut = RUN_EPIC.match(/async function waveSetup\(\) \{[\s\S]*?\\`\\`\\`bash\n([\s\S]*?)\\`\\`\\`/)
+  assert.ok(cut, 'the setup sequence is where this test expects it in run-epic.mjs')
+  const setup = instantiate(cut[1])
+  const r = workRepo()
+  try {
+    const attr = () => r.git('check-attr', 'merge', '--', 'epics/payments/status.md').trim()
+    const run = () => spawnSync('sh', ['-ec', setup], { cwd: r.work, encoding: 'utf8', env: ENV })
+    assert.equal(run().status, 0)
+    assert.match(attr(), /merge: flow-append$/)
+    const lines = () => readFileSync(join(r.work, '.git/info/attributes'), 'utf8').trim().split('\n').length
+    const once = lines()
+    assert.equal(run().status, 0)
+    assert.equal(lines(), once, 'idempotent: git already answers flow-append, so nothing is appended')
+    appendFileSync(join(r.work, '.git/info/attributes'), 'epics/** merge=union\n')
+    assert.match(attr(), /merge: union$/, 'the fixture really does outrank our line')
+    assert.equal(run().status, 0)
+    assert.match(attr(), /merge: flow-append$/)
+  } finally {
+    r.done()
   }
 })

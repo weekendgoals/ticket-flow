@@ -48,12 +48,12 @@ go through the flow, one-off work goes through `/flow:quick` into
   to the OS temp dir. Nothing but Node, and **no test reads a real
   transcript** — those live under `~/.claude` and belong to whoever ran
   them. The append merge driver has
-  `node --test plugins/flow/scripts/merge-append.test.mjs` (`# pass 9`) —
+  `node --test plugins/flow/scripts/merge-append.test.mjs` (`# pass 10`) —
   REAL git in throwaway repositories, the driver wired exactly as the run's
   merge step wires it, because the driver it replaced (git's own `union`) was
   also obviously right and corrupted every merge it touched; one test keeps
   that failure on record. Needs `git` and nothing else. And the run driver has
-  `node --test plugins/flow/workflows/run-epic.test.mjs` (`# pass 173`) —
+  `node --test plugins/flow/workflows/run-epic.test.mjs` (`# pass 175`) —
   which evaluates `run-epic.mjs`'s module body with stubbed agents and
   asserts the sequence, the gate branches and the halt mapping. It needs
   nothing but Node: no git, no network, no filesystem beyond the script.

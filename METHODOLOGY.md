@@ -1426,6 +1426,21 @@ post-merge halt tells the human to give the later ticket a `**Blocked by:**`
 line: the run has just disproved something the plan said. It un-merges
 nothing, like the budget halt, because nothing un-merges.
 
+**The net, widened once.** A reviewer from a different model found the hole
+in the first cut of that gate that nine rounds of same-model review had not:
+it re-ran only the *newcomer's* criteria, and the commoner break runs the
+other way — the later ticket is fine and the earlier one no longer is. So
+after each merge onto a moved base the run re-runs every ticket of the wave
+that is on the epic branch. The same review found the gate reading its
+criteria from the epic branch *after* the merge, where a merged ticket may
+have edited them: "0/0, all passed" is what a deleted criterion looks like,
+so the count must be the one the ticket was accepted with. And it found that
+the halt, which un-merges nothing, left a board with nothing wrong on it — a
+re-run could walk straight to the release pull request — so the run's own
+record is now read at the door. The general point is the one the plugin
+already makes about tickets: the party that built a thing reviews it worst,
+and that is as true of a model family as of a session.
+
 **A halt does not un-pass a sibling.** Tickets in one wave are independent by
 declaration and each cleared every gate a serial run has, so a sibling's halt
 is no evidence against them: they integrate, and then the run stops. The

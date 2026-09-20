@@ -1278,11 +1278,13 @@ for (let i = 0; i < MAX_TICKETS && ticketRecords.length < MAX_TICKETS && !halted
   const pipelineHalts = results.filter(r => r.halted).map(r => r.halted)
   let integrationHalt = null
   let baseMoved = false
+  const mergedBefore = [] // this wave's tickets already on the epic branch, in merge order
   const passed = results.filter(x => !x.halted)
   for (const r of passed) {
-    integrationHalt = await integrateTicket({ ...r, baseMoved, inWave: true, root: worktreePath(r.id) })
+    integrationHalt = await integrateTicket({ ...r, baseMoved, inWave: true, root: worktreePath(r.id), mergedBefore })
     if (integrationHalt) break
     baseMoved = true
+    mergedBefore.push({ id: r.id, record: r.record, root: worktreePath(r.id) })
   }
   if (integrationHalt) {
     // Nothing merges past a failed integration: the epic branch is no longer
@@ -1348,8 +1350,14 @@ function worktreePath(id) {
 // this epic's log, in the repository's local `info/attributes` (never
 // committed); the driver itself is defined on the merge command with `-c`,
 // so nothing persists in the repository's config, and a later merge without
-// it falls back to git's ordinary one. The fetch is here, once, because two
-// worktree steps fetching the same ref at the same moment race on its lock.
+// it falls back to git's ordinary one. The step asks GIT which driver it will
+// use (`git check-attr`) rather than grepping the file for our line: in a
+// gitattributes file the last matching rule wins, so our line can be present
+// and outranked — by a broader rule someone added below it, or a stale
+// `merge=union` — and the wave would then merge the log with exactly the
+// driver this one replaced, the heading guard none the wiser. The fetch is
+// here, once, because two worktree steps fetching the same ref at the same
+// moment race on its lock.
 async function waveSetup() {
   const r = await agent(
     `In the repository at ${repoRoot}, run exactly this sequence and report what it did:
@@ -1358,9 +1366,12 @@ async function waveSetup() {
 git fetch origin ${epicBranch}
 A="$(git rev-parse --git-common-dir)/info/attributes"
 mkdir -p "$(dirname "$A")"
-grep -qxF 'epics/${epic}/status.md merge=flow-append' "$A" 2>/dev/null || echo 'epics/${epic}/status.md merge=flow-append' >> "$A"
-cat "$A"
+test "$(git check-attr merge -- 'epics/${epic}/status.md' | sed 's/.*: merge: //')" = flow-append || echo 'epics/${epic}/status.md merge=flow-append' >> "$A"
+git check-attr merge -- 'epics/${epic}/status.md'
+test "$(git check-attr merge -- 'epics/${epic}/status.md' | sed 's/.*: merge: //')" = flow-append
 \`\`\`
+
+The last command is the point of the step: it exits nonzero unless git will actually USE the \`flow-append\` driver for this epic's status log. A later rule in that file (or a stale \`merge=union\` line) can outrank ours — in a gitattributes file the LAST matching line wins — which is why the line is appended whenever git's own answer is anything else, and checked again.
 
 That is the whole task: it names the merge driver for this epic's append-only status log. The file is the repository's local \`info/attributes\` — never committed, never pushed. Change no other file. Stop at the FIRST command that exits nonzero and report it.
 
@@ -2867,11 +2878,78 @@ ${NO_MAIN} You are read-only here in any case: the two fetches update remote-tra
 // verified SHA, the board's confirmation, and the budget check. Returns the
 // halt, or null. Always serial — it is the only code that touches the epic
 // branch between refreshes.
+// One ticket's signed-off CHECK criteria, re-run on the merged epic head in
+// that ticket's own worktree. `mergedId` is the merge that prompted it — the
+// subject's own, or a later sibling's. Returns a halt, or null.
+async function postMergeCheck({ id, record, root }, mergedId) {
+  if (!(record.acceptanceChecks > 0)) return null // no CHECK criteria: nothing to re-run
+  const own = mergedId === id
+  const post = await agent(
+    `In the working tree at ${root} — ticket ${id}'s own worktree — re-run its machine-runnable acceptance checks on the epic branch ${own ? 'it was just merged into' : `after ${mergedId} was merged into it`}, and report what the command printed. Run exactly this sequence:
+
+\`\`\`bash
+git fetch origin ${epicBranch}
+git checkout --detach origin/${epicBranch}
+node "${pluginRoot}/scripts/tickets.mjs" check ${id} --from origin/${epicBranch} --json
+\`\`\`
+
+The first two commands move this worktree to the merged epic head — detached, because ${epicBranch} itself is checked out in the main repository and git allows a branch one working tree. It is THIS worktree and not the main checkout on purpose: the ticket's worker installed the project's dependencies here, and the main checkout never saw them.
+
+The check command exits 0 when every check passed AND every criterion parsed, and 1 otherwise — an exit of 1 is a RESULT to report, not a failure of your step: outcome is "ran" whenever the command printed its JSON. Report the ledger's fields exactly as printed. Fix nothing, re-run nothing, change no file.
+
+${PROMPT_RULE}
+
+${NO_MAIN}`,
+    { label: own ? `post-merge:${id}` : `post-merge:${id}:after-${mergedId}`, phase: 'Verify', schema: ACCEPT_SCHEMA, effort: 'low', model: 'haiku' },
+  )
+  const where = own ? `${id}'s acceptance checks on ${epicBranch}, after its merge` : `${id}'s acceptance checks on ${epicBranch}, after ${mergedId} merged`
+  if (post && post.outcome === 'permission-prompt') return { ticket: id, stopCondition: STOP.permissionPrompt, where, detail: fence(line(post.detail || '(no command named)')) }
+  if (!post || post.outcome !== 'ran')
+    return {
+      ticket: id,
+      stopCondition: STOP.nonzeroExit,
+      where,
+      detail: post ? `the post-merge check step failed:${line(post.detail) ? ` ${fence(line(post.detail))}` : ' (no detail quoted)'}` : 'the post-merge check agent returned no report — whether the combination holds is unknown, and nothing further starts on a guess',
+    }
+  const n = v => (Number.isInteger(v) && v >= 0 ? v : null)
+  const [total, passed, skipped, problems] = [n(post.total), n(post.passed), n(post.skipped), n(post.problems)]
+  record.postMergeChecks = total
+  record.postMergeChecksPassed = passed
+  const unreadable = total === null || passed === null || skipped === null || problems === null || typeof post.allPassed !== 'boolean'
+  // The criteria are read `--from` the epic branch AFTER the merge, and a
+  // merged ticket may have edited tickets.md — so the gate checks that it is
+  // still judging what was signed off. Pre-merge acceptance read the document
+  // before any of this wave's merges; a different count now means a ticket
+  // changed its own gate, or a sibling's, and 0/0 "all passed" is what a
+  // deleted criterion looks like. The reviewed party must not edit its gate.
+  if (!unreadable && total !== record.acceptanceChecks)
+    return {
+      ticket: id,
+      stopCondition: STOP.postMergeCheck,
+      where,
+      detail: `${id} had ${record.acceptanceChecks} signed-off CHECK criteria when it was accepted, and the document on ${epicBranch} now gives it ${total} — tickets.md changed under a merge of this wave, so the post-merge gate would be judging criteria nobody signed off. ${mergedId} stays merged; nothing further starts. Look at what the wave's merges did to \`epics/${epic}/tickets.md\` (\`git log -p origin/${epicBranch} -- epics/${epic}/tickets.md\`).`,
+    }
+  if (unreadable || post.allPassed !== true || problems > 0 || passed !== total || skipped > 0) {
+    const failures = Array.isArray(post.failures) ? post.failures : []
+    const quoted = fence(failures.map(f => `${line(f.criterion)} — ${line(f.evidence || '(no evidence quoted)')}`).join('; ') || '(no failures quoted)')
+    return {
+      ticket: id,
+      stopCondition: STOP.postMergeCheck,
+      where,
+      detail: unreadable
+        ? `the post-merge check reported "ran" but no usable counts or verdict — a gate that cannot read its own evidence fails closed. ${mergedId} is merged; nothing further starts.`
+        : `${passed}/${total} of ${id}'s signed-off CHECK criteria pass on ${epicBranch} after ${own ? 'the merge' : `${mergedId} merged`} (${skipped} skipped, ${problems} malformed), where ${record.acceptanceChecksPassed}/${record.acceptanceChecks} passed on its own branch: ${quoted} Rule out the environment first — the check ran in ${id}'s worktree, whose installed dependencies are the ones ITS branch needed, and a sibling merged ${own ? 'before' : 'after'} it may have added one. If the failure is in the code, the tickets of this wave were declared independent and are not. ${own ? id : `${id} and ${mergedId}`} stay${own ? 's' : ''} merged; fix forward on ${epicBranch} through a ticket, and give the later ticket a \`**Blocked by:**\` line.`,
+    }
+  }
+  log(`${id}: post-merge checks ${passed}/${total} on ${epicBranch}${own ? '' : ` after ${mergedId} merged`} — the combination holds.`)
+  return null
+}
+
 // `inWave` changes two things and only two: the merge names the append driver
 // for the epic's status log (a serial run's merge is the command it always
 // was), and `root` — the ticket's own worktree — is where the post-merge gate
 // runs.
-async function integrateTicket({ id, branch, record, recordSpend, resolvedHead, baseMoved, inWave, root }) {
+async function integrateTicket({ id, branch, record, recordSpend, resolvedHead, baseMoved, inWave, root, mergedBefore = [] }) {
   let halted = null
   // Defined on the command, never in the repository's config: nothing persists,
   // and a later hand merge without it falls back to git's ordinary driver.
@@ -2881,16 +2959,19 @@ async function integrateTicket({ id, branch, record, recordSpend, resolvedHead, 
   // calls it clean — and that failure shape must never reach the remote
   // whatever causes it. `grep -q` exits 1, the sequence stops, nothing is
   // pushed, and the run halts on the merge step. Two things make that a
-  // barrier and not a one-run delay. The failing branch UNDOES the merge
-  // (`git reset --hard origin/<epic>` — the sequence has just fast-forwarded,
-  // so the bad merge is the only thing local has that origin lacks): left in
-  // place, the next run's refresh would `pull --ff-only` ("already up to
-  // date") and push it without a murmur. And the pattern is as loose as the
+  // barrier and not a one-run delay. The failing branch UNDOES the merge —
+  // `git reset --hard ORIG_HEAD`, which git set to the branch's head as it
+  // stood before the merge, the standard way to take a merge back. Not
+  // `origin/<epic>`: `pull --ff-only` succeeds when local is AHEAD, so a
+  // commit a human made on the epic branch mid-run would be on local and not
+  // on origin, and resetting to origin would destroy it along with the merge.
+  // Left in place, the bad merge would be pushed by the next run's refresh
+  // (`pull --ff-only`: "already up to date"; then `push`), without a murmur. And the pattern is as loose as the
   // board's own STATUS_HEADING — any whitespace after `###`, anything but an
   // ID character after the ID — because a guard stricter than the parser it
   // defends halts a run over an entry the board reads perfectly well.
   const mergeCommand = inWave
-    ? `git -c merge.flow-append.name="append-only log" -c merge.flow-append.driver='node "${pluginRoot}/scripts/merge-append.mjs" --driver %O %A %B' merge --no-ff ${resolvedHead} -m "Merge ${branch} into ${epicBranch}"\ngrep -qE "^###[[:space:]]+${id}([^A-Za-z0-9]|$)" "epics/${epic}/status.md" || { echo "MERGED LOG LOST THE ENTRY of ${id} - merge undone locally, nothing pushed"; git reset --hard "origin/${epicBranch}"; exit 1; }`
+    ? `git -c merge.flow-append.name="append-only log" -c merge.flow-append.driver='node "${pluginRoot}/scripts/merge-append.mjs" --driver %O %A %B' merge --no-ff ${resolvedHead} -m "Merge ${branch} into ${epicBranch}"\ngrep -qE "^###[[:space:]]+${id}([^A-Za-z0-9]|$)" "epics/${epic}/status.md" || { echo "MERGED LOG LOST THE ENTRY of ${id} - merge undone locally, nothing pushed"; git reset --hard ORIG_HEAD; exit 1; }`
     : `git merge --no-ff ${resolvedHead} -m "Merge ${branch} into ${epicBranch}"`
   // h. Merge — the one sanctioned agent merge, and its surface is the epic
   //    branch only. A fixed git sequence on a SHA this code verified, by an
@@ -2937,7 +3018,7 @@ ${NO_MAIN} This merge into ${epicBranch} is the only merge you perform.`,
           : /MERGED LOG LOST THE ENTRY/.test(errorText)
             ? {
                   stopCondition: STOP.nonzeroExit,
-                  detail: `${id}'s branch merged into ${epicBranch} and the merged status log did not contain ${id}'s entry — the log's merge driver did not do its work (a driver that does nothing still exits 0, and git then keeps the epic branch's side and drops the ticket's). The sequence undid the merge locally (\`git reset --hard origin/${epicBranch}\`) and pushed nothing, so ${epicBranch} is where it was; check \`git status -sb\` shows it level with origin before anything else. Then find out why \`scripts/merge-append.mjs\` did not run — \`node\` on the merge agent's PATH, the plugin path in the merge command — and re-run.${quoted}`,
+                  detail: `${id}'s branch merged into ${epicBranch} and the merged status log did not contain ${id}'s entry — the log's merge driver did not do its work (a driver that does nothing still exits 0, and git then keeps the epic branch's side and drops the ticket's). The sequence undid the merge locally (\`git reset --hard ORIG_HEAD\`) and pushed nothing, so ${epicBranch} is where it stood before the merge; check \`git log --oneline -3\` and \`git status -sb\` before anything else. Then find out why \`scripts/merge-append.mjs\` did not run — \`node\` on the merge agent's PATH, the plugin path in the merge command — and re-run.${quoted}`,
                 }
             : /conflict/i.test(errorText)
               ? { stopCondition: STOP.mergeConflict, detail: `merging ${branch} into ${epicBranch} conflicted:${quoted}` }
@@ -3001,52 +3082,16 @@ ${PROMPT_RULE}`,
   // the run from building on a combination that does not hold. A ticket with
   // no CHECK criteria has nothing to re-run, and a wave's first merge lands on
   // a base that did not move.
-  if (baseMoved && record.acceptanceChecks > 0) {
-    const post = await agent(
-      `In the working tree at ${root} — ticket ${id}'s own worktree — re-run its machine-runnable acceptance checks on the epic branch it was just merged into, and report what the command printed. Run exactly this sequence:
-
-\`\`\`bash
-git fetch origin ${epicBranch}
-git checkout --detach origin/${epicBranch}
-node "${pluginRoot}/scripts/tickets.mjs" check ${id} --from origin/${epicBranch} --json
-\`\`\`
-
-The first two commands move this worktree to the merged epic head — detached, because ${epicBranch} itself is checked out in the main repository and git allows a branch one working tree. It is THIS worktree and not the main checkout on purpose: the ticket's worker installed the project's dependencies here, and the main checkout never saw them.
-
-The check command exits 0 when every check passed AND every criterion parsed, and 1 otherwise — an exit of 1 is a RESULT to report, not a failure of your step: outcome is "ran" whenever the command printed its JSON. Report the ledger's fields exactly as printed. Fix nothing, re-run nothing, change no file.
-
-${PROMPT_RULE}
-
-${NO_MAIN}`,
-      { label: `post-merge:${id}`, phase: 'Verify', schema: ACCEPT_SCHEMA, effort: 'low', model: 'haiku' },
-    )
-    const where = `${id}'s acceptance checks on ${epicBranch}, after its merge`
-    if (post && post.outcome === 'permission-prompt') return { ticket: id, stopCondition: STOP.permissionPrompt, where, detail: fence(line(post.detail || '(no command named)')) }
-    if (!post || post.outcome !== 'ran')
-      return {
-        ticket: id,
-        stopCondition: STOP.nonzeroExit,
-        where,
-        detail: post ? `the post-merge check step failed:${line(post.detail) ? ` ${fence(line(post.detail))}` : ' (no detail quoted)'}` : 'the post-merge check agent returned no report — whether the combination holds is unknown, and nothing further starts on a guess',
-      }
-    const n = v => (Number.isInteger(v) && v >= 0 ? v : null)
-    const [total, passed, skipped, problems] = [n(post.total), n(post.passed), n(post.skipped), n(post.problems)]
-    record.postMergeChecks = total
-    record.postMergeChecksPassed = passed
-    const unreadable = total === null || passed === null || skipped === null || problems === null || typeof post.allPassed !== 'boolean'
-    if (unreadable || post.allPassed !== true || problems > 0 || passed !== total || skipped > 0) {
-      const failures = Array.isArray(post.failures) ? post.failures : []
-      const quoted = fence(failures.map(f => `${line(f.criterion)} — ${line(f.evidence || '(no evidence quoted)')}`).join('; ') || '(no failures quoted)')
-      return {
-        ticket: id,
-        stopCondition: STOP.postMergeCheck,
-        where,
-        detail: unreadable
-          ? `the post-merge check reported "ran" but no usable counts or verdict — a gate that cannot read its own evidence fails closed. ${id} is merged; nothing further starts.`
-          : `${passed}/${total} of ${id}'s signed-off CHECK criteria pass on ${epicBranch} after the merge (${skipped} skipped, ${problems} malformed), where ${record.acceptanceChecksPassed}/${record.acceptanceChecks} passed on its own branch: ${quoted} Rule out the environment first — the check ran in ${id}'s worktree, whose installed dependencies are the ones ITS branch needed, and a sibling merged before it may have added one. If the failure is in the code, the tickets of this wave were declared independent and are not. ${id} stays merged; fix forward on ${epicBranch} through a ticket, and give the later ticket a \`**Blocked by:**\` line.`,
-      }
+  if (baseMoved) {
+    // Every ticket of this wave that is on the epic branch now — the ones
+    // merged before this one, then this one. Re-running only the newcomer's
+    // criteria would miss the commoner break: the later ticket passes its own
+    // checks and breaks an EARLIER ticket's, which nothing would run again
+    // before the release pull request.
+    for (const subject of [...mergedBefore, { id, record, root }]) {
+      const postHalt = await postMergeCheck(subject, id)
+      if (postHalt) return postHalt
     }
-    log(`${id}: post-merge checks ${passed}/${total} on ${epicBranch} — the combination holds.`)
   }
   log(`${id}: integrated (confirmed from the board, not from any agent's report).`)
 

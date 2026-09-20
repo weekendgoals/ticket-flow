@@ -100,6 +100,33 @@ for prompt, and a test holds that.
   alone. And the merge guard's line is now cut out of the driver and run
   under the system's own grep against a real repository, so CI checks it
   under GNU grep on every push.
+- **A second opinion on waves, from a different model — eight findings, all
+  taken** (`workflows/run-epic.mjs` and its suite,
+  `scripts/merge-append.test.mjs`, `skills/run/SKILL.md`, METHODOLOGY). After
+  nine review rounds by Claude reviewers found no more, the branch was given
+  to OpenAI's Codex, read-only. **The post-merge gate re-runs every ticket of
+  the wave that is on the epic branch, not only the newcomer** — a later
+  ticket that passes its own criteria and breaks an earlier one's used to
+  sail through to the release pull request. **It refuses a changed criteria
+  count**: it reads criteria from the epic branch *after* the merge, so a
+  ticket that deleted its own CHECK lines from `tickets.md` scored "0/0, all
+  passed" — the reviewed party editing its gate, by another door. **The
+  setup step asks git which merge driver it will use** (`git check-attr`) and
+  ends on the answer, instead of grepping the attributes file for our line:
+  the last matching rule wins, so a broader rule below ours handed the log
+  back to `union` with the heading guard none the wiser. **The merge guard
+  undoes the merge to `ORIG_HEAD`**, not `origin/epic/<name>`: `pull
+  --ff-only` succeeds when local is ahead, and a commit made on the epic
+  branch mid-run would have been destroyed with the merge. The run skill's
+  Codex cancel command showed the repository's path directly under the
+  sentence saying a wave needs the worktree's; `Parallel: 4` parsed as absent
+  and ran serially instead of being refused (step 1 now refuses a declaration
+  line that will not parse); and **a post-merge halt left every ticket
+  `integrated`, so a plain re-run could open the release pull request for a
+  combination the run had proved broken** — step 1 now reads the last run
+  record and refuses until a fix ticket exists, and § Resuming has a fourth
+  shape for it. The setup sequence and the guard line are both cut out of the
+  driver and run by a real shell against real git in the suite.
 - **The plan reviewer reads every pair that could share a wave**
   (`agents/plan-reviewer.md`; README, METHODOLOGY, CLAUDE.md). When a draft
   declares `Parallel:` 2 or 3, tickets declared independent that are not —
