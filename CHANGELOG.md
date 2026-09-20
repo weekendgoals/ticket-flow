@@ -12,6 +12,26 @@ heading here. `check-invariants.mjs` holds both.
 
 ## Unreleased
 
+- **A design map may say where each landmark is drawn — `source` and
+  `widths`, both optional — and a landmark on neither side then fails**
+  (`scripts/fidelity.mjs`: an `unmatched` row, exit 1, the same with
+  `--landmarks` and without; new `--source <design source>` flag). Silence on
+  both sides was only a note, because a map may span several design sources
+  and an element may be drawn at one width alone. Scope is read from
+  `--removed-from`'s signed-off map only, like removals; `source` may be a
+  list, for a landmark several sources draw. A scoped map refuses a run with
+  no `--source`, a `--source` the map names nowhere (the refusal says the
+  comparison goes owed when the path is right and planning left the source
+  unscoped), `--source` without `--removed-from`, width-scoped landmarks
+  against reports with no width, and a landmark it draws here that `--map`
+  no longer declares — renamed or dropped on the ticket branch, it was
+  otherwise never looked for. Both source refusals read every source the map
+  names, never the `--landmarks` selection. **Additive: a map without the two
+  fields reads exactly as it did.** Epic skill teaches the fields; ticket,
+  quick and review skills pass `--source`; `check-invariants.mjs` holds the
+  two running lanes to it; METHODOLOGY § the differ records why the first
+  attempt (fail only under `--landmarks`) was the two-answers shape.
+
 ## 2.2.1 — 2026-09-20
 
 Two fidelity passes that carried no evidence. Patch: no format changes; a

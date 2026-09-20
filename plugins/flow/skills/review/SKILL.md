@@ -112,7 +112,8 @@ and you are the only fresh context that can check it.**
   `node "${CLAUDE_PLUGIN_ROOT}/scripts/fidelity.mjs" extract`, evaluate it on
   the design source and on the built page at each width the criterion names,
   and run `fidelity.mjs diff … --map epics/<name>/design-map.json
-  --removed-from <the signed-off map>` — removals from the base ref, never
+  --removed-from <the signed-off map> --source <the COMPARE line's path>` —
+  removals and landmark scope from the base ref, never
   from the working tree's copy, which is the file this ticket edits. **A table
   the re-run contradicts is Important.**
 - **Otherwise, audit the table against the design source's own markup and say

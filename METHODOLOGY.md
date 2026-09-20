@@ -555,6 +555,18 @@ whole map passed with a note. Two answers to one state is the shape a gate
 gets routed around, so the agreement is now a row of its own: the plan, the
 design and the page concur, which is evidence, not the absence of it.
 
+The opposite silence — a landmark on neither side that nobody declared removed
+— stayed a note for a release, and the first attempt to fail it repeated the
+mistake above: it failed under `--landmarks` and passed over the whole map,
+so the recovery from exit 1 was to drop the flag. The note was not laziness.
+A map may span several design sources and an element may be drawn at one
+width only, so the differ could not tell a missing element from one that was
+never meant to be there. What was missing was planning's word on where each
+landmark is drawn, so the map carries it (`source`, `widths`), optional and
+read from the signed-off ref like removals: where the map says a landmark is
+drawn, silence fails, with the flag or without; where it says nothing, the
+differ keeps saying what it knows, which is a note.
+
 ## Why a missing comparison stops the merge
 
 A criterion nobody performs is worse than no criterion: it is a gate that

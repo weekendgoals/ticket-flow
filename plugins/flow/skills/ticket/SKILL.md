@@ -244,7 +244,8 @@ never an invented test command.
   # 4. the comparison itself:
   node "${CLAUDE_PLUGIN_ROOT}/scripts/fidelity.mjs" diff design.json page.json \
     --map epics/<epic-name>/design-map.json \
-    --removed-from /tmp/signed-map.json [--landmarks <the LANDMARKS names>]
+    --removed-from /tmp/signed-map.json --source <the COMPARE line's path> \
+    [--landmarks <the LANDMARKS names>]
   ```
 
   **`--removed-from` is not optional and is never the working tree's map.** A
@@ -258,14 +259,26 @@ never an invented test command.
 
   The differ's exit codes: **0** — nothing differs, or the only rows are
   declared removals (including one the design no longer draws either: the two
-  sides agreeing with the plan). **1** — something differs; the rows say what.
+  sides agreeing with the plan). **1** — something differs; the rows say what
+  — including an `unmatched` row: a landmark on neither side that the
+  signed-off map's `source`/`widths` say is drawn in this source at this
+  width. It is answered like any row, and "the design does not draw it here"
+  is a correction to the signed-off map, which is planning's — a
+  `**Deviation:**`, never an edit to the map on this branch (scope, like
+  removals, is not read from it). **`--source` is how the differ knows which
+  design these reports are of**; it is ignored by a map that scopes nothing.
   **2** — nothing was compared, the two reports were taken at different
   viewport widths (two widths are two pages — media queries answered
-  differently on each side, so a clean table would be luck), or the command
-  or a file could not be read.
+  differently on each side, so a clean table would be luck), a scoped map
+  was not told its `--source`, or the command or a file could not be read.
   **Exit 2 is never "no differences"**: it means the run collected no
-  evidence at all — fix the selectors or the widths and run it again; a comparison nobody performed is recorded as
-  owed, never as passed.
+  evidence at all — fix the selectors, the widths or the flag and run it
+  again. Two refusals are not yours to fix, because the signed-off map is
+  planning's: a `--source` that is the `COMPARE` path character for character
+  and that the map names nowhere, and a landmark the signed-off map draws
+  here that this branch's map no longer declares (put it back — renaming or
+  dropping a landmark is a `**Deviation:**`). Either way a comparison nobody
+  performed is recorded as owed, never as passed.
 
   Paste the differ's table into the entry's `**Compared:**` field (step 6),
   verbatim — it is plain text for that reason. Then **every row is answered**:

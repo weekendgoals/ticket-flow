@@ -351,10 +351,29 @@ Rules that matter:
   ```json
   { "landmarks": [ { "name": "hero",
                      "design": "<selector in the design source>",
-                     "page":   "<selector in the built page>" } ],
+                     "page":   "<selector in the built page>",
+                     "source": "<OPTIONAL: the Design sources path that draws it, or a list of them>",
+                     "widths": ["<OPTIONAL: the widths it is drawn at, as numbers — [393]>"] } ],
     "removed":   [ { "name": "promo", "by": "<the deciding rule>",
                      "date": "YYYY-MM-DD" } ] }
   ```
+
+  **`source` and `widths` say where the design draws a landmark, and they are
+  what lets a missing one fail.** A landmark that matches on neither side is
+  only a note when the map is silent — with several design sources, or an
+  element drawn at one width alone, silence is sometimes correct and the
+  differ cannot tell. Scoped, it is a failing row wherever the map says the
+  landmark is drawn, and explained silence everywhere else. `widths` is
+  optional (absent means every width); `source` is the `COMPARE` line's path,
+  character for character, or a list of them for a landmark several sources
+  draw (a shared header is one landmark, not one per page). **Scope one
+  landmark by `source` and scope every design source's landmarks** — the
+  differ refuses a `--source` the map names nowhere, because a misspelt one
+  would read every landmark as drawn elsewhere, and a worker refused that way
+  cannot repair a signed-off map: the comparison goes owed. Like `removed`,
+  scope is read only from the signed-off ref: deleting a `source` line on a
+  ticket branch changes nothing, and a scoped landmark renamed or dropped
+  from the branch's map is refused rather than never looked for.
 
   A worker edits the `page` selectors — they are written before the page
   exists — so **the `removed` list is planning's and nobody else's**: it is

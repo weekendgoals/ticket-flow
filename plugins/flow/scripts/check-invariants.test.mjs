@@ -391,6 +391,15 @@ test('an execution lane that teaches the comparison without --removed-from fails
   assert.match(r.out, /quick\/SKILL\.md.*--removed-from/s)
 })
 
+test('an execution lane that teaches the comparison without --source fails', () => {
+  // A scoped design map refuses a run that does not say which source it is of.
+  const root = copyRepo()
+  mutate(root, 'plugins/flow/skills/ticket/SKILL.md', '--source', '--src')
+  const r = run(root)
+  assert.equal(r.status, 1, r.out)
+  assert.match(r.out, /ticket\/SKILL\.md.*--source/s)
+})
+
 test('a document dropping the COMPARE criterion fails the coupling', () => {
   const root = copyRepo()
   mutate(root, 'plugins/flow/skills/quick/SKILL.md', 'COMPARE', 'COMPARISON')
