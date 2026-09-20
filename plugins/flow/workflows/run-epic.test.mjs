@@ -2924,7 +2924,7 @@ test('wave: two ready tickets run side by side in worktrees, merge in document o
   // wave it names the append driver for the status log; a lone ticket's merge
   // is the command it always was.
   assert.match(prompt('merge:PAY-2'), /In the repository at \/repo, /)
-  assert.match(prompt('merge:PAY-2'), /git -c merge\.flow-append\.name="append-only log" -c merge\.flow-append\.driver='node "\/plugins\/flow\/scripts\/merge-append\.mjs" --driver %O %A %B' merge --no-ff beefc0ffee42 .*\ngrep -q "\^### PAY-2 " "epics\/payments\/status\.md"\ngit push origin epic\/payments/)
+  assert.match(prompt('merge:PAY-2'), /git -c merge\.flow-append\.name="append-only log" -c merge\.flow-append\.driver='node "\/plugins\/flow\/scripts\/merge-append\.mjs" --driver %O %A %B' merge --no-ff beefc0ffee42 .*\ngrep -qE "\^###\[\[:space:\]\]\+PAY-2\(\[\^A-Za-z0-9\]\|\$\)" "epics\/payments\/status\.md" \|\| \{ echo "MERGED LOG LOST THE ENTRY of PAY-2[^"]*"; git reset --hard "origin\/epic\/payments"; exit 1; \}\ngit push origin epic\/payments/)
   assert.doesNotMatch(prompt('merge:PAY-3'), /grep -q|flow-append/, "a lone ticket's merge is the sequence it always was")
   assert.match(prompt('merge:PAY-3'), /\ngit merge --no-ff beefc0ffee42 /)
   // The post-merge gate runs where the dependencies were installed: the
@@ -3014,6 +3014,12 @@ test('wave: a failed integration merges nothing past it, and says which passed t
     PAR(2),
   )
   assert.deepEqual([mixed.out.haltedOn.ticket, mixed.out.alsoHalted.map(h => h.ticket)], ['PAY-2', ['PAY-1']])
+  // The merge's own guard: the merged log lost the ticket's entry. The halt
+  // says what happened and that the merge was undone — never "a conflict",
+  // whose recovery (`git merge --abort`) has nothing to abort here.
+  const lost = await drive(waveReply([refreshed(['PAY-1', 'PAY-2'])], { 'merge:PAY-2': { outcome: 'failed', detail: 'MERGED LOG LOST THE ENTRY of PAY-2 - merge undone locally, nothing pushed' } }), PAR(2))
+  assert.match(lost.out.haltedOn.stopCondition, /^a nonzero exit/)
+  assert.match(lost.out.haltedOn.detail, /did not contain PAY-2's entry.*undid the merge locally \(`git reset --hard origin\/epic\/payments`\) and pushed nothing.*merge-append\.mjs/s)
   assert.match(mixed.out.haltedOn.stopCondition, /^a merge conflict/)
 })
 

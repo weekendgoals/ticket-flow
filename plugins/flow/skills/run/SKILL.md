@@ -261,12 +261,19 @@ branch**. Then it refreshes and asks the board again. Three things follow:
   clean-looking merge moved one ticket's `**Owed:**` line under the next
   ticket's heading. The attribute line stays after the run and is inert: a
   merge that does not define the driver falls back to git's ordinary one.
-- **A wave's merge checks its own result before it pushes**: the sequence
-  ends `grep -q "^### <ID> " epics/<name>/status.md` ahead of the push, so a
-  merged log that lost the ticket's entry — the shape every failure of a
-  merge driver takes, since a driver that does nothing still exits 0 and git
-  calls that clean — stops the sequence unpushed and halts the run on the
-  merge step.
+- **A wave's merge checks its own result before it pushes**: between the
+  merge and the push the sequence greps the merged `status.md` for the
+  ticket's entry heading (as loosely as the board parses it), so a merged log
+  that lost the entry — the shape every failure of a merge driver takes,
+  since a driver that does nothing still exits 0 and git calls that clean —
+  is never pushed. **The same line undoes the merge**
+  (`git reset --hard origin/epic/<name>`): left on the local branch, the next
+  run's refresh would find `pull --ff-only` "already up to date" and push it.
+  The run halts on a nonzero exit whose detail says so; confirm
+  `git status -sb` shows `epic/<name>` level with origin, find out why
+  `scripts/merge-append.mjs` did not run (`node` on the agent's PATH, the
+  plugin path in the command), and re-run. It is **not** a merge conflict and
+  there is nothing to `git merge --abort`.
 - **The post-merge check runs in the ticket's own worktree**, moved
   (detached) to the merged epic head — not in the main checkout, which never
   saw the dependencies the wave's workers installed. Its halt says to rule

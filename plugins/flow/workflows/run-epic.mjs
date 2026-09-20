@@ -2880,9 +2880,17 @@ async function integrateTicket({ id, branch, record, recordSpend, resolvedHead, 
   // does nothing still exits 0 — git then keeps ours and drops theirs, and
   // calls it clean — and that failure shape must never reach the remote
   // whatever causes it. `grep -q` exits 1, the sequence stops, nothing is
-  // pushed, and the run halts on the merge step.
+  // pushed, and the run halts on the merge step. Two things make that a
+  // barrier and not a one-run delay. The failing branch UNDOES the merge
+  // (`git reset --hard origin/<epic>` — the sequence has just fast-forwarded,
+  // so the bad merge is the only thing local has that origin lacks): left in
+  // place, the next run's refresh would `pull --ff-only` ("already up to
+  // date") and push it without a murmur. And the pattern is as loose as the
+  // board's own STATUS_HEADING — any whitespace after `###`, anything but an
+  // ID character after the ID — because a guard stricter than the parser it
+  // defends halts a run over an entry the board reads perfectly well.
   const mergeCommand = inWave
-    ? `git -c merge.flow-append.name="append-only log" -c merge.flow-append.driver='node "${pluginRoot}/scripts/merge-append.mjs" --driver %O %A %B' merge --no-ff ${resolvedHead} -m "Merge ${branch} into ${epicBranch}"\ngrep -q "^### ${id} " "epics/${epic}/status.md"`
+    ? `git -c merge.flow-append.name="append-only log" -c merge.flow-append.driver='node "${pluginRoot}/scripts/merge-append.mjs" --driver %O %A %B' merge --no-ff ${resolvedHead} -m "Merge ${branch} into ${epicBranch}"\ngrep -qE "^###[[:space:]]+${id}([^A-Za-z0-9]|$)" "epics/${epic}/status.md" || { echo "MERGED LOG LOST THE ENTRY of ${id} - merge undone locally, nothing pushed"; git reset --hard "origin/${epicBranch}"; exit 1; }`
     : `git merge --no-ff ${resolvedHead} -m "Merge ${branch} into ${epicBranch}"`
   // h. Merge — the one sanctioned agent merge, and its surface is the epic
   //    branch only. A fixed git sequence on a SHA this code verified, by an
@@ -2924,7 +2932,12 @@ ${NO_MAIN} This merge into ${epicBranch} is the only merge you perform.`,
           ? { stopCondition: STOP.permissionPrompt, detail: quoted.trim() || '(no command named)' }
           : /conflict/i.test(errorText)
             ? { stopCondition: STOP.mergeConflict, detail: `merging ${branch} into ${epicBranch} conflicted:${quoted}` }
-            : { stopCondition: STOP.nonzeroExit, detail: `the merge sequence did not merge ${id}'s verified head ${resolvedHead} (${line(merged.outcome)}):${quoted}` }),
+            : /MERGED LOG LOST THE ENTRY/.test(errorText)
+              ? {
+                  stopCondition: STOP.nonzeroExit,
+                  detail: `${id}'s branch merged into ${epicBranch} and the merged status log did not contain ${id}'s entry — the log's merge driver did not do its work (a driver that does nothing still exits 0, and git then keeps the epic branch's side and drops the ticket's). The sequence undid the merge locally (\`git reset --hard origin/${epicBranch}\`) and pushed nothing, so ${epicBranch} is where it was; check \`git status -sb\` shows it level with origin before anything else. Then find out why \`scripts/merge-append.mjs\` did not run — \`node\` on the merge agent's PATH, the plugin path in the merge command — and re-run.${quoted}`,
+                }
+              : { stopCondition: STOP.nonzeroExit, detail: `the merge sequence did not merge ${id}'s verified head ${resolvedHead} (${line(merged.outcome)}):${quoted}` }),
     }
     return halted
   }

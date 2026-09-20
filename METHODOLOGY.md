@@ -1537,7 +1537,12 @@ of that. **A merge driver acts on an explicit flag and fails closed**: told
 to act and unable to, it exits nonzero. And **the wave checks its own
 merge**: after merging, before pushing, the ticket's entry heading must be in
 the merged log — because "the driver silently did nothing" must not reach the
-remote *whatever* causes it next time. The general lesson is older than this
+remote *whatever* causes it next time. That guard had its own review, and its
+first cut was a delay, not a barrier: it stopped the push and left the bad
+merge on the local branch, where the next run's refresh would fast-forward
+nothing and push it. So the same line undoes the merge; and it matches a
+heading as loosely as the board's parser does, because a guard stricter than
+what it defends is a false halt waiting for a worker who typed two spaces. The general lesson is older than this
 repository: an assumption about what git does is tested against git, in a
 throwaway repository, before anything is built on it.
 
