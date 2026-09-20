@@ -259,10 +259,12 @@ never an invented test command.
   The differ's exit codes: **0** — nothing differs, or the only rows are
   declared removals (including one the design no longer draws either: the two
   sides agreeing with the plan). **1** — something differs; the rows say what.
-  **2** — nothing was compared, or the command or a file could not be read.
-  **Exit 2 is never "no differences"**: it means the map's selectors matched
-  neither report, so the run collected no evidence at all — fix the selectors
-  or the widths and run it again; a comparison nobody performed is recorded as
+  **2** — nothing was compared, the two reports were taken at different
+  viewport widths (two widths are two pages — media queries answered
+  differently on each side, so a clean table would be luck), or the command
+  or a file could not be read.
+  **Exit 2 is never "no differences"**: it means the run collected no
+  evidence at all — fix the selectors or the widths and run it again; a comparison nobody performed is recorded as
   owed, never as passed.
 
   Paste the differ's table into the entry's `**Compared:**` field (step 6),

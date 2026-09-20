@@ -139,7 +139,8 @@ epics/<name>/design-map.json --removed-from <the signed-off map>` — read with
 `git show origin/<default-branch>:epics/<name>/design-map.json`, because a
 removal is a planning decision and the map in the tree is the one this ticket
 edits. Exit 0 is nothing differing or only declared removals, exit 1 is a
-difference, and **exit 2 is "nothing was compared", never "no differences"**.
+difference, and **exit 2 is "nothing was compared" — no landmark matched, or the two
+reports were taken at different viewport widths — never "no differences"**.
 Paste the table into the entry's `**Compared:**` field and answer every row —
 fixed, recorded as a `**Deviation:**`, or already a declared removal. With no
 browser here, or a design nothing can render, the comparison is **owed**, said

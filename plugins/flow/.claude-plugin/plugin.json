@@ -1,7 +1,7 @@
 {
   "name": "flow",
   "displayName": "Ticket Flow",
-  "version": "2.2.0",
+  "version": "2.2.1",
   "description": "Turn a request into an epic, run its tickets one at a time to reviewed pull requests, and derive the board from git instead of maintaining it.",
   "author": {
     "name": "Vadim Tarasov"

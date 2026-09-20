@@ -1039,6 +1039,41 @@ test('compared never counts another ticket\'s table', () => {
   assert.match(text, /\*\*Compared:\*\*/, 'the log does carry tables — three of them, under other tickets')
 })
 
+test('compared does not count a field nobody filled in', () => {
+  // A bare label satisfied the driver's gate once. A table pasted on the
+  // lines below an empty label still counts — that is the normal shape — and
+  // so do `owed —` and `hand-written —`: what a field says is the reviewer's.
+  const status =
+    '# Vision epic — status log\n\n' +
+    '### V-1 — the landing page — 2026-09-10 — DONE\n\n**Built:** the page.\n\n**Compared:**\n\n**Owed:** Nothing.\n\n' +
+    '### V-2 — the results list — 2026-09-12 — DONE\n\n**Built:** the list.\n\n**Compared:**\n\nlandmark  property  design  page\nhero      order     1       2\n\n**Owed:** Nothing.\n\n' +
+    '### V-3 — the footer — 2026-09-13 — DONE\n\n**Built:** the footer.\n\n**Compared:**\n'
+  const dir = visionRepo('compared-empty', status)
+  const v1 = JSON.parse(run(dir, 'compared', 'V-1', '--json'))
+  assert.equal(v1.compared, 0, 'a label closed by the next field records nothing')
+  assert.equal(v1.empty.length, 1)
+  assert.match(run(dir, 'compared', 'V-1'), /an empty `\*\*Compared:\*\*` field — not counted/)
+  assert.equal(JSON.parse(run(dir, 'compared', 'V-2', '--json')).compared, 1, 'the table follows on the next lines')
+  const v3 = JSON.parse(run(dir, 'compared', 'V-3', '--json'))
+  assert.equal(v3.compared, 0, 'a label closed by the end of the file')
+  assert.deepEqual(v3.empty.map((e) => e.empty), [true])
+})
+
+test('compared counts a field whose body opens with a label of its own, and an addendum beside an empty one', () => {
+  // Only a heading or one of the entry's own field labels closes the field:
+  // "any bold label" read a table-per-width comparison as empty, which halts
+  // a ticket that did the work.
+  const status =
+    '# Vision epic — status log\n\n' +
+    '### V-1 — the landing page — 2026-09-10 — DONE\n\n**Built:** the page.\n\n**Compared:**\n\n**@ 1440:**\n\nlandmark  property  design  page\nhero      order     1       2\n\n**@ 393:**\n\nno differences — 4 landmarks compared\n\n**Owed:** Nothing.\n\n' +
+    '### V-2 — the results list — 2026-09-12 — DONE\r\n\r\n**Built:** the list.\r\n\r\n**Compared:**\r\n\r\n**Owed:** Nothing.\r\n\r\n**Addendum — 2026-09-13 — the comparison, run late.**\r\n\r\n**Compared:**\r\n\r\nno differences — 6 landmarks compared\r\n'
+  const dir = visionRepo('compared-sublabels', status)
+  assert.equal(JSON.parse(run(dir, 'compared', 'V-1', '--json')).compared, 1)
+  const v2 = JSON.parse(run(dir, 'compared', 'V-2', '--json'))
+  assert.equal(v2.compared, 1, 'the addendum filled in what the entry left bare — CRLF and all')
+  assert.equal(v2.empty.length, 1)
+})
+
 test('compared --log-from reads the pushed branch, and an unreadable log is never a count of 0', () => {
   const dir = visionRepo('compared-ref', '# Vision epic — status log\n')
   git(dir, 'config', 'user.email', 'test@example.com')

@@ -49,7 +49,9 @@
 // Exit: 0 when nothing differs or the only rows are declared removals, 1 when
 // anything else differs, 2 on a usage error or unreadable input — which
 // includes a run where no landmark matched on either side, since a map that
-// describes neither report is not evidence that a page matches its design.
+// describes neither report is not evidence that a page matches its design,
+// and a pair of reports taken at different viewport widths, since two widths
+// are two pages and a clean table between them would be luck.
 // One case that looks like the last is not it: a landmark the signed-off
 // `removed` list names, absent from the design and the page alike, is the two
 // sides AGREEING with the plan. It prints a `removed by …` row with `absent`
@@ -240,6 +242,9 @@ export function validateReport(report, side, label) {
   if (!report.landmarks || typeof report.landmarks !== 'object' || Array.isArray(report.landmarks)) {
     throw new UsageError(`${label}: no "landmarks" object — is this a report from \`fidelity.mjs extract\`?`)
   }
+  // A number or nothing: the width refusal compares the two, and a hand-built
+  // "375" against 375 would be refused as a mismatch that prints as none.
+  if (report.viewportWidth != null && typeof report.viewportWidth !== 'number') throw new UsageError(`${label}: "viewportWidth" must be a number or null, not ${JSON.stringify(report.viewportWidth)}`)
   if (report.side && report.side !== side) throw new UsageError(`${label}: this report says side "${report.side}" but was given as the ${side} — the two files look swapped`)
   return report
 }
@@ -331,9 +336,6 @@ export function diffReports(design, page, { landmarks, removed = [], only = null
     notes.push('the --map file carries a "removed" list; it is never honoured, because --map is the file the ticket under review edits — pass the signed-off map as --removed-from to read its removals')
   }
   if (unmatched.length) notes.push(`matched nothing on either side, so nothing was compared: ${unmatched.join(', ')}`)
-  if (design.viewportWidth != null && page.viewportWidth != null && design.viewportWidth !== page.viewportWidth) {
-    notes.push(`the reports were taken at different viewport widths (design ${design.viewportWidth}, page ${page.viewportWidth})`)
-  }
   const compared = list.length - unmatched.length
   return { rows, notes, compared, exit: rows.length === 0 || rows.every((r) => DECLARED_REMOVAL.has(r.kind)) ? 0 : 1 }
 }
@@ -421,6 +423,19 @@ export function run(argv) {
     // An unknown name is refused rather than compared as nothing: a typo that
     // narrowed the comparison to zero landmarks would print "no differences".
     if (unknown.length) throw new UsageError(`--landmarks names ${unknown.length === 1 ? 'a landmark' : 'landmarks'} the map does not declare: ${unknown.join(', ')}`)
+  }
+
+  // Two widths are two pages: media queries answered differently on each
+  // side, so every row would be a difference between viewports and a clean
+  // table would be luck. This was a note under exit 0 once, and a 1440-against-
+  // 375 pair read "no differences". Refused like every other comparison nobody
+  // performed; a report without a width (hand-built, or an older extractor) is
+  // not refused, because absence is not a mismatch.
+  if (design.viewportWidth != null && page.viewportWidth != null && design.viewportWidth !== page.viewportWidth) {
+    throw new UsageError(
+      `the reports were taken at different viewport widths (design ${design.viewportWidth}, page ${page.viewportWidth}) — that is two pages, not one compared with its design. ` +
+        'Open both at the width the COMPARE line names, extract again, and diff those reports.',
+    )
   }
 
   const result = diffReports(design, page, {
