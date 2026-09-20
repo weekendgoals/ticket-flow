@@ -389,6 +389,39 @@ test('a scoped landmark renamed or dropped in --map is refused, not quietly neve
     assert.match(r.err, /the signed-off map draws ghost here and --map does not declare it/)
   }
   // menu (393 only) and team (another source) are not drawn here, so their absence from --map is nothing
+  // ...and the refusal does not depend on --landmarks: naming every landmark
+  // --map still has is the same selection as no flag, and once got exit 0.
+  for (const [tree, names] of [[without('ghost'), 'hero'], [without('ghost', 'ghost2'), 'hero,ghost2']]) {
+    const r = cli('diff', f.design, f.page, '--map', tree, '--removed-from', f.signed, '--source', 'designs/city.html', '--landmarks', names)
+    assert.equal(r.code, 2, names)
+    assert.match(r.err, /--map does not declare it/)
+  }
+})
+
+test('a selection the signed-off map says is not drawn here is explained silence, not "fix your selectors"', () => {
+  // `LANDMARKS: menu` under `COMPARE … @ 393, 1440`, menu drawn at 393 only: the 1440 run.
+  const f = scoped()
+  const named = cli('diff', f.design, f.page, '--map', f.map, '--removed-from', f.signed, '--source', 'designs/city.html', '--landmarks', 'menu')
+  assert.equal(named.code, 0, named.err)
+  assert.match(named.out, /no differences — 0 landmarks compared/)
+  assert.match(named.out, /note: not drawn in designs\/city\.html at 1440 by the signed-off map, and on neither side: menu/)
+  // an UNSCOPED selection of nothing is still refused: nobody explained that silence
+  const g = bothAbsent()
+  assert.equal(cli('diff', g.design, g.page, '--map', g.map, '--removed-from', g.signed, '--landmarks', 'ghost').code, 2)
+})
+
+test('a scoped run says what it was asked, so a --source from the wrong COMPARE line is readable in the pasted table', () => {
+  const f = scoped()
+  // the reports are of city.html; the command claims about.html and names only city's landmarks
+  const r = cli('diff', f.design, f.page, '--map', f.map, '--removed-from', f.signed, '--source', 'designs/about.html', '--landmarks', 'hero,ghost')
+  assert.equal(r.code, 0, 'the differ cannot know — reports carry no source')
+  assert.match(r.out, /note: compared as source designs\/about\.html at 1440, landmarks hero, ghost — check it against the ticket's COMPARE and LANDMARKS lines/)
+  const j = JSON.parse(cli('diff', f.design, f.page, '--map', f.map, '--removed-from', f.signed, '--source', 'designs/city.html', '--json').out)
+  assert.deepEqual(j.asked, { source: 'designs/city.html', width: 1440, landmarks: null })
+  assert.ok(j.rows.some((x) => x.kind === 'unmatched'))
+  // an unscoped map prints exactly what it printed before scope existed
+  const g = bothAbsent()
+  assert.doesNotMatch(cli('diff', g.design, g.page, '--map', g.map, '--removed-from', g.signed).out, /compared as/)
 })
 
 test('--source without --removed-from is refused: scope would be read from nowhere', () => {

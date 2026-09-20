@@ -34,7 +34,7 @@ go through the flow, one-off work goes through `/flow:quick` into
   plan-page renderer `node --test plugins/flow/scripts/plan-page.test.mjs`
   (`# pass 8`) — both pure rendering tests over fixture JSON, no git
   needed. The fidelity differ has
-  `node --test plugins/flow/scripts/fidelity.test.mjs` (`# pass 52`) — the
+  `node --test plugins/flow/scripts/fidelity.test.mjs` (`# pass 54`) — the
   diff driven through the CLI over the committed fixture reports under
   `scripts/fixtures/fidelity/` (what a real browser returned once, from
   `design.html` and `page.html`), and the page-side extractor evaluated with
@@ -52,7 +52,11 @@ go through the flow, one-off work goes through `/flow:quick` into
   REAL git in throwaway repositories, the driver wired exactly as the run's
   merge step wires it, because the driver it replaced (git's own `union`) was
   also obviously right and corrupted every merge it touched; one test keeps
-  that failure on record. Needs `git` and nothing else. And the run driver has
+  that failure on record. Needs `git` and nothing else. The worktree setup has
+  `node --test plugins/flow/scripts/worktree-setup.test.mjs` (`# pass 12`) —
+  real git again, real linked worktrees in throwaway directories, because the
+  refusal that matters asks git a question (`check-ignore`, where `.git` is a
+  file). Needs `git`, POSIX `sh` and `sleep` (the budget case). And the run driver has
   `node --test plugins/flow/workflows/run-epic.test.mjs` (`# pass 175`) —
   which evaluates `run-epic.mjs`'s module body with stubbed agents and
   asserts the sequence, the gate branches and the halt mapping. It needs
@@ -86,8 +90,8 @@ go through the flow, one-off work goes through `/flow:quick` into
 - **Smoke:** `node plugins/flow/scripts/tickets.mjs doctor` — must exit 0 on
   this repo. `… list` shows the board.
 - **Syntax check:** `node --check plugins/flow/scripts/tickets.mjs`, and the
-  same for `scripts/fidelity.mjs`, `scripts/meter.mjs` and
-  `scripts/merge-append.mjs`. This does
+  same for `scripts/fidelity.mjs`, `scripts/meter.mjs`,
+  `scripts/merge-append.mjs` and `scripts/worktree-setup.mjs`. This does
   **not** work on `plugins/flow/workflows/run-epic.mjs`: a workflow script is
   a module body with a top-level `return`, which the workflow runtime allows
   (`allowReturnOutsideFunction`) and `node --check` rejects. Parse it the way
@@ -134,6 +138,15 @@ test file path explicitly.
   `ticketBudget`, is unreachable under `Parallel:` because the pair is
   refused. Hoisted function declarations may be called by the loop above
   them; a `const` they use may not live below it (that was a TDZ crash once).
+- **A worktree's setup copies only what git ignores, and runs only what was
+  pushed.** `scripts/worktree-setup.mjs` reads `epics/worktree.json` from the
+  worktree — the epic branch as committed — never from the main checkout's
+  working tree, and refuses to copy a file `git check-ignore` does not call
+  ignored: the files worth copying are secrets, and a wave worker commits
+  with `git add`. Do not move that refusal into a prompt, and do not make a
+  partial setup exit 0 — the worker would verify against something nobody
+  chose. No file means no change, and the step exists only under
+  `Parallel:`, so a serial run stays the old run, prompt for prompt.
 - **A merge driver that does nothing is a clean merge that loses data.**
   Git keeps ours and drops theirs when a driver exits 0 without writing, and
   reports no conflict. So `scripts/merge-append.mjs` acts on its `--driver`

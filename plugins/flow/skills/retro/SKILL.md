@@ -161,6 +161,9 @@ from under `repoRoot`.
   Every ticket that went BLOCKED, or recorded a criterion as owed, because a
   fresh worktree lacked what the usual checkout has. The worker seconds
   against this project's serial runs — the reinstall is paid per ticket.
+  Did the project have an `epics/worktree.json`, and did any worktree's
+  setup fail or run out of its eight minutes? A BLOCKED ticket in a project
+  without the file is a finding against planning, which is told to write it.
   **Integrity:** is the log whole (the record's doctor line; any entry
   flagged for its `**Owed:**` line is a corrupted merge until shown
   otherwise, and is Important whatever else the retro finds), did any relayed

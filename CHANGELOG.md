@@ -12,6 +12,24 @@ heading here. `check-invariants.mjs` holds both.
 
 ## Unreleased
 
+- **`epics/worktree.json` — a project says what a fresh worktree needs, and a
+  parallel run applies it** (new `scripts/worktree-setup.mjs` and its suite;
+  `workflows/run-epic.mjs`'s `worktree:<ID>` step runs it after the ref is
+  pinned). `{"copy": [...], "setup": [...]}`: `copy` files come from the main
+  checkout, `setup` commands run in the worktree, the file is read as
+  committed on the epic branch. A file git does not ignore is never copied;
+  any failure halts that ticket before a worker is hired, with the recovery
+  in the halt; the whole setup has an eight-minute budget, because the step
+  is one shell call that is killed at ten with its answer lost; `.git/` paths
+  are refused by shape. The Codex worker's prompt (`runners/codex.mjs`) says
+  what is already installed — it has no network, so the file is its only
+  source of dependencies. The run skill's preflight validates the file under `Parallel:`
+  (`--validate - --repo`, after its own fetch: shape, plus a `copy` file this
+  machine lacks or git does not ignore), the epic skill says to write it before declaring
+  `Parallel:`, and the wave worker's prompt says what was already applied.
+  **Additive: no file, no change — and a serial run is the old run, prompt
+  for prompt** (a test holds it).
+
 - **A design map may say where each landmark is drawn — `source` and
   `widths`, both optional — and a landmark on neither side then fails**
   (`scripts/fidelity.mjs`: an `unmatched` row, exit 1, the same with
@@ -25,8 +43,14 @@ heading here. `check-invariants.mjs` holds both.
   unscoped), `--source` without `--removed-from`, width-scoped landmarks
   against reports with no width, and a landmark it draws here that `--map`
   no longer declares — renamed or dropped on the ticket branch, it was
-  otherwise never looked for. Both source refusals read every source the map
-  names, never the `--landmarks` selection. **Additive: a map without the two
+  otherwise never looked for. Every one of these reads the whole signed-off
+  map, never the `--landmarks` selection: judged per selection, each was
+  dodged in review by adding or dropping the flag. A selection the map says
+  is not drawn here (`LANDMARKS: menu` at a width menu is not drawn at) is
+  exit 0 with the note that explains it, not "nothing was compared". And a
+  scoped run's first note says what it was asked — source, width, landmarks
+  — so a `--source` copied from the wrong `COMPARE` line is readable in the
+  pasted table; the review skill reads it first. **Additive: a map without the two
   fields reads exactly as it did.** Epic skill teaches the fields; ticket,
   quick and review skills pass `--source`; `check-invariants.mjs` holds the
   two running lanes to it; METHODOLOGY § the differ records why the first

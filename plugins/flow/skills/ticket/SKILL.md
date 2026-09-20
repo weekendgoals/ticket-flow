@@ -270,7 +270,9 @@ never an invented test command.
   **2** — nothing was compared, the two reports were taken at different
   viewport widths (two widths are two pages — media queries answered
   differently on each side, so a clean table would be luck), a scoped map
-  was not told its `--source`, or the command or a file could not be read.
+  was not told its `--source` (or was told it without `--removed-from`, or
+  scopes by width and the reports carry none), or the command or a file
+  could not be read.
   **Exit 2 is never "no differences"**: it means the run collected no
   evidence at all — fix the selectors, the widths or the flag and run it
   again. Two refusals are not yours to fix, because the signed-off map is
@@ -281,7 +283,10 @@ never an invented test command.
   performed is recorded as owed, never as passed.
 
   Paste the differ's table into the entry's `**Compared:**` field (step 6),
-  verbatim — it is plain text for that reason. Then **every row is answered**:
+  verbatim, notes included — it is plain text for that reason, and on a
+  scoped map its first note says which source, width and landmarks the run
+  was asked for, which is how a reader checks the command against this
+  ticket's `COMPARE` and `LANDMARKS` lines. Then **every row is answered**:
   fixed, or recorded as a `**Deviation:**`, or already a declared removal the
   table names as such. A row nobody answers is the whole mechanism spending
   its cost and buying nothing.

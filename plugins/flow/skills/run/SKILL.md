@@ -66,6 +66,21 @@ Stop and report too if:
   on. Both are fixed in `tickets.md`, committed and pushed to `epic/<name>`,
   before the run — the doctor row names the line. Refused here, in session,
   because the script has no way to run doctor;
+- **the epic declares `Parallel:` and the project's `epics/worktree.json`
+  will not read, or would fail on this machine** — `git fetch origin
+  epic/<name>` first (this check reads the pushed branch, and step 2's fetch
+  has not run yet), then ask whether the branch carries the file, `git
+  cat-file -e origin/epic/<name>:epics/worktree.json`, and only when it does
+  (exit 0) run `git show origin/epic/<name>:epics/worktree.json | node
+  "${CLAUDE_PLUGIN_ROOT}/scripts/worktree-setup.mjs" --validate - --repo
+  "$(git rev-parse --show-toplevel)"`; refuse on a nonzero exit of that last
+  command, with what it printed. It reads the file's shape and, against this
+  checkout, the two failures shape cannot show: a `copy` file this machine
+  does not have, and one git does not ignore. (Piped without
+  the first check, an absent file reaches the validator as empty input and is
+  refused as malformed JSON — a refusal of the one state that is fine.) Unchecked, the malformed file halts every ticket of the first wave
+  at its worktree step, one launch too late. An absent file is not a refusal:
+  the worktrees are bare and the workers are told so;
 - **a declaration line of this epic will not parse** — the same doctor run
   carries a row for `epics/<name>/tickets.md` saying a line "looks like a
   declaration line but will not parse, so it silently defaults". `Parallel:
@@ -266,12 +281,27 @@ wave's first, which lands on an epic branch that has moved since the ticket
 branched — **the ticket's own CHECK criteria re-run on the merged epic
 branch**. Then it refreshes and asks the board again. Three things follow:
 
-- **The worktree is fresh.** It has what git tracks and nothing else — no
-  installed dependencies, no build output, no local `.env`. The worker is told
-  so and installs what the project's instructions say; a project whose
-  verification needs something that cannot be reproduced from the repository
-  will see those criteria recorded as owed, or a BLOCKED ticket. Know this
-  before declaring `Parallel:` on such a project.
+- **The worktree is fresh, and `epics/worktree.json` is how a project says
+  what a fresh one needs.** A worktree has what git tracks and nothing else —
+  no installed dependencies, no build output, no local `.env`. So the step
+  that makes it (`worktree:<ID>`) then runs
+  `scripts/worktree-setup.mjs`, which reads `epics/worktree.json` **as
+  committed on the epic branch** — `{"copy": [".env"], "setup": ["npm ci"]}`
+  — copies the `copy` files in from the main checkout and runs the `setup`
+  commands inside the worktree. It refuses to copy a file git does not ignore
+  (a copied secret would be one `git add -A` from a commit), and any failure
+  halts that ticket before a worker is hired, with the worktree left in
+  place and the recovery in the halt. **The whole setup has eight minutes**:
+  the step is one shell call by a proxy whose tool kills a command at ten
+  and loses its answer, so the script stops itself first and says so — a
+  project whose install cannot finish in that time from a warm cache is not
+  one to declare `Parallel:` on. A `Worker runner: codex` worker has no
+  network at all, so for it this file is the only way a worktree gets
+  dependencies. With no such file the worker is told
+  the worktree is bare and installs what the project's instructions say — a
+  guess made once per ticket, which is what the file replaces. What neither
+  can reproduce (a running service) is still a criterion recorded as owed, or
+  a BLOCKED ticket. Know this before declaring `Parallel:`.
 - **The status log merges by appending, through the plugin's own driver.**
   Every ticket appends its entry to the end of `epics/<name>/status.md`, so
   two branches cut from one epic head conflict there on the second merge,

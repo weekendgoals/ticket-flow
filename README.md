@@ -218,6 +218,15 @@ exists to read, not a failure. Halting is the mechanism working —
 a run that pushes through is a run whose release pull request can no longer
 be trusted.
 
+**A parallel run sets each worktree up from `epics/worktree.json`**, a
+project-level file every epic shares: `{"copy": [".env"], "setup": ["npm
+ci"]}`. `copy` files come from your main checkout (only files git ignores —
+anything else is refused, because a copied secret would be one `git add -A`
+from a commit); `setup` commands run inside the worktree. It is read as
+committed on the epic branch, so what runs is what was pushed. Without the
+file a worktree has only what git tracks and each worker installs what it
+thinks the project needs.
+
 **A run is serial unless the epic says otherwise.** With `Parallel: 2` (or
 `3`) in the preamble it works the board's *ready* set in **waves**: up to
 that many tickets' pipelines — worker, review, disposition, acceptance, the
@@ -238,8 +247,10 @@ integrate before the run stops; and `Ticket budget:` cannot be declared,
 because a per-ticket ceiling is a delta on one meter. Two practical costs to
 know before declaring it: a fresh worktree has nothing git does not track —
 no installed dependencies, no build output, no local `.env` — so every
-ticket's worker installs the project again, and a project whose verification
-needs unreproducible local state will see BLOCKED tickets; and the ceiling is
+worktree is set up again, by `epics/worktree.json` when the project has one
+(inside eight minutes each) and by each worker's own reading of the project's
+instructions when it does not, and a project whose verification needs state
+neither can reproduce — a running service — will see BLOCKED tickets; and the ceiling is
 3 because what a wave produces still has to be reviewed by one human at the
 release pull request.
 

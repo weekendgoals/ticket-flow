@@ -213,7 +213,16 @@ epic a ticket without one is **declared independent** of every other
 unstarted ticket — so before writing this line, check each pair that could
 share a wave for files both would edit, and give the later one a
 `**Blocked by:**`. The ceiling is 3 because the constraint is review
-bandwidth, not machines. Parsed by the board today; the run driver applies
+bandwidth, not machines. **Before writing it, look for `epics/worktree.json`
+and write it if the project has none**: each ticket of a wave works in a
+fresh git worktree with no installed dependencies and no local `.env`, and
+that file — `{"copy": ["<git-ignored local files every worktree needs>"],
+"setup": ["<the install command>", "…"]}`, project-level, shared by every
+epic — is what the run applies to each one, inside an eight-minute budget
+per worktree (the step is one shell call with a ten-minute ceiling), so
+prefer the install that uses a warm cache. Without it every worker guesses
+the install for itself. Commit it with the epic's documents so it is on
+`epic/<name>` at sign-off; the run reads it from there. Parsed by the board today; the run driver applies
 it, and refuses it together with `Ticket budget:` (a per-ticket ceiling
 cannot be metered while tickets share the clock).
 
