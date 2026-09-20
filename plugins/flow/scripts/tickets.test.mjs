@@ -2500,6 +2500,107 @@ Design sources: designs/City Desktop.html, designs/map.html
 git(crepo, 'add', '.')
 git(crepo, 'commit', '-m', 'checks epic')
 
+// ── check-epic: the release check ────────────────────────────────────────────
+// A release epic with three tickets, two of them merged into the pushed epic
+// branch. Every CHECK reads a file a LATER ticket can change, which is the
+// point: a ticket's checks pass before its own merge and nothing re-ran them.
+
+function releaseRepo(name, { r2Breaks = false, weaken = false } = {}) {
+  const rel = join(tmp, name)
+  const remote = join(tmp, `${name}-remote.git`)
+  git(tmp, 'init', '--bare', '--initial-branch=main', remote)
+  git(tmp, 'init', '--initial-branch=main', rel)
+  git(rel, 'config', 'user.email', 'test@example.com')
+  git(rel, 'config', 'user.name', 'Test')
+  git(rel, 'config', 'commit.gpgsign', 'false')
+  mkdirSync(join(rel, 'epics/rc'), { recursive: true })
+  const doc = (r1Expect) =>
+    `# RC\n\nDelivery: release\n\n## RC-1 — the greeting\n\n**Acceptance criteria.**\n- the greeting is there\n  CHECK: cat greeting.txt; echo ran >> runs.log\n  EXPECT: ${r1Expect}\n\n## RC-2 — the farewell\n\n**Acceptance criteria.**\n- the farewell is there\n  CHECK: cat farewell.txt\n  EXPECT: bye\n- the greeting still is\n  CHECK: cat greeting.txt; echo ran >> runs.log\n  EXPECT: hel\n\n## RC-3 — never started\n\n**Acceptance criteria.**\n- it exists\n  CHECK: cat never.txt\n`
+  writeFileSync(join(rel, 'epics/rc/tickets.md'), doc('hello'))
+  writeFileSync(join(rel, '.gitignore'), 'runs.log\n')
+  git(rel, 'add', '.')
+  git(rel, 'commit', '-m', 'plan: rc epic')
+  git(rel, 'remote', 'add', 'origin', remote)
+  git(rel, 'push', '-u', 'origin', 'main')
+  git(rel, 'remote', 'set-head', 'origin', 'main')
+  git(rel, 'checkout', '-b', 'epic/rc')
+  const ticket = (id, files) => {
+    git(rel, 'checkout', '-b', id.toLowerCase())
+    for (const [f, text] of Object.entries(files)) writeFileSync(join(rel, f), text)
+    git(rel, 'add', '.')
+    git(rel, 'commit', '-m', `${id}: build it`)
+    git(rel, 'checkout', 'epic/rc')
+    git(rel, 'merge', '--no-ff', id.toLowerCase(), '-m', `Merge ${id.toLowerCase()} into epic/rc`)
+  }
+  ticket('RC-1', { 'greeting.txt': 'hello\n' })
+  // RC-2 passes its own checks and, when asked to, breaks RC-1's on the way
+  const r2 = { 'farewell.txt': 'bye\n' }
+  if (r2Breaks) r2['greeting.txt'] = 'help\n'
+  if (weaken) r2['epics/rc/tickets.md'] = doc('hel')
+  ticket('RC-2', r2)
+  git(rel, 'push', '-u', 'origin', 'epic/rc')
+  return rel
+}
+
+test('check-epic runs every landed ticket\'s checks at the head, once per distinct command', () => {
+  const rel = releaseRepo('rc-green')
+  const out = JSON.parse(run(rel, 'check-epic', 'rc', '--json'))
+  assert.equal(out.allPassed, true)
+  assert.deepEqual(out.tickets.map((t) => [t.id, t.passed, t.total]), [['RC-1', 1, 1], ['RC-2', 2, 2]])
+  assert.deepEqual(out.notLanded, [{ id: 'RC-3', state: 'todo' }], 'a ticket that never started is named, not run, and not a failure')
+  assert.equal(out.total, 3)
+  assert.equal(out.commandsRun, 2, 'RC-1 and RC-2 share a command')
+  assert.equal(readFileSync(join(rel, 'runs.log'), 'utf8'), 'ran\n', 'the shared command ran ONCE and was judged against each EXPECT')
+  assert.match(out.head, /^[0-9a-f]{40}$/)
+  assert.equal(out.tickets.every((t) => t.criteriaChanged === null), true)
+  assert.match(run(rel, 'check-epic', 'rc'), /3\/3 checks passed across 2 ticket\(s\), 2 distinct command\(s\) run/)
+})
+
+test('check-epic fails when a later ticket broke an earlier one\'s check, and names the ticket it broke', () => {
+  // RC-1 was green at its own merge. RC-2 changed the file RC-1's check reads,
+  // and passes every check of its own: no per-ticket gate ever sees this.
+  const rel = releaseRepo('rc-broken', { r2Breaks: true })
+  const fail = runFail(rel, 'check-epic', 'rc', '--json')
+  assert.equal(fail.status, 1)
+  const out = JSON.parse(fail.stdout)
+  assert.equal(out.allPassed, false)
+  assert.deepEqual(out.tickets.map((t) => [t.id, t.passed, t.total]), [['RC-1', 0, 1], ['RC-2', 2, 2]], 'the same output passes RC-2\'s looser EXPECT and fails RC-1\'s')
+  assert.match(out.tickets[0].checks[0].evidence, /does not contain "hello"/)
+  const text = runFail(rel, 'check-epic', 'rc')
+  assert.match(text.stdout, /RC-1.*0\/1[\s\S]*\$ cat greeting\.txt/)
+})
+
+test('check-epic shows criteria that differ from sign-off — a gate weakened by a later ticket passes, visibly', () => {
+  // The same breakage, with RC-2 also loosening RC-1's EXPECT in tickets.md.
+  // The check is green; the ledger says what was signed off and what runs now.
+  const rel = releaseRepo('rc-weakened', { r2Breaks: true, weaken: true })
+  const out = JSON.parse(run(rel, 'check-epic', 'rc', '--json'))
+  assert.equal(out.allPassed, true)
+  assert.match(out.signoff, /^[0-9a-f]{40}$/)
+  assert.deepEqual(out.tickets[0].criteriaChanged, {
+    was: ['CHECK: cat greeting.txt; echo ran >> runs.log — EXPECT: hello'],
+    now: ['CHECK: cat greeting.txt; echo ran >> runs.log — EXPECT: hel'],
+  })
+  assert.equal(out.tickets[1].criteriaChanged, null)
+  assert.match(run(rel, 'check-epic', 'rc'), /criteria differ from sign-off[\s\S]*was: CHECK: cat greeting\.txt.*EXPECT: hello\n\s+now: .*EXPECT: hel\n/)
+})
+
+test('check-epic with nothing landed is not a release that passed, and an unknown epic or no epic is refused', () => {
+  const rel = join(tmp, 'rc-empty')
+  git(tmp, 'init', '--initial-branch=main', rel)
+  git(rel, 'config', 'user.email', 'test@example.com')
+  git(rel, 'config', 'user.name', 'Test')
+  mkdirSync(join(rel, 'epics/rc'), { recursive: true })
+  writeFileSync(join(rel, 'epics/rc/tickets.md'), '# RC\n\nDelivery: release\n\n## RC-1 — one\n\n**Scope.** x\n')
+  git(rel, 'add', '.')
+  git(rel, 'commit', '-m', 'plan')
+  const none = runFail(rel, 'check-epic', 'rc')
+  assert.equal(none.status, 1)
+  assert.match(none.stdout, /there is nothing to release/)
+  assert.equal(runFail(rel, 'check-epic').status, 2)
+  assert.notEqual(runFail(rel, 'check-epic', 'nope').status, 0)
+})
+
 test('check runs CHECK commands and passes on exit 0 plus EXPECT match', () => {
   const out = JSON.parse(run(crepo, 'check', 'K-1', '--json'))
   assert.equal(out.total, 2)

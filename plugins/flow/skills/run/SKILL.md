@@ -376,6 +376,24 @@ branch**. Then it refreshes and asks the board again. Three things follow:
   per-ticket figures come from the transcripts, which are per agent whatever
   ran beside them.
 
+**The run ends with the release check.** When the loop finds nothing left to
+start and nothing waiting, the script does not return `completed` yet. A
+ticket's `CHECK` criteria pass before *its* merge — and, in a wave, after
+each merge of that wave — and then never again: not after a later wave's
+merges, not after the last refresh merged the default branch in. So it asks
+the board which tickets have landed (`release-list:<epic>` —
+`tickets.mjs check-epic <epic> --list`, with the script's own count beside
+the list, refused when they disagree) and re-runs each one's checks at the
+epic head (`release-check:<ID>`, one shell call per ticket, because a whole
+epic's suites in one call can outlive the ten minutes a proxy's shell allows
+and a command killed there loses its answer). That covers tickets an earlier
+run or a hand integrated too. Criteria are read from the checkout — the epic
+head's own `tickets.md`, so a mid-epic re-plan counts; what differs from
+sign-off is shown to the human in step 7's body, where someone who can tell
+a re-plan from a dodge reads it. `COMPARE` criteria are not re-run (there is
+no browser), and step 7 says so. The ledger rides in the result as
+`releaseCheck`.
+
 `ticketBudget` is the **launch-time** value, and the only one of these the
 script does not keep: the ceiling is **re-read at every refresh** of the
 epic's signed-off document. Concretely, each ticket's **resolve step** — the
@@ -760,6 +778,19 @@ that resumes past one. The run halts:
   halt it un-merges nothing. The repair is forward: a ticket that fixes the
   combination on `epic/<name>`, and a `**Blocked by:**` line on the later of
   the two so the plan stops claiming what the run disproved;
+- on **a failed release check — every ticket is merged, the epic branch carries the default branch, and a landed ticket's acceptance CHECK no longer passes at that head; nothing un-merges, and no release pull request is opened on evidence that went stale** —
+  the run's last gate, and the only one that judges the thing being released
+  rather than a ticket on its way in. It names the ticket whose check broke,
+  which is rarely the ticket at fault: something that landed after it, or
+  the default branch, changed what it built. The repair is forward — a
+  ticket that fixes it on `epic/<name>` (`/flow:quick` for a small one) —
+  and **re-running `/flow:run <epic>` is what clears it**: with nothing left
+  to start, the release check is the first thing that run does. No addendum
+  is owed, unlike the post-merge halt, because nothing about the board is
+  misleading in the meantime: no release pull request exists. After a
+  parallel run, rule out the environment first — the tickets installed
+  their dependencies in worktrees, and the main checkout may lack what a
+  later one added;
 - on **a nonzero exit from any command the run issues as a step, except
   those this skill explicitly marks tolerated** — the one tolerated shape is
   a 404 or 403 from step 3's protection probes, which run in session before
@@ -983,6 +1014,12 @@ run that selected no ticket prints `**Time:** run=<n>s` and nothing else,
 which is a complete line and not a near-miss. Planning evidence, never a gate — no ticket halts on a
 duration.>
 
+**Release check:** <from the result's `releaseCheck`: each landed ticket as
+`<ID> <passed>/<total>`, in the order checked — "PAY-1 2/2, PAY-2 3/3" — or
+"not reached: the run halted" when it is `null`. When the run halted ON the
+release check, the list stops at the ticket that failed. No `worker=` or
+`wall=` group belongs on this line: `spend` reads those wherever they sit.>
+
 **Waves:** <**required whenever the run went wide, omitted otherwise** —
 the evidence a parallel run leaves nowhere else, gathered now, while the
 run's directory and worktrees still exist, because the retro's ninth question
@@ -1105,6 +1142,21 @@ in this mode. It carries:
 - the release's size up front — `git diff --stat
   origin/<default-branch>...epic/<name>` — a release too large to review is
   a fact the human sees before approving;
+- **`## Release check`, pasted from the command, from both doors:**
+
+  ```bash
+  node "${CLAUDE_PLUGIN_ROOT}/scripts/tickets.mjs" check-epic <epic>
+  ```
+
+  run on `epic/<name>` at the head the pull request will carry. After a
+  completed run it repeats what the script's own release check already
+  passed, and adds the two things that check does not report: **every ticket
+  whose criteria differ from sign-off, was and now** — a later ticket that
+  loosened an earlier one's `EXPECT` is green in every ledger and visible
+  only here — and every `COMPARE` criterion, marked not re-verified at the
+  release commit. **By hand it is the gate itself**: a session opening the
+  pull request without a run result runs it first and opens nothing on a
+  nonzero exit — that door had no check of the assembled epic at all;
 - the run record summary, including which agent ran each ticket — and any
   ticket whose record carries `dispositionRecovered: true`, by name: it
   merged on what the branch showed and a re-review, not on a disposition's

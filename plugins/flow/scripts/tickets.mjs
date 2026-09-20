@@ -34,6 +34,12 @@
 //                                        ledger; --from reads the criteria
 //                                        from a git ref (the signed-off
 //                                        document) instead of the working tree
+//   tickets.mjs check-epic <epic> [--json] [--list]
+//                                        the release check: every landed ticket's
+//                                        CHECK criteria on this checkout, each
+//                                        distinct command run once, criteria that
+//                                        differ from sign-off shown; --list runs
+//                                        nothing and prints the landed IDs
 //   tickets.mjs compared <ID> [--json] [--log-from <ref>]
 //                                        how many `**Compared:**` fidelity
 //                                        tables the ticket's own status
@@ -713,9 +719,14 @@ const CHECK_RAN_MARK =
 // A line is skip evidence when it marks a skip and shows nothing having run.
 const skipEvidence = (line) => CHECK_SKIP_MARK.test(line) && !CHECK_RAN_MARK.test(line)
 
-function runChecks(checks) {
+// `ran`, when given, is a Map of command → what it printed: `check-epic` runs
+// every integrated ticket's criteria in one pass, and five tickets that each
+// say `CHECK: npm test` are one run of the suite judged five times, not five
+// runs. The EXPECT is still each criterion's own — only the process is shared.
+function runChecks(checks, ran = null) {
   return checks.map((c, idx) => {
-    const r = spawnSync(c.check, { cwd: repoRoot, shell: true, encoding: 'utf8', timeout: CHECK_TIMEOUT_MS, maxBuffer: CHECK_MAX_BUFFER })
+    const r = (ran && ran.get(c.check)) || spawnSync(c.check, { cwd: repoRoot, shell: true, encoding: 'utf8', timeout: CHECK_TIMEOUT_MS, maxBuffer: CHECK_MAX_BUFFER })
+    if (ran) ran.set(c.check, r)
     const output = `${r.stdout || ''}${r.stderr || ''}`
     const lines = output.split('\n')
     const exitCode = r.status === null ? -1 : r.status
@@ -3091,6 +3102,105 @@ switch (cmd) {
               : '') +
             (problems.length ? ` — ${problems.length} malformed line(s), which fail the gate` : ''),
         )
+    }
+    process.exit(allPassed ? 0 : 1)
+  }
+
+  case 'check-epic': {
+    // The release check: every LANDED ticket's CHECK criteria, run on the
+    // checkout as it stands — which is meant to be the epic branch's head after
+    // its last refresh. A ticket's checks pass before ITS merge; nothing re-ran
+    // them after the merges that came later, or after main was merged in, so
+    // "every ticket was green" was never a claim about the thing being
+    // released. This is that claim, made once, at the one commit it is about.
+    //
+    // Criteria are read from the checkout, not from a pinned ref: a human's
+    // re-plan mid-epic is legitimate and a pin would ignore it. What a pin
+    // protected against — a ticket quietly weakening an earlier ticket's gate —
+    // is SHOWN instead: every ticket whose criteria differ from the commit that
+    // first added the document (sign-off) is listed, was and now, for the human
+    // who decides the release. Evidence, not a gate: the script cannot tell a
+    // re-plan from a dodge, and a reader can.
+    if (!arg) {
+      console.error('usage: tickets.mjs check-epic <epic> [--json] [--list]')
+      process.exit(2)
+    }
+    const data = board(arg)
+    requireKnownEpic(data, arg)
+    const mine = data.tickets.filter((t) => t.epic === arg)
+    const landed = mine.filter((t) => LANDED.has(t.state))
+    const notLanded = mine.filter((t) => !LANDED.has(t.state)).map((t) => ({ id: t.id, state: t.state }))
+    // `--list` runs nothing: it is how the unattended driver learns WHICH
+    // tickets to check, one shell call each — a whole epic's suites in one
+    // call can outlive the ten minutes a proxy's shell tool allows, and a
+    // command killed there loses its answer. The count rides beside the list
+    // for the reason `next --with-waiting` carries its own: the list reaches
+    // the driver through a proxy's report, and an echo that dropped an ID
+    // would be a ticket nobody checked.
+    if (process.argv.includes('--list')) {
+      emit({ epic: arg, landed: landed.map((t) => t.id), landedCount: landed.length, notLanded })
+      process.exit(landed.length ? 0 : 1)
+    }
+    const epic = data.epics.find((e) => e.epic === arg)
+    const rel = `epics/${arg}/tickets.md`
+    const criteriaOf = (body, sources) => {
+      const { checks, compares } = parseChecks(body, sources)
+      return [...checks.map((c) => `CHECK: ${c.check}${c.expect === null ? '' : ` — EXPECT: ${c.expect}`}`), ...compares.map((c) => `COMPARE: ${c.compare}${c.landmarks ? ` — LANDMARKS: ${c.landmarks.join(', ')}` : ''}`)]
+    }
+    // Sign-off is the commit that first added the document to this history.
+    const signoff = (git(['log', '--diff-filter=A', '--format=%H', '--reverse', '--', rel], { allowFail: true }) || '').split('\n').filter(Boolean)[0] || null
+    const signedText = signoff ? git(['show', `${signoff}:${rel}`], { allowFail: true }) : null
+    const signedSections = signedText ? parseTicketSections(signedText, arg) : []
+    const signedSources = signedText ? parsePreambleText(signedText).designSources : null
+    const ran = new Map()
+    const rows = landed.map((t) => {
+      const { checks, compares, problems } = parseChecks(t.body, epic.designSources)
+      const results = runChecks(checks, ran)
+      const now = criteriaOf(t.body, epic.designSources)
+      const was = signedSections.find((x) => x.id === t.id)
+      const before = was ? criteriaOf(was.body, signedSources) : null
+      return {
+        id: t.id,
+        state: t.state,
+        total: results.length,
+        passed: results.filter((r) => r.passed).length,
+        skipped: results.filter((r) => r.status === 'skipped').length,
+        checks: results,
+        compares: compares.map((c) => ({ compare: c.compare, landmarks: c.landmarks, status: 'not re-verified at the release commit — no browser here' })),
+        problems,
+        criteriaChanged: before === null ? (signoff ? { was: null, now } : null) : JSON.stringify(before) === JSON.stringify(now) ? null : { was: before, now },
+      }
+    })
+    const sum = (k) => rows.reduce((a, r) => a + r[k], 0)
+    const problems = rows.reduce((a, r) => a + r.problems.length, 0)
+    const total = sum('total')
+    const passed = sum('passed')
+    const skipped = sum('skipped')
+    // Nothing landed is not a release that passed its check.
+    const allPassed = landed.length > 0 && passed === total && problems === 0
+    const head = (git(['rev-parse', 'HEAD'], { allowFail: true }) || '').trim() || null
+    if (json) {
+      emit({ epic: arg, head, signoff, total, passed, skipped, problems, allPassed, commandsRun: ran.size, tickets: rows, notLanded })
+    } else {
+      console.log(`${C.bold}${arg}${C.off} ${C.dim}— release check at ${head ? head.slice(0, 12) : '(no HEAD)'}${C.off}`)
+      if (!landed.length) console.log(`${C.red}no ticket of ${arg} is integrated or shipped — there is nothing to release${C.off}`)
+      const MARK = { passed: `${C.green}✓${C.off}`, skipped: `${C.yellow}↓${C.off}`, failed: `${C.red}✗${C.off}` }
+      for (const r of rows) {
+        console.log(`\n${C.bold}${r.id}${C.off} ${C.dim}${r.passed}/${r.total}${r.compares.length ? ` — ${r.compares.length} COMPARE not re-verified here` : ''}${C.off}`)
+        for (const c of r.checks) {
+          console.log(`  ${MARK[c.status]} ${c.criterion || '(no criterion bullet above the CHECK line)'}`)
+          if (c.status !== 'passed') console.log(`      $ ${c.check}\n      ${c.evidence}`)
+        }
+        for (const p of r.problems) console.log(`  ${C.red}!${C.off} line ${p.line}: ${p.why}: ${p.text}`)
+        if (r.criteriaChanged)
+          console.log(`  ${C.yellow}criteria differ from sign-off (${signoff.slice(0, 12)})${C.off}\n      was: ${r.criteriaChanged.was ? r.criteriaChanged.was.join(' | ') || '(none)' : '(ticket not in the signed-off document)'}\n      now: ${r.criteriaChanged.now.join(' | ') || '(none)'}`)
+      }
+      if (notLanded.length) console.log(`\n${C.yellow}not integrated, so not checked:${C.off} ${notLanded.map((t) => `${t.id} (${t.state})`).join(', ')}`)
+      console.log(
+        `\n${passed}/${total} checks passed across ${rows.length} ticket(s), ${ran.size} distinct command(s) run` +
+          (skipped ? ` — ${skipped} skipped, which does not pass` : '') +
+          (problems ? ` — ${problems} malformed line(s), which fail` : ''),
+      )
     }
     process.exit(allPassed ? 0 : 1)
   }

@@ -22,7 +22,7 @@ go through the flow, one-off work goes through `/flow:quick` into
 ## Commands
 
 - **Tests:** `node --test plugins/flow/scripts/tickets.test.mjs` — expect
-  every test passing (`# pass 180`, `# fail 0` as of 2026-09-20; the count
+  every test passing (`# pass 184`, `# fail 0` as of 2026-09-20; the count
   grows, the fail line does not). The suite builds a throwaway git repo in a
   temp dir; it needs `git` on PATH and nothing else. The session-guard hook
   has its own suite:
@@ -57,7 +57,7 @@ go through the flow, one-off work goes through `/flow:quick` into
   real git again, real linked worktrees in throwaway directories, because the
   refusal that matters asks git a question (`check-ignore`, where `.git` is a
   file). Needs `git`, POSIX `sh` and `sleep` (the budget case). And the run driver has
-  `node --test plugins/flow/workflows/run-epic.test.mjs` (`# pass 175`) —
+  `node --test plugins/flow/workflows/run-epic.test.mjs` (`# pass 180`) —
   which evaluates `run-epic.mjs`'s module body with stubbed agents and
   asserts the sequence, the gate branches and the halt mapping. It needs
   nothing but Node: no git, no network, no filesystem beyond the script.
@@ -228,7 +228,11 @@ test file path explicitly.
   <ID>`, with doctor near-miss coverage), the epic skill's template teaches
   them, the ticket and quick skills run them, and the run driver re-runs them
   from the signed-off document (`--from origin/epic/<name>`) as a code merge
-  gate — because the reviewed party must not edit its own gate. A format
+  gate — because the reviewed party must not edit its own gate — and once
+  more for every landed ticket at the epic head before it reports
+  `completed` (the release check; `check-epic` is the same check by hand):
+  there the criteria are the head's own, so a mid-epic re-plan counts, and
+  what differs from sign-off is shown to the human rather than gated on. A format
   change moves the parser, the skills and the driver in the same commit;
   `check-invariants.mjs` holds the coupling.
 

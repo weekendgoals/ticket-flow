@@ -1392,6 +1392,37 @@ That is why serial-to-main stopped being the universal default: the record
 showed disciplined users stacking anyway (Q-10–Q-17), which was the rule
 mismeasuring their throughput needs, not the users misbehaving.
 
+## Why the run ends by checking what it is about to release
+
+Every gate the run had judged a ticket on its way in. A ticket's checks ran
+on its branch before its merge, and in a wave once more after each merge of
+that wave — and then never again. Nothing re-ran them after a later ticket
+merged, and nothing after the last refresh merged the default branch into the
+epic. So the release pull request's claim that every ticket was green was a
+claim about a dozen different commits, none of them the one the human was
+asked to merge. A second agent reviewing this plugin against HumanLayer's
+said so, and running the first cut of `check-epic` on this repository's own
+shipped `run-lane-hardening` epic found a check that no longer passed.
+
+The release check makes the claim once, about the right commit. It is
+deliberately small: the criteria already exist, the parser and the ledger
+already exist, and "run them again at the head" adds no document for anyone
+to keep true. The larger proposal — a requirement-to-evidence matrix, judged
+by an agent — was not taken: it is a second planning document, and an agent
+filling a table with prose is the narration the CHECK format exists to
+replace.
+
+Two decisions carry reasons worth keeping. **Criteria come from the epic
+head, not from a pin at sign-off**: a human who re-plans a ticket mid-epic
+has changed the contract on purpose, and a pin would check the release
+against a document nobody holds any more. What the pin protected against — a
+later ticket loosening an earlier one's `EXPECT` — is *shown* instead, was
+and now, in the release body, because the script cannot tell a re-plan from
+a dodge and the person deciding the release can. And **the halt needs no
+addendum to clear**, unlike the post-merge halt: there, tickets read
+`integrated` while the epic is broken and a re-run could open the release;
+here the re-run *is* the check, so the state cannot be walked past.
+
 ## Why a run goes wide in waves
 
 The pain was measured, not imagined: a three-ticket run held its lane for 39

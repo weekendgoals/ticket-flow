@@ -227,6 +227,14 @@ committed on the epic branch, so what runs is what was pushed. Without the
 file a worktree has only what git tracks and each worker installs what it
 thinks the project needs.
 
+**A run ends by checking what it is about to release.** Each ticket's
+`CHECK` criteria pass before its own merge; nothing re-ran them after the
+tickets that came later, or after `main` was merged into the epic. So before
+it reports `completed`, the run re-runs every landed ticket's checks at the
+epic head and halts — no release pull request — if one no longer passes.
+`tickets.mjs check-epic <epic>` is the same check by hand, and also shows
+any ticket whose criteria changed since sign-off.
+
 **A run is serial unless the epic says otherwise.** With `Parallel: 2` (or
 `3`) in the preamble it works the board's *ready* set in **waves**: up to
 that many tickets' pipelines — worker, review, disposition, acceptance, the

@@ -12,6 +12,29 @@ heading here. `check-invariants.mjs` holds both.
 
 ## Unreleased
 
+- **The release check — an unattended run ends by re-running every landed
+  ticket's `CHECK` criteria at the epic head, and opens no release on a
+  failure** (`workflows/run-epic.mjs`: `release-list:<epic>` then one
+  `release-check:<ID>` per ticket; new stop condition *a failed release
+  check*, pinned by `check-invariants.mjs`; result field `releaseCheck`). A
+  ticket's checks passed before its own merge and nothing re-ran them after
+  later merges or after the default branch was merged in. It covers tickets
+  an earlier run or a hand integrated, and re-running `/flow:run` is what
+  clears the halt. **This changes every run, serial ones included: two kinds
+  of step are hired after the loop.**
+- **`tickets.mjs check-epic <epic> [--json] [--list]`** — the same check as
+  one command, for step 7's body and for a session opening the release pull
+  request by hand, which had no check of the assembled epic at all. Runs each
+  distinct command once and judges it against every ticket's own `EXPECT`;
+  lists every ticket whose criteria differ from the sign-off commit, was and
+  now; marks `COMPARE` criteria not re-verified; exits 1 when anything
+  failed, was skipped or did not parse, and when nothing has landed.
+  `--list` runs nothing and prints the landed IDs with their count.
+- Run skill: the release check in step 4, its stop condition in step 5, a
+  `**Release check:**` line in the run record, and `## Release check` in the
+  release pull request body from both doors. METHODOLOGY § "Why the run ends
+  by checking what it is about to release".
+
 ## 2.3.0 — 2026-09-20
 
 Two additions a parallel run and a fidelity comparison were missing. A
