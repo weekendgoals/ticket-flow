@@ -25,6 +25,11 @@
 //
 //   release-page.mjs <epic> [--check <check-epic.json>] [--out <file>]
 //
+// A ledger taken at an earlier commit is drawn as NOT a check of this release
+// — unless git says the only files changed since are this epic's `runs.md` and
+// `shadow-reviews.md`: the run record is committed after the pull request
+// opens, no CHECK reads those files, and the page is rendered again then.
+//
 // Without `--check` the page says the release check was not supplied, in the
 // place its ledger would be — an absent ledger is never drawn as a green one.
 //
@@ -56,11 +61,28 @@ const LANDED = new Set(['shipped', 'integrated'])
 // order it is read in at a release.
 const LEAD_FIELDS = ['Built', 'Verified', 'Compared', 'Deviation', 'Deviations closed', 'Owed']
 
-export function renderRelease(data, { check = null, generatedAt = '' } = {}) {
+// `recordOnlySince`: the ledger was taken at an earlier commit, and the CLI
+// established that the only files changed since are this epic's run record
+// (and its shadow-review file). That is the normal order — the run record is
+// committed after the pull request is opened, so it can name it — and no CHECK
+// reads those two files, so the ledger still describes this head. Anything
+// else changed, and it does not.
+export function renderRelease(data, { check = null, generatedAt = '', recordOnlySince = false } = {}) {
   const tickets = Array.isArray(data.tickets) ? data.tickets : []
   const landed = tickets.filter((t) => LANDED.has(t.state))
   const notLanded = tickets.filter((t) => !LANDED.has(t.state))
   const checkById = Object.fromEntries(((check && check.tickets) || []).map((t) => [t.id, t]))
+  // The verdict is recomputed here, never taken on the report's word: this
+  // page is what a human reads before the one merge they decide, and every
+  // way a ledger can fail to be about this release has to read as "no".
+  const moved = Boolean(check) && (!check.head || !data.head || check.head !== data.head)
+  const stale = moved && !recordOnlySince
+  const unchecked = check ? landed.filter((t) => !checkById[t.id]).map((t) => t.id) : []
+  const wrongEpic = Boolean(check) && check.epic !== data.epic
+  const rowGreen = (t) => t.passed === t.total && !(t.problems || []).length && !t.skipped
+  const green =
+    Boolean(check) && !stale && !wrongEpic && !unchecked.length && check.allPassed === true && check.headIsRemote !== false &&
+    check.passed === check.total && !check.problems && !check.skipped && (check.tickets || []).length > 0 && (check.tickets || []).every(rowGreen)
   const commitLink = (c) => (data.webUrl ? `<a href="${esc(data.webUrl)}/commit/${esc(c.sha)}"><code>${esc(c.sha.slice(0, 9))}</code></a>` : `<code>${esc(c.sha.slice(0, 9))}</code>`)
 
   // ── the release check ──────────────────────────────────────────────────────
@@ -70,20 +92,22 @@ export function renderRelease(data, { check = null, generatedAt = '' } = {}) {
   if (!check) {
     checkSection = `<div class="note bad">The release check was not supplied to this page (<code>--check</code>). Run <code>tickets.mjs check-epic ${esc(data.epic)} --json</code> on the release head and render again — nothing here says the assembled epic still passes its tickets' checks.</div>`
   } else {
-    const stale = check.head && data.head && check.head !== data.head
     const changed = (check.tickets || []).filter((t) => t.criteriaChanged)
     const removed = check.removedSinceSignoff || []
     const compares = (check.tickets || []).reduce((n, t) => n + (t.compares || []).length, 0)
     checkSection = `
-<p class="verdict ${check.allPassed && !stale ? 'ok' : 'bad'}">${check.allPassed ? 'Passed' : 'FAILED'} — ${esc(check.passed)}/${esc(check.total)} checks across ${esc((check.tickets || []).length)} ticket(s), at <code>${esc(String(check.head || '').slice(0, 12))}</code>${check.skipped ? ` · ${esc(check.skipped)} skipped, which does not pass` : ''}${check.problems ? ` · ${esc(check.problems)} malformed` : ''}</p>
-${stale ? `<div class="note bad">This ledger was taken at <code>${esc(check.head.slice(0, 12))}</code> and the page describes <code>${esc(data.head.slice(0, 12))}</code> — it is not a check of what is being released. Run it again on this head.</div>` : ''}
+<p class="verdict ${green ? 'ok' : 'bad'}">${green ? 'Passed' : stale || wrongEpic ? 'NOT A CHECK OF THIS RELEASE' : 'FAILED'} — ${esc(check.passed)}/${esc(check.total)} checks across ${esc((check.tickets || []).length)} ticket(s), at <code>${esc(String(check.head || '').slice(0, 12))}</code>${check.skipped ? ` · ${esc(check.skipped)} skipped, which does not pass` : ''}${check.problems ? ` · ${esc(check.problems)} malformed` : ''}</p>
+${wrongEpic ? `<div class="note bad">This ledger is the release check of <code>${esc(check.epic)}</code>, not of <code>${esc(data.epic)}</code>.</div>` : ''}
+${stale ? `<div class="note bad">This ledger was taken at <code>${esc(String(check.head || '(no commit)').slice(0, 12))}</code> and the page describes <code>${esc(String(data.head || '(no commit)').slice(0, 12))}</code> — it is not a check of what is being released. Run it again on this head.</div>` : ''}
+${moved && !stale ? `<div class="note">The ledger was taken at <code>${esc(check.head.slice(0, 12))}</code>; the only files changed since are this epic's run record, which no check reads.</div>` : ''}
+${unchecked.length ? `<div class="note bad">Landed and not in this ledger, so checked by nobody: ${esc(unchecked.join(', '))}.</div>` : ''}
 ${check.headIsRemote === false ? '<div class="note bad">The check ran on a checkout that was not at the remote epic branch\'s head — the pull request carries the remote\'s.</div>' : ''}
 ${check.shallow ? '<div class="note">Shallow clone: the sign-off commit may be the clone\'s boundary, so "criteria changed since sign-off" can be silently empty.</div>' : ''}
 <div class="twrap"><table><thead><tr><th>Ticket</th><th>Checks</th><th>What did not pass</th></tr></thead><tbody>
 ${(check.tickets || [])
   .map((t) => {
     const bad = (t.checks || []).filter((c) => c.status !== 'passed')
-    return `<tr><td class="id"><a href="#t-${esc(t.id)}">${esc(t.id)}</a></td><td class="${t.passed === t.total && !(t.problems || []).length ? 's-ok' : 's-bad'}">${esc(t.passed)}/${esc(t.total)}</td><td>${bad.map((c) => `<div><code>${esc(c.check)}</code><br><span class="dim">${esc(c.evidence)}</span></div>`).join('') || (t.problems || []).map((p) => `<div class="dim">line ${esc(p.line)}: ${esc(p.why)}</div>`).join('') || '<span class="dim">—</span>'}</td></tr>`
+    return `<tr><td class="id"><a href="#t-${esc(t.id)}">${esc(t.id)}</a></td><td class="${rowGreen(t) ? 's-ok' : 's-bad'}">${esc(t.passed)}/${esc(t.total)}${t.skipped ? ` · ${esc(t.skipped)} skipped` : ''}${(t.problems || []).length ? ` · ${esc(t.problems.length)} malformed` : ''}</td><td>${bad.map((c) => `<div><code>${esc(c.check)}</code><br><span class="dim">${esc(c.evidence)}</span></div>`).join('') || (t.problems || []).map((p) => `<div class="dim">line ${esc(p.line)}: ${esc(p.why)}</div>`).join('') || '<span class="dim">—</span>'}</td></tr>`
   })
   .join('\n')}
 </tbody></table></div>
@@ -105,11 +129,11 @@ ${compares ? `<p class="dim">${esc(compares)} <code>COMPARE</code> criterion(s) 
     const entries = (t.entries || []).map((e) => {
       const lead = e.fields.filter((f) => LEAD_FIELDS.includes(f.label))
       const rest = e.fields.filter((f) => !LEAD_FIELDS.includes(f.label))
-      return `<div class="entry"><p class="ehead">${esc(e.heading)}</p>${lead.map((f) => field(f, true)).join('')}${rest.map((f) => field(f, false)).join('')}</div>`
+      return `<div class="entry"><p class="ehead">${esc(e.heading)}</p>${e.lead ? `<div class="ftext">${prose(e.lead)}</div>` : ''}${!e.fields.length && !e.lead ? '<p class="dim">(the entry has a heading and nothing under it that reads as a field)</p>' : ''}${lead.map((f) => field(f, true)).join('')}${rest.map((f) => field(f, false)).join('')}</div>`
     })
     const open = (t.deviations || []).filter((d) => !d.closed)
     return `<section class="ticket" id="t-${esc(t.id)}">
-<h2><span class="id">${esc(t.id)}</span> ${esc(t.title)} <span class="badge s-${esc(t.state)}">${esc(t.state)}</span>${c ? ` <span class="badge ${c.passed === c.total ? 's-ok' : 's-bad'}">checks ${esc(c.passed)}/${esc(c.total)} at head</span>` : ''}${(t.deviations || []).length ? ` <span class="badge ${open.length ? 's-bad' : ''}">${esc(t.deviations.length)} deviation(s)${open.length ? `, ${esc(open.length)} open` : ''}</span>` : ''}</h2>
+<h2><span class="id">${esc(t.id)}</span> ${esc(t.title)} <span class="badge s-${esc(t.state)}">${esc(t.state)}</span>${c ? ` <span class="badge ${rowGreen(c) && !stale && !wrongEpic ? 's-ok' : 's-bad'}">checks ${esc(c.passed)}/${esc(c.total)}${stale || wrongEpic ? ' — not at this head' : ' at head'}</span>` : check && LANDED.has(t.state) ? ' <span class="badge s-bad">not in the release check</span>' : ''}${(t.deviations || []).length ? ` <span class="badge ${open.length ? 's-bad' : ''}">${esc(t.deviations.length)} deviation(s)${open.length ? `, ${esc(open.length)} open` : ''}</span>` : ''}</h2>
 ${entries.join('\n') || '<p class="empty">no status entry — nothing records what this ticket built</p>'}
 ${
   (t.commits || []).length
@@ -166,6 +190,8 @@ ${
 <p class="meta">derived from git, the status log and the run record at <code>${esc(String(data.head || '').slice(0, 12))}</code> on <code>${esc(data.branch || '')}</code>${generatedAt ? ` · generated ${esc(generatedAt)}` : ''} · a view, not a record: regenerate it rather than trusting an old copy</p>
 <div class="rule" id="merge-rule"><b>Merge with a merge commit — never squash.</b> This pull request carries every ticket's commits, and their subjects are how the board knows a ticket shipped: squashed, every ticket but one reads as unshipped.</div>
 <p id="size"><b>Size:</b> ${esc(data.diffstat || 'no diff against the default branch')} against <code>${esc(data.defaultBranch || '')}</code> · ${esc(landed.length)} ticket(s) landed${notLanded.length ? ` · <span class="s-bad">${esc(notLanded.length)} not landed: ${esc(notLanded.map((t) => `${t.id} (${t.state})`).join(', '))}</span>` : ''}</p>
+${data.delivery === 'release' && data.branch !== `epic/${data.epic}` ? `<div class="note bad">Rendered on <code>${esc(data.branch || '(detached)')}</code>, not on <code>epic/${esc(data.epic)}</code>: commits and size are measured from this checkout, so they do not describe the release. Check out the epic branch and render again.</div>` : ''}
+${data.delivery && data.delivery !== 'release' ? `<div class="note">This is a <code>Delivery: ${esc(data.delivery)}</code> epic: its tickets ship through pull requests of their own, so there is no release to walk through — commits and size below mean little here.</div>` : ''}
 <nav>${tickets.map((t) => `<a href="#t-${esc(t.id)}">${esc(t.id)}</a>`).join('')}<a href="#owed">Owed</a><a href="#other-commits">Other commits</a><a href="#last-run">Last run</a></nav>
 
 <section id="release-check">
@@ -232,7 +258,19 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
       process.exit(2)
     }
   }
-  const html = renderRelease(data, { check, generatedAt: new Date().toISOString().slice(0, 16).replace('T', ' ') })
+  // A ledger from an earlier commit still describes this head when the only
+  // files changed since are this epic's run record — the record is committed
+  // after the pull request opens, so that is the normal order. Asked of git,
+  // by exact path: `tickets.md` lives beside them and IS read by the checks.
+  let recordOnlySince = false
+  if (check && check.head && data.head && check.head !== data.head) {
+    try {
+      const changed = execFileSync('git', ['diff', '--name-only', `${check.head}..${data.head}`], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).split('\n').filter(Boolean)
+      const record = new Set([`epics/${epic}/runs.md`, `epics/${epic}/shadow-reviews.md`])
+      recordOnlySince = changed.length > 0 && changed.every((f) => record.has(f))
+    } catch { /* an unknown commit is a stale ledger, which is the default */ }
+  }
+  const html = renderRelease(data, { check, recordOnlySince, generatedAt: new Date().toISOString().slice(0, 16).replace('T', ' ') })
   if (outFile) writeFileSync(outFile, html)
   else process.stdout.write(html)
 }

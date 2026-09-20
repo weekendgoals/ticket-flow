@@ -1147,26 +1147,34 @@ in this mode. It carries:
 - the release's size up front — `git diff --stat
   origin/<default-branch>...epic/<name>` — a release too large to review is
   a fact the human sees before approving;
-- **`## Release check`, pasted from the command, from both doors:**
+- **`## Release check`, pasted from the command, from both doors — and the
+  suites run once for it.** Run the check as JSON, save it, and print the
+  text from the saved file:
 
   ```bash
-  node "${CLAUDE_PLUGIN_ROOT}/scripts/tickets.mjs" check-epic <epic>
+  node "${CLAUDE_PLUGIN_ROOT}/scripts/tickets.mjs" check-epic <epic> --json > <scratchpad>/check-<epic>.json; echo "exit $?"
+  node "${CLAUDE_PLUGIN_ROOT}/scripts/tickets.mjs" check-epic <epic> --render <scratchpad>/check-<epic>.json
   ```
 
-  run on `epic/<name>` at the head the pull request will carry. After a
-  completed run it repeats what the script's own release check already
-  passed, and adds the two things that check does not report: **every ticket
-  whose criteria differ from sign-off, was and now** — a later ticket that
-  loosened an earlier one's `EXPECT` is green in every ledger and visible
-  only here — and every `COMPARE` criterion, marked not re-verified at the
-  release commit — and every ticket sign-off knew whose section is gone
-  from the document, which is on no other list. **Open nothing on a nonzero
-  exit, from either door.** By hand it is the gate itself — that door had no
-  check of the assembled epic at all. After a completed run it is the
-  backstop: the script's check reached you through shell proxies' reports,
-  and this is the one run of it you watched. It also refuses a checkout
-  that is not at `origin/epic/<name>`'s head, because the pull request
-  carries the remote's;
+  on `epic/<name>` at the head the pull request will carry. The first command
+  is the run (and its exit code is the gate — the `;` is deliberate, so a
+  nonzero exit does not stop you reading it); the second runs nothing and
+  prints the ledger the body carries. The walkthrough below reads the same
+  file, so one run serves all three — after the script's own release check
+  that is already twice, and a third was minutes of suites for nothing.
+  After a completed run it repeats what the script's check passed, and adds
+  what that check does not report: **every ticket whose criteria differ from
+  sign-off, was and now** — a later ticket that loosened an earlier one's
+  `EXPECT` is green in every ledger and visible only here — every `COMPARE`
+  criterion, marked not re-verified at the release commit, and every ticket
+  sign-off knew whose section is gone from the document, which is on no
+  other list. **Open nothing on a nonzero exit, from either door** — render
+  the walkthrough anyway and send it to the human with the failure: it shows
+  what broke. By hand it is the gate itself — that door had no check of the
+  assembled epic at all. After a completed run it is the backstop: the
+  script's check reached you through shell proxies' reports, and this is
+  the one run of it you watched. It also refuses a checkout that is not at
+  `origin/epic/<name>`'s head, because the pull request carries the remote's;
 - the run record summary, including which agent ran each ticket — and any
   ticket whose record carries `dispositionRecovered: true`, by name: it
   merged on what the branch showed and a re-review, not on a disposition's
@@ -1212,31 +1220,37 @@ in this mode. It carries:
 
 - **the walkthrough's link, right under the never-squash line** — the same
   evidence laid out to be read, one section per ticket in the order they
-  were built. Render it on `epic/<name>` from the release check you just
-  ran, so the suites run once:
+  were built. Render it on `epic/<name>` from the saved release check:
 
   ```bash
-  node "${CLAUDE_PLUGIN_ROOT}/scripts/tickets.mjs" check-epic <epic> --json > <scratchpad>/check-<epic>.json
   node "${CLAUDE_PLUGIN_ROOT}/scripts/release-page.mjs" <epic> --check <scratchpad>/check-<epic>.json --out <scratchpad>/release-<epic>.html
   ```
 
-  (`check-epic`'s exit code is still the gate: a nonzero exit opens nothing,
-  but render the page anyway — it shows the human what failed.) Publish it as
-  an artifact and put the URL in the body (no artifact surface: send the
-  file, and say in the body that a walkthrough was sent). **The page adds
-  to the body and replaces none of it**: GitHub is where the merge is
-  decided, and a link can rot where the body cannot. Neither the JSON nor
-  the page is ever committed — it is a view of git, the status log and the
-  run record, and a committed view is a mirror somebody has to keep true. If
-  the branch moves before the merge, render it again: the page says which
-  commit it describes, and refuses to show a ledger from another one as
-  green;
+  Publish it as an artifact and put the URL in the body (no artifact
+  surface: send the file, and say in the body that a walkthrough was sent).
+  **Render it twice, to the same file path, so the URL is one URL.** The
+  first render is before the pull request exists, because the body needs the
+  link. The second is **after step 6's run record is committed and pushed**:
+  that commit moves the head the pull request carries, and until then the
+  page's "last run record" is the previous run's — or says there was none.
+  Re-run the same command with the same saved check and republish: the
+  renderer asks git what changed since the check was taken, and when it is
+  only this epic's `runs.md` and `shadow-reviews.md` — which no check reads —
+  it says so and keeps the ledger; if anything else changed, it draws the
+  ledger as *not a check of this release*, and the honest repair is to run
+  the check again. **The page adds to the body and replaces none of it**:
+  GitHub is where the merge is decided, and a link can rot where the body
+  cannot. Neither the JSON nor the page is ever committed — it is a view of
+  git, the status log and the run record, and a committed view is a mirror
+  somebody has to keep true;
 
 `ticketRecords` indexes those facts; the committed status log and its
 addenda are what travel in this pull request, so where the two differ the
 log wins and the difference is worth a line in the body.
 
-Then append the run record (step 6), print the pull request URL, and stop.
+Then append the run record (step 6), render and republish the walkthrough
+once more (above — the head just moved), print the pull request URL and the
+walkthrough's, and stop.
 **You do not merge it, approve it, or comment on it. No agent does.** The
 human gate moved here, and everything this run did was structured to keep
 this one click trustworthy.

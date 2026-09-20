@@ -33,7 +33,10 @@ heading here. `check-invariants.mjs` holds both.
   checkout that is not at the remote epic branch's head; a command one ticket
   repeats runs each time, as `check <ID>` runs it; marks `COMPARE` criteria not re-verified; exits 1 when anything
   failed, was skipped or did not parse, and when nothing has landed.
-  `--list` runs nothing and prints the landed IDs with their count.
+  `--list` runs nothing and prints the landed IDs with their count;
+  `--render <report.json>` runs nothing and prints a saved `--json` report as
+  the text ledger, so step 7's body and its walkthrough share one run of the
+  suites.
 - **The release walkthrough — `scripts/release-page.mjs <epic> [--check
   <check-epic.json>] [--out <file>]`** renders one self-contained page for
   the person deciding a release merge: the never-squash rule and the size,
@@ -43,8 +46,14 @@ heading here. `check-invariants.mjs` holds both.
   covers, the last run record. Its data is the new **`tickets.mjs release
   <epic> [--json]`** — entries split at the entry's own field labels, commits
   by ticket with their stat, owed, deviations, the last run record — derived,
-  never stored. An absent release check, or one taken at another commit, is
-  said where the ledger would be and never drawn green. Every ticket section
+  never stored. The page recomputes its verdict and never takes the
+  report's word: an absent release check, one of another epic, one missing a
+  landed ticket, or one taken at another commit is said where the ledger
+  would be and never drawn green — except a ledger from just before the run
+  record's own commit, which git confirms touched nothing a check reads. The
+  entry splitter treats a `#` line inside a fence as content (the bug
+  `compared` had), keeps text before the first field, and reads a label
+  wrapped over two lines and a CRLF log. Every ticket section
   and fixed section has a stable anchor. Run skill step 7 renders and
   publishes it and links it from the body, which it adds to and never
   replaces; METHODOLOGY § "Why the release pull request gets a page as well

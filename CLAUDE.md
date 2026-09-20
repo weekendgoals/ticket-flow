@@ -22,7 +22,7 @@ go through the flow, one-off work goes through `/flow:quick` into
 ## Commands
 
 - **Tests:** `node --test plugins/flow/scripts/tickets.test.mjs` — expect
-  every test passing (`# pass 186`, `# fail 0` as of 2026-09-20; the count
+  every test passing (`# pass 189`, `# fail 0` as of 2026-09-20; the count
   grows, the fail line does not). The suite builds a throwaway git repo in a
   temp dir; it needs `git` on PATH and nothing else. The session-guard hook
   has its own suite:
@@ -33,7 +33,7 @@ go through the flow, one-off work goes through `/flow:quick` into
   `node --test plugins/flow/scripts/board.test.mjs` (`# pass 9`) and the
   plan-page renderer `node --test plugins/flow/scripts/plan-page.test.mjs`
   (`# pass 8`), and the release walkthrough
-  `node --test plugins/flow/scripts/release-page.test.mjs` (`# pass 9`) —
+  `node --test plugins/flow/scripts/release-page.test.mjs` (`# pass 12`) —
   all three pure rendering tests over fixture JSON, no git
   needed. The fidelity differ has
   `node --test plugins/flow/scripts/fidelity.test.mjs` (`# pass 54`) — the

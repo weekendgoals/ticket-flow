@@ -34,12 +34,13 @@
 //                                        ledger; --from reads the criteria
 //                                        from a git ref (the signed-off
 //                                        document) instead of the working tree
-//   tickets.mjs check-epic <epic> [--json] [--list]
+//   tickets.mjs check-epic <epic> [--json] [--list] [--render <report.json>]
 //                                        the release check: every landed ticket's
 //                                        CHECK criteria on this checkout, each
 //                                        distinct command run once, criteria that
 //                                        differ from sign-off shown; --list runs
-//                                        nothing and prints the landed IDs
+//                                        nothing and prints the landed IDs;
+//                                        --render prints a saved --json report
 //   tickets.mjs release <epic> [--json]  what the release walkthrough shows that
 //                                        this script can derive — entries by
 //                                        field, commits by ticket, owed,
@@ -2592,6 +2593,37 @@ function readStatusLog(epic, rel, logFromRef, what) {
 // ticket. Every heading closes the region, which is what the driver's own
 // `awk '/^### /{f=/^### <ID> /} f'` does, so an entry's addenda count and the
 // next entry's do not.
+// The text form of a `check-epic` report — from a run just made, or from a
+// saved `--json` one (`--render`), which is why it reads the report and nothing
+// else.
+function printCheckEpic(r) {
+  const remoteRef = `origin/epic/${r.epic}`
+  console.log(`${C.bold}${r.epic}${C.off} ${C.dim}— release check at ${r.head ? r.head.slice(0, 12) : '(no HEAD)'} — sign-off ${r.signoff ? r.signoff.slice(0, 12) : 'not found in this history'}${C.off}`)
+  if (r.headIsRemote === false)
+    console.log(`${C.red}this checkout is at ${r.head ? r.head.slice(0, 12) : '(no HEAD)'} and ${remoteRef} is at ${String(r.remoteHead).slice(0, 12)} — the release pull request carries the remote head, so this is not a check of it. \`git checkout epic/${r.epic} && git pull --ff-only\`, then run it again.${C.off}`)
+  if (r.shallow) console.log(`${C.yellow}this is a shallow clone: the sign-off commit found may only be the clone's boundary, so "criteria differ from sign-off" can be silently empty. \`git fetch --unshallow\` to trust it.${C.off}`)
+  if (!r.tickets.length) console.log(`${C.red}no ticket of ${r.epic} is integrated or shipped — there is nothing to release${C.off}`)
+  const MARK = { passed: `${C.green}✓${C.off}`, skipped: `${C.yellow}↓${C.off}`, failed: `${C.red}✗${C.off}` }
+  for (const t of r.tickets) {
+    console.log(`\n${C.bold}${t.id}${C.off} ${C.dim}${t.passed}/${t.total}${t.compares.length ? ` — ${t.compares.length} COMPARE not re-verified here` : ''}${C.off}`)
+    for (const c of t.checks) {
+      console.log(`  ${MARK[c.status]} ${c.criterion || '(no criterion bullet above the CHECK line)'}`)
+      if (c.status !== 'passed') console.log(`      $ ${c.check}\n      ${c.evidence}`)
+    }
+    for (const p of t.problems) console.log(`  ${C.red}!${C.off} line ${p.line}: ${p.why}: ${p.text}`)
+    if (t.criteriaChanged)
+      console.log(`  ${C.yellow}criteria differ from sign-off (${String(r.signoff).slice(0, 12)})${C.off}\n      was: ${t.criteriaChanged.was ? t.criteriaChanged.was.join(' | ') || '(none)' : '(ticket not in the signed-off document)'}\n      now: ${t.criteriaChanged.now.join(' | ') || '(none)'}`)
+  }
+  if (r.removedSinceSignoff.length)
+    console.log(`\n${C.yellow}in the signed-off document and gone from this one — not checked, not listed anywhere else:${C.off}\n${r.removedSinceSignoff.map((x) => `  ${x.id}: ${x.was.join(' | ') || '(no criteria)'}`).join('\n')}`)
+  if (r.notLanded.length) console.log(`\n${C.yellow}not integrated, so not checked:${C.off} ${r.notLanded.map((t) => `${t.id} (${t.state})`).join(', ')}`)
+  console.log(
+    `\n${r.passed}/${r.total} checks passed across ${r.tickets.length} ticket(s), ${r.commandsRun} distinct command(s) run` +
+      (r.skipped ? ` — ${r.skipped} skipped, which does not pass` : '') +
+      (r.problems ? ` — ${r.problems} malformed line(s), which fail` : ''),
+  )
+}
+
 const ENTRY_FIELD = /^\*\*(?:(?:Built|Verified|Compared|Decisions|Deviation|Deviations closed|Owed|Resolves owed|Revert check|Mode|Tokens|Time):\*\*|Addendum\b)/
 
 function comparedIn(text, id) {
@@ -3127,8 +3159,29 @@ switch (cmd) {
     // who decides the release. Evidence, not a gate: the script cannot tell a
     // re-plan from a dodge, and a reader can.
     if (!arg) {
-      console.error('usage: tickets.mjs check-epic <epic> [--json] [--list]')
+      console.error('usage: tickets.mjs check-epic <epic> [--json] [--list] [--render <report.json>]')
       process.exit(2)
+    }
+    // `--render <file>` runs nothing either: it prints a saved `--json` report
+    // as the text ledger. The release body wants the text and the walkthrough
+    // wants the JSON, and two invocations were two runs of every suite in the
+    // epic — after the driver's own. One run, saved, read twice.
+    const renderIdx = process.argv.indexOf('--render')
+    if (renderIdx !== -1) {
+      const file = process.argv[renderIdx + 1]
+      let saved
+      try {
+        saved = JSON.parse(readFileSync(file, 'utf8'))
+      } catch (e) {
+        console.error(`tickets: cannot read ${file || '(no file given)'} as a check-epic --json report (${e.message})`)
+        process.exit(2)
+      }
+      if (saved.epic !== arg) {
+        console.error(`tickets: ${file} is the release check of "${saved.epic}", not of "${arg}"`)
+        process.exit(2)
+      }
+      printCheckEpic(saved)
+      process.exit(saved.allPassed ? 0 : 1)
     }
     const data = board(arg)
     requireKnownEpic(data, arg)
@@ -3167,8 +3220,13 @@ switch (cmd) {
     const rows = landed.map((t) => {
       const { checks, compares, problems } = parseChecks(t.body, epic.designSources)
       const own = new Map()
+      const used = new Set()
       const results = checks.map((c, idx) => {
-        const pool = ran.has(c.check) ? ran : own.has(c.check) ? null : own
+        // Only the FIRST use within this ticket may come from another ticket's
+        // run (or seed the pool); every repeat runs, whoever ran it before.
+        const first = !used.has(c.check)
+        used.add(c.check)
+        const pool = !first ? null : ran.has(c.check) ? ran : own
         return { ...runChecks([c], pool)[0], n: idx + 1 }
       })
       for (const [k, v] of own) if (!ran.has(k)) ran.set(k, v)
@@ -3207,34 +3265,9 @@ switch (cmd) {
     const head = (git(['rev-parse', 'HEAD'], { allowFail: true }) || '').trim() || null
     const headIsRemote = remoteHead === null ? null : head === remoteHead
     const allPassed = landed.length > 0 && passed === total && problems === 0 && headIsRemote !== false
-    if (json) {
-      emit({ epic: arg, head, remoteHead, headIsRemote, signoff, shallow, total, passed, skipped, problems, allPassed, commandsRun: ran.size, tickets: rows, notLanded, removedSinceSignoff })
-    } else {
-      console.log(`${C.bold}${arg}${C.off} ${C.dim}— release check at ${head ? head.slice(0, 12) : '(no HEAD)'} — sign-off ${signoff ? signoff.slice(0, 12) : 'not found in this history'}${C.off}`)
-      if (headIsRemote === false)
-        console.log(`${C.red}this checkout is at ${head ? head.slice(0, 12) : '(no HEAD)'} and ${remoteRef} is at ${remoteHead.slice(0, 12)} — the release pull request carries the remote head, so this is not a check of it. \`git checkout epic/${arg} && git pull --ff-only\`, then run it again.${C.off}`)
-      if (shallow) console.log(`${C.yellow}this is a shallow clone: the sign-off commit found may only be the clone's boundary, so "criteria differ from sign-off" can be silently empty. \`git fetch --unshallow\` to trust it.${C.off}`)
-      if (!landed.length) console.log(`${C.red}no ticket of ${arg} is integrated or shipped — there is nothing to release${C.off}`)
-      const MARK = { passed: `${C.green}✓${C.off}`, skipped: `${C.yellow}↓${C.off}`, failed: `${C.red}✗${C.off}` }
-      for (const r of rows) {
-        console.log(`\n${C.bold}${r.id}${C.off} ${C.dim}${r.passed}/${r.total}${r.compares.length ? ` — ${r.compares.length} COMPARE not re-verified here` : ''}${C.off}`)
-        for (const c of r.checks) {
-          console.log(`  ${MARK[c.status]} ${c.criterion || '(no criterion bullet above the CHECK line)'}`)
-          if (c.status !== 'passed') console.log(`      $ ${c.check}\n      ${c.evidence}`)
-        }
-        for (const p of r.problems) console.log(`  ${C.red}!${C.off} line ${p.line}: ${p.why}: ${p.text}`)
-        if (r.criteriaChanged)
-          console.log(`  ${C.yellow}criteria differ from sign-off (${signoff.slice(0, 12)})${C.off}\n      was: ${r.criteriaChanged.was ? r.criteriaChanged.was.join(' | ') || '(none)' : '(ticket not in the signed-off document)'}\n      now: ${r.criteriaChanged.now.join(' | ') || '(none)'}`)
-      }
-      if (removedSinceSignoff.length)
-        console.log(`\n${C.yellow}in the signed-off document and gone from this one — not checked, not listed anywhere else:${C.off}\n${removedSinceSignoff.map((x) => `  ${x.id}: ${x.was.join(' | ') || '(no criteria)'}`).join('\n')}`)
-      if (notLanded.length) console.log(`\n${C.yellow}not integrated, so not checked:${C.off} ${notLanded.map((t) => `${t.id} (${t.state})`).join(', ')}`)
-      console.log(
-        `\n${passed}/${total} checks passed across ${rows.length} ticket(s), ${ran.size} distinct command(s) run` +
-          (skipped ? ` — ${skipped} skipped, which does not pass` : '') +
-          (problems ? ` — ${problems} malformed line(s), which fail` : ''),
-      )
-    }
+    const report = { epic: arg, head, remoteHead, headIsRemote, signoff, shallow, total, passed, skipped, problems, allPassed, commandsRun: ran.size, tickets: rows, notLanded, removedSinceSignoff }
+    if (json) emit(report)
+    else printCheckEpic(report)
     process.exit(allPassed ? 0 : 1)
   }
 
@@ -3264,22 +3297,51 @@ switch (cmd) {
       const out = []
       let cur = null
       let field = null
-      for (const line of statusText.split('\n')) {
+      let fenced = false
+      let label = null // a field label still open: its closing `**` is on a later line
+      for (const line of statusText.split(/\r?\n/)) {
         const h = line.match(STATUS_HEADING)
-        if (h || /^#{1,3}\s/.test(line)) {
-          cur = h && h[1] === id ? { heading: line.replace(/^#+\s*/, '').trim(), date: h[3], outcome: h[4], fields: [] } : null
+        // What closes an entry is what closes a field in `comparedIn`, for the
+        // reason it says: inside a fence a `#` line is a pasted table's
+        // caption, not a heading, and read as one it cut the entry there and
+        // dropped every field after it — Owed and the review addendum included.
+        // A ticket's own heading closes it whatever the fence says, so an
+        // unclosed fence cannot swallow the next entry.
+        if (h || (!fenced && /^#{1,3}\s/.test(line))) {
+          cur = h && h[1] === id ? { heading: line.replace(/^#+\s*/, '').trim(), date: h[3], outcome: h[4], lead: '', fields: [] } : null
           if (cur) out.push(cur)
           field = null
+          label = null
+          fenced = false
           continue
         }
         if (!cur) continue
-        const f = line.match(/^\*\*([^*]+?)(?::\*\*|\*\*)\s?(.*)$/)
-        if (f && ENTRY_FIELD.test(line)) {
-          field = { label: f[1].replace(/:$/, '').trim(), text: f[2] }
-          cur.fields.push(field)
+        if (/^\s*(```|~~~)/.test(line)) fenced = !fenced
+        if (label !== null) {
+          // A label wrapped over two lines (a long `**Addendum — … —` heading):
+          // the label runs to the closing `**`, the field's text starts after it.
+          const end = line.indexOf('**')
+          if (end === -1) label += ` ${line.trim()}`
+          else {
+            field = { label: `${label} ${line.slice(0, end).trim()}`.replace(/:$/, '').trim(), text: line.slice(end + 2).trim() }
+            cur.fields.push(field)
+            label = null
+          }
+          continue
+        }
+        if (!fenced && ENTRY_FIELD.test(line)) {
+          const f = line.match(/^\*\*([^*]+?)(?::\*\*|\*\*)\s?(.*)$/)
+          if (f) {
+            field = { label: f[1].replace(/:$/, '').trim(), text: f[2] }
+            cur.fields.push(field)
+          } else label = line.slice(2).trim()
         } else if (field) field.text += `\n${line}`
+        else cur.lead += `${line}\n`
       }
-      for (const e of out) for (const f of e.fields) f.text = f.text.trim()
+      for (const e of out) {
+        e.lead = e.lead.trim()
+        for (const f of e.fields) f.text = f.text.trim()
+      }
       return out
     }
     const range = `origin/${defaultBranch}..HEAD`
@@ -3292,7 +3354,8 @@ switch (cmd) {
       return { sha, subject, ticket: m ? m[1] : null, stat }
     })
     const remote = (git(['remote', 'get-url', 'origin'], { allowFail: true }) || '').trim()
-    const web = remote.match(/github\.com[:/]([^/]+\/[^/]+?)(?:\.git)?$/)
+    // Anchored to the host: `mygithub.com/o/r` is not github.com/o/r.
+    const web = remote.match(/(?:^|[@/])github\.com[:/]([^/]+\/[^/]+?)(?:\.git)?$/)
     const { deviations } = parseDeviations(epic)
     const { owed, notes: owedNotes } = parseOwed(epic)
     // The latest run record, verbatim: what the run said about itself, halts

@@ -96,6 +96,49 @@ test('a ledger taken at another commit is not a check of this release, whatever 
   assert.doesNotMatch(html, /class="verdict ok"/, 'a green verdict about another commit is not shown green here')
 })
 
+test('the verdict is recomputed, never taken on the report\'s word — every way a ledger can fail to be about this release reads as no', () => {
+  const notGreen = (c, why) => assert.doesNotMatch(renderRelease(data(), { check: c }), /class="verdict ok"/, why)
+  notGreen(check({ passed: 0, total: 3 }), 'allPassed: true beside 0/3')
+  notGreen(check({ headIsRemote: false }), 'the checkout was not at the remote head')
+  notGreen(check({ head: null }), 'a ledger that does not say which commit it is about')
+  notGreen(check({ epic: 'refunds' }), 'another epic\'s ledger')
+  notGreen(check({ tickets: [] }), 'a ledger with no ticket in it')
+  notGreen(check({ tickets: [{ id: 'PAY-1', total: 1, passed: 1, skipped: 0, checks: [], compares: [], problems: [{ line: 9, why: 'malformed', text: 'CHECK' }], criteriaChanged: null }] }), 'a malformed criterion')
+  assert.doesNotMatch(renderRelease(data({ head: null }), { check: check() }), /class="verdict ok"/)
+  // a landed ticket the ledger does not carry was checked by nobody — said, and badged on the ticket
+  const two = data()
+  two.tickets[1].state = 'integrated'
+  const html = renderRelease(two, { check: check() })
+  assert.match(html, /Landed and not in this ledger, so checked by nobody: PAY-2/)
+  assert.match(html, /not in the release check/)
+  assert.doesNotMatch(html, /class="verdict ok"/)
+  // a malformed criterion is red on the ticket's badge too, not only in the table
+  const malformed = renderRelease(data(), { check: check({ passed: 1, total: 1, problems: 1, allPassed: false, tickets: [{ id: 'PAY-1', total: 1, passed: 1, skipped: 0, checks: [], compares: [], problems: [{ line: 9, why: 'x', text: 'y' }], criteriaChanged: null }] }) })
+  assert.match(malformed, /badge s-bad">checks 1\/1 at head/)
+})
+
+test('a ledger from before the run-record commit still describes this head — and only then', () => {
+  // The run record is committed AFTER the pull request opens, so it can name it.
+  const moved = check({ head: 'e'.repeat(40) })
+  const ok = renderRelease(data(), { check: moved, recordOnlySince: true })
+  assert.match(ok, /class="verdict ok">Passed/)
+  assert.match(ok, /the only files changed since are this epic's run record, which no check reads/)
+  assert.match(ok, /checks 2\/2 at head/)
+  const stale = renderRelease(data(), { check: moved })
+  assert.match(stale, /NOT A CHECK OF THIS RELEASE/)
+  assert.match(stale, /badge s-bad">checks 2\/2 — not at this head/, 'a badge that says "at head" about another commit is the page lying')
+})
+
+test('the page says when it was rendered somewhere that is not the release, and shows an entry\'s lead text', () => {
+  assert.match(renderRelease(data({ branch: 'main' }), { check: check() }), /Rendered on <code>main<\/code>, not on <code>epic\/payments<\/code>/)
+  assert.match(renderRelease(data({ delivery: 'incremental', branch: 'main' }), { check: check() }), /there is no release to walk through/)
+  const d = data()
+  d.tickets[0].entries[0].lead = 'a note before any field, with `code`'
+  assert.match(renderRelease(d, { check: check() }), /a note before any field, with <code>code<\/code>/)
+  d.tickets[0].entries[0] = { heading: 'PAY-1 — x — 2026-09-10 — DONE', lead: '', fields: [] }
+  assert.match(renderRelease(d, { check: check() }), /the entry has a heading and nothing under it that reads as a field/)
+})
+
 test('a failed check names the ticket, the command and its evidence', () => {
   const failed = check({
     allPassed: false,

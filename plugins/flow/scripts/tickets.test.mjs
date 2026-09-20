@@ -8,7 +8,7 @@
 import { test, after } from 'node:test'
 import assert from 'node:assert/strict'
 import { execFileSync, spawnSync } from 'node:child_process'
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, realpathSync, readFileSync, chmodSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, realpathSync, readFileSync, chmodSync, existsSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
@@ -2640,6 +2640,71 @@ test('release derives the walkthrough\'s data: entries split at their own fields
   assert.deepEqual(out.lastRun, { heading: 'Run — 2026-09-11 — completed', text: '**Tickets this run:** RC-2' })
   assert.match(run(rel, 'release', 'rc'), /RC-1 .*integrated.* — 1 entry, 1 commit\(s\), 1 deviation\(s\)/)
   assert.equal(runFail(rel, 'release').status, 2)
+  assert.equal(r1.entries[0].lead, 'some lead text', 'text before the first field is kept')
+})
+
+test('release does not cut an entry at a heading inside a fence, reads a label wrapped over two lines, and reads a CRLF log', () => {
+  const rel = releaseRepo('rc-release-fence')
+  // the caption of a pasted table, inside a fence, once dropped Owed and the review addendum with it
+  const entry =
+    '# RC — status log\n\n### RC-1 — the greeting — 2026-09-10 — DONE\n\n**Built:** it.\n\n**Verified:**\n```text\n# caption @ 1440\n## notes\nhero  width  100px\n```\n\n**Owed:** Nothing.\n\n**Addendum — 2026-09-10 — a label long enough that the writer wrapped it,\nand closed it here.**\n\nThe addendum\'s text.\n\n### RC-2 — the farewell — 2026-09-11 — DONE\n\n**Built:** the farewell.\n'
+  writeFileSync(join(rel, 'epics/rc/status.md'), entry)
+  const fields = JSON.parse(run(rel, 'release', 'rc', '--json')).tickets[0].entries[0].fields
+  assert.deepEqual(fields.map((f) => f.label), ['Built', 'Verified', 'Owed', 'Addendum — 2026-09-10 — a label long enough that the writer wrapped it, and closed it here.'])
+  assert.match(fields[1].text, /# caption @ 1440\n## notes\nhero {2}width {2}100px/)
+  assert.equal(fields[3].text, "The addendum's text.")
+  writeFileSync(join(rel, 'epics/rc/status.md'), entry.replace(/\n/g, '\r\n'))
+  const crlf = JSON.parse(run(rel, 'release', 'rc', '--json')).tickets
+  assert.deepEqual(crlf[0].entries[0].fields.map((f) => f.label).slice(0, 3), ['Built', 'Verified', 'Owed'])
+  assert.equal(crlf[1].entries[0].fields[0].text, 'the farewell.')
+})
+
+test('check-epic --render prints a saved report and runs nothing; a repeat inside ANY ticket runs again', () => {
+  const rel = releaseRepo('rc-render')
+  const saved = join(rel, 'report.json')
+  writeFileSync(saved, run(rel, 'check-epic', 'rc', '--json'))
+  rmSync(join(rel, 'runs.log'))
+  assert.match(run(rel, 'check-epic', 'rc', '--render', saved), /3\/3 checks passed across 2 ticket\(s\), 2 distinct command\(s\) run/)
+  assert.ok(!existsSync(join(rel, 'runs.log')), 'one run of the suites, saved, read twice — --render ran nothing')
+  const other = join(rel, 'other.json')
+  writeFileSync(other, JSON.stringify({ ...JSON.parse(readFileSync(saved, 'utf8')), epic: 'nope' }))
+  assert.equal(runFail(rel, 'check-epic', 'rc', '--render', other).status, 2)
+  assert.equal(runFail(rel, 'check-epic', 'rc', '--render', join(rel, 'missing.json')).status, 2)
+  const failing = join(rel, 'failing.json')
+  writeFileSync(failing, JSON.stringify({ ...JSON.parse(readFileSync(saved, 'utf8')), allPassed: false }))
+  assert.equal(runFail(rel, 'check-epic', 'rc', '--render', failing).status, 1, 'the saved verdict is the exit code')
+  // RC-1 runs the shared command once; RC-2 repeats it — the repeat runs, as `check RC-2` would run it
+  const doc = readFileSync(join(rel, 'epics/rc/tickets.md'), 'utf8')
+  writeFileSync(join(rel, 'epics/rc/tickets.md'), doc.replace('## RC-3', '- and again\n  CHECK: cat greeting.txt; echo ran >> runs.log\n\n## RC-3'))
+  git(rel, 'add', 'epics/rc/tickets.md')
+  git(rel, 'commit', '-m', 'RC-2: repeat a check')
+  git(rel, 'push', 'origin', 'epic/rc')
+  run(rel, 'check-epic', 'rc', '--json')
+  assert.equal(readFileSync(join(rel, 'runs.log'), 'utf8'), 'ran\nran\n', 'once for RC-1 (shared with RC-2\'s first use), once more for RC-2\'s repeat')
+})
+
+test('the walkthrough keeps a ledger taken just before the run-record commit, and refuses one taken before anything else changed', () => {
+  // Real git, because the question — what changed between the check and this
+  // head? — is asked of git. The page suite itself never touches a repository.
+  const PAGE = join(dirname(SCRIPT), 'release-page.mjs')
+  const page = (cwd, ...args) => execFileSync(process.execPath, [PAGE, ...args], { cwd, encoding: 'utf8' })
+  const rel = releaseRepo('rc-page')
+  const saved = join(tmp, 'rc-page-check.json')
+  writeFileSync(saved, run(rel, 'check-epic', 'rc', '--json'))
+  assert.match(page(rel, 'rc', '--check', saved), /class="verdict ok">Passed/)
+  // step 6: the run record is committed after the pull request opens
+  writeFileSync(join(rel, 'epics/rc/runs.md'), '# RC — runs\n\n### Run — 2026-09-11 — completed\n\n**Release PR:** #1\n')
+  git(rel, 'add', '.')
+  git(rel, 'commit', '-m', 'rc run record — 2026-09-11')
+  const after = page(rel, 'rc', '--check', saved)
+  assert.match(after, /class="verdict ok">Passed/)
+  assert.match(after, /the only files changed since are this epic's run record/)
+  assert.match(after, /Run — 2026-09-11 — completed/, 'and now the page carries THIS run\'s record')
+  // anything else moved, and the ledger is not about this release — tickets.md sits beside runs.md and IS read by the checks
+  writeFileSync(join(rel, 'epics/rc/tickets.md'), readFileSync(join(rel, 'epics/rc/tickets.md'), 'utf8') + '\n')
+  git(rel, 'add', '.')
+  git(rel, 'commit', '-m', 'rc: touch the plan')
+  assert.match(page(rel, 'rc', '--check', saved), /NOT A CHECK OF THIS RELEASE/)
 })
 
 test('check-epic with nothing landed is not a release that passed, and an unknown epic or no epic is refused', () => {
