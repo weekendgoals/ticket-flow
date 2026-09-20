@@ -12,6 +12,15 @@ heading here. `check-invariants.mjs` holds both.
 
 ## Unreleased
 
+## 2.4.0 — 2026-09-20
+
+A run ends by checking what it is about to release, and the release pull
+request gets a page as well as a body. Every ticket's `CHECK` criteria passed
+before its own merge and nothing re-ran them afterwards; the release check
+re-runs them once, at the commit the pull request will carry. Minor: no
+format changes — but **every unattended run gains steps after its loop**,
+serial runs included, and can halt there.
+
 - **The release check — an unattended run ends by re-running every landed
   ticket's `CHECK` criteria at the epic head, and opens no release on a
   failure** (`workflows/run-epic.mjs`: `release-list:<epic>` then one
