@@ -19,7 +19,7 @@ repository).
 | `/flow:quick <description>` | The **cheap lane**: one small, low-risk piece of work, implemented **in-session** with a written scope, verification with counts, a short log entry and a pull request — and a fresh-context reviewer **only when behaviour changes** (prose-only diffs — documentation and comments, nothing a machine reads — get none; the PR is the review). Size- **and risk-gated**: auth, secrets, migrations and other consequential work is routed to `/flow:epic` at any size |
 | `/flow:tickets [epic]` | The board — shipped, in flight, blocked, todo |
 | `/flow:board [epic]` | The same board as a **styled HTML page**, published as an artifact you can open and share, with a **Tokens** column from the recorded spend ledger. A rendering of derived state, rebuilt from git on every run — never committed, never a second store |
-| `/flow:spend [epic]` | The **recorded token ledger** — per ticket, per role (worker, reviewer, re-review, disposition, proxies) and per epic, derived from the status logs' Tokens lines, addendum phrases and run records — and beside it the **recorded time**: seconds per role and each ticket's wall-clock, from the run records' Time lines. `unknown` stays unknown, nothing is estimated |
+| `/flow:spend [epic]` | The **recorded token ledger** — per ticket, per role (worker, reviewer, re-review, disposition, proxies) and per epic, derived from the status logs' Tokens lines, addendum phrases and run records — and beside it the **recorded time**: seconds per role and each ticket's wall-clock, from the run records' Time lines, plus the **cache reads** and the **model** each role ran on, from theirs. `unknown` stays unknown, nothing is estimated |
 | `/flow:review [range]` | Review a commit range and report. Used by `/flow:ticket`; runnable on its own |
 | `/flow:doctor` | Is this project ready for the flow? Preconditions, merge settings, instruction-file quality, and headings that would silently misparse |
 | `/flow:retro [epic]` | Close a finished epic: a **fresh-context miner** reads the status log and review addenda and drafts the lessons and owed work — the invoking session often planned or ran the epic, so it mines nothing itself — then the approval gate and the shipping stay in-session, into instruction files and tickets. Its **seventh question asks what the run halted on and what each halt bought**: every `### Run —` record's halt classified as **work**, **plan**, **plugin/environment** or **policy**, with what the human did to resume and whether the stop retired a real risk or fired on a clean state — a policy stop that keeps firing clean becomes a proposal against the policy, a plugin halt a ticket for the plugin's own repository |
@@ -638,6 +638,26 @@ outside a Time paragraph — on a line naming a ticket that has no time
 anywhere in the ledger (per ticket, because one ticket's group parsing must
 not hide another's being lost). The repair for both is a dated addendum with
 the groups under a `**Time:**` line of its own, and it clears the warn.
+
+**Cache reads and models are two more lines of the same grammar.** The meter
+prints them beside the other two, and a run record pastes them as printed:
+`**Cache reads:** <ID> worker=<n>r reviewer=<n>r … ; total=<n>r` and
+`**Models:** <ID> worker=<name> reviewer=<name> …`. Cache reads are counted
+like tokens — rounds sum, a restated group corrects, `unknown` erases nothing
+— and stay **out** of the `worker=<n>` figure on the Tokens line, which is
+what keeps every record in the ledger comparable with every earlier one; they
+carry `r` on every figure and no commas, because a bare `worker=4812330`
+anywhere in a record is a token figure. Models are names, not counts: an
+agent that fell back to a second model prints both joined by `+`, a role's
+value is every model its agents used in first-use order, and a Codex worker
+reads `codex:<model>` — that agent is the runner's shell proxy, and the model
+that wrote the ticket is the one in the JSON the runner printed. Each line is
+read only inside its own paragraph, for the reason time is: `worker=unknown`
+and `worker=claude-opus-5` both open exactly like a token group. A record
+written before either line existed has neither, and `spend` reports nothing
+recorded — never zero, and never backfilled. `doctor` flags either line
+carrying values where no group parses, cleared the same way: a dated addendum
+with the groups under a label of their own.
 
 Two blind spots worth knowing: the board reads *this checkout's* view of the
 remote, so fetch first when the answer matters; and `shipped` means some commit

@@ -144,6 +144,38 @@ test('a dropped doctrine phrase fails', () => {
   assert.match(r.out, /doctrine phrase missing/)
 })
 
+test('a run-record template that drops a ledger unit fails at every door that carries it', () => {
+  // The units are the wall between the ledgers: `spend` reads a bare
+  // `<ID> worker=<n>` group as tokens wherever it sits, so a template that
+  // dropped the `s` or the `r` would pour durations, or a read count several
+  // times a ticket's size, into the token ledger. One shape in four files.
+  for (const [file, phrase] of [
+    ['plugins/flow/skills/run/SKILL.md', 'worker=<n>r reviewer=<n>r'],
+    ['README.md', 'worker=<n>r reviewer=<n>r'],
+    ['plugins/flow/scripts/tickets.mjs', 'worker=<n>r reviewer=<n>r'],
+    ['plugins/flow/scripts/meter.mjs', 'worker=<n>r reviewer=<n>r'],
+  ]) {
+    const root = copyRepo()
+    mutate(root, file, phrase, 'worker=<n> reviewer=<n>')
+    const r = run(root)
+    assert.equal(r.status, 1, `${file}: ${r.out}`)
+    assert.match(r.out, /doctrine phrase missing/)
+  }
+})
+
+test('a run-record template that drifts the Models groups to prose fails', () => {
+  // Nothing else in a record observes which model ran a role: the reviewer's
+  // model left the Tokens line's prose when this line arrived, so a document
+  // that drops the groups leaves the ledger with no model at all.
+  for (const file of ['plugins/flow/skills/run/SKILL.md', 'README.md', 'plugins/flow/scripts/tickets.mjs', 'plugins/flow/scripts/meter.mjs']) {
+    const root = copyRepo()
+    mutate(root, file, 'worker=<name> reviewer=<name>', 'the model each role ran on')
+    const r = run(root)
+    assert.equal(r.status, 1, `${file}: ${r.out}`)
+    assert.match(r.out, /doctrine phrase missing/)
+  }
+})
+
 test('a lane that renames the deviation opener fails', () => {
   // `**Deviation:**` is the exact label the parser reads. A lane that teaches
   // any other word produces entries that parse as nothing — and doctor's

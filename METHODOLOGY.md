@@ -749,7 +749,8 @@ finding. A ticket whose roles sum to its wall was slow because its agents
 were; one whose wall is far above the sum was waiting on something that is
 not an agent, and only the second is a driver problem.
 
-The unit is there because the two ledgers share a grammar. `spend` reads a
+The unit is there because the ledgers share a grammar — two of them when
+this was written, four since. `spend` reads a
 `<ID> worker=<n>` group wherever it sits in a record — that is what lets a
 correction addendum land anywhere — so a bare duration would be added to the
 token ledger silently. Seconds carry an `s`, a figure with a unit is never a
@@ -765,10 +766,51 @@ line dropped a whole ticket's time, silently, and handed that line's
 `worker=unknown` to the token ledger, `unknown` being the one figure with no
 unit to stop it. A line is the wrong thing to accept or reject, because
 people put words on lines. The split is by group: every time group in the
-paragraph is lifted out whatever stands beside it, the rest goes back to the
-token text, and a token group is never followed by a time-shaped pair —
-time-shaped only: the first cut of that refusal took any unreadable follower
-as grounds, and threw away whole token groups `main` had read correctly.
+paragraph is lifted out whatever stands beside it, and the rest goes back to
+the token text.
+
+### The follower rule, and the three cuts that lost figures
+
+The other half of that wall — what a token group may be followed by — is a
+refusal, and **cut A**, the first one ever written, refused a group followed
+by any `<role>=` pair at all. It threw away whole groups the parser had been
+reading correctly: `A-1 worker=100 reviewer=50 wall=9`, `… reviewer=228k`,
+`… reviewer=` — the figures before the unreadable pair went with it,
+silently, wherever a sibling group in the record parsed. What replaced it is
+the refusal the parser has shipped ever since: a follower that is TIME-SHAPED,
+or the unitless `unknown`.
+
+Adding the cache-reads and models ledgers cut at that refusal three more
+times, and each cut lost a figure somebody had observed. **Cut 1** refused
+any letter-initial follower, on the reasoning that every model name is one —
+and took `disposition=none`, `re-review=n/a`, `reviewer=skipped` with it,
+which is what a record writes for a role that did not run, along with the
+`proxies=5000` standing before them. **Cut 2** narrowed that to letter-initial
+values *carrying a digit*, which lost the same groups one class smaller:
+`re-review=round2`, `disposition=v2`, `reviewer=GPT5`. **Cut 3** left the
+words alone and widened the unit instead, by a single letter — `s` to `[sr]`,
+so that a cache figure could close a group as a duration does — and `C-1
+worker=462249 reviewer=185339 proxies=12r` lost the reviewer's 185,339 while
+the record's own Cache reads paragraph made the ticket look answered. That
+one needed no widening at all: a token figure already ends where its digits
+end, so `12r` was never a token pair and the group had always ended before it.
+
+Three cuts, one mistake: asking what the NEXT pair looks like. The right
+question is about the group. A token group can only be another ledger's group
+in disguise when every pair it swallowed is `unknown` — the single value all
+four ledgers share, and the reason the paragraph wall exists at all. So the
+rule that shipped **leaves the refusal exactly as it was** — time-shaped or
+`unknown`, the spelling every existing record was read with — and adds one
+test after the match: an all-`unknown` group is dropped when what follows
+belongs to a ledger. That one loses no figure at all; the only thing it drops
+is an `unknown` mark for a role nobody wrote a figure for. And a dropped
+group is taken out of the text as a read one is, because it belongs to
+neither ticket: left behind, its `worker=unknown` was absorbed by the
+enclosing status entry, which is the same leak one ticket to the left.
+
+The table in `tickets.test.mjs` holds a reading per line, taken from the
+parser as it was before any of this, so the next cut fails a test rather than
+an epic's ledger.
 
 The doctor warns for time are written so the repair they advertise ends
 them, because the log is append-only: an addendum can add a group and can
@@ -785,6 +827,46 @@ and still not what it seems, so it is never called `wall`: commits begin when
 the work is nearly over. It is shown because a labelled weak observation
 beats `unknown` for a human, and named for what it is because a metric built
 on it later would inherit the error invisibly.
+
+### Why cache reads and the model are their own lines
+
+Two questions the ledger could not answer were sitting in the same
+transcripts. What a ticket cost depends on which model ran it — a tier
+priced on opus and a tier priced on haiku are different numbers wearing the
+same name — and the record carried the reviewer's model as prose, written by
+the session from memory, or not at all. And the `worker=<n>` figure had
+always been input + output + cache creation with cache reads left out, which
+is a defensible sum and hides the largest number in the run: a long worker
+reads its cached context back on every turn, and those reads are most of
+what the run actually moved.
+
+The obvious repair — fold cache reads into `worker=<n>` — is the one that
+cannot be made. Every figure in every existing record means the old sum, and
+a redefinition makes the ledger incomparable with its own history while
+saying nothing about which records were written before it. So cache reads
+got a line of their own, and the headline figure did not move.
+
+Their unit is the same wall the seconds use, and it has a second edge here:
+a read count is several times a ticket's token figure, so a `4812330` that
+leaked into the token ledger would not look wrong — it would look like an
+expensive ticket. The models line has no unit to give, being names, and that
+is what settled the shape of all three: the paragraph is the wall, one
+mechanism for `**Time:**`, `**Cache reads:**` and `**Models:**`, because
+`worker=unknown` and `worker=claude-opus-5` open a token group exactly as a
+duration does.
+
+A model name is also the one figure here that is not a number, and it forced
+two rules a count never needed. An agent that fell back mid-step used two
+models, and reporting the dominant one would be an estimate of something the
+transcript states exactly — so both are reported, joined by `+`. And a role
+whose agents include one nobody observed is *not* unknown, where a role with
+an unobserved figure is: a missing number makes a sum silently low, while an
+unobserved agent cannot make an observed name wrong. A Codex worker is the
+case that proves the observation is worth making at all — its agent is a
+shell proxy running on haiku, so the transcript's own model is not the model
+that wrote the ticket; the runner prints its model in the JSON the proxy
+relays, and the meter reads it from the proxy's tool results rather than
+from the proxy's account of them.
 
 ### Why a round has a label, and a correction does not
 

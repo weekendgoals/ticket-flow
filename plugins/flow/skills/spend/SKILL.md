@@ -1,6 +1,6 @@
 ---
 name: spend
-description: Show the recorded token spend and wall-clock time per ticket, per role and per epic, derived from the status logs. Use when the user runs /flow:spend [epic], asks what an epic or ticket cost, how long it took, or asks where the tokens or the time went.
+description: Show the recorded token spend, wall-clock time, cache reads and the model each role ran on — per ticket, per role and per epic, derived from the status logs. Use when the user runs /flow:spend [epic], asks what an epic or ticket cost, how long it took, where the tokens or the time went, how much of a ticket was cache reads, or which model ran a ticket, a review or an epic.
 ---
 
 # Token spend $ARGUMENTS
@@ -51,6 +51,30 @@ show is a number nobody observed. `unknown` and `no figure recorded` are honest 
   `scripts/meter.mjs` prints from the workflow run's directory, or `(log)`
   for a `**Time:**` paragraph in a ticket's own entry — which only a
   supervisor that watched the agents stop can honestly write.
+- **Cache reads and models:** the dim row under the time row, present only
+  where the run record carries them — `cache worker 4,812,330 …
+  (run-record)` and beside it `models worker codex:gpt-5-codex reviewer
+  claude-fable-5-1 (run-record)`, each half ending with the document it was
+  read from, as the time row does. **Cache reads are not in the token
+  figures** and never were: `worker=<n>` on the Tokens line is input +
+  output + cache creation, the sum every record in the ledger uses, so the
+  reads are reported beside it rather than folded in — a ticket's reads are
+  commonly several times its token figure, and adding them would make this
+  epic incomparable with every earlier one. The epic's footer carries a
+  `cache` row of the same totals. A **model** is what ran a role, from the
+  transcripts' own lines: two joined by `+` where an agent fell back
+  mid-step, and `codex:<model>` for a ticket a Codex worker implemented,
+  where the agent in the run is only the runner's shell proxy. **A record
+  written before these lines existed carries neither, and both read as
+  nothing recorded** — never as zero, and never backfilled; most of an
+  older epic will have no row here at all, and that is the honest answer to
+  "how much of it was cache?".
+- **No cost in money, anywhere.** The ledger counts tokens, seconds and
+  reads because those were observed; a price per token is a rate this
+  repository does not know, changes without telling anyone, and differs per
+  account — a dollar figure derived here would be an estimate wearing an
+  observation's clothes. If asked what an epic cost in money, say what was
+  observed and leave the arithmetic to whoever knows the rate.
 - **`commit span … (git)`** appears only where no wall was recorded: the
   first to the last commit naming the ticket, by author date — so a ticket
   with one commit, or several at one instant, shows nothing: a point is not
@@ -62,6 +86,29 @@ show is a number nobody observed. `unknown` and `no figure recorded` are honest 
 - **In-session lanes** (`/flow:quick`, `--interactive`) always read
   `unknown`: a session cannot see its own counter. Claude Code's own `/cost`
   is the only view of those.
+
+## `--json`, for whoever reads this instead of the log
+
+`spend [epic] --json` returns the same ledger as data — what the retro reads
+rather than summing the log by hand. Every key it emits, so that nothing here
+has to be guessed at:
+
+- **top level:** `epics`, `commitSpansCapped`.
+- **per epic:** `epic`, `tickets`, `totals`, `timeTotals`, `cacheTotals`,
+  `untimedTickets`, `unknownTickets`.
+- **per ticket:** `id`, `title`, `state`; the five role figures (`worker`,
+  `reviewer`, `re-review`, `disposition`, `proxies`) and their `total`;
+  `unknown`, `rounds`, `source`, `note`; `time`, `cache`, `models`;
+  `commitSpan`.
+- **inside `time`:** the five roles plus `wall`, then `unknown`, `source`,
+  `rounds`. **Inside `cache`:** the five roles, `unknown`, `source`,
+  `rounds`. **Inside `models`:** the five roles, `unknown`, `source` — no
+  `rounds`, because names are united rather than summed and a count of the
+  passes would say nothing about the value.
+
+A figure nobody recorded is `null`, a model nobody recorded is `null`, and a
+role recorded as `unknown` is named in that ledger's `unknown` list —
+**`null` is not zero and never becomes zero**, in either direction.
 
 ## When to add commentary
 

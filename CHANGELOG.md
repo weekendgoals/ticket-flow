@@ -12,6 +12,51 @@ heading here. `check-invariants.mjs` holds both.
 
 ## Unreleased
 
+- **A run record carries two more metered lines — `**Cache reads:**` and
+  `**Models:**` — and `spend` reads both into the ledger beside the tokens and
+  the seconds** (`scripts/meter.mjs` prints all four now; `tickets.mjs`
+  parses them, reports them per ticket and per epic in `spend` and `spend
+  --json` — `tickets[].cache`, `tickets[].models`, `epics[].cacheTotals` —
+  and flags, **per written group**, every one (and every pair inside one) the
+  record in front of the reader writes and the ledger never got, because a
+  sibling group parsing beside it — an earlier run's, or the same ticket's
+  other round — hides the loss;
+  `skills/run/SKILL.md` § 6 teaches both fields and `skills/spend/SKILL.md`
+  teaches the rows; `check-invariants.mjs` pins both templates). The headline token figure does **not** change: `worker=<n>`
+  stays input + output + cache creation with cache reads left out, because
+  every earlier record in the ledger means that sum and folding the reads in
+  would make them incomparable — so the reads get their own paragraph, every
+  figure carrying `r` (`worker=4812330r`) for the reason seconds carry `s`: a
+  bare `worker=4812330` anywhere in a record is a token figure and the last
+  one read for a role wins, so a unitless read figure would not inflate a
+  ticket's cost but REPLACE it, with a count several times its size and
+  nothing saying so. Models are names, not counts — an agent
+  that fell back mid-step prints both joined by `+`, a role's value is its
+  agents' models in first-use order, and a Codex worker reads `codex:<model>`
+  off the runner's own printed JSON in the proxy's tool results, because that
+  agent's model is the proxy's haiku and not what wrote the ticket; only a
+  `worker:<ID>` agent reads a runner report that way, and one where the
+  runner demonstrably ran but printed nothing readable is `unknown` rather
+  than the proxy's own model. A name is letter-initial and ends in a letter or
+  digit at both doors, the writer's and the reader's — one that could be read
+  as a figure is the one shape that crosses into the token ledger — and **a
+  Models paragraph carries groups and nothing else**, prose about the tier or
+  the effort going in a sentence of its own outside it, because a value that
+  does not end its pair is read as nothing rather than cut short into a name
+  nobody ran. Both lines
+  are read **only inside their own paragraph**, by the splitter `**Time:**`
+  already used: `worker=unknown` and `worker=claude-opus-5` open exactly like
+  a token group, so the unit alone is not a wall. **Every existing record
+  reads exactly as it did**: `RUN_GROUP`'s refusal of a time-shaped or
+  `unknown` follower is untouched (three attempts to widen it here each lost a
+  figure somebody observed — the last by one letter, `s` to `[sr]`, which
+  dropped a reviewer's 185,339 under a record whose Cache reads paragraph
+  made the ticket look answered), and the single addition is that a group
+  whose every pair is `unknown` is dropped, and taken out of the text, when
+  another ledger's pair follows it. Records written before these
+  lines existed have neither, and read as nothing recorded — never zero, never
+  backfilled.
+
 ## 2.4.0 — 2026-09-20
 
 A run ends by checking what it is about to release, and the release pull

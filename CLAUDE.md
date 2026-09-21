@@ -22,13 +22,13 @@ go through the flow, one-off work goes through `/flow:quick` into
 ## Commands
 
 - **Tests:** `node --test plugins/flow/scripts/tickets.test.mjs` — expect
-  every test passing (`# pass 191`, `# fail 0` as of 2026-09-20; the count
+  every test passing (`# pass 215`, `# fail 0` as of 2026-09-21; the count
   grows, the fail line does not). The suite builds a throwaway git repo in a
   temp dir; it needs `git` on PATH and nothing else. The session-guard hook
   has its own suite:
   `node --test plugins/flow/hooks/ticket-session-guard.test.mjs` (`# pass 14`
   on the same terms). The invariant checker has
-  `node --test plugins/flow/scripts/check-invariants.test.mjs` (`# pass 39`),
+  `node --test plugins/flow/scripts/check-invariants.test.mjs` (`# pass 41`),
   The board renderer has
   `node --test plugins/flow/scripts/board.test.mjs` (`# pass 9`) and the
   plan-page renderer `node --test plugins/flow/scripts/plan-page.test.mjs`
@@ -44,9 +44,11 @@ go through the flow, one-off work goes through `/flow:quick` into
   closure reference fails here instead of inside somebody's page. It needs
   nothing but Node, and **no test may launch or drive a browser** — the plugin
   owns none, which is why it installs anywhere. The run meter has
-  `node --test plugins/flow/scripts/meter.test.mjs` (`# pass 18`) — tokens
-  and time metered off journal and transcript text built in the test, in the
-  shapes a real run wrote; the two CLI cases write a throwaway run directory
+  `node --test plugins/flow/scripts/meter.test.mjs` (`# pass 29`) — tokens,
+  time, cache reads and models metered off journal and transcript text built
+  in the test, in the shapes a real run wrote (a Codex worker's model comes
+  from a runner report in a tool result, so that shape is built here too);
+  the two CLI cases write a throwaway run directory
   to the OS temp dir. Nothing but Node, and **no test reads a real
   transcript** — those live under `~/.claude` and belong to whoever ran
   them. The append merge driver has
@@ -88,7 +90,7 @@ go through the flow, one-off work goes through `/flow:quick` into
   phrases). Run it whenever a skill, agent, hook or doctrine document changes —
   it is presence and equality only, so contradictions in meaning still need
   review. Its suite: `node --test plugins/flow/scripts/check-invariants.test.mjs`
-  (`# pass 39` on the same terms).
+  (`# pass 41` on the same terms).
 - **Smoke:** `node plugins/flow/scripts/tickets.mjs doctor` — must exit 0 on
   this repo. `… list` shows the board.
 - **Syntax check:** `node --check plugins/flow/scripts/tickets.mjs`, and the
@@ -116,16 +118,38 @@ test file path explicitly.
 - **`tickets.mjs` has zero dependencies and stores nothing.** Every fact is
   recomputed from git, `gh`, and document headings. Never add a cache, a state
   file, or an npm dependency.
-- **Tokens and time are one grammar in two ledgers, and the unit is the
-  wall between them.** `spend` reads a `<ID> worker=<n>` group wherever it
-  sits in a run record, so a duration written without its `s` is added to
-  the token ledger silently. `scripts/meter.mjs` writes both lines,
-  `tickets.mjs` parses both, the run skill's template teaches both — a
-  change to either shape moves all three in the same commit, and
-  `check-invariants.mjs` pins the Time template. `meter.mjs` shares the
+- **Tokens, time, cache reads and models are one grammar in four ledgers,
+  and the paragraph is the wall between them.** `spend` reads a `<ID>
+  worker=<n>` group wherever it sits in a run record, and the last figure
+  read for a role wins — so a duration written without its `s`, or a read
+  count without its `r`, does not inflate the token figure, it REPLACES it,
+  silently. And `worker=unknown` and `worker=claude-opus-5` carry no unit at
+  all, so each of the three labelled lines is read **only inside its own
+  paragraph** (`**Time:**`, `**Cache reads:**`, `**Models:**`), lifted out by
+  one shared splitter before tokens are read from what is left. What a token
+  group may be FOLLOWED by is the same wall from the other side, and **the
+  refusal in `RUN_GROUP` is not to be touched**: it refuses a follower that
+  is time-shaped or `unknown`, exactly as it always has, so every record
+  reads as it did — three cuts at it while the newer ledgers were added each
+  lost a figure somebody observed, the last by one letter (METHODOLOGY § The
+  follower rule). The one addition loses none, and is decided after the
+  match, on the group rather than the follower's spelling: an
+  **all-`unknown`** group is dropped, and taken out of the text, when another
+  ledger's pair follows it. The table in `tickets.test.mjs` holds a reading
+  per line so the next cut fails there.
+  `scripts/meter.mjs` writes all four lines, `tickets.mjs` parses all four,
+  the run skill's template teaches all four — a change to any of the shapes
+  moves those three files in the same commit, and `check-invariants.mjs`
+  pins the Time, Cache reads and Models templates. The headline `worker=<n>`
+  on the Tokens line is input + output + cache creation with **cache reads
+  left out**, and stays that way: every earlier record in the ledger means
+  that sum, and folding the reads in would make them incomparable with no
+  line saying which record used which definition. `meter.mjs` shares the
   first invariant: zero dependencies, stores nothing, and a figure it cannot
-  observe is `unknown`, never an estimate. A ticket's git commit span is
-  never reported as its `wall` — commits begin when the work is nearly over.
+  observe is `unknown`, never an estimate — which for a model means a name
+  no transcript carried, or one that cannot be written machine-shaped. A
+  ticket's git commit span is never reported as its `wall` — commits begin
+  when the work is nearly over.
 - **A parallel run changes WHERE a pipeline runs and nothing it must pass.**
   `run-epic.mjs` splits at the one line that matters — `runTicket` touches
   only the ticket's branch and may run side by side, in its own worktree;

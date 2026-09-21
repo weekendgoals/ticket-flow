@@ -997,10 +997,12 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/meter.mjs" "$(find ~/.claude/projects -type 
 matches nothing the script receives an empty path and says so: check the ID
 against the Workflow call's result, and list what runs exist with
 `ls -dt $(find ~/.claude/projects -type d -path '*subagents/workflows/wf_*') | head -5`
-— newest first, and the newest is usually the one. If the run's directory cannot be found, both lines
+— newest first, and the newest is usually the one. If the run's directory cannot be found, all four lines
 are written `unknown`, never from memory of what the run seemed to cost. The script sums each
-agent's `usage` as input + output + cache-creation tokens, cache reads left
-out — the sum every record in the ledger uses — counting a message once
+agent's `usage` as input + output + cache-creation tokens, **cache reads left
+out of this sum and reported on the `**Cache reads:**` line below** — so that
+`worker=<n>` here means today what it meant in every earlier record, which is
+what makes the ledger comparable at all — counting a message once
 however many lines it was streamed as, which is the arithmetic a session
 reading JSONL by hand got wrong in both directions. A `refresh+select` step
 counts as a proxy of the ticket it selected; one that selected nothing is
@@ -1008,8 +1010,9 @@ printed apart as run overhead, in `total=` and in no group. A role whose
 transcript is missing prints `unknown`, and a role that never ran is absent.
 If the script finds no journal, every figure is `unknown` — never estimate
 one. A resumed run has a run ID of its own: meter each, and label the
-groups `round=<n>` as above. Add the reviewer's tier, model and effort as prose after the
-groups. This is the run lane's only token record: ticket entries and
+groups `round=<n>` as above. Add the reviewer's tier and effort as prose after the
+groups — the model it ran on is on the `**Models:**` line, observed, and a
+prose copy of it is a second place to drift. This is the run lane's only token record: ticket entries and
 addenda point here. Planning evidence, never a gate. A record written
 without the groups reads as nothing — `doctor` flags it — and is repaired
 by a dated addendum beneath the record restating the figures as groups,
@@ -1040,6 +1043,57 @@ by that addendum. A
 run that selected no ticket prints `**Time:** run=<n>s` and nothing else,
 which is a complete line and not a near-miss. Planning evidence, never a gate — no ticket halts on a
 duration.>
+
+**Cache reads:** <the third line `meter.mjs` printed, pasted as printed — one
+group per ticket, `<ID> worker=<n>r reviewer=<n>r disposition=<n>r
+re-review=<n>r proxies=<n>r`, groups separated by `;`, then `total=<n>r`,
+which holds the run's overhead as the Tokens line's total does. **Every
+figure carries its `r`, and none carries a comma**: a bare `worker=4812330`
+anywhere in a record is a token figure, so the unit is what keeps a read
+count out of the token ledger — where, the last figure read for a role
+winning, it would not add to the ticket's cost but REPLACE it, with a count
+several times its size and nothing saying so. Read
+**only inside a paragraph that starts `**Cache reads:**`** (to the next blank
+line or bold label), for the reason time is: `worker=unknown` opens a token
+group and a cache group identically, so the paragraph is the wall. `round=<n>`
+labels, `unknown`, and corrections by dated addendum work exactly as on the
+Tokens line, and the sum of the rounds is the figure. A record written before
+this line existed has no cache reads at all, which `spend` reports as nothing
+recorded — never as zero, and never backfilled. `doctor` flags a Cache reads
+line with figures where no group parses, cleared by an addendum carrying the
+groups under a `**Cache reads:**` line of its own. Planning evidence, never a
+gate.>
+
+**Models:** <the fourth line `meter.mjs` printed, pasted as printed — one
+group per ticket, `<ID> worker=<name> reviewer=<name> …`, groups separated by
+`;`, and no total, because names have nothing to sum. Each name is observed:
+every assistant line of a transcript carries the model that wrote it. **An
+agent that used two models prints both joined by `+`** (a fallback mid-step)
+and a role's value is every model its agents used, in first-use order — never
+a "dominant" one, which would be an estimate of something the transcript
+states exactly. **With `Worker runner: codex` the worker reads
+`codex:<model>`**: that agent is the runner's shell proxy, so its own model
+is haiku, and the model that wrote the ticket is the one in the JSON the
+runner printed, which `meter.mjs` reads out of the proxy's tool results — and
+where the runner ran but printed nothing readable, the worker is `unknown`,
+because the proxy's own model is the one model that certainly did not write
+the ticket. Codex's token usage stays where it is — in the proxy's prose —
+and reaches no ledger. `unknown` where the transcripts named no model, and a
+name that cannot be written machine-shaped is `unknown` too, never guessed:
+each name opens with a letter, carries only letters, digits and `. _ : / -`,
+and ends in a letter or digit — a name that opened with a digit would be read
+back as a FIGURE, one with a space in it as a second pair, and one ending in
+punctuation as a name nobody ran. **This paragraph carries groups and nothing
+else**: the reviewer's tier and effort, and any note about the run, go in a
+sentence of their own outside it (after a blank line, or under another bold
+label), because a word standing beside a name ends the group there —
+`worker=claude-opus-5 as reported` is read as nothing, and `doctor` says
+which ticket lost its model. Read **only inside a paragraph that starts `**Models:**`**, for the
+reason cache reads are: `worker=claude-opus-5` opens like a token group.
+Corrections by dated addendum work as everywhere else; a later round's models
+are united with the earlier ones rather than replacing them. Old records have
+no Models line, which reads as nothing recorded. Planning evidence — what a
+tier cost on which model — never a gate.>
 
 **Release check:** <from the result's `releaseCheck`: the commit it was made
 at (`head`, shortened — kept when the check failed too) and each of its `tickets` as `<ID> <passed>/<total>`,

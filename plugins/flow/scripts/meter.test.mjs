@@ -14,7 +14,7 @@ import { mkdtempSync, writeFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { meter, readTranscript, tokensLine, timeLine } from './meter.mjs'
+import { meter, readTranscript, tokensLine, timeLine, cacheReadsLine, modelsLine } from './meter.mjs'
 
 const METER = join(dirname(fileURLToPath(import.meta.url)), 'meter.mjs')
 const jsonl = (rows) => rows.map((r) => JSON.stringify(r)).join('\n') + '\n'
@@ -27,6 +27,33 @@ const transcript = (start, end, u, id = 'msg_1') =>
     { type: 'assistant', timestamp: at(end), message: { id, usage: u } },
   ])
 const started = (label, agentId) => ({ type: 'started', key: `v2:${agentId}`, agentId, label, phase: 'Ticket' })
+// An assistant line naming the model that wrote it, the way the harness does.
+const says = (s, model, id = 'msg_1', u = usage(0, 1, 0)) => ({ type: 'assistant', timestamp: at(s), message: { id, model, usage: u } })
+// A tool RESULT line — the shape a shell call's output reaches a transcript
+// in. Built here, never read from a real transcript: those live under
+// ~/.claude and belong to whoever ran them.
+const toolResult = (s, text) => ({
+  type: 'user',
+  timestamp: at(s),
+  message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'toolu_1', content: [{ type: 'text', text }] }] },
+})
+// What `scripts/runners/codex.mjs --json` prints: the worker-shaped report
+// with the runner's own record under `runner` (see its `out` object).
+const codexReport = (model, extra = {}, ticket = 'CX-1') =>
+  JSON.stringify(
+    {
+      state: 'finished',
+      ticket,
+      result: 'work-done',
+      stopCondition: 'none',
+      tier: 'normal',
+      branch: 'cx-1',
+      deployPreconditions: [],
+      runner: { name: 'codex', model, exitCode: 0, usage: { input_tokens: 12 }, threadId: 'th_1', pushed: true, durationMs: 1000, events: 40, ...extra },
+    },
+    null,
+    2,
+  )
 
 test('a message streamed as several lines is counted once', () => {
   const u = usage(10, 200, 3000, 900000)
@@ -74,8 +101,222 @@ test('the release check is run overhead: it gives no ticket a group, and stretch
   assert.doesNotMatch(timeLine(idle), /RC-1|wall=/, 'a run that selected no ticket still prints no group')
 })
 
-test('cache reads are left out of the token figure', () => {
-  assert.equal(readTranscript(transcript(0, 1, usage(1, 1, 1, 5_000_000))).tokens, 3)
+test('cache reads are left out of the token figure, and reported beside it', () => {
+  const t = readTranscript(transcript(0, 1, usage(1, 1, 1, 5_000_000)))
+  assert.equal(t.tokens, 3)
+  assert.equal(t.cacheReads, 5_000_000)
+  // Zero reads is an observation, not a missing one — a first agent has no
+  // cache to read from, and `unknown` there would read as a lost transcript.
+  assert.equal(readTranscript(transcript(0, 1, usage(1, 1, 1))).cacheReads, 0)
+  assert.equal(readTranscript(jsonl([{ type: 'user', timestamp: at(0) }])).cacheReads, null)
+})
+
+test('the Cache reads line carries its unit on every figure, and its total holds the run overhead', () => {
+  const journal = jsonl([started('refresh+select:1', 's1'), started('worker:CR-1', 'w1'), started('review:CR-1', 'r1'), started('release-list:cr', 'o1')])
+  const t = {
+    s1: transcript(0, 5, usage(1, 1, 0, 700)),
+    w1: transcript(10, 100, usage(0, 10, 90, 4_812_330)),
+    r1: transcript(110, 150, usage(0, 5, 45, 911_204)),
+    o1: transcript(160, 170, usage(0, 1, 9, 88_120)),
+  }
+  const r = meter(journal, (id) => t[id])
+  assert.equal(cacheReadsLine(r), '**Cache reads:** CR-1 worker=4812330r reviewer=911204r proxies=700r; total=5812354r')
+  assert.equal(r.totalCacheReads, 4_812_330 + 911_204 + 700 + 88_120, 'the release-list step belongs to no ticket and is still in the total')
+  // The `r` is the wall: no figure on this line can be read as a token count.
+  for (const m of cacheReadsLine(r).matchAll(/=(\S+?)(?=[;\s]|$)/g)) assert.match(m[1], /^(\d+r|unknown)$/, m[0])
+  assert.doesNotMatch(cacheReadsLine(r), /,/, 'no thousands separators: `1,430s` is what `spend` once read as `1`')
+})
+
+test('models are the distinct names in order of first use, and <synthetic> is not one', () => {
+  const text = jsonl([
+    says(0, 'claude-opus-5'),
+    says(1, 'claude-opus-5'), // the same message, streamed as a second line
+    says(2, '<synthetic>', 'msg_2'), // injected by the harness; no model ran it
+    says(3, 'claude-fable-5-1', 'msg_3'),
+    says(4, 'claude-opus-5', 'msg_4'),
+  ])
+  assert.deepEqual(readTranscript(text).models, ['claude-opus-5', 'claude-fable-5-1'])
+})
+
+test('a model name outside the safe charset is no observation', () => {
+  // A name with a space or a `;` would be read in the record as a second pair
+  // or as the end of the group, so it is not printed at all — and one that
+  // opens with a digit would be read there as a FIGURE, which is the one
+  // wrong reading that changes a token count.
+  assert.deepEqual(readTranscript(jsonl([says(0, 'claude opus 5')])).models, [])
+  assert.deepEqual(readTranscript(jsonl([says(0, 'claude-opus-5;x')])).models, [])
+  assert.deepEqual(readTranscript(jsonl([says(0, '5')])).models, [])
+  assert.deepEqual(readTranscript(jsonl([says(0, '12r')])).models, [])
+  // …and one that ends in punctuation would be read back with the
+  // punctuation, which is a name nobody ran. A dot INSIDE a name is fine.
+  assert.deepEqual(readTranscript(jsonl([says(0, 'claude-opus-5.')])).models, [])
+  assert.deepEqual(readTranscript(jsonl([says(0, 'claude-fable-5.1')])).models, ['claude-fable-5.1'])
+})
+
+test("a role's models are its agents' union, in first-use order, joined by +", () => {
+  const journal = jsonl([started('worker:M-1', 'w1'), started('worker:M-1:retry', 'w2'), started('review:M-1', 'r1')])
+  const t = {
+    w1: jsonl([says(0, 'claude-opus-5')]),
+    w2: jsonl([says(10, 'claude-fable-5-1', 'msg_2'), says(11, 'claude-opus-5', 'msg_3')]),
+    r1: jsonl([says(20, 'claude-fable-5-1', 'msg_4')]),
+  }
+  const r = meter(journal, (id) => t[id])
+  assert.equal(modelsLine(r), '**Models:** M-1 worker=claude-opus-5+claude-fable-5-1 reviewer=claude-fable-5-1')
+})
+
+test('a role with no model observed anywhere reads unknown, and a run with no ticket names none', () => {
+  const journal = jsonl([started('worker:M-2', 'w1'), started('review:M-2', 'r1')])
+  const t = { w1: transcript(0, 10, usage(0, 1, 9)), r1: null }
+  const r = meter(journal, (id) => t[id])
+  assert.equal(modelsLine(r), '**Models:** M-2 worker=unknown reviewer=unknown')
+  assert.equal(modelsLine(meter(jsonl([started('refresh+select:1', 's')]), () => transcript(0, 5, usage(0, 1, 9)))), '**Models:** none — no ticket ran')
+})
+
+// The runner is started by a tool USE, and that command is what says the
+// runner ran here — `--wait` prints the report the model is read from. This
+// is `run-epic.mjs`'s own `runnerBase`, copied, with its two quoted paths
+// filled in: both are `${CLAUDE_PLUGIN_ROOT}` and the repository, and both
+// are wherever the person keeps their files — a home directory with a space
+// in it is ordinary, and a pattern that could not cross one read a real
+// Codex worker as its proxy's haiku.
+const runnerBase = (pluginRoot, root, id = 'CX-1') =>
+  `node "${pluginRoot}/scripts/runners/codex.mjs" ${id} --epic cx --epic-branch epic/cx --default-branch main --repo "${root}" --plugin "${pluginRoot}" --label worker:${id} --wave --timeout 3600000 --json`
+const PLAIN_ROOT = '/Users/x/.claude/plugins/ticket-flow/plugins/flow'
+const SPACED_ROOT = '/Users/John Smith/.claude/plugins/ticket flow/plugins/flow'
+const RUNNER_CMD = `${runnerBase(PLAIN_ROOT, '/Users/x/repo')} --start`
+const toolUse = (s, command, model = 'claude-haiku-4-5') => ({
+  type: 'assistant',
+  timestamp: at(s),
+  message: { id: `use_${s}`, model, usage: usage(0, 1, 0), content: [{ type: 'tool_use', id: 'toolu_1', name: 'Bash', input: { command } }] },
+})
+// A worker proxy's transcript: its own haiku lines, the runner's command, and
+// what the command printed.
+const proxy = (printed, command = RUNNER_CMD) => jsonl([says(0, 'claude-haiku-4-5'), toolUse(5, command), toolResult(10, printed), says(20, 'claude-haiku-4-5', 'msg_2')])
+const asWorker = (text, ticket = 'CX-1') => readTranscript(text, { proxyTicket: ticket })
+
+test("a Codex worker's model is the runner's, not its shell proxy's", () => {
+  // The `worker:<ID>` agent here is a haiku proxy that starts the runner and
+  // relays what it printed; the model that wrote the ticket is inside that
+  // JSON, which reaches the transcript as the shell call's result.
+  assert.deepEqual(asWorker(proxy(codexReport('gpt-5-codex'))).models, ['codex:gpt-5-codex'])
+  // Surrounded by whatever else the shell wrote, and after a `--start` that
+  // named no runner: still found, still the only model reported.
+  const noisy = `$ node codex.mjs CX-1 --start\n{\n  "state": "started",\n  "attempt": 1\n}\n${codexReport('gpt-5-codex')}\ndone\n`
+  assert.deepEqual(asWorker(proxy(noisy)).models, ['codex:gpt-5-codex'])
+  // An odd `"` in the shell's own output used to desynchronise a scan that
+  // ran from the top of the blob: every brace after it read as string
+  // content, and the report went missing. Each candidate is scanned from
+  // itself now.
+  const desynced = `bash: unexpected " near token\n${codexReport('gpt-5-codex')}\n`
+  assert.deepEqual(asWorker(proxy(desynced)).models, ['codex:gpt-5-codex'])
+  // …and one level deeper than expected is still the runner's report.
+  assert.deepEqual(asWorker(proxy(JSON.stringify({ stdout: JSON.parse(codexReport('gpt-5-codex')) }, null, 2))).models, ['codex:gpt-5-codex'])
+})
+
+test('a codex report is only a model substitution in the agent the runner ran in', () => {
+  // A merge or verify step that reads the runner's log prints the same JSON,
+  // and its own model is the one that did its work.
+  const text = proxy(codexReport('gpt-5-codex'))
+  assert.deepEqual(readTranscript(text).models, ['claude-haiku-4-5'], 'no proxy role: the agent keeps its own model')
+  const journal = jsonl([started('worker:CX-1', 'w'), started('merge:CX-1', 'm')])
+  const r = meter(journal, () => text)
+  assert.deepEqual(r.tickets[0].models, { worker: 'codex:gpt-5-codex', proxies: 'claude-haiku-4-5' })
+})
+
+test('a codex run whose report says nothing usable is unknown, never the proxy\'s own model', () => {
+  // The command proves the runner ran, so the proxy's haiku is the one model
+  // that certainly did not write this ticket.
+  assert.deepEqual(asWorker(proxy('{"ticket": "CX-1", "runner": {"name": "codex", "model": "gpt-5-cod')).models, [], 'truncated')
+  assert.deepEqual(asWorker(proxy('killed after 600000 ms')).models, [], 'nothing printed at all')
+  assert.deepEqual(asWorker(proxy(codexReport('gpt 5 codex'))).models, [], 'a name that cannot be written machine-shaped')
+  assert.deepEqual(asWorker(proxy(codexReport('5'))).models, [], 'a name that would read as a figure')
+  // `default` is the runner's placeholder for "whatever Codex is configured
+  // to use" — a name nobody ran, so it is no observation either.
+  assert.deepEqual(asWorker(proxy(codexReport('default'))).models, [])
+  const journal = jsonl([started('worker:CX-1', 'w1')])
+  assert.equal(modelsLine(meter(journal, () => proxy(codexReport('default')))), '**Models:** CX-1 worker=unknown')
+})
+
+test('reading the runner\'s file is not running it, and another ticket\'s report is not this one\'s', () => {
+  // A Claude worker that greps or opens the plugin's own source must keep its
+  // model: a substring test over every tool input reported `unknown` for a
+  // ticket whose worker had merely read the repository.
+  const report = codexReport('gpt-5-codex')
+  for (const command of [
+    'grep -n "runner" /p/plugins/flow/scripts/runners/codex.mjs',
+    'cat /p/plugins/flow/scripts/runners/codex.mjs',
+    'git log -1 -- plugins/flow/scripts/runners/codex.mjs',
+    'ls plugins/flow/scripts/runners/',
+    'grep node plugins/flow/scripts/runners/codex.mjs',
+  ])
+    assert.deepEqual(asWorker(jsonl([says(0, 'claude-opus-5'), toolUse(5, command, 'claude-opus-5'), toolResult(10, report)])).models, ['claude-opus-5'], command)
+  // Node flags that take the script and do NOT run it: a syntax check is not
+  // a run, and a worker that checked the plugin keeps its own model.
+  for (const command of ['node --check /p/scripts/runners/codex.mjs', 'node -c /p/scripts/runners/codex.mjs', 'node --test /p/scripts/runners/codex.mjs'])
+    assert.deepEqual(asWorker(jsonl([says(0, 'claude-opus-5'), toolUse(5, command, 'claude-opus-5'), toolResult(10, report)])).models, ['claude-opus-5'], command)
+  // …while a flag that does not stop the script running is still a run.
+  assert.deepEqual(asWorker(proxy(report, 'node --experimental-vm-modules /p/scripts/runners/codex.mjs CX-1 --json --wait')).models, ['codex:gpt-5-codex'])
+  // The Read tool carries a path, not a command, so it cannot look like one.
+  const readTool = { type: 'assistant', timestamp: at(5), message: { id: 'r1', model: 'claude-opus-5', usage: usage(0, 1, 0), content: [{ type: 'tool_use', id: 't', name: 'Read', input: { file_path: '/p/plugins/flow/scripts/runners/codex.mjs' } }] } }
+  assert.deepEqual(asWorker(jsonl([says(0, 'claude-opus-5'), readTool, toolResult(10, report)])).models, ['claude-opus-5'])
+  // A real invocation, in every shape the driver's proxy prompt produces —
+  // including the two-step `--start` then `--wait`, since the report arrives
+  // on whichever call prints it, and paths with spaces in them.
+  const spaced = runnerBase(SPACED_ROOT, '/Users/John Smith/my repo')
+  for (const command of [
+    RUNNER_CMD,
+    `${runnerBase(PLAIN_ROOT, '/Users/x/repo')} --wait --max-wait 540000`,
+    `${spaced} --start`,
+    `${spaced} --wait --max-wait 540000`,
+    `${spaced} --cancel`,
+    `${runnerBase(PLAIN_ROOT, '/Users/John Smith/my repo')} --wait --max-wait 540000`,
+    "node '/Users/John Smith/plugins/flow/scripts/runners/codex.mjs' CX-1 --json --start",
+    'cd /r && node /p/scripts/runners/codex.mjs CX-1 --cancel --json',
+    '"/usr/local/bin/node" "/p/scripts/runners/codex.mjs" CX-1 --json --wait',
+  ])
+    assert.deepEqual(asWorker(proxy(report, command)).models, ['codex:gpt-5-codex'], command)
+  // The two-step as the proxy actually runs it: the start prints a state
+  // object with no runner, the wait prints the report.
+  const twoStep = jsonl([
+    says(0, 'claude-haiku-4-5'),
+    toolUse(5, `${spaced} --start`),
+    toolResult(10, JSON.stringify({ state: 'started', ticket: 'CX-1', attempt: 1 }, null, 2)),
+    toolUse(15, `${spaced} --wait --max-wait 540000`),
+    toolResult(600, JSON.stringify({ state: 'pending', ticket: 'CX-1' }, null, 2)),
+    toolUse(610, `${spaced} --wait --max-wait 540000`),
+    toolResult(1200, report),
+  ])
+  assert.deepEqual(asWorker(twoStep).models, ['codex:gpt-5-codex'])
+  // And a report the proxy read in passing for ANOTHER ticket answers for
+  // nothing here — the runner's state directory is per ticket.
+  assert.deepEqual(asWorker(proxy(report), 'CX-2').models, [], "the runner ran, and its report is not this ticket's")
+  assert.deepEqual(readTranscript(proxy(report)).models, ['claude-haiku-4-5'], 'and with no proxy role at all, the agent keeps its own model')
+})
+
+test('the brace scan is bounded, so a blob of braces cannot hang the meter', () => {
+  // 2,000 lines of 60 open braces and a `"runner"` key each took 20 seconds
+  // when the only bound was per occurrence. The budget is global now: the
+  // report is simply not found, which for a proven runner run reads unknown.
+  const nasty = Array.from({ length: 2000 }, () => `${'{'.repeat(60)} "runner": 1 `).join('\n')
+  const started = Date.now()
+  const t = asWorker(proxy(nasty))
+  const ms = Date.now() - started
+  assert.deepEqual(t.models, [], 'the runner ran and nothing readable came back')
+  assert.ok(ms < 2000, `the bounded scan took ${ms}ms`)
+})
+
+test('anything short of a codex runner object leaves the proxy its own model', () => {
+  // No runner command in this agent: whatever the JSON says, nothing here
+  // substituted a model, and the transcript's own is what ran.
+  const noRunner = (text) => jsonl([says(0, 'claude-haiku-4-5'), toolUse(5, 'git log -1'), toolResult(10, text)])
+  assert.deepEqual(asWorker(noRunner('{"runner": broken')).models, ['claude-haiku-4-5'], 'unparseable')
+  assert.deepEqual(asWorker(noRunner(JSON.stringify({ runner: { name: 'claude', model: 'x-1' } }))).models, ['claude-haiku-4-5'], 'another runner')
+  assert.deepEqual(asWorker(noRunner(JSON.stringify({ runner: { name: 'codex', model: 5 } }))).models, ['claude-haiku-4-5'], 'no model string')
+  assert.deepEqual(asWorker(noRunner('runner name codex model gpt-5-codex')).models, ['claude-haiku-4-5'], 'prose')
+  // A codex report in the proxy's own MESSAGE is a model's account of the
+  // runner's output; only the tool result is the runner's own.
+  const relayed = jsonl([says(0, 'claude-haiku-4-5'), { type: 'assistant', timestamp: at(10), message: { id: 'msg_2', model: 'claude-haiku-4-5', usage: usage(0, 1, 0), content: [{ type: 'text', text: codexReport('gpt-5-codex') }] } }])
+  assert.deepEqual(asWorker(relayed).models, ['claude-haiku-4-5'])
 })
 
 test('a transcript with no assistant message has time and no tokens', () => {
@@ -123,6 +364,24 @@ const RUN = {
 }
 const read = (run) => (id) => run.transcripts[id] ?? null
 
+// The same run, with the two transcripts the CLI test reads for models and
+// cache reads: a Codex worker (a haiku proxy whose tool result carries the
+// runner's report) and a reviewer on its own model. The figures and the
+// timestamps are RUN's, so every other assertion about this run still holds.
+const MODELLED = {
+  journal: RUN.journal,
+  transcripts: {
+    ...RUN.transcripts,
+    w2: jsonl([
+      { type: 'user', timestamp: at(30) },
+      { type: 'assistant', timestamp: at(100), message: { id: 'use_1', model: 'claude-haiku-4-5', content: [{ type: 'tool_use', id: 'toolu_1', name: 'Bash', input: { command: 'node "/p/scripts/runners/codex.mjs" FND-2 --wait --json' } }] } },
+      toolResult(500, codexReport('gpt-5-codex', {}, 'FND-2')),
+      says(1030, 'claude-haiku-4-5', 'msg_1', usage(0, 50_000, 150_000, 900_000)),
+    ]),
+    r2: jsonl([{ type: 'user', timestamp: at(1060) }, says(1360, 'claude-fable-5-1', 'msg_1', usage(0, 10_000, 90_000, 400_000))]),
+  },
+}
+
 test('labels map to the ledger roles, and every other step is a proxy', () => {
   const [t2] = meter(RUN.journal, read(RUN)).tickets
   assert.deepEqual(t2.tokens, { worker: 200_000, reviewer: 100_000, disposition: 50_000, 're-review': 30_000, proxies: 2_000 })
@@ -160,6 +419,11 @@ test('a role that never ran is absent; a role whose transcript is missing is unk
   assert.equal(t3.seconds.reviewer, null)
   assert.equal(t3.wall, null, 'a wall with a hole in it is not a wall')
   assert.equal(t3.tokens.worker, 100_000, 'the roles that were observed keep their figures')
+  // Cache reads follow the same rule, for the same reason: a partial sum
+  // would read as the role's and be silently low.
+  assert.equal(t3.cacheReads.reviewer, null)
+  assert.equal(t3.cacheReads.worker, 0)
+  assert.match(cacheReadsLine(meter(RUN.journal, read(run))), /FND-3 worker=0r reviewer=unknown/)
 })
 
 test('a retried step is summed; one unobserved attempt makes the role unknown', () => {
@@ -196,19 +460,27 @@ function runDir(run) {
   return dir
 }
 
-test('CLI: prints both lines and one row per agent; --json carries the same lines', () => {
-  const dir = runDir(RUN)
+test('CLI: prints all four lines and one row per agent; --json carries the same lines', () => {
+  const dir = runDir(MODELLED)
   try {
     const out = execFileSync('node', [METER, dir], { encoding: 'utf8' })
     assert.match(out, /^\*\*Tokens:\*\* FND-2 worker=200,000/m)
     assert.match(out, /^\*\*Time:\*\* FND-2 worker=1000s/m)
-    assert.match(out, /worker:FND-2 — 200,000 tokens .*1000s/)
+    assert.match(out, /^\*\*Cache reads:\*\* FND-2 worker=900000r /m)
+    assert.match(out, /^\*\*Models:\*\* FND-2 worker=codex:gpt-5-codex reviewer=claude-fable-5-1/m)
+    assert.match(out, /worker:FND-2 — 200,000 tokens .*1000s — codex:gpt-5-codex/)
+    assert.match(out, /cache reads 900,000, on the Cache reads line and not in this sum/)
     assert.match(out, /run overhead/)
     const json = JSON.parse(execFileSync('node', [METER, dir, '--json'], { encoding: 'utf8' }))
     assert.equal(json.tickets[0].wall, 1600)
     assert.match(json.timeLine, /^\*\*Time:\*\* FND-2 worker=1000s .* wall=1600s; FND-3 .*; run=2470s$/)
+    assert.match(json.cacheReadsLine, /^\*\*Cache reads:\*\* FND-2 .*; total=\d+r$/)
+    assert.match(json.modelsLine, /^\*\*Models:\*\* FND-2 worker=codex:gpt-5-codex /)
+    assert.equal(json.tickets[0].models.worker, 'codex:gpt-5-codex')
+    assert.equal(json.tickets[0].cacheReads.worker, 900_000)
     assert.deepEqual(json.overhead.map((a) => [a.label, a.role, a.failed]), [['refresh+select:3', 'proxies', true]])
-    assert.deepEqual(Object.keys(json.tickets[0].agents[1]).sort(), ['agentId', 'failed', 'label', 'parts', 'role', 'seconds', 'tokens', 'transcript'])
+    assert.deepEqual(json.tickets[0].agents[1].models, ['codex:gpt-5-codex'], 'the per-agent models are in --json for the record’s prose')
+    assert.deepEqual(Object.keys(json.tickets[0].agents[1]).sort(), ['agentId', 'cacheReads', 'failed', 'label', 'models', 'parts', 'role', 'seconds', 'tokens', 'transcript'])
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }

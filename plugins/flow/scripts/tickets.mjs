@@ -1394,26 +1394,68 @@ const TOKENS_LINE = /\*\*Tokens:\*\*\s*([^\n]*)/gi
 // labelled groups, and doctor's only test for a parseable run record — so the
 // round label lives here, where all three move together.
 const ROLE_PAIRS = `((?:\\s+(?:${ROLE_RE})=(?:\\d[\\d,]*|unknown)${NOT_A_UNIT})+)`
-// …and a group is never followed by a role pair it could not read. Without
-// the closing lookahead `CITY-15 worker=unknown reviewer=200s` — a TIME group,
-// quoted in prose — reads as the token group `CITY-15 worker=unknown`:
-// `unknown` is the one figure with no unit, so it is the hole in the wall
-// between the ledgers, and the leak replaces the ticket's own
-// `**Tokens:** unknown` marker with a role nobody wrote a token figure for.
-// (`wall` is time's own key; it is here because it is what follows.)
+// …and a group is never followed by a TIME-shaped pair, or by `unknown`.
+// Without that `CITY-15 worker=unknown reviewer=200s` — a TIME group, quoted
+// in prose — reads as the token group `CITY-15 worker=unknown`: `unknown` is
+// the one figure with no unit, so it is the hole in the wall between the
+// ledgers, and the leak replaces the ticket's own `**Tokens:** unknown`
+// marker with a role nobody wrote a token figure for. (`wall` is time's own
+// key; it is here because it is what follows.)
 //
-// The follower must be TIME-SHAPED — seconds, or `unknown`. The first cut
-// refused a group followed by any `<role>=` at all, and that threw away whole
-// groups main had read correctly: `A-1 worker=100 reviewer=50 wall=9`,
-// `… reviewer=228k`, `… reviewer=` — silently, wherever a sibling group in the
-// record parsed. A follower that is merely unreadable costs only itself.
+// **This lookahead is unchanged, and changing it is how figures get lost.**
+// Cut A, the first one ever written, refused a group followed by any
+// `<role>=` at all, and threw away whole groups the parser had been reading
+// correctly: `A-1 worker=100 reviewer=50 wall=9`, `… reviewer=228k`,
+// `… reviewer=`; this shape is what replaced it. Adding the newer ledgers cut
+// at it three more times, each losing a figure. Cut 1 refused any
+// letter-initial follower and took `disposition=none`, `re-review=n/a` and
+// the `proxies=5000` before them. Cut 2 narrowed that to letter-initial
+// values carrying a digit, and took `re-review=round2`, `disposition=v2`.
+// Cut 3 widened the unit by one letter, `s` to `[sr]`, so that a cache figure
+// could close a group too — and `C-1 worker=462249 reviewer=185339
+// proxies=12r` lost the reviewer's 185,339, silently, while the record's own
+// Cache reads paragraph made the ticket look answered. A cache figure needs
+// nothing here: `NOT_A_UNIT` already refuses `12r` as a token pair, so the
+// group ends before it and reads exactly as it always did.
 const RUN_GROUP = new RegExp(`\\b(${TICKET_ID})(?:\\s+round=(\\d+))?${ROLE_PAIRS}(?!\\s+(?:${ROLE_RE}|wall)=(?:\\d[\\d,]*s|unknown)\\b)`, 'g')
+// The one addition, and it is decided after the match rather than by the
+// follower's spelling: a token group can only be another ledger's group in
+// disguise when every pair it swallowed is `unknown`, the single value the
+// four ledgers share. Such a group — and only such a group — is dropped when
+// what follows it belongs to a ledger: unit-carrying, or letter-initial,
+// which is every model name and `unknown` itself. Nothing observed is at
+// stake in the drop; the only thing lost is an `unknown` mark for a role
+// nobody wrote a figure for.
+const ALL_UNKNOWN = new RegExp(`^(?:\\s+(?:${ROLE_RE})=unknown${NOT_A_UNIT})+$`, 'i')
+const LEDGER_FOLLOWER = new RegExp(`^\\s+(?:${ROLE_RE}|wall)=(?:\\d[\\d,]*[sr]\\b|[A-Za-z])`, 'i')
+// Every run group the ledger reads out of a flattened text, and the same text
+// with EVERY matched group blanked, dropped ones included. The pair is one
+// function because an entry's own bare pairs are what is left when the
+// labelled groups are taken out — and a dropped group belongs to neither
+// ticket: left in the text, its `worker=unknown` was read as the enclosing
+// entry's own figure, which is the same leak one ticket to the left. (A group
+// the lookahead above refuses never matched at all, and stays where it is,
+// exactly as it does on main.)
+function runGroups(flat) {
+  const groups = []
+  let rest = ''
+  let at = 0
+  for (const m of flat.matchAll(RUN_GROUP)) {
+    if (!(ALL_UNKNOWN.test(m[3]) && LEDGER_FOLLOWER.test(flat.slice(m.index + m[0].length)))) groups.push(m)
+    rest += `${flat.slice(at, m.index)} `
+    at = m.index + m[0].length
+  }
+  return { groups, rest: rest + flat.slice(at) }
+}
 // The same label inside a ticket's own entry, where the ID is the heading's.
 const ENTRY_ROUND = new RegExp(`\\bround=(\\d+)${ROLE_PAIRS}`, 'gi')
 // What marks a repeated figure as a correction rather than a round: the dated
 // addendum corrections already take ("**Addendum — correction — …").
 const CORRECTION_MARK = /Addendum\b[^*]{0,80}\bcorrect/i
-const toNum = (s) => Number(s.replace(/,|s$/g, ''))
+// The unit comes off here, so one `apply` serves all three counting ledgers:
+// a token figure never ends in a letter (`NOT_A_UNIT` sees to that), so only a
+// duration's `s` and a cache read's `r` can be stripped.
+const toNum = (s) => Number(s.replace(/,|[sr]$/g, ''))
 
 // ── time ─────────────────────────────────────────────────────────────────────
 // A run record's `**Time:**` line is the Tokens line's twin — the same groups,
@@ -1438,39 +1480,114 @@ const TIME_GROUP = new RegExp(`\\b(${TICKET_ID})(?:\\s+round=(\\d+))?((?:\\s+(?:
 // Commas included: `worker=1,430s` is not machine-shaped, and it is still a
 // duration somebody meant the ledger to have.
 const TIME_FIGURE = new RegExp(`\\b(?:${TIME_RE})=\\d[\\d,]*s\\b`, 'i')
-// The paragraph runs from a line that starts `**Time:**` to the next blank line
-// or bold label — records wrap at the house width — and the split is by GROUP,
-// not by line: every time group in the paragraph is lifted out for the time
-// ledger, whatever prose stands beside it, and what is left goes back to the
-// text tokens are read from. Both line-level cuts lost figures silently. The
-// paragraph taken whole swallowed `CITY-15 worker=100 reviewer=50` written
-// under a Time line, and it reached neither ledger; the paragraph narrowed to
-// lines holding nothing but time dropped a whole ticket's time for one
-// parenthesis on a wrapped line, and handed the rejected line's
-// `worker=unknown` to the token ledger. Lifted groups are blanked in place,
-// newlines kept, so `rest` has the record's own line numbers and doctor can
-// name the line it means.
-function splitTimeParagraphs(text) {
+// ── cache reads and models ───────────────────────────────────────────────────
+// Two more lines from the same observer, read under the same rules. Cache
+// reads are a count like tokens — rounds sum, a repeat corrects, `unknown`
+// erases nothing — and carry `r` on every figure for the reason seconds carry
+// `s`: `spend` reads a bare `worker=4812330` as TOKENS wherever it sits, and
+// the last figure read for a role wins, so a unitless read figure does not
+// inflate the ticket's cost — it REPLACES it, with a count several times its
+// size and no sign that anything was overwritten.
+// Models are names, not counts: a role's value is what ran, several joined by
+// `+`, and a later round's models are unioned rather than summed.
+//
+// Neither unit is enough on its own. `worker=unknown` has no unit at all and
+// `worker=claude-opus-5` is not a figure, yet both open exactly like a token
+// group — so, as with time, the PARAGRAPH is the wall: each line's groups are
+// lifted out of the text before the token ledger reads what is left.
+const CACHE_PAIR = new RegExp(`\\b(${ROLE_RE})=(\\d+r|unknown)\\b`, 'gi')
+const CACHE_GROUP = new RegExp(`\\b(${TICKET_ID})(?:\\s+round=(\\d+))?((?:\\s+(?:${ROLE_RE})=(?:\\d+r|unknown)\\b)+)`, 'g')
+// A cache-shaped figure wherever it sits, for doctor: commas included, since
+// `worker=4,812,330r` is not machine-shaped and is still a count somebody
+// meant the ledger to have.
+// Case-sensitive, so that the line test and `FIGURE_OWNER`'s scan of the same
+// line agree about what a figure is.
+const CACHE_FIGURE = new RegExp(`\\b(?:${ROLE_RE})=\\d[\\d,]*r\\b`)
+// A model value is one or more names joined by `+`. A NAME is the charset
+// `meter.mjs` prints and nothing else — a letter first, a letter or digit
+// last — and it is the same rule at the writer's door, because a name that
+// could be read as a figure is the one shape that crosses into the token
+// ledger, and a name that swallows its neighbouring punctuation
+// (`claude-opus-5.`) is a name nobody ran. `claude-fable-5.1` keeps its dot:
+// the rule is about the end, not the middle.
+const MODEL_NAME = `[A-Za-z](?:[A-Za-z0-9._:/-]*[A-Za-z0-9])?`
+// …and the value has to END the pair: at `;`, at the end of the text, or at
+// whitespace that is followed by another pair or the next group. A value
+// merely cut at the first character outside the charset is the failure this
+// closes — `worker=a=b` read as `a`, `reviewer=claude opus` read as
+// `claude` — a wrong name reported as an observed one. Unread here means the
+// group ends there, and `doctor`'s per-paragraph warn says which ticket lost
+// its model and how to restate it. What that costs the writer is one rule,
+// and the skill and the warn both carry it: **a Models paragraph holds
+// groups and nothing else** — the reviewer's tier, its effort and any note
+// go in a sentence of their own outside the paragraph, because a word beside
+// a name ends the group there. A line pasted as the meter printed it always
+// parses.
+const MODEL_END = `(?=\\s*(?:;|$)|\\s+(?:${ROLE_RE})=|\\s+${TICKET_ID}\\b)`
+const MODEL_VALUE = `${MODEL_NAME}(?:\\+${MODEL_NAME})*${MODEL_END}`
+const MODEL_PAIR = new RegExp(`\\b(${ROLE_RE})=(${MODEL_NAME}(?:\\+${MODEL_NAME})*)${MODEL_END}`, 'gi')
+const MODEL_GROUP = new RegExp(`\\b(${TICKET_ID})(?:\\s+round=(\\d+))?((?:\\s+(?:${ROLE_RE})=${MODEL_VALUE})+)`, 'g')
+const ROLE_ASSIGN = new RegExp(`\\b(?:${ROLE_RE})=`, 'i')
+
+// The three labelled ledgers, each read only inside its own paragraph.
+const LEDGER_PARAGRAPHS = [
+  { key: 'time', label: /^\*\*Time:\*\*/i, group: TIME_GROUP },
+  { key: 'cache', label: /^\*\*Cache reads:\*\*/i, group: CACHE_GROUP },
+  { key: 'models', label: /^\*\*Models:\*\*/i, group: MODEL_GROUP },
+]
+
+// A paragraph runs from a line that starts with one of those labels to the
+// next blank line or bold label — records wrap at the house width — and the
+// split is by GROUP, not by line: every group in the paragraph is lifted out
+// for its own ledger, whatever prose stands beside it, and what is left goes
+// back to the text tokens are read from. Both line-level cuts lost figures
+// silently. The paragraph taken whole swallowed `CITY-15 worker=100
+// reviewer=50` written under a Time line, and it reached neither ledger; the
+// paragraph narrowed to lines holding nothing but time dropped a whole
+// ticket's time for one parenthesis on a wrapped line, and handed the
+// rejected line's `worker=unknown` to the token ledger. Lifted groups are
+// blanked in place, newlines kept, so `rest` has the record's own line
+// numbers and doctor can name the line it means.
+//
+// One function for the three labels rather than three copies: they are one
+// mechanism, and a fourth ledger that forgot to lift its paragraph would pour
+// its figures into the token ledger.
+function splitLedgerParagraphs(text) {
   const lines = text.split('\n')
-  const time = []
-  const paragraphs = []
+  const lifted = { time: [], cache: [], models: [] }
+  // One entry per paragraph, in document order: its raw text, where it sat
+  // (so doctor can name the line a lost figure is on, not the record's first
+  // label — a record repaired by an addendum has several paragraphs of the
+  // same kind, and the one that failed is rarely the first), and the groups
+  // lifted OUT OF IT, which is what makes "this paragraph gave the ledger
+  // nothing for this ticket" a question about one paragraph.
+  const paragraphs = { time: [], cache: [], models: [] }
   let start = -1
+  let kind = null
   const close = (end) => {
     if (start < 0) return
     const raw = lines.slice(start, end).join('\n')
-    paragraphs.push(raw)
-    const kept = raw.replace(TIME_GROUP, (m) => (time.push(m), m.replace(/[^\n]/g, ' ')))
+    const mine = []
+    const kept = raw.replace(kind.group, (m, id, round, pairs) => {
+      lifted[kind.key].push(m)
+      mine.push({ id, round, pairs })
+      return m.replace(/[^\n]/g, ' ')
+    })
+    paragraphs[kind.key].push({ text: raw, start, end, groups: mine })
     lines.splice(start, end - start, ...kept.split('\n'))
     start = -1
   }
   lines.forEach((line, i) => {
-    if (/^\*\*Time:\*\*/i.test(line)) {
+    const label = LEDGER_PARAGRAPHS.find((p) => p.label.test(line))
+    if (label) {
       close(i)
       start = i
+      kind = label
     } else if (start >= 0 && (line.trim() === '' || /^\*\*/.test(line))) close(i)
   })
   close(lines.length)
-  return { rest: lines.join('\n'), restLines: lines.map((l, i) => [i, l]), time: time.join('\n'), paragraphs: paragraphs.join('\n') }
+  const join = (o) => Object.fromEntries(Object.entries(o).map(([k, v]) => [k, v.join('\n')]))
+  return { rest: lines.join('\n'), restLines: lines.map((l, i) => [i, l]), ...join(lifted), paragraphs }
 }
 
 function parseSpend(epic) {
@@ -1481,9 +1598,10 @@ function parseSpend(epic) {
   // never where an old one can be found.
   const docs = [epic.statusDoc, epic.runsDoc].filter(Boolean)
   if (!docs.length) return byId
+  const ledger = () => ({ figures: {}, rounds: {}, unknown: new Set(), source: null })
   const rec = (id) =>
     byId[id] ||
-    (byId[id] = { id, figures: {}, rounds: {}, repeats: [], unknown: new Set(), source: null, note: null, time: { figures: {}, rounds: {}, unknown: new Set(), source: null } })
+    (byId[id] = { id, figures: {}, rounds: {}, repeats: [], unknown: new Set(), source: null, note: null, time: ledger(), cache: ledger(), models: ledger() })
   // Two files means two orders, so the ranking is stated rather than left to
   // whichever file is read last:
   //
@@ -1496,55 +1614,68 @@ function parseSpend(epic) {
   //      read wins, and runs.md is read after status.md — so a run record's
   //      figure outranks a status entry's, and a correction to a run record's
   //      figures belongs in runs.md, beneath the record it corrects.
-  const apply = (r, role, val, source) => {
+  //
+  // `read` turns the written value into what the ledger keeps: a number for
+  // the three counting ledgers (the unit comes off), the name itself for the
+  // models ledger. Everything else about the two rules above is the same in
+  // all four, which is the point — one grammar.
+  const apply = (r, role, val, source, read = toNum) => {
     role = role.toLowerCase()
     if (/^unknown$/i.test(val)) {
       if (role in r.figures) return // rule 1 — and the known figure keeps its own source
       r.unknown.add(role)
     } else {
-      r.figures[role] = toNum(val)
+      r.figures[role] = read(val)
       r.unknown.delete(role)
     }
     r.source = source
   }
   // A labelled round: last figure wins WITHIN the round (a correction to a
-  // round is that round written again), rounds are summed at the end, and
-  // `unknown` never erases a round's known figure — rule 1, per round.
-  const applyRound = (r, n, role, val, source) => {
+  // round is that round written again), rounds are summed at the end — united
+  // for models, which have nothing to add — and `unknown` never erases a
+  // round's known figure — rule 1, per round.
+  const applyRound = (r, n, role, val, source, read = toNum) => {
     role = role.toLowerCase()
     const rounds = (r.rounds[role] ||= {})
     if (/^unknown$/i.test(val)) {
       if (n in rounds) return // an unknown that changed nothing keeps the known figure's source too
       rounds[n] = null
-    } else rounds[n] = toNum(val)
+    } else rounds[n] = read(val)
     r.source = source
   }
   // Entries wrap at the house width, so phrases are matched over a region's
   // joined text, never line by line: "Worker tokens (implementation\nleg):".
   const flush = (region, text) => {
     if (!region) return
-    const split = splitTimeParagraphs(text)
-    // Time groups go to the ticket's time ledger under the token ledger's own
-    // rules — `apply` and `applyRound` take either — so rounds sum, a repeat
-    // corrects, and `unknown` never erases an observation, in both.
-    for (const m of split.time.replace(/\s+/g, ' ').matchAll(TIME_GROUP)) {
-      const t = rec(m[1]).time
-      const where = region.run ? 'run-record' : 'log'
-      for (const p of m[3].matchAll(TIME_PAIR)) m[2] ? applyRound(t, m[2], p[1], p[2], where) : apply(t, p[1], p[2], where)
+    const split = splitLedgerParagraphs(text)
+    // The three labelled ledgers go to the ticket under the token ledger's own
+    // rules — `apply` and `applyRound` take any of them — so rounds sum, a
+    // repeat corrects, and `unknown` never erases an observation, in all four.
+    const where = region.run ? 'run-record' : 'log'
+    for (const [key, group, pair, read] of [
+      ['time', TIME_GROUP, TIME_PAIR, toNum],
+      ['cache', CACHE_GROUP, CACHE_PAIR, toNum],
+      ['models', MODEL_GROUP, MODEL_PAIR, (v) => v],
+    ]) {
+      for (const m of split[key].replace(/\s+/g, ' ').matchAll(group)) {
+        const t = rec(m[1])[key]
+        for (const p of m[3].matchAll(pair)) (m[2] ? applyRound(t, m[2], p[1], p[2], where, read) : apply(t, p[1], p[2], where, read))
+      }
     }
     const flat = split.rest.replace(/\s+/g, ' ')
     // A machine-shaped group names its own ticket, so it is read wherever it
     // sits — a correction addendum for a run record appended at the end of
     // a log lands in whatever entry is last, and must still reach the ticket
     // it names rather than the entry it landed in.
-    for (const m of flat.matchAll(RUN_GROUP)) {
+    const run = runGroups(flat)
+    for (const m of run.groups) {
       const r = rec(m[1])
       for (const p of m[3].matchAll(ROLE_PAIR)) m[2] ? applyRound(r, m[2], p[1], p[2], 'run-record') : apply(r, p[1], p[2], 'run-record')
       r.unknown.delete('ticket')
     }
     if (region.id) {
       const r = rec(region.id)
-      let own = flat.replace(RUN_GROUP, ' ') // bare pairs and phrases belong to this entry; labelled groups do not
+      let own = run.rest // bare pairs and phrases belong to this entry; labelled groups do not
       for (const m of own.matchAll(ENTRY_ROUND)) for (const p of m[2].matchAll(ROLE_PAIR)) applyRound(r, m[1], p[1], p[2], 'log')
       own = own.replace(ENTRY_ROUND, ' ')
       // Two unlabelled known figures for one role in one entry are either a
@@ -1609,7 +1740,7 @@ function parseSpend(epic) {
   // labelled rounds is their sum — the labelled reading wins over any
   // unlabelled figure for the same role, and `mixed` says so for doctor. A
   // round known only as `unknown` adds nothing and erases nothing.
-  for (const r of Object.values(byId).flatMap((x) => [x, x.time])) {
+  for (const r of Object.values(byId).flatMap((x) => [x, x.time, x.cache])) {
     r.mixed = []
     for (const [role, rounds] of Object.entries(r.rounds)) {
       const known = Object.values(rounds).filter((v) => v !== null)
@@ -1622,6 +1753,26 @@ function parseSpend(epic) {
       r.unknown.delete(role)
     }
   }
+  // Models are united where the counts are summed: a second round ran
+  // whatever it ran, and the role's value is every model seen, in first-seen
+  // order. Adding them is what a shared fold would have done — `0 + 'opus'`.
+  // No `mixed` list here, unlike the counting ledgers: doctor's mixed warn is
+  // about a SUM that silently ignores an unlabelled figure, and a union
+  // ignores nothing — the unlabelled name would be one more member if it
+  // were read. A list nobody reads is a field that drifts.
+  for (const { models } of Object.values(byId)) {
+    for (const [role, rounds] of Object.entries(models.rounds)) {
+      const known = Object.values(rounds).filter((v) => v !== null)
+      if (!known.length) {
+        if (!(role in models.figures)) models.unknown.add(role)
+        continue
+      }
+      const seen = []
+      for (const v of known) for (const name of v.split('+')) if (!seen.includes(name)) seen.push(name)
+      models.figures[role] = seen.join('+')
+      models.unknown.delete(role)
+    }
+  }
   return byId
 }
 
@@ -1632,14 +1783,14 @@ function parseSpend(epic) {
 // repair is the log's own correction mechanism — a dated addendum beneath the
 // record restating the figures as groups — and parseSpend already reads a
 // region's addenda, so the advertised recovery works in the flagged state.
-function runRecordNearMisses(doc, timed = new Set()) {
+function runRecordNearMisses(doc, { timed = new Set() } = {}) {
   const misses = []
   let region = null // { line } for a run record; null elsewhere
   let text = ''
   const flush = () => {
     if (!region || region.tokensLine === undefined) return
-    const flat = splitTimeParagraphs(text).rest.replace(/\s+/g, ' ')
-    const groups = [...flat.matchAll(RUN_GROUP)]
+    const flat = splitLedgerParagraphs(text).rest.replace(/\s+/g, ' ')
+    const groups = runGroups(flat).groups
     // The figure must sit in the Tokens paragraph itself — the line and its
     // house-width continuation lines, up to the next blank line or bold
     // label — not anywhere later in the record: a Halted-on sentence that
@@ -1671,9 +1822,10 @@ function runRecordNearMisses(doc, timed = new Set()) {
   //                 record: it warns when no group parses in it.
   const flushTime = () => {
     if (!region) return
-    const split = splitTimeParagraphs(text)
+    const split = splitLedgerParagraphs(text)
     const parses = split.time !== ''
-    if (!parses && region.timeLine !== undefined && /\d/.test(split.paragraphs.replace(/\d{4}-\d{2}-\d{2}|\brun=\d+s\b/gi, '')))
+    const timeText = split.paragraphs.time.map((p) => p.text).join('\n')
+    if (!parses && region.timeLine !== undefined && /\d/.test(timeText.replace(/\d{4}-\d{2}-\d{2}|\brun=\d+s\b/gi, '')))
       return misses.push({ kind: 'time-shape', line: region.timeLine, heading: region.heading })
     for (const [i, line] of split.restLines) {
       if (!TIME_FIGURE.test(line)) continue
@@ -1682,16 +1834,166 @@ function runRecordNearMisses(doc, timed = new Set()) {
       if (ids.length ? untimed.length : !parses) return misses.push({ kind: 'time-stray', line: region.line + 1 + i, heading: region.heading, ids: untimed })
     }
   }
+  // The Cache reads and Models lines get the same near-misses as Time, and the
+  // ticket-level ones are asked PER WRITTEN GROUP — never "does this ticket
+  // have a figure somewhere", at any width. Asked of the epic, an earlier
+  // run's group answers for a later run's malformed one (the ledger reads 2r
+  // while the record in front of the reader says 4,812,330r); asked of the
+  // paragraph but summed per ticket, one parsing group answers for its own
+  // ticket's malformed sibling (`C-1 round=1 worker=1000r; C-1 round=2
+  // worker=4,812,330r`). So each group-position span — `<ID>`, an optional
+  // `round=<n>`, its pairs, to the next `;`, the next such `<ID>`, or the
+  // paragraph's end — is compared with what the parser reads out of THAT
+  // span, and every span that came up short is reported, not the first.
+  //
+  //   <kind>-shape — the label is there, the paragraph carries values, and no
+  //                  group parses anywhere in the record.
+  //   <kind>-lost  — a written group the parser read fewer pairs for than were
+  //                  written: none (the group is malformed) or some (one pair
+  //                  inside it is, which a whole-group question never sees).
+  //   cache-stray  — and for cache only, the same question one step wider: a
+  //                  `<role>=<n>r` figure ANYWHERE in the record (in prose, or
+  //                  with the commas that stop it parsing) whose own ticket no
+  //                  paragraph of THIS record gave the cache ledger a group
+  //                  for. A model value has no shape to scan for outside its
+  //                  paragraph, which is why models has no stray half.
+  //
+  // Cleared, in every case, by the repair the message advertises: a LATER
+  // paragraph of the same kind in this record — an addendum's, since the
+  // region runs to the next heading — that parses the ticket's group. The log
+  // is append-only, so nothing else could clear it.
+  // A pair as WRITTEN, whatever its value: what the author put on the line,
+  // against which what the parser read is compared. Deliberately loose — the
+  // strictness lives in the real pair regexes, and this one only has to see
+  // that something was meant to be read there.
+  const WRITTEN_PAIR = `\\s+(?:${ROLE_RE})=[^\\s;]+`
+  const WRITTEN_PAIRS = new RegExp(WRITTEN_PAIR, 'gi')
+  // A ticket ID where a GROUP may start. Two things make this stricter than
+  // `\b<ID>\b`, and a warn nobody could clear is what taught both: the match
+  // is CASE-SENSITIVE and must begin a token. Case-insensitively,
+  // `claude-opus-5` ends in `opus-5`, and a Models line naming two model
+  // versions warned about a ticket called "opus-5" — with a repair keyed on
+  // that name, so no append could ever clear it. `\b` alone was not enough
+  // either: it opens inside `claude-OPUS-5`.
+  const ID_AT_START = new RegExp(`(?<=^|[\\s;(])(${TICKET_ID})`, 'g')
+  // …and the rest of a group, tested from where that ID ends. Two regexes
+  // rather than one because the ID is case-sensitive and the role keys are
+  // not (the parsers that read them are `gi`), which one pattern cannot say.
+  // A parenthesised qualifier between the two — `CITY-14 (resumed) worker=…`,
+  // the shape a run heading already allows after its date — is still a group
+  // somebody wrote: the parser will not read it, and saying so by name is the
+  // whole point. Nothing else may stand there, or a sentence that happens to
+  // mention a ticket becomes a group nobody can repair.
+  const GROUP_TAIL = new RegExp(`^(?:\\s*\\([^)\\n]*\\))?(?:\\s+round=\\d+)?(?:${WRITTEN_PAIR})+`, 'i')
+  const CACHE_CARRIES = new RegExp(`\\b(?:${ROLE_RE})=\\d`, 'i')
+  // The GROUPS a paragraph writes, each with the span it owns: from its `<ID>`
+  // to the next `;`, the next group-position `<ID>`, or the paragraph's end.
+  // The span is the unit because the ticket is not: `C-1 round=1 worker=1000r;
+  // C-1 round=2 worker=4,812,330r` writes two groups for one ticket, and a
+  // count kept per ticket lets the first answer for the second.
+  const writtenSpans = (paraText) => {
+    const starts = []
+    for (const m of paraText.matchAll(ID_AT_START)) {
+      if (GROUP_TAIL.test(paraText.slice(m.index + m[1].length))) starts.push({ id: m[1], at: m.index })
+    }
+    return starts.map((s, i) => {
+      const nextGroup = i + 1 < starts.length ? starts[i + 1].at : paraText.length
+      const semi = paraText.indexOf(';', s.at)
+      const end = semi !== -1 && semi < nextGroup ? semi : nextGroup
+      return { id: s.id, at: s.at, text: paraText.slice(s.at, end) }
+    })
+  }
+  const flushLabelled = () => {
+    if (!region) return
+    const split = splitLedgerParagraphs(text)
+    for (const [kind, groupRe, pairRe] of [
+      ['cache', CACHE_GROUP, CACHE_PAIR],
+      ['models', MODEL_GROUP, MODEL_PAIR],
+    ]) {
+      const paras = split.paragraphs[kind]
+      const inRecord = paras.flatMap((p) => p.groups.map((g) => g.id))
+      const label = region[`${kind}Line`]
+      const all = paras.map((p) => p.text).join('\n')
+      // "Carries values" differs by ledger, and for cache it is NOT any digit:
+      // `**Cache reads:** total=5811654r (2 workers ran)` is the complete line
+      // of a run that selected no ticket, and a warn it cannot clear teaches
+      // its reader to ignore the rest. A figure in a role pair, or a ticket in
+      // group position, is what says a group was meant to be here.
+      const spans = paras.map((p) => writtenSpans(p.text))
+      // A shape warn needs a VALUE somebody tried to record — a `<role>=` —
+      // in both ledgers. A ticket merely named in prose is not one: the
+      // meter's own idle line, `**Models:** none — no ticket ran`, takes a
+      // note beside it ("(P-2 was skipped)") like any other line, and the
+      // only thing that would clear a warn about P-2 is a figure invented for
+      // it, which this ledger never carries.
+      const carries = kind === 'cache' ? CACHE_CARRIES.test(all) : ROLE_ASSIGN.test(all)
+      // The shape warn is for a paragraph with no group POSITION in it at all
+      // — a line written as prose, which has no group to name. Where groups
+      // were written, every one that came up short is named instead: the same
+      // information, one ticket at a time, with the repair attached to it.
+      if (!spans.some((s) => s.length) && label !== undefined && carries) misses.push({ kind: `${kind}-shape`, line: label, heading: region.heading })
+      else
+        paras.forEach((p, i) => {
+          // A later paragraph of the same kind restating the ticket's group is
+          // the repair the message advertises, and it clears this one.
+          const later = new Set(paras.slice(i + 1).flatMap((q) => q.groups.map((g) => g.id)))
+          for (const span of spans[i]) {
+            if (later.has(span.id)) continue
+            const written = [...span.text.matchAll(WRITTEN_PAIRS)].length
+            let read = 0
+            for (const m of span.text.matchAll(groupRe)) if (m[1] === span.id) read += [...m[3].matchAll(pairRe)].length
+            if (read >= written) continue
+            const line = region.line + 1 + p.start + p.text.slice(0, span.at).split('\n').length - 1
+            misses.push({ kind: `${kind}-lost`, line, heading: region.heading, ids: [span.id], partial: read > 0 })
+          }
+        })
+      // Every record's stray figures are looked at whatever the paragraphs
+      // said: a lost group and a figure nothing read are two different losses.
+      if (kind === 'cache') strayCache(split, inRecord, paras)
+    }
+  }
+  // A cache figure on a line whose own ticket no Cache reads group of this
+  // record answers for. Whose own: the ticket in group position directly
+  // before the figure — never every ID on the line, which named tickets of
+  // other epics quoted in the same sentence and could be cleared by nothing.
+  // Case-sensitive, and starting a token, for the reason `ID_AT_START` is.
+  const FIGURE_OWNER = new RegExp(`(?<=^|[\\s;(])(${TICKET_ID})|\\b(?:${ROLE_RE})=\\d[\\d,]*r\\b`, 'g')
+  const strayCache = (split, inRecord, paras) => {
+    const have = new Set(inRecord)
+    // A stray is a figure OUTSIDE a Cache reads paragraph, by definition —
+    // inside one it is a written group, and the group check has already named
+    // it. Two warns with two different repairs for one comma is how a reader
+    // learns to skip both.
+    const inside = new Set(paras.flatMap((p) => Array.from({ length: p.end - p.start }, (_, k) => p.start + k)))
+    for (const [i, l] of split.restLines) {
+      if (inside.has(i) || !CACHE_FIGURE.test(l)) continue
+      const owners = []
+      let last = null
+      for (const m of l.matchAll(FIGURE_OWNER)) {
+        if (m[1]) last = m[1]
+        else owners.push(last)
+      }
+      const named = owners.filter(Boolean)
+      const missing = [...new Set(named.filter((id) => !have.has(id)))]
+      if (named.length ? missing.length : !have.size) {
+        misses.push({ kind: 'cache-stray', line: region.line + 1 + i, heading: region.heading, ids: missing })
+        return
+      }
+    }
+  }
   readFileSync(doc, 'utf8').split('\n').forEach((line, i) => {
     if (/^#{2,3}\s/.test(line)) {
       flush()
       flushTime()
+      flushLabelled()
       region = RUN_HEADING.test(line) ? { line: i + 1, heading: line.trim(), tokensParagraph: '' } : null
       text = ''
       return
     }
     if (!region) return
     if (region.timeLine === undefined && /^\*\*Time:\*\*/i.test(line)) region.timeLine = i + 1
+    if (region.cacheLine === undefined && /^\*\*Cache reads:\*\*/i.test(line)) region.cacheLine = i + 1
+    if (region.modelsLine === undefined && /^\*\*Models:\*\*/i.test(line)) region.modelsLine = i + 1
     if (region.tokensLine === undefined && /^\*\*Tokens:\*\*/i.test(line)) {
       region.tokensLine = i + 1
       region.inTokens = true
@@ -1704,6 +2006,7 @@ function runRecordNearMisses(doc, timed = new Set()) {
   })
   flush()
   flushTime()
+  flushLabelled()
   return misses
 }
 
@@ -1765,7 +2068,10 @@ function spendReport(epicFilter) {
       .map((t) => {
         const r = spend[t.id] || { figures: {}, rounds: {}, unknown: new Set(), source: null, note: null }
         const known = Object.values(r.figures)
-        const time = r.time || { figures: {}, rounds: {}, unknown: new Set() }
+        const empty = { figures: {}, rounds: {}, unknown: new Set() }
+        const time = r.time || empty
+        const cache = r.cache || empty
+        const models = r.models || empty
         const span = spans[t.id]
         return {
           id: t.id,
@@ -1788,6 +2094,21 @@ function spendReport(epicFilter) {
             source: time.source ?? null,
             rounds: Object.fromEntries(Object.entries(time.rounds || {}).map(([role, rs]) => [role, Object.keys(rs).length])),
           },
+          // Cache reads per role, and the model each role ran on, from the run
+          // records' own lines. A record written before either line existed
+          // has neither, and reads `null` — never zero, which would say the
+          // ticket read no cache, and never backfilled from anywhere.
+          cache: {
+            ...Object.fromEntries(SPEND_ROLES.map((role) => [role, cache.figures[role] ?? null])),
+            unknown: [...cache.unknown].sort(),
+            source: cache.source ?? null,
+            rounds: Object.fromEntries(Object.entries(cache.rounds || {}).map(([role, rs]) => [role, Object.keys(rs).length])),
+          },
+          models: {
+            ...Object.fromEntries(SPEND_ROLES.map((role) => [role, models.figures[role] ?? null])),
+            unknown: [...models.unknown].sort(),
+            source: models.source ?? null,
+          },
           // Only where no wall was recorded — a recorded wall is the better
           // observation and the span would read as a second opinion on it.
           // One commit is a point, and so are several at one instant.
@@ -1797,11 +2118,13 @@ function spendReport(epicFilter) {
     const totals = Object.fromEntries(SPEND_ROLES.map((role) => [role, tickets.reduce((a, t) => a + (t[role] || 0), 0)]))
     totals.total = tickets.reduce((a, t) => a + (t.total || 0), 0)
     const timeTotals = Object.fromEntries(TIME_ROLES.map((role) => [role, tickets.reduce((a, t) => a + (t.time[role] || 0), 0)]))
+    const cacheTotals = Object.fromEntries(SPEND_ROLES.map((role) => [role, tickets.reduce((a, t) => a + (t.cache[role] || 0), 0)]))
     epics.push({
       epic: epic.epic,
       tickets,
       totals,
       timeTotals,
+      cacheTotals,
       untimedTickets: tickets.filter((t) => t.time.wall === null).length,
       unknownTickets: tickets.filter((t) => t.total === null || t.unknown.length).length,
     })
@@ -2429,6 +2752,12 @@ function doctor() {
           )
         if (r.mixed.length)
           add('warn', `${epic.epic} (${r.id}) — ${r.mixed.join(', ')} carr${r.mixed.length === 1 ? 'ies' : 'y'} both round-labelled and unlabelled figures; spend counts the labelled rounds' sum and ignores the unlabelled figure`)
+        // The cache ledger sums its rounds exactly as the token ledger does,
+        // so it has the same hazard and the same warn. (The models ledger has
+        // no `mixed` list: a union ignores nothing, so there is nothing to
+        // report.)
+        if (r.cache.mixed.length)
+          add('warn', `${epic.epic} (${r.id}) — cache reads: ${r.cache.mixed.join(', ')} carr${r.cache.mixed.length === 1 ? 'ies' : 'y'} both round-labelled and unlabelled figures; spend counts the labelled rounds' sum and ignores the unlabelled figure`)
       }
       // And a closing line that closed nothing, flagged at the same door for
       // the same reason: the brief that reports it is read by the next worker,
@@ -2444,7 +2773,9 @@ function doctor() {
     // its writer no longer walks through.
     // Which tickets have time anywhere in the ledger — an `unknown` counts, it
     // is an answer — so a stray time figure warns only while its ticket has
-    // none, and the addendum that gives it some ends the warn.
+    // none, and the addendum that gives it some ends the warn. (The Cache
+    // reads and Models checks ask this of the record in front of them, not of
+    // the epic: see `runRecordNearMisses`.)
     const timed = new Set(
       Object.values(parseSpend(epic))
         .filter((r) => Object.keys(r.time.figures).length || r.time.unknown.size)
@@ -2465,9 +2796,19 @@ function doctor() {
       // A run record's Tokens line written as prose reads as nothing: every
       // ticket that points at the record then reports "no figure recorded",
       // which is indistinguishable from a run nobody measured.
-      for (const miss of runRecordNearMisses(doc, timed))
+      for (const miss of runRecordNearMisses(doc, { timed }))
         if (miss.kind === 'time-shape')
           add('warn', `${epic.epic}/${name}:${miss.line} — the run record's Time line carries figures but no machine-shaped group, so spend reads no time from it (needs "<ID> worker=<n>s reviewer=<n>s disposition=<n>s re-review=<n>s proxies=<n>s wall=<n>s" per ticket — seconds, each with its "s" — "unknown" for any missing figure; \`scripts/meter.mjs <workflow-run-dir>\` prints the line); repair by appending a dated addendum beneath the record with the groups under its own "**Time:**" line — never by editing the record: ${miss.heading}`)
+        else if (miss.kind === 'cache-shape')
+          add('warn', `${epic.epic}/${name}:${miss.line} — the run record's Cache reads line carries figures but no machine-shaped group, so spend reads no cache reads from it (needs "<ID> worker=<n>r reviewer=<n>r disposition=<n>r re-review=<n>r proxies=<n>r" per ticket — each figure with its "r" and no commas, since "4,812,330r" is not machine-shaped — "unknown" for any missing figure; \`scripts/meter.mjs <workflow-run-dir>\` prints the line); repair by appending a dated addendum beneath the record with the groups under its own "**Cache reads:**" line — never by editing the record: ${miss.heading}`)
+        else if (miss.kind === 'models-shape')
+          add('warn', `${epic.epic}/${name}:${miss.line} — the run record's Models line records a value for a role but no machine-shaped group parses, so spend reads no model from it (needs "<ID> worker=<name> reviewer=<name> …" per ticket — one name per role from the meter's charset (a letter first, then letters, digits and ". _ : / -", ending in a letter or digit), two joined by "+" where an agent fell back, "unknown" where the transcript named none, groups separated by ";" — and **the paragraph carries groups and nothing else**: prose about the tier or the effort goes in a sentence of its own outside it, because a word beside a name ends the group there; \`scripts/meter.mjs <workflow-run-dir>\` prints the line); repair by appending a dated addendum beneath the record with the groups under its own "**Models:**" line — never by editing the record: ${miss.heading}`)
+        else if (miss.kind === 'cache-stray')
+          add('warn', `${epic.epic}/${name}:${miss.line} — a cache-read figure here was read by nothing${miss.ids.length ? `, and ${miss.ids.join(', ')} ${miss.ids.length === 1 ? 'has' : 'have'} no cache reads anywhere in this run record` : ', and no Cache reads group parses in this run record'}: cache reads are read ONLY inside a paragraph that starts "**Cache reads:**" (to the next blank line or bold label), so a figure quoted in the record's prose reaches no ledger — and one with commas ("4,812,330r") is not machine-shaped wherever it sits. Repair by appending a dated addendum beneath the record with the groups under a "**Cache reads:**" line of its own — "<ID> worker=<n>r reviewer=<n>r …", each figure with its "r", "unknown" for any missing one, as \`scripts/meter.mjs <workflow-run-dir>\` prints them — never by editing the record: ${miss.heading}`)
+        else if (miss.kind === 'cache-lost')
+          add('warn', `${epic.epic}/${name}:${miss.line} — this Cache reads paragraph gives the ledger ${miss.partial ? 'only part of what it writes for' : 'nothing for'} ${miss.ids.join(', ')}: a group, or one pair inside it, that will not parse is the same silence as no line at all, and a sibling group parsing beside it hides nothing. Cache reads are read from "<ID> worker=<n>r reviewer=<n>r … " groups inside a paragraph that starts "**Cache reads:**" (to the next blank line or bold label) — each figure with its "r" and no commas ("4,812,330r" is not machine-shaped), "unknown" for any missing figure; \`scripts/meter.mjs <workflow-run-dir>\` prints the line. Repair by appending a dated addendum beneath the record with the groups restated under a "**Cache reads:**" line of its own — never by editing the record: ${miss.heading}`)
+        else if (miss.kind === 'models-lost')
+          add('warn', `${epic.epic}/${name}:${miss.line} — this Models paragraph gives the ledger ${miss.partial ? 'only part of what it writes for' : 'nothing for'} ${miss.ids.join(', ')}: a pair that will not parse is the same silence as no line at all, and a sibling group parsing beside it hides nothing. Models are read from "<ID> worker=<name> reviewer=<name> …" groups inside a paragraph that starts "**Models:**" (to the next blank line or bold label), and **that paragraph carries groups and nothing else** — one name per role from the meter's own charset (a letter first, then letters, digits and ". _ : / -", ending in a letter or digit), two joined by "+" where an agent fell back, "unknown" where the transcript named none, groups separated by ";". Any prose about the run — the tier, the effort, a note — goes in a sentence of its own OUTSIDE the paragraph (after a blank line, or under another bold label), because a word beside a name ends the group there: "worker=claude-opus-5 as reported" reads as nothing rather than as a name nobody ran. \`scripts/meter.mjs <workflow-run-dir>\` prints the line. Repair by appending a dated addendum beneath the record with the groups restated under a "**Models:**" line of its own — never by editing the record: ${miss.heading}`)
         else if (miss.kind === 'time-stray')
           add('warn', `${epic.epic}/${name}:${miss.line} — a time figure here was read by nothing${miss.ids.length ? `, and ${miss.ids.join(', ')} ${miss.ids.length === 1 ? 'has' : 'have'} no time anywhere in the ledger` : ', and no Time group parses in this run record'}: time is read from "<ID> worker=<n>s … wall=<n>s" groups inside a paragraph that starts "**Time:**" (to the next blank line or bold label) — seconds with their "s" and no commas ("1,430s" is not machine-shaped). Repair by appending a dated addendum beneath the record with the groups under a "**Time:**" line of its own — never by editing the record: ${miss.heading}`)
         else add('warn', `${epic.epic}/${name}:${miss.line} — the run record's Tokens line carries figures but no machine-shaped group, so spend reads nothing from it (needs "<ID> worker=<n> reviewer=<n> disposition=<n> re-review=<n> proxies=<n>" per ticket, "unknown" for any missing figure); repair by appending a dated addendum beneath the record restating the figures as groups — never by editing the record: ${miss.heading}`)
@@ -2657,7 +2998,7 @@ function printCheckEpic(r) {
   )
 }
 
-const ENTRY_FIELD = /^\*\*(?:(?:Built|Verified|Compared|Decisions|Deviation|Deviations closed|Owed|Resolves owed|Revert check|Mode|Tokens|Time):\*\*|Addendum\b)/
+const ENTRY_FIELD = /^\*\*(?:(?:Built|Verified|Compared|Decisions|Deviation|Deviations closed|Owed|Resolves owed|Revert check|Mode|Tokens|Time|Cache reads|Models):\*\*|Addendum\b)/
 
 function comparedIn(text, id) {
   const found = []
@@ -3582,6 +3923,18 @@ switch (cmd) {
           if (timed.length) console.log(`  ${''.padEnd(8)} ${C.dim}time${C.off}  ${timed.join('  ')}  ${C.dim}(${t.time.source})${C.off}`)
           else if (t.commitSpan)
             console.log(`  ${''.padEnd(8)} ${C.dim}time  not recorded — commit span ${dur(t.commitSpan.seconds)} over ${t.commitSpan.commits} commits (git)${C.off}`)
+          // One line for both of the newer ledgers, and only when the record
+          // carries one of them: most records predate both, and a row of `?`
+          // on every ticket would teach the reader to skip the block.
+          // Each half ends with where it was read, as the time row does: the
+          // two can come from different documents, and which document a
+          // figure came from is half of what makes it checkable.
+          const cached = SPEND_ROLES.filter((r) => t.cache[r] !== null || t.cache.unknown.includes(r)).map((r) => `${r} ${fmt(t.cache[r])}`)
+          const ran = SPEND_ROLES.filter((r) => t.models[r] !== null || t.models.unknown.includes(r)).map((r) => `${r} ${t.models[r] ?? '?'}`)
+          const bits = []
+          if (cached.length) bits.push(`${C.dim}cache${C.off}  ${cached.join('  ')}  ${C.dim}(${t.cache.source})${C.off}`)
+          if (ran.length) bits.push(`${C.dim}models${C.off}  ${ran.join('  ')}  ${C.dim}(${t.models.source})${C.off}`)
+          if (bits.length) console.log(`  ${''.padEnd(8)} ${bits.join(`  ${C.dim}·${C.off}  `)}`)
         }
         console.log(
           `  ${C.dim}${SPEND_ROLES.map((r) => `${r} ${fmt(e.totals[r])}`).join('  ')}${C.off}`,
@@ -3592,6 +3945,8 @@ switch (cmd) {
               (e.untimedTickets ? ` · ${e.untimedTickets} ticket${e.untimedTickets === 1 ? '' : 's'} with no recorded wall` : '') +
               `${C.off}`,
           )
+        if (e.tickets.some((t) => SPEND_ROLES.some((r) => t.cache[r] !== null)))
+          console.log(`  ${C.dim}cache  ${SPEND_ROLES.map((r) => `${r} ${fmt(e.cacheTotals[r])}`).join('  ')}${C.off}`)
         console.log()
       }
       console.log(`${C.dim}Recorded figures only — harness-observed or unknown, as the log says; nothing here is estimated.${C.off}`)
