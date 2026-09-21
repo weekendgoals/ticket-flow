@@ -121,10 +121,32 @@ const KNOWN_OUTCOMES = new Set(['DONE', 'BLOCKED', 'ABANDONED'])
 
 // ── shell helpers ────────────────────────────────────────────────────────────
 
-function git(args, { allowFail = false } = {}) {
+// Node's default `maxBuffer` is 1 MiB, and every scan here passes
+// `allowFail: true` — so a log that outgrows it does not fail loudly, it
+// returns `null` and reads as an EMPTY branch: 623 commits at 1.18 MB turned
+// the whole board to `todo` and reported zero escapes with
+// `mainScanCapped: false`, as if observed. A commit log is text; 256 MiB is
+// far past any repository this walks and still a bound rather than none.
+const GIT_MAX_BUFFER = 256 * 1024 * 1024
+// …and even bounded, a scan can fail for reasons that are not "this ref is
+// empty" — a missing ref, a corrupt object, a buffer that is somehow still
+// too small. `allowFail` callers get `null` for both today, which is right
+// for a ref that may not exist and wrong for a scan whose emptiness will be
+// reported as a figure. Those callers pass `report`, an array the failure is
+// pushed onto, and print it instead of printing zeros.
+// The failures a scan is ALLOWED to have: the ref does not exist yet. A fresh
+// repository with no `origin`, an epic whose branch was never pushed, a
+// repository with no commits — each is a legitimate "nothing here", and the
+// callers below are written to read it as one. Anything else — ENOBUFS, a
+// corrupt object, a git that is not on PATH — is a scan that should have
+// worked, and its empty result must not be read as a fact.
+const MISSING_REF = /unknown revision|bad revision|ambiguous argument|does not have any commits yet|not a valid object name|no such ref|not a git repository/i
+function git(args, { allowFail = false, report = null } = {}) {
   try {
-    return execFileSync('git', args, { cwd: repoRoot, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim()
+    return execFileSync('git', args, { cwd: repoRoot, encoding: 'utf8', maxBuffer: GIT_MAX_BUFFER, stdio: ['ignore', 'pipe', 'pipe'] }).trim()
   } catch (e) {
+    const why = String(e.stderr || '').trim() || String(e.code || e.message)
+    if (report && !MISSING_REF.test(why)) report.push(`\`git ${args.slice(0, 3).join(' ')}…\` failed: ${why.replace(/\s+/g, ' ').slice(0, 160)}`)
     if (allowFail) return null
     throw new Error(`git ${args.join(' ')} failed: ${e.stderr || e.message}`)
   }
@@ -1591,8 +1613,22 @@ const PEAK_FIGURE = new RegExp(`\\b(?:${ROLE_RE})=\\d[\\d,]*c\\b`)
 // wall is what keeps one grammar rather than three exceptions.
 const FINDING_KEYS = ['important', 'nits', 'unfixed']
 const FINDING_RE = FINDING_KEYS.join('|')
-const FINDING_PAIR = new RegExp(`\\b(${FINDING_RE})=(\\d+|unknown)\\b`, 'gi')
-const FINDING_GROUP = new RegExp(`\\b(${TICKET_ID})(?:\\s+round=(\\d+))?((?:\\s+(?:${FINDING_RE})=(?:\\d+|unknown)\\b)+)`, 'g')
+// The value has to be the WHOLE count, not a prefix of one. `\b` is satisfied
+// by the boundary before a comma, so `nits=1,234` read as `nits=1` — a
+// four-figure count reported as one, with no warn, because the near-miss scan
+// saw a pair it could read. `NOT_A_COUNT` refuses a value followed by
+// anything that would have been part of it.
+//
+// Commas are REFUSED here where the token ledger accepts them (`\d[\d,]*`),
+// and the two differ on purpose: a token figure is often six or seven digits
+// and a human writing one by hand groups it, so the ledger has always taken
+// `462,249`; a findings count is a handful and `1,234` is not a count anybody
+// means, it is a typo or a second figure. Refused, it is a named warn with a
+// repair, which is the answer this ledger can give and the token ledger —
+// which has no door to complain at for a figure it already read — cannot.
+const NOT_A_COUNT = '(?![\\d,A-Za-z])'
+const FINDING_PAIR = new RegExp(`\\b(${FINDING_RE})=(\\d+|unknown)${NOT_A_COUNT}`, 'gi')
+const FINDING_GROUP = new RegExp(`\\b(${TICKET_ID})(?:\\s+round=(\\d+))?((?:\\s+(?:${FINDING_RE})=(?:\\d+|unknown)${NOT_A_COUNT})+)`, 'g')
 const FINDING_ASSIGN = new RegExp(`\\b(?:${FINDING_RE})=`, 'i')
 // ── halts ────────────────────────────────────────────────────────────────────
 // `**Halt:** <kind> <ID>` — the driver's OWN halt kind (the keys of `STOP` in
@@ -1630,14 +1666,22 @@ const HALT_KIND = `[a-z][A-Za-z]*`
 // case-SENSITIVE, because lower-case-initial is the entire thing that tells
 // a kind from a ticket ID. One flag cannot say both.
 const HALT_LABEL = `\\*\\*[Hh][Aa][Ll][Tt]:\\*\\*`
-const HALT_GROUP = new RegExp(`(?:^${HALT_LABEL}|;)\\s*(${HALT_KIND})(?:\\s+(${TICKET_ID}))?(?=\\s*(?:;|$))`, 'gm')
+// ONE definition of a halt, used by the parser and by `doctor`'s written-side
+// scan, so the two cannot disagree about where a group ends. They did: with a
+// multiline `$` the parser read `**Halt:** blocked A-1\n— the worker died` as
+// one halt while doctor called the segment lost, and the repair doctor
+// advertised then ADDED a second copy of a halt already counted. The boundary
+// is the paragraph's, not the line's — a group runs to the next `;` or to the
+// end of the paragraph, and nothing else may stand in it.
+const HALT_BODY = `(${HALT_KIND})(?:\\s+(${TICKET_ID}))?`
+const HALT_GROUP = new RegExp(`(?:^${HALT_LABEL}|;)\\s*${HALT_BODY}(?=\\s*(?:;|$))`, 'g')
 // A `;`-separated segment that IS a group and nothing else — the written-side
 // twin of `HALT_GROUP`, used by `doctor` to see what a paragraph meant to
 // record against what the parser got out of it. Anchored whole, because the
 // loss this catches is trailing text: `blocked CITY-14 — the worker died`
 // reads as nothing while its sibling `releaseCheck` reads fine, and a
 // question asked of the paragraph ("did anything parse?") answers yes.
-const HALT_SEGMENT = new RegExp(`^\\s*${HALT_KIND}(?:\\s+${TICKET_ID})?\\s*$`)
+const HALT_SEGMENT = new RegExp(`^\\s*${HALT_BODY}\\s*$`)
 
 // The labelled ledgers, each read only inside its own paragraph. `read` turns
 // a match into the record of what the paragraph WROTE there, which doctor
@@ -1910,8 +1954,19 @@ function parseSpend(epic) {
         if (!(role in models.figures)) models.unknown.add(role)
         continue
       }
+      // The unlabelled reading is a member of the union, not something the
+      // rounds replace: `A-1 worker=opus` then `A-1 round=2 worker=sonnet`
+      // read as `sonnet` alone and dropped an observed model. Peak's fold
+      // already folds its unlabelled figure in; this is the same rule, and
+      // for the counting ledgers it deliberately is NOT — there a sum that
+      // silently added an unlabelled figure to its rounds would double it,
+      // which is what `mixed` warns about instead.
       const seen = []
-      for (const v of known) for (const name of v.split('+')) if (!seen.includes(name)) seen.push(name)
+      const add = (v) => {
+        for (const name of String(v).split('+')) if (!seen.includes(name)) seen.push(name)
+      }
+      if (role in models.figures) add(models.figures[role])
+      for (const v of known) add(v)
       models.figures[role] = seen.join('+')
       models.unknown.delete(role)
     }
@@ -1930,8 +1985,61 @@ function parseSpend(epic) {
 // lift, the same paragraph boundary, the same blanking.
 function parseHalts(epic) {
   const out = []
+  // Keyed by the run record it sits under and the text of the line itself.
+  // `doctor`'s own recovery for a misfiled run is to APPEND the record to
+  // runs.md and leave the committed status.md copy alone — so the same record
+  // is read twice, and this is the one ledger that would count it twice: the
+  // counting ledgers overwrite a repeated reading for a ticket and role, and
+  // halts have no key to overwrite on. Same heading and same line is the same
+  // halt; two genuinely separate runs have different headings (the date, or
+  // the qualifier a same-day run carries), and two identical lines under one
+  // heading are indistinguishable from a copy by anything a reader could see
+  // either.
+  // Read per document first, so what is counted and what is collapsed can be
+  // told apart by WHERE the copies are. Two identical records in ONE document
+  // are two runs — a same-day re-run halting the same way is the ordinary
+  // case, and collapsing it lost a halt. A record that appears once in
+  // status.md AND once in runs.md is the relocation doctor's own recovery
+  // produces: it says to append the record to runs.md and leave the committed
+  // status.md copy alone.
+  const perDoc = []
   for (const doc of [epic.statusDoc, epic.runsDoc].filter(Boolean)) {
-    for (const p of splitLedgerParagraphs(readFileSync(doc, 'utf8')).paragraphs.halt) out.push(...p.groups)
+    const here = new Map() // key -> [{groups}], in document order
+    let heading = ''
+    let text = ''
+    const flush = () => {
+      if (!text) return
+      for (const p of splitLedgerParagraphs(text).paragraphs.halt) {
+        const key = `${heading}\u0000${p.text.replace(/\s+/g, ' ').trim()}`
+        if (!here.has(key)) here.set(key, [])
+        here.get(key).push(p.groups)
+      }
+      text = ''
+    }
+    for (const line of readFileSync(doc, 'utf8').split('\n')) {
+      if (/^#{2,3}\s/.test(line)) {
+        flush()
+        heading = RUN_HEADING.test(line) ? line.trim() : ''
+        continue
+      }
+      text += `${line}\n`
+    }
+    flush()
+    perDoc.push(here)
+  }
+  // Copies are paired ACROSS the two documents, one for one, and what is left
+  // over is runs: a key seen n times in status.md and m times in runs.md is
+  // `max(n, m)` records, because each status.md copy that has a twin in
+  // runs.md is that copy relocated. So one in each is one record, two in one
+  // document is two, and one relocated beside a genuine same-day re-run is
+  // two. Within a document nothing is ever collapsed — a reader looking at
+  // two records there sees two, and so does this.
+  const [first = new Map(), second = new Map()] = perDoc
+  for (const key of new Set([...first.keys(), ...second.keys()])) {
+    const here = first.get(key) ?? []
+    const there = second.get(key) ?? []
+    const kept = here.length >= there.length ? here : there
+    for (const groups of kept) out.push(...groups)
   }
   return out
 }
@@ -1948,7 +2056,7 @@ function runRecordNearMisses(doc, { timed = new Set() } = {}) {
   let region = null // { line } for a run record; null elsewhere
   let text = ''
   const flush = () => {
-    if (!region || region.tokensLine === undefined) return
+    if (!region || region.entry || region.tokensLine === undefined) return
     const flat = splitLedgerParagraphs(text).rest.replace(/\s+/g, ' ')
     const groups = runGroups(flat).groups
     // The figure must sit in the Tokens paragraph itself — the line and its
@@ -1981,7 +2089,7 @@ function runRecordNearMisses(doc, { timed = new Set() } = {}) {
   //                 stray figure on a line naming no ticket falls back to the
   //                 record: it warns when no group parses in it.
   const flushTime = () => {
-    if (!region) return
+    if (!region || region.entry) return
     const split = splitLedgerParagraphs(text)
     const parses = split.time !== ''
     const timeText = split.paragraphs.time.map((p) => p.text).join('\n')
@@ -2075,15 +2183,16 @@ function runRecordNearMisses(doc, { timed = new Set() } = {}) {
   // keys rather than copied — Peak context and Findings are the same shape
   // under different keys, and a copy is where the newest ledger's warn would
   // have been forgotten.
+  const LABELLED = [
+    ['cache', CACHE_GROUP, CACHE_PAIR, ROLE_RE, CACHE_FIGURE],
+    ['models', MODEL_GROUP, MODEL_PAIR, ROLE_RE, null],
+    ['peak', PEAK_GROUP, PEAK_PAIR, ROLE_RE, PEAK_FIGURE],
+    ['findings', FINDING_GROUP, FINDING_PAIR, FINDING_RE, null],
+  ]
   const flushLabelled = () => {
     if (!region) return
     const split = splitLedgerParagraphs(text)
-    for (const [kind, groupRe, pairRe, keys, figure] of [
-      ['cache', CACHE_GROUP, CACHE_PAIR, ROLE_RE, CACHE_FIGURE],
-      ['models', MODEL_GROUP, MODEL_PAIR, ROLE_RE, null],
-      ['peak', PEAK_GROUP, PEAK_PAIR, ROLE_RE, PEAK_FIGURE],
-      ['findings', FINDING_GROUP, FINDING_PAIR, FINDING_RE, null],
-    ]) {
+    for (const [kind, groupRe, pairRe, keys, figure] of region.entry ? LABELLED.filter(([k]) => k === 'findings') : LABELLED) {
       const paras = split.paragraphs[kind]
       const inRecord = paras.flatMap((p) => p.groups.map((g) => g.id))
       const label = region[`${kind}Line`]
@@ -2141,10 +2250,10 @@ function runRecordNearMisses(doc, { timed = new Set() } = {}) {
     // one place this differs from the cache and models repairs, where a
     // restated group replaces the ticket's earlier reading rather than adding
     // to it.
-    const haltParas = split.paragraphs.halt
+    const haltParas = region.entry ? [] : split.paragraphs.halt
     haltParas.forEach((p, i) => {
       const later = haltParas.slice(i + 1)
-      const body = p.text.replace(new RegExp(`^${HALT_LABEL}`, 'm'), '')
+      const body = p.text.replace(new RegExp(`^${HALT_LABEL}`), '')
       let at = 0
       for (const seg of body.split(';')) {
         const segAt = at
@@ -2203,7 +2312,18 @@ function runRecordNearMisses(doc, { timed = new Set() } = {}) {
       flush()
       flushTime()
       flushLabelled()
-      region = RUN_HEADING.test(line) ? { line: i + 1, heading: line.trim(), tokensParagraph: '' } : null
+      // A ticket entry opens a region too, but only for the Findings check:
+      // the ticket skill's review addendum is an advertised door for that
+      // line, and a `nits=five` written there reached the ledger as nothing
+      // with nobody to say so. Every other check stays where it was — a run
+      // record's Tokens, Time, Cache reads, Models, Peak context and Halt
+      // lines are the run lane's, and asking them of ticket entries would
+      // raise warns on every log already written.
+      region = RUN_HEADING.test(line)
+        ? { line: i + 1, heading: line.trim(), tokensParagraph: '' }
+        : STATUS_HEADING.test(line)
+          ? { line: i + 1, heading: line.trim(), entry: true, tokensParagraph: '' }
+          : null
       text = ''
       return
     }
@@ -2327,16 +2447,36 @@ const LOOSE_ID = new RegExp(`\\b${TICKET_ID}\\b`, 'i')
 // the two marks read off it. `--all` reaches a rebased or cherry-picked commit
 // under each ref it sits on; same subject is the same piece of work.
 function subjectMarks() {
-  const out = git(['log', '--all', '--no-merges', '--format=%s', '-n', String(MAIN_SCAN_LIMIT)], { allowFail: true })
-  const lines = out ? [...new Set(out.split('\n'))] : []
+  const failed = []
+  // Author date beside the subject: a rebase or a cherry-pick rewrites the
+  // COMMITTER date and keeps the author's, so the pair is one piece of work
+  // reached under several refs, while two real fixes that happen to share a
+  // subject ("address feedback (review fix)") are two rows and counted twice.
+  // Deduplicating on the subject alone lost the second of those.
+  //
+  // The limit, stated rather than papered over: two fixes with the SAME
+  // subject in the same second still read as one. Nothing cheap separates
+  // them — the author and committer names are identical, the committer date
+  // is what a rebase rewrites, and the patch is the only real discriminator
+  // and costs a diff per commit on a scan of four thousand. A rework count
+  // one low on a scripted burst is a better trade than a `git show` per
+  // commit, and the spend skill says so where it explains the count.
+  const out = git(['log', '--all', '--no-merges', '--format=%at%x09%s', '-n', String(MAIN_SCAN_LIMIT)], { allowFail: true, report: failed })
+  const lines = out ? out.split('\n') : []
+  // Before the dedup, never after: `capped` asks whether the SCAN reached its
+  // limit, and a history of four thousand repeated subjects read as
+  // uncapped once it had been collapsed to one.
+  const capped = lines.length >= MAIN_SCAN_LIMIT
   const owner = new RegExp(`^(${TICKET_ID})[:\\s]`)
   const rework = {}
-  for (const subject of lines) {
+  for (const line of new Set(lines)) {
+    const tab = line.indexOf('\t')
+    const subject = tab === -1 ? line : line.slice(tab + 1)
     const m = subject.match(owner)
     if (!m || !REVIEW_FIX.test(subject)) continue
     rework[m[1]] = (rework[m[1]] || 0) + 1
   }
-  return { rework, capped: lines.length >= MAIN_SCAN_LIMIT }
+  return { rework, capped, failed }
 }
 
 // Escaped defects: `(fixes <ID>)` on a commit that reached the DEFAULT BRANCH.
@@ -2361,7 +2501,8 @@ function subjectMarks() {
 // repositories with thousands of commits, and a per-commit `git` is how a
 // board command becomes a command nobody runs.
 function landingPositions(ref) {
-  const out = git(['log', ref, '--format=%H %P%x09%s', '-n', String(MAIN_SCAN_LIMIT)], { allowFail: true })
+  const failed = []
+  const out = git(['log', ref, '--format=%H %P%x09%s', '-n', String(MAIN_SCAN_LIMIT)], { allowFail: true, report: failed })
   const lines = out ? out.split('\n') : []
   const parents = new Map()
   const subjects = new Map()
@@ -2394,7 +2535,11 @@ function landingPositions(ref) {
       stack.push(...parents.get(c))
     }
   })
-  return { at, subjects, order, capped: lines.length >= MAIN_SCAN_LIMIT }
+  // A depth-limited clone's oldest commit has parents git does not have, so
+  // a ticket that landed before the boundary is invisible here — and "no
+  // landing position" would otherwise be reported as "never shipped".
+  const shallow = (git(['rev-parse', '--is-shallow-repository'], { allowFail: true }) || '').trim() === 'true'
+  return { at, subjects, order, capped: lines.length >= MAIN_SCAN_LIMIT, shallow, failed }
 }
 
 // One pass, and it returns the LANDED set beside the suffixes deliberately:
@@ -2403,7 +2548,7 @@ function landingPositions(ref) {
 // command is how the two answers drift. "Reached" is `idsOnRef`'s rule,
 // subject for subject, so it means what the board means by shipped.
 function escapedDefects() {
-  const { at, subjects, order, capped } = landingPositions(`origin/${defaultBranch}`)
+  const { at, subjects, order, capped, shallow, failed } = landingPositions(`origin/${defaultBranch}`)
   const owner = new RegExp(`^(${TICKET_ID})[:\\s]`)
   const shipped = new Map() // id -> the EARLIEST landing among its commits
   const seen = new Map() // subject -> its earliest landing: one subject is one piece of work
@@ -2437,7 +2582,7 @@ function escapedDefects() {
       ;(byId[id] ||= []).push({ by: by ? by[1] : null, subject, at: pos })
     }
   }
-  return { byId, shipped, unreadable, capped }
+  return { byId, shipped, unreadable, capped, shallow, failed }
 }
 
 // An escape is a repair that reached the default branch AFTER the ticket it
@@ -2729,6 +2874,14 @@ function metricsReport(epicFilter) {
     // read as "scanned everything" is how a count goes quietly low.
     commitScanCapped: marks.capped,
     mainScanCapped: escapes.capped,
+    // A depth-limited clone has history git does not have, so a ticket that
+    // landed before the boundary reads as never landed. Reported, not
+    // guessed around: the same notice `check-epic` already carries.
+    shallow: escapes.shallow,
+    // …and a scan that FAILED, which is not an empty branch. Every figure
+    // below that came from a failed scan is a zero nobody observed, and the
+    // whole rule of this ledger is that such a figure is not reported as one.
+    scanFailures: [...marks.failed, ...escapes.failed],
   }
 }
 
@@ -2769,8 +2922,8 @@ function pullRequests() {
 // which is why CLAUDE.md requires the ID prefix.
 const MAIN_SCAN_LIMIT = 4000
 
-function idsOnRef(ref) {
-  const out = git(['log', ref, '--format=%s', '-n', String(MAIN_SCAN_LIMIT)], { allowFail: true })
+function idsOnRef(ref, report = null) {
+  const out = git(['log', ref, '--format=%s', '-n', String(MAIN_SCAN_LIMIT)], { allowFail: true, report })
   const ids = new Set()
   if (!out) return { ids, capped: false }
   const subjects = out.split('\n')
@@ -2783,7 +2936,7 @@ function idsOnRef(ref) {
   return { ids, capped: subjects.length >= MAIN_SCAN_LIMIT }
 }
 
-const idsOnMain = () => idsOnRef(`origin/${defaultBranch}`)
+const idsOnMain = (report) => idsOnRef(`origin/${defaultBranch}`, report)
 
 // Work on an epic branch that belongs to no ticket. A commit there whose
 // subject carries no ticket ID reaches no status entry, no spend line and no
@@ -2862,7 +3015,11 @@ function board(epicFilter) {
   const epics = allEpics.filter((e) => !epicFilter || e.epic === epicFilter)
   const branches = localBranches()
   const prs = pullRequests()
-  const onMain = idsOnMain()
+  // Scans whose EMPTY result the board reads as a fact — "nothing shipped",
+  // "nothing integrated". A failure here is not that fact, and the board,
+  // `doctor` and `next` each say so rather than presenting `todo` as observed.
+  const scanFailures = []
+  const onMain = idsOnMain(scanFailures)
 
   const tickets = []
   const unticketed = {}
@@ -2873,7 +3030,7 @@ function board(epicFilter) {
     // Only release epics pay the extra log call, and only when their epic
     // branch exists on the remote — the remote, because integration is the
     // driver's push, and a local-only epic branch proves nothing.
-    const onEpicBranch = epic.delivery === 'release' ? idsOnRef(`origin/epic/${epic.epic}`).ids : NO_IDS
+    const onEpicBranch = epic.delivery === 'release' ? idsOnRef(`origin/epic/${epic.epic}`, scanFailures).ids : NO_IDS
     const parsed = parseTickets(epic)
     const { deps, problems, notes } = resolveDependencies(parsed)
     const resolved = parsed.map((t) => ({ ...t, ...resolveState(t, status, branches, prs, onMain.ids, onEpicBranch) }))
@@ -2908,6 +3065,7 @@ function board(epicFilter) {
     current: currentEpic(allEpics),
     prsAvailable: prs.available,
     onMainCapped: onMain.capped,
+    scanFailures: [...new Set(scanFailures)],
     defaultBranch,
   }
 }
@@ -2954,6 +3112,13 @@ const hereMarker = (name, current) => (current?.epic === name ? `${C.green}  ←
 const ticketlessLine = (name, current) => `${C.bold}${name}${C.off} ${C.dim}— no tickets yet${C.off}${hereMarker(name, current)}`
 
 function printBoard(data, epicFilter) {
+  // Loudest first: a scan that failed means the states below were not
+  // derived, they were defaulted. `todo` on every ticket looks exactly like a
+  // project nobody has started.
+  if (data.scanFailures.length)
+    console.log(
+      `${C.red}a git scan failed, so the states below are NOT derived — a ticket that shipped reads as "todo": ${data.scanFailures.join('; ')}${C.off}\n`,
+    )
   if (!data.tickets.length) {
     // An unknown filter never reaches here — the entry point rejects it with
     // exit 1 (BOARD-2). So a ticketless board is one of two facts, and they
@@ -3073,6 +3238,16 @@ function doctor() {
   if (origin && git(['rev-parse', '--verify', '--quiet', `origin/${defaultBranch}`], { allowFail: true }) === null) {
     add('fail', `no local ref for origin/${defaultBranch} — run git fetch origin; shipped detection reads it`)
   }
+
+  // A scan that should have worked and did not. `fail`, not `warn`: every
+  // state on the board is derived from these scans, so a failure does not
+  // make one row doubtful — it makes the whole board read as a project
+  // nobody has started, and the run skill's preflight reads this exit code.
+  // A ref that simply does not exist is not this (`MISSING_REF`): a fresh
+  // repository with no `origin` and an epic whose branch was never pushed
+  // both stay exactly as they were.
+  for (const f of board(null).scanFailures)
+    add('fail', `${f} — the board is not derived while this fails: every ticket reads "todo" whatever it actually is, and \`next\` refuses rather than telling a run the epic is built`)
 
   const prs = pullRequests()
   if (prs.available) add('ok', 'gh reachable — pull request state available')
@@ -3422,7 +3597,7 @@ function doctor() {
         else if (miss.kind === 'peak-stray')
           add('warn', `${epic.epic}/${name}:${miss.line} — a peak-context figure here was read by nothing${miss.ids.length ? `, and ${miss.ids.join(', ')} ${miss.ids.length === 1 ? 'has' : 'have'} no peak anywhere in this run record` : ', and no Peak context group parses in this run record'}: peaks are read ONLY inside a paragraph that starts "**Peak context:**" (to the next blank line or bold label), so a figure quoted in the record's prose reaches no ledger — and one with commas ("1,204,331c") is not machine-shaped wherever it sits. Repair by appending a dated addendum beneath the record with the groups under a "**Peak context:**" line of its own — "<ID> worker=<n>c reviewer=<n>c …", each figure with its "c", "unknown" for any missing one, as \`scripts/meter.mjs <workflow-run-dir>\` prints them — never by editing the record: ${miss.heading}`)
         else if (miss.kind === 'findings-shape')
-          add('warn', `${epic.epic}/${name}:${miss.line} — the run record's Findings line carries counts but no machine-shaped group, so spend reads no findings from it (needs "<ID> important=<n> nits=<n> unfixed=<n>" per ticket, groups separated by ";" — bare counts, no unit, "unknown" for any the run could not observe; the driver's result carries them as \`importantCount\`, \`nitCount\` + \`nitOverflowCount\` and \`notFixed.length\`); repair by appending a dated addendum beneath the record with the groups under its own "**Findings:**" line — never by editing the record: ${miss.heading}`)
+          add('warn', `${epic.epic}/${name}:${miss.line} — a Findings line here carries counts but no machine-shaped group, so spend reads no findings from it (needs "<ID> important=<n> nits=<n> unfixed=<n>" per ticket, groups separated by ";" — bare counts, no unit, "unknown" for any the run could not observe; the run driver's result carries them per ticket as a derived \`findings\` object, and the ticket skill's review addendum is the other door that writes this line); repair by appending a dated addendum beneath the record with the groups under its own "**Findings:**" line — never by editing the record: ${miss.heading}`)
         else if (miss.kind === 'findings-lost')
           add('warn', `${epic.epic}/${name}:${miss.line} — this Findings paragraph gives the ledger ${miss.partial ? 'only part of what it writes for' : 'nothing for'} ${miss.ids.join(', ')}: a group, or one pair inside it, that will not parse is the same silence as no line at all, and a sibling group parsing beside it hides nothing. Findings are read from "<ID> important=<n> nits=<n> unfixed=<n>" groups inside a paragraph that starts "**Findings:**" (to the next blank line or bold label) — those three keys and no others, bare counts, "unknown" for any the run could not observe. Repair by appending a dated addendum beneath the record with the groups restated under a "**Findings:**" line of its own — never by editing the record: ${miss.heading}`)
         else if (miss.kind === 'halt-lost')
@@ -4476,6 +4651,19 @@ switch (cmd) {
   case 'next': {
     const data = board(arg || null)
     requireKnownEpic(data, arg)
+    // Before anything is counted. The run driver reads an empty list as "the
+    // epic is built, open the release", and a failed scan produces exactly
+    // that list — every ticket reads `todo`, so nothing is `integrated` and,
+    // worse, a wholly built epic would look like one with everything still to
+    // do. Nonzero, with the reason, and the driver's nonzero-exit stop
+    // condition does the rest: a run halts where it would otherwise have
+    // released an epic on a board nobody derived.
+    if (data.scanFailures.length) {
+      console.error(
+        `tickets: a git scan failed, so the board was not derived and this list means nothing — every ticket reads "todo" whatever it actually is: ${data.scanFailures.join('; ')}`,
+      )
+      process.exit(1)
+    }
     // Startable means unstarted AND not waiting: a ticket whose blockers have
     // not landed is left out, so a lane that takes the first of this list —
     // or, in a parallel run, the first few — can never overtake the plan.
@@ -4682,6 +4870,15 @@ switch (cmd) {
       )
       if (report.commitScanCapped || report.mainScanCapped)
         console.log(`${C.dim}Commit scans read only the last ${MAIN_SCAN_LIMIT} commits — an older ticket's review fixes or escaped-defect fixes may be missing.${C.off}`)
+      if (report.shallow)
+        console.log(`${C.yellow}this is a shallow clone: history before the clone's boundary is absent, so a ticket that reached ${defaultBranch} earlier reads as never landed and its later repairs read as no escape. \`git fetch --unshallow\` to trust these rows.${C.off}`)
+      // Loudest of the three, and last so it is the line left on screen: a
+      // failed scan is not an empty history, and every zero above it was
+      // read from nothing.
+      if (report.scanFailures.length)
+        console.log(
+          `${C.red}a git scan failed, so the rows above are not observations — rework, escapes and shipped state were read from nothing and print as zero: ${report.scanFailures.join('; ')}${C.off}`,
+        )
     }
     break
   }
@@ -4695,6 +4892,7 @@ switch (cmd) {
         defaultBranch: data.defaultBranch,
         prsAvailable: data.prsAvailable,
         onMainCapped: data.onMainCapped,
+        scanFailures: data.scanFailures,
         current: data.current?.epic || null,
         epics: data.epics.map((e) => e.epic),
         modes: Object.fromEntries(

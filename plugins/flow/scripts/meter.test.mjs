@@ -607,3 +607,41 @@ test('peak: a Codex worker has none — the window the proxy exposed is the prox
   assert.equal(peakLine(r), '**Peak context:** CX-1 worker=unknown')
   assert.match(modelsLine(r), /worker=codex:gpt-5-codex/)
 })
+
+test('peak/models: a runner path that is printed, backed up or grepped is not a runner that ran', () => {
+  // Each of these costs a CLAUDE worker its model and its peak if the command
+  // is read as an invocation — the proxy substitution replaces both.
+  const claudeUsage = usage(2_000, 500, 100_000, 200_000)
+  const ran = (command) => {
+    const t = readTranscript(
+      jsonl([
+        { type: 'assistant', timestamp: at(0), message: { id: 'u1', model: 'claude-opus-5', content: [{ type: 'tool_use', id: 'toolu_1', name: 'Bash', input: { command } }] } },
+        says(20, 'claude-opus-5', 'msg_1', claudeUsage),
+      ]),
+      { proxyTicket: 'CX-1' },
+    )
+    return { models: t.models, peak: t.peak }
+  }
+  const worked = { models: ['claude-opus-5'], peak: 302_000 }
+  // A heredoc BODY is data the shell writes, not a command it runs — and the
+  // pattern anchors at the start of any line, because a real command may be
+  // continued across several.
+  assert.deepEqual(ran('cat <<EOF\nnode "/p/scripts/runners/codex.mjs" CX-1 --json\nEOF'), worked)
+  assert.deepEqual(ran('cat <<-\'END\'\nnode /p/scripts/runners/codex.mjs CX-1 --json\nEND\necho done'), worked)
+  // A path that merely STARTS with the runner's is another file.
+  assert.deepEqual(ran('node /p/scripts/runners/codex.mjs.backup CX-1 --json'), worked)
+  // The cases that already behaved, kept.
+  assert.deepEqual(ran('grep -n runner /p/scripts/runners/codex.mjs'), worked)
+  assert.deepEqual(ran("echo 'node /p/scripts/runners/codex.mjs CX-1 --json'"), worked)
+  assert.deepEqual(ran('node --check /p/scripts/runners/codex.mjs'), worked)
+  // DELIBERATE, pinned so it is not "fixed" back into the bug above: a wrapped
+  // `bash -c "…"` reads as not-an-invocation, because quoted text is not
+  // executed text. The driver's proxy prompt spells the command unquoted, so
+  // no lane here produces this shape; the alternative — treating quoted text
+  // as executed — is exactly what erased a Claude worker's model for printing
+  // the path.
+  assert.deepEqual(ran('bash -c "node /p/scripts/runners/codex.mjs CX-1 --start --json"'), worked)
+  // …and a real invocation still substitutes, quoted path with a space and all.
+  const real = ran('node "/Users/a b/plugins/flow/scripts/runners/codex.mjs" CX-1 --wait --json')
+  assert.deepEqual([real.models, real.peak], [[], null], 'the runner ran: no readable report, so no model — and no peak, which was the proxy\'s')
+})

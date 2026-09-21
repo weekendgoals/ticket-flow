@@ -157,9 +157,13 @@ Five sections per epic, and a total across epics when no epic is named:
   how many of the row's tickets carried it. Duration is the run record's
   observed `wall` and only that: a ticket's commit span is never reported as
   one, because commits begin when the work is nearly over.
-- **Rework** — `(review fix)` commits per ticket, off the subjects. High
-  rework on one ticket is a plan or a scope question for the retro, not a
-  worker question.
+- **Rework** — `(review fix)` commits per ticket, off the subjects, counted
+  once per subject-and-author-date pair so that a rebase or a cherry-pick of
+  one fix is not two. **Two fixes sharing a subject in the same second read
+  as one**: nothing cheap tells them apart — the committer date is what a
+  rebase rewrites and the patch would cost a diff per commit — so a scripted
+  burst can read one low. High rework on one ticket is a plan or a scope
+  question for the retro, not a worker question.
 - **Review** — `important`, `nits` and `unfixed` from the run records'
   `**Findings:**` lines, with how many tickets recorded any. Read it beside
   **escaped**: reviews that find nothing and defects that escape are the

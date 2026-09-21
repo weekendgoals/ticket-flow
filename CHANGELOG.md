@@ -14,6 +14,72 @@ heading here. `check-invariants.mjs` holds both.
 
 ## 2.5.0 — 2026-09-21
 
+- **A cross-model review of the above, and the twelve things it found.** Every
+  one reproduced before it was fixed. **`git()` now passes an explicit
+  `maxBuffer`**: Node's default is 1 MiB and every scan here passes
+  `allowFail`, so a log that outgrew it returned `null` and read as an EMPTY
+  branch — 623 commits at 1.18 MB turned the board to all-`todo` and reported
+  zero escapes with `mainScanCapped: false`, figures nobody observed printed
+  as observations. A scan that fails for any other reason is now distinguished
+  from an empty one too: `metrics` carries `scanFailures` and says in red that
+  the rows above it were read from nothing. It also carries `shallow`, the
+  notice `check-epic` already had — a depth-limited clone's history before the
+  boundary is absent, so a ticket that landed earlier reads as never landed.
+  **The run driver derives each ticket's `findings` counts in code** and the
+  run record's line copies the field: taught as arithmetic in prose, `unfixed`
+  was `notFixed.length`, which is only ever set on the disposition path — so a
+  run that halted on a NEW Important raised by the re-review, with no second
+  fix round to resolve it, recorded `unfixed=0`. Both halves now count the
+  re-review. **A findings count must be a whole token**: `nits=1,234` read as
+  `nits=1` with no warn, because `\b` is satisfied by the boundary before a
+  comma; commas are refused here where the token ledger accepts them, because
+  a token figure is six digits and grouped by hand while a findings count is a
+  handful, and the refusal is a named warn with a repair. **`HALT_GROUP` and
+  doctor's segment scan now share one boundary**: with a multiline `$` the
+  parser read a wrapped `**Halt:** blocked A-1\n— the worker died` as one halt
+  while doctor asked for it to be restated, and the repair it advertised then
+  counted the halt twice — a test now re-counts after every advertised repair.
+  **A relocated run record's halt is counted once**: doctor's own recovery for
+  a misfiled run appends it to `runs.md` and leaves the committed `status.md`
+  copy alone, and halts were the one ledger with no key to overwrite on.
+  **`meter.mjs` no longer reads a printed path as a run**: a heredoc body or a
+  `codex.mjs.backup` argument made a Claude worker report no model and no
+  peak. **Models union the unlabelled reading with labelled rounds**, as peak
+  already did. **A `**Findings:**` line under a ticket status heading gets the
+  near-miss checks too** — the ticket skill's review addendum is an advertised
+  door for it, and nothing else moved to that door. **Rework dedupes on
+  subject and author date** (two real fixes sharing a subject were one) **and
+  computes `capped` before deduping** (a truncated scan of repeated subjects
+  read as complete). Left as it is, and recorded: the `mixed` warn survives a
+  dated correction, which is main's own property for tokens and is inherited
+  here by cache and findings.
+
+- **A confirming pass over those fixes, and the six things it found.** The
+  derived findings counts were assigned to `record.findings` — **the
+  reviewer's own list** of Important findings with their cites and summaries,
+  which the session writes the run record's prose and the release pull request
+  from — emptying it on every ticket while every test passed, because none had
+  asked one record for the list and the counts together; they now live under
+  `findingCounts`, and a driver test asserts both survive. **The board,
+  `doctor` and `next` read a failed scan as "nothing shipped"**: `metrics` had
+  its red line while `idsOnRef` still returned an empty set, so the board
+  showed every ticket `todo` and `next` would have told a run the epic was
+  built and to open the release. The failure channel now reaches all of them —
+  the board prints a notice before any state, `doctor` **fails**, and `next`
+  exits nonzero with the reason — while a ref that simply does not exist stays
+  the ordinary "nothing here" a fresh repository depends on. **A same-date
+  re-run's halt is no longer collapsed into a relocated record's**: copies are
+  paired across `status.md` and `runs.md` one for one, so a record seen n
+  times in one and m in the other is `max(n, m)` runs and nothing inside one
+  document is ever merged. **`bash -c "node …/codex.mjs"` is pinned as
+  not-an-invocation** with the trade written down — quoted text is not
+  executed text, and the alternative is a printed path erasing a real worker's
+  model. **Rework's one-second limit is documented** rather than papered over:
+  two fixes sharing a subject in the same second read as one, and the patch is
+  the only discriminator left. **The oversized-log fixture is built with `git
+  fast-import`**, taking 27 seconds off the suite while still proving a real
+  `git log` over 1 MiB.
+
 The run record says more about what a run cost, and a command reads what the
 records and commit subjects already hold. `**Cache reads:**`, `**Models:**`
 and `**Peak context:**` join Tokens and Time; `**Findings:**` and

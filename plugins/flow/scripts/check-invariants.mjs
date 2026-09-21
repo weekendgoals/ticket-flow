@@ -213,11 +213,12 @@ function parserRegexes() {
     statusHeading: build(grab(/const STATUS_HEADING = new RegExp\(\s*`([^`]+)`,?\s*\)/, 'STATUS_HEADING')),
     blockedBy: build(grab(/const BLOCKED_BY_LINE = new RegExp\(`([^`]+)`\)/, 'BLOCKED_BY_LINE')),
     halt: new RegExp(
-      unescape(grab(/const HALT_GROUP = new RegExp\(`([^`]+)`, 'gm'\)/, 'HALT_GROUP'))
+      unescape(grab(/const HALT_GROUP = new RegExp\(`([^`]+)`, 'g'\)/, 'HALT_GROUP'))
+        .replaceAll('${HALT_BODY}', unescape(grab(/const HALT_BODY = `([^`]+)`/, 'HALT_BODY')))
         .replaceAll('${TICKET_ID}', ticketId)
         .replaceAll('${HALT_KIND}', unescape(grab(/const HALT_KIND = `([^`]+)`/, 'HALT_KIND')))
         .replaceAll('${HALT_LABEL}', unescape(grab(/const HALT_LABEL = `([^`]+)`/, 'HALT_LABEL'))),
-      'gm',
+      'g',
     ),
     outcomes: grab(/const KNOWN_OUTCOMES = new Set\(\[([^\]]+)\]\)/, 'KNOWN_OUTCOMES')
       .split(',')

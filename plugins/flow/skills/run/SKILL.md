@@ -1130,11 +1130,20 @@ never a gate.>
 
 **Findings:** <what the reviews found and what became of them, one group per
 ticket: `<ID> important=<n> nits=<n> unfixed=<n>`, groups separated by `;`.
-**Not from the meter** — no transcript says which findings were left unfixed —
-but from the driver's own result, in code, never from prose: for each
-`ticketRecords` entry, `important` is `importantCount` (plus
-`reReviewImportantCount` when `reReviewRan`), `nits` is `nitCount +
-nitOverflowCount`, and `unfixed` is `notFixed.length`. Bare counts, **no
+**Not from the meter** — no transcript says which findings were left unfixed
+— and **not from arithmetic done here either**: each `ticketRecords` entry
+carries a `findingCounts` object, `{important, nits, unfixed}`, which the
+driver derives in code and this line copies. (Its `findings` is a different
+field and stays one: the reviewer's own list, one entry per Important finding
+with its cite and summary, which the "Tickets this run" line and the release
+pull request are written from.) It counts the RE-REVIEW too, on both
+halves: its Important findings are findings this ticket raised, and they are
+unresolved by construction, because there is deliberately no second fix round
+after a re-review — a run that halts on one and reported `unfixed=0` was
+describing the one thing the line exists to carry. (`important` is
+`importantCount + reReviewImportantCount`, `nits` is `nitCount +
+nitOverflowCount`, `unfixed` is `notFixed.length + reReviewImportantCount`;
+copy `findingCounts` rather than recomputing it from those.) Bare counts, **no
 unit**: these three keys are the ledger's own and no other ledger's pair
 regex can read them, so a unit would protect nothing. `unknown` for a count
 the run could not observe — a ticket whose reviewer never reported, or one

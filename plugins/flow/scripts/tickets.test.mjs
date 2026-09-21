@@ -5244,7 +5244,7 @@ test('findings: rounds sum, an unknown erases nothing, and a lost pair is named 
 test('findings: a line written as prose warns by shape, and the addendum clears it', () => {
   const prose = '### Run — 2026-09-19 — completed\n\n**Findings:** the reviewer raised important=2 and left one unfixed for CITY-14.\n'
   const dir = roundsRepo('find-prose', TOKENS_ONLY, prose)
-  assert.equal(doctorWarns(dir, /Findings line carries counts but no machine-shaped group/).length, 1)
+  assert.equal(doctorWarns(dir, /Findings line here carries counts but no machine-shaped group/).length, 1)
   const repaired = roundsRepo('find-prose-fixed', TOKENS_ONLY, `${prose}\n**Addendum — correction — 2026-09-20.**\n\n**Findings:** CITY-14 important=2 nits=0 unfixed=1\n`)
   assert.deepEqual(ledgerWarns(repaired), [])
   assert.equal(spendOf(repaired, 'CITY-14').findings.unfixed, 1)
@@ -5654,4 +5654,234 @@ test('metrics: a `(fixes …)` the strict form cannot read is reported, never dr
   assert.equal(m.epics[0].escapedCommits, 0, 'and nothing unreadable is counted as an escape')
   // Every `unmatchedFixes` row carries a reason: the shape is the contract.
   for (const row of m.unmatchedFixes) assert.ok(['not-shipped', 'predates', 'unreadable'].includes(row.reason), row.reason)
+})
+
+// ── the Codex pass: what a different model found ────────────────────────────
+
+test('git scans: an oversized log is a FAILED scan, never an empty history', () => {
+  // Node's default maxBuffer is 1 MiB and every scan passes `allowFail`, so a
+  // log that outgrew it returned null and read as an empty branch: zero
+  // escapes, nothing shipped, `mainScanCapped: false` — figures nobody
+  // observed, printed as observations.
+  //
+  // The history is built with `git fast-import` and the refs are set by hand:
+  // 700 ordinary commits through `git commit` took 27 seconds of this suite's
+  // runtime and proved nothing the stream does not. What it must still prove
+  // is that a REAL `git log` of this branch exceeds 1 MiB, which is asserted
+  // below rather than assumed.
+  const dir = join(tmp, 'big-log')
+  git(tmp, 'init', '--initial-branch=main', dir)
+  for (const [k, v] of [['user.email', 't@e.com'], ['user.name', 'T'], ['commit.gpgsign', 'false']]) git(dir, 'config', k, v)
+  mkdirSync(join(dir, 'epics/big'), { recursive: true })
+  writeFileSync(join(dir, 'epics/big/tickets.md'), '# Big\n\nDelivery: incremental\n\n## BIG-1 — the one\n\n**Scope.** One.\n')
+  const wide = 'w'.repeat(1_700)
+  const stream = []
+  for (let i = 0; i < 700; i++) {
+    const subject = i === 0 ? 'BIG-1: the one' : `BIG-1: pass ${i} ${wide}`
+    const blob = `x${i}\n`
+    stream.push(
+      'commit refs/heads/main',
+      `mark :${i + 1}`,
+      'committer T <t@e.com> 0 +0000',
+      `data ${Buffer.byteLength(subject)}`,
+      subject,
+      ...(i ? [`from :${i}`] : []),
+      'M 644 inline a.js',
+      `data ${Buffer.byteLength(blob)}`,
+      blob.trimEnd(),
+      '',
+    )
+  }
+  execFileSync('git', ['fast-import', '--quiet'], { cwd: dir, env: ENV, input: `${stream.join('\n')}\n` })
+  // The remote refs by hand: a push would copy the whole history again for
+  // nothing, and what the scans read is `origin/main`.
+  git(dir, 'remote', 'add', 'origin', join(tmp, 'big-log-nowhere.git'))
+  git(dir, 'update-ref', 'refs/remotes/origin/main', 'refs/heads/main')
+  git(dir, 'symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/main')
+  // Read with an explicit buffer: this suite's own `git()` helper has the
+  // default one, and measuring the fixture must not be the thing that throws.
+  const log = execFileSync('git', ['log', 'origin/main', '--format=%H %P%x09%s'], { cwd: dir, encoding: 'utf8', env: ENV, maxBuffer: 64 * 1024 * 1024 })
+  assert.ok(log.length > 1024 * 1024, `the fixture has to exceed the old 1 MiB buffer — it is ${log.length}`)
+  const m = JSON.parse(run(dir, 'metrics', 'big', '--json'))
+  assert.deepEqual(m.scanFailures, [], 'the scan completes now')
+  assert.equal(m.epics[0].tickets, 1)
+  assert.deepEqual(JSON.parse(run(dir, 'list', '--json')).tickets.map((t) => t.state), ['shipped'], 'and the board does not collapse to todo')
+})
+
+// A `git` shim on PATH that fails one scan and passes everything else through
+// to the real binary — the only way to see what the board does when a scan
+// that should have worked does not.
+const shimmed = (name, failing) => {
+  const dir = join(tmp, `shim-${name}`)
+  const bare = join(tmp, `shim-${name}.git`)
+  git(tmp, 'init', '--bare', '--initial-branch=main', bare)
+  git(tmp, 'init', '--initial-branch=main', dir)
+  for (const [k, v] of [['user.email', 't@e.com'], ['user.name', 'T'], ['commit.gpgsign', 'false']]) git(dir, 'config', k, v)
+  mkdirSync(join(dir, 'epics/shim'), { recursive: true })
+  writeFileSync(join(dir, 'epics/shim/tickets.md'), '# Shim\n\nDelivery: incremental\n\n## SHIM-1 — the one\n\n**Scope.** One.\n')
+  git(dir, 'add', '.')
+  git(dir, 'commit', '-q', '-m', 'SHIM-1: the one')
+  git(dir, 'remote', 'add', 'origin', bare)
+  git(dir, 'push', '-q', '-u', 'origin', 'main')
+  git(dir, 'remote', 'set-head', 'origin', 'main')
+  const binDir = join(tmp, `shimbin-${name}`)
+  mkdirSync(binDir, { recursive: true })
+  const real = execFileSync('sh', ['-c', 'command -v git'], { encoding: 'utf8', env: { PATH: process.env.PATH } }).trim()
+  writeFileSync(join(binDir, 'git'), `#!/bin/sh\ncase "$*" in\n  ${failing}) echo "fatal: simulated scan failure" >&2; exit 128;;\nesac\nexec ${real} "$@"\n`)
+  chmodSync(join(binDir, 'git'), 0o755)
+  return { dir, env: { ...ENV, PATH: `${binDir}:${ENV.PATH}` } }
+}
+const withEnv = (dir, env, ...args) => spawnSync(process.execPath, [SCRIPT, ...args], { cwd: dir, encoding: 'utf8', env })
+
+test('git scans: a failed shipped-detection scan is named by the board, doctor and next — never presented as "todo"', () => {
+  const { dir, env } = shimmed('mainlog', 'log\\ origin/main\\ --format=%s*')
+  // The board says so before it prints a single state.
+  const board = withEnv(dir, env, 'list')
+  assert.match(board.stdout, /a git scan failed, so the states below are NOT derived/)
+  assert.match(board.stdout, /simulated scan failure/)
+  assert.deepEqual(JSON.parse(withEnv(dir, env, 'list', '--json').stdout).scanFailures.length, 1)
+  // …and `next` refuses rather than telling a run the epic is built.
+  const next = withEnv(dir, env, 'next', 'shim')
+  assert.equal(next.status, 1)
+  assert.match(next.stderr, /the board was not derived and this list means nothing/)
+  assert.equal(withEnv(dir, env, 'next', 'shim', '--with-waiting').status, 1, 'the driver’s own form refuses too')
+  // …and doctor fails on it, which is what the run skill’s preflight reads.
+  const rows = JSON.parse(withEnv(dir, env, 'doctor', '--json').stdout)
+  const failed = rows.filter((r) => r.level === 'fail' && /the board is not derived while this fails/.test(r.msg))
+  assert.equal(failed.length, 1, JSON.stringify(rows.map((r) => r.msg)))
+  // Without the shim the same repository is quiet: the notice is about a
+  // failure, never about a branch that is legitimately empty.
+  assert.doesNotMatch(run(dir, 'list'), /a git scan failed/)
+  assert.equal(JSON.parse(run(dir, 'doctor', '--json')).filter((r) => /the board is not derived/.test(r.msg)).length, 0)
+})
+
+test('git scans: a ref that simply does not exist is not a failure — a fresh repository is unchanged', () => {
+  // `MISSING_REF` is the whole difference. An epic branch nobody pushed and a
+  // repository with no `origin` are ordinary states the board reads as
+  // "nothing here", and every suite above depends on that staying true.
+  const { dir, env } = shimmed('missing', 'log\\ origin/epic/nope*')
+  assert.doesNotMatch(withEnv(dir, env, 'list').stdout, /a git scan failed/)
+  assert.deepEqual(JSON.parse(withEnv(dir, env, 'list', '--json').stdout).scanFailures, [])
+  assert.equal(withEnv(dir, env, 'next', 'shim').status, 0)
+})
+
+test('findings: a count with a comma is refused and named, where a token figure would take it', () => {
+  // `\b` is satisfied by the boundary before a comma, so `nits=1,234` read as
+  // `nits=1` — a four-figure count reported as one, with no warn, because the
+  // near-miss scan saw a pair it could read.
+  const broken = '### Run — 2026-09-19 — completed\n\n**Tokens:** CITY-14 worker=462,249\n\n**Findings:** CITY-14 important=5 unfixed=0 nits=1,234\n'
+  const dir = roundsRepo('find-comma', TOKENS_ONLY, broken)
+  const t = spendOf(dir, 'CITY-14')
+  assert.equal(t.findings.nits, null, 'not 1 — a prefix of a count is not a count')
+  assert.deepEqual([t.findings.important, t.findings.unfixed], [5, 0], 'the pairs beside it still read')
+  assert.equal(t.worker, 462249, 'and the token ledger still takes its own commas: 462,249, not 462')
+  const lost = doctorWarns(dir, /Findings paragraph gives the ledger/)
+  assert.equal(lost.length, 1)
+  assert.match(lost[0].msg, /only part of what it writes for CITY-14/)
+  const repaired = roundsRepo('find-comma-fixed', TOKENS_ONLY, `${broken}\n**Addendum — correction — 2026-09-20.**\n\n**Findings:** CITY-14 important=5 nits=1234 unfixed=0\n`)
+  assert.deepEqual(doctorWarns(repaired, /Findings paragraph gives the ledger/), [])
+  assert.equal(spendOf(repaired, 'CITY-14').findings.nits, 1234)
+})
+
+test('findings: the ticket skill\'s own door is gated too, and the addendum clears it', () => {
+  // The review addendum is an advertised writer of this line, and a region
+  // that opened only on run headings never looked at it.
+  const entry = `${CITY14}**Findings:** CITY-14 important=3 nits=five unfixed=0\n`
+  const dir = roundsRepo('find-entry', entry)
+  assert.equal(spendOf(dir, 'CITY-14').findings.nits, null)
+  const lost = doctorWarns(dir, /Findings paragraph gives the ledger/)
+  assert.equal(lost.length, 1, JSON.stringify(doctorWarns(dir, /./).map((w) => w.msg)))
+  assert.match(lost[0].msg, /status\.md:\d+/)
+  const repaired = roundsRepo('find-entry-fixed', `${entry}\n**Addendum — correction — 2026-09-20.**\n\n**Findings:** CITY-14 important=3 nits=5 unfixed=0\n`)
+  assert.deepEqual(doctorWarns(repaired, /Findings paragraph gives the ledger/), [])
+  assert.equal(spendOf(repaired, 'CITY-14').findings.nits, 5)
+  // …and nothing else moved to that door: a ticket entry is not asked for a
+  // Tokens group, a Time line or a Halt line, which every log already written
+  // would fail.
+  assert.deepEqual(doctorWarns(roundsRepo('find-entry-quiet', `${CITY14}**Tokens:** 462,249 spent in all\n`), /Tokens line carries|Time line|Halt/), [])
+})
+
+test('halt: the parser and doctor agree on every boundary, so no advertised repair can double a halt', () => {
+  // A wrapped line read as one halt while doctor asked for it to be restated
+  // — and the restatement then counted it twice. Both now read the paragraph,
+  // not the line.
+  const wrapped = '### Run — 2026-09-19 — halted\n\n**Halt:** blocked CITY-14\n— the worker died\n'
+  const dir = roundsRepo('halt-wrapped', TOKENS_ONLY, wrapped)
+  assert.deepEqual(JSON.parse(run(dir, 'metrics', 'city', '--json')).epics[0].halts, [], 'the parser reads nothing, as doctor says')
+  assert.equal(doctorWarns(dir, /counts as no halt at all/).length, 1)
+  const repaired = roundsRepo('halt-wrapped-fixed', TOKENS_ONLY, `${wrapped}\n**Addendum — correction — 2026-09-20.**\n\n**Halt:** blocked CITY-14\n`)
+  assert.deepEqual(doctorWarns(repaired, /counts as no halt at all/), [])
+  assert.deepEqual(
+    JSON.parse(run(repaired, 'metrics', 'city', '--json')).epics[0].halts.map((h) => [h.kind, h.count]),
+    [['blocked', 1]],
+    'once, not twice — the repair may not add a halt the parser already had',
+  )
+  // The shapes the two read, side by side: whatever one accepts the other
+  // must, or some repair somewhere doubles a count.
+  for (const line of ['blocked CITY-14', 'releaseCheck', 'blocked CITY-14; releaseCheck', 'blocked CITY-14\n— died', 'blocked CITY-14 — died', 'blocked\nCITY-14', 'ran to completion']) {
+    const one = roundsRepo(`halt-agree-${line.replace(/\W+/g, '')}`, TOKENS_ONLY, `### Run — 2026-09-19 — halted\n\n**Halt:** ${line}\n`)
+    const read = JSON.parse(run(one, 'metrics', 'city', '--json')).epics[0].haltCount
+    const warns = doctorWarns(one, /counts as no halt at all/).length
+    const segments = line.split(';').filter((x) => x.trim()).length
+    assert.equal(read + warns, segments, `${JSON.stringify(line)}: ${read} read + ${warns} warned should be ${segments} written`)
+  }
+})
+
+test('halt: doctor\'s own recovery for a misfiled run does not double its halt', () => {
+  // The advertised repair is to APPEND the record to runs.md and leave the
+  // committed status.md copy alone — so the same record is read twice, and
+  // this is the one ledger with no key to overwrite on.
+  const record = '### Run — 2026-09-19 — halted\n\n**Halt:** blocked CITY-14\n'
+  const dir = roundsRepo('halt-relocated', `${TOKENS_ONLY}\n${record}`, record)
+  assert.deepEqual(
+    JSON.parse(run(dir, 'metrics', 'city', '--json')).epics[0].halts.map((h) => [h.kind, h.count]),
+    [['blocked', 1]],
+    'the relocated record is one record',
+  )
+  // …and two genuinely separate runs still count twice.
+  const two = roundsRepo('halt-two-runs', TOKENS_ONLY, `${record}\n### Run — 2026-09-20 — halted\n\n**Halt:** blocked CITY-14\n`)
+  assert.deepEqual(JSON.parse(run(two, 'metrics', 'city', '--json')).epics[0].halts.map((h) => [h.kind, h.count]), [['blocked', 2]])
+})
+
+test('models: an unlabelled reading is a member of the union, not something a round replaces', () => {
+  const runs =
+    '### Run — 2026-09-19 — completed\n\n**Models:** CITY-14 worker=claude-opus-5\n\n' +
+    '### Run — 2026-09-20 — completed\n\n**Models:** CITY-14 round=2 worker=claude-fable-5-1\n'
+  assert.equal(spendOf(roundsRepo('models-union', TOKENS_ONLY, runs), 'CITY-14').models.worker, 'claude-opus-5+claude-fable-5-1')
+})
+
+test('categories: a cache figure that lost its `r` reaches no ledger — the leak the wall exists to stop', () => {
+  // Main read this `reviewer=50` as TOKENS: a cache figure somebody forgot
+  // the unit on, credited to the ticket's token spend, with nothing saying
+  // so. Here the paragraph is lifted whole, so it reaches no ledger at all,
+  // doctor names the orphan, and the repair recovers it as 50r. That is the
+  // ONLY other way this parser differs from main, and like the all-unknown
+  // drop it exists only inside a paragraph main never had.
+  const broken = '### Run — 2026-09-19 — completed\n\n**Tokens:** CITY-14 worker=40 reviewer=20\n\n**Cache reads:** CITY-14 worker=unknown reviewer=50\n'
+  const dir = roundsRepo('cat-orphan', TOKENS_ONLY, broken)
+  const t = spendOf(dir, 'CITY-14')
+  assert.equal(t.reviewer, 20, 'the Tokens line is what the token ledger reads — never 50, which main took')
+  assert.equal(t.cache.reviewer, null, 'and without its `r` it is no cache read either')
+  const lost = doctorWarns(dir, /Cache reads paragraph gives the ledger/)
+  assert.equal(lost.length, 1)
+  const repaired = roundsRepo('cat-orphan-fixed', TOKENS_ONLY, `${broken}\n**Addendum — correction — 2026-09-20.**\n\n**Cache reads:** CITY-14 worker=unknown reviewer=50r\n`)
+  assert.deepEqual(doctorWarns(repaired, /Cache reads paragraph gives the ledger/), [])
+  assert.equal(spendOf(repaired, 'CITY-14').cache.reviewer, 50)
+  assert.equal(spendOf(repaired, 'CITY-14').reviewer, 20, 'and the token figure is untouched by the recovery')
+})
+
+test('halt: two same-date runs count twice; one relocated record counts once', () => {
+  const rec = (halt) => `### Run — 2026-09-19 — halted\n\n**Halt:** ${halt}\n`
+  const halts = (dir) => JSON.parse(run(dir, 'metrics', 'city', '--json')).epics[0].halts.map((h) => [h.kind, h.count])
+  // Two records in ONE document are two runs — a same-day re-run halting the
+  // same way is the ordinary case, and a key on heading+line alone lost one.
+  assert.deepEqual(halts(roundsRepo('halt-same-day', TOKENS_ONLY, `${rec('blocked CITY-14')}\n${rec('blocked CITY-14')}`)), [['blocked', 2]])
+  // One copy in each document is doctor's own recovery for a misfiled run.
+  assert.deepEqual(halts(roundsRepo('halt-reloc', `${TOKENS_ONLY}\n${rec('blocked CITY-14')}`, rec('blocked CITY-14'))), [['blocked', 1]])
+  // …and the two together: a relocated record plus a genuine same-day re-run.
+  assert.deepEqual(
+    halts(roundsRepo('halt-reloc-plus', `${TOKENS_ONLY}\n${rec('blocked CITY-14')}`, `${rec('blocked CITY-14')}\n${rec('blocked CITY-14')}`)),
+    [['blocked', 2]],
+    'three copies are not one relocation',
+  )
 })

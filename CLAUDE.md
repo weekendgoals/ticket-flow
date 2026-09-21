@@ -22,7 +22,7 @@ go through the flow, one-off work goes through `/flow:quick` into
 ## Commands
 
 - **Tests:** `node --test plugins/flow/scripts/tickets.test.mjs` — expect
-  every test passing (`# pass 246`, `# fail 0` as of 2026-09-21; the count
+  every test passing (`# pass 256`, `# fail 0` as of 2026-09-21; the count
   grows, the fail line does not). The suite builds a throwaway git repo in a
   temp dir; it needs `git` on PATH and nothing else. The session-guard hook
   has its own suite:
@@ -44,7 +44,7 @@ go through the flow, one-off work goes through `/flow:quick` into
   closure reference fails here instead of inside somebody's page. It needs
   nothing but Node, and **no test may launch or drive a browser** — the plugin
   owns none, which is why it installs anywhere. The run meter has
-  `node --test plugins/flow/scripts/meter.test.mjs` (`# pass 36`) — tokens,
+  `node --test plugins/flow/scripts/meter.test.mjs` (`# pass 37`) — tokens,
   time, cache reads, models and peak context metered off journal and transcript text built
   in the test, in the shapes a real run wrote (a Codex worker's model comes
   from a runner report in a tool result, so that shape is built here too);
@@ -61,7 +61,7 @@ go through the flow, one-off work goes through `/flow:quick` into
   real git again, real linked worktrees in throwaway directories, because the
   refusal that matters asks git a question (`check-ignore`, where `.git` is a
   file). Needs `git`, POSIX `sh` and `sleep` (the budget case). And the run driver has
-  `node --test plugins/flow/workflows/run-epic.test.mjs` (`# pass 181`) —
+  `node --test plugins/flow/workflows/run-epic.test.mjs` (`# pass 182`) —
   which evaluates `run-epic.mjs`'s module body with stubbed agents and
   asserts the sequence, the gate branches and the halt mapping. It needs
   nothing but Node: no git, no network, no filesystem beyond the script.

@@ -675,10 +675,13 @@ answers one question — did anything come near the limit? — and gates nothing
 **Findings and halts are the two lines no transcript can carry.** A run record
 also writes `**Findings:** <ID> important=<n> nits=<n> unfixed=<n>` and, on a
 halted record only, `**Halt:** <kind> <ID>`. The findings counts come from the
-driver's own result in code — `importantCount`, `nitCount +
-nitOverflowCount`, `notFixed.length` — never from prose, and in the
-supervisor lane the ticket skill's review addendum writes the same line for
-the same reason. The three keys are the ledger's own, so no unit is needed:
+driver's own result in code — a derived `findingCounts` object per ticket,
+beside the reviewer's own `findings` list and never over it, never from prose
+and never from arithmetic in a prompt — and they count the
+re-review on both halves: its Important findings are the ticket's, and they
+are unresolved by construction, since there is no second fix round after a
+re-review. In the supervisor lane the ticket skill's review addendum writes
+the same line for the same reason. The three keys are the ledger's own, so no unit is needed:
 nothing else can read `important=3`. A halt's `<kind>` is the driver's own
 `STOP` key, written verbatim rather than translated back from the sentence
 (the sentences are reworded when they read wrongly to a human); an

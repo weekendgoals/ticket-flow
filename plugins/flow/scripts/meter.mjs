@@ -108,12 +108,52 @@ const NO_MODEL = 'default'
 // report, so that agent reads `unknown` — the same answer a killed run gives,
 // and a true one either way, since the proxy's own model did not write the
 // ticket.
+//
+// The script path must END at `codex.mjs` — whitespace, a closing quote, a
+// command terminator or the end of the line after it. Without that boundary
+// `node /p/runners/codex.mjs.backup` read as a run, and the worker whose
+// command it was lost its model to a file nobody executed.
 const NOT_A_RUN = `(?!(?:--check|-c|--test)\\b)`
 const QUOTED = (inner) => `(?:"[^"]*${inner}"|'[^']*${inner}'|[^\\s;&|"']*${inner})`
+const ENDS_THERE = `(?=$|[\\s;&|)])`
 const CODEX_INVOCATION = new RegExp(
-  `(?:^|[;&|(]|&&|\\|\\|)[ \\t]*(?:[A-Za-z_]\\w*=\\S*[ \\t]+)*${QUOTED('\\bnode(?:\\.exe)?')}[ \\t]+(?:${NOT_A_RUN}-{1,2}[^\\s]*[ \\t]+)*${QUOTED('runners\\/codex\\.mjs')}`,
+  `(?:^|[;&|(]|&&|\\|\\|)[ \\t]*(?:[A-Za-z_]\\w*=\\S*[ \\t]+)*${QUOTED('\\bnode(?:\\.exe)?')}[ \\t]+(?:${NOT_A_RUN}-{1,2}[^\\s]*[ \\t]+)*${QUOTED('runners\\/codex\\.mjs')}${ENDS_THERE}`,
   'm',
 )
+
+// A heredoc's body is DATA the shell writes somewhere, not commands it runs —
+// and because the pattern above anchors at the start of any line (a real
+// command may be continued across several), a body line reading `node
+// …/codex.mjs CX-1 --json` was matching as an invocation. That costs a Claude
+// worker its model and its peak on a command that printed a file. So the
+// bodies come out first: from a line opening `<<WORD` (or `<<-WORD`, or a
+// quoted delimiter) to the line that is that word alone, terminators nested
+// in the order they were opened. A here-STRING (`<<<word`) has no body and is
+// left alone.
+//
+// The deliberate cost: `bash -c "node …/codex.mjs … --start"` reads as NOT an
+// invocation, so a Codex worker driven that way would report its proxy's own
+// model. The trade is one sentence — **quoted text is not executed text** —
+// and it is the safe direction, because the alternative is the bug above: any
+// command that merely PRINTS the path (a heredoc, an echo, a log line) erases
+// a real Claude worker's model and its peak. The driver's proxy prompt spells
+// the invocation unquoted, so no lane that ships produces the shape, and a
+// test pins it so the next reader does not "fix" it back.
+const HEREDOC_OPEN = /<<-?\s*(["']?)([A-Za-z_]\w*)\1/g
+function withoutHeredocBodies(command) {
+  if (!command.includes('<<')) return command
+  const kept = []
+  const pending = []
+  for (const line of command.split('\n')) {
+    if (pending.length) {
+      if (line.trim() === pending[0]) pending.shift()
+      continue
+    }
+    kept.push(line)
+    for (const m of line.matchAll(HEREDOC_OPEN)) pending.push(m[2])
+  }
+  return kept.join('\n')
+}
 
 // The balanced `{…}` that begins at `start`, or -1 — strings and escapes
 // respected. Each call scans from its own start rather than from the top of
@@ -274,7 +314,7 @@ export function readTranscript(text, { proxyTicket = null } = {}) {
     // run whose report was truncated, nested a level deeper than expected or
     // never printed at all must read `unknown`, because the proxy's own model
     // is the one model that certainly did not write this ticket.
-    if (commands.some((c) => CODEX_INVOCATION.test(c))) codexRan = true
+    if (commands.some((c) => CODEX_INVOCATION.test(withoutHeredocBodies(c)))) codexRan = true
     for (const result of results) {
       for (const o of runnerObjectsIn(result)) {
         const r = o.runner

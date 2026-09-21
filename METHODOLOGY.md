@@ -812,6 +812,19 @@ The table in `tickets.test.mjs` holds a reading per line, taken from the
 parser as it was before any of this, so the next cut fails a test rather than
 an epic's ledger.
 
+What the table pins is a statement about the whole parser, and it is worth
+saying exactly: **outside a paragraph labelled with a ledger main never had,
+nothing reads differently from main.** Inside one, two things do, and both are
+the wall working. The all-`unknown` drop above is the first. The second is
+that a paragraph is lifted whole: under `**Cache reads:** A-1 worker=unknown
+reviewer=50`, main read `reviewer=50` into the TOKEN ledger — a cache figure
+somebody forgot the `r` on, credited to a ticket's token spend — and here it
+reads as nothing, with `doctor` naming the orphan and the repair recovering it
+as `50r`. That is not a figure lost; it is a figure that was never a token
+figure, taken out of the ledger it was leaking into. A record written before
+these labels existed has no such paragraph, so nothing in it can read
+differently at all.
+
 The doctor warns for time are written so the repair they advertise ends
 them, because the log is append-only: an addendum can add a group and can
 never remove the prose that tripped a warn. The first cut fired on the stray
@@ -899,10 +912,21 @@ any good. Three additions close that, and each is written at the one door
 that can observe it.
 
 **Findings** (`<ID> important=<n> nits=<n> unfixed=<n>`) are the driver's own
-result rendered in code — `importantCount`, `nitCount + nitOverflowCount`,
-`notFixed.length` — never a session's reading of the review prose, for the
-reason the token figures are metered rather than asked: an agent summarising
-its own run is the one observer with a stake. `important=0` is written
+result rendered in code, never a session's reading of the review prose, for
+the reason the token figures are metered rather than asked: an agent
+summarising its own run is the one observer with a stake. The derivation lives
+in the driver rather than in the skill's prose for a second reason, learned
+here: taught as arithmetic, `unfixed` was `notFixed.length`, and `notFixed` is
+only ever set on the disposition path — so a run that halted on a NEW Important
+raised by the re-review, with no second fix round to resolve it, recorded
+`unfixed=0`. A count assembled by a reader from three fields is a count that
+is wrong the first time a fourth field matters. It lives under
+`findingCounts`, not `findings`: the second is the reviewer's own list of
+Important findings with their cites, which the run record's prose and the
+release pull request are written from, and the first version of this
+derivation assigned the counts straight over it — emptying every ticket's
+findings while every test still passed, because none had asked one record for
+both. `important=0` is written
 because an absent line and a clean review are the same silence otherwise, and
 telling them apart is the whole measurement.
 
