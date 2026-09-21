@@ -19,7 +19,7 @@ repository).
 | `/flow:quick <description>` | The **cheap lane**: one small, low-risk piece of work, implemented **in-session** with a written scope, verification with counts, a short log entry and a pull request — and a fresh-context reviewer **only when behaviour changes** (prose-only diffs — documentation and comments, nothing a machine reads — get none; the PR is the review). Size- **and risk-gated**: auth, secrets, migrations and other consequential work is routed to `/flow:epic` at any size |
 | `/flow:tickets [epic]` | The board — shipped, in flight, blocked, todo |
 | `/flow:board [epic]` | The same board as a **styled HTML page**, published as an artifact you can open and share, with a **Tokens** column from the recorded spend ledger. A rendering of derived state, rebuilt from git on every run — never committed, never a second store |
-| `/flow:spend [epic]` | The **recorded token ledger** — per ticket, per role (worker, reviewer, re-review, disposition, proxies) and per epic, derived from the status logs' Tokens lines, addendum phrases and run records — and beside it the **recorded time**: seconds per role and each ticket's wall-clock, from the run records' Time lines, plus the **cache reads** and the **model** each role ran on, from theirs. `unknown` stays unknown, nothing is estimated |
+| `/flow:spend [epic]` | The **recorded token ledger** — per ticket, per role (worker, reviewer, re-review, disposition, proxies) and per epic, derived from the status logs' Tokens lines, addendum phrases and run records — and beside it the **recorded time**: seconds per role and each ticket's wall-clock, from the run records' Time lines, plus the **cache reads**, the **peak context** each role reached, the **model** each role ran on and what each review **found**, from theirs. `unknown` stays unknown, nothing is estimated. The same skill runs `tickets.mjs metrics [epic]`: **pace per worker model, rework, review effectiveness, halts by kind and escaped defects**, derived from those ledgers and the commit subjects |
 | `/flow:review [range]` | Review a commit range and report. Used by `/flow:ticket`; runnable on its own |
 | `/flow:doctor` | Is this project ready for the flow? Preconditions, merge settings, instruction-file quality, and headings that would silently misparse |
 | `/flow:retro [epic]` | Close a finished epic: a **fresh-context miner** reads the status log and review addenda and drafts the lessons and owed work — the invoking session often planned or ran the epic, so it mines nothing itself — then the approval gate and the shipping stay in-session, into instruction files and tickets. Its **seventh question asks what the run halted on and what each halt bought**: every `### Run —` record's halt classified as **work**, **plan**, **plugin/environment** or **policy**, with what the human did to resume and whether the stop retired a real risk or fired on a clean state — a policy stop that keeps firing clean becomes a proposal against the policy, a plugin halt a ticket for the plugin's own repository |
@@ -658,6 +658,56 @@ written before either line existed has neither, and `spend` reports nothing
 recorded — never zero, and never backfilled. `doctor` flags either line
 carrying values where no group parses, cleared the same way: a dated addendum
 with the groups under a label of their own.
+
+**Peak context is the fifth metered line, and the only one that is a max.**
+`**Peak context:** <ID> worker=<n>c reviewer=<n>c …` — the largest window a
+role's agents ever held, per message: input + cache reads + cache creation,
+what the model was given to read, with output left out because it was not in
+what was sent. A role's figure is the largest of its agents', never their sum,
+and rounds take the larger reading where every other counting ledger takes the
+sum; the line carries **no total**, because a peak summed across tickets names
+a window nobody ever held — `spend` prints the epic's max under the groups,
+computed from them. Every figure carries `c`, which is deliberately neither
+the time ledger's `s` nor the cache ledger's `r`: a peak that landed in the
+wrong paragraph is then read by no ledger rather than wrongly by one. It
+answers one question — did anything come near the limit? — and gates nothing.
+
+**Findings and halts are the two lines no transcript can carry.** A run record
+also writes `**Findings:** <ID> important=<n> nits=<n> unfixed=<n>` and, on a
+halted record only, `**Halt:** <kind> <ID>`. The findings counts come from the
+driver's own result in code — `importantCount`, `nitCount +
+nitOverflowCount`, `notFixed.length` — never from prose, and in the
+supervisor lane the ticket skill's review addendum writes the same line for
+the same reason. The three keys are the ledger's own, so no unit is needed:
+nothing else can read `important=3`. A halt's `<kind>` is the driver's own
+`STOP` key, written verbatim rather than translated back from the sentence
+(the sentences are reworded when they read wrongly to a human); an
+epic-level halt like the release check names no ticket and is the kind alone,
+which is why the kind comes first — a kind is lower-case-initial and a ticket
+ID is upper-case-initial, so nothing needs to stand in ID position. Both
+paragraphs carry groups and nothing else, and `doctor` says so when one does
+not.
+
+**`tickets.mjs metrics [epic]` is what those ledgers are for.** Five derived
+readings per epic, and a total across epics when no epic is named: **pace by
+worker model** (tickets, the worker's tokens, cache reads and peak, and the
+ticket's `wall`, grouped by the model that wrote it); **rework** (`(review
+fix)` commits per ticket, off the subjects); **review effectiveness** (the
+Findings groups, with how many tickets recorded any); **halts by kind**; and
+**escaped defects** — `(fixes <ID>)` on a later commit naming an
+already-shipped ticket, the one class of miss nothing else in the repository
+records, since the repair is somebody else's ticket with its own green
+ledger. Neither suffix disturbs shipped detection, which reads `^<ID>[:\s]`
+at the start of a subject. Every figure carries how many of its tickets it
+was read from (`3/7`), because how much of an epic went unmeasured is itself
+a finding; duration is the run record's observed `wall` and never a commit
+span, since commits begin when the work is nearly over; and there is no cost
+in money anywhere, for the reason `spend` gives. `doctor` warns when a
+`(fixes <ID>)` names a ticket this repository has planned and not yet
+shipped — a warn that ends by itself when it ships; one naming an ID nothing
+planned is listed by `metrics --json` under `unmatchedFixes` instead, because
+a commit subject on the default branch cannot be rewritten and a warn about
+one could never be cleared.
 
 Two blind spots worth knowing: the board reads *this checkout's* view of the
 remote, so fetch first when the answer matters; and `shipped` means some commit

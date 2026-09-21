@@ -12,9 +12,130 @@ heading here. `check-invariants.mjs` holds both.
 
 ## Unreleased
 
+- **`tickets.mjs metrics [epic]` — five derived readings the ledgers could
+  not answer one at a time** (`metrics` and `metrics --json`, documented in
+  `skills/spend/SKILL.md` and the manual; no new skill, because `/flow:spend`
+  is already the door for "what did this cost and how did it go"). **Pace by
+  worker model**: tickets, the worker role's tokens, cache reads and peak
+  context, and the ticket's `wall`, grouped by the model the record says wrote
+  it — tickets with no recorded model group under `unknown` rather than
+  dropping out, and every figure carries how many of its row's tickets it was
+  read from (`3/7`), because how much of an epic went unmeasured is itself the
+  finding. **Rework**: `(review fix)` commits per ticket. **Review
+  effectiveness**: the new Findings line, with how many tickets recorded any.
+  **Halts by kind**: the new Halt line. **Escaped defects**: the new `(fixes
+  <ID>)` suffix. Duration is the run record's observed `wall` and only that —
+  a commit span is never reported as one, because commits begin when the work
+  is nearly over — and there is no cost in money anywhere, for the reason
+  `spend` gives.
+
+- **`**Peak context:**` — a fifth metered line, and the first counting ledger
+  that is a MAX** (`scripts/meter.mjs` prints it, `tickets.mjs` parses it and
+  reports it in `spend`, `spend --json` (`tickets[].peak`, `epics[].peakMax`)
+  and `metrics`; `skills/run/SKILL.md` § 6 teaches it and
+  `check-invariants.mjs` pins the template). An agent's peak is the largest
+  window it ever held — per message, input + cache reads + cache creation,
+  what the model was given to read, with output left out because it was not
+  in what was sent — a role's is the LARGEST of its agents', never their sum,
+  and a round takes the larger reading where every other counting ledger takes
+  the sum: a second pass held its own window, it did not stack the first one's
+  on top. The line carries **no total**, because a peak summed across tickets
+  names a window nobody ever held; `spend` prints the epic's max under the
+  groups, computed from them, where it cannot disagree with them. Every figure
+  carries `c`, deliberately neither the time ledger's `s` nor the cache
+  ledger's `r`, so that a peak landing in the wrong paragraph is read by no
+  ledger rather than wrongly by one — and `LEDGER_FOLLOWER`, the
+  after-the-match rule that drops an all-`unknown` token group, gained the
+  letter while `RUN_GROUP`'s own lookahead stayed byte-identical to main's:
+  eight new rows in the readings table hold every figure main reads, and the
+  one row that diverges loses no figure, only an `unknown` mark nobody wrote.
+
+- **`**Findings:** <ID> important=<n> nits=<n> unfixed=<n>` — what the review
+  found and what became of it, in the record and in the log**
+  (`skills/run/SKILL.md` § 6 writes it from the driver's result in code —
+  `importantCount`, `nitCount + nitOverflowCount`, `notFixed.length`, never
+  from prose — and `skills/ticket/SKILL.md` § 8's review addendum writes the
+  same line in the supervisor lane; `tickets.mjs` parses it into `spend` and
+  `metrics`, `check-invariants.mjs` pins the template at both doors). The
+  three keys are the ledger's own, so the counts carry no unit: nothing else
+  in the record can read `important=3`, which is also why they are read only
+  inside a `**Findings:**` paragraph like every other labelled ledger — one
+  grammar, not an exception. `important=0` is written and means a review that
+  found nothing; an absent line means a review nobody measured, and telling
+  those two apart is the whole point. Rounds sum; one writer per ticket.
+
+- **`**Halt:** <kind> <ID>` — the driver's own halt kind, machine-shaped**
+  (written on a halted record only, from the run driver's new `haltKinds`
+  result field, which resolves `STOP`'s KEY beside each halt's sentence;
+  `metrics` counts halts by kind). The kind comes first and the ticket is
+  optional, because an epic-level halt — the release check — names none, and
+  every shape that put a placeholder there was worse: a kind is
+  lower-case-initial and a ticket ID upper-case-initial, so the two never
+  collide and nothing needs to stand between them. The key is resolved in the
+  driver rather than translated back from the sentence by a session, because
+  the sentences are reworded whenever a halt reads wrongly to a human. **The
+  paragraph carries groups and nothing else** — the Models line's rule, for
+  the Models line's reason: `**Halt:** blocked PAY-1 — the worker died` would
+  otherwise record halts named "the", "worker" and "died". `doctor` asks that
+  PER `;`-SEPARATED SEGMENT, never of the paragraph: `**Halt:** blocked PAY-1
+  — the worker died; releaseCheck` parses its second halt, so a
+  paragraph-wide question answers "yes" while the halt that stopped the run
+  is gone. The repair it advertises restates **only the halts the line
+  lost**, because every Halt paragraph in a record is counted and a full
+  restatement would count the readable ones twice — both readings are
+  tested, and a lost segment naming a ticket is cleared only by a later group
+  naming THAT ticket, so an addendum about some other halt cannot answer for
+  it. The label is read case-insensitively, as every other ledger's label
+  is, while the kind stays case-sensitive; `check-invariants.mjs` runs the
+  template through `HALT_GROUP` and fails if the parse goes tolerant.
+
+- **`(fixes <ID>)` on a commit subject — the only record an escaped defect
+  leaves** (`skills/ticket/SKILL.md` § 4 and `skills/quick/SKILL.md` teach it
+  with its reason; `tickets.mjs metrics` counts them per shipped ticket and
+  `doctor` warns on one that names a planned, unshipped ticket;
+  `check-invariants.mjs` pins the suffix at every door). A defect that passed
+  the review, the acceptance checks and the release check and shipped anyway
+  is repaired by somebody else's ticket, with its own entry and its own green
+  ledger — so without the suffix the most expensive class of miss is the one
+  class nothing measures. It does not disturb shipped detection, which anchors
+  at the START of a subject: `Q-7: fix the crash (fixes AUTH-3)` ships Q-7 and
+  only Q-7. An escape is ordered, not just matched: the fixing commit has to
+  REACH the default branch after the named ticket did. Where a commit reached
+  it is neither where nor when it was written — a release epic commits its
+  tickets on `epic/<name>` and brings them over in one merge, so a hotfix
+  written later can arrive first — so every commit is placed at the index,
+  along the branch's first-parent chain, of the commit that brought it in,
+  from one `git log` of the whole branch rather than a `git` call per commit.
+  Strictly later, so a fix arriving in the SAME release merge as its ticket is
+  a defect caught before release, not one that escaped. And a `(fixes …)`
+  carrying something ticket-ID-shaped that the strict one-ID form cannot read
+  (`(fixes A, B)`, `(fixes city-1)`) is reported rather than dropped —
+  `(fixes #12)` and `(fixes the flaky test)` are somebody else's convention
+  and are left alone: `metrics --json`'s `unmatchedFixes` carries a
+  `reason` on every row — `not-shipped`, `predates` or `unreadable` —
+  because the escape count is exactly the figure that reads fine while being
+  quietly low. The `doctor` warn on a planned, unshipped ID advertises
+  exactly one recovery, the ticket shipping, because a commit subject on the
+  default branch is never rewritten and an addendum would not clear it. `(review fix)`, already the subject shape three lanes commit
+  under, is pinned in the same pass and is what rework is counted from.
+
+- **`doctor` covers the three new lines the way it covers the two before
+  them**: a `**Peak context:**`, `**Findings:**` or `**Halt:**` line carrying
+  values where no group parses is a named warn, a written group (or one pair
+  inside it) the ledger came up short on is named per group, and a `…c` figure
+  quoted outside its paragraph is named by the ticket in group position before
+  it. Every advertised repair is the log's own append-only one — a dated
+  addendum beneath the record with the groups under a label of their own — and
+  each is tested to clear its warn in the refused state. The `(fixes <ID>)`
+  warn is scoped to a PLANNED, unshipped ticket for the same rule: that one
+  ends by itself when the ticket ships, while a suffix naming an ID nothing
+  planned could never be cleared, since a commit subject on the default branch
+  cannot be rewritten — `metrics --json` lists those under `unmatchedFixes`
+  instead.
+
 - **A run record carries two more metered lines — `**Cache reads:**` and
   `**Models:**` — and `spend` reads both into the ledger beside the tokens and
-  the seconds** (`scripts/meter.mjs` prints all four now; `tickets.mjs`
+  the seconds** (`scripts/meter.mjs` prints them beside the other two; `tickets.mjs`
   parses them, reports them per ticket and per epic in `spend` and `spend
   --json` — `tickets[].cache`, `tickets[].models`, `epics[].cacheTotals` —
   and flags, **per written group**, every one (and every pair inside one) the

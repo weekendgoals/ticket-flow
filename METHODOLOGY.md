@@ -797,8 +797,8 @@ end, so `12r` was never a token pair and the group had always ended before it.
 
 Three cuts, one mistake: asking what the NEXT pair looks like. The right
 question is about the group. A token group can only be another ledger's group
-in disguise when every pair it swallowed is `unknown` — the single value all
-four ledgers share, and the reason the paragraph wall exists at all. So the
+in disguise when every pair it swallowed is `unknown` — the single value
+every ledger shares, and the reason the paragraph wall exists at all. So the
 rule that shipped **leaves the refusal exactly as it was** — time-shaped or
 `unknown`, the spelling every existing record was read with — and adds one
 test after the match: an all-`unknown` group is dropped when what follows
@@ -827,6 +827,136 @@ and still not what it seems, so it is never called `wall`: commits begin when
 the work is nearly over. It is shown because a labelled weak observation
 beats `unknown` for a human, and named for what it is because a metric built
 on it later would inherit the error invisibly.
+
+### Where a new unit letter goes, and where it does not
+
+Peak context added a fifth metered line and a fourth unit, `c`, and the
+question the three cuts above make sharp is which of the two regexes it
+belongs in. It belongs in `LEDGER_FOLLOWER`, the after-the-match test, and
+not in `RUN_GROUP`'s lookahead — and the difference is what each one can
+cost. Widening the lookahead decides which groups are READ, so a wrong
+widening loses a figure, which is exactly what Cut 3 did by adding one letter
+to it. Widening `LEDGER_FOLLOWER` can only drop an **all-`unknown`** group,
+which by construction holds no figure: the worst it can do is fail to record
+that nobody recorded something. The two are one letter apart in the source
+and a whole class apart in consequence, which is why the comment on each says
+so.
+
+The letter itself was chosen, not inherited. Any letter keeps a figure out of
+the token ledger — `NOT_A_UNIT` refuses a digit run followed by a letter — so
+what a new unit has to earn is distinctness from the units already in use.
+`c` is neither `s` nor `r`, so a peak figure that lands in a Time or a Cache
+reads paragraph is read by **no** ledger rather than wrongly by one; had it
+reused either letter, the paragraph wall would have been the only thing
+between a 1.2M-token context window and a ticket's duration, and one wall is
+one fewer than this ledger has needed at every other point.
+
+A findings count carries no unit at all, and that is the same reasoning
+reaching the opposite answer: `important`, `nits` and `unfixed` are not role
+keys, so no other ledger's pair regex can read them and a unit would protect
+nothing. What they keep is the paragraph, because the rule is "one grammar"
+and a ledger that opted out of the wall would be the exception a later reader
+generalises from.
+
+### Why a peak is a max at every level, and carries no total
+
+Every other counting ledger sums: two agents of a role spent two agents'
+tokens, two rounds took two rounds' seconds. A context window does not work
+that way — two agents held two windows one after the other, and a ticket's
+second review pass held its own rather than stacking it on the first's. So
+the peak is a max over an agent's messages, over a role's agents, over a
+ticket's rounds and over an epic's tickets, and the line carries no `total=`
+at all: a peak summed across tickets names a window no agent ever held, and a
+figure headed `total=` beside four lines whose totals are sums would be read
+as one. The epic's max is computed by `spend` from the groups, where it
+cannot disagree with them — which is the same reason the Tokens line's
+`total=` is a liability the newer lines did not repeat.
+
+A Codex worker's peak is `unknown` for a reason that separates a peak from
+every figure beside it. That agent is the runner's shell proxy: its tokens and
+its cache reads are real cost, paid by this run whoever wrote the ticket, so
+they are reported. Its context window is not a cost at all — it is a claim
+about one model, and the window the transcript exposes is a few relayed JSON
+blobs wide. Printed under `codex:<model>` it would say a Codex agent came that
+close to its limit, which is the one thing nobody here observed. So the peak
+takes the same gate the model does, in the same place and on the same
+condition: two fields that must agree cannot be left to drift apart in two
+different `if`s.
+
+The `unknown` rule inverts too, and deliberately. A role with an unobserved
+agent makes its SUM unknown, because a partial sum reads as the role's spend
+and is silently low. A max over the same role could also only read low — and
+low is the direction that matters for a peak, since the question it answers
+is "did anything come near the limit?" — so it is `unknown` as well. Models
+are the one ledger where a hole does not make the role unknown, because a
+model is a label and an agent nobody observed cannot make an observed label
+wrong.
+
+### Findings, halts, and the two suffixes: measuring what the gates missed
+
+The metered ledgers say what work cost. None of them says whether it was
+any good. Three additions close that, and each is written at the one door
+that can observe it.
+
+**Findings** (`<ID> important=<n> nits=<n> unfixed=<n>`) are the driver's own
+result rendered in code — `importantCount`, `nitCount + nitOverflowCount`,
+`notFixed.length` — never a session's reading of the review prose, for the
+reason the token figures are metered rather than asked: an agent summarising
+its own run is the one observer with a stake. `important=0` is written
+because an absent line and a clean review are the same silence otherwise, and
+telling them apart is the whole measurement.
+
+**Halts** (`<kind> <ID>`) carry the driver's `STOP` key, resolved inside
+`run-epic.mjs`. The alternative — a session mapping the halt SENTENCE back to
+a key — fails the first time a sentence is reworded, and the sentences are
+reworded deliberately, every time a halt reads wrongly to a human. The kind
+comes first and the ticket is optional because an epic-level halt (the
+release check) names no ticket, and every shape that put something in ID
+position was worse: the epic's name reads like prose, a placeholder `-` is a
+token nobody would think to write, and `epic` is a word that could one day be
+a ticket prefix. A kind is lower-case-initial and a ticket ID is
+upper-case-initial, so the two never collide and nothing has to stand between
+them.
+
+**`(fixes <ID>)`** is the only record an escaped defect leaves anywhere. A
+defect that passed the review, the acceptance checks and the release check
+and shipped anyway is repaired by a LATER ticket — which has its own entry,
+its own review and its own green ledger, so the repository's own documents
+record the repair as a success and the miss as nothing at all. One suffix on
+one subject is what makes the most expensive class of failure countable, and
+a subject is where it goes for the reason shipped detection reads subjects:
+it is the one part of a commit that survives a rebase, a cherry-pick and a
+squash. An escape is ORDERED, not merely matched: the fix has to REACH the default
+branch after the named ticket did, because a repair that arrived while the
+ticket was still on an epic branch repaired work no user had seen, and
+"reached users" is the whole content of the word. Where a commit reached the
+branch is neither where it was written nor when: a release epic commits its
+tickets on `epic/<name>` weeks before the merge that brings them over, so a
+hotfix written later can arrive first, and an author date is rewritten by
+every rebase besides. So every commit is placed at the index, along the
+branch's first-parent chain, of the commit that brought it in — one `git log`
+for the whole branch, because a `git` call per commit is how a board command
+becomes one nobody runs. Strictly later, so a fix and its ticket arriving in
+one release merge is a defect CAUGHT, not escaped; it shares the `predates`
+reason rather than earning one of its own, because nothing reads the
+difference today and a reason nobody reads is a field that drifts. A suffix that fails that test, or one the strict form cannot read
+at all, is reported under `unmatchedFixes` with its reason rather than
+dropped: this count is exactly the kind that reads fine while being quietly
+low, and a lenient parse would have to guess which of several spellings meant
+what. `(review fix)`, already the shape three lanes commit fixes under, is
+the same measurement one stage earlier — rework is what the review caught,
+escapes are what it did not, and the two are one question read from both
+ends.
+
+The doctor warn on `(fixes <ID>)` is scoped narrowly for a rule this
+repository already had: a refusal's advertised recovery must work in the
+refused state. A commit subject on the default branch can never be rewritten,
+so a warn about a suffix naming an ID no epic plans would be permanent, and a
+permanent warn teaches its reader to skip the rest of `doctor`. What the warn
+does fire on is a suffix naming a ticket this repository has PLANNED and not
+yet shipped — where the recovery is real and ordinary, because the ticket
+ships and the warn ends by itself. The unclearable case is reported by
+`metrics --json`, as information, which is what it is.
 
 ### Why cache reads and the model are their own lines
 

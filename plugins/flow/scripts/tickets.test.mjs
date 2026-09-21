@@ -4352,7 +4352,7 @@ test('categories: a cache figure outside any paragraph is read by no ledger, and
 // that drops a figure fails this table rather than a live epic's ledger.
 // Four lines diverge from main ON PURPOSE — the third column — and each is
 // the leak the guard exists for: a group whose every pair is `unknown` (the
-// one value the four ledgers share) followed by another ledger's pair. No
+// one value every ledger shares) followed by another ledger's pair. No
 // figure is lost in any of them, only an `unknown` mark nobody wrote.
 const GROUP_TABLE = [
   ['A-1 worker=804432 reviewer=324269 disposition=12000 proxies=5000 re-review=round2; total=1145701', { 'A-1': { worker: 804432, reviewer: 324269, disposition: 12000, proxies: 5000 } }],
@@ -4394,6 +4394,21 @@ const GROUP_TABLE = [
   ['A-1 worker=100 reviewer=unknown proxies=200r', { 'A-1': { worker: 100, unknown: ['reviewer'] } }],
   ['A-1 worker=100 reviewer=unknown wall=9s', {}],
   ['A-1 worker=unknown reviewer=unknown', { 'A-1': { unknown: ['worker', 'reviewer'] } }],
+  // Peak-context followers, `c`. Identical to the cache case and for the
+  // identical reason: a token figure ends where its digits end, so `12c` was
+  // never a token pair and the group has always ended before it. NOTHING here
+  // may differ from main except the all-`unknown` row, which loses no figure.
+  ['A-1 worker=462249 reviewer=185339 proxies=12c; total=647588', { 'A-1': { worker: 462249, reviewer: 185339 } }],
+  ['A-1 worker=100 reviewer=200c', { 'A-1': { worker: 100 } }],
+  ['A-1 worker=100 reviewer=50 proxies=1204331c', { 'A-1': { worker: 100, reviewer: 50 } }],
+  ['A-1 worker=100 reviewer=unknown proxies=200c', { 'A-1': { worker: 100, unknown: ['reviewer'] } }],
+  ['A-1 worker=unknown reviewer=200c', { 'A-1': { unknown: ['worker'] } }, {}],
+  // Findings followers. The keys are the findings ledger's own, so no pair
+  // regex here can read them and the group simply ends — which is why the
+  // all-`unknown` drop does NOT extend to them: `important=` is not a role
+  // assignment, so nothing about this reading changes either way.
+  ['A-1 worker=100 important=3 nits=2 unfixed=0', { 'A-1': { worker: 100 } }],
+  ['A-1 worker=unknown important=3', { 'A-1': { unknown: ['worker'] } }],
 ]
 // Every line gets its own tickets, so one line's reading cannot stand in for
 // another's, and its own run record, so nothing leaks across regions.
@@ -4436,7 +4451,7 @@ test('run groups: every figure main reads is still read, and only the all-unknow
     assert.deepEqual(Object.values(mainReading).flatMap((v) => Object.keys(v).filter((k) => k !== 'unknown')), [], `${line}: main read a FIGURE here`)
     assert.match(line, /^(?:[A-Z][A-Z0-9]*-\d+ )?(?:round=\d+ )?(?:(?:worker|reviewer|re-review|disposition|proxies)=unknown ?)+\S/, `${line}: not an all-unknown group`)
   }
-  assert.equal(diverging.length, 4, 'the divergence set is the four all-unknown rows and nothing else')
+  assert.equal(diverging.length, 5, 'the divergence set is the five all-unknown rows and nothing else')
 })
 
 // The same groups, quoted where they actually turn up: inside ANOTHER
@@ -5112,4 +5127,531 @@ test('doctor: in a Parallel epic an entry with no Owed line, or two, is flagged 
   assert.deepEqual(warns.map((w) => w.msg.match(/status\.md:(\d+) — (DEP-\d)'s entry has (\w+) /).slice(1)), [['3', 'DEP-1', 'no'], ['9', 'DEP-2', '2']])
   assert.match(warns[0].msg, /git show origin\/dep-1:epics\/dep\/status\.md/)
   assert.deepEqual(doctorWarns(mk('owed-serial', 'Delivery: release'), /\*\*Owed:\*\* line/), [], 'a log that predates the rule is not a plugin update away from six new warns')
+})
+
+// ── peak context, findings and halts: three more lines behind the same wall ──
+// The grammar is the one the Time, Cache reads and Models lines already use,
+// so what these pin is the same two boundaries: the unit (or, for findings,
+// the ledger's own keys) and the PARAGRAPH.
+const LEDGERED_RUN =
+  '### Run — 2026-09-20 — halted\n\n**Tokens:** CITY-14 worker=462,249 reviewer=185,339; total=647,588\n\n' +
+  '**Peak context:** CITY-14 worker=1204331c reviewer=380221c;\nCITY-15 worker=90500c reviewer=unknown\n\n' +
+  '**Findings:** CITY-14 important=3 nits=5 unfixed=1; CITY-15 important=0\nnits=2 unfixed=0\n\n' +
+  '**Halt:** importantFinding CITY-14; releaseCheck\n\n**Halted on:** an Important review finding it cannot fix (CITY-14).\n'
+const ledgerWarns = (dir) =>
+  doctorWarns(dir, /Peak context line|Peak context paragraph|peak-context figure|Findings line|Findings paragraph|Halt line|Tokens line carries/)
+
+test('peak: read per role from its own paragraph, wrapped lines included, and never as tokens', () => {
+  const dir = roundsRepo('peak', CITY15_UNKNOWN, LEDGERED_RUN)
+  const t = spendOf(dir, 'CITY-14')
+  assert.equal(t.peak.worker, 1204331)
+  assert.equal(t.peak.reviewer, 380221)
+  assert.equal(t.peak.disposition, null, 'a role the record never named is nothing recorded')
+  assert.equal(t.worker, 462249, 'the token figure is the Tokens line’s, not the peak')
+  assert.equal(t.total, 647588)
+  const t15 = spendOf(dir, 'CITY-15')
+  assert.equal(t15.peak.worker, 90500, 'the group on the continuation line is read')
+  assert.deepEqual(t15.peak.unknown, ['reviewer'])
+  assert.deepEqual(t15.unknown, ['ticket'], 'and a peak unknown is not a token unknown')
+  assert.deepEqual(ledgerWarns(dir), [])
+  const text = run(dir, 'spend', 'city')
+  assert.match(text, /peak {2}worker 1,204,331 {2}reviewer 380,221/)
+  assert.match(text, /peak \(max\) {2}worker 1,204,331/, 'the epic row is a MAX and says so')
+})
+
+test('peak: the epic figure is the largest ticket’s, never the sum', () => {
+  const epic = JSON.parse(run(roundsRepo('peak-max', CITY15_UNKNOWN, LEDGERED_RUN), 'spend', 'city', '--json')).epics[0]
+  assert.equal(epic.peakMax.worker, 1204331, 'not 1,294,831')
+  assert.equal(epic.peakMax.disposition, null, 'a role nobody recorded is null, never 0')
+})
+
+test('peak: rounds take the larger reading, where tokens and cache take the sum', () => {
+  const runs =
+    '### Run — 2026-09-19 — completed\n\n**Tokens:** CITY-14 round=1 worker=100\n\n**Peak context:** CITY-14 round=1 worker=500000c\n\n' +
+    '### Run — 2026-09-20 — completed\n\n**Tokens:** CITY-14 round=2 worker=200\n\n**Peak context:** CITY-14 round=2 worker=300000c\n'
+  const t = spendOf(roundsRepo('peak-rounds', TOKENS_ONLY, runs), 'CITY-14')
+  assert.equal(t.worker, 300, 'tokens sum their rounds')
+  assert.equal(t.peak.worker, 500000, 'and a peak takes the larger — not 800,000')
+  assert.deepEqual(t.peak.rounds, { worker: 2 }, 'the passes the max was taken over')
+})
+
+test('peak: a figure outside its paragraph is read by no ledger, and doctor names the ticket', () => {
+  const dir = roundsRepo('peak-stray', TOKENS_ONLY, '### Run — 2026-09-19 — completed\n\n**Tokens:** CITY-14 worker=100 reviewer=10\n\nDiagnosis: CITY-14 worker=1204331c came close to the limit.\n')
+  const t = spendOf(dir, 'CITY-14')
+  assert.equal(t.worker, 100, 'not 1,204,331 — the `c` is what stops it')
+  assert.equal(t.peak.worker, null, 'and outside a Peak context paragraph it is no peak either')
+  const stray = doctorWarns(dir, /peak-context figure here was read by nothing/)
+  assert.equal(stray.length, 1)
+  assert.match(stray[0].msg, /runs\.md:7 .*CITY-14/)
+})
+
+test('peak: a comma stops the figure parsing, and the advertised addendum clears the warn', () => {
+  const broken = '### Run — 2026-09-19 — completed\n\n**Tokens:** CITY-14 worker=100\n\n**Peak context:** CITY-14 worker=1,204,331c\n'
+  const dir = roundsRepo('peak-comma', TOKENS_ONLY, broken)
+  const lost = doctorWarns(dir, /Peak context paragraph gives the ledger/)
+  assert.equal(lost.length, 1, JSON.stringify(doctorWarns(dir, /./).map((w) => w.msg)))
+  assert.match(lost[0].msg, /nothing for CITY-14/)
+  assert.equal(spendOf(dir, 'CITY-14').peak.worker, null)
+  // The repair the message advertises, on an append-only log: a dated
+  // addendum beneath the record with the groups under a Peak context line.
+  const repaired = roundsRepo('peak-comma-fixed', TOKENS_ONLY, `${broken}\n**Addendum — correction — 2026-09-20.**\n\n**Peak context:** CITY-14 worker=1204331c\n`)
+  assert.deepEqual(doctorWarns(repaired, /Peak context paragraph gives the ledger/), [], 'the advertised repair clears it')
+  assert.equal(spendOf(repaired, 'CITY-14').peak.worker, 1204331)
+})
+
+test('peak: a line written as prose warns by shape, and the addendum clears that too', () => {
+  const prose = '### Run — 2026-09-19 — completed\n\n**Tokens:** CITY-14 worker=100\n\n**Peak context:** the worker got to worker=900000c at its widest.\n'
+  const dir = roundsRepo('peak-prose', TOKENS_ONLY, prose)
+  assert.equal(doctorWarns(dir, /Peak context line carries figures but no machine-shaped group/).length, 1)
+  const repaired = roundsRepo('peak-prose-fixed', TOKENS_ONLY, `${prose}\n**Addendum — correction — 2026-09-20.**\n\n**Peak context:** CITY-14 worker=900000c\n`)
+  assert.deepEqual(ledgerWarns(repaired), [])
+})
+
+test('peak: an idle run’s complete line is no near-miss', () => {
+  const dir = roundsRepo('peak-idle', TOKENS_ONLY, '### Run — 2026-09-19 — completed\n\n**Tokens:** total=0\n\n**Peak context:** none — no ticket ran\n')
+  assert.deepEqual(ledgerWarns(dir), [])
+})
+
+test('findings: three counts per ticket, read only inside their paragraph and never as tokens', () => {
+  const dir = roundsRepo('find', CITY15_UNKNOWN, LEDGERED_RUN)
+  const t = spendOf(dir, 'CITY-14')
+  assert.deepEqual([t.findings.important, t.findings.nits, t.findings.unfixed], [3, 5, 1])
+  assert.equal(t.worker, 462249, 'and `important=3` reached no token ledger')
+  const t15 = spendOf(dir, 'CITY-15')
+  assert.deepEqual([t15.findings.important, t15.findings.nits, t15.findings.unfixed], [0, 2, 0], 'zero is a figure — the review found nothing Important')
+  assert.match(run(dir, 'spend', 'city'), /findings {2}important 3 {2}nits 5 {2}unfixed 1/)
+  assert.match(run(dir, 'spend', 'city'), /findings {2}important 3 {2}nits 7 {2}unfixed 1/, 'the epic footer sums them')
+})
+
+test('findings: rounds sum, an unknown erases nothing, and a lost pair is named with a repair that works', () => {
+  const runs =
+    '### Run — 2026-09-19 — completed\n\n**Findings:** CITY-14 round=1 important=2 nits=1 unfixed=0\n\n' +
+    '### Run — 2026-09-20 — completed\n\n**Findings:** CITY-14 round=2 important=1 nits=unknown unfixed=1\n'
+  const t = spendOf(roundsRepo('find-rounds', TOKENS_ONLY, runs), 'CITY-14')
+  assert.equal(t.findings.important, 3, 'two passes found three between them')
+  assert.equal(t.findings.nits, 1, 'and an unknown round adds nothing and erases nothing')
+  const broken = '### Run — 2026-09-19 — completed\n\n**Findings:** CITY-14 important=3 nits=five unfixed=0\n'
+  const dir = roundsRepo('find-lost', TOKENS_ONLY, broken)
+  const lost = doctorWarns(dir, /Findings paragraph gives the ledger/)
+  assert.equal(lost.length, 1)
+  assert.match(lost[0].msg, /only part of what it writes for CITY-14/)
+  assert.equal(spendOf(dir, 'CITY-14').findings.nits, null, 'the pair that would not parse reached nothing')
+  const repaired = roundsRepo('find-lost-fixed', TOKENS_ONLY, `${broken}\n**Addendum — correction — 2026-09-20.**\n\n**Findings:** CITY-14 important=3 nits=5 unfixed=0\n`)
+  assert.deepEqual(doctorWarns(repaired, /Findings paragraph gives the ledger/), [])
+  assert.equal(spendOf(repaired, 'CITY-14').findings.nits, 5)
+})
+
+test('findings: a line written as prose warns by shape, and the addendum clears it', () => {
+  const prose = '### Run — 2026-09-19 — completed\n\n**Findings:** the reviewer raised important=2 and left one unfixed for CITY-14.\n'
+  const dir = roundsRepo('find-prose', TOKENS_ONLY, prose)
+  assert.equal(doctorWarns(dir, /Findings line carries counts but no machine-shaped group/).length, 1)
+  const repaired = roundsRepo('find-prose-fixed', TOKENS_ONLY, `${prose}\n**Addendum — correction — 2026-09-20.**\n\n**Findings:** CITY-14 important=2 nits=0 unfixed=1\n`)
+  assert.deepEqual(ledgerWarns(repaired), [])
+  assert.equal(spendOf(repaired, 'CITY-14').findings.unfixed, 1)
+})
+
+test('halt: kinds and their tickets are read from the line, an epic-level halt names none', () => {
+  const dir = roundsRepo('halt', CITY15_UNKNOWN, LEDGERED_RUN)
+  const m = JSON.parse(run(dir, 'metrics', 'city', '--json')).epics[0]
+  assert.deepEqual(m.halts.map((h) => [h.kind, h.count, h.tickets]), [['importantFinding', 1, ['CITY-14']], ['releaseCheck', 1, []]])
+  assert.equal(m.haltCount, 2)
+  assert.deepEqual(ledgerWarns(dir), [])
+})
+
+test('halt: the paragraph carries groups and nothing else — prose beside a kind is a named warn, cleared by the addendum', () => {
+  const prose = '### Run — 2026-09-19 — completed\n\n**Halt:** blocked CITY-14 — the worker wrote a BLOCKED entry.\n'
+  const dir = roundsRepo('halt-prose', TOKENS_ONLY, prose)
+  const m = JSON.parse(run(dir, 'metrics', 'city', '--json')).epics[0]
+  assert.deepEqual(m.halts, [], 'a sentence beside the kind ends the group, so nothing is counted — never "the", "worker" and "entry"')
+  assert.equal(doctorWarns(dir, /writes something .*counts as no halt at all/).length, 1)
+  const repaired = roundsRepo('halt-prose-fixed', TOKENS_ONLY, `${prose}\n**Addendum — correction — 2026-09-20.**\n\n**Halt:** blocked CITY-14\n`)
+  assert.deepEqual(ledgerWarns(repaired), [])
+  assert.deepEqual(JSON.parse(run(repaired, 'metrics', 'city', '--json')).epics[0].halts.map((h) => h.kind), ['blocked'])
+})
+
+test('halt: a segment that reads as nothing beside one that reads fine is named — the paragraph question would have said yes', () => {
+  // The loss a whole-paragraph check misses, and the exact string the parser's
+  // own comment is written about: `releaseCheck` parses, so "did anything
+  // parse here?" answers yes while the halt that stopped the run is gone.
+  const broken = '### Run — 2026-09-19 — halted\n\n**Halt:** blocked CITY-14 — the worker died; releaseCheck\n'
+  const dir = roundsRepo('halt-partial', TOKENS_ONLY, broken)
+  assert.deepEqual(JSON.parse(run(dir, 'metrics', 'city', '--json')).epics[0].halts.map((h) => h.kind), ['releaseCheck'])
+  const warn = doctorWarns(dir, /writes something .*counts as no halt at all/)
+  assert.equal(warn.length, 1, JSON.stringify(doctorWarns(dir, /./).map((w) => w.msg)))
+  assert.match(warn[0].msg, /"blocked CITY-14 — the worker died"/, 'the segment is quoted, so the reader knows which halt to restate')
+  assert.match(warn[0].msg, /only the halts this line lost/)
+  assert.match(warn[0].msg, /runs\.md:5/)
+  // The advertised repair, on an append-only log: an addendum restating ONLY
+  // the lost halt. Every Halt paragraph in a record is counted, so restating
+  // the readable one too would count `releaseCheck` twice — the message says
+  // so, and this is the reading that proves it.
+  const repaired = roundsRepo('halt-partial-fixed', TOKENS_ONLY, `${broken}\n**Addendum — correction — 2026-09-20.**\n\n**Halt:** blocked CITY-14\n`)
+  assert.deepEqual(ledgerWarns(repaired), [], 'the advertised repair clears it')
+  assert.deepEqual(
+    JSON.parse(run(repaired, 'metrics', 'city', '--json')).epics[0].halts.map((h) => [h.kind, h.count]),
+    [['blocked', 1], ['releaseCheck', 1]],
+    'each halt counted once',
+  )
+  // …and the mistake the message warns against, priced: a full restatement
+  // double-counts the halt that already parsed.
+  const overstated = roundsRepo('halt-partial-over', TOKENS_ONLY, `${broken}\n**Addendum — correction — 2026-09-20.**\n\n**Halt:** blocked CITY-14; releaseCheck\n`)
+  assert.deepEqual(JSON.parse(run(overstated, 'metrics', 'city', '--json')).epics[0].halts.find((h) => h.kind === 'releaseCheck').count, 2)
+})
+
+test('halt: only a later group naming the same ticket clears a lost segment that named one', () => {
+  // An addendum about SOME OTHER halt must not answer for this one — the rule
+  // the cache and models warns are keyed on. Before this, any later Halt
+  // paragraph cleared every earlier segment, so a record could be "repaired"
+  // into silence while the halt that stopped the run stayed lost.
+  const broken = '### Run — 2026-09-19 — halted\n\n**Halt:** blocked CITY-14 — the worker died; releaseCheck\n'
+  const other = roundsRepo('halt-other', TOKENS_ONLY, `${broken}\n**Addendum — correction — 2026-09-20.**\n\n**Halt:** contradiction\n`)
+  const stillLost = doctorWarns(other, /counts as no halt at all/)
+  assert.equal(stillLost.length, 1, 'an addendum about a different halt clears nothing')
+  assert.match(stillLost[0].msg, /"blocked CITY-14 — the worker died"/)
+  // …and the advertised repair, naming the ticket, does clear it.
+  const named = roundsRepo('halt-named', TOKENS_ONLY, `${broken}\n**Addendum — correction — 2026-09-20.**\n\n**Halt:** blocked CITY-14\n`)
+  assert.deepEqual(doctorWarns(named, /counts as no halt at all/), [])
+  // A segment naming NO ticket has no key to match on, so any later paragraph
+  // clears it: nothing better can be known about which halt an addendum meant.
+  const epicLevel = '### Run — 2026-09-19 — halted\n\n**Halt:** releaseCheck — the epic head went stale\n'
+  const unkeyed = roundsRepo('halt-unkeyed', TOKENS_ONLY, epicLevel)
+  assert.equal(doctorWarns(unkeyed, /counts as no halt at all/).length, 1)
+  const cleared = roundsRepo('halt-unkeyed-fixed', TOKENS_ONLY, `${epicLevel}\n**Addendum — correction — 2026-09-20.**\n\n**Halt:** releaseCheck\n`)
+  assert.deepEqual(doctorWarns(cleared, /counts as no halt at all/), [])
+})
+
+test('halt: the label is read case-insensitively, as every other ledger label is', () => {
+  // `LEDGER_PARAGRAPHS` opens a halt paragraph on `/^\*\*Halt:\*\*/i`, so a
+  // `**HALT:**` line that opens one must also yield its groups — while the
+  // KIND stays case-sensitive, which is the whole thing that tells a kind
+  // from a ticket ID.
+  const dir = roundsRepo('halt-case', TOKENS_ONLY, '### Run — 2026-09-19 — halted\n\n**HALT:** blocked CITY-14\n')
+  assert.deepEqual(JSON.parse(run(dir, 'metrics', 'city', '--json')).epics[0].halts.map((h) => [h.kind, h.tickets]), [['blocked', ['CITY-14']]])
+  assert.deepEqual(ledgerWarns(dir), [], 'and it is no near-miss either')
+  const upper = roundsRepo('halt-case-kind', TOKENS_ONLY, '### Run — 2026-09-19 — halted\n\n**Halt:** Blocked CITY-14\n')
+  assert.deepEqual(JSON.parse(run(upper, 'metrics', 'city', '--json')).epics[0].halts, [], 'an upper-case kind is not a kind')
+  assert.equal(doctorWarns(upper, /counts as no halt at all/).length, 1, 'and it is named rather than dropped')
+})
+
+test('halt: the line reaches no other ledger — a ticket named there gains no figure', () => {
+  const dir = roundsRepo('halt-inert', TOKENS_ONLY, '### Run — 2026-09-19 — completed\n\n**Tokens:** CITY-14 worker=100\n\n**Halt:** ticketBudget CITY-14\n')
+  const t = spendOf(dir, 'CITY-14')
+  assert.equal(t.worker, 100)
+  assert.deepEqual([t.time.wall, t.cache.worker, t.peak.worker, t.findings.important], [null, null, null, null])
+})
+
+// ── metrics: what the ledgers say once crossed with the commit subjects ──────
+const mremote = join(tmp, 'metrics-remote.git')
+const mrepo = join(tmp, 'metrics-repo')
+git(tmp, 'init', '--bare', '--initial-branch=main', mremote)
+git(tmp, 'init', '--initial-branch=main', mrepo)
+git(mrepo, 'config', 'user.email', 'test@example.com')
+git(mrepo, 'config', 'user.name', 'Test')
+git(mrepo, 'config', 'commit.gpgsign', 'false')
+const mwrite = (rel, text) => {
+  mkdirSync(dirname(join(mrepo, rel)), { recursive: true })
+  writeFileSync(join(mrepo, rel), text)
+}
+const mcommit = (subject, ...paths) => {
+  git(mrepo, 'add', ...paths)
+  git(mrepo, 'commit', '-q', '-m', subject)
+}
+mwrite('epics/met/tickets.md', '# Met epic — tickets\n\nDelivery: incremental\n\n## MET-1 — the parser\n\n**Scope.** One.\n\n## MET-2 — the renderer\n\n**Scope.** Two.\n\n## MET-3 — not started\n\n**Scope.** Three.\n')
+mwrite(
+  'epics/met/status.md',
+  '# Met epic — status log\n\n### MET-1 — the parser — 2026-09-16 — DONE\n\n**Tokens:** recorded in the run record\n\n**Owed:** Nothing.\n\n' +
+    '### MET-2 — the renderer — 2026-09-17 — DONE\n\n**Tokens:** recorded in the run record\n\n**Owed:** Nothing.\n',
+)
+mwrite(
+  'epics/met/runs.md',
+  '# Met epic — run records\n\n### Run — 2026-09-18 — halted\n\n' +
+    '**Tokens:** MET-1 worker=200000 reviewer=50000; MET-2 worker=400000 reviewer=60000; total=710000\n\n' +
+    '**Time:** MET-1 worker=600s wall=900s; MET-2 worker=1200s wall=1500s; run=2600s\n\n' +
+    '**Cache reads:** MET-1 worker=1000000r; MET-2 worker=3000000r; total=4000000r\n\n' +
+    '**Models:** MET-1 worker=claude-opus-5 reviewer=claude-fable-5-1; MET-2\nworker=codex:gpt-5-codex reviewer=claude-fable-5-1\n\n' +
+    '**Peak context:** MET-1 worker=180000c reviewer=90000c; MET-2\nworker=250000c reviewer=95000c\n\n' +
+    '**Findings:** MET-1 important=1 nits=3 unfixed=0; MET-2 important=2 nits=1\nunfixed=1\n\n' +
+    '**Halt:** importantFinding MET-2; releaseCheck\n\n**Halted on:** an Important review finding it cannot fix (MET-2).\n',
+)
+mwrite('src/parser.js', 'export const p = 1\n')
+mcommit('MET-1: the parser', 'epics', 'src/parser.js')
+mwrite('src/parser.js', 'export const p = 2\n')
+mcommit('MET-1: guard the empty case (review fix)', 'src/parser.js')
+mwrite('src/render.js', 'export const r = 1\n')
+mcommit('MET-2: the renderer', 'src/render.js')
+mwrite('src/render.js', 'export const r = 2\n')
+mcommit('MET-2: escape the label (review fix)', 'src/render.js')
+mwrite('src/render.js', 'export const r = 3\n')
+mcommit('MET-2: restore the fallback (review fix)', 'src/render.js')
+// A later quick ticket repairing something MET-1 shipped: the escaped defect.
+mwrite('epics/quick/tickets.md', '# Quick\n\nDelivery: incremental\n\n## Q-7 — the crash\n\n**Scope.** Fix it.\n')
+mwrite('src/parser.js', 'export const p = 3\n')
+mcommit('Q-7: stop the crash on an empty token (fixes MET-1)', 'epics', 'src/parser.js')
+git(mrepo, 'remote', 'add', 'origin', mremote)
+git(mrepo, 'push', '-q', '-u', 'origin', 'main')
+git(mrepo, 'remote', 'set-head', 'origin', 'main')
+const metrics = (...a) => JSON.parse(run(mrepo, 'metrics', ...a, '--json'))
+
+test('metrics: pace is grouped by the worker’s model, with the worker’s own figures and the ticket’s wall', () => {
+  const e = metrics('met').epics[0]
+  assert.deepEqual(e.pace.map((p) => [p.model, p.tickets]), [['claude-opus-5', 1], ['codex:gpt-5-codex', 1], ['unknown', 1]])
+  const opus = e.pace.find((p) => p.model === 'claude-opus-5')
+  assert.deepEqual([opus.tokens.value, opus.cache.value, opus.peak.value, opus.wall.value], [200000, 1000000, 180000, 900])
+  assert.deepEqual([opus.tokens.from, opus.tokens.of], [1, 1])
+  const codex = e.pace.find((p) => p.model === 'codex:gpt-5-codex')
+  assert.deepEqual([codex.tokens.value, codex.peak.value, codex.wall.value], [400000, 250000, 1500])
+  // MET-3 never ran: grouped under `unknown` rather than dropped, and every
+  // figure null — how much of an epic went unmeasured is itself the finding.
+  const none = e.pace.find((p) => p.model === 'unknown')
+  assert.deepEqual([none.tokens.value, none.tokens.from, none.tokens.of], [null, 0, 1])
+})
+
+test('metrics: rework counts the `(review fix)` commits per ticket, off the subjects', () => {
+  const e = metrics('met').epics[0]
+  assert.deepEqual(e.rework.map((r) => [r.id, r.fixes]), [['MET-1', 1], ['MET-2', 2]])
+  assert.equal(e.reworkCommits, 3)
+  assert.match(run(mrepo, 'metrics', 'met'), /rework {2}3 review-fix commits over 2 tickets/)
+})
+
+test('metrics: review effectiveness comes from the Findings groups, and says how many tickets recorded any', () => {
+  const e = metrics('met').epics[0]
+  assert.deepEqual([e.review.important.value, e.review.nits.value, e.review.unfixed.value], [3, 4, 1])
+  assert.deepEqual([e.review.important.from, e.review.important.of], [2, 3], 'MET-3 recorded none, and a bare total would hide that')
+  assert.deepEqual([e.review.ticketsRecorded, e.review.ticketsWithImportant], [2, 2])
+})
+
+test('metrics: halts are counted by the driver’s own kind, epic-level ones included', () => {
+  const e = metrics('met').epics[0]
+  assert.deepEqual(e.halts.map((h) => [h.kind, h.count, h.tickets]), [['importantFinding', 1, ['MET-2']], ['releaseCheck', 1, []]])
+})
+
+test('metrics: an escaped defect is a later commit naming a SHIPPED ticket, and the suffix leaves shipped detection alone', () => {
+  const e = metrics('met').epics[0]
+  assert.deepEqual(e.escaped.map((x) => [x.id, x.count, x.by]), [['MET-1', 1, ['Q-7']]])
+  assert.equal(e.escapedCommits, 1)
+  // The suffix must not disturb the scan that decides what shipped: the
+  // subject `Q-7: … (fixes MET-1)` ships Q-7, and only Q-7.
+  const states = Object.fromEntries(JSON.parse(run(mrepo, 'list', '--json')).tickets.map((t) => [t.id, t.state]))
+  assert.equal(states['Q-7'], 'shipped')
+  assert.equal(states['MET-3'], 'todo', 'and nothing else was shipped by it')
+  assert.match(run(mrepo, 'metrics', 'met'), /escaped 1 later fix of 1 shipped ticket — MET-1 1 \(by Q-7\)/)
+})
+
+test('metrics: `wall` is the only duration — a commit span is never reported as one', () => {
+  const out = run(mrepo, 'metrics', 'met')
+  assert.match(out, /Duration is the run record's observed `wall` only/)
+  assert.doesNotMatch(out, /over \d+ commits/, 'no row carries a commit span, whatever the git history says')
+  assert.match(out, /claude-opus-5 +1 +200,000 +1,000,000 +180,000 +15m 00s/, 'the wall is the recorded 900s, not the span between MET-1’s two commits')
+})
+
+test('metrics: a total across epics only when no epic was named', () => {
+  assert.equal(metrics('met').totals, null, 'one epic’s own numbers twice is not a total')
+  const all = metrics()
+  assert.ok(all.totals.epics >= 2)
+  assert.equal(all.totals.reworkCommits, 3)
+  assert.equal(all.totals.important, 3)
+})
+
+test('metrics: a `(fixes <ID>)` naming a PLANNED, unshipped ticket is a doctor warn that shipping clears', () => {
+  const dir = join(tmp, 'metrics-unshipped')
+  git(tmp, 'init', '--initial-branch=main', dir)
+  git(dir, 'config', 'user.email', 'test@example.com')
+  git(dir, 'config', 'user.name', 'Test')
+  git(dir, 'config', 'commit.gpgsign', 'false')
+  const bare = join(tmp, 'metrics-unshipped.git')
+  git(tmp, 'init', '--bare', '--initial-branch=main', bare)
+  mkdirSync(join(dir, 'epics/esc'), { recursive: true })
+  writeFileSync(join(dir, 'epics/esc/tickets.md'), '# Esc\n\nDelivery: incremental\n\n## ESC-1 — the one\n\n**Scope.** One.\n\n## ESC-9 — the later one\n\n**Scope.** Nine.\n')
+  writeFileSync(join(dir, 'src.js'), 'a\n')
+  git(dir, 'add', '.')
+  git(dir, 'commit', '-q', '-m', 'ESC-1: repair it (fixes ESC-9)')
+  git(dir, 'remote', 'add', 'origin', bare)
+  git(dir, 'push', '-q', '-u', 'origin', 'main')
+  git(dir, 'remote', 'set-head', 'origin', 'main')
+  const warn = doctorWarns(dir, /has not shipped, so there is no released defect/)
+  assert.equal(warn.length, 1)
+  assert.match(warn[0].msg, /ESC-9/)
+  // The only recovery it advertises is the one that works. A commit subject
+  // on the default branch is never rewritten, so the message must not offer
+  // an addendum: a reader who appends one and watches the warn stay learns to
+  // skip the rest of doctor.
+  assert.match(warn[0].msg, /ends when ESC-9 ships, and nothing else ends it/)
+  assert.doesNotMatch(warn[0].msg, /say so in a dated addendum/)
+  assert.equal(JSON.parse(run(dir, 'metrics', 'esc', '--json')).epics[0].escapedCommits, 0, 'and nothing is counted as an escape')
+  // The advertised recovery: ESC-9 ships, and the warn ends by itself.
+  writeFileSync(join(dir, 'src9.js'), 'b\n')
+  git(dir, 'add', '.')
+  git(dir, 'commit', '-q', '-m', 'ESC-9: the later one')
+  git(dir, 'push', '-q', 'origin', 'main')
+  assert.deepEqual(doctorWarns(dir, /has not shipped, so there is no released defect/), [])
+  // …and the fix STILL counts as no escape, for the other reason: it landed
+  // before ESC-9 did, so it repaired work no user had seen. The count says so
+  // rather than going quiet.
+  const after = JSON.parse(run(dir, 'metrics', 'esc', '--json'))
+  assert.equal(after.epics[0].escapedCommits, 0)
+  assert.deepEqual(after.unmatchedFixes.map((x) => [x.id, x.reason]), [['ESC-9', 'predates']])
+  // A fix landing after it, on the other hand, is the real thing.
+  writeFileSync(join(dir, 'src10.js'), 'c\n')
+  git(dir, 'add', '.')
+  git(dir, 'commit', '-q', '-m', 'ESC-1: repair the released one (fixes ESC-9)')
+  git(dir, 'push', '-q', 'origin', 'main')
+  assert.equal(JSON.parse(run(dir, 'metrics', 'esc', '--json')).epics[0].escapedCommits, 1)
+})
+
+test('metrics: a `(fixes <ID>)` naming no planned ticket is listed, never warned — nothing could clear a warn on a pushed subject', () => {
+  const m = metrics()
+  assert.deepEqual(m.unmatchedFixes.map((x) => x.id), [], 'the fixture names only shipped tickets')
+  const rows = JSON.parse(runFail(mrepo, 'doctor', '--json')?.stdout ?? run(mrepo, 'doctor', '--json'))
+  assert.deepEqual(rows.filter((r) => /has not shipped, so there is no released defect/.test(r.msg)), [])
+})
+
+test('metrics: a fix that landed BEFORE the ticket it names shipped is no escape — and says why', () => {
+  // Set membership alone would count it: X is shipped and something names it.
+  // But a repair that landed while X was still in flight repaired work no
+  // user had seen, which is the one thing an escaped defect means. Ordered by
+  // POSITION on the default branch, not by an author clock a rebase rewrites.
+  const dir = join(tmp, 'metrics-order')
+  const bare = join(tmp, 'metrics-order.git')
+  git(tmp, 'init', '--bare', '--initial-branch=main', bare)
+  git(tmp, 'init', '--initial-branch=main', dir)
+  for (const [k, v] of [['user.email', 'test@example.com'], ['user.name', 'Test'], ['commit.gpgsign', 'false']]) git(dir, 'config', k, v)
+  mkdirSync(join(dir, 'epics/ord'), { recursive: true })
+  writeFileSync(join(dir, 'epics/ord/tickets.md'), '# Ord\n\nDelivery: incremental\n\n## ORD-1 — the one\n\n**Scope.** One.\n\n## ORD-2 — the other\n\n**Scope.** Two.\n')
+  const c = (subject, file) => {
+    writeFileSync(join(dir, file), `${subject}\n`)
+    git(dir, 'add', '.')
+    git(dir, 'commit', '-q', '-m', subject)
+  }
+  c('ORD-2: repair the parser (fixes ORD-1)', 'a.js') // lands FIRST — ORD-1 has not shipped
+  c('ORD-1: the one', 'b.js') // …and only now does ORD-1 ship
+  c('ORD-2: repair it again (fixes ORD-1)', 'c.js') // this one is a real escape
+  git(dir, 'remote', 'add', 'origin', bare)
+  git(dir, 'push', '-q', '-u', 'origin', 'main')
+  git(dir, 'remote', 'set-head', 'origin', 'main')
+  const m = JSON.parse(run(dir, 'metrics', 'ord', '--json'))
+  assert.deepEqual(m.epics[0].escaped.map((x) => [x.id, x.count]), [['ORD-1', 1]], 'one of the two, not both')
+  const predating = m.unmatchedFixes.filter((x) => x.reason === 'predates')
+  assert.deepEqual(predating.map((x) => [x.id, x.count]), [['ORD-1', 1]])
+  assert.match(predating[0].subjects[0], /repair the parser/)
+})
+
+// A throwaway repo with a remote, for the landing-position tests: what
+// matters is where a commit REACHED main, which only real merges can show.
+const escRepo = (name) => {
+  const dir = join(tmp, `esc-${name}`)
+  const bare = join(tmp, `esc-${name}.git`)
+  git(tmp, 'init', '--bare', '--initial-branch=main', bare)
+  git(tmp, 'init', '--initial-branch=main', dir)
+  for (const [k, v] of [['user.email', 'test@example.com'], ['user.name', 'Test'], ['commit.gpgsign', 'false']]) git(dir, 'config', k, v)
+  mkdirSync(join(dir, 'epics/city'), { recursive: true })
+  writeFileSync(join(dir, 'epics/city/tickets.md'), '# City\n\nDelivery: release\n\n## CITY-1 — the feature\n\n**Scope.** One.\n\n## CITY-2 — the hotfix\n\n**Scope.** Two.\n')
+  const commit = (subject, file, when = null) => {
+    writeFileSync(join(dir, file), `${subject}\n`)
+    git(dir, 'add', '.')
+    const env = when ? { ...ENV, GIT_AUTHOR_DATE: when, GIT_COMMITTER_DATE: when } : ENV
+    execFileSync('git', ['commit', '-q', '-m', subject], { cwd: dir, encoding: 'utf8', env })
+  }
+  const publish = () => {
+    git(dir, 'remote', 'add', 'origin', bare)
+    git(dir, 'push', '-q', '-u', 'origin', 'main')
+    git(dir, 'remote', 'set-head', 'origin', 'main')
+  }
+  return { dir, commit, publish, read: () => JSON.parse(run(dir, 'metrics', 'city', '--json')) }
+}
+
+test('metrics: a ticket reaches main at its release MERGE, so a hotfix committed before that merge never escaped it', () => {
+  // The release-epic shape. CITY-1 is committed on epic/city early and
+  // reaches main only when the epic merges; CITY-2's hotfix is committed on
+  // main in between. Ordered by where each commit was WRITTEN, CITY-1 is
+  // older and the hotfix looks like an escape. Ordered by where each REACHED
+  // main, CITY-1 arrived last and no user ever saw the defect.
+  const r = escRepo('merge')
+  r.commit('initial', 'README.md')
+  git(r.dir, 'checkout', '-q', '-b', 'epic/city')
+  r.commit('CITY-1: the feature', 'feature.js')
+  git(r.dir, 'checkout', '-q', 'main')
+  r.commit('CITY-2: hotfix (fixes CITY-1)', 'hotfix.js')
+  git(r.dir, 'merge', '-q', '--no-ff', 'epic/city', '-m', 'Merge pull request #1 from epic/city')
+  r.publish()
+  const m = r.read()
+  assert.deepEqual(m.epics[0].escaped, [], 'CITY-1 reached main after the hotfix did')
+  assert.deepEqual(m.unmatchedFixes.map((x) => [x.id, x.reason]), [['CITY-1', 'predates']])
+})
+
+test('metrics: a fix and the ticket it names arriving in ONE release merge is a defect caught, not escaped', () => {
+  const r = escRepo('same-merge')
+  r.commit('initial', 'README.md')
+  git(r.dir, 'checkout', '-q', '-b', 'epic/city')
+  r.commit('CITY-1: the feature', 'feature.js')
+  r.commit('CITY-2: repair it before release (fixes CITY-1)', 'fix.js')
+  git(r.dir, 'checkout', '-q', 'main')
+  git(r.dir, 'merge', '-q', '--no-ff', 'epic/city', '-m', 'Merge pull request #1 from epic/city')
+  r.publish()
+  const m = r.read()
+  assert.deepEqual(m.epics[0].escaped, [], 'both arrived at the same moment — the gates working, not a miss')
+  assert.deepEqual(m.unmatchedFixes.map((x) => [x.id, x.reason]), [['CITY-1', 'predates']])
+})
+
+test('metrics: a fix committed EARLIER by date but merged later is an escape — position decides, never the timestamp', () => {
+  const r = escRepo('late-merge')
+  r.commit('initial', 'README.md')
+  // The fix is authored and committed in January, on a branch of its own.
+  git(r.dir, 'checkout', '-q', '-b', 'fixline')
+  r.commit('CITY-2: repair it (fixes CITY-1)', 'fix.js', '2026-01-05T10:00:00Z')
+  // CITY-1 reaches main in March…
+  git(r.dir, 'checkout', '-q', 'main')
+  r.commit('CITY-1: the feature', 'feature.js', '2026-03-01T10:00:00Z')
+  // …and the January fix only arrives in April, which is when users got it.
+  git(r.dir, 'merge', '-q', '--no-ff', 'fixline', '-m', 'Merge pull request #2 from fixline')
+  r.publish()
+  const m = r.read()
+  assert.deepEqual(m.epics[0].escaped.map((x) => [x.id, x.count]), [['CITY-1', 1]])
+  assert.deepEqual(m.unmatchedFixes, [], 'nothing predates: the fix landed after the feature did')
+})
+
+test('metrics: a branch with no merges at all orders exactly as its commit list does', () => {
+  const r = escRepo('linear')
+  r.commit('CITY-2: repair it (fixes CITY-1)', 'a.js') // before CITY-1 exists
+  r.commit('CITY-1: the feature', 'b.js')
+  r.commit('CITY-2: repair it again (fixes CITY-1)', 'c.js') // after
+  r.publish()
+  const m = r.read()
+  assert.deepEqual(m.epics[0].escaped.map((x) => [x.id, x.count]), [['CITY-1', 1]], 'the later one only')
+  assert.deepEqual(m.unmatchedFixes.map((x) => [x.id, x.reason]), [['CITY-1', 'predates']])
+})
+
+test('metrics: a `(fixes …)` the strict form cannot read is reported, never dropped', () => {
+  // `(fixes A, B)` is not the taught shape, so it is a writer's mistake — but
+  // a mistake that vanishes is worse than one that is wrong, and the escape
+  // count is exactly the figure that reads fine while being quietly low.
+  const dir = join(tmp, 'metrics-unreadable')
+  const bare = join(tmp, 'metrics-unreadable.git')
+  git(tmp, 'init', '--bare', '--initial-branch=main', bare)
+  git(tmp, 'init', '--initial-branch=main', dir)
+  for (const [k, v] of [['user.email', 'test@example.com'], ['user.name', 'Test'], ['commit.gpgsign', 'false']]) git(dir, 'config', k, v)
+  mkdirSync(join(dir, 'epics/unr'), { recursive: true })
+  writeFileSync(join(dir, 'epics/unr/tickets.md'), '# Unr\n\nDelivery: incremental\n\n## UNR-1 — the one\n\n**Scope.** One.\n')
+  const c = (subject, file) => {
+    writeFileSync(join(dir, file), `${subject}\n`)
+    git(dir, 'add', '.')
+    git(dir, 'commit', '-q', '-m', subject)
+  }
+  c('UNR-1: the one', 'a.js')
+  c('UNR-1: repair two at once (fixes UNR-2, UNR-3)', 'b.js')
+  c('UNR-1: lower case (fixes unr-4)', 'c.js')
+  // …and two spellings that are NOT this repository's convention. A row
+  // about either would sit in `unmatchedFixes` for ever in every project that
+  // writes one, and nobody could act on it.
+  c('UNR-1: quieten it (fixes the flaky test)', 'd.js')
+  c('UNR-1: close the issue (fixes #12)', 'e.js')
+  git(dir, 'remote', 'add', 'origin', bare)
+  git(dir, 'push', '-q', '-u', 'origin', 'main')
+  git(dir, 'remote', 'set-head', 'origin', 'main')
+  const m = JSON.parse(run(dir, 'metrics', 'unr', '--json'))
+  const unreadable = m.unmatchedFixes.filter((x) => x.reason === 'unreadable')
+  assert.deepEqual(unreadable.map((x) => x.wrote).sort(), ['(fixes UNR-2, UNR-3)', '(fixes unr-4)'])
+  assert.deepEqual(unreadable.map((x) => x.id), [null, null], 'no ID was read, so none is claimed')
+  assert.equal(m.epics[0].escapedCommits, 0, 'and nothing unreadable is counted as an escape')
+  // Every `unmatchedFixes` row carries a reason: the shape is the contract.
+  for (const row of m.unmatchedFixes) assert.ok(['not-shipped', 'predates', 'unreadable'].includes(row.reason), row.reason)
 })

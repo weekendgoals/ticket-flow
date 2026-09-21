@@ -197,6 +197,17 @@ diffs against and step 9 targets: the default branch in incremental delivery
 - Commit in reviewable increments, **every subject prefixed with the ticket
   ID** — `SEC-3: bound the venue list limit`. The board reads subjects off
   the default branch to decide what has shipped.
+- **When the change repairs something an ALREADY-SHIPPED ticket got wrong,
+  end the subject `(fixes <ID>)`** — `SEC-3: reject the empty limit (fixes VEN-2)`. That
+  is an escaped defect: the review, the acceptance checks and the release
+  check all passed and the defect shipped anyway, and nothing else in the
+  repository records one, because the repair is this ticket, with its own
+  entry and its own green ledger. `tickets.mjs metrics` counts them per
+  shipped ticket, and the count is the only measure there is of what the
+  gates did not catch. It does not disturb shipped detection, which reads
+  `^<ID>[:\s]` at the START of the subject: that subject ships SEC-3 and only
+  SEC-3. Only for a ticket that has SHIPPED — `doctor` warns when the named ID
+  is planned and unshipped, because there was no released defect to escape.
 - **Stay inside the ticket's scope.** "Not in scope" is binding and usually
   names the next ticket. Do not start it.
 - Update the agent instruction files in the same commit as any change they
@@ -591,7 +602,29 @@ which commit, with counts; what was not fixed, each with its reason;
 with the figures the supervisor observed: `Worker tokens (implementation
 leg): <n>; Reviewer tokens: <n>`, `unknown` where the harness exposed
 nothing — or, driver-spawned, `Tokens: recorded in the run record`.>
+
+**Findings:** <ID> important=<n> nits=<n> unfixed=<n>
 ```
+
+The `**Findings:**` line is machine-shaped and is the same line the run
+record carries: **`<ID> important=<n> nits=<n> unfixed=<n>`**, bare counts,
+those three keys and no others, `unknown` for a count nothing observed.
+`important` is every Important finding this review raised (a re-review's
+included), `nits` every nit it listed plus any it said it saw and did not
+list, `unfixed` how many Important findings this addendum leaves unfixed with
+a reason. **`important=0` is written**: a review that found nothing is a
+normal and welcome result, and an absent line is indistinguishable from a
+review that never happened — which is exactly what `tickets.mjs metrics`
+reads it to tell apart, beside the rework count and the escaped defects.
+
+It goes on **its own line**, and the paragraph carries the group and nothing
+else: the counts are read only inside a paragraph that starts
+`**Findings:**`, and a word standing beside a pair ends the group there. The
+prose about what was found is the addendum above it, where it already is.
+**One writer per ticket**, as with the rounds below: here in the supervisor
+lane, the run record in an unattended run — a ticket whose entry points at
+the run record does not restate the counts, or `metrics` counts one review
+twice.
 
 **A ticket reviewed more than once labels its rounds.** Each review pass
 after the first writes its figures as a labelled group — `round=2

@@ -3371,6 +3371,19 @@ return {
   date: today,
   haltedOn: halted,
   alsoHalted,
+  // The halts as the run record's `**Halt:**` line writes them: the STOP
+  // KEY, not the sentence. The key is resolved here, against `STOP` itself,
+  // because a session translating a sentence back into a key is a lookup
+  // that drifts the day a sentence is reworded — and the sentences are
+  // reworded, deliberately, whenever a halt reads wrongly to a human.
+  // `haltedOn` first, then `alsoHalted` in order, which is the order the
+  // line writes them. Empty on a completed run, and the line is then not
+  // written at all: `none` is a lower-case word and would be counted as a
+  // halt kind of its own.
+  haltKinds: [halted, ...alsoHalted].filter(Boolean).map(h => ({
+    kind: Object.keys(STOP).find(k => STOP[k] === h.stopCondition) || 'unknown',
+    ticket: h.ticket || null,
+  })),
   ticketRecords,
   totals: {
     ticketsAttempted: ticketRecords.length,

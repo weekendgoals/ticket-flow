@@ -163,6 +163,56 @@ test('a run-record template that drops a ledger unit fails at every door that ca
   }
 })
 
+test('a run-record template that drops the peak context unit fails at every door that carries it', () => {
+  // `c` is deliberately neither `s` nor `r`: a peak figure in the wrong
+  // paragraph must be read by NO ledger rather than wrongly by one, and a
+  // template that dropped it would pour a window several times a ticket's
+  // token figure into the token ledger.
+  for (const file of ['plugins/flow/skills/run/SKILL.md', 'README.md', 'plugins/flow/scripts/tickets.mjs', 'plugins/flow/scripts/meter.mjs']) {
+    const root = copyRepo()
+    mutate(root, file, 'worker=<n>c reviewer=<n>c', 'worker=<n> reviewer=<n>')
+    const r = run(root)
+    assert.equal(r.status, 1, `${file}: ${r.out}`)
+    assert.match(r.out, /doctrine phrase missing/)
+  }
+})
+
+test('a Findings template that drifts at either of its two writers fails', () => {
+  // Two doors write the line — the run record for a driver run, the ticket
+  // skill's review addendum in the supervisor lane — and a copy that drifted
+  // at one would leave half an epic's reviews unmeasured, which reads exactly
+  // like an epic whose reviews found nothing.
+  for (const file of ['plugins/flow/skills/run/SKILL.md', 'plugins/flow/skills/ticket/SKILL.md', 'README.md', 'plugins/flow/scripts/tickets.mjs']) {
+    const root = copyRepo()
+    mutate(root, file, 'important=<n> nits=<n> unfixed=<n>', 'the counts the review produced')
+    const r = run(root)
+    assert.equal(r.status, 1, `${file}: ${r.out}`)
+    assert.match(r.out, /doctrine phrase missing/)
+  }
+})
+
+test('the two commit-subject suffixes are pinned at every door that writes or reads one', () => {
+  // `(review fix)` is what rework is counted from and `(fixes <ID>)` is the
+  // only record an escaped defect leaves — a lane that spelled either
+  // otherwise reports zero, which is what no measurement looks like.
+  for (const [file, phrase] of [
+    ['plugins/flow/skills/ticket/SKILL.md', '(review fix)'],
+    ['plugins/flow/skills/quick/SKILL.md', '(review fix)'],
+    ['plugins/flow/workflows/run-epic.mjs', '(review fix)'],
+    ['plugins/flow/scripts/tickets.mjs', '(review fix)'],
+    ['plugins/flow/skills/ticket/SKILL.md', '(fixes <ID>)'],
+    ['plugins/flow/skills/quick/SKILL.md', '(fixes <ID>)'],
+    ['plugins/flow/scripts/tickets.mjs', '(fixes <ID>)'],
+    ['README.md', '(fixes <ID>)'],
+  ]) {
+    const root = copyRepo()
+    mutate(root, file, phrase, '(a fix)')
+    const r = run(root)
+    assert.equal(r.status, 1, `${file}: ${phrase}: ${r.out}`)
+    assert.match(r.out, /doctrine phrase missing/)
+  }
+})
+
 test('a run-record template that drifts the Models groups to prose fails', () => {
   // Nothing else in a record observes which model ran a role: the reviewer's
   // model left the Tokens line's prose when this line arrived, so a document
@@ -562,4 +612,33 @@ test('parallel: the plan reviewer losing the independence lens fails — a plann
   const r = run(root)
   assert.equal(r.status, 1, r.out)
   assert.match(r.out, /plan-reviewer\.md.*DECLARED INDEPENDENT/s)
+})
+
+test('the Halt template is run through HALT_GROUP, and a tolerant parse fails', () => {
+  // Peak context and Findings are pinned by phrase: their shape is a pair
+  // list every other ledger already teaches. The Halt group is POSITIONAL —
+  // a kind directly after the label or a `;`, nothing beside it — so a
+  // template that read plausibly to a human could still parse as nothing,
+  // and a parser gone tolerant would read a sentence as four halts. Both
+  // directions, against the real regex.
+  const tolerant = copyRepo()
+  mutate(tolerant, 'plugins/flow/scripts/tickets.mjs', "(?=\\\\s*(?:;|$))", '')
+  const r = run(tolerant)
+  assert.equal(r.status, 1, r.out)
+  assert.match(r.out, /HALT_GROUP accepts prose beside a kind/)
+
+  // …and the kind stays case-sensitive: lower-case-initial is the entire
+  // thing that tells a halt kind from a ticket ID standing beside it.
+  const insensitive = copyRepo()
+  mutate(insensitive, 'plugins/flow/scripts/tickets.mjs', "const HALT_KIND = `[a-z][A-Za-z]*`", "const HALT_KIND = `[A-Za-z][A-Za-z]*`")
+  const i = run(insensitive)
+  assert.equal(i.status, 1, i.out)
+  assert.match(i.out, /HALT_GROUP accepts an upper-case kind/)
+
+  // A skill that stops teaching the group shape fails at the same door.
+  const untaught = copyRepo()
+  mutate(untaught, 'plugins/flow/skills/run/SKILL.md', '`<kind> <ID>`', 'the kind and the ticket')
+  const u = run(untaught)
+  assert.equal(u.status, 1, u.out)
+  assert.match(u.out, /no longer teaches the Halt group/)
 })

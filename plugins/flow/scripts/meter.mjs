@@ -16,12 +16,17 @@
 // session to do by hand. A model summing a few hundred JSONL lines is the one
 // place the ledger's arithmetic was not mechanical.
 //
-// Output is the run record's four machine-shaped lines, ready to paste:
+// Output is the run record's five machine-shaped lines, ready to paste:
 //
 //   **Tokens:** <ID> worker=<n> reviewer=<n> … ; total=<n>
 //   **Time:** <ID> worker=<n>s reviewer=<n>s … wall=<n>s; run=<n>s
 //   **Cache reads:** <ID> worker=<n>r reviewer=<n>r …; total=<n>r
 //   **Models:** <ID> worker=<name> reviewer=<name> …
+//   **Peak context:** <ID> worker=<n>c reviewer=<n>c …
+//
+// (The record's other two machine-shaped lines, `**Findings:**` and
+// `**Halt:**`, come from the driver's own result and not from a transcript:
+// nothing in a transcript says which findings were left unfixed.)
 //
 // and beneath them one line per agent, for the prose the record adds.
 //
@@ -280,6 +285,19 @@ export function readTranscript(text, { proxyTicket = null } = {}) {
     }
   }
   let tokens = null
+  // The largest context window this agent ever held: per MESSAGE, input +
+  // cache reads + cache creation — every token the model was given to read on
+  // that request, which is what "context" means and what a limit is measured
+  // against. Output is left out because it is not in the window that was
+  // sent; the next request's input carries it, and counting it here would add
+  // it twice at the one moment the figure is supposed to be exact.
+  //
+  // A MAX over messages, never a sum: the windows are the same conversation
+  // seen again and again, so summing them multiplies one context by the
+  // number of turns. That is also why deduplication by message id matters
+  // more here than anywhere — but in the other direction: a repeated line
+  // carries the same usage, and a max over duplicates is the same max.
+  let peak = null
   const parts = { input: 0, output: 0, cacheCreation: 0, cacheRead: 0 }
   for (const u of usageById.values()) {
     parts.input += u.input_tokens || 0
@@ -287,6 +305,8 @@ export function readTranscript(text, { proxyTicket = null } = {}) {
     parts.cacheCreation += u.cache_creation_input_tokens || 0
     parts.cacheRead += u.cache_read_input_tokens || 0
     tokens = parts.input + parts.output + parts.cacheCreation
+    const window = (u.input_tokens || 0) + (u.cache_read_input_tokens || 0) + (u.cache_creation_input_tokens || 0)
+    peak = peak === null ? window : Math.max(peak, window)
   }
   return {
     tokens,
@@ -304,6 +324,17 @@ export function readTranscript(text, { proxyTicket = null } = {}) {
     // ticket, an unprintable name, the runner's `default` placeholder — and
     // the agent has no model at all: the proxy's would be a name nobody ran.
     models: codexRan ? codexModels.map((m) => `codex:${m}`) : models,
+    // The SAME gate, on the same condition and beside it so the two cannot
+    // drift — and for a stronger reason. Tokens and cache reads stay as they
+    // are because they are the proxy's real cost, paid by this run whoever
+    // wrote the ticket. A peak is not a cost: it is a claim about ONE model's
+    // context window, and the only window this transcript exposes is the
+    // shell proxy's, a few relayed JSON blobs wide. Reported under
+    // `codex:<model>` it would say a Codex agent came that close to its
+    // limit, which no observation here supports — so where the runner ran,
+    // the peak is `unknown`, the same answer the model gets when the report
+    // is unreadable.
+    peak: codexRan ? null : peak,
     seconds: first === null ? null : Math.round((last - first) / 1000),
     first,
     last,
@@ -344,7 +375,7 @@ export function meter(journalText, readAgent) {
     // own word for it, not a guess from the transcript's contents.
     const m = a.label.match(TICKET_LABEL)
     const proxyTicket = m && m[1] === 'worker' ? m[2] : null
-    Object.assign(a, text == null ? { tokens: null, cacheReads: null, parts: null, models: [], seconds: null, first: null, last: null } : readTranscript(text, { proxyTicket }), {
+    Object.assign(a, text == null ? { tokens: null, peak: null, cacheReads: null, parts: null, models: [], seconds: null, first: null, last: null } : readTranscript(text, { proxyTicket }), {
       failed: failed.has(a.agentId),
       transcript: text != null,
     })
@@ -382,12 +413,21 @@ export function meter(journalText, readAgent) {
     for (const a of list) for (const m of a.models) if (!out.includes(m)) out.push(m)
     return out.length ? out.join('+') : null
   }
+  // A role's peak is the LARGEST of its agents' peaks, never their sum: two
+  // agents of one role held two separate context windows, one after the
+  // other, and adding them names a window nobody ever held. The `unknown`
+  // rule is the sum's, though, and for the sum's reason inverted: a max taken
+  // over a role with an unobserved agent in it could only be too LOW, and a
+  // peak that reads low is the one direction that matters — it is read to
+  // answer "did anything come near the limit?".
+  const largest = (list, key) => (list.some((a) => a[key] === null) ? null : Math.max(...list.map((a) => a[key])))
   const out = []
   for (const t of tickets.values()) {
     const tokens = {}
     const seconds = {}
     const cacheReads = {}
     const models = {}
+    const peak = {}
     for (const role of ROLES) {
       const mine = t.agents.filter((a) => a.role === role)
       if (!mine.length) continue // a role that never ran is absent, not unknown
@@ -395,11 +435,12 @@ export function meter(journalText, readAgent) {
       seconds[role] = sum(mine, 'seconds')
       cacheReads[role] = sum(mine, 'cacheReads')
       models[role] = union(mine)
+      peak[role] = largest(mine, 'peak')
     }
     // Wall is first agent start to last agent end — NOT the sum of the roles:
     // the difference is what the ticket spent between agents, waiting on the
     // driver, and that gap is part of what a human waited through.
-    out.push({ id: t.id, tokens, seconds, cacheReads, models, wall: span(t.agents), agents: t.agents })
+    out.push({ id: t.id, tokens, seconds, cacheReads, models, peak, wall: span(t.agents), agents: t.agents })
   }
   const known = (o) => Object.values(o).filter((v) => v !== null)
   const total = (key) => out.reduce((n, t) => n + known(t[key]).reduce((a, b) => a + b, 0), 0) + overhead.reduce((n, a) => n + (a[key] || 0), 0)
@@ -420,6 +461,10 @@ const secs = (n) => (n === null || n === undefined ? 'unknown' : `${n}s`)
 // `\d+r` and `1,430s` is what a hand-written record looked like when `spend`
 // read `worker=1` out of it.
 const reads = (n) => (n === null || n === undefined ? 'unknown' : `${n}r`)
+// …and the peak's own unit, for the same reason and one more: `c` is neither
+// `s` nor `r`, so a peak figure that landed in a Time or Cache reads
+// paragraph is read by neither ledger rather than read wrongly by one.
+const ctx = (n) => (n === null || n === undefined ? 'unknown' : `${n}c`)
 
 export function tokensLine(report) {
   const groups = report.tickets.map((t) => `${t.id} ${Object.entries(t.tokens).map(([r, v]) => `${r}=${fmt(v)}`).join(' ')}`)
@@ -429,9 +474,9 @@ export function tokensLine(report) {
 // Seconds carry their unit — `worker=1430s` — and that `s` is load-bearing:
 // `tickets.mjs spend` reads a bare `worker=1430` as TOKENS wherever it sits in
 // a record, so a time figure without its unit would be added to the token
-// ledger. The unit is the first half of what keeps the four ledgers apart;
-// the second is the paragraph each line is read inside, because `unknown` and
-// a model name carry no unit at all.
+// ledger. The unit is the first half of what keeps the counting ledgers
+// apart; the second is the paragraph each line is read inside, because
+// `unknown` and a model name carry no unit at all.
 export function timeLine(report) {
   const groups = report.tickets.map(
     (t) => `${t.id} ${[...Object.entries(t.seconds).map(([r, v]) => `${r}=${secs(v)}`), `wall=${secs(t.wall)}`].join(' ')}`,
@@ -459,10 +504,22 @@ export function modelsLine(report) {
   return `**Models:** ${groups.length ? groups.join('; ') : 'none — no ticket ran'}`
 }
 
+// The largest context window each role held, and NO total: a max across
+// tickets is not a sum, and a figure headed `total=` beside four lines whose
+// totals are sums would be read as one. `tickets.mjs spend` prints the epic's
+// max under the groups, computed from them, where it cannot disagree.
+// A Codex worker's role reads `unknown` here even though its proxy exposed a
+// window: see `readTranscript`. The window was the proxy's, and a peak names
+// a model.
+export function peakLine(report) {
+  const groups = report.tickets.map((t) => `${t.id} ${Object.entries(t.peak).map(([r, v]) => `${r}=${ctx(v)}`).join(' ')}`)
+  return `**Peak context:** ${groups.length ? groups.join('; ') : 'none — no ticket ran'}`
+}
+
 export function render(report) {
-  const lines = [tokensLine(report), '', timeLine(report), '', cacheReadsLine(report), '', modelsLine(report), '']
+  const lines = [tokensLine(report), '', timeLine(report), '', cacheReadsLine(report), '', modelsLine(report), '', peakLine(report), '']
   const row = (a) =>
-    `  ${a.label || a.agentId} — ${a.transcript ? `${fmt(a.tokens)} tokens` + (a.parts ? ` (output ${fmt(a.parts.output)}, input ${fmt(a.parts.input)}, cache creation ${fmt(a.parts.cacheCreation)}; cache reads ${fmt(a.parts.cacheRead)}, on the Cache reads line and not in this sum)` : '') + `, ${secs(a.seconds)}` + (a.models.length ? ` — ${a.models.join('+')}` : '') : 'no transcript'}${a.failed ? ' — failed' : ''}`
+    `  ${a.label || a.agentId} — ${a.transcript ? `${fmt(a.tokens)} tokens` + (a.parts ? ` (output ${fmt(a.parts.output)}, input ${fmt(a.parts.input)}, cache creation ${fmt(a.parts.cacheCreation)}; cache reads ${fmt(a.parts.cacheRead)}, on the Cache reads line and not in this sum; peak context ${fmt(a.peak)})` : '') + `, ${secs(a.seconds)}` + (a.models.length ? ` — ${a.models.join('+')}` : '') : 'no transcript'}${a.failed ? ' — failed' : ''}`
   for (const t of report.tickets) {
     lines.push(`${t.id} — wall ${secs(t.wall)}`)
     for (const a of t.agents) lines.push(row(a))
@@ -486,7 +543,7 @@ if (import.meta.url === pathToFileURL(process.argv[1] || '').href) {
   }
   const journal = join(dir, 'journal.jsonl')
   if (!existsSync(journal)) {
-    console.error(`meter: no journal.jsonl in ${JSON.stringify(dir)} — this is not a workflow run directory (a path with a line break in it is two \`find\` matches: pass one). Every figure is unknown; write the run record's Tokens, Time, Cache reads and Models lines as \`unknown\` rather than estimating.`)
+    console.error(`meter: no journal.jsonl in ${JSON.stringify(dir)} — this is not a workflow run directory (a path with a line break in it is two \`find\` matches: pass one). Every figure is unknown; write the run record's Tokens, Time, Cache reads, Models and Peak context lines as \`unknown\` rather than estimating.`)
     process.exit(1)
   }
   const report = meter(readFileSync(journal, 'utf8'), (id) => {
@@ -494,11 +551,11 @@ if (import.meta.url === pathToFileURL(process.argv[1] || '').href) {
     return existsSync(p) ? readFileSync(p, 'utf8') : null
   })
   if (json) {
-    const slim = (a) => ({ agentId: a.agentId, label: a.label, role: a.role, tokens: a.tokens, cacheReads: a.cacheReads, models: a.models, parts: a.parts, seconds: a.seconds, failed: a.failed, transcript: a.transcript })
+    const slim = (a) => ({ agentId: a.agentId, label: a.label, role: a.role, tokens: a.tokens, cacheReads: a.cacheReads, peak: a.peak, models: a.models, parts: a.parts, seconds: a.seconds, failed: a.failed, transcript: a.transcript })
     console.log(
       JSON.stringify(
         {
-          tickets: report.tickets.map((t) => ({ id: t.id, tokens: t.tokens, seconds: t.seconds, cacheReads: t.cacheReads, models: t.models, wall: t.wall, agents: t.agents.map(slim) })),
+          tickets: report.tickets.map((t) => ({ id: t.id, tokens: t.tokens, seconds: t.seconds, cacheReads: t.cacheReads, models: t.models, peak: t.peak, wall: t.wall, agents: t.agents.map(slim) })),
           overhead: report.overhead.map(slim),
           totalTokens: report.totalTokens,
           totalCacheReads: report.totalCacheReads,
@@ -507,6 +564,7 @@ if (import.meta.url === pathToFileURL(process.argv[1] || '').href) {
           timeLine: timeLine(report),
           cacheReadsLine: cacheReadsLine(report),
           modelsLine: modelsLine(report),
+          peakLine: peakLine(report),
         },
         null,
         2,

@@ -212,6 +212,13 @@ function parserRegexes() {
     ticketHeading: build(grab(/const TICKET_HEADING = new RegExp\(`([^`]+)`\)/, 'TICKET_HEADING')),
     statusHeading: build(grab(/const STATUS_HEADING = new RegExp\(\s*`([^`]+)`,?\s*\)/, 'STATUS_HEADING')),
     blockedBy: build(grab(/const BLOCKED_BY_LINE = new RegExp\(`([^`]+)`\)/, 'BLOCKED_BY_LINE')),
+    halt: new RegExp(
+      unescape(grab(/const HALT_GROUP = new RegExp\(`([^`]+)`, 'gm'\)/, 'HALT_GROUP'))
+        .replaceAll('${TICKET_ID}', ticketId)
+        .replaceAll('${HALT_KIND}', unescape(grab(/const HALT_KIND = `([^`]+)`/, 'HALT_KIND')))
+        .replaceAll('${HALT_LABEL}', unescape(grab(/const HALT_LABEL = `([^`]+)`/, 'HALT_LABEL'))),
+      'gm',
+    ),
     outcomes: grab(/const KNOWN_OUTCOMES = new Set\(\[([^\]]+)\]\)/, 'KNOWN_OUTCOMES')
       .split(',')
       .map((s) => s.trim().replace(/'/g, '')),
@@ -328,6 +335,42 @@ function checkCompareTemplate() {
 // a gate is verified at the door its actor walks through) — which starts with
 // the skill quoting the hook verbatim, not paraphrasing it.
 
+// ── 3c. The run record's Halt template matches its parser ────────────────────
+// The Peak context and Findings templates are pinned by phrase, because their
+// shape is a pair list every other ledger already teaches. The Halt line is
+// the odd one: its group is positional — a kind directly after the label or a
+// `;`, and NOTHING beside it — so a template that read plausibly could still
+// parse as nothing, and a parser that went tolerant would read a sentence as
+// four halts. Both directions are checked here, against the real regex.
+function checkHaltTemplate() {
+  const { halt } = parserRegexes()
+  const line = '**Halt:** blocked PAY-1; releaseCheck'
+  const groups = (text) => [...text.matchAll(new RegExp(halt.source, halt.flags))].map((m) => [m[1], m[2] || null])
+  const got = groups(line)
+  if (JSON.stringify(got) !== JSON.stringify([['blocked', 'PAY-1'], ['releaseCheck', null]]))
+    throw new Error(`HALT_GROUP no longer reads the template's two groups — got ${JSON.stringify(got)}`)
+  // The label is case-insensitive where every other ledger's label is, and
+  // the kind is not: lower-case-initial is the whole thing that tells a kind
+  // from a ticket ID.
+  if (groups('**HALT:** blocked PAY-1').length !== 1) throw new Error('HALT_GROUP does not read a `**HALT:**` label, which `LEDGER_PARAGRAPHS` opens a paragraph on')
+  if (groups('**Halt:** Blocked PAY-1').length) throw new Error('HALT_GROUP accepts an upper-case kind — a kind and a ticket ID are told apart by exactly that')
+  // …and the parse stays strict: a word beside a kind ends the group, which
+  // is what `doctor`'s per-segment warn exists to report.
+  if (groups('**Halt:** blocked PAY-1 — the worker died').length) throw new Error('HALT_GROUP accepts prose beside a kind — the paragraph carries groups and nothing else (CLAUDE.md § Invariants)')
+  if (groups('**Halt:** ran to completion').length) throw new Error('HALT_GROUP reads a sentence as a halt kind')
+  // The template the skill teaches is the one the parser reads: the label it
+  // writes, and the group shape beneath it, filled in and run through the
+  // regex above rather than matched as a phrase.
+  const run = read('run')
+  if (!/^\*\*Halt:\*\*/m.test(run)) throw new Error(`no "**Halt:**" line in ${FILES.run}'s run-record template`)
+  if (!run.includes('`<kind> <ID>`')) throw new Error(`${FILES.run} no longer teaches the Halt group as \`<kind> <ID>\``)
+  // Backticks inside the warn's own template literal are escaped in the
+  // source; unescape before looking for the shape, or the pin fails on a
+  // string that reads correctly to every human who sees it printed.
+  if (!read('script').replaceAll('\\`', '`').includes('`<kind> <ID>`'))
+    throw new Error(`${FILES.script}'s doctor warn no longer names the Halt group as \`<kind> <ID>\``)
+}
+
 function checkRefusalMessage() {
   const m = read('hook').match(/const REFUSAL =\s*'([^']+)'/)
   if (!m) throw new Error(`cannot extract REFUSAL from ${FILES.hook} — source shape changed; update check-invariants.mjs`)
@@ -431,6 +474,26 @@ const PHRASES = [
     why: "the run record's Models groups are what `tickets.mjs spend` parses — one name per role, the role's own agents' models joined by `+`. A template that drifted to prose would leave the ledger with no model at all, since nothing else in the record observes one",
     re: /worker=<name> reviewer=<name>/,
     files: ['run', 'readme', 'script', 'meter'],
+  },
+  {
+    why: "the run record's Peak context groups are what `tickets.mjs spend` parses — a max per role carrying `c`. The unit is load-bearing for the reason the `s` and the `r` are, and it is deliberately NEITHER of them: a peak figure that landed in a Time or Cache reads paragraph must be read by no ledger rather than wrongly by one, and a template that dropped the `c` would pour a window several times a ticket's token figure into the token ledger",
+    re: /worker=<n>c reviewer=<n>c/,
+    files: ['run', 'readme', 'script', 'meter'],
+  },
+  {
+    why: "the run record's Findings groups are what `tickets.mjs metrics` reads review effectiveness from — three keys of the ledger's own, bare counts, one group per ticket. Two doors write it (the run record for a driver run, the ticket skill's review addendum in the supervisor lane) and a copy that drifted at one of them would leave half an epic's reviews unmeasured, which reads exactly like an epic whose reviews found nothing",
+    re: /important=<n> nits=<n> unfixed=<n>/,
+    files: ['run', 'ticket', 'readme', 'script'],
+  },
+  {
+    why: "the `(review fix)` subject suffix is what `tickets.mjs metrics` counts rework from. Three doors commit under it — the ticket skill's fix step, the quick skill's review step and the run driver's disposition prompt — and a door that spelled it otherwise would report its tickets as needing no rework at all",
+    re: /\(review fix\)/,
+    files: ['ticket', 'quick', 'workflow', 'script'],
+  },
+  {
+    why: "the `(fixes <ID>)` subject suffix is the only record of an escaped defect: the repair is somebody else's ticket, with its own entry and its own green ledger, so nothing else in the repository says a shipped ticket was wrong. Taught at both doors a commit is made from, and read by the script — a lane that dropped it reports zero escapes, which is what a repository with no measurement looks like",
+    re: /\(fixes <ID>\)/,
+    files: ['ticket', 'quick', 'script', 'readme'],
   },
   {
     why: "the acceptance-check stop condition is one sentence in the skill and the script — a halt the run record quotes verbatim. Pinned whole, like the fix-bounds sentence: the gate halts on a malformed CHECK, on a COMPARE criterion whose pushed entry records no comparison, and on a report it cannot read, as well as on a failing check — and a retro that reads only the first clause files those halts as something else",
@@ -634,6 +697,7 @@ const CHECKS = [
   ['skill heading templates match the parser regexes', checkTemplates],
   ["the epic skill's Blocked by template parses, and the parse is strict", checkBlockedByTemplate],
   ["the COMPARE criterion's template matches its parser, and every lane that runs the differ names --removed-from and --source", checkCompareTemplate],
+  ["the run record's Halt template matches its parser, and the parse stays strict", checkHaltTemplate],
   ['hook refusal message quoted verbatim by the ticket skill', checkRefusalMessage],
   ['load-bearing doctrine phrases present everywhere required', checkPhrases],
   ["plugin.json names the newest stamped release, and Unreleased is under its ceiling", checkRelease],

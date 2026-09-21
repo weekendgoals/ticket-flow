@@ -14,7 +14,7 @@ import { mkdtempSync, writeFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { meter, readTranscript, tokensLine, timeLine, cacheReadsLine, modelsLine } from './meter.mjs'
+import { meter, readTranscript, tokensLine, timeLine, cacheReadsLine, modelsLine, peakLine } from './meter.mjs'
 
 const METER = join(dirname(fileURLToPath(import.meta.url)), 'meter.mjs')
 const jsonl = (rows) => rows.map((r) => JSON.stringify(r)).join('\n') + '\n'
@@ -460,7 +460,7 @@ function runDir(run) {
   return dir
 }
 
-test('CLI: prints all four lines and one row per agent; --json carries the same lines', () => {
+test('CLI: prints all five lines and one row per agent; --json carries the same lines', () => {
   const dir = runDir(MODELLED)
   try {
     const out = execFileSync('node', [METER, dir], { encoding: 'utf8' })
@@ -480,7 +480,13 @@ test('CLI: prints all four lines and one row per agent; --json carries the same 
     assert.equal(json.tickets[0].cacheReads.worker, 900_000)
     assert.deepEqual(json.overhead.map((a) => [a.label, a.role, a.failed]), [['refresh+select:3', 'proxies', true]])
     assert.deepEqual(json.tickets[0].agents[1].models, ['codex:gpt-5-codex'], 'the per-agent models are in --json for the record’s prose')
-    assert.deepEqual(Object.keys(json.tickets[0].agents[1]).sort(), ['agentId', 'cacheReads', 'failed', 'label', 'models', 'parts', 'role', 'seconds', 'tokens', 'transcript'])
+    // FND-2's worker is a Codex shell proxy: its model is `codex:…` and its
+    // peak is therefore `unknown` — the window the transcript exposes is the
+    // proxy's, and a peak names a model. The reviewer's figure beside it is a
+    // real Claude agent's and is reported.
+    assert.match(out, /^\*\*Peak context:\*\* FND-2 worker=unknown reviewer=\d+c/m)
+    assert.match(json.peakLine, /^\*\*Peak context:\*\* FND-2 worker=unknown reviewer=\d+c/)
+    assert.deepEqual(Object.keys(json.tickets[0].agents[1]).sort(), ['agentId', 'cacheReads', 'failed', 'label', 'models', 'parts', 'peak', 'role', 'seconds', 'tokens', 'transcript'])
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }
@@ -515,4 +521,89 @@ test('a wave: the plumbing steps are the ticket\'s proxies, the setup step is ru
   assert.deepEqual([p2.tokens.proxies, p2.seconds.proxies], [400, 3 + 10 + 20 + 2], 'worktree, merge, post-merge and worktree-remove')
   assert.deepEqual([p1.wall, p2.wall, r.runSeconds], [1032, 1052, 1064])
   assert.ok(p1.wall + p2.wall > r.runSeconds, 'side by side: the walls overlap')
+})
+
+// ── peak context ─────────────────────────────────────────────────────────────
+// The fifth line, and the only counting ledger that is a MAX. Everything here
+// is built in the test, like every shape above it: no real transcript.
+
+test('peak: the largest window one agent ever held, not the sum of its messages', () => {
+  // Three messages of one agent — the same conversation, seen three times.
+  // The window is input + cache reads + cache creation; output is left out,
+  // because it was not in what the model was given to read.
+  const t = readTranscript(
+    jsonl([
+      { type: 'assistant', timestamp: at(0), message: { id: 'a', usage: usage(100, 500, 2_000, 10_000) } },
+      { type: 'assistant', timestamp: at(1), message: { id: 'b', usage: usage(50, 900, 1_000, 180_000) } },
+      { type: 'assistant', timestamp: at(2), message: { id: 'c', usage: usage(10, 40, 0, 90_000) } },
+    ]),
+  )
+  assert.equal(t.peak, 50 + 1_000 + 180_000, 'the largest single window')
+  assert.notEqual(t.peak, 12_100 + 181_050 + 90_010, 'and never their sum')
+  assert.equal(t.tokens, 100 + 500 + 2_000 + 50 + 900 + 1_000 + 10 + 40, 'the token sum is untouched by this')
+})
+
+test('peak: a message streamed as several lines peaks once', () => {
+  const u = usage(10, 200, 3_000, 900_000)
+  const t = readTranscript(jsonl([{ type: 'assistant', timestamp: at(0), message: { id: 'm', usage: u } }, { type: 'assistant', timestamp: at(1), message: { id: 'm', usage: u } }]))
+  assert.equal(t.peak, 903_010)
+})
+
+test('peak: a transcript that exposed no usage has none — unknown, never zero', () => {
+  assert.equal(readTranscript(jsonl([{ type: 'assistant', timestamp: at(0), message: { id: 'x' } }])).peak, null)
+  assert.equal(readTranscript('').peak, null)
+})
+
+test('peak: a role with two agents takes the larger, never the sum; one unseen makes it unknown', () => {
+  const journal = jsonl([started('worker:PK-1', 'w1'), started('worker:PK-1', 'w2'), started('review:PK-1', 'r1'), started('review:PK-1', 'r2')])
+  const texts = {
+    w1: transcript(0, 10, usage(100, 10, 0, 40_000)),
+    w2: transcript(10, 20, usage(100, 10, 0, 120_000)),
+    r1: transcript(20, 30, usage(5, 5, 0, 7_000)),
+    r2: null, // this one's transcript is gone
+  }
+  const r = meter(journal, (id) => texts[id])
+  const t = r.tickets[0]
+  assert.equal(t.peak.worker, 120_100, 'the larger of the two, not 160,200')
+  assert.equal(t.peak.reviewer, null, 'a role with an unobserved agent could only read LOW, so it reads unknown')
+  assert.equal(t.tokens.worker, 220, 'and the token sum still sums')
+  assert.match(peakLine(r), /^\*\*Peak context:\*\* PK-1 worker=120100c reviewer=unknown$/)
+})
+
+test('peak: the line carries no total, and an idle run says so', () => {
+  const r = meter(jsonl([started('refresh+select:1', 's1')]), () => transcript(0, 5, usage(1, 1, 1)))
+  assert.equal(peakLine(r), '**Peak context:** none — no ticket ran')
+  assert.doesNotMatch(peakLine(r), /total=/, 'a max has no sum, so the line never carries one')
+})
+
+test('peak: every figure carries its `c`, and no figure carries a comma', () => {
+  const journal = jsonl([started('worker:PK-2', 'w1')])
+  const r = meter(journal, () => transcript(0, 10, usage(1_204_331, 0, 0, 0)))
+  const line = peakLine(r)
+  assert.match(line, /worker=1204331c/, 'machine-shaped: `tickets.mjs` reads `\\d+c` and 1,204,331c parses as nothing')
+  assert.doesNotMatch(line, /1,204,331/)
+})
+
+test('peak: a Codex worker has none — the window the proxy exposed is the proxy\'s, and a peak names a model', () => {
+  // The repro exactly: a shell proxy whose own messages peak at 302,000, and
+  // a real runner invocation in its tool calls. Its MODEL is the runner's; its
+  // window is not, so reporting 302,000c under `codex:gpt-5-codex` would say
+  // a Codex agent came that close to its limit, which nothing here observed.
+  const proxy = jsonl([
+    { type: 'assistant', timestamp: at(0), message: { id: 'u1', model: 'claude-haiku-4-5', content: [{ type: 'tool_use', id: 'toolu_1', name: 'Bash', input: { command: 'node "/p/scripts/runners/codex.mjs" CX-1 --wait --json' } }] } },
+    toolResult(10, codexReport('gpt-5-codex', {}, 'CX-1')),
+    says(20, 'claude-haiku-4-5', 'msg_1', usage(2_000, 500, 100_000, 200_000)),
+  ])
+  const t = readTranscript(proxy, { proxyTicket: 'CX-1' })
+  assert.deepEqual(t.models, ['codex:gpt-5-codex'])
+  assert.equal(t.peak, null, 'not 302,000 — unknown, the same answer an unreadable report gives')
+  assert.equal(t.tokens, 2_000 + 500 + 100_000, 'tokens stay: they are the proxy\'s real cost, paid by this run')
+  assert.equal(t.cacheReads, 200_000, 'and so are the cache reads')
+  // The same transcript WITHOUT the invocation is an ordinary Claude agent,
+  // and its window is its own: one condition gates both fields, in one place.
+  const claude = readTranscript(jsonl([says(20, 'claude-opus-5', 'msg_1', usage(2_000, 500, 100_000, 200_000))]))
+  assert.deepEqual([claude.models, claude.peak], [['claude-opus-5'], 302_000])
+  const r = meter(jsonl([started('worker:CX-1', 'w1')]), () => proxy)
+  assert.equal(peakLine(r), '**Peak context:** CX-1 worker=unknown')
+  assert.match(modelsLine(r), /worker=codex:gpt-5-codex/)
 })

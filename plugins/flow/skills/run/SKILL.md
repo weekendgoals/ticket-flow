@@ -997,8 +997,8 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/meter.mjs" "$(find ~/.claude/projects -type 
 matches nothing the script receives an empty path and says so: check the ID
 against the Workflow call's result, and list what runs exist with
 `ls -dt $(find ~/.claude/projects -type d -path '*subagents/workflows/wf_*') | head -5`
-— newest first, and the newest is usually the one. If the run's directory cannot be found, all four lines
-are written `unknown`, never from memory of what the run seemed to cost. The script sums each
+— newest first, and the newest is usually the one. If the run's directory cannot be found, every line the meter would have
+printed is written `unknown`, never from memory of what the run seemed to cost. The script sums each
 agent's `usage` as input + output + cache-creation tokens, **cache reads left
 out of this sum and reported on the `**Cache reads:**` line below** — so that
 `worker=<n>` here means today what it meant in every earlier record, which is
@@ -1094,6 +1094,84 @@ Corrections by dated addendum work as everywhere else; a later round's models
 are united with the earlier ones rather than replacing them. Old records have
 no Models line, which reads as nothing recorded. Planning evidence — what a
 tier cost on which model — never a gate.>
+
+**Peak context:** <the fifth line `meter.mjs` printed, pasted as printed — one
+group per ticket, `<ID> worker=<n>c reviewer=<n>c disposition=<n>c
+re-review=<n>c proxies=<n>c`, groups separated by `;`, and **no total**,
+because a max has no sum: a peak summed across tickets names a context window
+no agent ever held, and `tickets.mjs spend` prints the epic's max under the
+groups, computed from them, where it cannot disagree with them. A role's
+figure is the LARGEST window any of its agents held — per message, input +
+cache reads + cache creation, which is what the model was given to read — and
+the role's value is the largest of its agents', never their sum. Output is
+left out: it was not in the window that was sent, and the next request's input
+carries it. **Every figure carries its `c`, and none carries a comma**, for
+the reason the `r` and the `s` exist — a bare `worker=180000` anywhere in a
+record is a token figure — and `c` is deliberately neither of them, so a peak
+that landed in the wrong paragraph is read by no ledger rather than wrongly by
+one. Read **only inside a paragraph that starts `**Peak context:**`** (to the
+next blank line or bold label). **With `Worker runner: codex` the worker's
+peak is `unknown`**, even though that agent exposed a window: it is the
+runner's shell proxy, and the window it held is a few relayed JSON blobs
+wide. Its tokens and cache reads are reported as they are — the proxy's real
+cost, paid by this run whoever wrote the ticket — but a peak is not a cost,
+it is a claim about ONE model's context window, and the proxy's reported
+under `codex:<model>` would say a Codex agent came that close to its limit
+when nothing here observed it. `round=<n>` labels and `unknown` work as
+everywhere else, with one difference that follows from a max: **rounds take
+the LARGER reading, not the sum** — a second pass held its own window, it did
+not stack the first one's on top. A record written before this line existed
+has no peak at all, which `spend` reports as nothing recorded, never as zero.
+`doctor` flags a Peak context line with figures where no group parses, a group
+or pair the ledger lost, and a `…c` figure quoted outside the paragraph — each
+cleared by a dated addendum carrying the groups under a `**Peak context:**`
+line of its own. Planning evidence — how close a role came to its limit —
+never a gate.>
+
+**Findings:** <what the reviews found and what became of them, one group per
+ticket: `<ID> important=<n> nits=<n> unfixed=<n>`, groups separated by `;`.
+**Not from the meter** — no transcript says which findings were left unfixed —
+but from the driver's own result, in code, never from prose: for each
+`ticketRecords` entry, `important` is `importantCount` (plus
+`reReviewImportantCount` when `reReviewRan`), `nits` is `nitCount +
+nitOverflowCount`, and `unfixed` is `notFixed.length`. Bare counts, **no
+unit**: these three keys are the ledger's own and no other ledger's pair
+regex can read them, so a unit would protect nothing. `unknown` for a count
+the run could not observe — a ticket whose reviewer never reported, or one
+finished by hand. **This paragraph carries groups and nothing else**, the
+rule the Models and Halt lines carry and for their reason: a word standing
+beside a pair ends the group there, so `important=2 (both in the parser)`
+reads as one pair and loses the two beside it, and `doctor` then says which
+ticket came up short. What the review found in words is the "Tickets this
+run" line and the ticket's own addendum, where it already is. Zero is a figure and is written: `important=0` is a review
+that found nothing, which is a normal and welcome result and not a review that
+did not happen. Read **only inside a paragraph that starts `**Findings:**`**,
+for the reason the others are. `round=<n>` labels, corrections by dated
+addendum and the `unknown` rule work exactly as on the Tokens line, and rounds
+**sum** — two passes found what they each found. `tickets.mjs metrics` reads
+these into the epic's review-effectiveness figures beside the rework count
+(`(review fix)` commits) and the escaped defects (`(fixes <ID>)` commits).
+Planning evidence, never a gate — the gate on findings is the driver's, and it
+already ran.>
+
+**Halt:** <**required on a halted record, omitted when the run ran to
+completion** — `none` is a lower-case word and would be counted as a halt kind
+of its own. One group per halt, from the result's `haltKinds`, in the order it
+gives them (`haltedOn` first, then each `alsoHalted`): `<kind> <ID>`, groups
+separated by `;`. `<kind>` is the driver's OWN halt kind — the `STOP` key the
+result resolved, `blocked`, `importantFinding`, `acceptanceCheck`,
+`releaseCheck` and the rest — written verbatim and never translated from the
+sentence, which is reworded whenever a halt reads wrongly to a human. **An
+epic-level halt names no ticket** and is the kind alone (`**Halt:**
+releaseCheck`): a kind is lower-case-initial and a ticket ID is
+upper-case-initial, so nothing needs to stand in ID position and nothing may.
+**The paragraph carries groups and nothing else** — the sentence about what
+happened goes under `**Halted on:**` and `**Diagnosis:**`, where it always
+did, because a word standing beside a kind ends the group there and
+`**Halt:** blocked PAY-1 — the worker died` would otherwise record halts
+named "the", "worker" and "died". `doctor` says so when no group parses.
+`tickets.mjs metrics` counts halts by kind; this line is the only place a
+retro can read what stopped runs without re-reading every record's prose.>
 
 **Release check:** <from the result's `releaseCheck`: the commit it was made
 at (`head`, shortened — kept when the check failed too) and each of its `tickets` as `<ID> <passed>/<total>`,

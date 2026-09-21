@@ -3126,7 +3126,39 @@ test('wave: a halted pipeline does not un-pass its sibling — the sibling integ
   )
   assert.equal(both.out.haltedOn.ticket, 'PAY-1')
   assert.deepEqual(both.out.alsoHalted.map(h => h.ticket), ['PAY-2'])
+  // …and the run record's `**Halt:**` groups, resolved to STOP's own KEYS —
+  // `haltedOn` first, then `alsoHalted` in order. The sentence is what a
+  // human reads and is reworded when it reads wrongly; the key is what
+  // `tickets.mjs metrics` counts, so the driver resolves it here rather than
+  // leaving a session to translate one back into the other.
+  assert.deepEqual(both.out.haltKinds, [{ kind: 'blocked', ticket: 'PAY-1' }, { kind: 'acceptanceCheck', ticket: 'PAY-2' }])
   assert.deepEqual(only(both.labels, /^merge:/), [])
+})
+
+test('the halt kinds are STOP keys, an epic-level halt names no ticket, and a completed run has none', async () => {
+  // Every kind the driver returns has to BE a key of `STOP` — one that is not
+  // reaches the record as the string "unknown" and is counted as a halt kind
+  // of its own, which is how a vocabulary quietly grows a synonym.
+  const stopBlock = source.slice(source.indexOf('const STOP = {'))
+  const STOP_KEYS = [...stopBlock.slice(0, stopBlock.indexOf('\n}')).matchAll(/^  ([A-Za-z]+):/gm)].map(m => m[1])
+  assert.ok(STOP_KEYS.includes('blocked') && STOP_KEYS.includes('releaseCheck'), STOP_KEYS.join(','))
+
+  const clean = await drive(oneTicket())
+  assert.deepEqual(clean.out.haltKinds, [], 'a completed run has no halt to write, so the record carries no Halt line at all')
+
+  const blocked = await drive(oneTicket({ 'worker:PAY-1': workerOk('PAY-1', { result: 'blocked', stopCondition: 'blocked-entry' }) }))
+  assert.deepEqual(blocked.out.haltKinds, [{ kind: 'blocked', ticket: 'PAY-1' }])
+
+  // The release check fires after the loop, per landed ticket, and names one.
+  const release = await drive(oneTicket({ 'release-check:payments:PAY-1': { outcome: 'ran', head: REL_HEAD, dirty: '', total: 1, passed: 0, skipped: 0, problems: 0, compares: 0, allPassed: false, failures: [{ criterion: 'c', evidence: 'no' }] } }))
+  assert.deepEqual(release.out.haltKinds, [{ kind: 'releaseCheck', ticket: 'PAY-1' }])
+
+  // An EPIC-level halt names no ticket at all: the group is the kind alone,
+  // and nothing stands in ID position — which is why the kind comes first.
+  const epicLevel = await drive(oneTicket({ 'release-list:payments': { outcome: 'done', landed: [], landedCount: 0, remoteHead: REL_HEAD, localHead: REL_HEAD } }))
+  assert.deepEqual(epicLevel.out.haltKinds.map(h => h.ticket), [null])
+  for (const h of [...blocked.out.haltKinds, ...release.out.haltKinds, ...epicLevel.out.haltKinds])
+    assert.ok(STOP_KEYS.includes(h.kind), `${h.kind} is not a STOP key`)
 })
 
 test('wave: tickets declared independent that are not — the later merge fails its own criteria on the combination, stays merged, and the run stops', async () => {

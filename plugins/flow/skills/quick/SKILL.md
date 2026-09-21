@@ -114,6 +114,17 @@ The ticket skill's execution rules bind:
 - **Prefix every commit subject with the ticket ID** — `Q-7: fix the warning
   text`. The board reads subjects off the default branch to decide what has
   shipped.
+- **When the change repairs something an ALREADY-SHIPPED ticket got wrong,
+  end the subject `(fixes <ID>)`** — `Q-7: stop the crash on an empty token (fixes AUTH-3)`. That
+  is an escaped defect: the review, the acceptance checks and the release
+  check all passed and the defect shipped anyway, and nothing else in the
+  repository records one, because the repair is this ticket, with its own
+  entry and its own green ledger. `tickets.mjs metrics` counts them per
+  shipped ticket, and the count is the only measure there is of what the
+  gates did not catch. It does not disturb shipped detection, which reads
+  `^<ID>[:\s]` at the START of the subject: that subject ships Q-7 and only
+  Q-7. Only for a ticket that has SHIPPED — `doctor` warns when the named ID
+  is planned and unshipped, because there was no released defect to escape.
 - **Stage only your own hunks.** Never `git add -A` or `git add .`.
 - Update the agent instruction files in the same commit as any change they
   describe.
