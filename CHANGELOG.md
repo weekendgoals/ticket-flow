@@ -12,6 +12,17 @@ heading here. `check-invariants.mjs` holds both.
 
 ## Unreleased
 
+## 2.5.0 — 2026-09-21
+
+The run record says more about what a run cost, and a command reads what the
+records and commit subjects already hold. `**Cache reads:**`, `**Models:**`
+and `**Peak context:**` join Tokens and Time; `**Findings:**` and
+`**Halt:**` make review results and halts countable; `tickets.mjs metrics`
+derives pace by worker model, rework, review effectiveness, halts and escaped
+defects from them. Minor: every addition is a new line or a new suffix — the
+headline token figure means what it always meant (cache reads left out), and
+every earlier record reads exactly as it did. No cost in money anywhere.
+
 - **`tickets.mjs metrics [epic]` — five derived readings the ledgers could
   not answer one at a time** (`metrics` and `metrics --json`, documented in
   `skills/spend/SKILL.md` and the manual; no new skill, because `/flow:spend`
