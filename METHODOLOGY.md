@@ -749,7 +749,8 @@ finding. A ticket whose roles sum to its wall was slow because its agents
 were; one whose wall is far above the sum was waiting on something that is
 not an agent, and only the second is a driver problem.
 
-The unit is there because the two ledgers share a grammar. `spend` reads a
+The unit is there because the ledgers share a grammar — two of them when
+this was written, four since. `spend` reads a
 `<ID> worker=<n>` group wherever it sits in a record — that is what lets a
 correction addendum land anywhere — so a bare duration would be added to the
 token ledger silently. Seconds carry an `s`, a figure with a unit is never a
@@ -765,10 +766,64 @@ line dropped a whole ticket's time, silently, and handed that line's
 `worker=unknown` to the token ledger, `unknown` being the one figure with no
 unit to stop it. A line is the wrong thing to accept or reject, because
 people put words on lines. The split is by group: every time group in the
-paragraph is lifted out whatever stands beside it, the rest goes back to the
-token text, and a token group is never followed by a time-shaped pair —
-time-shaped only: the first cut of that refusal took any unreadable follower
-as grounds, and threw away whole token groups `main` had read correctly.
+paragraph is lifted out whatever stands beside it, and the rest goes back to
+the token text.
+
+### The follower rule, and the three cuts that lost figures
+
+The other half of that wall — what a token group may be followed by — is a
+refusal, and **cut A**, the first one ever written, refused a group followed
+by any `<role>=` pair at all. It threw away whole groups the parser had been
+reading correctly: `A-1 worker=100 reviewer=50 wall=9`, `… reviewer=228k`,
+`… reviewer=` — the figures before the unreadable pair went with it,
+silently, wherever a sibling group in the record parsed. What replaced it is
+the refusal the parser has shipped ever since: a follower that is TIME-SHAPED,
+or the unitless `unknown`.
+
+Adding the cache-reads and models ledgers cut at that refusal three more
+times, and each cut lost a figure somebody had observed. **Cut 1** refused
+any letter-initial follower, on the reasoning that every model name is one —
+and took `disposition=none`, `re-review=n/a`, `reviewer=skipped` with it,
+which is what a record writes for a role that did not run, along with the
+`proxies=5000` standing before them. **Cut 2** narrowed that to letter-initial
+values *carrying a digit*, which lost the same groups one class smaller:
+`re-review=round2`, `disposition=v2`, `reviewer=GPT5`. **Cut 3** left the
+words alone and widened the unit instead, by a single letter — `s` to `[sr]`,
+so that a cache figure could close a group as a duration does — and `C-1
+worker=462249 reviewer=185339 proxies=12r` lost the reviewer's 185,339 while
+the record's own Cache reads paragraph made the ticket look answered. That
+one needed no widening at all: a token figure already ends where its digits
+end, so `12r` was never a token pair and the group had always ended before it.
+
+Three cuts, one mistake: asking what the NEXT pair looks like. The right
+question is about the group. A token group can only be another ledger's group
+in disguise when every pair it swallowed is `unknown` — the single value
+every ledger shares, and the reason the paragraph wall exists at all. So the
+rule that shipped **leaves the refusal exactly as it was** — time-shaped or
+`unknown`, the spelling every existing record was read with — and adds one
+test after the match: an all-`unknown` group is dropped when what follows
+belongs to a ledger. That one loses no figure at all; the only thing it drops
+is an `unknown` mark for a role nobody wrote a figure for. And a dropped
+group is taken out of the text as a read one is, because it belongs to
+neither ticket: left behind, its `worker=unknown` was absorbed by the
+enclosing status entry, which is the same leak one ticket to the left.
+
+The table in `tickets.test.mjs` holds a reading per line, taken from the
+parser as it was before any of this, so the next cut fails a test rather than
+an epic's ledger.
+
+What the table pins is a statement about the whole parser, and it is worth
+saying exactly: **outside a paragraph labelled with a ledger main never had,
+nothing reads differently from main.** Inside one, two things do, and both are
+the wall working. The all-`unknown` drop above is the first. The second is
+that a paragraph is lifted whole: under `**Cache reads:** A-1 worker=unknown
+reviewer=50`, main read `reviewer=50` into the TOKEN ledger — a cache figure
+somebody forgot the `r` on, credited to a ticket's token spend — and here it
+reads as nothing, with `doctor` naming the orphan and the repair recovering it
+as `50r`. That is not a figure lost; it is a figure that was never a token
+figure, taken out of the ledger it was leaking into. A record written before
+these labels existed has no such paragraph, so nothing in it can read
+differently at all.
 
 The doctor warns for time are written so the repair they advertise ends
 them, because the log is append-only: an addendum can add a group and can
@@ -785,6 +840,187 @@ and still not what it seems, so it is never called `wall`: commits begin when
 the work is nearly over. It is shown because a labelled weak observation
 beats `unknown` for a human, and named for what it is because a metric built
 on it later would inherit the error invisibly.
+
+### Where a new unit letter goes, and where it does not
+
+Peak context added a fifth metered line and a fourth unit, `c`, and the
+question the three cuts above make sharp is which of the two regexes it
+belongs in. It belongs in `LEDGER_FOLLOWER`, the after-the-match test, and
+not in `RUN_GROUP`'s lookahead — and the difference is what each one can
+cost. Widening the lookahead decides which groups are READ, so a wrong
+widening loses a figure, which is exactly what Cut 3 did by adding one letter
+to it. Widening `LEDGER_FOLLOWER` can only drop an **all-`unknown`** group,
+which by construction holds no figure: the worst it can do is fail to record
+that nobody recorded something. The two are one letter apart in the source
+and a whole class apart in consequence, which is why the comment on each says
+so.
+
+The letter itself was chosen, not inherited. Any letter keeps a figure out of
+the token ledger — `NOT_A_UNIT` refuses a digit run followed by a letter — so
+what a new unit has to earn is distinctness from the units already in use.
+`c` is neither `s` nor `r`, so a peak figure that lands in a Time or a Cache
+reads paragraph is read by **no** ledger rather than wrongly by one; had it
+reused either letter, the paragraph wall would have been the only thing
+between a 1.2M-token context window and a ticket's duration, and one wall is
+one fewer than this ledger has needed at every other point.
+
+A findings count carries no unit at all, and that is the same reasoning
+reaching the opposite answer: `important`, `nits` and `unfixed` are not role
+keys, so no other ledger's pair regex can read them and a unit would protect
+nothing. What they keep is the paragraph, because the rule is "one grammar"
+and a ledger that opted out of the wall would be the exception a later reader
+generalises from.
+
+### Why a peak is a max at every level, and carries no total
+
+Every other counting ledger sums: two agents of a role spent two agents'
+tokens, two rounds took two rounds' seconds. A context window does not work
+that way — two agents held two windows one after the other, and a ticket's
+second review pass held its own rather than stacking it on the first's. So
+the peak is a max over an agent's messages, over a role's agents, over a
+ticket's rounds and over an epic's tickets, and the line carries no `total=`
+at all: a peak summed across tickets names a window no agent ever held, and a
+figure headed `total=` beside four lines whose totals are sums would be read
+as one. The epic's max is computed by `spend` from the groups, where it
+cannot disagree with them — which is the same reason the Tokens line's
+`total=` is a liability the newer lines did not repeat.
+
+A Codex worker's peak is `unknown` for a reason that separates a peak from
+every figure beside it. That agent is the runner's shell proxy: its tokens and
+its cache reads are real cost, paid by this run whoever wrote the ticket, so
+they are reported. Its context window is not a cost at all — it is a claim
+about one model, and the window the transcript exposes is a few relayed JSON
+blobs wide. Printed under `codex:<model>` it would say a Codex agent came that
+close to its limit, which is the one thing nobody here observed. So the peak
+takes the same gate the model does, in the same place and on the same
+condition: two fields that must agree cannot be left to drift apart in two
+different `if`s.
+
+The `unknown` rule inverts too, and deliberately. A role with an unobserved
+agent makes its SUM unknown, because a partial sum reads as the role's spend
+and is silently low. A max over the same role could also only read low — and
+low is the direction that matters for a peak, since the question it answers
+is "did anything come near the limit?" — so it is `unknown` as well. Models
+are the one ledger where a hole does not make the role unknown, because a
+model is a label and an agent nobody observed cannot make an observed label
+wrong.
+
+### Findings, halts, and the two suffixes: measuring what the gates missed
+
+The metered ledgers say what work cost. None of them says whether it was
+any good. Three additions close that, and each is written at the one door
+that can observe it.
+
+**Findings** (`<ID> important=<n> nits=<n> unfixed=<n>`) are the driver's own
+result rendered in code, never a session's reading of the review prose, for
+the reason the token figures are metered rather than asked: an agent
+summarising its own run is the one observer with a stake. The derivation lives
+in the driver rather than in the skill's prose for a second reason, learned
+here: taught as arithmetic, `unfixed` was `notFixed.length`, and `notFixed` is
+only ever set on the disposition path — so a run that halted on a NEW Important
+raised by the re-review, with no second fix round to resolve it, recorded
+`unfixed=0`. A count assembled by a reader from three fields is a count that
+is wrong the first time a fourth field matters. It lives under
+`findingCounts`, not `findings`: the second is the reviewer's own list of
+Important findings with their cites, which the run record's prose and the
+release pull request are written from, and the first version of this
+derivation assigned the counts straight over it — emptying every ticket's
+findings while every test still passed, because none had asked one record for
+both. `important=0` is written
+because an absent line and a clean review are the same silence otherwise, and
+telling them apart is the whole measurement.
+
+**Halts** (`<kind> <ID>`) carry the driver's `STOP` key, resolved inside
+`run-epic.mjs`. The alternative — a session mapping the halt SENTENCE back to
+a key — fails the first time a sentence is reworded, and the sentences are
+reworded deliberately, every time a halt reads wrongly to a human. The kind
+comes first and the ticket is optional because an epic-level halt (the
+release check) names no ticket, and every shape that put something in ID
+position was worse: the epic's name reads like prose, a placeholder `-` is a
+token nobody would think to write, and `epic` is a word that could one day be
+a ticket prefix. A kind is lower-case-initial and a ticket ID is
+upper-case-initial, so the two never collide and nothing has to stand between
+them.
+
+**`(fixes <ID>)`** is the only record an escaped defect leaves anywhere. A
+defect that passed the review, the acceptance checks and the release check
+and shipped anyway is repaired by a LATER ticket — which has its own entry,
+its own review and its own green ledger, so the repository's own documents
+record the repair as a success and the miss as nothing at all. One suffix on
+one subject is what makes the most expensive class of failure countable, and
+a subject is where it goes for the reason shipped detection reads subjects:
+it is the one part of a commit that survives a rebase, a cherry-pick and a
+squash. An escape is ORDERED, not merely matched: the fix has to REACH the default
+branch after the named ticket did, because a repair that arrived while the
+ticket was still on an epic branch repaired work no user had seen, and
+"reached users" is the whole content of the word. Where a commit reached the
+branch is neither where it was written nor when: a release epic commits its
+tickets on `epic/<name>` weeks before the merge that brings them over, so a
+hotfix written later can arrive first, and an author date is rewritten by
+every rebase besides. So every commit is placed at the index, along the
+branch's first-parent chain, of the commit that brought it in — one `git log`
+for the whole branch, because a `git` call per commit is how a board command
+becomes one nobody runs. Strictly later, so a fix and its ticket arriving in
+one release merge is a defect CAUGHT, not escaped; it shares the `predates`
+reason rather than earning one of its own, because nothing reads the
+difference today and a reason nobody reads is a field that drifts. A suffix that fails that test, or one the strict form cannot read
+at all, is reported under `unmatchedFixes` with its reason rather than
+dropped: this count is exactly the kind that reads fine while being quietly
+low, and a lenient parse would have to guess which of several spellings meant
+what. `(review fix)`, already the shape three lanes commit fixes under, is
+the same measurement one stage earlier — rework is what the review caught,
+escapes are what it did not, and the two are one question read from both
+ends.
+
+The doctor warn on `(fixes <ID>)` is scoped narrowly for a rule this
+repository already had: a refusal's advertised recovery must work in the
+refused state. A commit subject on the default branch can never be rewritten,
+so a warn about a suffix naming an ID no epic plans would be permanent, and a
+permanent warn teaches its reader to skip the rest of `doctor`. What the warn
+does fire on is a suffix naming a ticket this repository has PLANNED and not
+yet shipped — where the recovery is real and ordinary, because the ticket
+ships and the warn ends by itself. The unclearable case is reported by
+`metrics --json`, as information, which is what it is.
+
+### Why cache reads and the model are their own lines
+
+Two questions the ledger could not answer were sitting in the same
+transcripts. What a ticket cost depends on which model ran it — a tier
+priced on opus and a tier priced on haiku are different numbers wearing the
+same name — and the record carried the reviewer's model as prose, written by
+the session from memory, or not at all. And the `worker=<n>` figure had
+always been input + output + cache creation with cache reads left out, which
+is a defensible sum and hides the largest number in the run: a long worker
+reads its cached context back on every turn, and those reads are most of
+what the run actually moved.
+
+The obvious repair — fold cache reads into `worker=<n>` — is the one that
+cannot be made. Every figure in every existing record means the old sum, and
+a redefinition makes the ledger incomparable with its own history while
+saying nothing about which records were written before it. So cache reads
+got a line of their own, and the headline figure did not move.
+
+Their unit is the same wall the seconds use, and it has a second edge here:
+a read count is several times a ticket's token figure, so a `4812330` that
+leaked into the token ledger would not look wrong — it would look like an
+expensive ticket. The models line has no unit to give, being names, and that
+is what settled the shape of all three: the paragraph is the wall, one
+mechanism for `**Time:**`, `**Cache reads:**` and `**Models:**`, because
+`worker=unknown` and `worker=claude-opus-5` open a token group exactly as a
+duration does.
+
+A model name is also the one figure here that is not a number, and it forced
+two rules a count never needed. An agent that fell back mid-step used two
+models, and reporting the dominant one would be an estimate of something the
+transcript states exactly — so both are reported, joined by `+`. And a role
+whose agents include one nobody observed is *not* unknown, where a role with
+an unobserved figure is: a missing number makes a sum silently low, while an
+unobserved agent cannot make an observed name wrong. A Codex worker is the
+case that proves the observation is worth making at all — its agent is a
+shell proxy running on haiku, so the transcript's own model is not the model
+that wrote the ticket; the runner prints its model in the JSON the proxy
+relays, and the meter reads it from the proxy's tool results rather than
+from the proxy's account of them.
 
 ### Why a round has a label, and a correction does not
 

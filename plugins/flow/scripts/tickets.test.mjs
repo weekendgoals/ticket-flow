@@ -4272,6 +4272,588 @@ test('time: the scan-cap note prints for an untimed ticket even when no commit s
   assert.doesNotMatch(run(roundsRepo('uncapped', `${CITY14}**Tokens:** unknown\n`), 'spend', 'city'), /scanned only/)
 })
 
+// ── cache reads and models: two more lines of the same grammar ───────────────
+// `**Cache reads:**` and `**Models:**` are metered beside Tokens and Time and
+// read under the same rules. What these pin is the wall: a read count carries
+// `r` and a model is not a number at all, and both live only inside their own
+// paragraph, because `worker=unknown` and `worker=claude-opus-5` open exactly
+// like a token group.
+const CATEGORISED_RUN =
+  '### Run — 2026-09-19 — completed\n\n**Tokens:** CITY-14 worker=462,249 reviewer=185,339 proxies=239,856; total=887,444\n\n' +
+  '**Cache reads:** CITY-14 worker=4812330r reviewer=911204r proxies=88120r;\nCITY-15 worker=1000r reviewer=unknown; total=5811654r\n\n' +
+  '**Models:** CITY-14 worker=claude-opus-5 reviewer=claude-fable-5-1\nproxies=claude-haiku-4-5; CITY-15 worker=codex:gpt-5-codex reviewer=unknown\n\n**Halted on:** ran to completion.\n'
+const categoryWarns = (dir) =>
+  doctorWarns(dir, /Cache reads line|Cache reads paragraph|Models line|Models paragraph|cache-read figure|Tokens line carries|Time line carries/)
+
+test('categories: both lines are read per role, wrapped lines included, and neither touches the token ledger', () => {
+  const dir = roundsRepo('cat', CITY15_UNKNOWN, CATEGORISED_RUN)
+  const t = spendOf(dir, 'CITY-14')
+  assert.equal(t.cache.worker, 4812330)
+  assert.equal(t.cache.reviewer, 911204)
+  assert.equal(t.cache.proxies, 88120, 'the group wrapped onto the next line is still one group')
+  assert.equal(t.cache.disposition, null, 'a role the record never named is nothing recorded')
+  assert.equal(t.models.worker, 'claude-opus-5')
+  assert.equal(t.models.proxies, 'claude-haiku-4-5')
+  assert.equal(t.worker, 462249, 'the token figure is the Tokens line’s, not the cache read')
+  assert.equal(t.total, 887444)
+  const t15 = spendOf(dir, 'CITY-15')
+  assert.equal(t15.cache.worker, 1000)
+  assert.deepEqual(t15.cache.unknown, ['reviewer'])
+  assert.equal(t15.models.worker, 'codex:gpt-5-codex', 'a Codex worker is metered as the runner’s model')
+  assert.deepEqual(t15.models.unknown, ['reviewer'])
+  // The wall: an `unknown` inside either paragraph is that ledger's, and the
+  // ticket's own `**Tokens:** unknown` marker is all the token ledger has.
+  assert.deepEqual(t15.unknown, ['ticket'])
+  assert.equal(t15.worker, null)
+  const epic = JSON.parse(run(dir, 'spend', 'city', '--json')).epics[0]
+  assert.equal(epic.cacheTotals.worker, 4812330 + 1000)
+  assert.deepEqual(categoryWarns(dir), [])
+  const text = run(dir, 'spend', 'city')
+  assert.match(text, /cache {2}worker 4,812,330 {2}reviewer 911,204/)
+  assert.match(text, /models {2}worker claude-opus-5 {2}reviewer claude-fable-5-1/)
+  assert.match(text, /cache {2}worker 4,813,330 {2}reviewer 911,204/, 'the epic row')
+})
+
+test('categories: a record written before these lines existed has neither — null, never zero', () => {
+  const t = spendOf(roundsRepo('cat-old', TOKENS_ONLY, TIMED_RUN), 'CITY-14')
+  assert.equal(t.cache.worker, null)
+  assert.equal(t.models.worker, null)
+  assert.deepEqual([t.cache.unknown, t.models.unknown], [[], []])
+  assert.doesNotMatch(run(roundsRepo('cat-old2', TOKENS_ONLY, TIMED_RUN), 'spend', 'city'), /cache|models/)
+})
+
+test('categories: a cache figure outside any paragraph is read by no ledger, and never as tokens', () => {
+  const dir = roundsRepo('cat-stray', TOKENS_ONLY, '### Run — 2026-09-19 — completed\n\n**Tokens:** CITY-14 worker=100 reviewer=10\n\nA stray restatement: CITY-14 worker=4812330r reviewer=911204r\n')
+  const t = spendOf(dir, 'CITY-14')
+  assert.equal(t.worker, 100, 'not 4,812,330 — the `r` is what stops it')
+  assert.equal(t.reviewer, 10)
+  assert.equal(t.cache.worker, null, 'and outside a Cache reads paragraph it is no cache read either')
+  // …and a figure read by nothing is not silent: the same per-ticket warn the
+  // Time line has, so the ledger's silence has a door to complain at.
+  const stray = doctorWarns(dir, /cache-read figure here was read by nothing/)
+  assert.equal(stray.length, 1)
+  assert.match(stray[0].msg, /runs\.md:7 .*CITY-14/)
+  // The same figure quoted after a token group must not swallow the group.
+  const quoted = roundsRepo('cat-quoted', TOKENS_ONLY, '### Run — 2026-09-19 — completed\n\n**Tokens:** CITY-14 worker=100\n\nProse: CITY-15 worker=unknown reviewer=911204r, and CITY-14 ran on worker=claude-opus-5.\n')
+  assert.deepEqual(spendOf(quoted, 'CITY-15').unknown, [], 'a cache-shaped follower keeps the group out of the token ledger')
+  assert.equal(spendOf(quoted, 'CITY-14').worker, 100)
+  // A Models group quoted in prose is the same hole: `unknown` is the one
+  // figure with no unit, so a model-shaped follower must close the group.
+  const models = roundsRepo('cat-quoted-models', CITY15_UNKNOWN, '### Run — 2026-09-19 — completed\n\n**Tokens:** CITY-14 worker=100\n\nDiagnosis: the meter first printed CITY-15 worker=unknown reviewer=claude-opus-5 before the transcripts were read.\n')
+  assert.deepEqual(spendOf(models, 'CITY-15').unknown, ['ticket'], "the ticket's own Tokens: unknown marker stands, and no role was added to it")
+  assert.equal(spendOf(models, 'CITY-15').models.reviewer, null, 'and outside a Models paragraph it is no model either')
+})
+
+// ── the run-group differential ───────────────────────────────────────────────
+// The follower guard — what a `<ID> worker=… ` group may be followed by — has
+// been cut three times, and each of the first two traded real figures for a
+// hypothetical leak, silently. So every line here was read through the
+// parser as `main` had it, and that reading is hard-coded below: a fourth cut
+// that drops a figure fails this table rather than a live epic's ledger.
+// Four lines diverge from main ON PURPOSE — the third column — and each is
+// the leak the guard exists for: a group whose every pair is `unknown` (the
+// one value every ledger shares) followed by another ledger's pair. No
+// figure is lost in any of them, only an `unknown` mark nobody wrote.
+const GROUP_TABLE = [
+  ['A-1 worker=804432 reviewer=324269 disposition=12000 proxies=5000 re-review=round2; total=1145701', { 'A-1': { worker: 804432, reviewer: 324269, disposition: 12000, proxies: 5000 } }],
+  ['A-1 worker=100 disposition=v2', { 'A-1': { worker: 100 } }],
+  ['A-1 worker=100 proxies=n1', { 'A-1': { worker: 100 } }],
+  ['A-1 worker=100 reviewer=GPT5', { 'A-1': { worker: 100 } }],
+  ['A-1 round=2 worker=100 disposition=v2', { 'A-1': { worker: 100 } }],
+  ['A-1 worker=100 disposition=v2 reviewer=50', { 'A-1': { worker: 100 } }],
+  ['A-1 worker=100 reviewer=50 wall=9', { 'A-1': { worker: 100, reviewer: 50 } }],
+  ['A-1 worker=100 reviewer=228k', { 'A-1': { worker: 100 } }],
+  ['A-1 worker=100 reviewer=', { 'A-1': { worker: 100 } }],
+  ['A-1 worker=100 reviewer=unknown disposition=claude-opus-5', { 'A-1': { worker: 100, unknown: ['reviewer'] } }],
+  ['A-1 worker=unknown reviewer=claude-opus-5', { 'A-1': { unknown: ['worker'] } }, {}],
+  ['A-1 worker=unknown reviewer=200s', {}],
+  ['A-1 worker=unknown reviewer=200r', { 'A-1': { unknown: ['worker'] } }, {}],
+  ['A-1 worker=unknown reviewer=unknown proxies=none', { 'A-1': { unknown: ['worker', 'reviewer'] } }, {}],
+  ['A-1 worker=unknown', { 'A-1': { unknown: ['worker'] } }],
+  ['A-1 worker=unknown reviewer=50', { 'A-1': { reviewer: 50, unknown: ['worker'] } }],
+  ['A-1 worker=462,249 reviewer=185,339 disposition=none re-review=none proxies=none; total=647588', { 'A-1': { worker: 462249, reviewer: 185339 } }],
+  ['A-1 worker=1,234, reviewer=500. Then prose.', { 'A-1': { worker: 1234, reviewer: 500 } }],
+  ['A-1 worker=1,430s reviewer=1,475s', {}],
+  ['A-1 worker=4812330r reviewer=911204r', {}],
+  ['A-1 worker=100 reviewer=50 proxies=unknown', { 'A-1': { worker: 100, reviewer: 50, unknown: ['proxies'] } }],
+  ['A-1 worker=100; A-2 worker=200 reviewer=claude-opus-5', { 'A-1': { worker: 100 }, 'A-2': { worker: 200 } }],
+  ['A-1 worker=100 wall=2353s', {}],
+  ['A-1 worker=100 reviewer=50s', {}],
+  ['A-1 round=1 worker=unknown proxies=skipped', { 'A-1': { unknown: ['worker'] } }, {}],
+  ['A-1 worker=unknown wall=1240s', {}],
+  ['A-1 worker=0 reviewer=unknown', { 'A-1': { worker: 0, unknown: ['reviewer'] } }],
+  // Cache-shaped followers. A token figure ends where its digits end, so
+  // `12r` was never a token pair and the group has always ended before it —
+  // the cut that taught the lookahead to refuse it lost the reviewer's
+  // 185,339 in the first line here, under a record whose Cache reads
+  // paragraph made the ticket look answered.
+  ['A-1 worker=462249 reviewer=185339 proxies=12r; total=647588', { 'A-1': { worker: 462249, reviewer: 185339 } }],
+  ['A-1 worker=100 reviewer=200r', { 'A-1': { worker: 100 } }],
+  ['A-1 worker=100 reviewer=50 proxies=88120r', { 'A-1': { worker: 100, reviewer: 50 } }],
+  ['A-1 round=2 worker=100 reviewer=200r proxies=50', { 'A-1': { worker: 100 } }],
+  ['A-1 worker=100 reviewer=unknown proxies=200r', { 'A-1': { worker: 100, unknown: ['reviewer'] } }],
+  ['A-1 worker=100 reviewer=unknown wall=9s', {}],
+  ['A-1 worker=unknown reviewer=unknown', { 'A-1': { unknown: ['worker', 'reviewer'] } }],
+  // Peak-context followers, `c`. Identical to the cache case and for the
+  // identical reason: a token figure ends where its digits end, so `12c` was
+  // never a token pair and the group has always ended before it. NOTHING here
+  // may differ from main except the all-`unknown` row, which loses no figure.
+  ['A-1 worker=462249 reviewer=185339 proxies=12c; total=647588', { 'A-1': { worker: 462249, reviewer: 185339 } }],
+  ['A-1 worker=100 reviewer=200c', { 'A-1': { worker: 100 } }],
+  ['A-1 worker=100 reviewer=50 proxies=1204331c', { 'A-1': { worker: 100, reviewer: 50 } }],
+  ['A-1 worker=100 reviewer=unknown proxies=200c', { 'A-1': { worker: 100, unknown: ['reviewer'] } }],
+  ['A-1 worker=unknown reviewer=200c', { 'A-1': { unknown: ['worker'] } }, {}],
+  // Findings followers. The keys are the findings ledger's own, so no pair
+  // regex here can read them and the group simply ends — which is why the
+  // all-`unknown` drop does NOT extend to them: `important=` is not a role
+  // assignment, so nothing about this reading changes either way.
+  ['A-1 worker=100 important=3 nits=2 unfixed=0', { 'A-1': { worker: 100 } }],
+  ['A-1 worker=unknown important=3', { 'A-1': { unknown: ['worker'] } }],
+]
+// Every line gets its own tickets, so one line's reading cannot stand in for
+// another's, and its own run record, so nothing leaks across regions.
+const idsFor = (i) => ({ 'A-1': `D1-${i + 1}`, 'A-2': `D2-${i + 1}` })
+const differentialRepo = () => {
+  const dir = join(tmp, 'group-differential')
+  git(tmp, 'init', '--initial-branch=main', dir)
+  mkdirSync(join(dir, 'epics/dif'), { recursive: true })
+  const sections = []
+  const records = []
+  GROUP_TABLE.forEach(([line], i) => {
+    const map = idsFor(i)
+    for (const id of Object.values(map)) sections.push(`## ${id} — line ${i + 1}\n\n**Scope.** One.\n`)
+    const written = line.replace(/A-1/g, map['A-1']).replace(/A-2/g, map['A-2'])
+    records.push(`### Run — 2026-09-19 (line ${i + 1}) — completed\n\n**Tokens:** ${written}\n`)
+  })
+  writeFileSync(join(dir, 'epics/dif/tickets.md'), `# Dif\n\nDelivery: release\n\n${sections.join('\n')}`)
+  writeFileSync(join(dir, 'epics/dif/runs.md'), `# Dif epic — run records\n\n${records.join('\n')}`)
+  return dir
+}
+
+test('run groups: every figure main reads is still read, and only the all-unknown leak is not', () => {
+  const dir = differentialRepo()
+  const rows = Object.fromEntries(JSON.parse(run(dir, 'spend', 'dif', '--json')).epics[0].tickets.map((t) => [t.id, t]))
+  const roles = ['worker', 'reviewer', 're-review', 'disposition', 'proxies']
+  GROUP_TABLE.forEach(([line, mainReading, branchReading], i) => {
+    const want = branchReading ?? mainReading
+    for (const [key, id] of Object.entries(idsFor(i))) {
+      const expected = want[key] ?? {}
+      const got = rows[id]
+      for (const role of roles) assert.equal(got[role], expected[role] ?? null, `${line} → ${id} ${role}`)
+      assert.deepEqual(got.unknown, [...(expected.unknown ?? [])].sort(), `${line} → ${id} unknown`)
+    }
+  })
+  // The divergence set is exactly the all-`unknown` groups — nothing else in
+  // the table may differ from main, and each divergence loses no figure, only
+  // a mark main invented for a role nobody wrote a figure for.
+  const diverging = GROUP_TABLE.filter((r) => r.length === 3)
+  for (const [line, mainReading] of diverging) {
+    assert.deepEqual(Object.values(mainReading).flatMap((v) => Object.keys(v).filter((k) => k !== 'unknown')), [], `${line}: main read a FIGURE here`)
+    assert.match(line, /^(?:[A-Z][A-Z0-9]*-\d+ )?(?:round=\d+ )?(?:(?:worker|reviewer|re-review|disposition|proxies)=unknown ?)+\S/, `${line}: not an all-unknown group`)
+  }
+  assert.equal(diverging.length, 5, 'the divergence set is the five all-unknown rows and nothing else')
+})
+
+// The same groups, quoted where they actually turn up: inside ANOTHER
+// ticket's status entry, and inside that entry's addendum. Two tickets can
+// lose here — the one the group names, and the one whose entry it sits in,
+// whose own bare-pair reader absorbs whatever the group reader left behind.
+// Each expectation is main's reading; `named: {}` marks a deliberate drop.
+const ENTRY_TABLE = [
+  ['body', 'N worker=100 reviewer=50', { worker: 100, reviewer: 50 }],
+  ['body', 'N worker=100 reviewer=unknown proxies=12r', { worker: 100, unknown: ['reviewer'] }],
+  ['addendum', 'N worker=unknown reviewer=200s', {}],
+  ['body', 'N round=1 worker=unknown reviewer=claude-opus-5', {}, 'main marked the named ticket from a Models group'],
+  ['addendum', 'N worker=unknown reviewer=200r', {}, 'main marked the named ticket from a Cache reads group'],
+]
+
+test('run groups: a group quoted inside an entry reaches the ticket it names, and a dropped one reaches nobody', () => {
+  const dir = join(tmp, 'entry-placement')
+  git(tmp, 'init', '--initial-branch=main', dir)
+  mkdirSync(join(dir, 'epics/dif'), { recursive: true })
+  const sections = []
+  const entries = []
+  ENTRY_TABLE.forEach(([where, quoted], i) => {
+    const enclosing = `E1-${i + 1}`
+    const named = `N1-${i + 1}`
+    sections.push(`## ${enclosing} — the entry\n\n**Scope.** One.\n`, `## ${named} — the ticket it names\n\n**Scope.** Two.\n`)
+    const prose = `the meter first printed ${quoted.replace(/\bN\b/, named)} before the transcripts were read.`
+    entries.push(
+      `### ${enclosing} — the entry — 2026-09-16 — DONE\n\n**Built:** it.\n\n**Tokens:** worker=500 reviewer=100\n\n` +
+        (where === 'body' ? `The ${prose}\n` : `**Addendum — note — 2026-09-17:** the ${prose}\n`) +
+        `\n**Owed:** Nothing.\n`,
+    )
+  })
+  writeFileSync(join(dir, 'epics/dif/tickets.md'), `# Dif\n\nDelivery: release\n\n${sections.join('\n')}`)
+  writeFileSync(join(dir, 'epics/dif/status.md'), `# Dif epic — status log\n\n${entries.join('\n')}`)
+  const rows = Object.fromEntries(JSON.parse(run(dir, 'spend', 'dif', '--json')).epics[0].tickets.map((t) => [t.id, t]))
+  const roles = ['worker', 'reviewer', 're-review', 'disposition', 'proxies']
+  ENTRY_TABLE.forEach(([where, quoted, named], i) => {
+    const host = rows[`E1-${i + 1}`]
+    const guest = rows[`N1-${i + 1}`]
+    // The enclosing entry reads its OWN line and nothing of the quotation —
+    // a dropped group left in the text was read as this ticket's figure.
+    assert.deepEqual([host.worker, host.reviewer, host['re-review'], host.disposition, host.proxies], [500, 100, null, null, null], `${where}: ${quoted} — the entry`)
+    assert.deepEqual([host.unknown, host.rounds], [[], {}], `${where}: ${quoted} — the entry's marks`)
+    for (const role of roles) assert.equal(guest[role], named[role] ?? null, `${where}: ${quoted} — ${role}`)
+    assert.deepEqual(guest.unknown, [...(named.unknown ?? [])].sort(), `${where}: ${quoted} — unknown`)
+  })
+})
+
+test('categories: a word where a figure was expected costs only its own pair', () => {
+  // `none`, `n/a`, `skipped` are what a record writes for a role that did not
+  // run, and they are unreadable — NOT another ledger's pair. A lookahead
+  // that took any letter-initial word as one dropped the whole group around
+  // them, reviewer figure and all, and `doctor` said nothing.
+  const dir = roundsRepo(
+    'cat-words',
+    CITY15_UNKNOWN,
+    '### Run — 2026-09-19 — completed\n\n**Tokens:** CITY-14 worker=462249 reviewer=185339 disposition=none re-review=none proxies=none; total=647588\n\n' +
+      '### Run — 2026-09-20 — completed\n\n**Tokens:** CITY-15 worker=100 reviewer=50 disposition=n/a re-review=skipped\n',
+  )
+  const t = spendOf(dir, 'CITY-14')
+  assert.equal(t.worker, 462249)
+  assert.equal(t.reviewer, 185339, 'the pair after the words is the one a narrower lookahead lost')
+  assert.equal(t.total, 462249 + 185339)
+  const t15 = spendOf(dir, 'CITY-15')
+  assert.deepEqual([t15.worker, t15.reviewer, t15.total], [100, 50, 150])
+})
+
+test('categories: a model value that does not end the pair is unread, never a shorter name', () => {
+  // `worker=a=b` and `reviewer=claude opus` were read as `a` and `claude` —
+  // a name reported as observed that nobody ran. The pair ends at a space, a
+  // `;` or the line's end, or it is not a pair.
+  const dir = roundsRepo('cat-cut', TOKENS_ONLY, '### Run — 2026-09-19 — completed\n\n**Tokens:** CITY-14 worker=100\n\n**Models:** CITY-14 worker=claude=opus reviewer=claude opus 5\n')
+  const t = spendOf(dir, 'CITY-14')
+  assert.equal(t.models.worker, null)
+  assert.equal(t.models.reviewer, null)
+  assert.equal(t.worker, 100, 'and nothing of it reached the token ledger')
+  assert.equal(doctorWarns(dir, /Models paragraph gives the ledger nothing for CITY-14/).length, 1, 'unread here is never silent')
+})
+
+test('categories: a group under the wrong label goes to the ledger that can read it', () => {
+  // Exactly the Time behaviour: the split is by GROUP, so a token-shaped pair
+  // written under a `**Cache reads:**` label is left for the token ledger
+  // rather than swallowed by a paragraph that cannot read it.
+  const dir = roundsRepo('cat-wrong-label', CITY15_UNKNOWN, '### Run — 2026-09-19 — completed\n\n**Tokens:** CITY-14 worker=100\n\n**Cache reads:** CITY-14 worker=4812330r; CITY-15 worker=700 reviewer=50\n')
+  assert.equal(spendOf(dir, 'CITY-14').cache.worker, 4812330)
+  const t15 = spendOf(dir, 'CITY-15')
+  assert.equal(t15.worker, 700)
+  assert.equal(t15.total, 750)
+  assert.equal(t15.cache.worker, null)
+  // Named on the line and absent from the ledger: the warn that says so.
+  assert.equal(doctorWarns(dir, /Cache reads paragraph gives the ledger nothing for CITY-15/).length, 1)
+})
+
+test('categories: rounds sum, models unite, and a restated round corrects only itself', () => {
+  const dir = roundsRepo(
+    'cat-rounds',
+    TOKENS_ONLY,
+    '### Run — 2026-09-16 — halted\n\n**Cache reads:** CITY-14 round=1 worker=1000r\n\n**Models:** CITY-14 round=1 worker=claude-opus-5\n\n' +
+      '### Run — 2026-09-17 (resumed) — completed\n\n**Cache reads:** CITY-14 round=2 worker=600r reviewer=unknown\n\n**Models:** CITY-14 round=2 worker=claude-fable-5-1\n\n' +
+      '**Addendum — correction — 2026-09-18:** the first round was mis-read.\n\n**Cache reads:** CITY-14 round=1 worker=1100r\n\n**Models:** CITY-14 round=1 worker=claude-opus-5-1\n',
+  )
+  const t = spendOf(dir, 'CITY-14')
+  assert.equal(t.cache.worker, 1100 + 600)
+  assert.deepEqual(t.cache.unknown, ['reviewer'])
+  assert.deepEqual(t.cache.rounds, { worker: 2, reviewer: 1 })
+  assert.equal(t.models.worker, 'claude-opus-5-1+claude-fable-5-1', 'the corrected round replaces its own model; the two rounds unite')
+})
+
+test('categories: runs.md outranks status.md, and an unknown never overwrites a known figure', () => {
+  const dir = roundsRepo(
+    'cat-rank',
+    `${CITY14}**Cache reads:** CITY-14 worker=500r reviewer=200r\n\n**Models:** CITY-14 worker=claude-opus-4 reviewer=claude-fable-5-1\n`,
+    '### Run — 2026-09-19 — completed\n\n**Cache reads:** CITY-14 worker=900r reviewer=unknown\n\n**Models:** CITY-14 worker=claude-opus-5 reviewer=unknown\n',
+  )
+  const t = spendOf(dir, 'CITY-14')
+  assert.equal(t.cache.worker, 900, 'the run record wins between two known figures')
+  assert.equal(t.cache.reviewer, 200, 'an unknown records no observation and erases nothing')
+  assert.equal(t.models.worker, 'claude-opus-5')
+  assert.equal(t.models.reviewer, 'claude-fable-5-1')
+  assert.deepEqual([t.cache.unknown, t.models.unknown], [[], []])
+  // An unlabelled repeat is a correction, and the last one read wins — the
+  // ledger's ordering rule, in the models ledger too.
+  const twice = roundsRepo('cat-lastwins', TOKENS_ONLY, '### Run — 2026-09-19 — completed\n\n**Models:** CITY-14 worker=claude-opus-5\n\n**Addendum — correction — 2026-09-20:** it was fable.\n\n**Models:** CITY-14 worker=claude-fable-5-1\n')
+  assert.equal(spendOf(twice, 'CITY-14').models.worker, 'claude-fable-5-1')
+})
+
+test('categories: a line that carries values where no group parses draws a doctor warn, and the addendum clears it', () => {
+  // The Models line here records a value (`worker=`) with no ticket to hang
+  // it on — a sentence that merely names a ticket records nothing, and is
+  // silent by design (see "a Models line that records no value at all").
+  const commas = '### Run — 2026-09-19 — completed\n\n**Tokens:** CITY-14 worker=100\n\n**Cache reads:** CITY-14 worker=4,812,330r reviewer=911,204r\n\n**Models:** worker=opus, reviewer=fable, roughly\n'
+  const before = roundsRepo('cat-nearmiss', TOKENS_ONLY, commas)
+  // A group was written, so the warn names the group rather than the line:
+  // the same needed shape, with the ticket that lost its figures on it.
+  const cache = doctorWarns(before, /Cache reads paragraph gives the ledger nothing for CITY-14/)
+  assert.equal(cache.length, 1)
+  assert.match(cache[0].msg, /runs\.md:7 /, 'the line the group is on')
+  assert.match(cache[0].msg, /worker=<n>r reviewer=<n>r/)
+  assert.match(cache[0].msg, /meter\.mjs/)
+  const models = doctorWarns(before, /Models line records a value for a role but no machine-shaped group/)
+  assert.equal(models.length, 1)
+  assert.match(models[0].msg, /worker=<name> reviewer=<name>/)
+  assert.match(models[0].msg, /carries groups and nothing else/, 'the rule a repair is written from lives in the message')
+  // A Cache reads line with figures and no ticket in group position has no
+  // group to name either, and gets the same whole-line message.
+  const noId = roundsRepo('cat-nearmiss-noid', TOKENS_ONLY, '### Run — 2026-09-19 — completed\n\n**Tokens:** CITY-14 worker=100\n\n**Cache reads:** worker=4,812,330r and reviewer=911,204r, roughly\n')
+  const shape = doctorWarns(noId, /Cache reads line carries figures but no machine-shaped group/)
+  assert.equal(shape.length, 1)
+  assert.match(shape[0].msg, /worker=<n>r reviewer=<n>r/)
+  assert.equal(spendOf(before, 'CITY-14').cache.worker, null)
+  const after = roundsRepo(
+    'cat-repaired',
+    TOKENS_ONLY,
+    `${commas}\n**Addendum — correction — 2026-09-20:** restated without commas.\n\n**Cache reads:** CITY-14 worker=4812330r reviewer=911204r\n\n**Models:** CITY-14 worker=claude-opus-5 reviewer=claude-fable-5-1\n`,
+  )
+  assert.equal(spendOf(after, 'CITY-14').cache.worker, 4812330)
+  assert.deepEqual(categoryWarns(after), [], 'append-only: a warn no append can clear is not a gate')
+})
+
+test('categories: the question is asked of the paragraph in front of you, not of the epic', () => {
+  // An earlier run's group must not answer for a later run's malformed one:
+  // the ledger shows A-2's cache reads as 2r while the record in front of the
+  // reader says 4,812,330r, and an epic-wide question reports nothing.
+  const twoRuns =
+    '### Run — 2026-09-19 — completed\n\n**Tokens:** CITY-14 worker=100\n\n**Cache reads:** CITY-14 worker=1r; CITY-15 worker=2r\n\n' +
+    '### Run — 2026-09-20 — completed\n\n**Tokens:** CITY-14 worker=100\n\n**Cache reads:** CITY-14 worker=100r; CITY-15 worker=4,812,330r\n'
+  const dir = roundsRepo('cat-two-runs', TOKENS_ONLY, twoRuns)
+  assert.equal(spendOf(dir, 'CITY-15').cache.worker, 2, 'the ledger keeps the only figure that parsed')
+  const warns = doctorWarns(dir, /Cache reads paragraph gives the ledger nothing for CITY-15/)
+  assert.equal(warns.length, 1)
+  assert.match(warns[0].msg, /runs\.md:13 /, "the second record's line, not the first's")
+  // The same inside one record, where the paragraphs are two rounds.
+  const rounds = roundsRepo('cat-rounds-lost', TOKENS_ONLY, '### Run — 2026-09-19 — completed\n\n**Cache reads:** CITY-14 round=1 worker=1r\n\n**Cache reads:** CITY-14 round=2 worker=4,812,330r\n')
+  assert.equal(doctorWarns(rounds, /Cache reads paragraph gives the ledger nothing for CITY-14/).length, 1)
+  // And a ticket merely MENTIONED beside the total is not in group position:
+  // warning about it could only be cleared by inventing a group for it.
+  // (The Models line keeps its note OUTSIDE the paragraph, which is that
+  // ledger's rule: a word standing beside a name ends the group there.)
+  const mentioned = roundsRepo('cat-mentioned', TOKENS_ONLY, '### Run — 2026-09-19 — completed\n\n**Cache reads:** CITY-14 worker=100r; total=100r (CITY-15 did not run)\n\n**Models:** CITY-14 worker=claude-opus-5\n\nCITY-15 did not run.\n')
+  assert.deepEqual(categoryWarns(mentioned), [])
+})
+
+test('categories: one group of a ticket never answers for another group of the same ticket', () => {
+  // Summed per ticket, `C-1 round=1 worker=1000r` covered the malformed
+  // `C-1 round=2 worker=4,812,330r` beside it and the record said nothing.
+  // The unit is the written GROUP: its `<ID>` to the next `;`, the next
+  // group-position ID, or the paragraph's end.
+  const rounds = roundsRepo('cat-span-rounds', TOKENS_ONLY, '### Run — 2026-09-19 — completed\n\n**Cache reads:** CITY-14 round=1 worker=1000r; CITY-14 round=2 worker=4,812,330r\n')
+  assert.equal(spendOf(rounds, 'CITY-14').cache.worker, 1000, 'the round that parsed is all the ledger has')
+  assert.equal(doctorWarns(rounds, /Cache reads paragraph gives the ledger nothing for CITY-14/).length, 1)
+  const twice = roundsRepo('cat-span-twice', TOKENS_ONLY, '### Run — 2026-09-19 — completed\n\n**Cache reads:** CITY-14 worker=1000r; CITY-14 reviewer=4,812,330r\n')
+  assert.equal(doctorWarns(twice, /Cache reads paragraph gives the ledger nothing for CITY-14/).length, 1)
+  // Every lost group of a record is reported, not the first.
+  const several = roundsRepo(
+    'cat-span-several',
+    TOKENS_ONLY,
+    '### Run — 2026-09-19 — completed\n\n**Cache reads:** CITY-14 worker=1,000r; CITY-15 worker=2,000r\n\n**Models:** CITY-14 worker=claude opus; CITY-15 worker=fable 5\n',
+  )
+  assert.equal(doctorWarns(several, /Cache reads paragraph gives the ledger/).length, 2, 'both cache groups')
+  assert.equal(doctorWarns(several, /Models paragraph gives the ledger/).length, 2, 'both models groups')
+  // …and the repair clears every one of them.
+  const repaired = roundsRepo(
+    'cat-span-repaired',
+    TOKENS_ONLY,
+    '### Run — 2026-09-19 — completed\n\n**Cache reads:** CITY-14 round=1 worker=1000r; CITY-14 round=2 worker=4,812,330r\n\n' +
+      '**Addendum — correction — 2026-09-21:** round 2 restated without commas.\n\n**Cache reads:** CITY-14 round=2 worker=4812330r\n',
+  )
+  assert.equal(spendOf(repaired, 'CITY-14').cache.worker, 1000 + 4812330, 'the rounds sum once the second one parses')
+  assert.deepEqual(categoryWarns(repaired), [])
+})
+
+test('categories: a stray cache figure belongs to the ticket written before it, and the repair clears it', () => {
+  // Naming every ID on the line named tickets of other epics quoted in the
+  // same sentence, and nothing the writer could append would clear them.
+  const stray = '### Run — 2026-09-19 — completed\n\n**Tokens:** CITY-14 worker=100\n\n**Cache reads:** CITY-14 worker=100r\n\nCompared with OTHER-9: CITY-15 worker=4,812,330r on the second wave.\n'
+  const before = roundsRepo('cat-stray-owner', TOKENS_ONLY, stray)
+  const warns = doctorWarns(before, /cache-read figure here was read by nothing/)
+  assert.equal(warns.length, 1)
+  assert.match(warns[0].msg, /CITY-15/)
+  assert.doesNotMatch(warns[0].msg, /OTHER-9/, 'the ticket the figure is not written against is not named')
+  assert.doesNotMatch(warns[0].msg, /CITY-14/, 'nor the one whose group parsed')
+  // The whole sentence, as a reader meets it: the shape the Time line's stray
+  // warn has, and a tail about a figure quoted OUTSIDE the paragraph — which
+  // is what a stray is, and not what a malformed group is.
+  assert.match(
+    warns[0].msg,
+    /^city\/runs\.md:9 — a cache-read figure here was read by nothing, and CITY-15 has no cache reads anywhere in this run record: cache reads are read ONLY inside a paragraph that starts "\*\*Cache reads:\*\*"/,
+  )
+  assert.match(warns[0].msg, /Repair by appending a dated addendum beneath the record with the groups under a "\*\*Cache reads:\*\*" line of its own/)
+  assert.doesNotMatch(warns[0].msg, /a group, or one pair inside it/, 'a stray is not a group that would not parse')
+  const after = roundsRepo('cat-stray-repaired', TOKENS_ONLY, `${stray}\n**Addendum — correction — 2026-09-21:** restated for CITY-15.\n\n**Cache reads:** CITY-15 worker=4812330r\n`)
+  assert.equal(spendOf(after, 'CITY-15').cache.worker, 4812330)
+  assert.deepEqual(categoryWarns(after), [], 'the repair the message advertises clears it')
+})
+
+test('categories: one mistake draws one warn — a malformed group inside the paragraph is never also a stray', () => {
+  // A comma'd figure inside a Cache reads paragraph is a written group that
+  // did not parse, and nothing else. Warned about twice, with two different
+  // repairs, a reader learns to skip both.
+  const commas = roundsRepo('cat-one-warn', TOKENS_ONLY, '### Run — 2026-09-19 — completed\n\n**Tokens:** CITY-14 worker=100\n\n**Cache reads:** CITY-14 worker=4,812,330r reviewer=911,204r\n')
+  const warns = categoryWarns(commas)
+  assert.equal(warns.length, 1, warns.map((w) => w.msg.slice(0, 80)).join(' || '))
+  assert.match(warns[0].msg, /gives the ledger nothing for CITY-14/)
+  const partial = roundsRepo(
+    'cat-one-warn-partial',
+    TOKENS_ONLY,
+    '### Run — 2026-09-19 — completed\n\n**Tokens:** CITY-14 worker=100\n\n**Cache reads:** CITY-14 worker=100r; CITY-15 worker=4,812,330r; total=4812430r\n',
+  )
+  const both = categoryWarns(partial)
+  assert.equal(both.length, 1, both.map((w) => w.msg.slice(0, 80)).join(' || '))
+  assert.match(both[0].msg, /nothing for CITY-15/)
+})
+
+test('categories: a cache role with both a labelled round and a loose figure is flagged, as tokens are', () => {
+  // The cache ledger sums its rounds exactly as the token ledger does, so the
+  // labelled reading silently wins over the unlabelled figure beside it.
+  const dir = roundsRepo(
+    'cat-mixed',
+    TOKENS_ONLY,
+    '### Run — 2026-09-19 — completed\n\n**Cache reads:** CITY-14 round=1 worker=1000r\n\n**Cache reads:** CITY-14 worker=4812330r\n',
+  )
+  assert.equal(spendOf(dir, 'CITY-14').cache.worker, 1000, "the labelled round's sum wins")
+  const warns = doctorWarns(dir, /cache reads: worker carries both round-labelled and unlabelled figures/)
+  assert.equal(warns.length, 1)
+  assert.match(warns[0].msg, /counts the labelled rounds' sum and ignores the unlabelled figure/)
+  // …and a ledger with only labelled rounds says nothing of the kind.
+  const clean = roundsRepo('cat-mixed-clean', TOKENS_ONLY, '### Run — 2026-09-19 — completed\n\n**Cache reads:** CITY-14 round=1 worker=1000r\n\n**Cache reads:** CITY-14 round=2 worker=600r\n')
+  assert.equal(spendOf(clean, 'CITY-14').cache.worker, 1600)
+  assert.deepEqual(doctorWarns(clean, /cache reads:/), [])
+})
+
+test('categories: a model name is not a ticket, whatever its case', () => {
+  // `claude-opus-5` ends in something a case-insensitive ID pattern reads as
+  // a ticket, and the warn that followed named "opus-5" — with its repair
+  // keyed on that name, so no addendum could ever clear it. IDs in group
+  // position are case-sensitive and start a token.
+  const dir = roundsRepo('cat-id-case', TOKENS_ONLY, '### Run — 2026-09-19 — completed\n\n**Models:** CITY-14 (resumed) worker=claude-opus-5 reviewer=claude-fable-5-1\n')
+  const warns = doctorWarns(dir, /Models paragraph|Models line/)
+  assert.equal(warns.length, 1, 'one warn, about the ticket whose group the parenthesis broke')
+  // The tickets it names — the clause before the colon — and nothing else in
+  // the message's own prose, which quotes model names as examples.
+  const named = warns[0].msg.match(/gives the ledger (?:nothing|only part of what it writes) for ([^:]+):/)
+  assert.deepEqual(named && named[1].split(', '), ['CITY-14'], 'a model name is never named as a ticket')
+  // The literal repair the message advertises clears it.
+  const repaired = roundsRepo(
+    'cat-id-case-repaired',
+    TOKENS_ONLY,
+    '### Run — 2026-09-19 — completed\n\n**Models:** CITY-14 (resumed) worker=claude-opus-5 reviewer=claude-fable-5-1\n\n**Addendum — correction — 2026-09-21:** the run was resumed.\n\n**Models:** CITY-14 worker=claude-opus-5 reviewer=claude-fable-5-1\n',
+  )
+  assert.equal(spendOf(repaired, 'CITY-14').models.worker, 'claude-opus-5')
+  assert.deepEqual(categoryWarns(repaired), [])
+  // A model name in prose, with no ticket in group position anywhere: an
+  // upper-case tail must not be read as one either.
+  const prose = roundsRepo('cat-id-prose', TOKENS_ONLY, '### Run — 2026-09-19 — completed\n\n**Models:** the worker ran claude-OPUS-5 reviewer=claude-fable-5-1\n')
+  for (const w of doctorWarns(prose, /Models/)) assert.doesNotMatch(w.msg, /OPUS-5/)
+  // …and a cache figure quoted beside a model name is owned by no ticket.
+  const stray = roundsRepo('cat-id-stray', TOKENS_ONLY, '### Run — 2026-09-19 — completed\n\n**Tokens:** CITY-14 worker=100\n\nclaude-OPUS-5 read worker=4,812,330r on the second wave.\n')
+  for (const w of doctorWarns(stray, /cache-read figure/)) assert.doesNotMatch(w.msg, /OPUS-5/)
+})
+
+test('categories: a Models line that records no value at all is prose, and silent', () => {
+  // The meter's own idle line, with a note beside it. A warn here could only
+  // be cleared by inventing `P-2 worker=unknown`, and this ledger is never
+  // backfilled — so a shape warn asks for a `<role>=`, a value somebody tried
+  // to record, exactly as the cache one asks for a figure.
+  const idle = roundsRepo('cat-models-idle', TOKENS_ONLY, '### Run — 2026-09-19 — completed\n\n**Tokens:** total=40,991\n\n**Models:** none — no ticket ran (CITY-15 was skipped)\n')
+  assert.deepEqual(categoryWarns(idle), [])
+  const named = roundsRepo('cat-models-prose', TOKENS_ONLY, '### Run — 2026-09-19 — completed\n\n**Tokens:** CITY-14 worker=100\n\n**Models:** CITY-15 ran on opus.\n')
+  assert.deepEqual(categoryWarns(named), [], 'a sentence about a ticket records no value, so there is nothing to restate')
+  // A value written with no ticket to hang it on is still a near-miss.
+  const valued = roundsRepo('cat-models-valued', TOKENS_ONLY, '### Run — 2026-09-19 — completed\n\n**Tokens:** CITY-14 worker=100\n\n**Models:** worker=claude-opus-5 and reviewer=claude-fable-5-1, roughly\n')
+  assert.equal(doctorWarns(valued, /Models line records a value for a role but no machine-shaped group/).length, 1)
+})
+
+test('categories: a Cache reads line that is only a total is complete, not a near-miss', () => {
+  // The line a run that selected no ticket prints, with a note beside it: a
+  // warn nothing can clear teaches its reader to ignore the rest.
+  const dir = roundsRepo('cat-total-only', TOKENS_ONLY, '### Run — 2026-09-19 — completed\n\n**Tokens:** total=40,991\n\n**Cache reads:** total=5811654r (2 workers ran)\n\n**Models:** none — no ticket ran\n')
+  assert.deepEqual(categoryWarns(dir), [])
+})
+
+test('categories: a pair lost inside a group that parsed is the same silence, and warns', () => {
+  const dir = roundsRepo('cat-pair-lost', TOKENS_ONLY, '### Run — 2026-09-19 — completed\n\n**Cache reads:** CITY-14 worker=100r reviewer=4,812,330r\n\n**Models:** CITY-14 worker=claude-opus-5 reviewer=claude opus\n')
+  const t = spendOf(dir, 'CITY-14')
+  assert.equal(t.cache.worker, 100, 'the pair that parsed is in the ledger')
+  assert.equal(t.cache.reviewer, null)
+  assert.equal(t.models.reviewer, null)
+  const cache = doctorWarns(dir, /Cache reads paragraph gives the ledger only part of what it writes for CITY-14/)
+  assert.equal(cache.length, 1)
+  assert.equal(doctorWarns(dir, /Models paragraph gives the ledger only part of what it writes for CITY-14/).length, 1)
+})
+
+test('categories: a Models paragraph carries groups and nothing else, and the warn says so', () => {
+  // The words a repair is written from: prose standing beside a name ends the
+  // group there, so the paragraph holds groups and the note goes outside it.
+  // Both doctor messages carry that rule, because the message is the door.
+  const prose = '### Run — 2026-09-19 — completed\n\n**Models:** CITY-14 worker=claude-opus-5; CITY-15 worker=claude-opus-5 as reported (xhigh)\n'
+  const dir = roundsRepo('cat-prose-beside', CITY15_UNKNOWN, prose)
+  assert.equal(spendOf(dir, 'CITY-14').models.worker, 'claude-opus-5', 'the group that is nothing but a group parses')
+  assert.equal(spendOf(dir, 'CITY-15').models.worker, null)
+  const warns = doctorWarns(dir, /Models paragraph gives the ledger nothing for CITY-15/)
+  assert.equal(warns.length, 1)
+  assert.match(warns[0].msg, /carries groups and nothing else/)
+  assert.match(warns[0].msg, /OUTSIDE the paragraph/)
+  assert.match(warns[0].msg, /as reported/, 'and it quotes the shape that fails')
+  // …and the repair the message words: the groups restated under their own
+  // label, the prose in a sentence of its own.
+  const repaired = roundsRepo(
+    'cat-prose-repaired',
+    CITY15_UNKNOWN,
+    `${prose}\n**Addendum — correction — 2026-09-21:** CITY-15's reviewer ran at xhigh.\n\n**Models:** CITY-15 worker=claude-opus-5\n`,
+  )
+  assert.equal(spendOf(repaired, 'CITY-15').models.worker, 'claude-opus-5')
+  assert.deepEqual(categoryWarns(repaired), [])
+  // A name that ends in punctuation is a name nobody ran; one with a dot
+  // INSIDE it is fine.
+  const dotted = roundsRepo('cat-dot', TOKENS_ONLY, '### Run — 2026-09-19 — completed\n\n**Models:** CITY-14 worker=claude-fable-5.1 reviewer=claude-opus-5.\n')
+  assert.equal(spendOf(dotted, 'CITY-14').models.worker, 'claude-fable-5.1', 'a dot inside a name is part of it')
+  assert.equal(spendOf(dotted, 'CITY-14').models.reviewer, null, 'a dot after one is not')
+  assert.equal(doctorWarns(dotted, /Models paragraph gives the ledger only part/).length, 1)
+})
+
+test('categories: one ticket\'s group parsing beside another\'s does not hide the loss — the warn is per ticket', () => {
+  // The failure a per-record check cannot see, and the one that actually
+  // happens: A parses, B does not, and B's whole figure is silently absent.
+  const lost =
+    '### Run — 2026-09-19 — completed\n\n**Tokens:** CITY-14 worker=100\n\n' +
+    '**Cache reads:** CITY-14 worker=100r; CITY-15 worker=4,812,330r; total=4812430r\n\n' +
+    '**Models:** CITY-14 worker=claude-opus-5; CITY-15 worker=claude opus 5\n'
+  const before = roundsRepo('cat-partial', TOKENS_ONLY, lost)
+  assert.equal(spendOf(before, 'CITY-14').cache.worker, 100, 'the ticket that parsed keeps its figure')
+  assert.equal(spendOf(before, 'CITY-15').cache.worker, null)
+  const cache = doctorWarns(before, /Cache reads paragraph gives the ledger nothing for/)
+  assert.equal(cache.length, 1)
+  assert.match(cache[0].msg, /nothing for CITY-15/)
+  assert.doesNotMatch(cache[0].msg, /CITY-14/, 'the ticket that parsed is not named')
+  assert.match(cache[0].msg, /runs\.md:7 /)
+  const models = doctorWarns(before, /Models paragraph gives the ledger nothing for CITY-15/)
+  assert.equal(models.length, 1)
+  assert.match(models[0].msg, /\*\*Models:\*\*" line of its own/)
+  // The advertised repair is an append, and it clears both.
+  const after = roundsRepo(
+    'cat-partial-repaired',
+    TOKENS_ONLY,
+    `${lost}\n**Addendum — correction — 2026-09-21:** restated for CITY-15.\n\n**Cache reads:** CITY-15 worker=4812330r\n\n**Models:** CITY-15 worker=claude-fable-5-1\n`,
+  )
+  assert.equal(spendOf(after, 'CITY-15').cache.worker, 4812330)
+  assert.equal(spendOf(after, 'CITY-15').models.worker, 'claude-fable-5-1')
+  assert.deepEqual(categoryWarns(after), [], 'append-only: a warn no append can clear is not a gate')
+})
+
+test('categories: a ticket recorded as unknown has an answer, and draws no warn', () => {
+  const dir = roundsRepo('cat-unknown-ok', TOKENS_ONLY, '### Run — 2026-09-19 — completed\n\n**Tokens:** CITY-14 worker=100\n\n**Cache reads:** CITY-14 worker=unknown; total=0r\n\n**Models:** CITY-14 worker=unknown\n')
+  assert.deepEqual(spendOf(dir, 'CITY-14').cache.unknown, ['worker'])
+  assert.deepEqual(categoryWarns(dir), [])
+})
+
+test('categories: the lines the meter prints for a run that selected no ticket are not near-misses', () => {
+  const dir = roundsRepo('cat-no-ticket', TOKENS_ONLY, '### Run — 2026-09-19 — completed\n\n**Tokens:** total=40,991\n\n**Time:** run=28s\n\n**Cache reads:** total=5811654r\n\n**Models:** none — no ticket ran\n')
+  assert.deepEqual(categoryWarns(dir), [])
+})
+
 // ── parallel tickets, stage 1: `**Blocked by:**` and the waiting state ───────
 // The plan's statement about order. What these pin is the strictness that the
 // first dependency graph lacked: a line that is about blocking and will not
@@ -4545,4 +5127,761 @@ test('doctor: in a Parallel epic an entry with no Owed line, or two, is flagged 
   assert.deepEqual(warns.map((w) => w.msg.match(/status\.md:(\d+) — (DEP-\d)'s entry has (\w+) /).slice(1)), [['3', 'DEP-1', 'no'], ['9', 'DEP-2', '2']])
   assert.match(warns[0].msg, /git show origin\/dep-1:epics\/dep\/status\.md/)
   assert.deepEqual(doctorWarns(mk('owed-serial', 'Delivery: release'), /\*\*Owed:\*\* line/), [], 'a log that predates the rule is not a plugin update away from six new warns')
+})
+
+// ── peak context, findings and halts: three more lines behind the same wall ──
+// The grammar is the one the Time, Cache reads and Models lines already use,
+// so what these pin is the same two boundaries: the unit (or, for findings,
+// the ledger's own keys) and the PARAGRAPH.
+const LEDGERED_RUN =
+  '### Run — 2026-09-20 — halted\n\n**Tokens:** CITY-14 worker=462,249 reviewer=185,339; total=647,588\n\n' +
+  '**Peak context:** CITY-14 worker=1204331c reviewer=380221c;\nCITY-15 worker=90500c reviewer=unknown\n\n' +
+  '**Findings:** CITY-14 important=3 nits=5 unfixed=1; CITY-15 important=0\nnits=2 unfixed=0\n\n' +
+  '**Halt:** importantFinding CITY-14; releaseCheck\n\n**Halted on:** an Important review finding it cannot fix (CITY-14).\n'
+const ledgerWarns = (dir) =>
+  doctorWarns(dir, /Peak context line|Peak context paragraph|peak-context figure|Findings line|Findings paragraph|Halt line|Tokens line carries/)
+
+test('peak: read per role from its own paragraph, wrapped lines included, and never as tokens', () => {
+  const dir = roundsRepo('peak', CITY15_UNKNOWN, LEDGERED_RUN)
+  const t = spendOf(dir, 'CITY-14')
+  assert.equal(t.peak.worker, 1204331)
+  assert.equal(t.peak.reviewer, 380221)
+  assert.equal(t.peak.disposition, null, 'a role the record never named is nothing recorded')
+  assert.equal(t.worker, 462249, 'the token figure is the Tokens line’s, not the peak')
+  assert.equal(t.total, 647588)
+  const t15 = spendOf(dir, 'CITY-15')
+  assert.equal(t15.peak.worker, 90500, 'the group on the continuation line is read')
+  assert.deepEqual(t15.peak.unknown, ['reviewer'])
+  assert.deepEqual(t15.unknown, ['ticket'], 'and a peak unknown is not a token unknown')
+  assert.deepEqual(ledgerWarns(dir), [])
+  const text = run(dir, 'spend', 'city')
+  assert.match(text, /peak {2}worker 1,204,331 {2}reviewer 380,221/)
+  assert.match(text, /peak \(max\) {2}worker 1,204,331/, 'the epic row is a MAX and says so')
+})
+
+test('peak: the epic figure is the largest ticket’s, never the sum', () => {
+  const epic = JSON.parse(run(roundsRepo('peak-max', CITY15_UNKNOWN, LEDGERED_RUN), 'spend', 'city', '--json')).epics[0]
+  assert.equal(epic.peakMax.worker, 1204331, 'not 1,294,831')
+  assert.equal(epic.peakMax.disposition, null, 'a role nobody recorded is null, never 0')
+})
+
+test('peak: rounds take the larger reading, where tokens and cache take the sum', () => {
+  const runs =
+    '### Run — 2026-09-19 — completed\n\n**Tokens:** CITY-14 round=1 worker=100\n\n**Peak context:** CITY-14 round=1 worker=500000c\n\n' +
+    '### Run — 2026-09-20 — completed\n\n**Tokens:** CITY-14 round=2 worker=200\n\n**Peak context:** CITY-14 round=2 worker=300000c\n'
+  const t = spendOf(roundsRepo('peak-rounds', TOKENS_ONLY, runs), 'CITY-14')
+  assert.equal(t.worker, 300, 'tokens sum their rounds')
+  assert.equal(t.peak.worker, 500000, 'and a peak takes the larger — not 800,000')
+  assert.deepEqual(t.peak.rounds, { worker: 2 }, 'the passes the max was taken over')
+})
+
+test('peak: a figure outside its paragraph is read by no ledger, and doctor names the ticket', () => {
+  const dir = roundsRepo('peak-stray', TOKENS_ONLY, '### Run — 2026-09-19 — completed\n\n**Tokens:** CITY-14 worker=100 reviewer=10\n\nDiagnosis: CITY-14 worker=1204331c came close to the limit.\n')
+  const t = spendOf(dir, 'CITY-14')
+  assert.equal(t.worker, 100, 'not 1,204,331 — the `c` is what stops it')
+  assert.equal(t.peak.worker, null, 'and outside a Peak context paragraph it is no peak either')
+  const stray = doctorWarns(dir, /peak-context figure here was read by nothing/)
+  assert.equal(stray.length, 1)
+  assert.match(stray[0].msg, /runs\.md:7 .*CITY-14/)
+})
+
+test('peak: a comma stops the figure parsing, and the advertised addendum clears the warn', () => {
+  const broken = '### Run — 2026-09-19 — completed\n\n**Tokens:** CITY-14 worker=100\n\n**Peak context:** CITY-14 worker=1,204,331c\n'
+  const dir = roundsRepo('peak-comma', TOKENS_ONLY, broken)
+  const lost = doctorWarns(dir, /Peak context paragraph gives the ledger/)
+  assert.equal(lost.length, 1, JSON.stringify(doctorWarns(dir, /./).map((w) => w.msg)))
+  assert.match(lost[0].msg, /nothing for CITY-14/)
+  assert.equal(spendOf(dir, 'CITY-14').peak.worker, null)
+  // The repair the message advertises, on an append-only log: a dated
+  // addendum beneath the record with the groups under a Peak context line.
+  const repaired = roundsRepo('peak-comma-fixed', TOKENS_ONLY, `${broken}\n**Addendum — correction — 2026-09-20.**\n\n**Peak context:** CITY-14 worker=1204331c\n`)
+  assert.deepEqual(doctorWarns(repaired, /Peak context paragraph gives the ledger/), [], 'the advertised repair clears it')
+  assert.equal(spendOf(repaired, 'CITY-14').peak.worker, 1204331)
+})
+
+test('peak: a line written as prose warns by shape, and the addendum clears that too', () => {
+  const prose = '### Run — 2026-09-19 — completed\n\n**Tokens:** CITY-14 worker=100\n\n**Peak context:** the worker got to worker=900000c at its widest.\n'
+  const dir = roundsRepo('peak-prose', TOKENS_ONLY, prose)
+  assert.equal(doctorWarns(dir, /Peak context line carries figures but no machine-shaped group/).length, 1)
+  const repaired = roundsRepo('peak-prose-fixed', TOKENS_ONLY, `${prose}\n**Addendum — correction — 2026-09-20.**\n\n**Peak context:** CITY-14 worker=900000c\n`)
+  assert.deepEqual(ledgerWarns(repaired), [])
+})
+
+test('peak: an idle run’s complete line is no near-miss', () => {
+  const dir = roundsRepo('peak-idle', TOKENS_ONLY, '### Run — 2026-09-19 — completed\n\n**Tokens:** total=0\n\n**Peak context:** none — no ticket ran\n')
+  assert.deepEqual(ledgerWarns(dir), [])
+})
+
+test('findings: three counts per ticket, read only inside their paragraph and never as tokens', () => {
+  const dir = roundsRepo('find', CITY15_UNKNOWN, LEDGERED_RUN)
+  const t = spendOf(dir, 'CITY-14')
+  assert.deepEqual([t.findings.important, t.findings.nits, t.findings.unfixed], [3, 5, 1])
+  assert.equal(t.worker, 462249, 'and `important=3` reached no token ledger')
+  const t15 = spendOf(dir, 'CITY-15')
+  assert.deepEqual([t15.findings.important, t15.findings.nits, t15.findings.unfixed], [0, 2, 0], 'zero is a figure — the review found nothing Important')
+  assert.match(run(dir, 'spend', 'city'), /findings {2}important 3 {2}nits 5 {2}unfixed 1/)
+  assert.match(run(dir, 'spend', 'city'), /findings {2}important 3 {2}nits 7 {2}unfixed 1/, 'the epic footer sums them')
+})
+
+test('findings: rounds sum, an unknown erases nothing, and a lost pair is named with a repair that works', () => {
+  const runs =
+    '### Run — 2026-09-19 — completed\n\n**Findings:** CITY-14 round=1 important=2 nits=1 unfixed=0\n\n' +
+    '### Run — 2026-09-20 — completed\n\n**Findings:** CITY-14 round=2 important=1 nits=unknown unfixed=1\n'
+  const t = spendOf(roundsRepo('find-rounds', TOKENS_ONLY, runs), 'CITY-14')
+  assert.equal(t.findings.important, 3, 'two passes found three between them')
+  assert.equal(t.findings.nits, 1, 'and an unknown round adds nothing and erases nothing')
+  const broken = '### Run — 2026-09-19 — completed\n\n**Findings:** CITY-14 important=3 nits=five unfixed=0\n'
+  const dir = roundsRepo('find-lost', TOKENS_ONLY, broken)
+  const lost = doctorWarns(dir, /Findings paragraph gives the ledger/)
+  assert.equal(lost.length, 1)
+  assert.match(lost[0].msg, /only part of what it writes for CITY-14/)
+  assert.equal(spendOf(dir, 'CITY-14').findings.nits, null, 'the pair that would not parse reached nothing')
+  const repaired = roundsRepo('find-lost-fixed', TOKENS_ONLY, `${broken}\n**Addendum — correction — 2026-09-20.**\n\n**Findings:** CITY-14 important=3 nits=5 unfixed=0\n`)
+  assert.deepEqual(doctorWarns(repaired, /Findings paragraph gives the ledger/), [])
+  assert.equal(spendOf(repaired, 'CITY-14').findings.nits, 5)
+})
+
+test('findings: a line written as prose warns by shape, and the addendum clears it', () => {
+  const prose = '### Run — 2026-09-19 — completed\n\n**Findings:** the reviewer raised important=2 and left one unfixed for CITY-14.\n'
+  const dir = roundsRepo('find-prose', TOKENS_ONLY, prose)
+  assert.equal(doctorWarns(dir, /Findings line here carries counts but no machine-shaped group/).length, 1)
+  const repaired = roundsRepo('find-prose-fixed', TOKENS_ONLY, `${prose}\n**Addendum — correction — 2026-09-20.**\n\n**Findings:** CITY-14 important=2 nits=0 unfixed=1\n`)
+  assert.deepEqual(ledgerWarns(repaired), [])
+  assert.equal(spendOf(repaired, 'CITY-14').findings.unfixed, 1)
+})
+
+test('halt: kinds and their tickets are read from the line, an epic-level halt names none', () => {
+  const dir = roundsRepo('halt', CITY15_UNKNOWN, LEDGERED_RUN)
+  const m = JSON.parse(run(dir, 'metrics', 'city', '--json')).epics[0]
+  assert.deepEqual(m.halts.map((h) => [h.kind, h.count, h.tickets]), [['importantFinding', 1, ['CITY-14']], ['releaseCheck', 1, []]])
+  assert.equal(m.haltCount, 2)
+  assert.deepEqual(ledgerWarns(dir), [])
+})
+
+test('halt: the paragraph carries groups and nothing else — prose beside a kind is a named warn, cleared by the addendum', () => {
+  const prose = '### Run — 2026-09-19 — completed\n\n**Halt:** blocked CITY-14 — the worker wrote a BLOCKED entry.\n'
+  const dir = roundsRepo('halt-prose', TOKENS_ONLY, prose)
+  const m = JSON.parse(run(dir, 'metrics', 'city', '--json')).epics[0]
+  assert.deepEqual(m.halts, [], 'a sentence beside the kind ends the group, so nothing is counted — never "the", "worker" and "entry"')
+  assert.equal(doctorWarns(dir, /writes something .*counts as no halt at all/).length, 1)
+  const repaired = roundsRepo('halt-prose-fixed', TOKENS_ONLY, `${prose}\n**Addendum — correction — 2026-09-20.**\n\n**Halt:** blocked CITY-14\n`)
+  assert.deepEqual(ledgerWarns(repaired), [])
+  assert.deepEqual(JSON.parse(run(repaired, 'metrics', 'city', '--json')).epics[0].halts.map((h) => h.kind), ['blocked'])
+})
+
+test('halt: a segment that reads as nothing beside one that reads fine is named — the paragraph question would have said yes', () => {
+  // The loss a whole-paragraph check misses, and the exact string the parser's
+  // own comment is written about: `releaseCheck` parses, so "did anything
+  // parse here?" answers yes while the halt that stopped the run is gone.
+  const broken = '### Run — 2026-09-19 — halted\n\n**Halt:** blocked CITY-14 — the worker died; releaseCheck\n'
+  const dir = roundsRepo('halt-partial', TOKENS_ONLY, broken)
+  assert.deepEqual(JSON.parse(run(dir, 'metrics', 'city', '--json')).epics[0].halts.map((h) => h.kind), ['releaseCheck'])
+  const warn = doctorWarns(dir, /writes something .*counts as no halt at all/)
+  assert.equal(warn.length, 1, JSON.stringify(doctorWarns(dir, /./).map((w) => w.msg)))
+  assert.match(warn[0].msg, /"blocked CITY-14 — the worker died"/, 'the segment is quoted, so the reader knows which halt to restate')
+  assert.match(warn[0].msg, /only the halts this line lost/)
+  assert.match(warn[0].msg, /runs\.md:5/)
+  // The advertised repair, on an append-only log: an addendum restating ONLY
+  // the lost halt. Every Halt paragraph in a record is counted, so restating
+  // the readable one too would count `releaseCheck` twice — the message says
+  // so, and this is the reading that proves it.
+  const repaired = roundsRepo('halt-partial-fixed', TOKENS_ONLY, `${broken}\n**Addendum — correction — 2026-09-20.**\n\n**Halt:** blocked CITY-14\n`)
+  assert.deepEqual(ledgerWarns(repaired), [], 'the advertised repair clears it')
+  assert.deepEqual(
+    JSON.parse(run(repaired, 'metrics', 'city', '--json')).epics[0].halts.map((h) => [h.kind, h.count]),
+    [['blocked', 1], ['releaseCheck', 1]],
+    'each halt counted once',
+  )
+  // …and the mistake the message warns against, priced: a full restatement
+  // double-counts the halt that already parsed.
+  const overstated = roundsRepo('halt-partial-over', TOKENS_ONLY, `${broken}\n**Addendum — correction — 2026-09-20.**\n\n**Halt:** blocked CITY-14; releaseCheck\n`)
+  assert.deepEqual(JSON.parse(run(overstated, 'metrics', 'city', '--json')).epics[0].halts.find((h) => h.kind === 'releaseCheck').count, 2)
+})
+
+test('halt: only a later group naming the same ticket clears a lost segment that named one', () => {
+  // An addendum about SOME OTHER halt must not answer for this one — the rule
+  // the cache and models warns are keyed on. Before this, any later Halt
+  // paragraph cleared every earlier segment, so a record could be "repaired"
+  // into silence while the halt that stopped the run stayed lost.
+  const broken = '### Run — 2026-09-19 — halted\n\n**Halt:** blocked CITY-14 — the worker died; releaseCheck\n'
+  const other = roundsRepo('halt-other', TOKENS_ONLY, `${broken}\n**Addendum — correction — 2026-09-20.**\n\n**Halt:** contradiction\n`)
+  const stillLost = doctorWarns(other, /counts as no halt at all/)
+  assert.equal(stillLost.length, 1, 'an addendum about a different halt clears nothing')
+  assert.match(stillLost[0].msg, /"blocked CITY-14 — the worker died"/)
+  // …and the advertised repair, naming the ticket, does clear it.
+  const named = roundsRepo('halt-named', TOKENS_ONLY, `${broken}\n**Addendum — correction — 2026-09-20.**\n\n**Halt:** blocked CITY-14\n`)
+  assert.deepEqual(doctorWarns(named, /counts as no halt at all/), [])
+  // A segment naming NO ticket has no key to match on, so any later paragraph
+  // clears it: nothing better can be known about which halt an addendum meant.
+  const epicLevel = '### Run — 2026-09-19 — halted\n\n**Halt:** releaseCheck — the epic head went stale\n'
+  const unkeyed = roundsRepo('halt-unkeyed', TOKENS_ONLY, epicLevel)
+  assert.equal(doctorWarns(unkeyed, /counts as no halt at all/).length, 1)
+  const cleared = roundsRepo('halt-unkeyed-fixed', TOKENS_ONLY, `${epicLevel}\n**Addendum — correction — 2026-09-20.**\n\n**Halt:** releaseCheck\n`)
+  assert.deepEqual(doctorWarns(cleared, /counts as no halt at all/), [])
+})
+
+test('halt: the label is read case-insensitively, as every other ledger label is', () => {
+  // `LEDGER_PARAGRAPHS` opens a halt paragraph on `/^\*\*Halt:\*\*/i`, so a
+  // `**HALT:**` line that opens one must also yield its groups — while the
+  // KIND stays case-sensitive, which is the whole thing that tells a kind
+  // from a ticket ID.
+  const dir = roundsRepo('halt-case', TOKENS_ONLY, '### Run — 2026-09-19 — halted\n\n**HALT:** blocked CITY-14\n')
+  assert.deepEqual(JSON.parse(run(dir, 'metrics', 'city', '--json')).epics[0].halts.map((h) => [h.kind, h.tickets]), [['blocked', ['CITY-14']]])
+  assert.deepEqual(ledgerWarns(dir), [], 'and it is no near-miss either')
+  const upper = roundsRepo('halt-case-kind', TOKENS_ONLY, '### Run — 2026-09-19 — halted\n\n**Halt:** Blocked CITY-14\n')
+  assert.deepEqual(JSON.parse(run(upper, 'metrics', 'city', '--json')).epics[0].halts, [], 'an upper-case kind is not a kind')
+  assert.equal(doctorWarns(upper, /counts as no halt at all/).length, 1, 'and it is named rather than dropped')
+})
+
+test('halt: the line reaches no other ledger — a ticket named there gains no figure', () => {
+  const dir = roundsRepo('halt-inert', TOKENS_ONLY, '### Run — 2026-09-19 — completed\n\n**Tokens:** CITY-14 worker=100\n\n**Halt:** ticketBudget CITY-14\n')
+  const t = spendOf(dir, 'CITY-14')
+  assert.equal(t.worker, 100)
+  assert.deepEqual([t.time.wall, t.cache.worker, t.peak.worker, t.findings.important], [null, null, null, null])
+})
+
+// ── metrics: what the ledgers say once crossed with the commit subjects ──────
+const mremote = join(tmp, 'metrics-remote.git')
+const mrepo = join(tmp, 'metrics-repo')
+git(tmp, 'init', '--bare', '--initial-branch=main', mremote)
+git(tmp, 'init', '--initial-branch=main', mrepo)
+git(mrepo, 'config', 'user.email', 'test@example.com')
+git(mrepo, 'config', 'user.name', 'Test')
+git(mrepo, 'config', 'commit.gpgsign', 'false')
+const mwrite = (rel, text) => {
+  mkdirSync(dirname(join(mrepo, rel)), { recursive: true })
+  writeFileSync(join(mrepo, rel), text)
+}
+const mcommit = (subject, ...paths) => {
+  git(mrepo, 'add', ...paths)
+  git(mrepo, 'commit', '-q', '-m', subject)
+}
+mwrite('epics/met/tickets.md', '# Met epic — tickets\n\nDelivery: incremental\n\n## MET-1 — the parser\n\n**Scope.** One.\n\n## MET-2 — the renderer\n\n**Scope.** Two.\n\n## MET-3 — not started\n\n**Scope.** Three.\n')
+mwrite(
+  'epics/met/status.md',
+  '# Met epic — status log\n\n### MET-1 — the parser — 2026-09-16 — DONE\n\n**Tokens:** recorded in the run record\n\n**Owed:** Nothing.\n\n' +
+    '### MET-2 — the renderer — 2026-09-17 — DONE\n\n**Tokens:** recorded in the run record\n\n**Owed:** Nothing.\n',
+)
+mwrite(
+  'epics/met/runs.md',
+  '# Met epic — run records\n\n### Run — 2026-09-18 — halted\n\n' +
+    '**Tokens:** MET-1 worker=200000 reviewer=50000; MET-2 worker=400000 reviewer=60000; total=710000\n\n' +
+    '**Time:** MET-1 worker=600s wall=900s; MET-2 worker=1200s wall=1500s; run=2600s\n\n' +
+    '**Cache reads:** MET-1 worker=1000000r; MET-2 worker=3000000r; total=4000000r\n\n' +
+    '**Models:** MET-1 worker=claude-opus-5 reviewer=claude-fable-5-1; MET-2\nworker=codex:gpt-5-codex reviewer=claude-fable-5-1\n\n' +
+    '**Peak context:** MET-1 worker=180000c reviewer=90000c; MET-2\nworker=250000c reviewer=95000c\n\n' +
+    '**Findings:** MET-1 important=1 nits=3 unfixed=0; MET-2 important=2 nits=1\nunfixed=1\n\n' +
+    '**Halt:** importantFinding MET-2; releaseCheck\n\n**Halted on:** an Important review finding it cannot fix (MET-2).\n',
+)
+mwrite('src/parser.js', 'export const p = 1\n')
+mcommit('MET-1: the parser', 'epics', 'src/parser.js')
+mwrite('src/parser.js', 'export const p = 2\n')
+mcommit('MET-1: guard the empty case (review fix)', 'src/parser.js')
+mwrite('src/render.js', 'export const r = 1\n')
+mcommit('MET-2: the renderer', 'src/render.js')
+mwrite('src/render.js', 'export const r = 2\n')
+mcommit('MET-2: escape the label (review fix)', 'src/render.js')
+mwrite('src/render.js', 'export const r = 3\n')
+mcommit('MET-2: restore the fallback (review fix)', 'src/render.js')
+// A later quick ticket repairing something MET-1 shipped: the escaped defect.
+mwrite('epics/quick/tickets.md', '# Quick\n\nDelivery: incremental\n\n## Q-7 — the crash\n\n**Scope.** Fix it.\n')
+mwrite('src/parser.js', 'export const p = 3\n')
+mcommit('Q-7: stop the crash on an empty token (fixes MET-1)', 'epics', 'src/parser.js')
+git(mrepo, 'remote', 'add', 'origin', mremote)
+git(mrepo, 'push', '-q', '-u', 'origin', 'main')
+git(mrepo, 'remote', 'set-head', 'origin', 'main')
+const metrics = (...a) => JSON.parse(run(mrepo, 'metrics', ...a, '--json'))
+
+test('metrics: pace is grouped by the worker’s model, with the worker’s own figures and the ticket’s wall', () => {
+  const e = metrics('met').epics[0]
+  assert.deepEqual(e.pace.map((p) => [p.model, p.tickets]), [['claude-opus-5', 1], ['codex:gpt-5-codex', 1], ['unknown', 1]])
+  const opus = e.pace.find((p) => p.model === 'claude-opus-5')
+  assert.deepEqual([opus.tokens.value, opus.cache.value, opus.peak.value, opus.wall.value], [200000, 1000000, 180000, 900])
+  assert.deepEqual([opus.tokens.from, opus.tokens.of], [1, 1])
+  const codex = e.pace.find((p) => p.model === 'codex:gpt-5-codex')
+  assert.deepEqual([codex.tokens.value, codex.peak.value, codex.wall.value], [400000, 250000, 1500])
+  // MET-3 never ran: grouped under `unknown` rather than dropped, and every
+  // figure null — how much of an epic went unmeasured is itself the finding.
+  const none = e.pace.find((p) => p.model === 'unknown')
+  assert.deepEqual([none.tokens.value, none.tokens.from, none.tokens.of], [null, 0, 1])
+})
+
+test('metrics: rework counts the `(review fix)` commits per ticket, off the subjects', () => {
+  const e = metrics('met').epics[0]
+  assert.deepEqual(e.rework.map((r) => [r.id, r.fixes]), [['MET-1', 1], ['MET-2', 2]])
+  assert.equal(e.reworkCommits, 3)
+  assert.match(run(mrepo, 'metrics', 'met'), /rework {2}3 review-fix commits over 2 tickets/)
+})
+
+test('metrics: review effectiveness comes from the Findings groups, and says how many tickets recorded any', () => {
+  const e = metrics('met').epics[0]
+  assert.deepEqual([e.review.important.value, e.review.nits.value, e.review.unfixed.value], [3, 4, 1])
+  assert.deepEqual([e.review.important.from, e.review.important.of], [2, 3], 'MET-3 recorded none, and a bare total would hide that')
+  assert.deepEqual([e.review.ticketsRecorded, e.review.ticketsWithImportant], [2, 2])
+})
+
+test('metrics: halts are counted by the driver’s own kind, epic-level ones included', () => {
+  const e = metrics('met').epics[0]
+  assert.deepEqual(e.halts.map((h) => [h.kind, h.count, h.tickets]), [['importantFinding', 1, ['MET-2']], ['releaseCheck', 1, []]])
+})
+
+test('metrics: an escaped defect is a later commit naming a SHIPPED ticket, and the suffix leaves shipped detection alone', () => {
+  const e = metrics('met').epics[0]
+  assert.deepEqual(e.escaped.map((x) => [x.id, x.count, x.by]), [['MET-1', 1, ['Q-7']]])
+  assert.equal(e.escapedCommits, 1)
+  // The suffix must not disturb the scan that decides what shipped: the
+  // subject `Q-7: … (fixes MET-1)` ships Q-7, and only Q-7.
+  const states = Object.fromEntries(JSON.parse(run(mrepo, 'list', '--json')).tickets.map((t) => [t.id, t.state]))
+  assert.equal(states['Q-7'], 'shipped')
+  assert.equal(states['MET-3'], 'todo', 'and nothing else was shipped by it')
+  assert.match(run(mrepo, 'metrics', 'met'), /escaped 1 later fix of 1 shipped ticket — MET-1 1 \(by Q-7\)/)
+})
+
+test('metrics: `wall` is the only duration — a commit span is never reported as one', () => {
+  const out = run(mrepo, 'metrics', 'met')
+  assert.match(out, /Duration is the run record's observed `wall` only/)
+  assert.doesNotMatch(out, /over \d+ commits/, 'no row carries a commit span, whatever the git history says')
+  assert.match(out, /claude-opus-5 +1 +200,000 +1,000,000 +180,000 +15m 00s/, 'the wall is the recorded 900s, not the span between MET-1’s two commits')
+})
+
+test('metrics: a total across epics only when no epic was named', () => {
+  assert.equal(metrics('met').totals, null, 'one epic’s own numbers twice is not a total')
+  const all = metrics()
+  assert.ok(all.totals.epics >= 2)
+  assert.equal(all.totals.reworkCommits, 3)
+  assert.equal(all.totals.important, 3)
+})
+
+test('metrics: a `(fixes <ID>)` naming a PLANNED, unshipped ticket is a doctor warn that shipping clears', () => {
+  const dir = join(tmp, 'metrics-unshipped')
+  git(tmp, 'init', '--initial-branch=main', dir)
+  git(dir, 'config', 'user.email', 'test@example.com')
+  git(dir, 'config', 'user.name', 'Test')
+  git(dir, 'config', 'commit.gpgsign', 'false')
+  const bare = join(tmp, 'metrics-unshipped.git')
+  git(tmp, 'init', '--bare', '--initial-branch=main', bare)
+  mkdirSync(join(dir, 'epics/esc'), { recursive: true })
+  writeFileSync(join(dir, 'epics/esc/tickets.md'), '# Esc\n\nDelivery: incremental\n\n## ESC-1 — the one\n\n**Scope.** One.\n\n## ESC-9 — the later one\n\n**Scope.** Nine.\n')
+  writeFileSync(join(dir, 'src.js'), 'a\n')
+  git(dir, 'add', '.')
+  git(dir, 'commit', '-q', '-m', 'ESC-1: repair it (fixes ESC-9)')
+  git(dir, 'remote', 'add', 'origin', bare)
+  git(dir, 'push', '-q', '-u', 'origin', 'main')
+  git(dir, 'remote', 'set-head', 'origin', 'main')
+  const warn = doctorWarns(dir, /has not shipped, so there is no released defect/)
+  assert.equal(warn.length, 1)
+  assert.match(warn[0].msg, /ESC-9/)
+  // The only recovery it advertises is the one that works. A commit subject
+  // on the default branch is never rewritten, so the message must not offer
+  // an addendum: a reader who appends one and watches the warn stay learns to
+  // skip the rest of doctor.
+  assert.match(warn[0].msg, /ends when ESC-9 ships, and nothing else ends it/)
+  assert.doesNotMatch(warn[0].msg, /say so in a dated addendum/)
+  assert.equal(JSON.parse(run(dir, 'metrics', 'esc', '--json')).epics[0].escapedCommits, 0, 'and nothing is counted as an escape')
+  // The advertised recovery: ESC-9 ships, and the warn ends by itself.
+  writeFileSync(join(dir, 'src9.js'), 'b\n')
+  git(dir, 'add', '.')
+  git(dir, 'commit', '-q', '-m', 'ESC-9: the later one')
+  git(dir, 'push', '-q', 'origin', 'main')
+  assert.deepEqual(doctorWarns(dir, /has not shipped, so there is no released defect/), [])
+  // …and the fix STILL counts as no escape, for the other reason: it landed
+  // before ESC-9 did, so it repaired work no user had seen. The count says so
+  // rather than going quiet.
+  const after = JSON.parse(run(dir, 'metrics', 'esc', '--json'))
+  assert.equal(after.epics[0].escapedCommits, 0)
+  assert.deepEqual(after.unmatchedFixes.map((x) => [x.id, x.reason]), [['ESC-9', 'predates']])
+  // A fix landing after it, on the other hand, is the real thing.
+  writeFileSync(join(dir, 'src10.js'), 'c\n')
+  git(dir, 'add', '.')
+  git(dir, 'commit', '-q', '-m', 'ESC-1: repair the released one (fixes ESC-9)')
+  git(dir, 'push', '-q', 'origin', 'main')
+  assert.equal(JSON.parse(run(dir, 'metrics', 'esc', '--json')).epics[0].escapedCommits, 1)
+})
+
+test('metrics: a `(fixes <ID>)` naming no planned ticket is listed, never warned — nothing could clear a warn on a pushed subject', () => {
+  const m = metrics()
+  assert.deepEqual(m.unmatchedFixes.map((x) => x.id), [], 'the fixture names only shipped tickets')
+  const rows = JSON.parse(runFail(mrepo, 'doctor', '--json')?.stdout ?? run(mrepo, 'doctor', '--json'))
+  assert.deepEqual(rows.filter((r) => /has not shipped, so there is no released defect/.test(r.msg)), [])
+})
+
+test('metrics: a fix that landed BEFORE the ticket it names shipped is no escape — and says why', () => {
+  // Set membership alone would count it: X is shipped and something names it.
+  // But a repair that landed while X was still in flight repaired work no
+  // user had seen, which is the one thing an escaped defect means. Ordered by
+  // POSITION on the default branch, not by an author clock a rebase rewrites.
+  const dir = join(tmp, 'metrics-order')
+  const bare = join(tmp, 'metrics-order.git')
+  git(tmp, 'init', '--bare', '--initial-branch=main', bare)
+  git(tmp, 'init', '--initial-branch=main', dir)
+  for (const [k, v] of [['user.email', 'test@example.com'], ['user.name', 'Test'], ['commit.gpgsign', 'false']]) git(dir, 'config', k, v)
+  mkdirSync(join(dir, 'epics/ord'), { recursive: true })
+  writeFileSync(join(dir, 'epics/ord/tickets.md'), '# Ord\n\nDelivery: incremental\n\n## ORD-1 — the one\n\n**Scope.** One.\n\n## ORD-2 — the other\n\n**Scope.** Two.\n')
+  const c = (subject, file) => {
+    writeFileSync(join(dir, file), `${subject}\n`)
+    git(dir, 'add', '.')
+    git(dir, 'commit', '-q', '-m', subject)
+  }
+  c('ORD-2: repair the parser (fixes ORD-1)', 'a.js') // lands FIRST — ORD-1 has not shipped
+  c('ORD-1: the one', 'b.js') // …and only now does ORD-1 ship
+  c('ORD-2: repair it again (fixes ORD-1)', 'c.js') // this one is a real escape
+  git(dir, 'remote', 'add', 'origin', bare)
+  git(dir, 'push', '-q', '-u', 'origin', 'main')
+  git(dir, 'remote', 'set-head', 'origin', 'main')
+  const m = JSON.parse(run(dir, 'metrics', 'ord', '--json'))
+  assert.deepEqual(m.epics[0].escaped.map((x) => [x.id, x.count]), [['ORD-1', 1]], 'one of the two, not both')
+  const predating = m.unmatchedFixes.filter((x) => x.reason === 'predates')
+  assert.deepEqual(predating.map((x) => [x.id, x.count]), [['ORD-1', 1]])
+  assert.match(predating[0].subjects[0], /repair the parser/)
+})
+
+// A throwaway repo with a remote, for the landing-position tests: what
+// matters is where a commit REACHED main, which only real merges can show.
+const escRepo = (name) => {
+  const dir = join(tmp, `esc-${name}`)
+  const bare = join(tmp, `esc-${name}.git`)
+  git(tmp, 'init', '--bare', '--initial-branch=main', bare)
+  git(tmp, 'init', '--initial-branch=main', dir)
+  for (const [k, v] of [['user.email', 'test@example.com'], ['user.name', 'Test'], ['commit.gpgsign', 'false']]) git(dir, 'config', k, v)
+  mkdirSync(join(dir, 'epics/city'), { recursive: true })
+  writeFileSync(join(dir, 'epics/city/tickets.md'), '# City\n\nDelivery: release\n\n## CITY-1 — the feature\n\n**Scope.** One.\n\n## CITY-2 — the hotfix\n\n**Scope.** Two.\n')
+  const commit = (subject, file, when = null) => {
+    writeFileSync(join(dir, file), `${subject}\n`)
+    git(dir, 'add', '.')
+    const env = when ? { ...ENV, GIT_AUTHOR_DATE: when, GIT_COMMITTER_DATE: when } : ENV
+    execFileSync('git', ['commit', '-q', '-m', subject], { cwd: dir, encoding: 'utf8', env })
+  }
+  const publish = () => {
+    git(dir, 'remote', 'add', 'origin', bare)
+    git(dir, 'push', '-q', '-u', 'origin', 'main')
+    git(dir, 'remote', 'set-head', 'origin', 'main')
+  }
+  return { dir, commit, publish, read: () => JSON.parse(run(dir, 'metrics', 'city', '--json')) }
+}
+
+test('metrics: a ticket reaches main at its release MERGE, so a hotfix committed before that merge never escaped it', () => {
+  // The release-epic shape. CITY-1 is committed on epic/city early and
+  // reaches main only when the epic merges; CITY-2's hotfix is committed on
+  // main in between. Ordered by where each commit was WRITTEN, CITY-1 is
+  // older and the hotfix looks like an escape. Ordered by where each REACHED
+  // main, CITY-1 arrived last and no user ever saw the defect.
+  const r = escRepo('merge')
+  r.commit('initial', 'README.md')
+  git(r.dir, 'checkout', '-q', '-b', 'epic/city')
+  r.commit('CITY-1: the feature', 'feature.js')
+  git(r.dir, 'checkout', '-q', 'main')
+  r.commit('CITY-2: hotfix (fixes CITY-1)', 'hotfix.js')
+  git(r.dir, 'merge', '-q', '--no-ff', 'epic/city', '-m', 'Merge pull request #1 from epic/city')
+  r.publish()
+  const m = r.read()
+  assert.deepEqual(m.epics[0].escaped, [], 'CITY-1 reached main after the hotfix did')
+  assert.deepEqual(m.unmatchedFixes.map((x) => [x.id, x.reason]), [['CITY-1', 'predates']])
+})
+
+test('metrics: a fix and the ticket it names arriving in ONE release merge is a defect caught, not escaped', () => {
+  const r = escRepo('same-merge')
+  r.commit('initial', 'README.md')
+  git(r.dir, 'checkout', '-q', '-b', 'epic/city')
+  r.commit('CITY-1: the feature', 'feature.js')
+  r.commit('CITY-2: repair it before release (fixes CITY-1)', 'fix.js')
+  git(r.dir, 'checkout', '-q', 'main')
+  git(r.dir, 'merge', '-q', '--no-ff', 'epic/city', '-m', 'Merge pull request #1 from epic/city')
+  r.publish()
+  const m = r.read()
+  assert.deepEqual(m.epics[0].escaped, [], 'both arrived at the same moment — the gates working, not a miss')
+  assert.deepEqual(m.unmatchedFixes.map((x) => [x.id, x.reason]), [['CITY-1', 'predates']])
+})
+
+test('metrics: a fix committed EARLIER by date but merged later is an escape — position decides, never the timestamp', () => {
+  const r = escRepo('late-merge')
+  r.commit('initial', 'README.md')
+  // The fix is authored and committed in January, on a branch of its own.
+  git(r.dir, 'checkout', '-q', '-b', 'fixline')
+  r.commit('CITY-2: repair it (fixes CITY-1)', 'fix.js', '2026-01-05T10:00:00Z')
+  // CITY-1 reaches main in March…
+  git(r.dir, 'checkout', '-q', 'main')
+  r.commit('CITY-1: the feature', 'feature.js', '2026-03-01T10:00:00Z')
+  // …and the January fix only arrives in April, which is when users got it.
+  git(r.dir, 'merge', '-q', '--no-ff', 'fixline', '-m', 'Merge pull request #2 from fixline')
+  r.publish()
+  const m = r.read()
+  assert.deepEqual(m.epics[0].escaped.map((x) => [x.id, x.count]), [['CITY-1', 1]])
+  assert.deepEqual(m.unmatchedFixes, [], 'nothing predates: the fix landed after the feature did')
+})
+
+test('metrics: a branch with no merges at all orders exactly as its commit list does', () => {
+  const r = escRepo('linear')
+  r.commit('CITY-2: repair it (fixes CITY-1)', 'a.js') // before CITY-1 exists
+  r.commit('CITY-1: the feature', 'b.js')
+  r.commit('CITY-2: repair it again (fixes CITY-1)', 'c.js') // after
+  r.publish()
+  const m = r.read()
+  assert.deepEqual(m.epics[0].escaped.map((x) => [x.id, x.count]), [['CITY-1', 1]], 'the later one only')
+  assert.deepEqual(m.unmatchedFixes.map((x) => [x.id, x.reason]), [['CITY-1', 'predates']])
+})
+
+test('metrics: a `(fixes …)` the strict form cannot read is reported, never dropped', () => {
+  // `(fixes A, B)` is not the taught shape, so it is a writer's mistake — but
+  // a mistake that vanishes is worse than one that is wrong, and the escape
+  // count is exactly the figure that reads fine while being quietly low.
+  const dir = join(tmp, 'metrics-unreadable')
+  const bare = join(tmp, 'metrics-unreadable.git')
+  git(tmp, 'init', '--bare', '--initial-branch=main', bare)
+  git(tmp, 'init', '--initial-branch=main', dir)
+  for (const [k, v] of [['user.email', 'test@example.com'], ['user.name', 'Test'], ['commit.gpgsign', 'false']]) git(dir, 'config', k, v)
+  mkdirSync(join(dir, 'epics/unr'), { recursive: true })
+  writeFileSync(join(dir, 'epics/unr/tickets.md'), '# Unr\n\nDelivery: incremental\n\n## UNR-1 — the one\n\n**Scope.** One.\n')
+  const c = (subject, file) => {
+    writeFileSync(join(dir, file), `${subject}\n`)
+    git(dir, 'add', '.')
+    git(dir, 'commit', '-q', '-m', subject)
+  }
+  c('UNR-1: the one', 'a.js')
+  c('UNR-1: repair two at once (fixes UNR-2, UNR-3)', 'b.js')
+  c('UNR-1: lower case (fixes unr-4)', 'c.js')
+  // …and two spellings that are NOT this repository's convention. A row
+  // about either would sit in `unmatchedFixes` for ever in every project that
+  // writes one, and nobody could act on it.
+  c('UNR-1: quieten it (fixes the flaky test)', 'd.js')
+  c('UNR-1: close the issue (fixes #12)', 'e.js')
+  git(dir, 'remote', 'add', 'origin', bare)
+  git(dir, 'push', '-q', '-u', 'origin', 'main')
+  git(dir, 'remote', 'set-head', 'origin', 'main')
+  const m = JSON.parse(run(dir, 'metrics', 'unr', '--json'))
+  const unreadable = m.unmatchedFixes.filter((x) => x.reason === 'unreadable')
+  assert.deepEqual(unreadable.map((x) => x.wrote).sort(), ['(fixes UNR-2, UNR-3)', '(fixes unr-4)'])
+  assert.deepEqual(unreadable.map((x) => x.id), [null, null], 'no ID was read, so none is claimed')
+  assert.equal(m.epics[0].escapedCommits, 0, 'and nothing unreadable is counted as an escape')
+  // Every `unmatchedFixes` row carries a reason: the shape is the contract.
+  for (const row of m.unmatchedFixes) assert.ok(['not-shipped', 'predates', 'unreadable'].includes(row.reason), row.reason)
+})
+
+// ── the Codex pass: what a different model found ────────────────────────────
+
+test('git scans: an oversized log is a FAILED scan, never an empty history', () => {
+  // Node's default maxBuffer is 1 MiB and every scan passes `allowFail`, so a
+  // log that outgrew it returned null and read as an empty branch: zero
+  // escapes, nothing shipped, `mainScanCapped: false` — figures nobody
+  // observed, printed as observations.
+  //
+  // The history is built with `git fast-import` and the refs are set by hand:
+  // 700 ordinary commits through `git commit` took 27 seconds of this suite's
+  // runtime and proved nothing the stream does not. What it must still prove
+  // is that a REAL `git log` of this branch exceeds 1 MiB, which is asserted
+  // below rather than assumed.
+  const dir = join(tmp, 'big-log')
+  git(tmp, 'init', '--initial-branch=main', dir)
+  for (const [k, v] of [['user.email', 't@e.com'], ['user.name', 'T'], ['commit.gpgsign', 'false']]) git(dir, 'config', k, v)
+  mkdirSync(join(dir, 'epics/big'), { recursive: true })
+  writeFileSync(join(dir, 'epics/big/tickets.md'), '# Big\n\nDelivery: incremental\n\n## BIG-1 — the one\n\n**Scope.** One.\n')
+  const wide = 'w'.repeat(1_700)
+  const stream = []
+  for (let i = 0; i < 700; i++) {
+    const subject = i === 0 ? 'BIG-1: the one' : `BIG-1: pass ${i} ${wide}`
+    const blob = `x${i}\n`
+    stream.push(
+      'commit refs/heads/main',
+      `mark :${i + 1}`,
+      'committer T <t@e.com> 0 +0000',
+      `data ${Buffer.byteLength(subject)}`,
+      subject,
+      ...(i ? [`from :${i}`] : []),
+      'M 644 inline a.js',
+      `data ${Buffer.byteLength(blob)}`,
+      blob.trimEnd(),
+      '',
+    )
+  }
+  execFileSync('git', ['fast-import', '--quiet'], { cwd: dir, env: ENV, input: `${stream.join('\n')}\n` })
+  // The remote refs by hand: a push would copy the whole history again for
+  // nothing, and what the scans read is `origin/main`.
+  git(dir, 'remote', 'add', 'origin', join(tmp, 'big-log-nowhere.git'))
+  git(dir, 'update-ref', 'refs/remotes/origin/main', 'refs/heads/main')
+  git(dir, 'symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/main')
+  // Read with an explicit buffer: this suite's own `git()` helper has the
+  // default one, and measuring the fixture must not be the thing that throws.
+  const log = execFileSync('git', ['log', 'origin/main', '--format=%H %P%x09%s'], { cwd: dir, encoding: 'utf8', env: ENV, maxBuffer: 64 * 1024 * 1024 })
+  assert.ok(log.length > 1024 * 1024, `the fixture has to exceed the old 1 MiB buffer — it is ${log.length}`)
+  const m = JSON.parse(run(dir, 'metrics', 'big', '--json'))
+  assert.deepEqual(m.scanFailures, [], 'the scan completes now')
+  assert.equal(m.epics[0].tickets, 1)
+  assert.deepEqual(JSON.parse(run(dir, 'list', '--json')).tickets.map((t) => t.state), ['shipped'], 'and the board does not collapse to todo')
+})
+
+// A `git` shim on PATH that fails one scan and passes everything else through
+// to the real binary — the only way to see what the board does when a scan
+// that should have worked does not.
+const shimmed = (name, failing) => {
+  const dir = join(tmp, `shim-${name}`)
+  const bare = join(tmp, `shim-${name}.git`)
+  git(tmp, 'init', '--bare', '--initial-branch=main', bare)
+  git(tmp, 'init', '--initial-branch=main', dir)
+  for (const [k, v] of [['user.email', 't@e.com'], ['user.name', 'T'], ['commit.gpgsign', 'false']]) git(dir, 'config', k, v)
+  mkdirSync(join(dir, 'epics/shim'), { recursive: true })
+  writeFileSync(join(dir, 'epics/shim/tickets.md'), '# Shim\n\nDelivery: incremental\n\n## SHIM-1 — the one\n\n**Scope.** One.\n')
+  git(dir, 'add', '.')
+  git(dir, 'commit', '-q', '-m', 'SHIM-1: the one')
+  git(dir, 'remote', 'add', 'origin', bare)
+  git(dir, 'push', '-q', '-u', 'origin', 'main')
+  git(dir, 'remote', 'set-head', 'origin', 'main')
+  const binDir = join(tmp, `shimbin-${name}`)
+  mkdirSync(binDir, { recursive: true })
+  const real = execFileSync('sh', ['-c', 'command -v git'], { encoding: 'utf8', env: { PATH: process.env.PATH } }).trim()
+  writeFileSync(join(binDir, 'git'), `#!/bin/sh\ncase "$*" in\n  ${failing}) echo "fatal: simulated scan failure" >&2; exit 128;;\nesac\nexec ${real} "$@"\n`)
+  chmodSync(join(binDir, 'git'), 0o755)
+  return { dir, env: { ...ENV, PATH: `${binDir}:${ENV.PATH}` } }
+}
+const withEnv = (dir, env, ...args) => spawnSync(process.execPath, [SCRIPT, ...args], { cwd: dir, encoding: 'utf8', env })
+
+test('git scans: a failed shipped-detection scan is named by the board, doctor and next — never presented as "todo"', () => {
+  const { dir, env } = shimmed('mainlog', 'log\\ origin/main\\ --format=%s*')
+  // The board says so before it prints a single state.
+  const board = withEnv(dir, env, 'list')
+  assert.match(board.stdout, /a git scan failed, so the states below are NOT derived/)
+  assert.match(board.stdout, /simulated scan failure/)
+  assert.deepEqual(JSON.parse(withEnv(dir, env, 'list', '--json').stdout).scanFailures.length, 1)
+  // …and `next` refuses rather than telling a run the epic is built.
+  const next = withEnv(dir, env, 'next', 'shim')
+  assert.equal(next.status, 1)
+  assert.match(next.stderr, /the board was not derived and this list means nothing/)
+  assert.equal(withEnv(dir, env, 'next', 'shim', '--with-waiting').status, 1, 'the driver’s own form refuses too')
+  // …and doctor fails on it, which is what the run skill’s preflight reads.
+  const rows = JSON.parse(withEnv(dir, env, 'doctor', '--json').stdout)
+  const failed = rows.filter((r) => r.level === 'fail' && /the board is not derived while this fails/.test(r.msg))
+  assert.equal(failed.length, 1, JSON.stringify(rows.map((r) => r.msg)))
+  // Without the shim the same repository is quiet: the notice is about a
+  // failure, never about a branch that is legitimately empty.
+  assert.doesNotMatch(run(dir, 'list'), /a git scan failed/)
+  assert.equal(JSON.parse(run(dir, 'doctor', '--json')).filter((r) => /the board is not derived/.test(r.msg)).length, 0)
+})
+
+test('git scans: a ref that simply does not exist is not a failure — a fresh repository is unchanged', () => {
+  // `MISSING_REF` is the whole difference. An epic branch nobody pushed and a
+  // repository with no `origin` are ordinary states the board reads as
+  // "nothing here", and every suite above depends on that staying true.
+  const { dir, env } = shimmed('missing', 'log\\ origin/epic/nope*')
+  assert.doesNotMatch(withEnv(dir, env, 'list').stdout, /a git scan failed/)
+  assert.deepEqual(JSON.parse(withEnv(dir, env, 'list', '--json').stdout).scanFailures, [])
+  assert.equal(withEnv(dir, env, 'next', 'shim').status, 0)
+})
+
+test('findings: a count with a comma is refused and named, where a token figure would take it', () => {
+  // `\b` is satisfied by the boundary before a comma, so `nits=1,234` read as
+  // `nits=1` — a four-figure count reported as one, with no warn, because the
+  // near-miss scan saw a pair it could read.
+  const broken = '### Run — 2026-09-19 — completed\n\n**Tokens:** CITY-14 worker=462,249\n\n**Findings:** CITY-14 important=5 unfixed=0 nits=1,234\n'
+  const dir = roundsRepo('find-comma', TOKENS_ONLY, broken)
+  const t = spendOf(dir, 'CITY-14')
+  assert.equal(t.findings.nits, null, 'not 1 — a prefix of a count is not a count')
+  assert.deepEqual([t.findings.important, t.findings.unfixed], [5, 0], 'the pairs beside it still read')
+  assert.equal(t.worker, 462249, 'and the token ledger still takes its own commas: 462,249, not 462')
+  const lost = doctorWarns(dir, /Findings paragraph gives the ledger/)
+  assert.equal(lost.length, 1)
+  assert.match(lost[0].msg, /only part of what it writes for CITY-14/)
+  const repaired = roundsRepo('find-comma-fixed', TOKENS_ONLY, `${broken}\n**Addendum — correction — 2026-09-20.**\n\n**Findings:** CITY-14 important=5 nits=1234 unfixed=0\n`)
+  assert.deepEqual(doctorWarns(repaired, /Findings paragraph gives the ledger/), [])
+  assert.equal(spendOf(repaired, 'CITY-14').findings.nits, 1234)
+})
+
+test('findings: the ticket skill\'s own door is gated too, and the addendum clears it', () => {
+  // The review addendum is an advertised writer of this line, and a region
+  // that opened only on run headings never looked at it.
+  const entry = `${CITY14}**Findings:** CITY-14 important=3 nits=five unfixed=0\n`
+  const dir = roundsRepo('find-entry', entry)
+  assert.equal(spendOf(dir, 'CITY-14').findings.nits, null)
+  const lost = doctorWarns(dir, /Findings paragraph gives the ledger/)
+  assert.equal(lost.length, 1, JSON.stringify(doctorWarns(dir, /./).map((w) => w.msg)))
+  assert.match(lost[0].msg, /status\.md:\d+/)
+  const repaired = roundsRepo('find-entry-fixed', `${entry}\n**Addendum — correction — 2026-09-20.**\n\n**Findings:** CITY-14 important=3 nits=5 unfixed=0\n`)
+  assert.deepEqual(doctorWarns(repaired, /Findings paragraph gives the ledger/), [])
+  assert.equal(spendOf(repaired, 'CITY-14').findings.nits, 5)
+  // …and nothing else moved to that door: a ticket entry is not asked for a
+  // Tokens group, a Time line or a Halt line, which every log already written
+  // would fail.
+  assert.deepEqual(doctorWarns(roundsRepo('find-entry-quiet', `${CITY14}**Tokens:** 462,249 spent in all\n`), /Tokens line carries|Time line|Halt/), [])
+})
+
+test('halt: the parser and doctor agree on every boundary, so no advertised repair can double a halt', () => {
+  // A wrapped line read as one halt while doctor asked for it to be restated
+  // — and the restatement then counted it twice. Both now read the paragraph,
+  // not the line.
+  const wrapped = '### Run — 2026-09-19 — halted\n\n**Halt:** blocked CITY-14\n— the worker died\n'
+  const dir = roundsRepo('halt-wrapped', TOKENS_ONLY, wrapped)
+  assert.deepEqual(JSON.parse(run(dir, 'metrics', 'city', '--json')).epics[0].halts, [], 'the parser reads nothing, as doctor says')
+  assert.equal(doctorWarns(dir, /counts as no halt at all/).length, 1)
+  const repaired = roundsRepo('halt-wrapped-fixed', TOKENS_ONLY, `${wrapped}\n**Addendum — correction — 2026-09-20.**\n\n**Halt:** blocked CITY-14\n`)
+  assert.deepEqual(doctorWarns(repaired, /counts as no halt at all/), [])
+  assert.deepEqual(
+    JSON.parse(run(repaired, 'metrics', 'city', '--json')).epics[0].halts.map((h) => [h.kind, h.count]),
+    [['blocked', 1]],
+    'once, not twice — the repair may not add a halt the parser already had',
+  )
+  // The shapes the two read, side by side: whatever one accepts the other
+  // must, or some repair somewhere doubles a count.
+  for (const line of ['blocked CITY-14', 'releaseCheck', 'blocked CITY-14; releaseCheck', 'blocked CITY-14\n— died', 'blocked CITY-14 — died', 'blocked\nCITY-14', 'ran to completion']) {
+    const one = roundsRepo(`halt-agree-${line.replace(/\W+/g, '')}`, TOKENS_ONLY, `### Run — 2026-09-19 — halted\n\n**Halt:** ${line}\n`)
+    const read = JSON.parse(run(one, 'metrics', 'city', '--json')).epics[0].haltCount
+    const warns = doctorWarns(one, /counts as no halt at all/).length
+    const segments = line.split(';').filter((x) => x.trim()).length
+    assert.equal(read + warns, segments, `${JSON.stringify(line)}: ${read} read + ${warns} warned should be ${segments} written`)
+  }
+})
+
+test('halt: doctor\'s own recovery for a misfiled run does not double its halt', () => {
+  // The advertised repair is to APPEND the record to runs.md and leave the
+  // committed status.md copy alone — so the same record is read twice, and
+  // this is the one ledger with no key to overwrite on.
+  const record = '### Run — 2026-09-19 — halted\n\n**Halt:** blocked CITY-14\n'
+  const dir = roundsRepo('halt-relocated', `${TOKENS_ONLY}\n${record}`, record)
+  assert.deepEqual(
+    JSON.parse(run(dir, 'metrics', 'city', '--json')).epics[0].halts.map((h) => [h.kind, h.count]),
+    [['blocked', 1]],
+    'the relocated record is one record',
+  )
+  // …and two genuinely separate runs still count twice.
+  const two = roundsRepo('halt-two-runs', TOKENS_ONLY, `${record}\n### Run — 2026-09-20 — halted\n\n**Halt:** blocked CITY-14\n`)
+  assert.deepEqual(JSON.parse(run(two, 'metrics', 'city', '--json')).epics[0].halts.map((h) => [h.kind, h.count]), [['blocked', 2]])
+})
+
+test('models: an unlabelled reading is a member of the union, not something a round replaces', () => {
+  const runs =
+    '### Run — 2026-09-19 — completed\n\n**Models:** CITY-14 worker=claude-opus-5\n\n' +
+    '### Run — 2026-09-20 — completed\n\n**Models:** CITY-14 round=2 worker=claude-fable-5-1\n'
+  assert.equal(spendOf(roundsRepo('models-union', TOKENS_ONLY, runs), 'CITY-14').models.worker, 'claude-opus-5+claude-fable-5-1')
+})
+
+test('categories: a cache figure that lost its `r` reaches no ledger — the leak the wall exists to stop', () => {
+  // Main read this `reviewer=50` as TOKENS: a cache figure somebody forgot
+  // the unit on, credited to the ticket's token spend, with nothing saying
+  // so. Here the paragraph is lifted whole, so it reaches no ledger at all,
+  // doctor names the orphan, and the repair recovers it as 50r. That is the
+  // ONLY other way this parser differs from main, and like the all-unknown
+  // drop it exists only inside a paragraph main never had.
+  const broken = '### Run — 2026-09-19 — completed\n\n**Tokens:** CITY-14 worker=40 reviewer=20\n\n**Cache reads:** CITY-14 worker=unknown reviewer=50\n'
+  const dir = roundsRepo('cat-orphan', TOKENS_ONLY, broken)
+  const t = spendOf(dir, 'CITY-14')
+  assert.equal(t.reviewer, 20, 'the Tokens line is what the token ledger reads — never 50, which main took')
+  assert.equal(t.cache.reviewer, null, 'and without its `r` it is no cache read either')
+  const lost = doctorWarns(dir, /Cache reads paragraph gives the ledger/)
+  assert.equal(lost.length, 1)
+  const repaired = roundsRepo('cat-orphan-fixed', TOKENS_ONLY, `${broken}\n**Addendum — correction — 2026-09-20.**\n\n**Cache reads:** CITY-14 worker=unknown reviewer=50r\n`)
+  assert.deepEqual(doctorWarns(repaired, /Cache reads paragraph gives the ledger/), [])
+  assert.equal(spendOf(repaired, 'CITY-14').cache.reviewer, 50)
+  assert.equal(spendOf(repaired, 'CITY-14').reviewer, 20, 'and the token figure is untouched by the recovery')
+})
+
+test('halt: two same-date runs count twice; one relocated record counts once', () => {
+  const rec = (halt) => `### Run — 2026-09-19 — halted\n\n**Halt:** ${halt}\n`
+  const halts = (dir) => JSON.parse(run(dir, 'metrics', 'city', '--json')).epics[0].halts.map((h) => [h.kind, h.count])
+  // Two records in ONE document are two runs — a same-day re-run halting the
+  // same way is the ordinary case, and a key on heading+line alone lost one.
+  assert.deepEqual(halts(roundsRepo('halt-same-day', TOKENS_ONLY, `${rec('blocked CITY-14')}\n${rec('blocked CITY-14')}`)), [['blocked', 2]])
+  // One copy in each document is doctor's own recovery for a misfiled run.
+  assert.deepEqual(halts(roundsRepo('halt-reloc', `${TOKENS_ONLY}\n${rec('blocked CITY-14')}`, rec('blocked CITY-14'))), [['blocked', 1]])
+  // …and the two together: a relocated record plus a genuine same-day re-run.
+  assert.deepEqual(
+    halts(roundsRepo('halt-reloc-plus', `${TOKENS_ONLY}\n${rec('blocked CITY-14')}`, `${rec('blocked CITY-14')}\n${rec('blocked CITY-14')}`)),
+    [['blocked', 2]],
+    'three copies are not one relocation',
+  )
 })

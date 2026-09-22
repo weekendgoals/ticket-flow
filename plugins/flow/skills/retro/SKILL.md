@@ -192,7 +192,18 @@ other section — and the epic's token spend from
 recorded it (an attended ticket's entry and addendum, a driver-run ticket's
 run record), with `unknown` figures named rather than counted as zero. Do
 not sum the log by hand; if a figure the log carries is missing from the
-ledger, that is a finding about the log's shape.
+ledger, that is a finding about the log's shape. Then, beside it,
+`node "${CLAUDE_PLUGIN_ROOT}/scripts/tickets.mjs" metrics <epic>` — the same
+ledgers crossed with each other and with the commit subjects: **pace per
+worker model**, **rework** (`(review fix)` commits), **what the reviews
+found** (the records' `**Findings:**` lines), **halts by kind** and
+**escaped defects** (`(fixes <ID>)` commits naming a shipped ticket). Quote
+the counts; the `(n/m)` beside a figure says how many of the epic's tickets
+carried it, and an epic mostly unmeasured is a finding about the lane, not a
+cheap epic. Read review effectiveness and escapes together — reviews that
+find nothing and defects that escape are one question from two ends — and
+never read a commit span as a duration: `metrics` reports `wall` only,
+because commits begin when the work is nearly over.
 
 Back in the invoking session: show the miner's report to the user
 **unedited** — disagreeing with a finding is a comment at the gate, never an

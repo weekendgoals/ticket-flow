@@ -997,10 +997,12 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/meter.mjs" "$(find ~/.claude/projects -type 
 matches nothing the script receives an empty path and says so: check the ID
 against the Workflow call's result, and list what runs exist with
 `ls -dt $(find ~/.claude/projects -type d -path '*subagents/workflows/wf_*') | head -5`
-— newest first, and the newest is usually the one. If the run's directory cannot be found, both lines
-are written `unknown`, never from memory of what the run seemed to cost. The script sums each
-agent's `usage` as input + output + cache-creation tokens, cache reads left
-out — the sum every record in the ledger uses — counting a message once
+— newest first, and the newest is usually the one. If the run's directory cannot be found, every line the meter would have
+printed is written `unknown`, never from memory of what the run seemed to cost. The script sums each
+agent's `usage` as input + output + cache-creation tokens, **cache reads left
+out of this sum and reported on the `**Cache reads:**` line below** — so that
+`worker=<n>` here means today what it meant in every earlier record, which is
+what makes the ledger comparable at all — counting a message once
 however many lines it was streamed as, which is the arithmetic a session
 reading JSONL by hand got wrong in both directions. A `refresh+select` step
 counts as a proxy of the ticket it selected; one that selected nothing is
@@ -1008,8 +1010,9 @@ printed apart as run overhead, in `total=` and in no group. A role whose
 transcript is missing prints `unknown`, and a role that never ran is absent.
 If the script finds no journal, every figure is `unknown` — never estimate
 one. A resumed run has a run ID of its own: meter each, and label the
-groups `round=<n>` as above. Add the reviewer's tier, model and effort as prose after the
-groups. This is the run lane's only token record: ticket entries and
+groups `round=<n>` as above. Add the reviewer's tier and effort as prose after the
+groups — the model it ran on is on the `**Models:**` line, observed, and a
+prose copy of it is a second place to drift. This is the run lane's only token record: ticket entries and
 addenda point here. Planning evidence, never a gate. A record written
 without the groups reads as nothing — `doctor` flags it — and is repaired
 by a dated addendum beneath the record restating the figures as groups,
@@ -1040,6 +1043,144 @@ by that addendum. A
 run that selected no ticket prints `**Time:** run=<n>s` and nothing else,
 which is a complete line and not a near-miss. Planning evidence, never a gate — no ticket halts on a
 duration.>
+
+**Cache reads:** <the third line `meter.mjs` printed, pasted as printed — one
+group per ticket, `<ID> worker=<n>r reviewer=<n>r disposition=<n>r
+re-review=<n>r proxies=<n>r`, groups separated by `;`, then `total=<n>r`,
+which holds the run's overhead as the Tokens line's total does. **Every
+figure carries its `r`, and none carries a comma**: a bare `worker=4812330`
+anywhere in a record is a token figure, so the unit is what keeps a read
+count out of the token ledger — where, the last figure read for a role
+winning, it would not add to the ticket's cost but REPLACE it, with a count
+several times its size and nothing saying so. Read
+**only inside a paragraph that starts `**Cache reads:**`** (to the next blank
+line or bold label), for the reason time is: `worker=unknown` opens a token
+group and a cache group identically, so the paragraph is the wall. `round=<n>`
+labels, `unknown`, and corrections by dated addendum work exactly as on the
+Tokens line, and the sum of the rounds is the figure. A record written before
+this line existed has no cache reads at all, which `spend` reports as nothing
+recorded — never as zero, and never backfilled. `doctor` flags a Cache reads
+line with figures where no group parses, cleared by an addendum carrying the
+groups under a `**Cache reads:**` line of its own. Planning evidence, never a
+gate.>
+
+**Models:** <the fourth line `meter.mjs` printed, pasted as printed — one
+group per ticket, `<ID> worker=<name> reviewer=<name> …`, groups separated by
+`;`, and no total, because names have nothing to sum. Each name is observed:
+every assistant line of a transcript carries the model that wrote it. **An
+agent that used two models prints both joined by `+`** (a fallback mid-step)
+and a role's value is every model its agents used, in first-use order — never
+a "dominant" one, which would be an estimate of something the transcript
+states exactly. **With `Worker runner: codex` the worker reads
+`codex:<model>`**: that agent is the runner's shell proxy, so its own model
+is haiku, and the model that wrote the ticket is the one in the JSON the
+runner printed, which `meter.mjs` reads out of the proxy's tool results — and
+where the runner ran but printed nothing readable, the worker is `unknown`,
+because the proxy's own model is the one model that certainly did not write
+the ticket. Codex's token usage stays where it is — in the proxy's prose —
+and reaches no ledger. `unknown` where the transcripts named no model, and a
+name that cannot be written machine-shaped is `unknown` too, never guessed:
+each name opens with a letter, carries only letters, digits and `. _ : / -`,
+and ends in a letter or digit — a name that opened with a digit would be read
+back as a FIGURE, one with a space in it as a second pair, and one ending in
+punctuation as a name nobody ran. **This paragraph carries groups and nothing
+else**: the reviewer's tier and effort, and any note about the run, go in a
+sentence of their own outside it (after a blank line, or under another bold
+label), because a word standing beside a name ends the group there —
+`worker=claude-opus-5 as reported` is read as nothing, and `doctor` says
+which ticket lost its model. Read **only inside a paragraph that starts `**Models:**`**, for the
+reason cache reads are: `worker=claude-opus-5` opens like a token group.
+Corrections by dated addendum work as everywhere else; a later round's models
+are united with the earlier ones rather than replacing them. Old records have
+no Models line, which reads as nothing recorded. Planning evidence — what a
+tier cost on which model — never a gate.>
+
+**Peak context:** <the fifth line `meter.mjs` printed, pasted as printed — one
+group per ticket, `<ID> worker=<n>c reviewer=<n>c disposition=<n>c
+re-review=<n>c proxies=<n>c`, groups separated by `;`, and **no total**,
+because a max has no sum: a peak summed across tickets names a context window
+no agent ever held, and `tickets.mjs spend` prints the epic's max under the
+groups, computed from them, where it cannot disagree with them. A role's
+figure is the LARGEST window any of its agents held — per message, input +
+cache reads + cache creation, which is what the model was given to read — and
+the role's value is the largest of its agents', never their sum. Output is
+left out: it was not in the window that was sent, and the next request's input
+carries it. **Every figure carries its `c`, and none carries a comma**, for
+the reason the `r` and the `s` exist — a bare `worker=180000` anywhere in a
+record is a token figure — and `c` is deliberately neither of them, so a peak
+that landed in the wrong paragraph is read by no ledger rather than wrongly by
+one. Read **only inside a paragraph that starts `**Peak context:**`** (to the
+next blank line or bold label). **With `Worker runner: codex` the worker's
+peak is `unknown`**, even though that agent exposed a window: it is the
+runner's shell proxy, and the window it held is a few relayed JSON blobs
+wide. Its tokens and cache reads are reported as they are — the proxy's real
+cost, paid by this run whoever wrote the ticket — but a peak is not a cost,
+it is a claim about ONE model's context window, and the proxy's reported
+under `codex:<model>` would say a Codex agent came that close to its limit
+when nothing here observed it. `round=<n>` labels and `unknown` work as
+everywhere else, with one difference that follows from a max: **rounds take
+the LARGER reading, not the sum** — a second pass held its own window, it did
+not stack the first one's on top. A record written before this line existed
+has no peak at all, which `spend` reports as nothing recorded, never as zero.
+`doctor` flags a Peak context line with figures where no group parses, a group
+or pair the ledger lost, and a `…c` figure quoted outside the paragraph — each
+cleared by a dated addendum carrying the groups under a `**Peak context:**`
+line of its own. Planning evidence — how close a role came to its limit —
+never a gate.>
+
+**Findings:** <what the reviews found and what became of them, one group per
+ticket: `<ID> important=<n> nits=<n> unfixed=<n>`, groups separated by `;`.
+**Not from the meter** — no transcript says which findings were left unfixed
+— and **not from arithmetic done here either**: each `ticketRecords` entry
+carries a `findingCounts` object, `{important, nits, unfixed}`, which the
+driver derives in code and this line copies. (Its `findings` is a different
+field and stays one: the reviewer's own list, one entry per Important finding
+with its cite and summary, which the "Tickets this run" line and the release
+pull request are written from.) It counts the RE-REVIEW too, on both
+halves: its Important findings are findings this ticket raised, and they are
+unresolved by construction, because there is deliberately no second fix round
+after a re-review — a run that halts on one and reported `unfixed=0` was
+describing the one thing the line exists to carry. (`important` is
+`importantCount + reReviewImportantCount`, `nits` is `nitCount +
+nitOverflowCount`, `unfixed` is `notFixed.length + reReviewImportantCount`;
+copy `findingCounts` rather than recomputing it from those.) Bare counts, **no
+unit**: these three keys are the ledger's own and no other ledger's pair
+regex can read them, so a unit would protect nothing. `unknown` for a count
+the run could not observe — a ticket whose reviewer never reported, or one
+finished by hand. **This paragraph carries groups and nothing else**, the
+rule the Models and Halt lines carry and for their reason: a word standing
+beside a pair ends the group there, so `important=2 (both in the parser)`
+reads as one pair and loses the two beside it, and `doctor` then says which
+ticket came up short. What the review found in words is the "Tickets this
+run" line and the ticket's own addendum, where it already is. Zero is a figure and is written: `important=0` is a review
+that found nothing, which is a normal and welcome result and not a review that
+did not happen. Read **only inside a paragraph that starts `**Findings:**`**,
+for the reason the others are. `round=<n>` labels, corrections by dated
+addendum and the `unknown` rule work exactly as on the Tokens line, and rounds
+**sum** — two passes found what they each found. `tickets.mjs metrics` reads
+these into the epic's review-effectiveness figures beside the rework count
+(`(review fix)` commits) and the escaped defects (`(fixes <ID>)` commits).
+Planning evidence, never a gate — the gate on findings is the driver's, and it
+already ran.>
+
+**Halt:** <**required on a halted record, omitted when the run ran to
+completion** — `none` is a lower-case word and would be counted as a halt kind
+of its own. One group per halt, from the result's `haltKinds`, in the order it
+gives them (`haltedOn` first, then each `alsoHalted`): `<kind> <ID>`, groups
+separated by `;`. `<kind>` is the driver's OWN halt kind — the `STOP` key the
+result resolved, `blocked`, `importantFinding`, `acceptanceCheck`,
+`releaseCheck` and the rest — written verbatim and never translated from the
+sentence, which is reworded whenever a halt reads wrongly to a human. **An
+epic-level halt names no ticket** and is the kind alone (`**Halt:**
+releaseCheck`): a kind is lower-case-initial and a ticket ID is
+upper-case-initial, so nothing needs to stand in ID position and nothing may.
+**The paragraph carries groups and nothing else** — the sentence about what
+happened goes under `**Halted on:**` and `**Diagnosis:**`, where it always
+did, because a word standing beside a kind ends the group there and
+`**Halt:** blocked PAY-1 — the worker died` would otherwise record halts
+named "the", "worker" and "died". `doctor` says so when no group parses.
+`tickets.mjs metrics` counts halts by kind; this line is the only place a
+retro can read what stopped runs without re-reading every record's prose.>
 
 **Release check:** <from the result's `releaseCheck`: the commit it was made
 at (`head`, shortened — kept when the check failed too) and each of its `tickets` as `<ID> <passed>/<total>`,

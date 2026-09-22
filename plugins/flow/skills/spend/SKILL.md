@@ -1,6 +1,6 @@
 ---
 name: spend
-description: Show the recorded token spend and wall-clock time per ticket, per role and per epic, derived from the status logs. Use when the user runs /flow:spend [epic], asks what an epic or ticket cost, how long it took, or asks where the tokens or the time went.
+description: Show the recorded token spend, wall-clock time, cache reads, peak context and the model each role ran on — per ticket, per role and per epic — and the derived metrics on top of them: pace per worker model, rework, what reviews found, what halted the runs and what shipped broken. Use when the user runs /flow:spend [epic], asks what an epic or ticket cost, how long it took, where the tokens or the time went, how much of a ticket was cache reads, how close a run came to its context limit, which model ran a ticket, a review or an epic, how much rework or how many halts an epic had, whether reviews are catching anything, or what escaped to production.
 ---
 
 # Token spend $ARGUMENTS
@@ -51,6 +51,49 @@ show is a number nobody observed. `unknown` and `no figure recorded` are honest 
   `scripts/meter.mjs` prints from the workflow run's directory, or `(log)`
   for a `**Time:**` paragraph in a ticket's own entry — which only a
   supervisor that watched the agents stop can honestly write.
+- **Peak context:** on the same dim row as the cache reads, present only
+  where the run record carries it — `peak worker 1,204,331 …
+  (run-record)`. It is the largest context window a role's agents ever held,
+  per message: input + cache reads + cache creation, what the model was given
+  to read. **A max, never a sum** — the role's figure is the largest of its
+  agents', the epic's footer row is the largest of its tickets', and both say
+  `(max)` where a total would stand. It answers one question and only one:
+  did anything come near the limit? A ticket whose peak is a large fraction of
+  the model's window is a ticket the next plan should split, and that is a
+  planning read, never a gate. **A Codex worker reads `?`** even where its
+  tokens and cache reads are recorded: that agent is the runner's shell
+  proxy, and the window it held is not the one the model that wrote the
+  ticket held.
+- **Findings:** the last half of the same row — `findings important 3 nits 5
+  unfixed 1 (run-record)` — what the review raised and what became of it,
+  written by the run record from the driver's own result. `important=0` is a
+  review that found nothing, not a review that did not happen; a ticket with
+  no row recorded none either way. Rounds sum: two review passes found what
+  they each found.
+- **Cache reads and models:** the dim row under the time row, present only
+  where the run record carries them — `cache worker 4,812,330 …
+  (run-record)` and beside it `models worker codex:gpt-5-codex reviewer
+  claude-fable-5-1 (run-record)`, each half ending with the document it was
+  read from, as the time row does. **Cache reads are not in the token
+  figures** and never were: `worker=<n>` on the Tokens line is input +
+  output + cache creation, the sum every record in the ledger uses, so the
+  reads are reported beside it rather than folded in — a ticket's reads are
+  commonly several times its token figure, and adding them would make this
+  epic incomparable with every earlier one. The epic's footer carries a
+  `cache` row of the same totals. A **model** is what ran a role, from the
+  transcripts' own lines: two joined by `+` where an agent fell back
+  mid-step, and `codex:<model>` for a ticket a Codex worker implemented,
+  where the agent in the run is only the runner's shell proxy. **A record
+  written before these lines existed carries neither, and both read as
+  nothing recorded** — never as zero, and never backfilled; most of an
+  older epic will have no row here at all, and that is the honest answer to
+  "how much of it was cache?".
+- **No cost in money, anywhere.** The ledger counts tokens, seconds and
+  reads because those were observed; a price per token is a rate this
+  repository does not know, changes without telling anyone, and differs per
+  account — a dollar figure derived here would be an estimate wearing an
+  observation's clothes. If asked what an epic cost in money, say what was
+  observed and leave the arithmetic to whoever knows the rate.
 - **`commit span … (git)`** appears only where no wall was recorded: the
   first to the last commit naming the ticket, by author date — so a ticket
   with one commit, or several at one instant, shows nothing: a point is not
@@ -62,6 +105,100 @@ show is a number nobody observed. `unknown` and `no figure recorded` are honest 
 - **In-session lanes** (`/flow:quick`, `--interactive`) always read
   `unknown`: a session cannot see its own counter. Claude Code's own `/cost`
   is the only view of those.
+
+## `--json`, for whoever reads this instead of the log
+
+`spend [epic] --json` returns the same ledger as data — what the retro reads
+rather than summing the log by hand. Every key it emits, so that nothing here
+has to be guessed at:
+
+- **top level:** `epics`, `commitSpansCapped`.
+- **per epic:** `epic`, `tickets`, `totals`, `timeTotals`, `cacheTotals`,
+  `untimedTickets`, `unknownTickets`.
+- **per ticket:** `id`, `title`, `state`; the five role figures (`worker`,
+  `reviewer`, `re-review`, `disposition`, `proxies`) and their `total`;
+  `unknown`, `rounds`, `source`, `note`; `time`, `cache`, `models`, `peak`,
+  `findings`; `commitSpan`.
+- **inside `time`:** the five roles plus `wall`, then `unknown`, `source`,
+  `rounds`. **Inside `cache`:** the five roles, `unknown`, `source`,
+  `rounds`. **Inside `models`:** the five roles, `unknown`, `source` — no
+  `rounds`, because names are united rather than summed and a count of the
+  passes would say nothing about the value. **Inside `peak`:** the five
+  roles, `unknown`, `source`, `rounds` — where `rounds` counts the passes the
+  MAX was taken over, not figures that were added. **Inside `findings`:**
+  `important`, `nits`, `unfixed`, then `unknown`, `source`, `rounds`.
+- **per epic, also:** `peakMax` (the largest each role reached, per role — a
+  max, so `null` where no ticket recorded one) and `findingTotals`.
+
+A figure nobody recorded is `null`, a model nobody recorded is `null`, and a
+role recorded as `unknown` is named in that ledger's `unknown` list —
+**`null` is not zero and never becomes zero**, in either direction.
+
+## Derived metrics: `metrics [epic]`
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/tickets.mjs" metrics $ARGUMENTS
+```
+
+Run it **as well as `spend`** when the question is about how the work went
+rather than what it cost — at a retro, or when the user asks about rework,
+review effectiveness, halts, or what shipped broken. It crosses the ledgers
+with each other and with the commit subjects; every figure in it is derived
+from what is already recorded, and a figure nobody observed is `?`, never
+zero and never an estimate.
+
+Five sections per epic, and a total across epics when no epic is named:
+
+- **Pace by worker model** — tickets, the worker role's tokens and cache
+  reads, its peak (a max), and the ticket's `wall`, grouped by the model the
+  worker ran on. Tickets whose record names no model are grouped under
+  `unknown` rather than dropped: **how much of an epic went unmeasured is
+  itself the finding**, which is also what the `(n/m)` beside a figure says —
+  how many of the row's tickets carried it. Duration is the run record's
+  observed `wall` and only that: a ticket's commit span is never reported as
+  one, because commits begin when the work is nearly over.
+- **Rework** — `(review fix)` commits per ticket, off the subjects, counted
+  once per subject-and-author-date pair so that a rebase or a cherry-pick of
+  one fix is not two. **Two fixes sharing a subject in the same second read
+  as one**: nothing cheap tells them apart — the committer date is what a
+  rebase rewrites and the patch would cost a diff per commit — so a scripted
+  burst can read one low. High rework on one ticket is a plan or a scope
+  question for the retro, not a worker question.
+- **Review** — `important`, `nits` and `unfixed` from the run records'
+  `**Findings:**` lines, with how many tickets recorded any. Read it beside
+  **escaped**: reviews that find nothing and defects that escape are the
+  same finding from two ends.
+- **Halts** — counted by the driver's own halt kind, from the records'
+  `**Halt:**` lines. What stopped runs is not what remains broken: a halt
+  a human then resolved is still on the record, deliberately.
+- **Escaped** — `(fixes <ID>)` commits on the default branch naming an
+  already-shipped ticket. The most expensive class of miss and the one
+  nothing else records: the repair is somebody else's ticket, with its own
+  entry and its own green ledger.
+
+An escape has to **reach the default branch after** the ticket it names did.
+Where a commit reached it is not where it was written: a release epic commits
+its tickets on `epic/<name>` and brings them over in one merge, so a ticket
+written weeks ago can arrive after a hotfix written yesterday. Both are placed
+by the merge that brought them in, and a repair that arrived no later than the
+ticket repaired work no user had seen — including one that arrived in the SAME
+release merge, which is a defect caught before release rather than one that
+escaped.
+
+`metrics --json` adds `unmatchedFixes`: every `(fixes …)` that counted as no
+escape, with a `reason` on each row — `not-shipped` (names an ID nothing on
+the default branch shipped), `predates` (landed before that ticket shipped)
+or `unreadable` (something ticket-ID-shaped the strict one-ID form could not
+read: `(fixes A, B)`, `(fixes city-1)`). `(fixes #12)` and `(fixes the flaky
+test)` are somebody else's convention or plain English and are left alone —
+a row nobody could act on, in every project that writes one, is not a
+report. They are listed, not warned about: a commit
+subject on the default branch cannot be rewritten, so a warn about one could
+never be cleared. `doctor` does warn when the named ID is a ticket this
+repository has PLANNED and not yet shipped — and that warn advertises exactly
+one recovery, the ticket shipping, because there is no other.
+
+**No cost in money here either**, for the reason above.
 
 ## When to add commentary
 

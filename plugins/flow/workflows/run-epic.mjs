@@ -3363,6 +3363,28 @@ if (halted) {
   log(`Ran to completion: ${integrated.length} ticket(s) integrated into ${epicBranch}. The session writes the run record and OPENS the release pull request — no agent merges it.`)
 }
 
+// What the run record's `**Findings:**` line writes, per ticket, derived here
+// rather than taught as arithmetic in the skill's prose. `unfixed` was the
+// reason: `notFixed` is only ever set on the disposition path, and a NEW
+// Important raised by the re-review returns before it — so a run that halted
+// on an unresolved finding wrote `unfixed=0`, which is the one number the
+// line exists to carry. There is deliberately no second fix round after a
+// re-review, so every Important it raises is unresolved by construction.
+//
+// `findingCounts`, NOT `findings`: `record.findings` is the reviewer's own
+// list — one entry per Important finding, with its cite, its summary and its
+// failure — and the session writes both the run record's prose and the
+// release pull request's body out of it. Assigning the counts over that key
+// emptied every ticket's findings and nothing failed, because no test had
+// ever asked for the list and the counts on one record.
+for (const r of ticketRecords) {
+  r.findingCounts = {
+    important: r.importantCount + r.reReviewImportantCount,
+    nits: r.nitCount + r.nitOverflowCount,
+    unfixed: r.notFixed.length + r.reReviewImportantCount,
+  }
+}
+
 return {
   outcome: halted ? 'halted' : 'completed',
   epic,
@@ -3371,6 +3393,19 @@ return {
   date: today,
   haltedOn: halted,
   alsoHalted,
+  // The halts as the run record's `**Halt:**` line writes them: the STOP
+  // KEY, not the sentence. The key is resolved here, against `STOP` itself,
+  // because a session translating a sentence back into a key is a lookup
+  // that drifts the day a sentence is reworded — and the sentences are
+  // reworded, deliberately, whenever a halt reads wrongly to a human.
+  // `haltedOn` first, then `alsoHalted` in order, which is the order the
+  // line writes them. Empty on a completed run, and the line is then not
+  // written at all: `none` is a lower-case word and would be counted as a
+  // halt kind of its own.
+  haltKinds: [halted, ...alsoHalted].filter(Boolean).map(h => ({
+    kind: Object.keys(STOP).find(k => STOP[k] === h.stopCondition) || 'unknown',
+    ticket: h.ticket || null,
+  })),
   ticketRecords,
   totals: {
     ticketsAttempted: ticketRecords.length,
