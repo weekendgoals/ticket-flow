@@ -73,6 +73,25 @@ writeFileSync(
 
 Delivery: incremental
 
+## Walkthrough
+
+1. **someone with a half-finished import** opens the results page.
+   **Sees:** what the run produced, still there the next morning.
+   **Today:** the page is empty and nobody can say whether it ran.
+   **Tickets:** A-1, A-2
+
+Delivery: whatever — a declaration-shaped line inside the walkthrough prose,
+here on purpose: the declaration parse stops at the first "## " heading, so a
+sentence in this section can never become a declaration nobody wrote.
+
+## Ground rules for every ticket in this epic
+
+- never rewrite pushed history.
+
+## Order
+
+A-1 first: it is the one that proves the pipeline.
+
 ## A-1 — ship the walking skeleton
 
 **Scope.** The skeleton.
@@ -423,6 +442,35 @@ test('brief prints a ticket\'s full section plus the derived facts find reports'
   assert.match(out, /A-2 — persist the results/)
   assert.match(out, /state done/, 'the derived state is reported')
   assert.match(out, /\*\*Scope\.\*\* Persistence\./)
+})
+
+test('the preamble reaches its worker whole — walkthrough, ground rules and order, all of it above the first TICKET heading', () => {
+  // `## Walkthrough` is a planning section like `## Order` and the ground
+  // rules: a heading that is not `## <ID> — <name>` is preamble, and the
+  // parsers are indifferent to it. What used to happen is the failure being
+  // pinned here: the brief cut at the first `## ` of any kind, so every
+  // section planning writes beneath the declaration lines reached no worker.
+  const briefed = JSON.parse(run(repo, 'brief', 'a-4', '--json'))
+  assert.match(briefed.preamble, /## Walkthrough/)
+  assert.match(briefed.preamble, /Sees:\*\* what the run produced/)
+  assert.match(briefed.preamble, /## Ground rules for every ticket in this epic/)
+  assert.match(briefed.preamble, /never rewrite pushed history/)
+  assert.match(briefed.preamble, /## Order/)
+  assert.ok(!briefed.preamble.includes('## A-1'), 'and it still stops at the first ticket section')
+
+  // The board still sees four tickets: a `## Walkthrough` heading is not one.
+  const list = JSON.parse(run(repo, 'list', '--json'))
+  assert.deepEqual(
+    list.tickets.filter((t) => t.epic === 'alpha').map((t) => t.id),
+    ['A-1', 'A-2', 'A-3', 'A-4'],
+  )
+
+  // And doctor says nothing about any of it: not a ticket-heading near-miss,
+  // not a status-heading one, and not a declaration near-miss for the
+  // declaration-shaped sentence inside the walkthrough prose.
+  const rows = JSON.parse(runFail(repo, 'doctor', '--json')?.stdout ?? run(repo, 'doctor', '--json'))
+  for (const row of rows)
+    assert.doesNotMatch(row.msg, /Walkthrough|Ground rules|## Order/, `doctor warned about a planning section: ${row.msg}`)
 })
 
 test('brief carries the epic preamble and the recorded owed items, Nothing filtered out', () => {
@@ -5884,4 +5932,62 @@ test('halt: two same-date runs count twice; one relocated record counts once', (
     [['blocked', 2]],
     'three copies are not one relocation',
   )
+})
+
+// ── the walkthrough's scenes, checked in the record ──────────────────────────
+// `plan-page.mjs` refuses a scene naming a ticket the plan does not carry, but
+// it reads the plan JSON — the copy that is thrown away. These pin the same
+// guard at the door that survives: the `## Walkthrough` section of tickets.md,
+// which `brief` hands every worker and the retro reads.
+
+const sceneWarns = (dir) => doctorWarns(dir, /walkthrough scene/)
+const walkRepo = (name, section) =>
+  depsRepo(name, sec('DEP-1') + sec('DEP-2'), [], `Delivery: incremental\n\n## Walkthrough\n\n${section}`)
+
+test('walkthrough: a section whose scenes name this epic’s tickets is silent', () => {
+  const dir = walkRepo(
+    'clean',
+    '1. **a reader** opens the page.\n   **Sees:** the thing.\n   **Today:** nothing.\n   **Tickets:** DEP-1\n\n2. **the same reader** comes back.\n   **Sees:** it is still there.\n   **Tickets:** DEP-1, DEP-2\n',
+  )
+  assert.deepEqual(sceneWarns(dir), [])
+})
+
+test('walkthrough: a scene naming a ticket this epic does not have is a named warn — scene number, ID and the repair', () => {
+  const dir = walkRepo(
+    'ghost',
+    '1. **a reader** opens the page.\n   **Sees:** the thing.\n   **Tickets:** DEP-1\n\n2. **a reader** does more.\n   **Sees:** more.\n   **Tickets:** DEP-2, DEP-99\n',
+  )
+  const warns = sceneWarns(dir)
+  assert.equal(warns.length, 1)
+  assert.match(warns[0].msg, /tickets\.md:\d+ — walkthrough scene 2 names DEP-99, which is not a ticket of this epic/)
+  assert.match(warns[0].msg, /promises something nothing in the plan builds/)
+  assert.match(warns[0].msg, /editing tickets\.md — it is the plan, edited to re-plan/)
+})
+
+test('walkthrough: a Tickets line that will not parse is a near warn, and the parse stays strict', () => {
+  for (const [label, line] of [
+    ['prose after the IDs', '   **Tickets:** DEP-1 once the API settles'],
+    ['an unbolded label', '   Tickets: DEP-1'],
+    ['a bulleted label', '   - **Tickets:** DEP-1'],
+    ['the unedited placeholder', '   **Tickets:** <ID>[, <ID>]'],
+  ]) {
+    const dir = walkRepo(`near-${label.replace(/\W+/g, '-')}`, `1. **a reader** opens the page.\n   **Sees:** the thing.\n${line}\n`)
+    const warns = sceneWarns(dir)
+    assert.equal(warns.length, 1, `${label}: expected one warn, got ${JSON.stringify(warns.map((w) => w.msg))}`)
+    assert.match(warns[0].msg, /walkthrough scene 1 has a line about its tickets that will not parse/, label)
+    assert.match(warns[0].msg, /needs "\*\*Tickets:\*\* <ID>\[, <ID>\]"/, label)
+  }
+})
+
+test('walkthrough: a Tickets line outside the section is not read at all', () => {
+  // The same line under another heading, and inside a ticket: `**Tickets:**`
+  // is an ordinary phrase everywhere but the one section, and a scan that
+  // reached further would warn about prose nobody meant as a scene.
+  const dir = depsRepo(
+    'outside',
+    `${sec('DEP-1')}**Tickets:** DEP-99\n\n${sec('DEP-2')}`,
+    [],
+    'Delivery: incremental\n\n## Order\n\n**Tickets:** DEP-99 — prose about ordering.\n',
+  )
+  assert.deepEqual(sceneWarns(dir), [])
 })

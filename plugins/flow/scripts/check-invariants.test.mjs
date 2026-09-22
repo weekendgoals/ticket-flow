@@ -24,6 +24,7 @@ const FILES = [
   'plugins/flow/skills/retro/SKILL.md',
   'plugins/flow/agents/ticket-reviewer.md',
   'plugins/flow/agents/plan-reviewer.md',
+  'plugins/flow/agents/researcher.md',
   'plugins/flow/scripts/tickets.mjs',
   'plugins/flow/.claude-plugin/plugin.json',
   'CHANGELOG.md',
@@ -308,6 +309,62 @@ test('either lane that stops naming a deviation in the pull request body fails',
   const t = run(ticket)
   assert.equal(t.status, 1, t.out)
   assert.match(t.out, /ticket\/SKILL\.md.*attended doors/s)
+})
+
+test("a researcher rule deleted while its reason is left standing fails", () => {
+  // The failure this test exists for: the reason reads as settled prose after
+  // the imperative is gone, so pinning only "a researcher told the wanted
+  // answer confirms it" let the strip list and the trigger be deleted with
+  // every suite green. Each mutation below removes the RULE and keeps the
+  // sentence that explains it.
+  for (const [file, phrase, replacement] of [
+    ['plugins/flow/agents/researcher.md', 'list or the Outcome line', 'areas in scope'],
+    ['plugins/flow/skills/epic/SKILL.md', 'the ticket list and the Outcome', 'the areas in scope'],
+    ['README.md', 'ticket list or the Outcome line', 'areas in scope'],
+    ['CLAUDE.md', 'ticket list or the Outcome line', 'areas in scope'],
+    ['METHODOLOGY.md', 'ticket list, nor the Outcome line', 'areas in scope'],
+    ['plugins/flow/skills/epic/SKILL.md', 'when the brief NAMES a solution', 'whenever you plan'],
+    ['README.md', 'names a solution', 'is planned'],
+    ['METHODOLOGY.md', 'when the brief names a solution', 'whenever an epic is planned'],
+  ]) {
+    const root = copyRepo()
+    mutate(root, file, phrase, replacement)
+    const r = run(root)
+    assert.equal(r.status, 1, `${file}: ${phrase}: ${r.out}`)
+    assert.match(r.out, /doctrine phrase missing/)
+  }
+})
+
+test("either of the researcher's two rules dropped from any door that carries it fails", () => {
+  // Both are rules a future session is most likely to "simplify": one bars a
+  // recommendations section that would look helpful, the other withholds the
+  // brief from an agent that would look better informed with it. Neither has
+  // a parser or a gate behind it — the agent definition, the step that spawns
+  // it and the documents that explain it are the whole enforcement — so a
+  // door that drops its copy leaves a researcher reading for a proposal, and
+  // every suite stays green while the step returns the brief with citations
+  // attached.
+  // The fragments are the part of each sentence that sits inside one wrapped
+  // line in every file that carries it; the checker normalises whitespace
+  // before matching, the mutation helper does not.
+  for (const [file, phrase] of [
+    ['plugins/flow/agents/researcher.md', 'starts solving'],
+    ['plugins/flow/skills/epic/SKILL.md', 'starts solving'],
+    ['README.md', 'starts solving'],
+    ['CLAUDE.md', 'starts solving'],
+    ['METHODOLOGY.md', 'starts solving'],
+    ['plugins/flow/agents/researcher.md', 'the wanted answer confirms'],
+    ['plugins/flow/skills/epic/SKILL.md', 'the wanted answer confirms'],
+    ['METHODOLOGY.md', 'wanted answer confirms it'],
+    ['README.md', 'the wanted answer confirms'],
+    ['CLAUDE.md', 'the wanted answer'],
+  ]) {
+    const root = copyRepo()
+    mutate(root, file, phrase, 'reads the code')
+    const r = run(root)
+    assert.equal(r.status, 1, `${file}: ${phrase}: ${r.out}`)
+    assert.match(r.out, /doctrine phrase missing/)
+  }
 })
 
 test('the workflow script losing the driver handshake fails', () => {

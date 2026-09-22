@@ -12,6 +12,138 @@ heading here. `check-invariants.mjs` holds both.
 
 ## Unreleased
 
+## 2.6.0 — 2026-09-22
+
+The plan gains its readers before code exists. The plan page shows what will
+be built as a walkthrough a non-engineer can follow, and any text on it can be
+selected and commented on, statelessly, with the block pasted back into the
+session. A researcher who is not told the wanted answer reads the code before
+the decomposition. The plan reviewer looks for layer-split decompositions and
+scenes no ticket builds; the retro asks whether each scene happened. Minor:
+every change is a new section, a new agent or a new lens — no heading format,
+ID shape or command contract moves. Two things installed projects will notice
+without asking: `brief` now hands workers the whole preamble, ground rules
+included, as README always said it did; and the page's captions read for the
+person who asked for the feature.
+
+- **A planning session can send out for facts before it decomposes: the new
+  `flow:researcher` agent and a research step in `/flow:epic`.** A brief
+  usually names a solution — "add a cache", "use library X" — and from the
+  moment the planner has read it, its reading of the code is a search for
+  confirmation: the files the proposal implies get opened, the rest stay
+  closed. The researcher runs in a fresh context and is given the in-scope
+  areas, the instruction files that bind them, the plugin root (so it can run
+  `tickets.mjs list` and `doctor`) and a list of concrete questions — and is
+  **not** given the brief, the proposed solution, the ticket list or the
+  Outcome line. That strip is the mechanism, not a courtesy: a researcher told
+  the wanted answer confirms it, and a confirmation that arrives with
+  citations is worse than not having asked. Questions are about the present
+  ("how does X reach Y today", "which tests cover Z"); a solution-shaped one
+  ("would a cache here work") is refused, quoted back, and returned as the
+  present-tense question it would have to become. Output is three sections —
+  **Facts** (numbered, one claim each, every one with a `file:line`), **Could
+  not establish** (what it searched for and where, because an absence somebody
+  looked for is evidence and an absence nobody looked for is a guess), and
+  **Open questions the planner should ask the user** — and nothing else: no
+  recommendations, no design, no ordering, because a researcher who starts
+  solving stops observing. A refused solution-shaped question and a lookup
+  it could not run are reported under **Could not establish**, and one line
+  above the sections appears only when the packet was wrong — the brief, the
+  proposed solution, the Outcome line or the ticket list was handed over. Read-only, no memory (a fact about a repository is
+  true on a date), and it writes nothing anywhere. It runs on the **strongest
+  model** at `effort: high`: every Fact carries a `file:line` and so audits
+  itself, but **nothing proves an absence** — a file nobody opened leaves no
+  trace, and the two sections the planner leans on hardest are judgement about
+  what was *not* found. A missed fact is caught by the plan reviewer or by the
+  code; a missed gap is decomposed against and paid for in tickets.
+- **The research step has a trigger, a budget and a place for what it
+  returns.** Run it when the brief names a solution or the epic spans more
+  than one area — the two cases where the planner's reading is most anchored
+  and where what it did not read is largest; the user can say skip, and a
+  one-area epic with no solution in the brief does not need one (a second
+  reader there is ceremony). Five to ten questions is the budget — enough to
+  cover the areas, few enough to be answered rather than skimmed — and the
+  researcher stops when they are
+  answered rather than when the area is exhausted. The facts go into the plan
+  page's existing `grounding` lines and into the bodies of the tickets that
+  need them; **no research document is committed** — `tickets.md` is the
+  record, and a second file holding the same facts preserves nothing the
+  ticket body does not. The planner reads the Facts **before** slicing, and
+  **where a fact contradicts the solution the brief named it says so at the
+  shape stop, as a question**, which is the one moment that contradiction
+  costs a sentence instead of a ticket. The planner **names the step and lists
+  its questions in chat before spawning**, because a skip is only a choice
+  where the step was shown. `check-invariants.mjs` pins the **imperatives as
+  well as the reasons** — the strip list and the trigger condition, beside the
+  two sentences that explain them — at every document that states each: a
+  reason left standing over a deleted rule reads as settled and instructs
+  nobody, which is how a review of this step deleted the strip from three
+  files with every suite green.
+- **The plan page carries a walkthrough: what the epic will let a person do,
+  before it is built.** An optional `walkthrough` in the plan JSON — three to
+  seven scenes, each one `who` acts, what they `does`, what they `sees` once
+  it ships and what happens `today` instead, with the `tickets` that build it
+  and the `requirements` it serves — rendered at both gates, in the order a
+  person meets them rather than ticket order. It is the counterpart of the
+  release walkthrough, which shows what *was* built: sign-off was otherwise
+  made entirely on engineer-shaped material, and the first description of a
+  feature in the user's own terms arrived when the feature did. A scene is the
+  one part of a plan that can be pure fiction, so it is tied down where both
+  gates pass: `plan-page.mjs` **refuses to render** a scene naming a ticket
+  the plan does not carry (naming the scene and the ID; the CLI exits nonzero
+  and writes no page) or citing a requirement outside the numbered list, and
+  every ticket **no scene names is listed** under the walkthrough — where
+  infrastructure legitimately belongs and a forgotten scene shows up. The
+  epic skill writes the scenes into the JSON and the same scenes into
+  `tickets.md` as a `## Walkthrough` section of the preamble, which is what
+  survives the page. **The guard stands at both doors**: `doctor` reads the
+  section's `**Tickets:**` lines — strict, like `**Blocked by:**`: bold label,
+  bare ticket IDs of this epic, commas, nothing else — and warns, by scene
+  number and line, on an ID this epic does not have and on a line that will
+  not parse. The renderer alone would have guarded only the copy that is
+  thrown away, while the copy `brief` hands every worker stayed free prose.
+- **The plan page's captions are written for the reader, not the method.**
+  "Outcome — falsifiable, or it is decoration" is now "Outcome — what success
+  looks like, and what would prove it failed"; "Observable change",
+  "Evidence" and "Reversal condition" are "What changes", "How we will know it
+  worked" and "What would make us undo it"; "Requirements — the WHAT, apart
+  from the HOW" is "Requirements — what it must do, not how". The page text
+  changes at every human gate of every installed project, which is why it is
+  recorded here: the words were the methodology talking to itself, in front of
+  the one person on the call who has not read it.
+- **The epic preamble reaches its worker whole.** `tickets.mjs brief` cut the
+  preamble at the first `## ` heading of any kind, so the ground rules, the
+  `## Order` section and anything else planning writes beneath the declaration
+  lines reached no worker at all — silently, while the command's own
+  description said it handed them over. It now cuts at the first **ticket**
+  heading, which is what the preamble is everywhere else in the script. The
+  declaration parse still stops at the first `## `, deliberately: a label read
+  out of a prose section would be a declaration nobody wrote.
+- **Comment on a plan page by selecting text.** A selection opens a popover;
+  a note in it copies `> [<anchor>] <the quoted text>` and the comment to the
+  clipboard, and the human pastes that into the chat, where the session
+  answers it, updates the plan and re-renders at the same URL. Nothing is
+  stored, nothing is sent, there is no server and no parser — chat is the
+  channel, and the page is thrown away. The anchors are stable and documented
+  at the top of `plan-page.mjs` (`#outcome`, `#requirements`, `#walkthrough`,
+  `#scene-<n>`, `#tickets`, `#<ID>` per ticket, `#alternative`,
+  `#plan-review`, `#open-questions`; `page` under none, and the first of two
+  when a selection spans them), because a later multi-user layer would attach
+  to exactly these. Where the browser has no clipboard API (file:// in some
+  browsers) the block is shown selected for manual copy — never a silent
+  failure. With JavaScript off the page reads identically and never advertises
+  the popover.
+- **Two plan-reviewer lenses, report-only as ever.** *Vertical slice*: a
+  decomposition split by layer (schema, then API, then UI) makes the first
+  user-visible slice arrive last and hides integration risk until the end —
+  the reviewer flags the shape and names which walkthrough scene the first
+  ticket serves, if any. *Walkthrough fidelity*: every scene's `sees` must be
+  built by the tickets that scene names, walked scene → tickets → criteria;
+  a ticket in no scene is either infrastructure the plan declares or a scene
+  nobody wrote; scene prose that names files or ticket IDs is written for the
+  wrong reader. The reviewer reads the `## Walkthrough` section of
+  `tickets.md` — it is given the document, not the page.
+
 ## 2.5.0 — 2026-09-21
 
 - **A cross-model review of the above, and the twelve things it found.** Every

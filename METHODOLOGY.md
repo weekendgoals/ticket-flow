@@ -1342,6 +1342,79 @@ this is narrower, not perfectly read-only; the run lane's sanctioned
 fallback reviewer is a general agent and keeps its full toolset, which is
 one more reason the fallback is a fallback.
 
+## Why the planner sends out for facts before it decomposes
+
+Grounding was always in the epic skill: read the instruction files, read the
+actual code, see which other epics are open. What that step never accounted
+for is *who* is doing the reading. The planning session has read the brief,
+and a brief usually names a solution — "add a cache", "use library X", "move
+it to the worker" — because the person who asks for work has usually already
+thought about how. From that moment the session's reading of the code is a
+search for confirmation. It opens the files the proposal implies, finds them
+roughly as the proposal predicted, and reports back that the plan is sound.
+The files the proposal does not imply stay closed, and the ones that
+contradict it get read as special cases. Nothing in the session is
+dishonest; it simply cannot unsee the brief.
+
+The fix is the same trick this workflow uses on diffs and on plans, moved one
+step earlier: a fresh context with no stake. The researcher is given the
+areas in scope, the instruction files that bind them, and a list of concrete
+questions — and is given **neither the brief, nor the proposed solution, nor
+the ticket list, nor the Outcome line**. The strip is the whole mechanism,
+and it is the part that will read as withheld context to a future session
+tempted to "help" the agent by pasting the brief in: **a researcher told the
+wanted answer confirms it.** Hand it the proposal and it reads for evidence
+of the proposal, exactly as the planner was doing — and now the planner
+decomposes against its own anchored reading returned in another agent's
+words, which is worse than not having asked, because the confirmation now
+arrives with citations.
+
+Two constraints follow from the same reasoning and are not decoration. The
+questions must be about the **present** — "how does X reach Y today", "what
+handles the empty case", "which tests cover Z" — and a solution-shaped
+question ("would a cache here work") is refused rather than answered, because
+an agent that was deliberately not told what the work is has no basis for an
+opinion about it, and an opinion it produced anyway would be a guess wearing a
+citation. And the researcher proposes nothing at all: no design, no ordering,
+no recommendations section. **A researcher who starts solving stops
+observing** — the moment it holds a solution it is reading for evidence of it,
+which is the anchoring this step exists to remove. Every claim carries a
+`file:line`; "I could not find X, here is what I searched" is a finding of its
+own, because an absence somebody looked for is evidence and an absence nobody
+looked for is a guess.
+
+It runs on the strongest model available, which looks like the wrong place to
+spend until you ask what the report can be checked for. Every Fact carries a
+`file:line`, so the present claims audit themselves — and **nothing proves an
+absence**. A file the researcher never opened leaves no trace in the report;
+"Could not establish" and "Open questions" are trusted on its word, and they
+are precisely the two sections the planner leans on, because they are what
+becomes a clarify question or the assumption ticket one has to prove. A
+missed fact is caught by the plan reviewer or the code; a missed *gap* is
+decomposed against, and paid for in tickets.
+
+The output is a handful of facts, not a document. They go into the plan
+page's grounding lines and into the bodies of the tickets that need them;
+**no research file is committed**, because `tickets.md` is the record and a
+second document holding the same facts preserves no knowledge the ticket body
+does not and would drift from it within an epic. That is the admission test
+applied to the step's own artifact. The step itself passes on two counts: it
+reduces uncertainty (the decomposition is made against the code rather than
+against a reading of it made under a proposal), and it produces decision
+evidence for the shape stop — where a fact contradicts the brief's proposed
+solution, the planner is told to raise it there, as a question for the person
+who wrote the brief, which is the one moment that contradiction costs a
+sentence instead of a ticket.
+
+It is also the step most likely to become ceremony, so it has a trigger
+rather than a default: run it when the brief names a solution, or when the
+epic spans more than one area. Those are the two cases where the anchor is
+strongest and where what the planner did not read is largest. A one-area epic
+whose brief names no solution gets nothing from a second reader that the
+first could not get itself, and paying for one there is exactly the "gates
+multiplying faster than the risk they retire" failure this document names as
+the workflow's own.
+
 ## Why the plan is reviewed before sign-off
 
 Every defence in this workflow used to start after the plan was signed off —
@@ -1704,6 +1777,74 @@ reviewed. What the page adds is order and folding — the fields a merge
 decision turns on are open, the rest are one click away — and stable anchors
 per ticket, which is where a comment layer can attach later without the page
 changing shape.
+
+## Why the plan page walks through what will be built
+
+The release page walks through what *was* built. The plan page's walkthrough
+is its counterpart on the other side of the work, and it exists because the
+two planning gates ask a human to approve something written in a language
+that is not theirs. An Outcome line, a numbered requirement, four tickets with
+acceptance criteria, a delivery mode: every one of those is engineer-shaped,
+and a person who asked for a feature can read all of it and still not know
+what they will be able to do when it ships. They approve anyway — the shape
+looks competent, the reviewer found things, the plan is plainly the work of
+someone who thought about it — and the first moment the feature is described
+in their terms is the moment it exists, which is the most expensive moment
+available. So the plan says it first, in scenes: who acts, what they see, and
+what happens today instead. In the order a person meets them, because ticket
+order is a build order and reading it as a story is what makes a missing
+scene obvious.
+
+Everything else about the walkthrough follows from one hazard: **it is the
+only part of the plan that can be pure fiction.** The rest is tied to
+something — criteria to commands, tickets to branches, requirements to
+criteria — while a scene is prose about a future nobody has to build, written
+by the party that benefits from it reading well. So the scenes are tied down
+mechanically and in the one place both gates pass through: a scene names its
+tickets structurally, the renderer refuses a scene naming a ticket the plan
+does not carry, and every ticket no scene names is printed rather than
+quietly dropped. That last one is not a gate and is the most useful of the
+three: infrastructure legitimately appears there, and so does the
+user-visible ticket whose scene somebody forgot to write, and only the human
+reading can tell which. What stays a rule rather than a check — no ticket IDs,
+no file names in the prose — stays one because "a name that reads like an
+identifier" is not something a regex can separate from a product name; the
+skill teaches it and the plan reviewer reads for it.
+
+The walkthrough also makes one decomposition failure visible before it is
+built. A plan split by layer — schema, then API, then UI — has a walkthrough
+in which nothing a person can see happens until the last ticket, and that is
+legible on the page in a way it never is in a ticket list. Hence the rule the
+skill and the reviewer share: the first ticket makes the first scene work end
+to end, thin.
+
+## Why comments on the page are a clipboard and not a database
+
+The page needed something worth commenting on before comments were worth
+building: a reader who cannot find the sentence they disagree with does not
+lack a comment box, they lack a sentence. With the walkthrough there, the
+missing piece is the mechanics of pointing at one — "the third paragraph
+under requirements" costs a sentence to write and another to resolve.
+
+What it is *not* is the decision worth recording. A comment layer implies
+storage, and storage implies a server, an identity, a lifecycle and a mirror
+of the conversation that someone must keep true — for a page that is
+deliberately thrown away, whose whole contract is that `tickets.md` is the
+record. So the page holds no state at all: select text, type, and it copies a
+block naming the anchor the selection started in. The human pastes it into
+the chat, where the steering already happens, and the session answers it in
+the same turn. Nothing is stored because there is nothing to store; nothing
+is parsed because chat is the channel and a parser would be a second, worse
+reading of what the person said.
+
+The anchors are the part with a future. They are stable, documented ids —
+`#outcome`, `#scene-2`, `#PAY-3` — which is exactly what a multi-user comment
+layer would attach to if one is ever built, the same way the release page's
+`#t-<ID>` anchors were written before anything pointed at them. Until then
+they cost one attribute per section. And the popover is additive on purpose:
+with JavaScript off the page reads identically, and the sentence advertising
+the popover is hidden, because a page that offers what it cannot do is worse
+than one that offers nothing.
 
 ## Why a run goes wide in waves
 

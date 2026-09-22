@@ -47,11 +47,91 @@ away.
 - The root agent instructions (`CLAUDE.md` or `AGENTS.md`) and the same file
   for every service, package or workspace in play. **If they are stale, fix
   them first** — every ticket will be written and executed against them.
+  **Name the areas you expect to touch as you do it** — you are already
+  opening one instruction file per area, so the list exists here, a step
+  before `Areas in scope:` writes it down; the research trigger below is
+  judged on it.
 - The actual code and data the epic concerns. A decomposition written from
   the description alone invents tickets for problems that do not exist and
   misses the ones that do.
 - `node "${CLAUDE_PLUGIN_ROOT}/scripts/tickets.mjs" list` — what other epics
   are open, and where they overlap this one.
+
+### Research — facts from a context the brief never reached
+
+**Run this when the brief NAMES a solution** — "add a cache", "use library
+X", "move it to the worker" — **or when the epic spans more than one area.**
+It is your judgement, and the trigger is stated so it is a judgement about
+something: a brief that names a solution is the case where your own reading
+is most anchored, because you read the code to confirm what you have already
+been told and you cannot unsee it; more than one area is the case where what
+you did not read is largest. A one-area epic whose brief names no solution
+does not need it — the grounding above is enough, and a researcher there is
+ceremony.
+
+**Say in chat that you are running it, and list the questions you will ask,
+before you spawn anything.** The user can say skip, and a skip is only a
+choice where the step was shown: a gate is verified at the door its actor
+walks through, and the actor here is the person paying for the step. The
+questions in that message are also the cheapest review this step gets — the
+user is the one reader who knows which of them the brief already answers.
+
+Spawn `flow:researcher` with the **Agent** tool — omit the `model` parameter
+so the agent definition's pinned strongest model applies, and `effort: high`.
+It is not cheap and is not meant to be: a citation proves a present claim, so
+the Facts are the one part of the report anybody can check, and **nothing
+proves an absence** — the file nobody opened leaves no trace at all. The two
+sections you will lean on hardest, **Could not establish** and **Open
+questions**, are judgement about what was *not* found, and an omission there
+is not caught by a reader; it is decomposed against, and paid for in tickets.
+It reports what is true today and
+**proposes nothing** — no design, no ordering, no decomposition: a researcher
+who starts solving stops observing, and the report you want back is the one
+nobody wrote toward an answer.
+
+Give it: the **in-scope areas** as paths and the instruction file that binds
+each; **the plugin's root path** (`${CLAUDE_PLUGIN_ROOT}`, resolved — it runs
+`tickets.mjs list` and `doctor` for what other epics are open, and the script
+is on no PATH); and **your list of questions**.
+
+**Strip the brief, the proposed solution, the ticket list and the Outcome
+line from what you hand it.** That is the mechanism, not an omission: a
+researcher told the wanted answer confirms it — reads past the code that
+disagrees and hands the brief back with citations attached — and you would
+then decompose against your own reading returned in another agent's words.
+
+**The questions are about the present, and a question about a future is
+refused.** Ask "how does the checkout reach the payment provider today",
+"what handles the empty-cart case", "which tests cover the retry path",
+"where is the rate limit configured". Do not ask "would a cache here work",
+"is approach A better than B", "should this move to the worker": the
+researcher was not told what the work is, so an answer would be a guess
+wearing a citation — it refuses those, quotes them back, and names the
+present-tense question each would have to become. **Five to ten questions is
+the budget**, and the researcher stops when they are answered rather than
+when the area is exhausted: the questions are the only thing bounding what it
+reads, so a long list is a survey of the repository, which costs more than
+the planning session it is saving and returns facts nobody asked for.
+
+**Read the Facts before you slice anything** — that is the whole point of the
+step, and a fact that arrives after the decomposition is a fact that has to
+argue with it. **Where a fact contradicts the solution the brief names, say
+so at the shape stop below, as a question**: the brief's author is the one
+person who can decide whether the fact changes the want.
+
+**Its other two sections have owners too.** Every line under **Could not
+establish** is either a question for the user in step 3's sweep or the thing
+ticket one proves — the researcher searched for it and the repository did not
+answer, which is an unproven assumption whichever way it resolves, and the
+plan reviewer's lens on a probe buried at ticket four is waiting for it. The
+**Open questions** go into the clarify sweep, first.
+
+Where the facts live: the ones that shape the plan go in the plan page's
+`grounding` lines (one per fact, with its citation) and in the shape message;
+the ones a ticket needs go in **that ticket's body** in `tickets.md`. **No
+research document is committed.** `tickets.md` is the record, a file nobody
+re-reads preserves nothing the ticket body does not, and an artifact that
+preserves no knowledge and constrains nothing fails the admission test.
 
 ## 3. Clarify, agree the shape, then write `epics/<name>/tickets.md`
 
@@ -61,8 +141,14 @@ lifecycle, error and edge behaviour, integration contracts, non-functional
 expectations, any sentence two readers could read two ways. **Ask the user
 the ones whose answer changes the shape of the work — batched, concrete,
 each with the readings you are choosing between**; a handful of sharp
-questions is the budget. Record every answer in the ticket document. The
-rest ride to sign-off as open questions.
+questions is the budget. **Step 2's researcher, where you ran one, hands you
+its "Open questions" — start from those**: they are the ones the code cannot
+settle, found by a reader who had no brief to resolve them against. Take its
+**"Could not establish"** here too: an absence somebody searched for is
+either a question the user can answer outright or an assumption ticket one
+has to prove. Record
+every answer in the ticket document. The rest ride to sign-off as open
+questions.
 
 **Then show the user the shape and let them bend it** — a finished
 decomposition anchors, and a re-split costs a sentence now and a rewrite
@@ -72,10 +158,50 @@ anything grounding turned up; the **delivery choice** and its why, in one
 line; the **ticket list as one line each** — `ID — name — what it proves or
 builds` — in order, with a word on why the first is first.
 
+**Write the walkthrough — the epic in the user's own words**, and present it
+first, before the ticket list. Three to seven
+**scenes**, in the order a person meets them and never in ticket order. Each
+scene carries four fields: `who` acts, what they `does`, what they `sees` once
+this ships, and `today` what happens instead; plus the `tickets` that build it,
+as a structured list, and the numbered `requirements` it serves when the epic
+has them. Sign-off is otherwise made on engineer-shaped material — tickets,
+criteria, a delivery mode — and the person who asked for the feature has
+nothing in front of them written in their own terms. The rules, each with its
+reason:
+
+- **The reader is the person who asked for the feature**, not the person who
+  will build it, so the prose carries **no ticket IDs and no file names**. The
+  IDs ride in the scene's `tickets` list, where the page renders them as tags;
+  "PAY-2 adds the refunds endpoint" is a sentence written for the wrong reader,
+  and a scene nobody outside the team can read is a scene that checks nothing
+  at the gate it exists for.
+- **A scene may name only tickets this plan carries, and that is checked at
+  both doors.** `plan-page.mjs` refuses to render otherwise, naming the scene
+  and the ID, and a requirement citation outside the numbered list is refused
+  the same way; `/flow:doctor` then reads the `**Tickets:**` line of every
+  scene in `tickets.md`'s `## Walkthrough` section and warns on an ID this
+  epic does not have, or on a line too loose to parse. Both, because prose
+  about a future nobody has to build is exactly the fiction this section
+  produces when nothing ties it down — and the page is thrown away while the
+  section is what every worker and the retro actually read. **Run
+  `/flow:doctor` after writing the section**, the way you run it before
+  sign-off for the dependency lines.
+- **Tickets no scene names are printed under the walkthrough**, as "In no
+  scene" — never hidden. Infrastructure a user never meets belongs there and
+  the reader should see it; a user-visible ticket landing there is a scene
+  nobody wrote.
+- **`firstWhy` should point at scene 1**: the first ticket makes the first
+  walkthrough scene work end to end, thin. A decomposition split by layer
+  (schema, then API, then UI) makes the first user-visible slice arrive last
+  and hides integration risk until the end, which is the one shape the
+  walkthrough makes visible before it is built.
+
 **Render the shape as a page.** Write it as JSON into your session's
 **scratchpad** (never the repository — `tickets.md` is the record); the
 schema is at the top of `scripts/plan-page.mjs` (`stage: "shape"`, outcome,
-requirements, areas, delivery with its why, the ticket lines, `firstWhy`).
+requirements, the `walkthrough` scenes, areas, the `grounding` lines — where
+step 2's research facts go, one per line with its citation — delivery with its why, the
+ticket lines, `firstWhy`).
 Then:
 
 ```bash
@@ -84,10 +210,30 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/plan-page.mjs" <scratchpad>/plan-<name>.json
 
 Publish it as an artifact and print the URL (no artifact surface: send the
 file). Keep the ticket lines in chat too — the page is the reading view, the
-chat lines are what the reply quotes. **Wait for the user to say the shape is
+chat lines are what the reply quotes. Say in one sentence that **they can
+select any text on the page, type a note, and paste the copied block back into
+this chat**. **Wait for the user to say the shape is
 right** before writing the full sections; this is a steering stop, not the
 sign-off gate. On a redirect, update the JSON, re-render, and **republish
 the same file path** so the URL evolves with the plan.
+
+**A pasted block is steering, and you answer it in the turn it arrives.** The
+page copies, and the human pastes:
+
+```
+> [<anchor>] <the text they selected>
+<what they said about it>
+```
+
+The anchor says where they are pointing — `outcome`, `requirements`,
+`walkthrough`, `scene-<n>`, `tickets`, a bare ticket ID (`PAY-3`),
+`alternative`, `plan-review`, `open-questions`, or `page` when the selection
+sat under none of them. Read it as if they had typed the same words in chat
+about that part of the plan: answer it, apply what you accept, say what you
+reject and why, then update the JSON, re-render and republish **the same file
+path**, so the page they are looking at becomes the answer. Nothing parses
+these blocks and nothing stores them — chat is the channel, and a comment left
+unanswered in the turn it arrives is one the human has to make twice.
 
 Then write the document:
 
@@ -238,6 +384,29 @@ cannot raise the ceiling that judges it. Removing the line mid-run does not
 lift the ceiling: the run keeps the last value and logs that it did.>
 
 Status log: `epics/<name>/status.md`. Run a ticket with `/flow:ticket <ID>`.
+
+## Walkthrough
+
+<the plan page's scenes, the same ones in the same words — the page is
+thrown away and this is the copy that survives, so `brief` hands it to
+every worker and the retro can ask "did scene 3 happen?". Three to seven,
+in the order a person meets them. No ticket IDs and no file names in the
+prose: the reader is the person who asked for the feature.>
+
+1. **<who>** <does what>.
+   **Sees:** <what they see once this ships>
+   **Today:** <what happens instead>
+   **Tickets:** <ID>[, <ID>]
+
+<the **Tickets:** line is the one line here a script reads, and it is strict
+the way `**Blocked by:**` is: the bold label, then bare ticket IDs of this
+epic and commas, and nothing else on the line — no "and", no aside. Indented
+under its scene is fine. `/flow:doctor` names a line it cannot read and an ID
+this epic does not have, because a scene whose tickets are decoration is a
+promise nothing is checked against.>
+
+<and, when some ticket is in no scene, one line saying which and why —
+infrastructure a user never meets, named here rather than left unexplained>
 
 ## Ground rules for every ticket in this epic
 
@@ -480,6 +649,9 @@ requested. **When the draft declares `Design sources:`, give it those paths
 and `epics/<name>/design-map.json` as well** — the design is an input like
 the code, and a plan review that never sees the drawing cannot tell you that
 the map misses something it draws, or that a ground rule quietly narrows it.
+**The reviewer reads the document, never the plan page** — so the walkthrough
+it checks is the `## Walkthrough` section of `tickets.md`, and scenes left in
+the plan JSON alone are scenes nobody reviews.
 It reports; it does not rewrite.
 
 Then, before showing the user: **fix what is right** (re-split, reorder —
@@ -489,7 +661,9 @@ unchanged** — they are the human's to answer.
 
 ## 5. Get sign-off — hard gate
 
-Show the user: the ticket list with one line each, the order, what ticket
+Show the user: **the walkthrough first** — what they will be able to do,
+scene by scene, which is the only part of this gate written in their terms —
+then the ticket list with one line each, the order, what ticket
 one proves, the delivery choice and why, anything grounding found that
 changes the shape — plus **one alternative decomposition you considered and
 rejected, with the reason**, so sign-off is a choice between shapes rather
@@ -519,9 +693,13 @@ read reports nothing — the human is signing off on the lane as much as on the
 decomposition.
 
 **Bring the plan page to this gate too**: update step 3's JSON — `stage:
-"sign-off"`, the `alternative` with its rejection reason, the `planReview`
+"sign-off"`, the `walkthrough` as the re-planning left it, the `alternative`
+with its rejection reason, the `planReview`
 outcome, any `openQuestions` — re-render, and republish the **same file
-path**.
+path**. Say again, in one sentence, that they can **select any text on the
+page and paste the copied block back into this chat**, and answer what comes
+back the way step 3 says: this is the last gate at which a sentence costs a
+sentence.
 
 **If the epic declares `Delivery: release`, say so in plain terms**: "after
 your approval, tickets will implement, review and merge into `epic/<name>`
