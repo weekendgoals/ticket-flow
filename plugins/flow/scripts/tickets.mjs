@@ -356,6 +356,73 @@ function currentEpic(epics) {
 
 // ── ticket-doc parsing ───────────────────────────────────────────────────────
 
+// The epic preamble a worker is handed by `brief`: everything above the first
+// TICKET heading — which is what the preamble IS (parseTicketSections splits on
+// the same line), and what `brief`'s own description has always claimed it
+// hands over. It used to cut at the first `## ` of any kind, so the ground
+// rules, the order and the walkthrough — every `## ` section planning writes
+// beneath the declaration lines — reached no worker at all, silently. The
+// declaration parse (`parsePreamble`) deliberately still stops at the first
+// `## `: a label read out of a prose section would be a declaration nobody
+// wrote.
+//
+// A near-miss FIRST ticket heading widens this: `## pay-1 — …` is no ticket to
+// either parser, so that section becomes preamble and every worker reads it as
+// ground rules. That is bounded rather than guarded — `doctor` names the
+// heading and says what it is doing meanwhile — because a second, looser
+// notion of "where the tickets start" is exactly the tolerance the dependency
+// graph died of.
+function epicPreamble(text) {
+  const lines = text.split('\n')
+  const first = lines.findIndex((l) => TICKET_HEADING.test(l))
+  return (first === -1 ? lines : lines.slice(0, first)).join('\n').trim()
+}
+
+// ── the walkthrough section ──────────────────────────────────────────────────
+// `plan-page.mjs` refuses to render a scene naming a ticket the plan does not
+// carry — but it reads the plan JSON, which is the copy that is thrown away.
+// The copy that survives is the `## Walkthrough` section of `tickets.md`: it
+// is what `brief` hands every worker and what the retro reads, and there the
+// scenes are prose. So the same guard stands at this door too, over the one
+// machine-readable line a scene carries.
+//
+// Strict for the reason `**Blocked by:**` is strict: a scene's tickets are
+// checked or they are decoration, and a tolerant parse would report a
+// hand-waved line as a checked one. Indentation IS allowed, unlike there,
+// because the template writes these lines inside a numbered list item, and a
+// near set that would be too wide over a whole document is safe over the five
+// lines of one section — which is why the scan is scoped to the section, from
+// the `## Walkthrough` heading to the next `## ` of any kind.
+const WALKTHROUGH_HEADING = /^##\s+Walkthrough\s*$/i
+const SCENE_TICKETS_LINE = new RegExp(`^[^\\S\\n]*\\*\\*Tickets:\\*\\*[^\\S\\n]*(${TICKET_ID}(?:[^\\S\\n]*,[^\\S\\n]*${TICKET_ID})*)[^\\S\\n]*$`)
+const SCENE_TICKETS_NEAR = /^[^\S\n]*(?:[-*][^\S\n]+)?\*{0,2}\s*Tickets\s*\*{0,2}[^\S\n]*:/i
+
+// → { scenes: [{ scene, line, ids }], problems: [{ scene, line, text }] }.
+// A scene is numbered by the order of its `**Tickets:**` line in the section,
+// which is the order the page numbers its scenes in. A scene carrying no such
+// line at all is not reported: telling one from a paragraph break needs a
+// parse of the prose, and a guess there would name scenes nobody wrote. The
+// price: a scene is the nth `**Tickets:**` line, so one written without the
+// line shifts every later scene's number down — which is why each warn also
+// carries the line number, the figure recovery is done from.
+function parseWalkthrough(text) {
+  const scenes = []
+  const problems = []
+  let inSection = false
+  text.split('\n').forEach((line, i) => {
+    if (/^##\s/.test(line)) {
+      inSection = WALKTHROUGH_HEADING.test(line)
+      return
+    }
+    if (!inSection || !SCENE_TICKETS_NEAR.test(line)) return
+    const scene = scenes.length + problems.length + 1
+    const m = line.match(SCENE_TICKETS_LINE)
+    if (m) scenes.push({ scene, line: i + 1, ids: m[1].split(',').map((x) => x.trim()) })
+    else problems.push({ scene, line: i + 1, text: line.trim() })
+  })
+  return { scenes, problems }
+}
+
 // Split a ticket doc into "## <ID> — <title>" sections. Anything above the first
 // such heading is epic preamble (ground rules, ordering) and is not a ticket.
 // The text form exists because `check --from` parses the document as a git ref
@@ -3471,8 +3538,30 @@ function doctor() {
     }
     readFileSync(epic.ticketsDoc, 'utf8').split('\n').forEach((line, i) => {
       if (nearTicket.test(line) && !TICKET_HEADING.test(line))
-        add('warn', `${epic.epic}/tickets.md:${i + 1} — heading will not parse as a ticket (needs "## <ID> — <name>", ID uppercase): ${line.trim()}`)
+        add(
+          'warn',
+          `${epic.epic}/tickets.md:${i + 1} — heading will not parse as a ticket (needs "## <ID> — <name>", ID uppercase): ${line.trim()}. Until it is fixed the ticket is on no board, and if it is the FIRST such heading its whole section is preamble — \`brief\` hands it to every worker of this epic as ground rules; otherwise it is the tail of the ticket above and reaches that worker as scope`,
+        )
     })
+    // The walkthrough's scenes name their tickets, and the names are checked
+    // here because this copy — the one in the record — is the one no renderer
+    // ever sees. Both doors, one rule.
+    {
+      const known = new Set(parseTickets(epic).map((t) => t.id))
+      const { scenes, problems } = parseWalkthrough(readFileSync(epic.ticketsDoc, 'utf8'))
+      for (const p of problems)
+        add(
+          'warn',
+          `${epic.epic}/tickets.md:${p.line} — walkthrough scene ${p.scene} has a line about its tickets that will not parse, so nothing checks that the scene is built by anything (needs "**Tickets:** <ID>[, <ID>]" — bold label, bare ticket IDs of this epic, commas, nothing else on the line): ${p.text}`,
+        )
+      for (const s of scenes)
+        for (const id of s.ids)
+          if (!known.has(id))
+            add(
+              'warn',
+              `${epic.epic}/tickets.md:${s.line} — walkthrough scene ${s.scene} names ${id}, which is not a ticket of this epic: the scene promises something nothing in the plan builds. Fix the scene or add the ticket by editing tickets.md — it is the plan, edited to re-plan; the status log is the append-only one`,
+            )
+    }
     // A CHECK that almost parses never runs, and the ticket then passes its
     // acceptance gate on silence — the same failure class as a heading
     // near-miss, flagged the same way. The same scan carries the shapes that
@@ -4023,7 +4112,7 @@ switch (cmd) {
     const dev = parseDeviations(epic)
     const out = {
       ...ticketFacts(data, t),
-      preamble: readFileSync(epic.ticketsDoc, 'utf8').split(/^##\s/m)[0].trim(),
+      preamble: epicPreamble(readFileSync(epic.ticketsDoc, 'utf8')),
       owed,
       notes,
       // Open deviations only, epic-wide, beside the owed items: a departure no

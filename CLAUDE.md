@@ -22,7 +22,7 @@ go through the flow, one-off work goes through `/flow:quick` into
 ## Commands
 
 - **Tests:** `node --test plugins/flow/scripts/tickets.test.mjs` — expect
-  every test passing (`# pass 256`, `# fail 0` as of 2026-09-21; the count
+  every test passing (`# pass 261`, `# fail 0` as of 2026-09-22; the count
   grows, the fail line does not). The suite builds a throwaway git repo in a
   temp dir; it needs `git` on PATH and nothing else. The session-guard hook
   has its own suite:
@@ -31,11 +31,20 @@ go through the flow, one-off work goes through `/flow:quick` into
   `node --test plugins/flow/scripts/check-invariants.test.mjs` (`# pass 45`),
   The board renderer has
   `node --test plugins/flow/scripts/board.test.mjs` (`# pass 9`) and the
-  plan-page renderer `node --test plugins/flow/scripts/plan-page.test.mjs`
-  (`# pass 8`), and the release walkthrough
+  release walkthrough
   `node --test plugins/flow/scripts/release-page.test.mjs` (`# pass 13`) —
-  all three pure rendering tests over fixture JSON, no git
-  needed. The fidelity differ has
+  both pure rendering tests over fixture JSON, no git
+  needed. The plan page has
+  `node --test plugins/flow/scripts/plan-page.test.mjs` (`# pass 23`) — the
+  same fixture-JSON rendering, plus the page's own **comment script cut out
+  of the rendered HTML** between its markers and evaluated with `new Function`
+  against a stub `document` / `window.getSelection` / `navigator.clipboard`,
+  which is how a selection spanning two anchors or a missing clipboard API
+  fails here instead of inside somebody's browser; **no test may launch or
+  drive a browser** (see the fidelity extractor below — same technique, same
+  reason). Two of its cases drive the CLI over a throwaway JSON file in the
+  OS temp dir, because the walkthrough's refusal only matters if the command
+  the epic skill runs exits nonzero and writes no page. The fidelity differ has
   `node --test plugins/flow/scripts/fidelity.test.mjs` (`# pass 54`) — the
   diff driven through the CLI over the committed fixture reports under
   `scripts/fixtures/fidelity/` (what a real browser returned once, from
@@ -85,6 +94,9 @@ go through the flow, one-off work goes through `/flow:quick` into
   cross-document couplings (the status-log preamble's three copies, the run
   log's copy of its **Rules** block, the two
   risk lists, skill heading templates against the parser regexes, the
+  walkthrough's `**Tickets:**` template against `SCENE_TICKETS_LINE` (in both
+  directions, like `**Blocked by:**`: the template must parse and a loosened
+  line must not), the
   `COMPARE`/`LANDMARKS` template against theirs, the session
   guard's refusal message as the ticket skill quotes it, load-bearing doctrine
   phrases). Run it whenever a skill, agent, hook or doctrine document changes —
@@ -95,7 +107,8 @@ go through the flow, one-off work goes through `/flow:quick` into
   this repo. `… list` shows the board.
 - **Syntax check:** `node --check plugins/flow/scripts/tickets.mjs`, and the
   same for `scripts/fidelity.mjs`, `scripts/meter.mjs`,
-  `scripts/merge-append.mjs`, `scripts/worktree-setup.mjs` and
+  `scripts/merge-append.mjs`, `scripts/worktree-setup.mjs`,
+  `scripts/plan-page.mjs` and
   `scripts/release-page.mjs`. This does
   **not** work on `plugins/flow/workflows/run-epic.mjs`: a workflow script is
   a module body with a top-level `return`, which the workflow runtime allows
@@ -240,6 +253,18 @@ test file path explicitly.
   `check-invariants.mjs` runs the template through the regex and fails if
   the parse goes tolerant. The removed `Depends on:` spelling stays inert:
   a live installed epic carries it on unstarted tickets.
+- **The walkthrough is guarded at both doors, because only one of them
+  survives.** A scene is prose about a future nobody has to build — the one
+  part of a plan nothing else ties down — so `plan-page.mjs` refuses to render
+  a scene naming a ticket the plan does not carry, and `doctor` warns on the
+  same thing in the `## Walkthrough` section of `tickets.md`. The renderer
+  alone guards the plan JSON, which is thrown away; the section is what
+  `brief` hands every worker and what the retro walks scene by scene. The
+  `**Tickets:**` line is strict for the reason `**Blocked by:**` is — a
+  tolerant parse reports a hand-waved line as a checked one — and is read
+  **only** inside that section, heading to the next `## `, because the phrase
+  is ordinary everywhere else. `check-invariants.mjs` runs the epic skill's
+  template through `SCENE_TICKETS_LINE` and fails if the parse goes tolerant.
 - **Ticket IDs match `[A-Z][A-Z0-9]*-\d+`**, branches are the lowercased ID,
   and shipped detection reads `^<ID>[:\s]` off commit subjects on the default
   branch. Changing any of these breaks every installed project's board.

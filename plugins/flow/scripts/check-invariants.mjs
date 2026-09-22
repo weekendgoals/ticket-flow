@@ -212,6 +212,7 @@ function parserRegexes() {
     ticketHeading: build(grab(/const TICKET_HEADING = new RegExp\(`([^`]+)`\)/, 'TICKET_HEADING')),
     statusHeading: build(grab(/const STATUS_HEADING = new RegExp\(\s*`([^`]+)`,?\s*\)/, 'STATUS_HEADING')),
     blockedBy: build(grab(/const BLOCKED_BY_LINE = new RegExp\(`([^`]+)`\)/, 'BLOCKED_BY_LINE')),
+    sceneTickets: build(grab(/const SCENE_TICKETS_LINE = new RegExp\(`([^`]+)`\)/, 'SCENE_TICKETS_LINE')),
     halt: new RegExp(
       unescape(grab(/const HALT_GROUP = new RegExp\(`([^`]+)`, 'g'\)/, 'HALT_GROUP'))
         .replaceAll('${HALT_BODY}', unescape(grab(/const HALT_BODY = `([^`]+)`/, 'HALT_BODY')))
@@ -595,6 +596,16 @@ const PHRASES = [
     files: ['epic', 'planReviewer', 'methodology'],
   },
   {
+    why: "the walkthrough's section name — the epic skill's template writes `## Walkthrough` into the preamble of `tickets.md`, the plan reviewer reads that section by name (it is handed the document, not the page), the retro walks it scene by scene, and `tickets.mjs` scans it for scenes naming tickets the epic does not have. A document that renamed the heading would leave each of those reading a section that is no longer there — reporting nothing, which reads exactly like nothing being wrong. README claiming a retro reading that the retro skill did not perform is the drift this entry was added for",
+    re: /## Walkthrough/,
+    files: ['epic', 'planReviewer', 'retro', 'readme', 'script'],
+  },
+  {
+    why: 'the vertical-slice rule — the first ticket makes the first walkthrough scene work end to end, so a layer split (schema, then API, then UI) is visible before it is built. One rule at two doors: the epic skill tells the planner at the shape stop, the plan reviewer flags the shape at the gate, and a rule in only one of them is either never planned or never checked',
+    re: /the first ticket makes the first walkthrough scene work end to end/i,
+    files: ['epic', 'planReviewer'],
+  },
+  {
     why: "the painted-versus-property lens — a style assertion that reads a property off an element while the page paints something else is the visual form of the test that executes code without checking it, and the reviewer definition, the review skill and the driver's inlined reviewer rules must all carry it. The Codex runner's copy is pinned to the driver's by codex-review.test.mjs, so this entry covers the three that are not",
     re: /paints something else/i,
     files: ['reviewer', 'review', 'workflow'],
@@ -691,12 +702,40 @@ function checkBlockedByTemplate() {
   }
 }
 
+// The walkthrough's scene line is the record's half of the fiction guard:
+// `plan-page.mjs` refuses a scene naming a ticket the plan does not carry, and
+// `doctor` refuses the same thing in the `## Walkthrough` section of
+// `tickets.md`, which is the copy that survives the page. That second half is
+// only as good as the template that teaches the line, and only while the parse
+// stays strict — a tolerant one would report a hand-waved line as a checked
+// one, which is the dependency graph's failure with a new label. Both
+// directions, against the real regex.
+function checkSceneTicketsTemplate() {
+  const { sceneTickets } = parserRegexes()
+  const lines = fences(read('epic'))
+    .flatMap((b) => b.split('\n'))
+    .filter((l) => /^\s*\*\*Tickets:\*\*/.test(l))
+  if (!lines.length)
+    throw new Error(
+      `no "**Tickets:**" template line in a fenced block of ${FILES.epic} — the walkthrough section is where a scene is tied to the tickets that build it, and a line nobody teaches is a line nobody writes`,
+    )
+  for (const raw of lines) {
+    const line = raw.replace('<ID>[, <ID>]', 'SEC-3, SEC-4')
+    if (!sceneTickets.test(line)) throw new Error(`the epic skill's walkthrough template no longer matches SCENE_TICKETS_LINE: "${raw}"`)
+    if (sceneTickets.test(`${line} once the API settles`))
+      throw new Error('SCENE_TICKETS_LINE accepts prose after the IDs — the parse must stay strict (CLAUDE.md § Invariants)')
+    if (sceneTickets.test(line.replace('**Tickets:**', 'Tickets:')))
+      throw new Error('SCENE_TICKETS_LINE accepts an unbolded label — the bold label is what tells the line from a sentence about tickets')
+  }
+}
+
 const CHECKS = [
   ['status-log preamble identical across its three copies', checkPreambleCopies],
   ["the run log's Rules block is the status log's, verbatim", checkRunLogRules],
   ['the two risk lists cover the same trigger set', checkRiskLists],
   ['skill heading templates match the parser regexes', checkTemplates],
   ["the epic skill's Blocked by template parses, and the parse is strict", checkBlockedByTemplate],
+  ["the walkthrough's Tickets template parses, and the parse is strict", checkSceneTicketsTemplate],
   ["the COMPARE criterion's template matches its parser, and every lane that runs the differ names --removed-from and --source", checkCompareTemplate],
   ["the run record's Halt template matches its parser, and the parse stays strict", checkHaltTemplate],
   ['hook refusal message quoted verbatim by the ticket skill', checkRefusalMessage],

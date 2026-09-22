@@ -13,7 +13,7 @@ repository).
 
 | | |
 |---|---|
-| `/flow:epic <name> [source...]` | Turn a request, report or conversation into `epics/<name>/`. Sources are files, globs or URLs, saved into `context/`; with none, the conversation is the brief. The shape is agreed **before** the document is written, a fresh-context **plan reviewer** challenges the decomposition — holding the **design** too, where the epic declares one, so that an element the drawing has and the map does not is caught before sign-off — then it **stops for sign-off** and commits — no pull request. An epic that declares `Design sources:` writes `design-map.json` beside its tickets and **ends with a whole-page fidelity ticket, then a human render-and-read ticket** (the differ decides computed style; composition and behaviour are a person's to judge, and the release waits on that ticket); what the plan deliberately does not build is declared in that map's `removed` list, where a comparison prints it as a decision instead of a hole. Both human gates render the plan as a **styled page** (`plan-page.mjs`, published as an artifact): one URL that evolves from shape checkpoint to sign-off, never committed |
+| `/flow:epic <name> [source...]` | Turn a request, report or conversation into `epics/<name>/`. Sources are files, globs or URLs, saved into `context/`; with none, the conversation is the brief. The shape is agreed **before** the document is written, a fresh-context **plan reviewer** challenges the decomposition — holding the **design** too, where the epic declares one, so that an element the drawing has and the map does not is caught before sign-off — then it **stops for sign-off** and commits — no pull request. An epic that declares `Design sources:` writes `design-map.json` beside its tickets and **ends with a whole-page fidelity ticket, then a human render-and-read ticket** (the differ decides computed style; composition and behaviour are a person's to judge, and the release waits on that ticket); what the plan deliberately does not build is declared in that map's `removed` list, where a comparison prints it as a decision instead of a hole. Both human gates render the plan as a **styled page** (`plan-page.mjs`, published as an artifact): one URL that evolves from shape checkpoint to sign-off, never committed, carrying a **walkthrough** of what the epic will let a person do — scene by scene, each scene tied to the tickets that build it — and a select-to-comment popover whose block you paste back into the chat |
 | `/flow:ticket <ID>` | One ticket end to end: branch, implement, verify, log, commit, review, fix, push, pull request. Runs **supervisor-mode by default** — a fresh-context worker implements from the documents and the supervisor hires the reviewer; `--interactive` runs in-session, once per session (a hook refuses a second interactive run; supervisor runs stay open) |
 | `/flow:run <epic>` | Run a `Delivery: release` epic end to end with nobody present: verifies sign-off happened, then hands the loop to a shipped **workflow script** — **code-controlled, agent-executed** — that takes the tickets in document order. Per ticket: refresh the epic branch and read the board, a **fresh-context worker** implements and stops at its pushed branch (**release tickets open no pull request of their own** — the release pull request at the end is the epic's only one), the **driver hires the reviewer** priced by a code-floored tier, a disposition agent fixes and records, fixes get one bounded re-review at the consequence tier — below it a code gate checks the fix diff stayed inside the files the review saw or its findings named and under a line budget, and a trip buys that same re-review at the consequence tier instead of halting (only a fix diff nothing could measure still halts) — the ticket's `CHECK`/`EXPECT` acceptance criteria are **re-run from the signed-off document** (`tickets.mjs check <ID> --from origin/epic/<name>`) and gated on in code, then the branch's review addendum, the departures its status entry records (**any `**Deviation:**` line halts the run — closed or not, because nobody present could have closed it**) and its exact head SHA are checked **in code before any agent that could merge exists**; only then does a merge agent merge that verified SHA — which cannot be retargeted — into the epic branch, and the board — not an agent — confirms the result. It halts on any stop condition, because each one is a code path rather than a judgment call. The session ends by **opening** the release pull request. Requires the Workflow tool; never merges toward the default branch |
 | `/flow:quick <description>` | The **cheap lane**: one small, low-risk piece of work, implemented **in-session** with a written scope, verification with counts, a short log entry and a pull request — and a fresh-context reviewer **only when behaviour changes** (prose-only diffs — documentation and comments, nothing a machine reads — get none; the PR is the review). Size- **and risk-gated**: auth, secrets, migrations and other consequential work is routed to `/flow:epic` at any size |
@@ -100,6 +100,43 @@ its record on the epic branch, and every mid-ticket halt then cost a hand
 merge. It is created by the first run record written after an epic splits
 them out; logs written before the split keep their records in `status.md`
 and are still read there, because an append-only log is never rewritten.
+
+**Both planning gates render the plan as a page**, and the page carries a
+**walkthrough**: three to seven scenes saying who does what, what they see once
+the epic ships, and what happens today instead — in the order a person meets
+them, not the order the work is built. It is the counterpart of the release
+walkthrough below: that one shows what *was* built, after the fact; this one
+shows what *will* be, while a sentence still costs a sentence. The scenes name
+their tickets structurally, and `plan-page.mjs` refuses to render a scene that
+names a ticket the plan does not carry (and lists, under the walkthrough, every
+ticket no scene names) — a promise nobody has to build is the one fiction this
+section reliably produces. The same scenes are written into `tickets.md` as a
+`## Walkthrough` section in the preamble, which is what survives the page: the
+page is never committed, while `tickets.mjs brief` hands the whole preamble to
+every worker and the retro asks, scene by scene, whether it happened.
+
+**That guard stands at both doors.** The renderer checks the plan JSON, which
+is thrown away; `/flow:doctor` checks the copy that survives, reading each
+scene's `**Tickets:** <ID>[, <ID>]` line — strict like `**Blocked by:**`: bold
+label, bare ticket IDs of this epic, commas and nothing else — and naming, by
+scene number and line, any ID the epic does not have and any line that will not
+parse. Only inside that section, where `**Tickets:**` means a scene's tickets
+and nowhere else. The repair is to edit `tickets.md`: it is the plan, edited to
+re-plan, and the append-only rule is the status log's.
+
+**Comment on a plan page by selecting text.** A popover takes a note and copies
+
+```
+> [<anchor>] <the text you selected>
+<your comment>
+```
+
+to the clipboard; you paste it into the chat and the session answers it, updates
+the plan and re-renders at the same URL. The anchor is the section or ticket the
+selection started in (`outcome`, `walkthrough`, `scene-2`, `PAY-3`, …), or
+`page` under none. Nothing is stored, nothing is sent, and no parser reads these
+blocks — chat is the channel. With JavaScript off the page reads exactly as it
+does with it; the popover is additive, and the page does not advertise it.
 
 The status log is a **diary, not a dashboard**. "Which tickets are done" is
 answered by `/flow:tickets`, computed fresh from ticket headings, status-log
@@ -442,7 +479,10 @@ and that must never be said of an epic with work unbuilt.
 Before starting a ticket, the board script's `brief [ID]` subcommand prints
 everything in one place: the ticket's full section from its epic's
 `tickets.md` — Scope, Not in scope, Acceptance criteria — plus the **epic
-preamble** (ground rules, ordering, delivery), the status log's **owed items
+preamble**: everything above the first ticket heading, which is the
+declaration lines, the walkthrough, the ground rules and the order (it used to
+stop at the first `## ` heading of any kind, so every section planning writes
+beneath the declarations reached no worker at all), the status log's **owed items
 not yet marked resolved** (every non-Nothing obligation an `**Owed:**` block
 records, attributed to its entry — an entry that owed one thing is addressed
 by its own ID, one that owed several numbers its bullets `<ID>.1`, `<ID>.2` …

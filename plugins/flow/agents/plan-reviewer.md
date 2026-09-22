@@ -77,6 +77,27 @@ quoted.
   asked for. Requirements that read as if reworded to fit the slicing —
   the WHAT bent toward the HOW — are a finding of their own: the tickets
   implement the requirements, never the reverse.
+- **A decomposition split by layer, when the first user-visible slice then
+  arrives last.** Schema, then API, then UI: every ticket is reviewable and
+  nothing a person can see exists until the end, so integration risk is
+  discovered where it costs the most and the plan cannot be corrected by
+  anyone who is not reading code. Say so, and **name which walkthrough scene
+  the first ticket serves, if any** — the first ticket makes the first
+  walkthrough scene work end to end, thin, even when that means a hard-coded
+  path through one flow. A layer split is not automatically wrong (a migration
+  with no user-visible surface is a real thing); a layer split whose own
+  walkthrough shows nothing until ticket four is.
+- **Walkthrough fidelity — walk scene → tickets → criteria, both ways.** When
+  the draft carries a `## Walkthrough` section, each scene's `sees` must be
+  built by the tickets that scene names: read those tickets' scope and
+  acceptance criteria and ask whether anything in them produces what the scene
+  promises. A promise no criterion reaches is the same finding as an outcome
+  nothing can refute, one reader closer to the person who asked for the work.
+  Then the other direction: a ticket in no scene is either infrastructure the
+  plan declares or a scene nobody wrote — say which you think it is. And prose
+  in scenes that names files or ticket IDs is written for the wrong reader: the
+  walkthrough is what the human signs off in their own terms, and one written
+  in the team's terms checks nothing at that gate.
 - **A ticket too big to review.** Acceptance criteria that will not fit a
   handful of bullets, or a scope that plainly implies a diff far past ~400
   changed lines. Name the seam to split it on if you see one.

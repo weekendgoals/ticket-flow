@@ -74,6 +74,17 @@ from under `repoRoot`.
   not yet assessable (say what evidence is still to arrive, and when to look
   again). Older epics without an Outcome line: say so and move on — do not retrofit
   one.
+
+  **Then walk the `## Walkthrough` section of `tickets.md`, scene by scene**,
+  and say of each: **happened**, **did not happen**, or **unknown** — each
+  with its evidence (the status entry, the shipped commit, the criterion that
+  proves it). That section is the only place the epic was written in the words
+  of the person who asked for it, and it is in the record precisely so that
+  this question can be asked: a scene that did not happen is work the plan
+  promised and the board reports as complete, and a scene nobody can decide is
+  a promise that was never made checkable. Both are planning findings, not
+  failures to hide. Epics whose `tickets.md` carries no walkthrough: say so and
+  move on.
 - **What is still owed?** Every **Owed** line and every review finding
   dispositioned as pre-existing or out of scope: did a shipped ticket
   actually inherit it? What survives is unfinished work that exists nowhere

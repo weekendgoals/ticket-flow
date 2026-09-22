@@ -1705,6 +1705,74 @@ decision turns on are open, the rest are one click away — and stable anchors
 per ticket, which is where a comment layer can attach later without the page
 changing shape.
 
+## Why the plan page walks through what will be built
+
+The release page walks through what *was* built. The plan page's walkthrough
+is its counterpart on the other side of the work, and it exists because the
+two planning gates ask a human to approve something written in a language
+that is not theirs. An Outcome line, a numbered requirement, four tickets with
+acceptance criteria, a delivery mode: every one of those is engineer-shaped,
+and a person who asked for a feature can read all of it and still not know
+what they will be able to do when it ships. They approve anyway — the shape
+looks competent, the reviewer found things, the plan is plainly the work of
+someone who thought about it — and the first moment the feature is described
+in their terms is the moment it exists, which is the most expensive moment
+available. So the plan says it first, in scenes: who acts, what they see, and
+what happens today instead. In the order a person meets them, because ticket
+order is a build order and reading it as a story is what makes a missing
+scene obvious.
+
+Everything else about the walkthrough follows from one hazard: **it is the
+only part of the plan that can be pure fiction.** The rest is tied to
+something — criteria to commands, tickets to branches, requirements to
+criteria — while a scene is prose about a future nobody has to build, written
+by the party that benefits from it reading well. So the scenes are tied down
+mechanically and in the one place both gates pass through: a scene names its
+tickets structurally, the renderer refuses a scene naming a ticket the plan
+does not carry, and every ticket no scene names is printed rather than
+quietly dropped. That last one is not a gate and is the most useful of the
+three: infrastructure legitimately appears there, and so does the
+user-visible ticket whose scene somebody forgot to write, and only the human
+reading can tell which. What stays a rule rather than a check — no ticket IDs,
+no file names in the prose — stays one because "a name that reads like an
+identifier" is not something a regex can separate from a product name; the
+skill teaches it and the plan reviewer reads for it.
+
+The walkthrough also makes one decomposition failure visible before it is
+built. A plan split by layer — schema, then API, then UI — has a walkthrough
+in which nothing a person can see happens until the last ticket, and that is
+legible on the page in a way it never is in a ticket list. Hence the rule the
+skill and the reviewer share: the first ticket makes the first scene work end
+to end, thin.
+
+## Why comments on the page are a clipboard and not a database
+
+The page needed something worth commenting on before comments were worth
+building: a reader who cannot find the sentence they disagree with does not
+lack a comment box, they lack a sentence. With the walkthrough there, the
+missing piece is the mechanics of pointing at one — "the third paragraph
+under requirements" costs a sentence to write and another to resolve.
+
+What it is *not* is the decision worth recording. A comment layer implies
+storage, and storage implies a server, an identity, a lifecycle and a mirror
+of the conversation that someone must keep true — for a page that is
+deliberately thrown away, whose whole contract is that `tickets.md` is the
+record. So the page holds no state at all: select text, type, and it copies a
+block naming the anchor the selection started in. The human pastes it into
+the chat, where the steering already happens, and the session answers it in
+the same turn. Nothing is stored because there is nothing to store; nothing
+is parsed because chat is the channel and a parser would be a second, worse
+reading of what the person said.
+
+The anchors are the part with a future. They are stable, documented ids —
+`#outcome`, `#scene-2`, `#PAY-3` — which is exactly what a multi-user comment
+layer would attach to if one is ever built, the same way the release page's
+`#t-<ID>` anchors were written before anything pointed at them. Until then
+they cost one attribute per section. And the popover is additive on purpose:
+with JavaScript off the page reads identically, and the sentence advertising
+the popover is hidden, because a page that offers what it cannot do is worse
+than one that offers nothing.
+
 ## Why a run goes wide in waves
 
 The pain was measured, not imagined: a three-ticket run held its lane for 39

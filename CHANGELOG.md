@@ -12,6 +12,71 @@ heading here. `check-invariants.mjs` holds both.
 
 ## Unreleased
 
+- **The plan page carries a walkthrough: what the epic will let a person do,
+  before it is built.** An optional `walkthrough` in the plan JSON — three to
+  seven scenes, each one `who` acts, what they `does`, what they `sees` once
+  it ships and what happens `today` instead, with the `tickets` that build it
+  and the `requirements` it serves — rendered at both gates, in the order a
+  person meets them rather than ticket order. It is the counterpart of the
+  release walkthrough, which shows what *was* built: sign-off was otherwise
+  made entirely on engineer-shaped material, and the first description of a
+  feature in the user's own terms arrived when the feature did. A scene is the
+  one part of a plan that can be pure fiction, so it is tied down where both
+  gates pass: `plan-page.mjs` **refuses to render** a scene naming a ticket
+  the plan does not carry (naming the scene and the ID; the CLI exits nonzero
+  and writes no page) or citing a requirement outside the numbered list, and
+  every ticket **no scene names is listed** under the walkthrough — where
+  infrastructure legitimately belongs and a forgotten scene shows up. The
+  epic skill writes the scenes into the JSON and the same scenes into
+  `tickets.md` as a `## Walkthrough` section of the preamble, which is what
+  survives the page. **The guard stands at both doors**: `doctor` reads the
+  section's `**Tickets:**` lines — strict, like `**Blocked by:**`: bold label,
+  bare ticket IDs of this epic, commas, nothing else — and warns, by scene
+  number and line, on an ID this epic does not have and on a line that will
+  not parse. The renderer alone would have guarded only the copy that is
+  thrown away, while the copy `brief` hands every worker stayed free prose.
+- **The plan page's captions are written for the reader, not the method.**
+  "Outcome — falsifiable, or it is decoration" is now "Outcome — what success
+  looks like, and what would prove it failed"; "Observable change",
+  "Evidence" and "Reversal condition" are "What changes", "How we will know it
+  worked" and "What would make us undo it"; "Requirements — the WHAT, apart
+  from the HOW" is "Requirements — what it must do, not how". The page text
+  changes at every human gate of every installed project, which is why it is
+  recorded here: the words were the methodology talking to itself, in front of
+  the one person on the call who has not read it.
+- **The epic preamble reaches its worker whole.** `tickets.mjs brief` cut the
+  preamble at the first `## ` heading of any kind, so the ground rules, the
+  `## Order` section and anything else planning writes beneath the declaration
+  lines reached no worker at all — silently, while the command's own
+  description said it handed them over. It now cuts at the first **ticket**
+  heading, which is what the preamble is everywhere else in the script. The
+  declaration parse still stops at the first `## `, deliberately: a label read
+  out of a prose section would be a declaration nobody wrote.
+- **Comment on a plan page by selecting text.** A selection opens a popover;
+  a note in it copies `> [<anchor>] <the quoted text>` and the comment to the
+  clipboard, and the human pastes that into the chat, where the session
+  answers it, updates the plan and re-renders at the same URL. Nothing is
+  stored, nothing is sent, there is no server and no parser — chat is the
+  channel, and the page is thrown away. The anchors are stable and documented
+  at the top of `plan-page.mjs` (`#outcome`, `#requirements`, `#walkthrough`,
+  `#scene-<n>`, `#tickets`, `#<ID>` per ticket, `#alternative`,
+  `#plan-review`, `#open-questions`; `page` under none, and the first of two
+  when a selection spans them), because a later multi-user layer would attach
+  to exactly these. Where the browser has no clipboard API (file:// in some
+  browsers) the block is shown selected for manual copy — never a silent
+  failure. With JavaScript off the page reads identically and never advertises
+  the popover.
+- **Two plan-reviewer lenses, report-only as ever.** *Vertical slice*: a
+  decomposition split by layer (schema, then API, then UI) makes the first
+  user-visible slice arrive last and hides integration risk until the end —
+  the reviewer flags the shape and names which walkthrough scene the first
+  ticket serves, if any. *Walkthrough fidelity*: every scene's `sees` must be
+  built by the tickets that scene names, walked scene → tickets → criteria;
+  a ticket in no scene is either infrastructure the plan declares or a scene
+  nobody wrote; scene prose that names files or ticket IDs is written for the
+  wrong reader. The reviewer reads the `## Walkthrough` section of
+  `tickets.md` — it is given the document, not the page.
+
 ## 2.5.0 — 2026-09-21
 
 - **A cross-model review of the above, and the twelve things it found.** Every

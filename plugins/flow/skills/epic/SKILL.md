@@ -72,10 +72,49 @@ anything grounding turned up; the **delivery choice** and its why, in one
 line; the **ticket list as one line each** — `ID — name — what it proves or
 builds` — in order, with a word on why the first is first.
 
+**Write the walkthrough — the epic in the user's own words**, and present it
+first, before the ticket list. Three to seven
+**scenes**, in the order a person meets them and never in ticket order. Each
+scene carries four fields: `who` acts, what they `does`, what they `sees` once
+this ships, and `today` what happens instead; plus the `tickets` that build it,
+as a structured list, and the numbered `requirements` it serves when the epic
+has them. Sign-off is otherwise made on engineer-shaped material — tickets,
+criteria, a delivery mode — and the person who asked for the feature has
+nothing in front of them written in their own terms. The rules, each with its
+reason:
+
+- **The reader is the person who asked for the feature**, not the person who
+  will build it, so the prose carries **no ticket IDs and no file names**. The
+  IDs ride in the scene's `tickets` list, where the page renders them as tags;
+  "PAY-2 adds the refunds endpoint" is a sentence written for the wrong reader,
+  and a scene nobody outside the team can read is a scene that checks nothing
+  at the gate it exists for.
+- **A scene may name only tickets this plan carries, and that is checked at
+  both doors.** `plan-page.mjs` refuses to render otherwise, naming the scene
+  and the ID, and a requirement citation outside the numbered list is refused
+  the same way; `/flow:doctor` then reads the `**Tickets:**` line of every
+  scene in `tickets.md`'s `## Walkthrough` section and warns on an ID this
+  epic does not have, or on a line too loose to parse. Both, because prose
+  about a future nobody has to build is exactly the fiction this section
+  produces when nothing ties it down — and the page is thrown away while the
+  section is what every worker and the retro actually read. **Run
+  `/flow:doctor` after writing the section**, the way you run it before
+  sign-off for the dependency lines.
+- **Tickets no scene names are printed under the walkthrough**, as "In no
+  scene" — never hidden. Infrastructure a user never meets belongs there and
+  the reader should see it; a user-visible ticket landing there is a scene
+  nobody wrote.
+- **`firstWhy` should point at scene 1**: the first ticket makes the first
+  walkthrough scene work end to end, thin. A decomposition split by layer
+  (schema, then API, then UI) makes the first user-visible slice arrive last
+  and hides integration risk until the end, which is the one shape the
+  walkthrough makes visible before it is built.
+
 **Render the shape as a page.** Write it as JSON into your session's
 **scratchpad** (never the repository — `tickets.md` is the record); the
 schema is at the top of `scripts/plan-page.mjs` (`stage: "shape"`, outcome,
-requirements, areas, delivery with its why, the ticket lines, `firstWhy`).
+requirements, the `walkthrough` scenes, areas, delivery with its why, the
+ticket lines, `firstWhy`).
 Then:
 
 ```bash
@@ -84,10 +123,30 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/plan-page.mjs" <scratchpad>/plan-<name>.json
 
 Publish it as an artifact and print the URL (no artifact surface: send the
 file). Keep the ticket lines in chat too — the page is the reading view, the
-chat lines are what the reply quotes. **Wait for the user to say the shape is
+chat lines are what the reply quotes. Say in one sentence that **they can
+select any text on the page, type a note, and paste the copied block back into
+this chat**. **Wait for the user to say the shape is
 right** before writing the full sections; this is a steering stop, not the
 sign-off gate. On a redirect, update the JSON, re-render, and **republish
 the same file path** so the URL evolves with the plan.
+
+**A pasted block is steering, and you answer it in the turn it arrives.** The
+page copies, and the human pastes:
+
+```
+> [<anchor>] <the text they selected>
+<what they said about it>
+```
+
+The anchor says where they are pointing — `outcome`, `requirements`,
+`walkthrough`, `scene-<n>`, `tickets`, a bare ticket ID (`PAY-3`),
+`alternative`, `plan-review`, `open-questions`, or `page` when the selection
+sat under none of them. Read it as if they had typed the same words in chat
+about that part of the plan: answer it, apply what you accept, say what you
+reject and why, then update the JSON, re-render and republish **the same file
+path**, so the page they are looking at becomes the answer. Nothing parses
+these blocks and nothing stores them — chat is the channel, and a comment left
+unanswered in the turn it arrives is one the human has to make twice.
 
 Then write the document:
 
@@ -238,6 +297,29 @@ cannot raise the ceiling that judges it. Removing the line mid-run does not
 lift the ceiling: the run keeps the last value and logs that it did.>
 
 Status log: `epics/<name>/status.md`. Run a ticket with `/flow:ticket <ID>`.
+
+## Walkthrough
+
+<the plan page's scenes, the same ones in the same words — the page is
+thrown away and this is the copy that survives, so `brief` hands it to
+every worker and the retro can ask "did scene 3 happen?". Three to seven,
+in the order a person meets them. No ticket IDs and no file names in the
+prose: the reader is the person who asked for the feature.>
+
+1. **<who>** <does what>.
+   **Sees:** <what they see once this ships>
+   **Today:** <what happens instead>
+   **Tickets:** <ID>[, <ID>]
+
+<the **Tickets:** line is the one line here a script reads, and it is strict
+the way `**Blocked by:**` is: the bold label, then bare ticket IDs of this
+epic and commas, and nothing else on the line — no "and", no aside. Indented
+under its scene is fine. `/flow:doctor` names a line it cannot read and an ID
+this epic does not have, because a scene whose tickets are decoration is a
+promise nothing is checked against.>
+
+<and, when some ticket is in no scene, one line saying which and why —
+infrastructure a user never meets, named here rather than left unexplained>
 
 ## Ground rules for every ticket in this epic
 
@@ -480,6 +562,9 @@ requested. **When the draft declares `Design sources:`, give it those paths
 and `epics/<name>/design-map.json` as well** — the design is an input like
 the code, and a plan review that never sees the drawing cannot tell you that
 the map misses something it draws, or that a ground rule quietly narrows it.
+**The reviewer reads the document, never the plan page** — so the walkthrough
+it checks is the `## Walkthrough` section of `tickets.md`, and scenes left in
+the plan JSON alone are scenes nobody reviews.
 It reports; it does not rewrite.
 
 Then, before showing the user: **fix what is right** (re-split, reorder —
@@ -489,7 +574,9 @@ unchanged** — they are the human's to answer.
 
 ## 5. Get sign-off — hard gate
 
-Show the user: the ticket list with one line each, the order, what ticket
+Show the user: **the walkthrough first** — what they will be able to do,
+scene by scene, which is the only part of this gate written in their terms —
+then the ticket list with one line each, the order, what ticket
 one proves, the delivery choice and why, anything grounding found that
 changes the shape — plus **one alternative decomposition you considered and
 rejected, with the reason**, so sign-off is a choice between shapes rather
@@ -519,9 +606,13 @@ read reports nothing — the human is signing off on the lane as much as on the
 decomposition.
 
 **Bring the plan page to this gate too**: update step 3's JSON — `stage:
-"sign-off"`, the `alternative` with its rejection reason, the `planReview`
+"sign-off"`, the `walkthrough` as the re-planning left it, the `alternative`
+with its rejection reason, the `planReview`
 outcome, any `openQuestions` — re-render, and republish the **same file
-path**.
+path**. Say again, in one sentence, that they can **select any text on the
+page and paste the copied block back into this chat**, and answer what comes
+back the way step 3 says: this is the last gate at which a sentence costs a
+sentence.
 
 **If the epic declares `Delivery: release`, say so in plain terms**: "after
 your approval, tickets will implement, review and merge into `epic/<name>`
