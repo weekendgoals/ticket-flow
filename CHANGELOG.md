@@ -12,6 +12,20 @@ heading here. `check-invariants.mjs` holds both.
 
 ## Unreleased
 
+## 2.6.0 — 2026-09-22
+
+The plan gains its readers before code exists. The plan page shows what will
+be built as a walkthrough a non-engineer can follow, and any text on it can be
+selected and commented on, statelessly, with the block pasted back into the
+session. A researcher who is not told the wanted answer reads the code before
+the decomposition. The plan reviewer looks for layer-split decompositions and
+scenes no ticket builds; the retro asks whether each scene happened. Minor:
+every change is a new section, a new agent or a new lens — no heading format,
+ID shape or command contract moves. Two things installed projects will notice
+without asking: `brief` now hands workers the whole preamble, ground rules
+included, as README always said it did; and the page's captions read for the
+person who asked for the feature.
+
 - **A planning session can send out for facts before it decomposes: the new
   `flow:researcher` agent and a research step in `/flow:epic`.** A brief
   usually names a solution — "add a cache", "use library X" — and from the
