@@ -47,11 +47,91 @@ away.
 - The root agent instructions (`CLAUDE.md` or `AGENTS.md`) and the same file
   for every service, package or workspace in play. **If they are stale, fix
   them first** — every ticket will be written and executed against them.
+  **Name the areas you expect to touch as you do it** — you are already
+  opening one instruction file per area, so the list exists here, a step
+  before `Areas in scope:` writes it down; the research trigger below is
+  judged on it.
 - The actual code and data the epic concerns. A decomposition written from
   the description alone invents tickets for problems that do not exist and
   misses the ones that do.
 - `node "${CLAUDE_PLUGIN_ROOT}/scripts/tickets.mjs" list` — what other epics
   are open, and where they overlap this one.
+
+### Research — facts from a context the brief never reached
+
+**Run this when the brief NAMES a solution** — "add a cache", "use library
+X", "move it to the worker" — **or when the epic spans more than one area.**
+It is your judgement, and the trigger is stated so it is a judgement about
+something: a brief that names a solution is the case where your own reading
+is most anchored, because you read the code to confirm what you have already
+been told and you cannot unsee it; more than one area is the case where what
+you did not read is largest. A one-area epic whose brief names no solution
+does not need it — the grounding above is enough, and a researcher there is
+ceremony.
+
+**Say in chat that you are running it, and list the questions you will ask,
+before you spawn anything.** The user can say skip, and a skip is only a
+choice where the step was shown: a gate is verified at the door its actor
+walks through, and the actor here is the person paying for the step. The
+questions in that message are also the cheapest review this step gets — the
+user is the one reader who knows which of them the brief already answers.
+
+Spawn `flow:researcher` with the **Agent** tool — omit the `model` parameter
+so the agent definition's pinned strongest model applies, and `effort: high`.
+It is not cheap and is not meant to be: a citation proves a present claim, so
+the Facts are the one part of the report anybody can check, and **nothing
+proves an absence** — the file nobody opened leaves no trace at all. The two
+sections you will lean on hardest, **Could not establish** and **Open
+questions**, are judgement about what was *not* found, and an omission there
+is not caught by a reader; it is decomposed against, and paid for in tickets.
+It reports what is true today and
+**proposes nothing** — no design, no ordering, no decomposition: a researcher
+who starts solving stops observing, and the report you want back is the one
+nobody wrote toward an answer.
+
+Give it: the **in-scope areas** as paths and the instruction file that binds
+each; **the plugin's root path** (`${CLAUDE_PLUGIN_ROOT}`, resolved — it runs
+`tickets.mjs list` and `doctor` for what other epics are open, and the script
+is on no PATH); and **your list of questions**.
+
+**Strip the brief, the proposed solution, the ticket list and the Outcome
+line from what you hand it.** That is the mechanism, not an omission: a
+researcher told the wanted answer confirms it — reads past the code that
+disagrees and hands the brief back with citations attached — and you would
+then decompose against your own reading returned in another agent's words.
+
+**The questions are about the present, and a question about a future is
+refused.** Ask "how does the checkout reach the payment provider today",
+"what handles the empty-cart case", "which tests cover the retry path",
+"where is the rate limit configured". Do not ask "would a cache here work",
+"is approach A better than B", "should this move to the worker": the
+researcher was not told what the work is, so an answer would be a guess
+wearing a citation — it refuses those, quotes them back, and names the
+present-tense question each would have to become. **Five to ten questions is
+the budget**, and the researcher stops when they are answered rather than
+when the area is exhausted: the questions are the only thing bounding what it
+reads, so a long list is a survey of the repository, which costs more than
+the planning session it is saving and returns facts nobody asked for.
+
+**Read the Facts before you slice anything** — that is the whole point of the
+step, and a fact that arrives after the decomposition is a fact that has to
+argue with it. **Where a fact contradicts the solution the brief names, say
+so at the shape stop below, as a question**: the brief's author is the one
+person who can decide whether the fact changes the want.
+
+**Its other two sections have owners too.** Every line under **Could not
+establish** is either a question for the user in step 3's sweep or the thing
+ticket one proves — the researcher searched for it and the repository did not
+answer, which is an unproven assumption whichever way it resolves, and the
+plan reviewer's lens on a probe buried at ticket four is waiting for it. The
+**Open questions** go into the clarify sweep, first.
+
+Where the facts live: the ones that shape the plan go in the plan page's
+`grounding` lines (one per fact, with its citation) and in the shape message;
+the ones a ticket needs go in **that ticket's body** in `tickets.md`. **No
+research document is committed.** `tickets.md` is the record, a file nobody
+re-reads preserves nothing the ticket body does not, and an artifact that
+preserves no knowledge and constrains nothing fails the admission test.
 
 ## 3. Clarify, agree the shape, then write `epics/<name>/tickets.md`
 
@@ -61,8 +141,14 @@ lifecycle, error and edge behaviour, integration contracts, non-functional
 expectations, any sentence two readers could read two ways. **Ask the user
 the ones whose answer changes the shape of the work — batched, concrete,
 each with the readings you are choosing between**; a handful of sharp
-questions is the budget. Record every answer in the ticket document. The
-rest ride to sign-off as open questions.
+questions is the budget. **Step 2's researcher, where you ran one, hands you
+its "Open questions" — start from those**: they are the ones the code cannot
+settle, found by a reader who had no brief to resolve them against. Take its
+**"Could not establish"** here too: an absence somebody searched for is
+either a question the user can answer outright or an assumption ticket one
+has to prove. Record
+every answer in the ticket document. The rest ride to sign-off as open
+questions.
 
 **Then show the user the shape and let them bend it** — a finished
 decomposition anchors, and a re-split costs a sentence now and a rewrite
@@ -113,7 +199,8 @@ reason:
 **Render the shape as a page.** Write it as JSON into your session's
 **scratchpad** (never the repository — `tickets.md` is the record); the
 schema is at the top of `scripts/plan-page.mjs` (`stage: "shape"`, outcome,
-requirements, the `walkthrough` scenes, areas, delivery with its why, the
+requirements, the `walkthrough` scenes, areas, the `grounding` lines — where
+step 2's research facts go, one per line with its citation — delivery with its why, the
 ticket lines, `firstWhy`).
 Then:
 

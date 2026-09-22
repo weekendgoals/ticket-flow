@@ -40,6 +40,7 @@ const FILES = {
   retro: 'plugins/flow/skills/retro/SKILL.md',
   reviewer: 'plugins/flow/agents/ticket-reviewer.md',
   planReviewer: 'plugins/flow/agents/plan-reviewer.md',
+  researcher: 'plugins/flow/agents/researcher.md',
   review: 'plugins/flow/skills/review/SKILL.md',
   script: 'plugins/flow/scripts/tickets.mjs',
   plugin: 'plugins/flow/.claude-plugin/plugin.json',
@@ -421,6 +422,35 @@ const PHRASES = [
     why: 'reviewers report and never fix — neither reviewer definition may gain a write instruction',
     re: /(reports?; it does not fix|report and never fix|report\. You never fix|report\. You never rewrite|reports without fixing)/i,
     files: ['ticket', 'quick', 'reviewer', 'planReviewer', 'readme', 'claudemd'],
+  },
+  {
+    // The researcher's counterpart of the rule above, and the reason it needs
+    // its own entry: it is not a reviewer, so no alternation of the reviewers'
+    // sentence covers it, and what it must never gain is not a write
+    // instruction but a design to propose.
+    why: 'the researcher observes and never proposes — the agent definition, the step that spawns it, README, METHODOLOGY and the invariant carry one rule',
+    re: /a researcher who starts solving stops observing/i,
+    files: ['researcher', 'epic', 'readme', 'claudemd', 'methodology'],
+  },
+  {
+    why: 'the researcher is not handed the brief, the proposed solution or the ticket list — the strip IS the mechanism, and it reads like withheld context to anyone who does not carry its reason',
+    re: /a researcher told the wanted answer confirms it/i,
+    files: ['researcher', 'epic', 'methodology', 'readme', 'claudemd'],
+  },
+  {
+    // The two entries above pin the REASONS, and a reason is not a rule: a
+    // document can drop the imperative, keep the sentence that explains it,
+    // and read as settled while instructing nobody — which is exactly what a
+    // review of this step found, with every suite green. So the strip list
+    // and the trigger are pinned as their own text.
+    why: "the strip list itself — what the researcher is NOT handed; the reason for it is pinned above, and a reason standing over a deleted rule instructs nobody",
+    re: /ticket list,? (and|or|nor) the Outcome line/i,
+    files: ['researcher', 'epic', 'readme', 'claudemd', 'methodology'],
+  },
+  {
+    why: "the research step's trigger — it runs where the brief names a solution or the epic spans more than one area, and a document that loses the condition turns an anchoring remedy into a step every epic pays for",
+    re: /the brief \*{0,2}names a solution/i,
+    files: ['epic', 'readme', 'methodology'],
   },
   {
     why: 'a regression the change introduced is Important, never a nit parked for the retro — the reviewer, the review skill, the lanes that disposition findings and the driver carry one rule',

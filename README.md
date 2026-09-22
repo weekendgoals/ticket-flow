@@ -13,7 +13,7 @@ repository).
 
 | | |
 |---|---|
-| `/flow:epic <name> [source...]` | Turn a request, report or conversation into `epics/<name>/`. Sources are files, globs or URLs, saved into `context/`; with none, the conversation is the brief. The shape is agreed **before** the document is written, a fresh-context **plan reviewer** challenges the decomposition — holding the **design** too, where the epic declares one, so that an element the drawing has and the map does not is caught before sign-off — then it **stops for sign-off** and commits — no pull request. An epic that declares `Design sources:` writes `design-map.json` beside its tickets and **ends with a whole-page fidelity ticket, then a human render-and-read ticket** (the differ decides computed style; composition and behaviour are a person's to judge, and the release waits on that ticket); what the plan deliberately does not build is declared in that map's `removed` list, where a comparison prints it as a decision instead of a hole. Both human gates render the plan as a **styled page** (`plan-page.mjs`, published as an artifact): one URL that evolves from shape checkpoint to sign-off, never committed, carrying a **walkthrough** of what the epic will let a person do — scene by scene, each scene tied to the tickets that build it — and a select-to-comment popover whose block you paste back into the chat |
+| `/flow:epic <name> [source...]` | Turn a request, report or conversation into `epics/<name>/`. Sources are files, globs or URLs, saved into `context/`; with none, the conversation is the brief. Where the brief **names a solution** or the epic spans more than one area, a fresh-context **researcher** — given the areas and a list of present-tense questions, and deliberately not the brief, the solution or the ticket list — reports what is true today with a `file:line` for every claim, so the decomposition is made against the code rather than against a reading of it taken under somebody's proposal. The shape is agreed **before** the document is written, a fresh-context **plan reviewer** challenges the decomposition — holding the **design** too, where the epic declares one, so that an element the drawing has and the map does not is caught before sign-off — then it **stops for sign-off** and commits — no pull request. An epic that declares `Design sources:` writes `design-map.json` beside its tickets and **ends with a whole-page fidelity ticket, then a human render-and-read ticket** (the differ decides computed style; composition and behaviour are a person's to judge, and the release waits on that ticket); what the plan deliberately does not build is declared in that map's `removed` list, where a comparison prints it as a decision instead of a hole. Both human gates render the plan as a **styled page** (`plan-page.mjs`, published as an artifact): one URL that evolves from shape checkpoint to sign-off, never committed, carrying a **walkthrough** of what the epic will let a person do — scene by scene, each scene tied to the tickets that build it — and a select-to-comment popover whose block you paste back into the chat |
 | `/flow:ticket <ID>` | One ticket end to end: branch, implement, verify, log, commit, review, fix, push, pull request. Runs **supervisor-mode by default** — a fresh-context worker implements from the documents and the supervisor hires the reviewer; `--interactive` runs in-session, once per session (a hook refuses a second interactive run; supervisor runs stay open) |
 | `/flow:run <epic>` | Run a `Delivery: release` epic end to end with nobody present: verifies sign-off happened, then hands the loop to a shipped **workflow script** — **code-controlled, agent-executed** — that takes the tickets in document order. Per ticket: refresh the epic branch and read the board, a **fresh-context worker** implements and stops at its pushed branch (**release tickets open no pull request of their own** — the release pull request at the end is the epic's only one), the **driver hires the reviewer** priced by a code-floored tier, a disposition agent fixes and records, fixes get one bounded re-review at the consequence tier — below it a code gate checks the fix diff stayed inside the files the review saw or its findings named and under a line budget, and a trip buys that same re-review at the consequence tier instead of halting (only a fix diff nothing could measure still halts) — the ticket's `CHECK`/`EXPECT` acceptance criteria are **re-run from the signed-off document** (`tickets.mjs check <ID> --from origin/epic/<name>`) and gated on in code, then the branch's review addendum, the departures its status entry records (**any `**Deviation:**` line halts the run — closed or not, because nobody present could have closed it**) and its exact head SHA are checked **in code before any agent that could merge exists**; only then does a merge agent merge that verified SHA — which cannot be retargeted — into the epic branch, and the board — not an agent — confirms the result. It halts on any stop condition, because each one is a code path rather than a judgment call. The session ends by **opening** the release pull request. Requires the Workflow tool; never merges toward the default branch |
 | `/flow:quick <description>` | The **cheap lane**: one small, low-risk piece of work, implemented **in-session** with a written scope, verification with counts, a short log entry and a pull request — and a fresh-context reviewer **only when behaviour changes** (prose-only diffs — documentation and comments, nothing a machine reads — get none; the PR is the review). Size- **and risk-gated**: auth, secrets, migrations and other consequential work is routed to `/flow:epic` at any size |
@@ -333,7 +333,7 @@ start):
   cooperating agent; protection is the hard floor that holds even against a
   misbehaving one.
 
-## Why the reviewers are separate agents
+## Why the reviewers and the researcher are separate agents
 
 A session that has just spent hours justifying its own decisions is the worst
 possible reviewer of them — and that is as true of a plan as of a diff.
@@ -364,6 +364,30 @@ in `/flow:run` the driver script does the same one level up — the worker
 stops at its pushed branch, the script hires the reviewer, and a code
 gate on the reviewer's structured findings decides whether anything merges.
 A worker that picked its own judge would recreate self-review one level down.
+
+`flow:researcher` is the third fresh context and the only one that runs
+**before** anything is written. A planning session that has read the brief has
+usually read a proposed solution with it — "add a cache", "use library X" —
+and its reading of the code from then on is a search for confirmation: it
+opens the files the proposal implies and leaves the rest closed. So
+`/flow:epic` sends out for facts instead, where the brief names a solution or
+the epic spans more than one area. The researcher is given the in-scope areas,
+their instruction files and a list of concrete questions, and is **not** given
+the brief, the proposed solution, the ticket list or the Outcome line — the
+strip is the mechanism, because a researcher told the wanted answer confirms
+it. It answers questions about the present ("how does X reach Y today", "which
+tests cover Z"), refuses solution-shaped ones ("would a cache here work") and
+names the present-tense question each would have to become, cites `file:line`
+for every claim, and reports what it looked for and could not find as a
+finding of its own. It proposes nothing — no design, no ordering, no
+recommendations — because a researcher who starts solving stops observing. It
+runs on the strongest model: a `file:line` proves a present claim, but nothing
+proves an absence, and the file nobody opened leaves no trace in the report.
+The
+facts land in the plan page's grounding lines and in the bodies of the tickets
+that need them; **no research document is committed**, since `tickets.md` is
+the record. Where a fact contradicts the solution the brief named, the planner
+raises it at the shape stop, as a question for the person who wrote the brief.
 
 They ship under their own names rather than generic ones, because project and
 user `.claude/agents/` definitions override same-named plugin agents. If you

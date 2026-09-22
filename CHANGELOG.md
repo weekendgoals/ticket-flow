@@ -12,6 +12,59 @@ heading here. `check-invariants.mjs` holds both.
 
 ## Unreleased
 
+- **A planning session can send out for facts before it decomposes: the new
+  `flow:researcher` agent and a research step in `/flow:epic`.** A brief
+  usually names a solution — "add a cache", "use library X" — and from the
+  moment the planner has read it, its reading of the code is a search for
+  confirmation: the files the proposal implies get opened, the rest stay
+  closed. The researcher runs in a fresh context and is given the in-scope
+  areas, the instruction files that bind them, the plugin root (so it can run
+  `tickets.mjs list` and `doctor`) and a list of concrete questions — and is
+  **not** given the brief, the proposed solution, the ticket list or the
+  Outcome line. That strip is the mechanism, not a courtesy: a researcher told
+  the wanted answer confirms it, and a confirmation that arrives with
+  citations is worse than not having asked. Questions are about the present
+  ("how does X reach Y today", "which tests cover Z"); a solution-shaped one
+  ("would a cache here work") is refused, quoted back, and returned as the
+  present-tense question it would have to become. Output is three sections —
+  **Facts** (numbered, one claim each, every one with a `file:line`), **Could
+  not establish** (what it searched for and where, because an absence somebody
+  looked for is evidence and an absence nobody looked for is a guess), and
+  **Open questions the planner should ask the user** — and nothing else: no
+  recommendations, no design, no ordering, because a researcher who starts
+  solving stops observing. A refused solution-shaped question and a lookup
+  it could not run are reported under **Could not establish**, and one line
+  above the sections appears only when the packet was wrong — the brief, the
+  proposed solution, the Outcome line or the ticket list was handed over. Read-only, no memory (a fact about a repository is
+  true on a date), and it writes nothing anywhere. It runs on the **strongest
+  model** at `effort: high`: every Fact carries a `file:line` and so audits
+  itself, but **nothing proves an absence** — a file nobody opened leaves no
+  trace, and the two sections the planner leans on hardest are judgement about
+  what was *not* found. A missed fact is caught by the plan reviewer or by the
+  code; a missed gap is decomposed against and paid for in tickets.
+- **The research step has a trigger, a budget and a place for what it
+  returns.** Run it when the brief names a solution or the epic spans more
+  than one area — the two cases where the planner's reading is most anchored
+  and where what it did not read is largest; the user can say skip, and a
+  one-area epic with no solution in the brief does not need one (a second
+  reader there is ceremony). Five to ten questions is the budget — enough to
+  cover the areas, few enough to be answered rather than skimmed — and the
+  researcher stops when they are
+  answered rather than when the area is exhausted. The facts go into the plan
+  page's existing `grounding` lines and into the bodies of the tickets that
+  need them; **no research document is committed** — `tickets.md` is the
+  record, and a second file holding the same facts preserves nothing the
+  ticket body does not. The planner reads the Facts **before** slicing, and
+  **where a fact contradicts the solution the brief named it says so at the
+  shape stop, as a question**, which is the one moment that contradiction
+  costs a sentence instead of a ticket. The planner **names the step and lists
+  its questions in chat before spawning**, because a skip is only a choice
+  where the step was shown. `check-invariants.mjs` pins the **imperatives as
+  well as the reasons** — the strip list and the trigger condition, beside the
+  two sentences that explain them — at every document that states each: a
+  reason left standing over a deleted rule reads as settled and instructs
+  nobody, which is how a review of this step deleted the strip from three
+  files with every suite green.
 - **The plan page carries a walkthrough: what the epic will let a person do,
   before it is built.** An optional `walkthrough` in the plan JSON — three to
   seven scenes, each one `who` acts, what they `does`, what they `sees` once

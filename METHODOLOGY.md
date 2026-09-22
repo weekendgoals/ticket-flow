@@ -1342,6 +1342,79 @@ this is narrower, not perfectly read-only; the run lane's sanctioned
 fallback reviewer is a general agent and keeps its full toolset, which is
 one more reason the fallback is a fallback.
 
+## Why the planner sends out for facts before it decomposes
+
+Grounding was always in the epic skill: read the instruction files, read the
+actual code, see which other epics are open. What that step never accounted
+for is *who* is doing the reading. The planning session has read the brief,
+and a brief usually names a solution — "add a cache", "use library X", "move
+it to the worker" — because the person who asks for work has usually already
+thought about how. From that moment the session's reading of the code is a
+search for confirmation. It opens the files the proposal implies, finds them
+roughly as the proposal predicted, and reports back that the plan is sound.
+The files the proposal does not imply stay closed, and the ones that
+contradict it get read as special cases. Nothing in the session is
+dishonest; it simply cannot unsee the brief.
+
+The fix is the same trick this workflow uses on diffs and on plans, moved one
+step earlier: a fresh context with no stake. The researcher is given the
+areas in scope, the instruction files that bind them, and a list of concrete
+questions — and is given **neither the brief, nor the proposed solution, nor
+the ticket list, nor the Outcome line**. The strip is the whole mechanism,
+and it is the part that will read as withheld context to a future session
+tempted to "help" the agent by pasting the brief in: **a researcher told the
+wanted answer confirms it.** Hand it the proposal and it reads for evidence
+of the proposal, exactly as the planner was doing — and now the planner
+decomposes against its own anchored reading returned in another agent's
+words, which is worse than not having asked, because the confirmation now
+arrives with citations.
+
+Two constraints follow from the same reasoning and are not decoration. The
+questions must be about the **present** — "how does X reach Y today", "what
+handles the empty case", "which tests cover Z" — and a solution-shaped
+question ("would a cache here work") is refused rather than answered, because
+an agent that was deliberately not told what the work is has no basis for an
+opinion about it, and an opinion it produced anyway would be a guess wearing a
+citation. And the researcher proposes nothing at all: no design, no ordering,
+no recommendations section. **A researcher who starts solving stops
+observing** — the moment it holds a solution it is reading for evidence of it,
+which is the anchoring this step exists to remove. Every claim carries a
+`file:line`; "I could not find X, here is what I searched" is a finding of its
+own, because an absence somebody looked for is evidence and an absence nobody
+looked for is a guess.
+
+It runs on the strongest model available, which looks like the wrong place to
+spend until you ask what the report can be checked for. Every Fact carries a
+`file:line`, so the present claims audit themselves — and **nothing proves an
+absence**. A file the researcher never opened leaves no trace in the report;
+"Could not establish" and "Open questions" are trusted on its word, and they
+are precisely the two sections the planner leans on, because they are what
+becomes a clarify question or the assumption ticket one has to prove. A
+missed fact is caught by the plan reviewer or the code; a missed *gap* is
+decomposed against, and paid for in tickets.
+
+The output is a handful of facts, not a document. They go into the plan
+page's grounding lines and into the bodies of the tickets that need them;
+**no research file is committed**, because `tickets.md` is the record and a
+second document holding the same facts preserves no knowledge the ticket body
+does not and would drift from it within an epic. That is the admission test
+applied to the step's own artifact. The step itself passes on two counts: it
+reduces uncertainty (the decomposition is made against the code rather than
+against a reading of it made under a proposal), and it produces decision
+evidence for the shape stop — where a fact contradicts the brief's proposed
+solution, the planner is told to raise it there, as a question for the person
+who wrote the brief, which is the one moment that contradiction costs a
+sentence instead of a ticket.
+
+It is also the step most likely to become ceremony, so it has a trigger
+rather than a default: run it when the brief names a solution, or when the
+epic spans more than one area. Those are the two cases where the anchor is
+strongest and where what the planner did not read is largest. A one-area epic
+whose brief names no solution gets nothing from a second reader that the
+first could not get itself, and paying for one there is exactly the "gates
+multiplying faster than the risk they retire" failure this document names as
+the workflow's own.
+
 ## Why the plan is reviewed before sign-off
 
 Every defence in this workflow used to start after the plan was signed off —

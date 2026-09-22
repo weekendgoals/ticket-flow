@@ -28,7 +28,7 @@ go through the flow, one-off work goes through `/flow:quick` into
   has its own suite:
   `node --test plugins/flow/hooks/ticket-session-guard.test.mjs` (`# pass 14`
   on the same terms). The invariant checker has
-  `node --test plugins/flow/scripts/check-invariants.test.mjs` (`# pass 45`),
+  `node --test plugins/flow/scripts/check-invariants.test.mjs` (`# pass 47`),
   The board renderer has
   `node --test plugins/flow/scripts/board.test.mjs` (`# pass 9`) and the
   release walkthrough
@@ -102,7 +102,7 @@ go through the flow, one-off work goes through `/flow:quick` into
   phrases). Run it whenever a skill, agent, hook or doctrine document changes —
   it is presence and equality only, so contradictions in meaning still need
   review. Its suite: `node --test plugins/flow/scripts/check-invariants.test.mjs`
-  (`# pass 45` on the same terms).
+  (`# pass 47` on the same terms).
 - **Smoke:** `node plugins/flow/scripts/tickets.mjs doctor` — must exit 0 on
   this repo. `… list` shows the board.
 - **Syntax check:** `node --check plugins/flow/scripts/tickets.mjs`, and the
@@ -289,8 +289,18 @@ test file path explicitly.
   command's contract breaks. `check-invariants.mjs` fails when `plugin.json`
   and the newest stamped heading disagree, and when `Unreleased` passes 30
   entries.
-- **Reviewers report and never fix.** Do not give `ticket-reviewer` or
-  `plan-reviewer` write instructions.
+- **Reviewers report and never fix; the researcher observes and never
+  proposes.** Do not give `ticket-reviewer` or `plan-reviewer` write
+  instructions. Do not give `researcher` a design to propose, a decomposition
+  to suggest or a recommendations section — a researcher who starts solving
+  stops observing, and the planner would then be decomposing against its own
+  proposal handed back in another agent's words. The same rule bars handing it
+  the brief, the wanted solution, the ticket list or the Outcome line: the
+  strip is the mechanism, not a courtesy — a researcher told the wanted answer
+  confirms it — and it reads like withheld context to anyone who does not
+  carry that reason. `check-invariants.mjs` pins the imperatives as well as
+  the reasons, because a reason left standing over a deleted rule reads as
+  settled and instructs nobody.
 - **A human merges into main; nothing runs after that merge.** Absolute in
   every mode: no agent merges or pushes toward the default branch, and no
   skill gains a post-merge step. The one sanctioned agent merge is **a
