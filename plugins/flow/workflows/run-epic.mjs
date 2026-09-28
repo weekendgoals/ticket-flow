@@ -2077,8 +2077,11 @@ ${NO_MAIN} You do not merge this branch; the driver does, after its own gate.`,
       effort: important.length ? 'high' : 'low',
       // With nothing to fix, the disposition is clerical — write the addendum,
       // commit, push — so it is priced like the other shell-adjacent steps.
-      // Anything with an Important finding to fix keeps the inherited model.
-      ...(important.length ? {} : { model: 'haiku' }),
+      // Anything with an Important finding to fix is implementation, and runs
+      // on the epic's `Worker model:` like the worker did — the fix commits
+      // are the same kind of work, priced the same way; absent a line, it
+      // inherits the driver's model as before.
+      ...(important.length ? (workerModel ? { model: workerModel } : {}) : { model: 'haiku' }),
     },
   )
 

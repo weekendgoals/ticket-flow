@@ -503,7 +503,10 @@ ticket is a halt, not an ending:
   later prompt — and a shadow failure is never a stop condition. Its meter
   delta (`shadowSpend`) is left out of what the `Ticket budget` judges. An
   unknown `shadowReviewer` value is one log line and a run without a shadow.
-- **Dispositions the findings** in another fresh agent: Important findings
+- **Dispositions the findings** in another fresh agent — on `Worker model:`
+  when the epic declares one and there is an Important finding to fix, since
+  a fix commit is implementation like the worker's; on a fast model when the
+  review was clean and the step is clerical: Important findings
   fixed as new commits (`<ID>: … (review fix)`), checks re-run with counts,
   pre-existing findings recorded with a named owner (`retro` when none
   fits), the dated review addendum appended per the ticket skill's step 8
