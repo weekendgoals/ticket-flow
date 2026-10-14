@@ -1,0 +1,165 @@
+import { parseEpicBody, parseTicketBody } from './issue-body.mjs'
+
+export const EPIC_LABEL = 'flow:epic'
+export const TICKET_LABEL = 'flow:ticket'
+export const APPROVED_LABEL = 'flow:approved'
+export const NEEDS_HUMAN_LABEL = 'flow:needs-human'
+
+export const STATE_BY_LABEL = {
+  'flow:planned': 'planned',
+  'flow:ready': 'ready',
+  'flow:in-progress': 'in-progress',
+  'flow:in-review': 'in-review',
+  'flow:done': 'done',
+  'flow:needs-human': 'needs-human',
+}
+export const STATE_LABELS = Object.keys(STATE_BY_LABEL)
+export const TIER_LABELS = { easy: 'tier:easy', hard: 'tier:hard' }
+export const MODEL_BY_TIER = { easy: 'sonnet', hard: 'opus' }
+
+export const LABELS = [
+  { name: EPIC_LABEL, color: '5319e7', description: 'Flow epic: the plan for one piece of work' },
+  { name: TICKET_LABEL, color: '1d76db', description: 'Flow ticket: one step of an epic' },
+  { name: APPROVED_LABEL, color: '0e8a16', description: 'A person signed off this epic plan' },
+  { name: 'flow:planned', color: 'c5def5', description: 'Written, waiting for the epic to be approved' },
+  { name: 'flow:ready', color: 'bfdadc', description: 'Approved and free to start once its blockers are done' },
+  { name: 'flow:in-progress', color: 'fbca04', description: 'Someone is building this ticket now' },
+  { name: 'flow:in-review', color: 'd4c5f9', description: 'Built, being reviewed' },
+  { name: 'flow:done', color: '0e8a16', description: 'Merged into the epic branch' },
+  { name: NEEDS_HUMAN_LABEL, color: 'd93f0b', description: 'Stopped: a person has to decide something' },
+  { name: TIER_LABELS.easy, color: 'ededed', description: 'Straightforward ticket, built by the faster model' },
+  { name: TIER_LABELS.hard, color: '555555', description: 'Demanding ticket, built by the strongest model' },
+]
+
+export function ticketState(labels) {
+  const states = labels.filter((label) => STATE_LABELS.includes(label)).map((label) => STATE_BY_LABEL[label])
+  if (states.length === 1) return { state: states[0], problem: null }
+  if (!states.length) return { state: 'unlabelled', problem: 'has no state label (flow:planned, flow:ready, …)' }
+  return { state: 'conflicting', problem: `has ${states.length} state labels at once (${states.join(', ')}); keep one` }
+}
+
+export function ticketTier(labels) {
+  return labels.includes(TIER_LABELS.easy) && !labels.includes(TIER_LABELS.hard) ? 'easy' : 'hard'
+}
+
+function orderTickets(listed, subIssues) {
+  const position = new Map(listed.map((task, index) => [task.number, index]))
+  return [...subIssues].sort((a, b) => {
+    const pa = position.has(a.number) ? position.get(a.number) : Infinity
+    const pb = position.has(b.number) ? position.get(b.number) : Infinity
+    return pa === pb ? a.number - b.number : pa - pb
+  })
+}
+
+export function findCycles(graph) {
+  const cycles = []
+  const seen = new Set()
+  const visiting = []
+  const finished = new Set()
+  const visit = (node) => {
+    if (finished.has(node)) return
+    const at = visiting.indexOf(node)
+    if (at !== -1) {
+      const members = visiting.slice(at)
+      const key = [...members].sort((a, b) => a - b).join(',')
+      if (!seen.has(key)) {
+        seen.add(key)
+        cycles.push([...members, node])
+      }
+      return
+    }
+    visiting.push(node)
+    for (const next of graph.get(node) || []) visit(next)
+    visiting.pop()
+    finished.add(node)
+  }
+  for (const node of graph.keys()) visit(node)
+  return cycles
+}
+
+export function deriveEpic(epicIssue, subIssues) {
+  const plan = parseEpicBody(epicIssue.body)
+  const designSources = plan.settings.designSources
+  const problems = plan.problems.map((problem) => `epic #${epicIssue.number}: ${problem}`)
+  const members = new Set(subIssues.map((issue) => issue.number))
+  for (const task of plan.tickets)
+    if (!members.has(task.number))
+      problems.push(`epic #${epicIssue.number} lists #${task.number} under "## Tickets", but #${task.number} is not one of its sub-issues`)
+
+  const tickets = orderTickets(plan.tickets, subIssues).map((issue) => {
+    const parsed = parseTicketBody(issue.body, designSources)
+    const { state, problem: stateProblem } = ticketState(issue.labels)
+    const ticketProblems = []
+    if (stateProblem) ticketProblems.push(`#${issue.number} ${stateProblem}`)
+    if (parsed.blockedByProblem) ticketProblems.push(`#${issue.number} ${parsed.blockedByProblem}`)
+    if (parsed.epic !== null && parsed.epic !== epicIssue.number)
+      ticketProblems.push(`#${issue.number} says "Epic: #${parsed.epic}" but is a sub-issue of epic #${epicIssue.number}`)
+    const outsideBlockers = parsed.blockedBy.filter((number) => !members.has(number))
+    for (const number of outsideBlockers)
+      ticketProblems.push(`#${issue.number} is blocked by #${number}, which is not a ticket of epic #${epicIssue.number}; a wait on other work cannot be tracked here`)
+    return {
+      number: issue.number,
+      title: issue.title,
+      state,
+      tier: ticketTier(issue.labels),
+      blockedBy: parsed.blockedBy,
+      blockedByProblem: parsed.blockedByProblem,
+      outsideBlockers,
+      assignees: issue.assignees,
+      problems: ticketProblems,
+    }
+  })
+
+  const byNumber = new Map(tickets.map((ticket) => [ticket.number, ticket]))
+  const graph = new Map(tickets.map((ticket) => [ticket.number, ticket.blockedBy.filter((number) => members.has(number))]))
+  const cycles = findCycles(graph)
+  const inCycle = new Set(cycles.flat())
+  for (const cycle of cycles)
+    problems.push(`epic #${epicIssue.number} has a blocking cycle: ${cycle.map((number) => `#${number}`).join(' → ')}; none of these can ever start`)
+
+  for (const ticket of tickets) {
+    ticket.unfinishedBlockers = ticket.blockedBy.filter((number) => !byNumber.has(number) || byNumber.get(number).state !== 'done')
+    ticket.inCycle = inCycle.has(ticket.number)
+    const blocked = ticket.blockedByProblem !== null || ticket.outsideBlockers.length > 0 || ticket.unfinishedBlockers.length > 0
+    ticket.shownState = ticket.state === 'ready' && blocked ? 'waiting' : ticket.state
+    problems.push(...ticket.problems)
+  }
+
+  return {
+    number: epicIssue.number,
+    title: epicIssue.title,
+    author: epicIssue.author,
+    approved: epicIssue.labels.includes(APPROVED_LABEL),
+    settings: plan.settings,
+    tickets,
+    cycles,
+    problems,
+  }
+}
+
+export function nextSteps(epic) {
+  const pick = (...states) => epic.tickets.filter((ticket) => states.includes(ticket.shownState)).map((ticket) => ticket.number)
+  const result = {
+    epic: epic.number,
+    ready: pick('ready'),
+    waiting: epic.tickets
+      .filter((ticket) => ticket.shownState === 'waiting')
+      .map((ticket) => ({
+        n: ticket.number,
+        blockedBy: ticket.unfinishedBlockers,
+        ...(ticket.blockedByProblem ? { problem: ticket.blockedByProblem } : {}),
+      })),
+    inProgress: pick('in-progress', 'in-review'),
+    done: pick('done'),
+    needsHuman: pick('needs-human'),
+    planned: pick('planned'),
+    problems: epic.problems,
+  }
+  const unfinished = epic.tickets.filter((ticket) => ticket.state !== 'done').length
+  const stuckReason = !epic.tickets.length
+    ? `epic #${epic.number} has no tickets, so there is nothing built and nothing to start`
+    : unfinished > 0 && !result.ready.length && !result.inProgress.length
+      ? `epic #${epic.number} is stuck: ${unfinished} ticket(s) are not done, none is ready and none is in progress`
+      : null
+  return { result, stuckReason }
+}

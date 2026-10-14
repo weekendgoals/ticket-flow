@@ -18,6 +18,12 @@ jobs:
           node-version: 20
       - name: syntax checks
         run: |
+          node --check plugins/flow/scripts/flow.mjs
+          node --check plugins/flow/scripts/issue-body.mjs
+          node --check plugins/flow/scripts/checks.mjs
+          node --check plugins/flow/scripts/epic-state.mjs
+          node --check plugins/flow/scripts/tracker/github.mjs
+          node --check plugins/flow/scripts/tracker/fake-gh.mjs
           node --check plugins/flow/scripts/fidelity.mjs
           node --check plugins/flow/scripts/meter.mjs
           node --check plugins/flow/scripts/worktree-setup.mjs
@@ -26,6 +32,10 @@ jobs:
           node -e 'const s=require("fs").readFileSync("plugins/flow/workflows/run-epic.mjs","utf8").replace(/^export const meta/m,"const meta");new (Object.getPrototypeOf(async function(){}).constructor)("agent","parallel","pipeline","log","phase","args","budget",s)'
       - name: test suites
         run: |
+          node --test plugins/flow/scripts/flow.test.mjs
+          node --test plugins/flow/scripts/issue-body.test.mjs
+          node --test plugins/flow/scripts/checks.test.mjs
+          node --test plugins/flow/scripts/tracker/github.test.mjs
           node --test plugins/flow/scripts/fidelity.test.mjs
           node --test plugins/flow/scripts/meter.test.mjs
           node --test plugins/flow/scripts/worktree-setup.test.mjs
