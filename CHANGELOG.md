@@ -125,6 +125,8 @@ a whole epic and the retro follow.
 - **`/flow:quick`** writes one ticket with no epic and runs `/flow:ticket`
   on it; sign-in, payments, data migrations, deletion and shared
   infrastructure still go through `/flow:epic`.
+- **`/flow:epic`** now hands over to `/flow:ticket #<n>` for the first
+  ready ticket.
 - **Removed:** the 2.x supervisor and interactive modes, the status log
   entries and addenda, the revert check written into a log, and the run
   meter's run-record lines.

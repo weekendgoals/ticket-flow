@@ -3,9 +3,10 @@
 A Claude Code plugin that plans work as **epics** and **tickets** and keeps
 them in **GitHub Issues**. GitHub is the board; git is the proof.
 
-This is **Flow 3.0, stage 1**: planning (`/flow:epic`) and the `flow`
-command-line tool are rewritten. Building, reviewing and the unattended run
-are still the 2.x versions and are being rewritten next (see
+This is **Flow 3.0, stages 1 and 2**: planning (`/flow:epic`), building one
+ticket (`/flow:ticket`, `/flow:quick`, `/flow:review`) and the `flow`
+command-line tool are rewritten. The unattended run of a whole epic and the
+retro are still the 2.x versions (see
 [What is not rewritten yet](#what-is-not-rewritten-yet)).
 
 ## Install
@@ -143,6 +144,94 @@ conversation is always one of them.
    `flow:approved` to the epic (or leaves that to a teammate on GitHub), and
    prints the epic's URL.
 
+## `/flow:ticket #<n>`
+
+Builds one ticket from ready to merged. A person can run it in a session
+(**attended**: the session supervises, a worker it spawns builds, and it may
+ask questions), or a host can run `claude -p "/flow:ticket #<n>"` with
+`FLOW_UNATTENDED=1` (**unattended**: nothing waits for an answer; a question
+becomes `flow:needs-human`). Each step posts one comment on the issue:
+
+1. **Start** (`flow start`): refuses a ticket that is not ready or a working
+   tree with uncommitted changes; cuts `ticket/<n>` from the epic branch
+   (release) or the default branch (incremental, or no epic); labels it
+   `flow:in-progress`; says who builds it, on which model.
+2. **Build** on the ticket's model, `tier:easy` on Sonnet, otherwise Opus,
+   with commits `#<n>: <what>`, no code comments, component tests for UI and
+   an end-to-end test only for a journey the epic names.
+3. **Check** (`flow check`), then **screenshots** (`flow screenshots`) when
+   the project says how to take them.
+4. **Review** (`flow:in-review`): a separate reviewer on the strongest model
+   reads the commits, the ticket and the epic's ground rules, and never the
+   builder's reasoning. Important findings are fixed in `(review fix)`
+   commits and reviewed once more; one still open after that goes to a
+   person.
+5. **Accept** (`flow accept`): the criteria run on the committed head and
+   the results are posted with that commit. If the issue body (which holds
+   the criteria) was edited after the start, acceptance is refused and names
+   who edited it.
+6. **Cost** (`flow meter`): what each step cost, posted as a table.
+7. **Deliver** (`flow deliver`): only the accepted commit. Release: merged
+   into the epic branch with `--no-ff` and labelled `flow:done`; if the
+   branch moved it tries again twice, and a conflict goes to a person.
+   Incremental: a pull request into the default branch, then the pull
+   request loop below.
+
+A ticket stops for a person in three cases only: acceptance still failing
+after two rounds of fixes, a contradiction between the ticket and the code,
+and a merge conflict. Everything else is retried or noted in a comment.
+
+### The pull request loop
+
+`flow pr-review-request` asks Copilot to review (a project with
+`.coderabbit.yaml` is reviewed by CodeRabbit instead); `flow pr-wait` waits
+for that review; `flow pr-threads` lists the unresolved threads, and each is
+fixed or answered, then closed with `flow pr-resolve` and a reply;
+`flow pr-checks --wait` waits for CI, and a failure is fixed. Two rounds,
+then a person. One comment per round on the ticket.
+
+### `.flow.json`
+
+Optional, at the repository root:
+
+```json
+{
+  "screenshots": "npm run screenshots",
+  "screenshotsDir": ".flow/screenshots/{n}"
+}
+```
+
+`screenshots` is a shell command that writes PNGs of the built screens. It
+gets `FLOW_TICKET` and `FLOW_SCREENSHOTS_DIR`, and may print another
+directory as its last line. The images are committed on the ticket branch
+and posted on the issue.
+
+### The cost comment
+
+`flow meter <n> --transcripts worker=<file> reviewer=<file> ...` reads
+Claude Code transcripts (a file, a directory, or a headless run's
+`stream-json` output, which it splits into worker, reviewer and fixes by
+itself) and posts, per step and per model: input and output tokens, cache
+writes and reads, the largest context any single request held, compactions,
+and time from first to last message, plus the same figures as JSON for later
+reading. Anything a transcript does not record reads `unknown`: nothing is
+estimated. Attended, the transcripts are under
+`~/.claude/projects/<project>/<session>/subagents/agent-<id>.jsonl`, where
+`<id>` is the `agentId` the Agent tool returned.
+
+## `/flow:quick "<what>"`
+
+For one small, low-risk change: it writes a ticket with no epic
+(`flow create-ticket --no-epic`), proves its check fails, and runs
+`/flow:ticket` on it, ending at a pull request. Anything touching sign-in,
+payments, data migrations, deletion or shared infrastructure goes through
+`/flow:epic`.
+
+## `/flow:review [range]`
+
+The ticket reviewer's rules, run by hand on a range of commits. It reports
+and fixes nothing.
+
 ## The `flow` command
 
 `node <plugin root>/scripts/flow.mjs <command>`. It stores nothing locally:
@@ -162,7 +251,18 @@ every answer is read from GitHub (through `gh`) and git.
 | `create-epic --file <md> --title "<t>"` | Creates the epic issue; prints its number |
 | `create-ticket <epic> --file <md> --title "<t>" [--tier easy\|hard] [--blocked-by <n>,<n>]` | Creates the ticket, writes its `Epic:` and `Blocked by:` lines, links it as a sub-issue and adds it to the epic's task list; prints its number |
 | `link <epic> <n>` | Finishes a `create-ticket` that created the issue but could not link it. Safe to repeat |
+| `create-ticket --no-epic --file <md> --title "<t>" [--tier easy\|hard]` | Creates a ticket that belongs to no epic (counts as approved) |
 | `needs-human <n> --text "<why>"` | Marks the ticket `flow:needs-human` and asks a person, by mention |
+| `start <n>` | Starts a ready ticket: branch, label, first comment. JSON out; refuses otherwise (unattended: and asks a person) |
+| `accept <n>` | Runs the criteria on `ticket/<n>`'s committed head and posts the results with the commit; refuses an issue body edited after the start |
+| `deliver <n>` | Merges the accepted commit into the epic branch (release) or opens its pull request (incremental) |
+| `screenshots <n>` | Runs `.flow.json`'s `screenshots` command, commits and posts the images |
+| `meter <n> --transcripts [<role>=]<path> ... [--print]` | Posts what the ticket cost, read from transcripts |
+| `pr-review-request <pr>` | Asks Copilot to review; prints `copilot`, `coderabbit` or `none` |
+| `pr-wait <pr> [--bot …] [--timeout <s>] [--interval <s>]` | Waits for the bot's review of the current head |
+| `pr-threads <pr>` | Unresolved review threads as JSON |
+| `pr-resolve <thread-id> --text "<reply>"` | Replies on a thread, then resolves it |
+| `pr-checks <pr> [--wait]` | CI checks as JSON; exit 1 when one failed, 3 when some are still running |
 
 ## What is not rewritten yet
 
@@ -171,10 +271,9 @@ writes, so they do not work with an epic planned by 3.0:
 
 | | Stage |
 |---|---|
-| `/flow:ticket`, `/flow:review` — build and review one ticket | stage 2, not yet rewritten |
-| `/flow:run` — the unattended run | stage 3, not yet rewritten |
+| `/flow:run` — the unattended run of a whole epic | stage 3, not yet rewritten |
 | A GitHub Action that runs the same steps in the target project | stage 3, not yet written |
-| `/flow:retro`, `/flow:quick` | stage 4, not yet rewritten |
+| `/flow:retro` | stage 4, not yet rewritten |
 
 ## Agents
 
@@ -183,7 +282,9 @@ writes, so they do not work with an epic planned by 3.0:
   proposes one.
 - **plan-reviewer** — reads the draft plan with no stake in it and reports
   what will fail. It never edits the plan.
-- **ticket-reviewer** — reviews one ticket's change (stage 2).
+- **ticket-reviewer** — reviews one ticket's commits with no memory of
+  writing them and never sees the builder's reasoning. It reports and never
+  fixes.
 
 All three run on the strongest model available: what a reviewer or
 researcher left out cannot be checked afterwards.

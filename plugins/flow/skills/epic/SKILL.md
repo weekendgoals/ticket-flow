@@ -361,7 +361,7 @@ URL.
 
 ## 7. Hand over
 
-Say that the epic is ready to build and name its first ticket. Flow 3.0's
-build commands (one ticket at a time, and the unattended run) are not
-rewritten yet; say so rather than suggesting a command that reads the old
-plan files. Then stop.
+Say that the epic is ready to build, name its first ready ticket, and say
+that `/flow:ticket #<n>` builds it, best in a fresh session (this one is full
+of planning). The unattended run of a whole epic is not rewritten yet; do not
+suggest `/flow:run`. Then stop.
