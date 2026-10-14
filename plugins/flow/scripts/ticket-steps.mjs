@@ -1,6 +1,10 @@
 export const STARTED_MARKER = '<!-- flow:started -->'
 export const ACCEPTANCE_MARKER = /<!-- flow:acceptance sha=([0-9a-f]{7,40}) passed=(true|false) -->/
 export const METER_MARKER = '<!-- flow:meter -->'
+export const RESET_MARKER = '<!-- flow:reset -->'
+export const MERGED_MARKER = /<!-- flow:merged sha=([0-9a-f]{7,40}) accepted=([0-9a-f]{7,40}) -->/
+export const RELEASE_CHECK_MARKER = '<!-- flow:release-check -->'
+export const RELEASE_PR_MARKER = /<!-- flow:release-pr number=(\d+) -->/
 export const UNATTENDED_VARIABLE = 'FLOW_UNATTENDED'
 
 export function isUnattended(environment = process.env) {
@@ -12,7 +16,7 @@ export function hostName(environment = process.env) {
 }
 
 const STATE_REFUSALS = {
-  'in-progress': 'is already in progress; if that run is gone, put flow:planned back by hand and start again',
+  'in-progress': 'is already in progress; if nobody is working on it any more, run `flow reset` on it and start again: the branch keeps its commits',
   'in-review': 'is already built and in review; finish it rather than starting it again',
   done: 'is already done',
   'needs-human': 'is waiting for a person (flow:needs-human); once they have decided, replace that label with flow:planned to start again',
@@ -44,8 +48,31 @@ export function deliveryFor(epic) {
   return epic.settings.delivery || 'release'
 }
 
-export function startedComment({ host, model, branch, base, baseSha }) {
+export function startedComment({ host, model, branch, base, baseSha, resumedAt = null }) {
+  if (resumedAt)
+    return `${STARTED_MARKER}\n**Resumed** in an ${host} · worker model ${model} · branch \`${branch}\` carries on from its commit \`${resumedAt.slice(0, 12)}\` (it left \`${base}\` at \`${baseSha.slice(0, 12)}\`)`
   return `${STARTED_MARKER}\n**Started** in an ${host} · worker model ${model} · branch \`${branch}\` from \`${base}\` at \`${baseSha.slice(0, 12)}\``
+}
+
+export function resetComment({ host, branch }) {
+  return `${RESET_MARKER}\n**Reset** by an ${host}: the run working on this ticket stopped without a result. It is planned again; \`${branch}\` keeps its commits, and the next start carries on from them.`
+}
+
+export function countResets(comments) {
+  return comments.filter((comment) => comment.body.startsWith(RESET_MARKER)).length
+}
+
+export function mergedComment({ sha, mergeSha, epicBranch, alreadyMerged }) {
+  const how = alreadyMerged ? `was already in \`${epicBranch}\` (at \`${mergeSha.slice(0, 12)}\`)` : `merged into \`${epicBranch}\` as \`${mergeSha.slice(0, 12)}\``
+  return `<!-- flow:merged sha=${mergeSha} accepted=${sha} -->\n**Done.** The accepted commit \`${sha.slice(0, 12)}\` ${how}.`
+}
+
+export function lastMerge(comments) {
+  for (let index = comments.length - 1; index >= 0; index--) {
+    const match = comments[index].body.match(MERGED_MARKER)
+    if (match) return { mergeSha: match[1], accepted: match[2] }
+  }
+  return null
 }
 
 export function lastStart(comments) {

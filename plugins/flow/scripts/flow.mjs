@@ -1,10 +1,11 @@
 #!/usr/bin/env node
-import { readFileSync, existsSync, readdirSync, statSync } from 'node:fs'
+import { readFileSync, writeFileSync, existsSync, readdirSync, statSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import { join, resolve, relative, isAbsolute } from 'node:path'
 import * as github from './tracker/github.mjs'
 import { TrackerError } from './tracker/github.mjs'
-import { parseEpicBody, parseTicketBody, withEpicLine, withBlockedBy, withTicketListed, withTicketChecked, normalizeNewlines } from './issue-body.mjs'
+import { parseEpicBody, parseTicketBody, parseDesignMap, withEpicLine, withBlockedBy, withTicketListed, withTicketChecked, normalizeNewlines } from './issue-body.mjs'
+import { CONFIG, ConfigError, apply as applyWorktreeSetup, createWorktree, removeWorktree, worktreePath } from './worktree-setup.mjs'
 import { runCriteria, formatCheckReport, CHECK_TIMEOUT_MS, CHECK_MAX_BUFFER } from './checks.mjs'
 import {
   GitError,
@@ -31,14 +32,20 @@ import {
   editsAfter,
   acceptanceComment,
   editedRefusal,
+  resetComment,
+  countResets,
+  mergedComment,
+  lastMerge,
+  RELEASE_CHECK_MARKER,
 } from './ticket-steps.mjs'
-import { loadSources, meterTranscripts, meterComment } from './meter.mjs'
+import { loadSources, workflowSources, meterTranscripts, meterComment, readMeterComment } from './meter.mjs'
 import { COPILOT_REVIEWER_LOGIN, BOTS, configuredBot, copilotUnavailable, botReview, summarizeChecks, sleepSeconds } from './review-bots.mjs'
 import {
   LABELS,
   EPIC_LABEL,
   TICKET_LABEL,
   NEEDS_HUMAN_LABEL,
+  START_LABEL,
   STATE_LABELS,
   TIER_LABELS,
   MODEL_BY_TIER,
@@ -58,28 +65,40 @@ const USAGE = `usage: flow <command>
   check <n> [--cwd <dir>]                run a ticket's CHECK criteria (exit 1 unless all pass)
   check --file <md> [--epic-file <md>]   the same, for a draft ticket body not yet on GitHub
   link <epic> <n>                        finish linking a ticket to its epic (safe to repeat)
-  post <n> --file <md> | --text "<md>"   add a comment
+  post <n> --file <md> | --text "<md>"   add a comment (--file - reads it from standard input)
   label <n> +<label> -<label> ...        add and remove labels
   create-epic --file <md> --title "<t>"
   create-ticket <epic> --file <md> --title "<t>" [--tier easy|hard] [--blocked-by <n>,<n>]
   create-ticket --no-epic --file <md> --title "<t>" [--tier easy|hard]
   needs-human <n> --text "<why>"         stop a ticket and ask a person
+  reset <n> [--once]                     put a ticket whose run died back to planned; its branch keeps its commits
+                                         (--once: if it was reset before, ask a person instead)
 
   start <n> [--cwd <dir>]                start a ready ticket: its branch, label and first comment (JSON)
   accept <n> [--cwd <dir>]               run the criteria on the committed head and post the result
   deliver <n> [--cwd <dir>]              merge the accepted commit into the epic branch, or open its pull request
   screenshots <n> [--cwd <dir>]          run the screenshots command from .flow.json, commit the images, link them
-  meter <n> --transcripts [<role>=]<path> ... [--print]
+  merge <n> [--sha <sha>] | merge --epic <epic>
+                                         merge the accepted commit into the epic branch (--epic: every accepted ticket, in order)
+  meter <n> (--transcripts [<role>=]<path> ... | --workflow <run dir>) [--print]
                                          post what the ticket cost, read from session transcripts
   pr-review-request <pr>                 ask Copilot to review (prints copilot, coderabbit or none)
   pr-wait <pr> [--bot copilot|coderabbit|none] [--timeout <s>] [--interval <s>]
   pr-threads <pr>                        unresolved review threads, as JSON
   pr-resolve <thread-id> --text "<reply>"
-  pr-checks <pr> [--wait] [--timeout <s>] [--interval <s>]`
+  pr-checks <pr> [--wait] [--timeout <s>] [--interval <s>]
 
-const VALUE_FLAGS = new Set(['--file', '--epic-file', '--text', '--title', '--tier', '--cwd', '--blocked-by', '--bot', '--timeout', '--interval'])
+  next, dispatch and the commands below run a whole epic:
+  dispatch <epic>                        ask a host to start ready tickets (adds flow:start, up to Parallel:)
+  worktree <n> [--remove]                a separate set-up working copy for one ticket, beside the repository
+  check-epic <epic> [--tickets <n>,<n>] [--mark]
+                                         run the checks of done tickets at the epic branch's head, in a clean copy
+  release-pr <epic>                      open the epic's one pull request once every ticket is done
+  design-map <epic> [--out <file>]       write the epic's design map for the design comparison`
+
+const VALUE_FLAGS = new Set(['--file', '--epic-file', '--text', '--title', '--tier', '--cwd', '--blocked-by', '--bot', '--timeout', '--interval', '--sha', '--epic', '--tickets', '--out', '--workflow'])
 const REPEATABLE_FLAGS = new Set(['--transcripts'])
-const BOOLEAN_FLAGS = new Set(['--json', '--no-epic', '--print', '--wait'])
+const BOOLEAN_FLAGS = new Set(['--json', '--no-epic', '--print', '--wait', '--once', '--mark', '--remove'])
 const DEFAULT_WAIT_SECONDS = 1800
 const DEFAULT_POLL_SECONDS = 30
 const DEFAULT_SCREENSHOTS_DIR = '.flow/screenshots/{n}'
@@ -116,7 +135,7 @@ function issueNumber(value, what = 'issue number') {
 
 function readText(flags) {
   if (flags.file !== undefined && flags.text !== undefined) throw new UsageError('give --file or --text, not both')
-  if (flags.file !== undefined) return readFileSync(flags.file, 'utf8')
+  if (flags.file !== undefined) return readFileSync(flags.file === '-' ? 0 : flags.file, 'utf8')
   if (flags.text !== undefined) return flags.text
   throw new UsageError('give --file <md> or --text "<md>"')
 }
@@ -485,7 +504,7 @@ function markNeedsHuman(number, text) {
   const { issue, epicAuthor } = loadTicket(number)
   const people = issue.assignees.length ? issue.assignees : [epicAuthor || issue.author].filter(Boolean)
   github.addLabels(number, issue.labels.includes(NEEDS_HUMAN_LABEL) ? [] : [NEEDS_HUMAN_LABEL])
-  github.removeLabels(number, issue.labels.filter((label) => STATE_LABELS.includes(label) && label !== NEEDS_HUMAN_LABEL))
+  github.removeLabels(number, issue.labels.filter((label) => (STATE_LABELS.includes(label) && label !== NEEDS_HUMAN_LABEL) || label === START_LABEL))
   const mention = people.map((login) => `@${login}`).join(' ')
   return github.comment(number, `**This ticket needs a person.** ${mention ? `${mention} ` : ''}${text}`)
 }
@@ -548,9 +567,9 @@ function commandStart(positional, flags) {
   const tier = ticketTier(issue.labels)
   const model = MODEL_BY_TIER[tier]
   github.addLabels(number, ['flow:in-progress'])
-  github.removeLabels(number, ['flow:planned'])
+  github.removeLabels(number, ['flow:planned', ...(issue.labels.includes(START_LABEL) ? [START_LABEL] : [])])
   const host = hostName()
-  github.comment(number, startedComment({ host, model, branch, base, baseSha: cut.baseSha }))
+  github.comment(number, startedComment({ host, model, branch, base, baseSha: cut.baseSha, resumedAt: cut.resumedAt }))
   printJson({
     ticket: number,
     title: issue.title,
@@ -559,6 +578,7 @@ function commandStart(positional, flags) {
     branch,
     base,
     baseSha: cut.baseSha,
+    resumedAt: cut.resumedAt,
     tier,
     model,
     host,
@@ -607,16 +627,67 @@ function mergeFailureText({ result, epicBranch, sha }) {
   return `Merging \`${sha.slice(0, 12)}\` into \`${epicBranch}\` failed: ${result.reason || result.kind}. Nothing was merged.`
 }
 
+function mergeAcceptedTicket({ number, root, expectedSha = null }) {
+  const { issue, parsed } = loadTicket(number)
+  const { state } = ticketState(issue.labels)
+  const { epic, epicIssue } = loadOptionalEpic(parsed.epic)
+  const fail = (reason) => ({ code: 1, reason })
+  if (deliveryFor(epic) !== 'release') return fail(`#${number} is not in a release epic; it is delivered by its own pull request (\`flow deliver ${number}\`)`)
+  if (!ACCEPTABLE_STATES.has(state)) return fail(`#${number} is ${state}; only a ticket in progress or in review can be merged`)
+  const acceptance = lastAcceptance(github.listComments(number))
+  if (!acceptance || !acceptance.passed) return fail(`#${number} has no passing acceptance comment; run \`flow accept ${number}\` on the reviewed head first`)
+  const sha = acceptance.sha
+  if (expectedSha && !sha.startsWith(expectedSha) && !expectedSha.startsWith(sha))
+    return fail(`#${number} was accepted at ${sha.slice(0, 12)}, not at ${expectedSha.slice(0, 12)}; only the commit the acceptance comment names is merged`)
+  const branch = ticketBranchName(number)
+  fetchOrigin(root)
+  if (!resolveCommit(root, sha)) {
+    const reason = `the accepted commit ${sha} is not in this clone; fetch the ticket branch, then merge again`
+    return { code: refuse(number, state, reason), reason }
+  }
+  const pushed = pushTicketBranch(root, { sha, branch })
+  if (!pushed.ok) {
+    const reason = `#${number} was not merged: ${pushed.reason}`
+    return { code: refuse(number, state, reason), reason }
+  }
+  const epicBranch = epic.settings.branch
+  if (!epicBranch) {
+    const reason = `epic #${epic.number} has no "Branch:" setting, so there is no epic branch to merge into`
+    return { code: refuse(number, state, reason), reason }
+  }
+  const result = mergeIntoEpic(root, { sha, epicBranch, subject: `Merge #${number}: ${issue.title}` })
+  if (!result.ok) {
+    const text = mergeFailureText({ result, epicBranch, sha })
+    markNeedsHuman(number, text)
+    return { code: 1, reason: text, needsHuman: true }
+  }
+  github.addLabels(number, ['flow:done'])
+  github.removeLabels(number, issue.labels.filter((label) => STATE_LABELS.includes(label) && label !== 'flow:done'))
+  github.comment(number, mergedComment({ sha, mergeSha: result.mergeSha, epicBranch, alreadyMerged: result.kind === 'already-merged' }))
+  const checked = withTicketChecked(epicIssue.body, number)
+  if (checked !== normalizeNewlines(epicIssue.body)) github.updateIssueBody(epic.number, checked)
+  return { code: 0, json: { ticket: number, delivery: 'release', accepted: sha, epicBranch, merge: result.mergeSha, outcome: result.kind, attempts: result.attempts } }
+}
+
 function commandDeliver(positional, flags) {
   const number = issueNumber(positional[0], 'a ticket number')
   const root = requireRepository(flags)
   const { issue, parsed } = loadTicket(number)
   const { state } = ticketState(issue.labels)
-  const { epic, epicIssue } = loadOptionalEpic(parsed.epic)
+  const { epic } = loadOptionalEpic(parsed.epic)
   const delivery = deliveryFor(epic)
   if (!ACCEPTABLE_STATES.has(state)) {
     process.stderr.write(`#${number} is ${state}; only a ticket in progress or in review can be delivered\n`)
     return 1
+  }
+  if (delivery === 'release') {
+    const merged = mergeAcceptedTicket({ number, root })
+    if (merged.code !== 0) {
+      process.stderr.write(`${merged.reason}\n`)
+      return merged.code
+    }
+    printJson(merged.json)
+    return 0
   }
   const acceptance = lastAcceptance(github.listComments(number))
   if (!acceptance || !acceptance.passed) {
@@ -629,25 +700,6 @@ function commandDeliver(positional, flags) {
   if (!resolveCommit(root, sha)) return refuse(number, state, `the accepted commit ${sha} is not in this clone; fetch the ticket branch, then run \`flow deliver ${number}\` again`)
   const pushed = pushTicketBranch(root, { sha, branch })
   if (!pushed.ok) return refuse(number, state, `#${number} was not delivered: ${pushed.reason}`)
-  if (delivery === 'release') {
-    const epicBranch = epic.settings.branch
-    if (!epicBranch) return refuse(number, state, `epic #${epic.number} has no "Branch:" setting, so there is no epic branch to merge into`)
-    const result = mergeIntoEpic(root, { sha, epicBranch, subject: `Merge #${number}: ${issue.title}` })
-    if (!result.ok) {
-      const text = mergeFailureText({ result, epicBranch, sha })
-      process.stderr.write(`${text}\n`)
-      markNeedsHuman(number, text)
-      return 1
-    }
-    github.addLabels(number, ['flow:done'])
-    github.removeLabels(number, issue.labels.filter((label) => STATE_LABELS.includes(label) && label !== 'flow:done'))
-    const how = result.kind === 'already-merged' ? `was already in \`${epicBranch}\` (at \`${result.mergeSha.slice(0, 12)}\`)` : `merged into \`${epicBranch}\` as \`${result.mergeSha.slice(0, 12)}\``
-    github.comment(number, `**Done.** The accepted commit \`${sha.slice(0, 12)}\` ${how}.`)
-    const checked = withTicketChecked(epicIssue.body, number)
-    if (checked !== normalizeNewlines(epicIssue.body)) github.updateIssueBody(epic.number, checked)
-    printJson({ ticket: number, delivery, accepted: sha, epicBranch, merge: result.mergeSha, outcome: result.kind, attempts: result.attempts })
-    return 0
-  }
   const base = github.defaultBranch()
   const existing = github.findOpenPullRequest(branch)
   const pullRequest =
@@ -660,6 +712,283 @@ function commandDeliver(positional, flags) {
     })
   github.comment(number, `**Pull request ${existing ? 'already open' : 'opened'}:** ${pullRequest.url} (into \`${base}\`). A person merges it.`)
   printJson({ ticket: number, delivery, accepted: sha, pullRequest: pullRequest.number, url: pullRequest.url, base })
+  return 0
+}
+
+function commandMerge(positional, flags) {
+  const root = requireRepository(flags)
+  if (flags.epic !== undefined) {
+    if (positional.length) throw new UsageError('give a ticket number or --epic, not both')
+    const epic = loadEpic(issueNumber(flags.epic, 'an epic number'))
+    if (deliveryFor(epic) !== 'release') {
+      printJson({ epic: epic.number, merged: [], notMerged: [], reason: 'not a release epic: each ticket has its own pull request' })
+      return 0
+    }
+    const waiting = epic.tickets.filter((ticket) => ACCEPTABLE_STATES.has(ticket.state))
+    const merged = []
+    const notMerged = []
+    for (const ticket of waiting) {
+      if (!lastAcceptance(github.listComments(ticket.number))?.passed) continue
+      const outcome = mergeAcceptedTicket({ number: ticket.number, root })
+      if (outcome.code === 0) merged.push(outcome.json)
+      else notMerged.push({ ticket: ticket.number, reason: outcome.reason })
+    }
+    printJson({ epic: epic.number, merged, notMerged })
+    return notMerged.length ? 1 : 0
+  }
+  const number = issueNumber(positional[0], 'a ticket number')
+  const outcome = mergeAcceptedTicket({ number, root, expectedSha: flags.sha || null })
+  if (outcome.code !== 0) {
+    process.stderr.write(`${outcome.reason}\n`)
+    return outcome.code
+  }
+  printJson(outcome.json)
+  return 0
+}
+
+function commandReset(positional, flags) {
+  const number = issueNumber(positional[0], 'a ticket number')
+  const issue = github.getIssue(number)
+  const { state } = ticketState(issue.labels)
+  if (!ACCEPTABLE_STATES.has(state)) {
+    process.stderr.write(`#${number} is ${state}; only a ticket left in progress or in review can be reset\n`)
+    return 1
+  }
+  const branch = ticketBranchName(number)
+  const comments = github.listComments(number)
+  const started = lastStart(comments)
+  const acceptance = lastAcceptance(comments)
+  if (acceptance && acceptance.passed && (!started || Date.parse(acceptance.at) >= Date.parse(started.createdAt))) {
+    process.stderr.write(`#${number} passed acceptance at ${acceptance.sha.slice(0, 12)} and is waiting to be merged, not abandoned; run \`flow merge ${number}\`\n`)
+    return 1
+  }
+  const earlier = countResets(comments)
+  if (flags.once && earlier > 0) {
+    markNeedsHuman(number, `The run working on this ticket stopped without a result, and it already had once before (it was reset ${earlier} time(s)). \`${branch}\` keeps its commits; a person decides how to go on.`)
+    printJson({ ticket: number, action: 'needs-human', resets: earlier })
+    return 0
+  }
+  github.addLabels(number, ['flow:planned'])
+  github.removeLabels(number, issue.labels.filter((label) => (STATE_LABELS.includes(label) && label !== 'flow:planned') || label === START_LABEL))
+  github.comment(number, resetComment({ host: hostName(), branch }))
+  printJson({ ticket: number, action: 'reset', resets: earlier + 1 })
+  return 0
+}
+
+function failedChecksText(report) {
+  const failed = report.checks.filter((check) => check.status !== 'passed').map((check) => `\`${check.check}\` (${check.status})`)
+  const problems = report.problems.map((problem) => problem.why)
+  return [...failed, ...problems].join('; ')
+}
+
+function commandCheckEpic(positional, flags) {
+  const epicNumber = issueNumber(positional[0], 'an epic number')
+  const root = requireRepository(flags)
+  const epic = loadEpic(epicNumber)
+  const epicBranch = epic.settings.branch
+  if (!epicBranch) {
+    process.stderr.write(`epic #${epicNumber} has no "Branch:" setting, so there is no epic branch to check\n`)
+    return 1
+  }
+  const listed = flags.tickets === undefined ? null : parseBlockerList(flags.tickets)
+  const outside = (listed || []).filter((number) => !epic.tickets.some((ticket) => ticket.number === number))
+  if (outside.length) throw new UsageError(`${outside.map((number) => `#${number}`).join(', ')} is not a ticket of epic #${epicNumber}`)
+  const chosen = listed ? epic.tickets.filter((ticket) => listed.includes(ticket.number)) : epic.tickets.filter((ticket) => ticket.state === 'done')
+  fetchOrigin(root)
+  const head = resolveCommit(root, `origin/${epicBranch}`)
+  if (!head) {
+    process.stderr.write(`origin/${epicBranch} does not exist, so there is nothing to check\n`)
+    return 1
+  }
+  const path = worktreePath(root, `epic-${epicNumber}-check`)
+  const made = createWorktree(root, { path, ref: head })
+  if (!made.ok) {
+    process.stderr.write(`${made.reason}\n`)
+    return 1
+  }
+  const results = []
+  let setupFailure = null
+  try {
+    try {
+      const setup = applyWorktreeSetup({ repo: root, worktree: path })
+      if (setup.failure) setupFailure = `${setup.failure.step}: ${setup.failure.detail}`
+    } catch (error) {
+      if (!(error instanceof ConfigError)) throw error
+      setupFailure = error.message
+    }
+    if (!setupFailure)
+      for (const ticket of chosen) {
+        const issue = github.getIssue(ticket.number)
+        const criteria = parseTicketBody(issue.body, epic.settings.designSources).criteria
+        const report = runCriteria({ ticket: ticket.number, ...criteria }, { cwd: path })
+        results.push({ ticket: ticket.number, title: ticket.title, passed: report.passed, total: report.total, skipped: report.skipped, allPassed: report.allPassed, failures: report.allPassed ? '' : failedChecksText(report) })
+      }
+  } finally {
+    removeWorktree(root, path)
+  }
+  const failing = results.filter((result) => !result.allPassed)
+  const allPassed = !setupFailure && !failing.length
+  const lines = [RELEASE_CHECK_MARKER]
+  if (setupFailure) lines.push(`**The epic check could not run** at \`${head.slice(0, 12)}\` of \`${epicBranch}\`: setting up a clean copy failed (${setupFailure}). Nothing was judged.`)
+  else {
+    lines.push(`**Epic check** at \`${head.slice(0, 12)}\` of \`${epicBranch}\`: ${results.length - failing.length} of ${results.length} ticket(s) still pass their checks.`)
+    if (results.length) {
+      lines.push('', '| Ticket | Checks | Result |', '|---|---|---|')
+      for (const result of results) lines.push(`| #${result.ticket} ${result.title.replace(/\|/g, '\\|')} | ${result.passed} of ${result.total} | ${result.allPassed ? 'pass' : `FAIL: ${result.failures.replace(/\|/g, '\\|')}`} |`)
+    }
+  }
+  github.comment(epicNumber, lines.join('\n'))
+  if (flags.mark)
+    for (const result of failing)
+      markNeedsHuman(
+        result.ticket,
+        `This ticket's checks fail on the epic branch \`${epicBranch}\` at \`${head.slice(0, 12)}\`, after it was merged: ${result.failures}. It stays merged; whether it needs a fix ticket is a person's call.`,
+      )
+  printJson({ epic: epicNumber, branch: epicBranch, head, setupFailure, tickets: results, allPassed })
+  return allPassed ? 0 : 1
+}
+
+function commandWorktree(positional, flags) {
+  const number = issueNumber(positional[0], 'a ticket number')
+  const root = requireRepository(flags)
+  const path = worktreePath(root, `ticket-${number}`)
+  if (flags.remove) {
+    removeWorktree(root, path)
+    printJson({ ticket: number, path, removed: true })
+    return 0
+  }
+  const { parsed } = loadTicket(number)
+  const { epic } = loadOptionalEpic(parsed.epic)
+  const base = deliveryFor(epic) === 'release' ? epic.settings.branch : github.defaultBranch()
+  if (!base) {
+    process.stderr.write(`#${number} has no branch to start from (no epic branch, or the default branch is unknown)\n`)
+    return 1
+  }
+  fetchOrigin(root)
+  const made = createWorktree(root, { path, ref: `origin/${base}` })
+  if (!made.ok) {
+    printJson({ ticket: number, path, base, configured: false, failure: { step: 'git worktree add', detail: made.reason } })
+    return 1
+  }
+  let setup
+  try {
+    setup = applyWorktreeSetup({ repo: root, worktree: path })
+  } catch (error) {
+    if (!(error instanceof ConfigError)) throw error
+    setup = { configured: true, copied: [], ran: [], failure: { step: CONFIG, detail: error.message } }
+  }
+  if (setup.failure) removeWorktree(root, path)
+  printJson({ ticket: number, path, base, ...setup })
+  return setup.failure ? 1 : 0
+}
+
+function costTotals(meters) {
+  const names = ['input', 'output', 'cacheCreation', 'cacheReads']
+  const totals = {}
+  for (const name of names) {
+    const values = meters.map((meter) => meter.total[name])
+    totals[name] = values.some((value) => typeof value !== 'number') ? null : values.reduce((sum, value) => sum + value, 0)
+  }
+  return totals
+}
+
+function shownCount(value) {
+  return typeof value === 'number' ? value.toLocaleString('en-US') : 'unknown'
+}
+
+function releaseBody({ epic, plan, tickets }) {
+  const lines = [`Epic: #${epic.number}`, '']
+  if (plan.outcome) lines.push('## Outcome', '', plan.outcome, '')
+  if (plan.walkthrough) lines.push('## Walkthrough', '', plan.walkthrough, '')
+  lines.push('## Tickets', '', '| Ticket | Merged as |', '|---|---|')
+  for (const ticket of tickets) lines.push(`| #${ticket.number} ${ticket.title.replace(/\|/g, '\\|')} | ${ticket.mergeSha ? `\`${ticket.mergeSha.slice(0, 12)}\`` : 'not recorded'} |`)
+  const metered = tickets.filter((ticket) => ticket.meter)
+  lines.push('', '## Cost', '')
+  if (!metered.length) lines.push('No ticket has a cost comment, so the cost is unknown.')
+  else {
+    const totals = costTotals(metered.map((ticket) => ticket.meter))
+    lines.push(
+      `Over ${metered.length} of ${tickets.length} ticket(s) with a cost comment: ${shownCount(totals.input)} input, ${shownCount(totals.output)} output, ${shownCount(totals.cacheCreation)} cache writes and ${shownCount(totals.cacheReads)} cache reads (tokens). Each ticket's comment has the figures by step and by model.`,
+    )
+  }
+  lines.push('', ...tickets.map((ticket) => `Closes #${ticket.number}`), `Closes #${epic.number}`, '', 'A person reviews and merges this pull request; nothing runs after the merge.')
+  return lines.join('\n')
+}
+
+function commandReleasePr(positional) {
+  const epicNumber = issueNumber(positional[0], 'an epic number')
+  const epicIssue = github.getIssue(epicNumber)
+  if (!epicIssue.labels.includes(EPIC_LABEL)) throw new UsageError(`#${epicNumber} is not an epic (it has no ${EPIC_LABEL} label)`)
+  const epic = deriveEpic(epicIssue, github.listSubIssues(epicNumber))
+  const refusal = !epic.approved
+    ? `epic #${epicNumber} is not approved`
+    : deliveryFor(epic) !== 'release'
+      ? `epic #${epicNumber} is not a release epic; each of its tickets has its own pull request`
+      : !epic.settings.branch
+        ? `epic #${epicNumber} has no "Branch:" setting`
+        : !epic.tickets.length
+          ? `epic #${epicNumber} has no tickets`
+          : epic.tickets.some((ticket) => ticket.state !== 'done')
+            ? `not every ticket of epic #${epicNumber} is done (${epic.tickets.filter((ticket) => ticket.state !== 'done').map((ticket) => `#${ticket.number} ${ticket.state}`).join(', ')})`
+            : null
+  if (refusal) {
+    process.stderr.write(`${refusal}; the release pull request opens only when every ticket is merged\n`)
+    return 1
+  }
+  const tickets = epic.tickets.map((ticket) => {
+    const comments = github.listComments(ticket.number)
+    const merged = lastMerge(comments)
+    const meterComment = [...comments].reverse().find((comment) => readMeterComment(comment.body))
+    return { number: ticket.number, title: ticket.title, mergeSha: merged ? merged.mergeSha : null, meter: meterComment ? readMeterComment(meterComment.body) : null }
+  })
+  const base = github.defaultBranch()
+  const existing = github.findOpenPullRequest(epic.settings.branch)
+  const pullRequest =
+    existing || github.createPullRequest({ title: epic.title, head: epic.settings.branch, base, body: releaseBody({ epic, plan: parseEpicBody(epicIssue.body), tickets }) })
+  github.comment(
+    epicNumber,
+    `<!-- flow:release-pr number=${pullRequest.number} -->\n**Release pull request ${existing ? 'already open' : 'opened'}:** ${pullRequest.url} (\`${epic.settings.branch}\` into \`${base}\`). A person reviews and merges it.`,
+  )
+  printJson({ epic: epicNumber, pullRequest: pullRequest.number, url: pullRequest.url, base, existing: Boolean(existing) })
+  return 0
+}
+
+function commandDesignMap(positional, flags) {
+  const epicNumber = issueNumber(positional[0], 'an epic number')
+  const epicIssue = github.getIssue(epicNumber)
+  const found = parseDesignMap(epicIssue.body)
+  if (found.problem) {
+    process.stderr.write(`epic #${epicNumber}: ${found.problem}\n`)
+    return 1
+  }
+  if (!found.map) {
+    process.stderr.write(`epic #${epicNumber} has no \`\`\`design-map block, so there is nothing to compare against; the plan adds one when it declares Design sources\n`)
+    return 1
+  }
+  const text = `${JSON.stringify(found.map, null, 2)}\n`
+  if (flags.out === undefined) process.stdout.write(text)
+  else {
+    writeFileSync(flags.out, text)
+    console.log(flags.out)
+  }
+  return 0
+}
+
+function commandDispatch(positional) {
+  const epic = loadEpic(issueNumber(positional[0], 'an epic number'))
+  const { result, stuckReason } = nextSteps(epic)
+  if (!epic.approved) {
+    process.stderr.write(`${stuckReason}\n`)
+    return 1
+  }
+  const flagged = epic.tickets.filter((ticket) => ticket.state === 'planned' && ticket.labels.includes(START_LABEL)).map((ticket) => ticket.number)
+  const width = epic.settings.parallel || 1
+  const slots = Math.max(0, width - result.inProgress.length - flagged.length)
+  const started = result.ready.filter((number) => !flagged.includes(number)).slice(0, slots)
+  for (const number of started) github.addLabels(number, [START_LABEL])
+  const busy = result.inProgress.length + flagged.length + started.length
+  const state = busy ? 'running' : epic.tickets.length && epic.tickets.every((ticket) => ticket.state === 'done') ? 'built' : 'stopped'
+  printJson({ epic: epic.number, parallel: width, started, alreadyAsked: flagged, inProgress: result.inProgress, needsHuman: result.needsHuman, state })
   return 0
 }
 
@@ -736,16 +1065,17 @@ function commandScreenshots(positional, flags) {
 
 function commandMeter(positional, flags) {
   const number = issueNumber(positional[0], 'a ticket number')
-  if (!flags.transcripts) throw new UsageError('meter needs --transcripts <path> (a transcript file, a directory of them, or a headless run\'s stream output)')
+  if (!flags.transcripts && flags.workflow === undefined)
+    throw new UsageError("meter needs --transcripts <path> (a transcript file, a directory of them, or a headless run's output) or --workflow <run dir>")
   let sources
   try {
-    sources = loadSources(flags.transcripts)
+    sources = [...(flags.transcripts ? loadSources(flags.transcripts) : []), ...(flags.workflow !== undefined ? workflowSources(flags.workflow, number) : [])]
   } catch (error) {
     process.stderr.write(`${error.message}\n`)
     return 1
   }
   if (!sources.length) {
-    process.stderr.write(`no .jsonl transcript found in ${flags.transcripts.join(', ')}\n`)
+    process.stderr.write(`no transcript found for #${number} in ${[...(flags.transcripts || []), ...(flags.workflow !== undefined ? [flags.workflow] : [])].join(', ')}\n`)
     return 1
   }
   const body = meterComment({ ticket: number, sourceCount: sources.length, meter: meterTranscripts(sources) })
@@ -895,6 +1225,20 @@ function main(argv) {
       return commandPrResolve(positional, flags)
     case 'pr-checks':
       return commandPrChecks(positional, flags)
+    case 'merge':
+      return commandMerge(positional, flags)
+    case 'reset':
+      return commandReset(positional, flags)
+    case 'check-epic':
+      return commandCheckEpic(positional, flags)
+    case 'worktree':
+      return commandWorktree(positional, flags)
+    case 'release-pr':
+      return commandReleasePr(positional)
+    case 'design-map':
+      return commandDesignMap(positional, flags)
+    case 'dispatch':
+      return commandDispatch(positional)
     default:
       throw new UsageError(`unknown command "${command}"`)
   }

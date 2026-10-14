@@ -7,6 +7,7 @@ import {
   parseTaskList,
   parseSettings,
   parseEpicBody,
+  parseDesignMap,
   parseTicketBody,
   parseCriteriaSection,
   withEpicLine,
@@ -288,4 +289,16 @@ test('withTicketListed finds a "## Tickets ##" heading the section parser accept
 test('withTicketChecked ticks one ticket off the list and leaves the rest', () => {
   const body = '## Tickets\n\n- [ ] #2 — first\n- [ ] #3 — second\n\n```\n- [ ] #2 — in a fence\n```\n'
   assert.equal(withTicketChecked(body, 2), '## Tickets\n\n- [x] #2 — first\n- [ ] #3 — second\n\n```\n- [ ] #2 — in a fence\n```\n')
+})
+
+test('the design map is one ```design-map block of JSON in the epic body, read whole and checked the way the comparison reads it', () => {
+  const map = { landmarks: [{ name: 'hero', design: '.hero', page: '[data-hero]' }] }
+  const body = `## Outcome\n\nx\n\n## Design map\n\n\`\`\`design-map\n${JSON.stringify(map)}\n\`\`\`\n`
+  assert.deepEqual(parseDesignMap(body), { map, problem: null })
+  assert.deepEqual(parseEpicBody(body).designMap, map)
+  assert.deepEqual(parseDesignMap('## Outcome\n\nno map\n'), { map: null, problem: null })
+  assert.match(parseDesignMap('```design-map\n{ nope\n```').problem, /block is not valid JSON/)
+  assert.match(parseDesignMap('```design-map\n{"landmarks":[{"name":"a"}]}\n```').problem, /cannot read the design map: .*has no "design"/)
+  assert.match(parseDesignMap(`\`\`\`design-map\n${JSON.stringify(map)}\n\`\`\`\n\n\`\`\`design-map\n${JSON.stringify(map)}\n\`\`\``).problem, /there are 2 ```design-map blocks \(lines 1, 5\)/)
+  assert.ok(parseEpicBody('## Settings\n\nDelivery: release\n\n```design-map\n[]\n```').problems.some((problem) => /design map/.test(problem)), 'a broken map is a problem with the plan, so create-epic refuses it')
 })

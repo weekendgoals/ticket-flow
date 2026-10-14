@@ -1,4 +1,5 @@
 import { parseChecks, CHECK_LINE, EXPECT_LINE, COMPARE_LINE, LANDMARKS_LINE, CHECK_NEAR } from './checks.mjs'
+import { validateMap } from './fidelity.mjs'
 
 export const BLOCKED_BY_LINE = /^Blocked by:[ \t]*(#\d+(?:[ \t]*,[ \t]*#\d+)*)[ \t]*$/
 export const BLOCKED_BY_NEAR = /^[\s>*_+-]*(?:\d+[.)]\s+)?[*_]*blocked[ -]?by[*_]*\s*:/i
@@ -8,6 +9,7 @@ const FENCE_OPEN = /^[ \t]*(`{3,}|~{3,})[ \t]*([^`\s]*)/
 const TASK_LINE = /^[ \t]*[-*][ \t]+\[([ xX])\][ \t]+#(\d+)\b[ \t]*(?:[—–-][ \t]*)?(.*)$/
 const SETTING_LINE = /^[ \t]*(?:[-*][ \t]+)?([A-Za-z][A-Za-z ]*?)[ \t]*:[ \t]*(.*?)[ \t]*$/
 
+export const DESIGN_MAP_FENCE = 'design-map'
 export const DELIVERY_MODES = ['release', 'incremental']
 export const MAX_PARALLEL = 3
 
@@ -148,11 +150,41 @@ export function parseSettings(text) {
   return { settings, problems }
 }
 
+export function parseDesignMap(body) {
+  const blocks = []
+  let current = null
+  for (const entry of scanLines(body)) {
+    if (entry.fence !== DESIGN_MAP_FENCE) continue
+    if (entry.fenceEdge === 'open') {
+      current = { firstLine: entry.number, lines: [] }
+      blocks.push(current)
+    } else if (entry.fenceEdge === null && current) current.lines.push(entry.line)
+  }
+  if (!blocks.length) return { map: null, problem: null }
+  if (blocks.length > 1)
+    return { map: null, problem: `there are ${blocks.length} \`\`\`${DESIGN_MAP_FENCE} blocks (lines ${blocks.map((block) => block.firstLine).join(', ')}); keep one, so nobody has to guess which one the comparison reads` }
+  let map
+  try {
+    map = JSON.parse(blocks[0].lines.join('\n'))
+  } catch (error) {
+    return { map: null, problem: `the \`\`\`${DESIGN_MAP_FENCE} block is not valid JSON (${error.message})` }
+  }
+  try {
+    validateMap(map, `the ${DESIGN_MAP_FENCE} block`)
+  } catch (error) {
+    return { map: null, problem: `the design comparison cannot read the design map: ${error.message}` }
+  }
+  return { map, problem: null }
+}
+
 export function parseEpicBody(body) {
   const { section } = splitSections(body)
   const text = (name) => (section(name) ? section(name).text : null)
   const { settings, problems } = parseSettings(text('settings'))
+  const designMap = parseDesignMap(body)
+  if (designMap.problem) problems.push(designMap.problem)
   return {
+    designMap: designMap.map,
     outcome: text('outcome'),
     sources: text('sources'),
     settings,

@@ -4,6 +4,7 @@ export const EPIC_LABEL = 'flow:epic'
 export const TICKET_LABEL = 'flow:ticket'
 export const APPROVED_LABEL = 'flow:approved'
 export const NEEDS_HUMAN_LABEL = 'flow:needs-human'
+export const START_LABEL = 'flow:start'
 
 export const STATE_BY_LABEL = {
   'flow:planned': 'planned',
@@ -25,6 +26,7 @@ export const LABELS = [
   { name: 'flow:in-review', color: 'd4c5f9', description: 'Built, being reviewed' },
   { name: 'flow:done', color: '0e8a16', description: 'Merged into the epic branch' },
   { name: NEEDS_HUMAN_LABEL, color: 'd93f0b', description: 'Stopped: a person has to decide something' },
+  { name: START_LABEL, color: 'bfdadc', description: 'Asks a host to start building this ticket now; removed when it starts' },
   { name: TIER_LABELS.easy, color: 'ededed', description: 'Straightforward ticket, built by the faster model' },
   { name: TIER_LABELS.hard, color: '555555', description: 'Demanding ticket, built by the strongest model' },
 ]
@@ -112,6 +114,7 @@ export function deriveEpic(epicIssue, subIssues) {
       blockedByProblem: parsed.blockedByProblem,
       outsideBlockers,
       assignees: issue.assignees,
+      labels: issue.labels,
       problems: ticketProblems,
     }
   })
@@ -161,6 +164,10 @@ export function nextSteps(epic) {
     needsHuman: pick('needs-human'),
     planned: pick('planned'),
     problems: epic.problems,
+    delivery: epic.settings.delivery,
+    parallel: epic.settings.parallel,
+    branch: epic.settings.branch,
+    tickets: epic.tickets.map((ticket) => ({ n: ticket.number, title: ticket.title, tier: ticket.tier, model: MODEL_BY_TIER[ticket.tier], state: ticket.shownState })),
   }
   const unfinished = epic.tickets.filter((ticket) => ticket.state !== 'done').length
   const stuckReason = !epic.approved

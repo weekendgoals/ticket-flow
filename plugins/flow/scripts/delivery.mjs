@@ -60,10 +60,22 @@ export function cutTicketBranch(cwd, { branch, base }) {
   fetchOrigin(cwd)
   const baseSha = resolveCommit(cwd, `origin/${base}`)
   if (!baseSha) return { ok: false, reason: `origin/${base} does not exist, so there is nothing to start the ticket from` }
-  if (resolveCommit(cwd, branch) || resolveCommit(cwd, `origin/${branch}`))
-    return { ok: false, reason: `a branch named ${branch} already exists (locally or on origin); look at what is on it, then delete it or carry the work on by hand` }
-  git(cwd, ['checkout', '--quiet', '--no-track', '-b', branch, baseSha])
-  return { ok: true, baseSha }
+  const local = resolveCommit(cwd, `refs/heads/${branch}`)
+  const remote = resolveCommit(cwd, `refs/remotes/origin/${branch}`)
+  if (!local && !remote) {
+    git(cwd, ['checkout', '--quiet', '--no-track', '-b', branch, baseSha])
+    return { ok: true, baseSha, resumedAt: null }
+  }
+  let head = local || remote
+  if (local && remote && local !== remote) {
+    if (isAncestor(cwd, local, remote)) head = remote
+    else if (!isAncestor(cwd, remote, local))
+      return { ok: false, reason: `${branch} here and on origin have both moved since they parted, so there is no one head to carry on from; a person keeps one of them` }
+  }
+  const checkedOut = git(cwd, ['checkout', '--quiet', '--no-track', '-B', branch, head], { allowFailure: true })
+  if (!checkedOut.ok) return { ok: false, reason: `${branch} exists but could not be checked out here: ${checkedOut.stderr}` }
+  const forkPoint = git(cwd, ['merge-base', head, baseSha], { allowFailure: true })
+  return { ok: true, baseSha: forkPoint.ok ? forkPoint.stdout : baseSha, resumedAt: head }
 }
 
 function pushRejectedAsStale(stderr) {

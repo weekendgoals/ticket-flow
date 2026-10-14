@@ -127,21 +127,21 @@ const brokenEpic = () => ({
   ],
 })
 
-test('init creates the ten labels, and a second run creates none', () => {
+test('init creates the eleven labels, and a second run creates none', () => {
   world({ labels: ['flow:epic', 'bug'], extra: { [`POST ${R}/labels`]: {} } })
   const first = flow('init')
   assert.equal(first.status, 0, first.stderr)
   const posted = fake.calls().filter((call) => call.key === `POST ${R}/labels`).map((call) => JSON.parse(call.stdin))
-  assert.equal(posted.length, 9)
+  assert.equal(posted.length, 10)
   assert.ok(posted.every((label) => /^[0-9a-f]{6}$/.test(label.color) && label.description.length > 0))
-  assert.match(first.stdout, /9 label\(s\) created, 1 already there/)
-  assert.equal(LABELS.length, 10)
+  assert.match(first.stdout, /10 label\(s\) created, 1 already there/)
+  assert.equal(LABELS.length, 11)
   assert.ok(!LABELS.some((label) => label.name === 'flow:ready'), 'ready is worked out, never a label')
   fake.clearCalls()
   world({ extra: { [`POST ${R}/labels`]: {} } })
   const second = flow('init')
   assert.equal(second.status, 0)
-  assert.match(second.stdout, /all 10 labels already there/)
+  assert.match(second.stdout, /all 11 labels already there/)
   assert.equal(fake.calls().filter((call) => call.key === `POST ${R}/labels`).length, 0)
 })
 
@@ -238,6 +238,8 @@ test('next lists ready, waiting, in-progress and done tickets, and exits 0 while
   assert.deepEqual(next.inProgress, [5])
   assert.deepEqual(next.done, [2])
   assert.deepEqual(next.problems, [])
+  assert.deepEqual([next.delivery, next.parallel], ['release', 1])
+  assert.deepEqual(next.tickets.find((ticket) => ticket.n === 5), { n: 5, title: next.tickets.find((ticket) => ticket.n === 5).title, tier: 'hard', model: 'opus', state: 'in-progress' })
 })
 
 test('next on an unapproved epic reports approved false, nothing ready, and exits 1', () => {
