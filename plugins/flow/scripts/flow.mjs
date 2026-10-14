@@ -47,6 +47,9 @@ import {
   reviewRounds,
   reviewRefusal,
   hasComparedTable,
+  reviewedHeadRefusal,
+  importantCountMismatch,
+  passingAcceptancesByOthers,
   RELEASE_CHECK_MARKER,
 } from './ticket-steps.mjs'
 import { loadSources, workflowSources, meterTranscripts, meterComment, readMeterComment } from './meter.mjs'
@@ -79,8 +82,8 @@ const USAGE = `usage: flow <command>
   check --file <md> [--epic-file <md>]   the same, for a draft ticket body not yet on GitHub
   link <epic> <n>                        finish linking a ticket to its epic (safe to repeat)
   post <n> --file <md> | --text "<md>"   add a comment (--file - reads it from standard input)
-  post <n> --review --important <k> --file <md>
-                                         the reviewer's report, as the next numbered review round
+  post <n> --review --important <k> --head <sha> --file <md>
+                                         the reviewer's report, as the next numbered review round over <sha>
   label <n> +<label> -<label> ...        add and remove labels
   create-epic --file <md> --title "<t>"
   create-ticket <epic> --file <md> --title "<t>" [--tier easy|hard] [--blocked-by <n>,<n>]
@@ -116,7 +119,7 @@ const USAGE = `usage: flow <command>
                                          how the work went: time per step, tokens per model, review rounds,
                                          rework, escaped defects, stops; read from the issues' comments and git`
 
-const VALUE_FLAGS = new Set(['--file', '--epic-file', '--text', '--title', '--tier', '--cwd', '--blocked-by', '--bot', '--timeout', '--interval', '--sha', '--epic', '--tickets', '--out', '--workflow', '--important', '--grace', '--since', '--repo'])
+const VALUE_FLAGS = new Set(['--file', '--epic-file', '--text', '--title', '--tier', '--cwd', '--blocked-by', '--bot', '--timeout', '--interval', '--sha', '--epic', '--tickets', '--out', '--workflow', '--important', '--grace', '--since', '--repo', '--head'])
 const REPEATABLE_FLAGS = new Set(['--transcripts'])
 const BOOLEAN_FLAGS = new Set(['--json', '--no-epic', '--print', '--wait', '--once', '--mark', '--remove', '--review', '--all'])
 const DEFAULT_WAIT_SECONDS = 1800
@@ -376,7 +379,7 @@ function commandCheck(positional, flags) {
 function commandPost(positional, flags) {
   const number = issueNumber(positional[0])
   const text = readText(flags)
-  if (flags.important !== undefined && !flags.review) throw new UsageError('--important goes with --review')
+  if ((flags.important !== undefined || flags.head !== undefined) && !flags.review) throw new UsageError('--important and --head go with --review')
   if (!flags.review) {
     const posted = github.comment(number, text)
     console.log(posted.url || `commented on #${number}`)
@@ -384,11 +387,15 @@ function commandPost(positional, flags) {
   }
   if (flags.important === undefined || !/^\d+$/.test(flags.important))
     throw new UsageError('--review needs --important <count>: how many Important findings the report leaves open')
+  if (flags.head === undefined || !/^[0-9a-f]{7,40}$/.test(flags.head))
+    throw new UsageError('--review needs --head <sha>: the commit the reviewer read up to, so acceptance can tell whether anything came after it')
+  const mismatch = importantCountMismatch(text, Number(flags.important))
+  if (mismatch) throw new UsageError(`${mismatch}; nothing was posted`)
   const account = github.viewerLogin()
   const comments = github.listComments(number)
   const started = lastStart(comments, account)
   const round = reviewRounds(comments, account, started ? started.createdAt : null).length + 1
-  const posted = github.comment(number, `${reviewMarker({ round, important: Number(flags.important) })}\n**Review, round ${round}**\n\n${text}`)
+  const posted = github.comment(number, `${reviewMarker({ round, important: Number(flags.important), head: flags.head })}\n**Review, round ${round}**\n\n${text}`)
   console.log(posted.url || `review round ${round} posted on #${number}`)
   return 0
 }
@@ -668,9 +675,12 @@ function commandAccept(positional, flags) {
     github.comment(number, refusal)
     return fail(refusal.replace(/\*\*/g, ''))
   }
-  const review = reviewRefusal(reviewRounds(comments, account, started.createdAt))
+  const rounds = reviewRounds(comments, account, started.createdAt)
+  const review = reviewRefusal(rounds)
   if (review) return review.stop ? refuse(number, state, `#${number} cannot be accepted: ${review.reason}`) : fail(`#${number} cannot be accepted yet: ${review.reason}`)
-  if (parsed.criteria.compares.length && !hasComparedTable(comments))
+  const unreviewed = reviewedHeadRefusal(rounds, sha)
+  if (unreviewed) return fail(`#${number} cannot be accepted yet: ${unreviewed}`)
+  if (parsed.criteria.compares.length && !hasComparedTable(comments, started.createdAt))
     return fail(`#${number} has a COMPARE criterion and no comment starting "**Compared:**"; post the comparison table (or "**Compared:** not run — <why>") first, because nothing else shows the design was checked`)
   const began = Date.now()
   const report = runCriteria({ ticket: number, ...parsed.criteria }, { cwd: root })
@@ -696,9 +706,10 @@ function mergeAcceptedTicket({ number, root, expectedSha = null }) {
   if (deliveryFor(epic) !== 'release') return fail(`#${number} is not in a release epic; it is delivered by its own pull request (\`flow deliver ${number}\`)`)
   if (!ACCEPTABLE_STATES.has(state)) return fail(`#${number} is ${state}; only a ticket in progress or in review can be merged`)
   const comments = github.listComments(number)
-  const acceptance = lastAcceptance(comments, github.viewerLogin())
+  const account = github.viewerLogin()
+  const acceptance = lastAcceptance(comments, account)
   if (!acceptance || !acceptance.passed) return fail(`#${number} has no passing acceptance comment from this account; run \`flow accept ${number}\` on the reviewed head first`)
-  if (parsed.criteria.compares.length && !hasComparedTable(comments)) return fail(`#${number} has a COMPARE criterion and no "**Compared:**" comment; it is not merged without the comparison`)
+  if (parsed.criteria.compares.length && !hasComparedTable(comments, lastStart(comments, account)?.createdAt)) return fail(`#${number} has a COMPARE criterion and no "**Compared:**" comment; it is not merged without the comparison`)
   const sha = acceptance.sha
   if (expectedSha && !sha.startsWith(expectedSha) && !expectedSha.startsWith(sha))
     return fail(`#${number} was accepted at ${sha.slice(0, 12)}, not at ${expectedSha.slice(0, 12)}; only the commit the acceptance comment names is merged`)
@@ -751,12 +762,13 @@ function commandDeliver(positional, flags) {
     return 0
   }
   const comments = github.listComments(number)
-  const acceptance = lastAcceptance(comments, github.viewerLogin())
+  const account = github.viewerLogin()
+  const acceptance = lastAcceptance(comments, account)
   if (!acceptance || !acceptance.passed) {
     process.stderr.write(`#${number} has no passing acceptance comment from this account; run \`flow accept ${number}\` on the reviewed head first\n`)
     return 1
   }
-  if (parsed.criteria.compares.length && !hasComparedTable(comments)) {
+  if (parsed.criteria.compares.length && !hasComparedTable(comments, lastStart(comments, account)?.createdAt)) {
     process.stderr.write(`#${number} has a COMPARE criterion and no "**Compared:**" comment; it is not delivered without the comparison\n`)
     return 1
   }
@@ -793,8 +805,18 @@ function commandMerge(positional, flags) {
     const waiting = epic.tickets.filter((ticket) => ACCEPTABLE_STATES.has(ticket.state))
     const merged = []
     const notMerged = []
+    const account = github.viewerLogin()
     for (const ticket of waiting) {
-      if (!lastAcceptance(github.listComments(ticket.number), github.viewerLogin())?.passed) continue
+      const comments = github.listComments(ticket.number)
+      if (!lastAcceptance(comments, account)?.passed) {
+        const elsewhere = passingAcceptancesByOthers(comments, account)
+        if (elsewhere.length)
+          notMerged.push({
+            ticket: ticket.number,
+            reason: `#${ticket.number} passed acceptance under ${[...new Set(elsewhere.map((entry) => `@${entry.author}`))].join(', ')}, not under ${account}, the account running this; only this account's acceptance names a commit to merge, so run \`flow accept ${ticket.number}\` under it`,
+          })
+        continue
+      }
       const outcome = mergeAcceptedTicket({ number: ticket.number, root })
       if (outcome.code === 0) merged.push(outcome.json)
       else notMerged.push({ ticket: ticket.number, reason: outcome.reason })

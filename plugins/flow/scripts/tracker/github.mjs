@@ -325,13 +325,23 @@ export function pullRequestChecks(number) {
 }
 
 const VIEWER_QUERY = 'query{viewer{login}}'
+export const ACCOUNT_VARIABLE = 'FLOW_ACCOUNT'
+const ACCOUNT_HINT = `set ${ACCOUNT_VARIABLE} to the login Flow posts as: github-actions[bot] for the Actions token, <app-slug>[bot] for a GitHub App token, the owner's login for a personal access token`
 let viewerLoginOnce = null
 
-export function viewerLogin() {
+export function viewerLogin(environment = process.env) {
+  const named = String(environment[ACCOUNT_VARIABLE] || '').trim()
+  if (named) return named
   if (viewerLoginOnce) return viewerLoginOnce
-  const data = graphql(VIEWER_QUERY, {}, { inRepository: false })
+  let data
+  try {
+    data = graphql(VIEWER_QUERY, {}, { inRepository: false })
+  } catch (error) {
+    if (!(error instanceof TrackerError) || error.missing) throw error
+    throw new TrackerError(`GitHub would not say which account \`gh\` is signed in as (${error.message}), and Flow trusts its own comments only from that account; ${ACCOUNT_HINT}`)
+  }
   const login = data && data.viewer && data.viewer.login
-  if (!login) throw new TrackerError('GitHub did not say which account `gh` is signed in as')
+  if (!login) throw new TrackerError(`GitHub did not say which account \`gh\` is signed in as; ${ACCOUNT_HINT}`)
   viewerLoginOnce = login
   return login
 }

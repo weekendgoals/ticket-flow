@@ -6,7 +6,7 @@ export const START_WITHDRAWN_MARKER = '<!-- flow:start-withdrawn -->'
 export const LOCAL_RUN_MARKER = '<!-- flow:local-run -->'
 export const LOCAL_RUN_END_MARKER = '<!-- flow:local-run-end -->'
 export const MERGED_MARKER = /^<!-- flow:merged sha=([0-9a-f]{7,40}) accepted=([0-9a-f]{7,40}) -->/
-export const REVIEW_MARKER = /^<!-- flow:review round=(\d+) important=(\d+) -->/
+export const REVIEW_MARKER = /^<!-- flow:review round=(\d+) important=(\d+)(?: head=([0-9a-f]{7,40}))? -->/
 export const COMPARED_HEADING = '**Compared:**'
 export const MAX_REVIEW_ROUNDS = 2
 export const RELEASE_CHECK_MARKER = '<!-- flow:release-check -->'
@@ -129,13 +129,44 @@ export function lastStart(comments, author) {
   return found.length ? found[found.length - 1] : null
 }
 
+export function passingAcceptancesByOthers(comments, author) {
+  return comments
+    .filter((comment) => !sameLogin(comment.author, author))
+    .map((comment) => ({ comment, match: comment.body.match(ACCEPTANCE_MARKER) }))
+    .filter(({ match }) => match && match[2] === 'true')
+    .map(({ comment, match }) => ({ author: comment.author, sha: match[1] }))
+}
+
 export function lastAcceptance(comments, author) {
   const found = lastMatch(comments, author, ACCEPTANCE_MARKER)
   return found ? { sha: found.match[1], passed: found.match[2] === 'true', at: found.comment.createdAt } : null
 }
 
-export function reviewMarker({ round, important }) {
-  return `<!-- flow:review round=${round} important=${important} -->`
+export function reviewMarker({ round, important, head }) {
+  return `<!-- flow:review round=${round} important=${important} head=${head} -->`
+}
+
+export function sameCommit(a, b) {
+  return Boolean(a && b) && a.length >= 7 && b.length >= 7 && (a.startsWith(b) || b.startsWith(a))
+}
+
+export function reviewedHeadRefusal(rounds, head) {
+  const last = rounds[rounds.length - 1]
+  if (!last.head) return `the latest review (round ${last.round}) does not name the commit it read up to; post it again with \`--head <sha>\``
+  if (!sameCommit(last.head, head)) return `the latest review is of ${last.head.slice(0, 12)}, not HEAD (${head.slice(0, 12)}); have the commits after it reviewed and post that review first`
+  return null
+}
+
+const IMPORTANT_SECTION = /\*\*Important\.\*\*([\s\S]*?)\*\*Nits\.\*\*/
+const NONE = /^none\.?$/i
+
+export function importantCountMismatch(report, important) {
+  const section = report.match(IMPORTANT_SECTION)
+  if (!section) return 'the report has no "**Important.**" section followed by "**Nits.**", so nothing shows how many Important findings it leaves open'
+  const saysNone = NONE.test(section[1].trim())
+  if (saysNone && important > 0) return `--important ${important}, but the report's Important section reads "None"`
+  if (!saysNone && important === 0) return '--important 0, but the report\'s Important section lists findings; count them, or write "None" when there are none'
+  return null
 }
 
 export function reviewRounds(comments, author, since = null) {
@@ -144,11 +175,11 @@ export function reviewRounds(comments, author, since = null) {
     .filter((comment) => sinceTime === null || Date.parse(comment.createdAt) >= sinceTime)
     .map((comment) => comment.body.match(REVIEW_MARKER))
     .filter(Boolean)
-    .map((match) => ({ round: Number(match[1]), important: Number(match[2]) }))
+    .map((match) => ({ round: Number(match[1]), important: Number(match[2]), head: match[3] || null }))
 }
 
 export function reviewRefusal(rounds) {
-  if (!rounds.length) return { reason: 'no review is posted for this work; post the reviewer\'s report with `flow post <n> --review --important <count> --file <report>` first', stop: false }
+  if (!rounds.length) return { reason: 'no review is posted for this work; post the reviewer\'s report with `flow post <n> --review --important <count> --head <sha> --file <report>` first', stop: false }
   const last = rounds[rounds.length - 1]
   if (last.important === 0) return null
   if (rounds.length >= MAX_REVIEW_ROUNDS)
@@ -156,8 +187,10 @@ export function reviewRefusal(rounds) {
   return { reason: `review round ${last.round} has ${last.important} Important finding(s) open; fix them and post the second review over the fixes first`, stop: false }
 }
 
-export function hasComparedTable(comments) {
-  return comments.some((comment) => comment.body.trimStart().startsWith(COMPARED_HEADING))
+export function hasComparedTable(comments, since) {
+  if (!since) return false
+  const sinceTime = Date.parse(since)
+  return comments.some((comment) => Date.parse(comment.createdAt) >= sinceTime && comment.body.trimStart().startsWith(COMPARED_HEADING))
 }
 
 export function editsAfter(edits, since) {

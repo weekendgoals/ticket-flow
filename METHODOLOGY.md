@@ -73,11 +73,13 @@ review fixes that never once found a defect, and a cost limit that fired
 after the merge it was meant to prevent. Every false halt costs a person a
 context switch and teaches them to stop reading halts.
 
-So 3.0 stops for three reasons only: the acceptance checks are still red
-after two rounds of fixes; the builder finds a real contradiction between
-the plan and the code; a merge conflict the agent cannot resolve. Anything
-else retries, becomes a comment, or falls back to building one ticket at a
-time.
+So 3.0 stops a ticket for three reasons only: a gate still fails after two
+rounds of fixes (the acceptance checks, an Important review finding, a pull
+request thread or check); the plan and the work disagree (the ticket
+contradicts the code, a check looks wrong, the issue body changed after the
+start); a merge conflict the agent cannot resolve. An epic also stops when
+tickets' checks fail at its head after merging. Anything else retries,
+becomes a comment, or falls back to building one ticket at a time.
 
 ## A gate is verified at the door its actor walks through
 

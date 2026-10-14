@@ -175,9 +175,12 @@ becomes `flow:needs-human`). Each step posts one comment on the issue:
    files sit in the tree, before a review is posted or while one has an
    Important finding open, when a design comparison has no posted
    `**Compared:**` table, and when the issue body (which holds the criteria)
-   was edited after the start, naming who edited it. Flow reads its own
-   comments only from the account running it, so start, accept and deliver
-   run under one GitHub account.
+   was edited after the start, naming who edited it, and while HEAD is not
+   the commit the latest review read (a fix after the review is reviewed
+   too). Flow reads its own comments only from the account running it, so
+   `start`, `accept`, `deliver`, `merge`, `reset` and `release-pr` run under
+   one GitHub account: a ticket accepted under another account is not
+   merged (`merge --epic` says so), and `reset` on it proceeds.
 6. **Cost** (`flow meter`): what each step cost, posted as a table.
 7. **Deliver** (`flow deliver`): only the accepted commit. Release: merged
    into the epic branch with `--no-ff` and labelled `flow:done`; if the
@@ -204,8 +207,9 @@ once per ticket; a second death goes to a person.
 `.coderabbit.yaml` is reviewed by CodeRabbit instead); `flow pr-wait` waits
 for that review; `flow pr-threads` lists the unresolved threads, and each is
 fixed or answered, then closed with `flow pr-resolve` and a reply;
-`flow pr-checks --wait` waits for CI, and a failure is fixed; a pull request no check ever appears on is said to have no CI, never read as passing. Two rounds,
-then a person. One comment per round on the ticket.
+`flow pr-checks --wait` waits for CI, and a failure is fixed; a pull request
+no check ever appears on is said to have no CI, never read as passing. Two
+rounds, then a person. One comment per round on the ticket.
 
 ### `.flow.json`
 
@@ -317,6 +321,18 @@ your project's `.github/workflows/`, then add these repository secrets:
   added with the default `GITHUB_TOKEN` start no other workflow, and the
   scheduler starts tickets by adding a label.
 
+Flow trusts its own comments only from the account it runs as, and asks
+GitHub which that is. A GitHub App's installation token, and the default
+`GITHUB_TOKEN`, may not be allowed to ask (`Resource not accessible by
+integration`); then every command that reads those comments refuses, naming
+`FLOW_ACCOUNT`. The template sets `FLOW_ACCOUNT` to `github-actions[bot]`
+when there is no `FLOW_TOKEN`, and otherwise to the repository variable
+`FLOW_ACCOUNT` when you set one: `<app-slug>[bot]` for an App token. A
+personal access token can ask, so it needs none. Whether an App token can
+ask is unverified; to check, run
+`gh api graphql -f query='query{viewer{login}}'` in a job step with that
+token: it either prints the login or fails.
+
 A runner has no checkout with your ignored files, so a `.flow.json` `copy`
 entry (such as `.env`) fails the epic check there: write those files in a
 step before the jobs that need them (from secrets), or keep `copy` empty for
@@ -363,7 +379,7 @@ every answer is read from GitHub (through `gh`) and git.
 | `check <n> [--cwd <dir>]` | Runs the ticket's criteria from the repository root (or `--cwd`). JSON results on stdout, with every edit of the issue body (who, when); a readable table on stderr. Exits 1 unless every check passed, and when the ticket has no criteria |
 | `check --file <md> [--epic-file <md>]` | The same for a draft that is not on GitHub yet |
 | `post <n> --file <md>` or `--text "<md>"` | Adds a comment |
-| `post <n> --review --important <k> --file <md>` | Posts a reviewer's report as the next numbered review round, with how many Important findings it leaves open |
+| `post <n> --review --important <k> --head <sha> --file <md>` | Posts a reviewer's report as the next numbered review round over `<sha>`, with how many Important findings it leaves open; refuses a count the report's Important section contradicts |
 | `label <n> +<label> -<label> …` | Adds and removes labels; refuses to leave two state labels on one issue |
 | `create-epic --file <md> --title "<t>"` | Creates the epic issue; prints its number |
 | `create-ticket <epic> --file <md> --title "<t>" [--tier easy\|hard] [--blocked-by <n>,<n>]` | Creates the ticket, writes its `Epic:` and `Blocked by:` lines, links it as a sub-issue and adds it to the epic's task list; prints its number |

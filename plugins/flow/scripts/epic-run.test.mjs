@@ -181,6 +181,25 @@ test('merge --epic merges every accepted ticket in the order the epic lists them
   assert.deepEqual(posted(4), [])
 })
 
+test('merge --epic names a ticket accepted under another account in notMerged instead of skipping it silently', () => {
+  const repo = repository()
+  const two = ticketBranch(repo, 2, { 'button.txt': 'b\n' })
+  const three = ticketBranch(repo, 3, { 'export.txt': 'e\n' })
+  const elsewhere = { ...accepted(three), user: { login: 'vadim' } }
+  world({
+    tickets: { 2: { labels: ['flow:ticket', 'flow:in-review'] }, 3: { labels: ['flow:ticket', 'flow:in-review'] } },
+    comments: { 2: [STARTED, accepted(two)], 3: [STARTED, elsewhere] },
+  })
+  const result = flow(repo.work, ['merge', '--epic', '1'])
+  assert.equal(result.status, 1)
+  const outcome = JSON.parse(result.stdout)
+  assert.deepEqual(outcome.merged.map((entry) => entry.ticket), [2])
+  assert.equal(outcome.notMerged.length, 1)
+  assert.equal(outcome.notMerged[0].ticket, 3)
+  assert.match(outcome.notMerged[0].reason, /#3 passed acceptance under @vadim, not under flow-bot, the account running this/)
+  assert.deepEqual(posted(3), [])
+})
+
 test('merge refuses a ticket of an incremental epic: that ticket has its own pull request', () => {
   const repo = repository()
   const sha = ticketBranch(repo, 2, { 'button.txt': 'b\n' })

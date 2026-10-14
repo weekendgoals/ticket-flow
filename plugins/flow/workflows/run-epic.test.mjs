@@ -108,6 +108,7 @@ test('the driver hires the reviewer: the ticket reviewer agent, on its own model
   const fixes = run.calls.find((call) => call.label === 'fixes:#2')
   assert.match(fixes.prompt, /args "#2 --unattended --after-review 1"/)
   assert.match(fixes.prompt, /<review-report>\n## Important\n\nNone\./)
+  assert.match(fixes.prompt, /The reviewer read the range aaa111\.\.bbb222; post its report with `--head bbb222`\./)
   assert.equal(fixes.model, 'sonnet')
 })
 

@@ -166,7 +166,7 @@ async function buildTicket({ ticket, model, root, wide, phaseName }) {
     const report = await agent(reviewPrompt(ticket, range, root, round), { ...options('reviewer', round === 2 ? ':2' : ''), agentType: 'flow:ticket-reviewer' })
     if (!report) return { ticket, outcome: 'died', step: `review ${round}` }
     const after = await agent(
-      skillPrompt(ticket, workerArguments(ticket, wide, `--after-review ${round}`), root, ['', `The reviewer's report for round ${round}, exactly as it wrote it:`, '', '<review-report>', String(report), '</review-report>']),
+      skillPrompt(ticket, workerArguments(ticket, wide, `--after-review ${round}`), root, ['', `The reviewer read the range ${range}; post its report with \`--head ${range.split('..')[1] || range}\`.`, `The reviewer's report for round ${round}, exactly as it wrote it:`, '', '<review-report>', String(report), '</review-report>']),
       { ...options('fixes', round === 2 ? ':2' : ''), model, schema: STEP_SCHEMA },
     )
     if (!after) return { ticket, outcome: 'died', step: `fixes ${round}` }

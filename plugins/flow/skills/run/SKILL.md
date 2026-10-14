@@ -87,8 +87,9 @@ It posts each wave and its end on the epic issue. When the separate
 working copies cannot be set up, that wave runs one ticket at a time and
 the epic gets a comment saying so; the run does not stop for it.
 
-A ticket stops only for what `/flow:ticket` stops for (checks still failing
-after two rounds of fixes, a contradiction between the ticket and the code,
+A ticket stops only for what `/flow:ticket` stops for (a gate still failing
+after two rounds of fixes: the acceptance checks, an Important review
+finding, a pull request thread or check; the plan and the work disagreeing;
 a merge conflict), or when its checks fail at the epic head after merging;
 then it is labelled `flow:needs-human`, its assignee (or the epic's author)
 is mentioned, and the run carries on with the others. A builder that dies

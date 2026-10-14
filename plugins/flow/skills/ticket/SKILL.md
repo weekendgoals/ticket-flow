@@ -207,11 +207,16 @@ the reviewer's value is that it did not watch the work being done, and an
 explanation of why the code is right is what makes a reviewer agree with it.
 
 Post its report on the issue as it is, as a numbered review round:
-`FLOW post <n> --review --important <k> --file <report>`, where `<k>` is the
-number of Important findings the report lists. `FLOW accept` reads these
-rounds: it refuses while the latest round has an Important finding open, and
-after two rounds with one still open it is a stop, so an unattended run
-cannot loop.
+`FLOW post <n> --review --important <k> --head <sha> --file <report>`, where
+`<k>` is the number of Important findings the report lists and `<sha>` is
+the last commit of the range it read. `post` refuses, posting nothing, when
+the report's Important section reads "None" and `<k>` is not 0, or the
+reverse. `FLOW accept` reads these rounds: it refuses while the latest round
+has an Important finding open, refuses while HEAD is not the commit the
+latest round read (so every commit is reviewed before it is accepted), and
+after two rounds with an Important finding still open it is a stop, so an
+unattended run cannot loop. Rounds count from the latest start, so a
+ticket reset and resumed gets two more.
 
 **Important findings are fixed.** Attended: spawn a fresh worker on the same
 model with the findings, the branch and the worker rules; unattended: fix
@@ -226,7 +231,8 @@ ask a person, quoting the finding. Two rounds is the limit because a third
 rarely finds what two missed, and a person is cheaper than a loop.
 
 Nits are listed in the report, not fixed, unless the fix is trivial and
-inside the scope.
+inside the scope; such a fix is a commit after the review, so it needs a
+review round over it before `accept` takes it. Usually, leave the nit.
 
 ## 7. Accept
 
@@ -243,13 +249,18 @@ issue body edited after the start comment (it posts that refusal, naming
 who edited). Otherwise it runs the criteria from the issue and posts the
 results with the commit they judged. Only that commit can be delivered.
 
-`start`, `accept` and `deliver` read their own earlier comments only from
-the account running them, so a comment anyone else posts (or quotes) cannot
-move the line the edit check draws or name a commit to merge. Run all three
-under one GitHub account.
+`start`, `accept`, `deliver`, `merge`, `reset` and `release-pr` read their
+own earlier comments only from the account running them, so a comment anyone
+else posts (or quotes) cannot move the line the edit check draws or name a
+commit to merge. Run them all under one GitHub account: a ticket accepted
+under another account is not merged (`merge --epic` lists it with that
+reason), and `reset` on it proceeds, because this account sees no passing
+acceptance to protect. On a host where GitHub will not say which account
+`gh` is (a GitHub App token), set `FLOW_ACCOUNT` to it.
 
-- **It fails on a check:** fix (a `(review fix)` commit), run `FLOW accept`
-  again. Two failed rounds of fixes after the review stop the ticket: ask a
+- **It fails on a check:** fix (a `(review fix)` commit), have the reviewer
+  read the fix (`<head before the fix>..HEAD`, posted as the next round),
+  and run `FLOW accept` again. Two failed rounds of fixes after the review stop the ticket: ask a
   person with the failing check and its output.
 - **It refuses an edited body:** stop and ask a person to confirm the new
   criteria. Do not work around it: whoever edited the gate may not be the
@@ -346,7 +357,8 @@ changes where the skill stops or starts; every step still posts its comment.
 - `--after-review <round>`: the ticket is in review and the host has put the
   reviewer's report for that round (1 or 2) into this prompt. Check out
   `ticket/<n>`, post the report as it is
-  (`FLOW post <n> --review --important <k> --file <report>`),
+  (`FLOW post <n> --review --important <k> --head <sha> --file <report>`,
+  `<sha>` being the end of the range the host says the reviewer read),
   then go on from step 6's "Important findings are fixed". When you fixed
   something in round 1, end with `REVIEW <head before the fixes>..<head>`:
   the host has the fixes reviewed once more and calls you with

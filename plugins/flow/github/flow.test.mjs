@@ -154,3 +154,8 @@ test('when a ticket job dies before it reads the ticket, the scheduler still run
   assert.equal(scheduler.env.EPIC, '${{ steps.epic.outputs.number }}')
   assert.match(text, /# execution_file is the output anthropics\/claude-code-action@v1 documents/)
 })
+
+test('every job runs as one named account: github-actions[bot] without FLOW_TOKEN, otherwise the FLOW_ACCOUNT variable or what GitHub says', () => {
+  assert.equal(workflow.env.FLOW_ACCOUNT, "${{ vars.FLOW_ACCOUNT || (secrets.FLOW_TOKEN == '' && 'github-actions[bot]' || '') }}")
+  assert.ok(Object.values(workflow.jobs).every((job) => !job.env || !('FLOW_ACCOUNT' in job.env)), 'no job overrides it')
+})

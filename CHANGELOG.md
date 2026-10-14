@@ -269,6 +269,23 @@ at a finished epic.
   input; **`flow:start`** is the eleventh label, taken off when the ticket
   starts or goes to a person.
 
+- **Follow-ups from the stage 2 confirming review.** `FLOW_ACCOUNT` names
+  the account Flow trusts its own comments from, because GitHub will not
+  tell an App installation token or the Actions token who it is; without
+  either, every command that reads those comments refuses with a sentence
+  naming the variable. The Action template sets it to `github-actions[bot]`
+  when there is no `FLOW_TOKEN`, and to a `FLOW_ACCOUNT` repository variable
+  otherwise. A review round now names the commit it read
+  (`flow post <n> --review --important <k> --head <sha>`), and `accept`
+  refuses while HEAD is another commit, so a fix after the review is
+  reviewed too. `post --review` refuses a count the report's Important
+  section contradicts ("None" with a nonzero count, or findings with 0).
+  `merge --epic` lists a ticket accepted under another account in
+  `notMerged` instead of skipping it. A `**Compared:**` table counts only
+  when posted after the latest start. The ticket skill says review rounds
+  count from the latest start (a reset ticket gets two more), and every
+  document now gives the same list of reasons a ticket stops.
+
 ### Stage 4: looking back
 
 - **New: `flow stats [<epic>] [--since <date>] [--json]`.** Reads every

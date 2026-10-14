@@ -236,3 +236,9 @@ test('viewerLogin asks GitHub once which account gh is signed in as, and remembe
   assert.equal(fake.calls().length, 1)
   assert.match(fake.calls()[0].args.find((arg) => arg.startsWith('query=')), /viewer\{login\}/)
 })
+
+test('viewerLogin takes FLOW_ACCOUNT as it is, asking GitHub nothing', () => {
+  fake.setFixtures({})
+  assert.equal(github.viewerLogin({ FLOW_ACCOUNT: ' github-actions[bot] ' }), 'github-actions[bot]')
+  assert.equal(fake.calls().length, 0)
+})

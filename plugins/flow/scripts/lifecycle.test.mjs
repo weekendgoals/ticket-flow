@@ -26,12 +26,15 @@ function git(cwd, ...args) {
   return execFileSync('git', args, { cwd, encoding: 'utf8', env: { ...process.env, ...GIT_IDENTITY } }).trim()
 }
 
+let lastCommit = null
+
 function commitFile(cwd, path, text, subject) {
   mkdirSync(dirname(join(cwd, path)), { recursive: true })
   writeFileSync(join(cwd, path), text)
   git(cwd, 'add', path)
   git(cwd, 'commit', '-q', '-m', subject)
-  return git(cwd, 'rev-parse', 'HEAD')
+  lastCommit = git(cwd, 'rev-parse', 'HEAD')
+  return lastCommit
 }
 
 function repository() {
@@ -258,8 +261,9 @@ test('start takes a ticket with no epic as approved and cuts it from the default
 })
 
 const STARTED = comment('<!-- flow:started -->\n**Started** in an attended session', '2026-10-14T10:00:00Z')
-const review = (round, important, createdAt = '2026-10-14T11:00:00Z') => comment(`<!-- flow:review round=${round} important=${important} -->\n**Review, round ${round}**`, createdAt)
-const REVIEWED = review(1, 0)
+const review = (round, important, createdAt = '2026-10-14T11:00:00Z', head = lastCommit) =>
+  comment(`<!-- flow:review round=${round} important=${important} head=${head} -->\n**Review, round ${round}**`, createdAt)
+const reviewed = () => review(1, 0)
 const by = (login, entry) => ({ ...entry, user: { login } })
 
 function startedTicket() {
@@ -271,7 +275,7 @@ function startedTicket() {
 test('accept runs the criteria on the committed head and posts the results with the commit', () => {
   const { work } = startedTicket()
   const sha = commitFile(work, 'export.txt', 'trip\n', '#2: write the export')
-  world({ ticket2: { labels: ['flow:ticket', 'flow:in-review'] }, comments: [STARTED, REVIEWED] })
+  world({ ticket2: { labels: ['flow:ticket', 'flow:in-review'] }, comments: [STARTED, reviewed()] })
   const result = flow(work, ['accept', '2'])
   assert.equal(result.status, 0, result.stderr)
   assert.equal(JSON.parse(result.stdout).sha, sha)
@@ -284,7 +288,7 @@ test('accept runs the criteria on the committed head and posts the results with 
 test('accept posts a failing result and exits 1 when a check fails', () => {
   const { work } = startedTicket()
   commitFile(work, 'other.txt', 'x\n', '#2: something else')
-  world({ ticket2: { labels: ['flow:ticket', 'flow:in-review'] }, comments: [STARTED, REVIEWED] })
+  world({ ticket2: { labels: ['flow:ticket', 'flow:in-review'] }, comments: [STARTED, reviewed()] })
   const result = flow(work, ['accept', '2'])
   assert.equal(result.status, 1)
   assert.match(posted(2)[0], /passed=false seconds=\d+ -->\n\*\*Acceptance failed\*\*/)
@@ -497,7 +501,7 @@ test('accept refuses untracked files, because the checks would see what the comm
   const { work } = startedTicket()
   commitFile(work, 'other.txt', 'x\n', '#2: not the export')
   writeFileSync(join(work, 'export.txt'), 'only on disk\n')
-  world({ ticket2: { labels: IN_REVIEW }, comments: [STARTED, REVIEWED] })
+  world({ ticket2: { labels: IN_REVIEW }, comments: [STARTED, reviewed()] })
   const result = flow(work, ['accept', '2'])
   assert.equal(result.status, 1)
   assert.match(result.stderr, /1 untracked file\(s\) \(export\.txt\)/)
@@ -509,7 +513,7 @@ test('a start comment from another account does not move the edit line: a forged
   commitFile(work, 'export.txt', 'trip\n', '#2: write the export')
   world({
     ticket2: { labels: IN_REVIEW },
-    comments: [STARTED, REVIEWED, by('mallory', comment('<!-- flow:started -->\n**Started**', '2026-10-14T12:00:00Z'))],
+    comments: [STARTED, reviewed(), by('mallory', comment('<!-- flow:started -->\n**Started**', '2026-10-14T12:00:00Z'))],
     history: edits([{ editedAt: '2026-10-14T11:30:00Z', editor: { login: 'mallory' } }]),
   })
   const result = flow(work, ['accept', '2'])
@@ -520,7 +524,7 @@ test('a start comment from another account does not move the edit line: a forged
 test('accept refuses a ticket started under another account, and names the account running it', () => {
   const { work } = startedTicket()
   commitFile(work, 'export.txt', 'trip\n', '#2: write the export')
-  world({ ticket2: { labels: IN_REVIEW }, comments: [by('someone-else', STARTED), REVIEWED] })
+  world({ ticket2: { labels: IN_REVIEW }, comments: [by('someone-else', STARTED), reviewed()] })
   const result = flow(work, ['accept', '2'])
   assert.equal(result.status, 1)
   assert.match(result.stderr, /no "Started" comment from flow-bot/)
@@ -560,12 +564,65 @@ test('accept requires a posted review, refuses while Important findings are open
 test('post --review numbers the rounds since the ticket started and records the open Important count', () => {
   const { work } = startedTicket()
   const report = join(work, '..', 'report.md')
-  writeFileSync(report, '**Important.** None.')
+  writeFileSync(report, '**Important.** None.\n\n**Nits.** None.')
   world({ comments: [comment('<!-- flow:review round=1 important=3 -->', '2026-10-14T09:00:00Z'), STARTED, review(1, 1)] })
-  const result = flow(work, ['post', '2', '--review', '--important', '0', '--file', report])
+  const result = flow(work, ['post', '2', '--review', '--important', '0', '--head', 'abc1234', '--file', report])
   assert.equal(result.status, 0, result.stderr)
-  assert.match(posted(2)[0], /^<!-- flow:review round=2 important=0 -->\n\*\*Review, round 2\*\*\n\n\*\*Important\.\*\* None\./)
-  assert.equal(flow(work, ['post', '2', '--review', '--file', report]).status, 2)
+  assert.match(posted(2)[0], /^<!-- flow:review round=2 important=0 head=abc1234 -->\n\*\*Review, round 2\*\*\n\n\*\*Important\.\*\* None\./)
+  assert.equal(flow(work, ['post', '2', '--review', '--head', 'abc1234', '--file', report]).status, 2)
+  const headless = flow(work, ['post', '2', '--review', '--important', '0', '--file', report])
+  assert.equal(headless.status, 2)
+  assert.match(headless.stderr, /--review needs --head <sha>/)
+})
+
+test('post --review refuses a count the report contradicts, and posts nothing', () => {
+  const { work } = startedTicket()
+  const report = join(work, '..', 'report.md')
+  world({ comments: [STARTED] })
+  writeFileSync(report, '**Important.** None.\n\n**Nits.** `a.js:3` a name.')
+  const claimsOne = flow(work, ['post', '2', '--review', '--important', '1', '--head', 'abc1234', '--file', report])
+  assert.equal(claimsOne.status, 2)
+  assert.match(claimsOne.stderr, /--important 1, but the report's Important section reads "None"; nothing was posted/)
+  writeFileSync(report, '**Important.**\n\n- `src/export.ts:40` drops the last row (confirmed).\n\n**Nits.** None.')
+  const claimsNone = flow(work, ['post', '2', '--review', '--important', '0', '--head', 'abc1234', '--file', report])
+  assert.equal(claimsNone.status, 2)
+  assert.match(claimsNone.stderr, /--important 0, but the report's Important section lists findings/)
+  writeFileSync(report, 'Looks fine to me.')
+  assert.match(flow(work, ['post', '2', '--review', '--important', '0', '--head', 'abc1234', '--file', report]).stderr, /no "\*\*Important\.\*\*" section followed by "\*\*Nits\.\*\*"/)
+  assert.deepEqual(posted(2), [])
+})
+
+test('FLOW_ACCOUNT names the account when GitHub will not say (an App installation token), and without it the command fails closed naming the variable', () => {
+  const { work } = startedTicket()
+  commitFile(work, 'export.txt', 'trip\n', '#2: write the export')
+  const noViewer = { graphql: { $exit: 1, $stderr: 'GraphQL: Resource not accessible by integration (viewer)' } }
+  world({ ticket2: { labels: IN_REVIEW }, comments: [STARTED, reviewed()], extra: noViewer })
+  const closed = flow(work, ['accept', '2'])
+  assert.equal(closed.status, 1)
+  assert.match(closed.stderr, /Resource not accessible by integration.*set FLOW_ACCOUNT to the login Flow posts as: github-actions\[bot\] for the Actions token, <app-slug>\[bot\] for a GitHub App token/)
+  assert.deepEqual(posted(2), [])
+  fake.clearCalls()
+  const named = flow(work, ['accept', '2'], { FLOW_ACCOUNT: 'flow-bot[bot]' })
+  assert.equal(named.status, 0, named.stderr)
+  assert.ok(!fake.calls().some((call) => call.key === 'graphql'), 'the named account is used as it is, without asking GitHub')
+  const someoneElse = flow(work, ['accept', '2'], { FLOW_ACCOUNT: 'github-actions[bot]' })
+  assert.match(someoneElse.stderr, /no "Started" comment from github-actions\[bot\]/)
+})
+
+test('accept refuses a head the latest review did not read: a commit after the review needs its own review', () => {
+  const { work } = startedTicket()
+  const reviewedSha = commitFile(work, 'export.txt', 'trip\n', '#2: write the export')
+  const round = review(1, 0)
+  commitFile(work, 'export.txt', 'trip, tidied\n', '#2: tidy after the review')
+  world({ ticket2: { labels: IN_REVIEW }, comments: [STARTED, round] })
+  const refused = flow(work, ['accept', '2'], { FLOW_UNATTENDED: '1' })
+  assert.equal(refused.status, 1)
+  assert.match(refused.stderr, new RegExp(`the latest review is of ${reviewedSha.slice(0, 12)}, not HEAD \\(${lastCommit.slice(0, 12)}\\)`))
+  assert.deepEqual(posted(2), [], 'work to do, not a stop')
+  world({ ticket2: { labels: IN_REVIEW }, comments: [STARTED, comment('<!-- flow:review round=1 important=0 -->\n**Review, round 1**', '2026-10-14T11:00:00Z')] })
+  assert.match(flow(work, ['accept', '2']).stderr, /does not name the commit it read up to/)
+  world({ ticket2: { labels: IN_REVIEW }, comments: [STARTED, round, review(2, 0, '2026-10-14T11:30:00Z', lastCommit.slice(0, 7))] })
+  assert.equal(flow(work, ['accept', '2']).status, 0)
 })
 
 const COMPARING = {
@@ -576,16 +633,19 @@ const COMPARING = {
 test('a ticket with a design comparison is not accepted or delivered without a posted Compared table', () => {
   const { work } = startedTicket()
   const sha = commitFile(work, 'page.html', '<main></main>\n', '#2: the page')
-  world({ ...COMPARING, comments: [STARTED, REVIEWED] })
+  world({ ...COMPARING, comments: [STARTED, reviewed()] })
   const refused = flow(work, ['accept', '2'])
   assert.equal(refused.status, 1)
   assert.match(refused.stderr, /COMPARE criterion and no comment starting "\*\*Compared:\*\*"/)
-  world({ ...COMPARING, comments: [STARTED, REVIEWED, accepted(sha)] })
+  world({ ...COMPARING, comments: [STARTED, reviewed(), accepted(sha)] })
   const undelivered = flow(work, ['deliver', '2'])
   assert.equal(undelivered.status, 1)
   assert.match(undelivered.stderr, /no "\*\*Compared:\*\*" comment; it is not merged without the comparison/)
+  const before = by('ana', comment('**Compared:**\n\n| landmark | design | page |', '2026-10-14T09:00:00Z'))
+  world({ ...COMPARING, comments: [before, STARTED, reviewed()] })
+  assert.match(flow(work, ['accept', '2']).stderr, /no comment starting "\*\*Compared:\*\*"/, 'a table from before the latest start judged other work')
   const table = by('ana', comment('**Compared:**\n\n| landmark | design | page |', '2026-10-14T11:10:00Z'))
-  world({ ...COMPARING, comments: [STARTED, REVIEWED, table] })
+  world({ ...COMPARING, comments: [STARTED, reviewed(), table] })
   assert.equal(flow(work, ['accept', '2']).status, 0)
 })
 

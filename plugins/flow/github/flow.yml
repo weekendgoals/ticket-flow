@@ -29,6 +29,8 @@ permissions:
 
 env:
   FLOW_UNATTENDED: '1'
+  # The account Flow's own comments are trusted from. Without FLOW_TOKEN it is the Actions token's github-actions[bot]; with a GitHub App token set the repository variable FLOW_ACCOUNT to <app-slug>[bot]; a personal access token's owner is found by asking GitHub, so leave it empty.
+  FLOW_ACCOUNT: ${{ vars.FLOW_ACCOUNT || (secrets.FLOW_TOKEN == '' && 'github-actions[bot]' || '') }}
   FLOW: node .flow-plugin/plugins/flow/scripts/flow.mjs
   FLOW_PLUGIN_REPOSITORY: weekendgoals/ticket-flow
   FLOW_PLUGIN_REF: main
