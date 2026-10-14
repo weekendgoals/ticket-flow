@@ -1,0 +1,228 @@
+# Flow: builds the tickets of an approved epic on GitHub, with nobody watching.
+# Copy this file to .github/workflows/flow.yml in your project.
+# Events made with the default GITHUB_TOKEN start no other workflow, so the scheduler labels tickets with FLOW_TOKEN: a fine-grained personal access token or a GitHub App token (contents, issues and pull requests: read and write).
+name: flow
+
+on:
+  issues:
+    types: [labeled]
+  workflow_dispatch:
+    inputs:
+      ticket:
+        description: Ticket issue number to build
+        required: true
+  pull_request_review:
+    types: [submitted]
+  check_suite:
+    types: [completed]
+  # Suites created by GitHub Actions send no check_suite event; name your CI workflows here instead.
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+  id-token: write
+  actions: read
+
+env:
+  FLOW_UNATTENDED: '1'
+  FLOW: node .flow-plugin/plugins/flow/scripts/flow.mjs
+  FLOW_PLUGIN_REPOSITORY: weekendgoals/ticket-flow
+  FLOW_PLUGIN_REF: main
+
+jobs:
+  ticket:
+    if: (github.event_name == 'issues' && github.event.label.name == 'flow:start') || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    concurrency:
+      group: ticket-${{ github.event.issue.number || inputs.ticket }}
+      cancel-in-progress: false
+    outputs:
+      epic: ${{ steps.read.outputs.epic }}
+    env:
+      TICKET: ${{ github.event.issue.number || inputs.ticket }}
+      GH_TOKEN: ${{ secrets.FLOW_TOKEN || github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.FLOW_TOKEN || github.token }}
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ env.FLOW_PLUGIN_REPOSITORY }}
+          ref: ${{ env.FLOW_PLUGIN_REF }}
+          path: .flow-plugin
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: git identity
+        run: |
+          git config user.name "flow[bot]"
+          git config user.email "flow[bot]@users.noreply.github.com"
+          echo ".flow-plugin/" >> .git/info/exclude
+      - name: read the ticket's model and epic
+        id: read
+        run: |
+          ticket="$($FLOW ticket "$TICKET")"
+          echo "model=$(echo "$ticket" | jq -r '.model')" >> "$GITHUB_OUTPUT"
+          echo "epic=$(echo "$ticket" | jq -r '.epic // empty')" >> "$GITHUB_OUTPUT"
+      - name: build the ticket
+        id: claude
+        uses: anthropics/claude-code-action@v1
+        env:
+          GH_TOKEN: ${{ secrets.FLOW_TOKEN || github.token }}
+          FLOW_UNATTENDED: '1'
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          # claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          github_token: ${{ secrets.FLOW_TOKEN || github.token }}
+          plugin_marketplaces: https://github.com/weekendgoals/ticket-flow.git
+          plugins: flow@ticket-flow
+          prompt: /flow:ticket #${{ env.TICKET }} --unattended --no-merge
+          claude_args: --model ${{ steps.read.outputs.model }} --allowedTools "Bash,Read,Edit,Write,Glob,Grep,Agent,Task,Skill,WebFetch"
+      - name: post what it cost
+        if: always() && steps.claude.outputs.execution_file != ''
+        run: $FLOW meter "$TICKET" --transcripts "${{ steps.claude.outputs.execution_file }}" || true
+      - name: keep the screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenshots-${{ env.TICKET }}
+          path: .flow/screenshots/
+          if-no-files-found: ignore
+      - name: a run that stopped without a result is reset once, then goes to a person
+        if: always()
+        run: $FLOW reset "$TICKET" --once || true
+
+  merge:
+    needs: ticket
+    if: always() && needs.ticket.outputs.epic != ''
+    runs-on: ubuntu-latest
+    # One merge into an epic branch at a time; each run merges every accepted ticket, so a queued run GitHub drops loses nothing.
+    concurrency:
+      group: epic-${{ needs.ticket.outputs.epic }}
+      cancel-in-progress: false
+    env:
+      EPIC: ${{ needs.ticket.outputs.epic }}
+      GH_TOKEN: ${{ secrets.FLOW_TOKEN || github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.FLOW_TOKEN || github.token }}
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ env.FLOW_PLUGIN_REPOSITORY }}
+          ref: ${{ env.FLOW_PLUGIN_REF }}
+          path: .flow-plugin
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: git identity
+        run: |
+          git config user.name "flow[bot]"
+          git config user.email "flow[bot]@users.noreply.github.com"
+          echo ".flow-plugin/" >> .git/info/exclude
+      - name: merge the accepted tickets in order, then check them at the new epic head
+        run: |
+          merged="$($FLOW merge --epic "$EPIC" | jq -r '[.merged[].ticket] | join(",")')" || true
+          if [ -n "$merged" ]; then $FLOW check-epic "$EPIC" --tickets "$merged" --mark || true; fi
+
+  epic:
+    needs: [ticket, merge]
+    if: always() && ((github.event_name == 'issues' && github.event.label.name == 'flow:approved') || needs.ticket.outputs.epic != '')
+    runs-on: ubuntu-latest
+    concurrency:
+      group: epic-${{ github.event.label.name == 'flow:approved' && github.event.issue.number || needs.ticket.outputs.epic }}
+      cancel-in-progress: false
+    env:
+      EPIC: ${{ github.event.label.name == 'flow:approved' && github.event.issue.number || needs.ticket.outputs.epic }}
+      GH_TOKEN: ${{ secrets.FLOW_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.FLOW_TOKEN }}
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ env.FLOW_PLUGIN_REPOSITORY }}
+          ref: ${{ env.FLOW_PLUGIN_REF }}
+          path: .flow-plugin
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: git identity
+        run: |
+          git config user.name "flow[bot]"
+          git config user.email "flow[bot]@users.noreply.github.com"
+          echo ".flow-plugin/" >> .git/info/exclude
+      - name: start what is ready, or open the release pull request when everything is built
+        run: |
+          dispatched="$($FLOW dispatch "$EPIC")"
+          echo "$dispatched"
+          state="$(echo "$dispatched" | jq -r '.state')"
+          if [ "$state" = "built" ] && [ "$($FLOW next "$EPIC" | jq -r '.delivery')" = "release" ]; then
+            $FLOW check-epic "$EPIC" --mark
+            pr="$($FLOW release-pr "$EPIC" | jq -r '.pullRequest')"
+            $FLOW pr-review-request "$pr" || true
+          elif [ "$state" = "stopped" ]; then
+            $FLOW post "$EPIC" --text "**Run stopped.** Nothing is ready and nothing is in progress; the tickets labelled flow:needs-human say why."
+          fi
+
+  pr:
+    if: >-
+      (github.event_name == 'pull_request_review' && (startsWith(github.event.pull_request.head.ref, 'ticket/') || startsWith(github.event.pull_request.head.ref, 'epic/'))) ||
+      (github.event_name == 'check_suite' && github.event.check_suite.conclusion != 'success' && github.event.check_suite.pull_requests[0] && (startsWith(github.event.check_suite.head_branch, 'ticket/') || startsWith(github.event.check_suite.head_branch, 'epic/'))) ||
+      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion != 'success' && github.event.workflow_run.pull_requests[0] && (startsWith(github.event.workflow_run.head_branch, 'ticket/') || startsWith(github.event.workflow_run.head_branch, 'epic/')))
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    concurrency:
+      group: pr-${{ github.event.pull_request.number || github.event.check_suite.pull_requests[0].number || github.event.workflow_run.pull_requests[0].number }}
+      cancel-in-progress: false
+    env:
+      PR: ${{ github.event.pull_request.number || github.event.check_suite.pull_requests[0].number || github.event.workflow_run.pull_requests[0].number }}
+      HEAD: ${{ github.event.pull_request.head.ref || github.event.check_suite.head_branch || github.event.workflow_run.head_branch }}
+      GH_TOKEN: ${{ secrets.FLOW_TOKEN || github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ env.HEAD }}
+          token: ${{ secrets.FLOW_TOKEN || github.token }}
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ env.FLOW_PLUGIN_REPOSITORY }}
+          ref: ${{ env.FLOW_PLUGIN_REF }}
+          path: .flow-plugin
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: git identity
+        run: |
+          git config user.name "flow[bot]"
+          git config user.email "flow[bot]@users.noreply.github.com"
+          echo ".flow-plugin/" >> .git/info/exclude
+      - name: leave a ticket's pull request to its own job until that job is done
+        id: gate
+        run: |
+          case "$HEAD" in
+            ticket/*) state="$($FLOW ticket "${HEAD#ticket/}" | jq -r '.state')"; [ "$state" = "done" ] || echo "skip=true" >> "$GITHUB_OUTPUT" ;;
+          esac
+      - name: answer the review and fix the checks
+        if: steps.gate.outputs.skip != 'true'
+        uses: anthropics/claude-code-action@v1
+        env:
+          GH_TOKEN: ${{ secrets.FLOW_TOKEN || github.token }}
+          FLOW_UNATTENDED: '1'
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          # claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          github_token: ${{ secrets.FLOW_TOKEN || github.token }}
+          plugin_marketplaces: https://github.com/weekendgoals/ticket-flow.git
+          plugins: flow@ticket-flow
+          prompt: /flow:ticket --pr-loop ${{ env.PR }} --unattended
+          claude_args: --model opus --allowedTools "Bash,Read,Edit,Write,Glob,Grep,Agent,Task,Skill"
