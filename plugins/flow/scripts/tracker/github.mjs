@@ -68,6 +68,8 @@ function normalizeIssue(raw) {
     assignees: (raw.assignees || []).map((user) => user.login),
     author: raw.user ? raw.user.login : null,
     url: raw.html_url || null,
+    createdAt: raw.created_at || null,
+    closedAt: raw.closed_at || null,
   }
 }
 
@@ -154,6 +156,7 @@ export function listComments(number) {
     author: raw.user ? raw.user.login : null,
     body: raw.body || '',
     createdAt: raw.created_at,
+    url: raw.html_url || null,
   }))
 }
 
@@ -220,6 +223,8 @@ function normalizePullRequest(raw) {
     head: raw.head ? raw.head.ref : null,
     headSha: raw.head ? raw.head.sha : null,
     base: raw.base ? raw.base.ref : null,
+    merged: Boolean(raw.merged_at),
+    mergedAt: raw.merged_at || null,
   }
 }
 

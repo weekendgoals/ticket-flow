@@ -41,7 +41,7 @@ test('the fixture key names the method and path, or the graphql variables', () =
 })
 
 test('getIssue reads one issue and returns it in the tracker shape', () => {
-  fake.setFixtures({ [`GET ${R}/issues/5`]: rawIssue(5, { body: null }) })
+  fake.setFixtures({ [`GET ${R}/issues/5`]: rawIssue(5, { body: null, created_at: '2026-10-01T09:00:00Z', closed_at: null }) })
   assert.deepEqual(github.getIssue(5), {
     number: 5,
     id: 9005,
@@ -52,6 +52,8 @@ test('getIssue reads one issue and returns it in the tracker shape', () => {
     assignees: ['ana'],
     author: 'vadim',
     url: 'https://github.com/o/r/issues/5',
+    createdAt: '2026-10-01T09:00:00Z',
+    closedAt: null,
   })
   assert.deepEqual(fake.calls()[0].args, ['api', `${R}/issues/5`])
 })
@@ -135,10 +137,10 @@ test('ensureLabels creates only what is missing, so running it twice changes not
 
 test('listComments and listLabels return plain records', () => {
   fake.setFixtures({
-    [`GET ${R}/issues/7/comments?per_page=100`]: [{ id: 1, user: { login: 'ana' }, body: 'hi', created_at: '2026-10-14T10:00:00Z' }],
+    [`GET ${R}/issues/7/comments?per_page=100`]: [{ id: 1, user: { login: 'ana' }, body: 'hi', created_at: '2026-10-14T10:00:00Z', html_url: 'https://github.com/o/r/issues/7#issuecomment-1' }],
     [`GET ${R}/labels?per_page=100`]: [{ name: 'tier:easy', color: 'ededed', description: null }],
   })
-  assert.deepEqual(github.listComments(7), [{ id: 1, author: 'ana', body: 'hi', createdAt: '2026-10-14T10:00:00Z' }])
+  assert.deepEqual(github.listComments(7), [{ id: 1, author: 'ana', body: 'hi', createdAt: '2026-10-14T10:00:00Z', url: 'https://github.com/o/r/issues/7#issuecomment-1' }])
   assert.deepEqual(github.listLabels(), [{ name: 'tier:easy', color: 'ededed', description: '' }])
 })
 
@@ -214,9 +216,11 @@ test('a missing gh is a TrackerError that says so', () => {
 test('pull requests and their reviews come back in the tracker shape', () => {
   fake.setFixtures({
     [`GET ${R}/pulls/40`]: { number: 40, html_url: 'https://github.com/o/r/pull/40', state: 'open', head: { ref: 'ticket/2', sha: 'abc' }, base: { ref: 'main' } },
+    [`GET ${R}/pulls/41`]: { number: 41, html_url: 'https://github.com/o/r/pull/41', state: 'closed', head: { ref: 'epic/x', sha: 'def' }, base: { ref: 'main' }, merged_at: '2026-10-15T08:00:00Z' },
     [`GET ${R}/pulls/40/reviews?per_page=100`]: [{ id: 3, user: { login: 'copilot-pull-request-reviewer[bot]' }, state: 'COMMENTED', commit_id: 'abc', submitted_at: '2026-10-14T12:00:00Z' }],
   })
-  assert.deepEqual(github.getPullRequest(40), { number: 40, url: 'https://github.com/o/r/pull/40', state: 'open', head: 'ticket/2', headSha: 'abc', base: 'main' })
+  assert.deepEqual(github.getPullRequest(40), { number: 40, url: 'https://github.com/o/r/pull/40', state: 'open', head: 'ticket/2', headSha: 'abc', base: 'main', merged: false, mergedAt: null })
+  assert.deepEqual(github.getPullRequest(41), { number: 41, url: 'https://github.com/o/r/pull/41', state: 'closed', head: 'epic/x', headSha: 'def', base: 'main', merged: true, mergedAt: '2026-10-15T08:00:00Z' })
   assert.deepEqual(github.listPullRequestReviews(40), [{ id: 3, author: 'copilot-pull-request-reviewer[bot]', state: 'COMMENTED', commit: 'abc', submittedAt: '2026-10-14T12:00:00Z' }])
 })
 

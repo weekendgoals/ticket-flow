@@ -48,6 +48,18 @@ export function isAncestor(cwd, ancestor, descendant) {
   return git(cwd, ['merge-base', '--is-ancestor', ancestor, descendant], { allowFailure: true }).ok
 }
 
+export function commitSubjects(cwd, refs) {
+  const present = refs.filter((ref) => resolveCommit(cwd, ref))
+  if (!present.length) return null
+  return git(cwd, ['log', '--no-merges', '--format=%H%x09%s', ...present, '--'])
+    .stdout.split('\n')
+    .filter(Boolean)
+    .map((line) => {
+      const at = line.indexOf('\t')
+      return { sha: line.slice(0, at), subject: line.slice(at + 1) }
+    })
+}
+
 export function fetchOrigin(cwd) {
   git(cwd, ['fetch', '--quiet', '--prune', 'origin'])
 }

@@ -1,5 +1,5 @@
 export const STARTED_MARKER = '<!-- flow:started -->'
-export const ACCEPTANCE_MARKER = /^<!-- flow:acceptance sha=([0-9a-f]{7,40}) passed=(true|false) -->/
+export const ACCEPTANCE_MARKER = /^<!-- flow:acceptance sha=([0-9a-f]{7,40}) passed=(true|false)(?: seconds=(\d+))? -->/
 export const METER_MARKER = '<!-- flow:meter -->'
 export const RESET_MARKER = '<!-- flow:reset -->'
 export const START_WITHDRAWN_MARKER = '<!-- flow:start-withdrawn -->'
@@ -11,6 +11,10 @@ export const COMPARED_HEADING = '**Compared:**'
 export const MAX_REVIEW_ROUNDS = 2
 export const RELEASE_CHECK_MARKER = '<!-- flow:release-check -->'
 export const RELEASE_PR_MARKER = /^<!-- flow:release-pr number=(\d+) -->/
+export const NEEDS_HUMAN_MARKER = '<!-- flow:needs-human -->'
+export const NEEDS_HUMAN_LEAD = '**This ticket needs a person.**'
+export const SERIAL_WAVE_MARKER = /^<!-- flow:serial wave=([\w:-]+) tickets=(\d+(?:,\d+)*) -->$/m
+export const PULL_REQUEST_COMMENT = /^\*\*Pull request (opened|already open|round \d+):?\*\*/
 export const UNATTENDED_VARIABLE = 'FLOW_UNATTENDED'
 
 export function isUnattended(environment = process.env) {
@@ -167,8 +171,8 @@ function cell(text) {
 
 const RESULT_WORDS = { passed: 'pass', failed: 'FAIL', skipped: 'SKIPPED (does not pass)' }
 
-export function acceptanceComment({ sha, report }) {
-  const lines = [`<!-- flow:acceptance sha=${sha} passed=${report.allPassed} -->`]
+export function acceptanceComment({ sha, report, seconds = null }) {
+  const lines = [`<!-- flow:acceptance sha=${sha} passed=${report.allPassed}${Number.isInteger(seconds) ? ` seconds=${seconds}` : ''} -->`]
   lines.push(`**Acceptance ${report.allPassed ? 'passed' : 'failed'}** at \`${sha.slice(0, 12)}\`: ${report.passed} of ${report.total} checks passed${report.skipped ? `, ${report.skipped} skipped` : ''}.`)
   if (report.checks.length) {
     lines.push('', '| # | Criterion | Command | Result | Evidence |', '|---|---|---|---|---|')
@@ -184,6 +188,11 @@ export function acceptanceComment({ sha, report }) {
     for (const problem of report.problems) lines.push(`- line ${problem.line ?? '?'}: ${problem.why}`)
   }
   return lines.join('\n')
+}
+
+export function needsHumanComment({ people, text }) {
+  const mention = people.map((login) => `@${login}`).join(' ')
+  return `${NEEDS_HUMAN_MARKER}\n${NEEDS_HUMAN_LEAD} ${mention ? `${mention} ` : ''}${text}`
 }
 
 export function editedRefusal({ edits, startedAt }) {

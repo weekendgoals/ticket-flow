@@ -29,6 +29,7 @@ jobs:
           node --check plugins/flow/scripts/tracker/fake-gh.mjs
           node --check plugins/flow/scripts/fidelity.mjs
           node --check plugins/flow/scripts/meter.mjs
+          node --check plugins/flow/scripts/stats.mjs
           node --check plugins/flow/scripts/worktree-setup.mjs
       - name: parse run-epic.mjs the way the workflow runtime does
         run: |
@@ -43,6 +44,7 @@ jobs:
           node --test plugins/flow/scripts/epic-run.test.mjs
           node --test plugins/flow/scripts/pull-request.test.mjs
           node --test plugins/flow/scripts/fidelity.test.mjs
+          node --test plugins/flow/scripts/stats.test.mjs
           node --test plugins/flow/scripts/meter.test.mjs
           node --test plugins/flow/scripts/worktree-setup.test.mjs
           node --test plugins/flow/workflows/run-epic.test.mjs

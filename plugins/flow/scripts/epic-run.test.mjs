@@ -207,7 +207,7 @@ test('reset --once asks a person when the ticket was reset before, and reset ref
   assert.equal(result.status, 0, result.stderr)
   assert.equal(JSON.parse(result.stdout).action, 'needs-human')
   assert.deepEqual(added(2), ['flow:needs-human'])
-  assert.match(posted(2)[0], /^\*\*This ticket needs a person\.\*\* @ana The run working on this ticket stopped without a result, and it already had once before/)
+  assert.match(posted(2)[0], /^<!-- flow:needs-human -->\n\*\*This ticket needs a person\.\*\* @ana The run working on this ticket stopped without a result, and it already had once before/)
   fake.clearCalls()
   world()
   const planned = flow(directory, ['reset', '2'])
@@ -321,12 +321,12 @@ test('release-pr refuses while a ticket is not done', () => {
   assert.ok(!fake.calls().some((call) => call.key === `POST ${R}/pulls`))
 })
 
-test('release-pr opens the epic\'s one pull request with its outcome, walkthrough, merge commits and cost, and posts it on the epic', () => {
+test('release-pr opens the epic\'s one pull request with its outcome, walkthrough, merge commits and cost over every run, and posts it on the epic', () => {
   const meter = (input) => comment(`<!-- flow:meter -->\n**Cost of #n**\n\n\`\`\`json\n${JSON.stringify({ flowMeter: 1, ticket: 2, roles: {}, models: {}, total: { input, output: 10, cacheCreation: 5, cacheReads: 100 } })}\n\`\`\``)
   const mergedMarker = (sha) => comment(`<!-- flow:merged sha=${sha} accepted=${'b'.repeat(40)} -->\n**Done.**`)
   world({
     tickets: { 2: { labels: ['flow:ticket', 'flow:done'] }, 3: { labels: ['flow:ticket', 'flow:done'] }, 4: { labels: ['flow:ticket', 'flow:done'] } },
-    comments: { 2: [mergedMarker('1'.repeat(40)), meter(1000)], 3: [mergedMarker('2'.repeat(40)), meter(2500)], 4: [] },
+    comments: { 2: [mergedMarker('1'.repeat(40)), meter(1000), meter(1000), meter(500)], 3: [mergedMarker('2'.repeat(40)), meter(2500)], 4: [] },
     extra: {
       [`GET ${R}/pulls?head=o%3Aepic%2Ftrip-export&state=open&per_page=100`]: [],
       [`POST ${R}/pulls`]: { number: 40, html_url: 'https://github.com/o/r/pull/40', head: { ref: 'epic/trip-export', sha: 'c'.repeat(40) }, base: { ref: 'main' } },
@@ -339,7 +339,7 @@ test('release-pr opens the epic\'s one pull request with its outcome, walkthroug
   assert.deepEqual([request.title, request.head, request.base], ['Trip export', 'epic/trip-export', 'main'])
   assert.match(request.body, /^Epic: #1\n\n## Outcome\n\nTravellers can export a trip\.\n\n## Walkthrough\n\nA traveller opens a trip/)
   assert.match(request.body, /\| #2 Export button \| `111111111111` \|\n\| #3 Export file \| `222222222222` \|\n\| #4 Export name \| not recorded \|/)
-  assert.match(request.body, /Over 2 of 3 ticket\(s\) with a cost comment: 3,500 input, 20 output, 10 cache writes and 200 cache reads/)
+  assert.match(request.body, /Over 2 of 3 ticket\(s\) with a cost comment: 4,000 input, 30 output, 15 cache writes and 300 cache reads/, 'a cost comment posted twice counts once; a second run of a ticket adds')
   assert.match(request.body, /Closes #2\nCloses #3\nCloses #4\nCloses #1\n\nA person reviews and merges this pull request; nothing runs after the merge\./)
   assert.match(posted(1)[0], /^<!-- flow:release-pr number=40 -->\n\*\*Release pull request opened:\*\* https:\/\/github\.com\/o\/r\/pull\/40/)
 })

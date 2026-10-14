@@ -124,4 +124,6 @@ When the workflow returns:
    merge the release pull request, or to answer those tickets and run
    `/flow:run #<e>` again: a ticket they fixed and labelled `flow:planned`
    is picked up where its branch left off.
-3. Say in one line that this is a good point to compact the session.
+3. Say in one line that this is a good point to run `/compact` with a focus
+   sentence you supply (for example "keep: epic #<e> built, release pull
+   request <url>, #<n> waits for a person"), or to start a fresh session.

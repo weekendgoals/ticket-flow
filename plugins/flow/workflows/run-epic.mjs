@@ -250,7 +250,7 @@ async function runWave({ chosen, wide, wave, release }) {
     roots = made.roots
     if (!roots)
       await postOnEpic(
-        `${LOCAL_RUN_MARKER}\n**Wave ${wave} runs one ticket at a time.** The separate working copies for building side by side could not be set up (${made.failures.join('; ')}), so this wave is built in the main checkout instead. Nothing was stopped for this.`,
+        `${LOCAL_RUN_MARKER}\n<!-- flow:serial wave=${wave} tickets=${chosen.map((entry) => entry.n).join(',')} -->\n**Wave ${wave} runs one ticket at a time.** The separate working copies for building side by side could not be set up (${made.failures.join('; ')}), so this wave is built in the main checkout instead. Nothing was stopped for this.`,
         `post:#${epic}:fallback:${wave}`,
       )
   }

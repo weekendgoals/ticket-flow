@@ -392,8 +392,12 @@ URL.
 
 ## 7. Hand over
 
-Say that the epic is ready to build, and that there are three ways, each
-best started in a fresh session (this one is full of planning):
+Say that the epic is ready to build (once approved, when a teammate
+approves it on GitHub), and in one line that this is a good point to start
+a fresh session, or to run `/compact` with a focus sentence you supply (for
+example "keep: epic #E, branch epic/<name>, first ready ticket #<n>"),
+because this one is full of
+planning. Then the three ways to build it:
 `/flow:ticket #<n>` builds its first ready ticket with them watching;
 `/flow:run #E` builds the whole epic on this machine with nobody watching;
 and when the project has Flow's GitHub Action (`.github/workflows/flow.yml`),

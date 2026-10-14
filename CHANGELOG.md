@@ -12,9 +12,10 @@ An epic is an issue labelled `flow:epic` whose body is the plan; each ticket is
 a sub-issue with its scope, what is out of scope and its acceptance criteria;
 state is labels; progress is one comment per step. Major: every heading
 format, the ticket ID shape (`#12` instead of `PAY-3`) and every command
-contract change. Stages 1 to 3 of the rewrite are done: planning, the `flow`
-command, building one ticket from ready to merged, and building a whole epic
-with nobody watching, locally or as a GitHub Action. The retro follows.
+contract change. All four stages of the rewrite are done: planning, the
+`flow` command, building one ticket from ready to merged, building a whole
+epic with nobody watching (locally or as a GitHub Action), and looking back
+at a finished epic.
 
 - **New: `scripts/flow.mjs`**, one command-line tool both the local run and a
   GitHub Action will call: `init` (creates the ten labels), `doctor`,
@@ -69,7 +70,7 @@ with nobody watching, locally or as a GitHub Action. The retro follows.
   own 2.x `epics/` records stay on the default branch's history.
 - **Not yet rewritten, and not working with a 3.0 epic:** `/flow:run`,
   `/flow:retro`, `workflows/run-epic.mjs` and `worktree-setup.mjs` (all but
-  the retro were rewritten in stage 3).
+  the retro were rewritten in stage 3, the retro in stage 4).
 - **`METHODOLOGY.md`** is now a short list of the lessons that still decide
   the design.
 
@@ -267,6 +268,50 @@ with nobody watching, locally or as a GitHub Action. The retro follows.
   tier, model and state to its JSON; **`flow post --file -`** reads standard
   input; **`flow:start`** is the eleventh label, taken off when the ticket
   starts or goes to a person.
+
+### Stage 4: looking back
+
+- **New: `flow stats [<epic>] [--since <date>] [--json]`.** Reads every
+  ticket's comments and git, and prints per ticket and summed per epic: time
+  per step (worker, review and fixes from the cost comment; acceptance from
+  the time its checks ran; delivery from the passing acceptance to the merge,
+  or to the last pull request comment under incremental delivery; whole from
+  the first start), tokens in, out and cache per model, the largest context,
+  compactions, review rounds and Important findings, `(review fix)` commits,
+  `(fixes #n)` commits on the default branch, every stop for a person with
+  its reason and link, every stopped run, and the tickets of a wave that was
+  planned side by side and built one at a time. Without an epic it covers
+  every epic (`--since` leaves out those created earlier) and adds a pace
+  line: done tickets per day and the median ticket. A figure no comment or
+  commit carries is `unknown`; a sum over some tickets says how many
+  (`1,800 (1/2)`). Nothing is estimated. It changes nothing on GitHub.
+- **`/flow:retro #<epic>` rewritten.** It refuses until the release pull
+  request is merged (under incremental delivery, until every ticket is
+  done), hands the reading to a new `retro-miner` agent on the strongest
+  model, which answers seven fixed questions with a link per answer (stops,
+  real defects against taste and what the pull request bot caught, where the
+  time went, waves built one at a time, criteria that passed wrongly or
+  failed wrongly, broken or missing project rules, what to change), posts
+  the answers on the epic, and files a plugin proposal
+  (`flow create-ticket --no-epic --repo <plugin repository>`) or sends an
+  instruction-file change through `/flow:quick` only when the user says yes.
+- **Comments carry what `stats` reads.** The acceptance marker records how
+  long the checks ran (`seconds=`); a stop for a person starts with
+  `<!-- flow:needs-human -->`; a wave that falls back to one ticket at a time
+  names its wave and tickets in `<!-- flow:serial wave=… tickets=… -->`.
+  Comments written before still read: a missing figure is `unknown`.
+- **`flow pr-threads <pr> --all`** lists resolved threads too, for a merged
+  pull request; **`create-ticket --no-epic --repo <owner>/<name>`** files the
+  ticket in another repository. Issues, comments and pull requests now carry
+  their dates, comment links and whether a pull request was merged.
+- **The release pull request's cost adds every run of a ticket**, as `stats`
+  does, instead of taking the last cost comment: a ticket reset and built
+  again on the Action posts one comment per run, and a comment posted twice
+  is counted once.
+- **The compaction hint names its focus.** At each boundary (a ticket
+  delivered, a plan created, a run ended, a retro filed) the attended
+  session says it is a good point to run `/compact` with a focus sentence it
+  supplies, or to start a fresh session.
 
 ## 2.6.0 — 2026-09-22
 

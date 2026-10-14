@@ -351,16 +351,16 @@ test('ticket prints the parsed ticket with its criteria and body edit history', 
   assert.deepEqual(parsed.edits, [{ editedAt: '2026-10-14T08:00:00Z', editor: 'vadim' }])
 })
 
-test('check runs the criteria from the issue: JSON ledger on stdout, a table on stderr, exit 0 when all pass', () => {
+test('check runs the criteria from the issue: JSON results on stdout, a table on stderr, exit 0 when all pass', () => {
   const epic = issue(1, { body: epicBody([3], 'Design sources: designs/map.html'), labels: epicLabels() })
   world({ epics: [{ epic, tickets: [ticket(3, 1, 'in-progress', { criteria: CRITERIA })] }] })
   const result = flow('check', '3')
   assert.equal(result.status, 0, result.stderr)
-  const ledger = JSON.parse(result.stdout)
-  assert.equal(ledger.ticket, 3)
-  assert.equal(ledger.total, 1)
-  assert.equal(ledger.passed, 1)
-  assert.equal(ledger.compares.length, 1)
+  const results = JSON.parse(result.stdout)
+  assert.equal(results.ticket, 3)
+  assert.equal(results.total, 1)
+  assert.equal(results.passed, 1)
+  assert.equal(results.compares.length, 1)
   assert.match(result.stderr, /✓ 1\/1 the export prints its count/)
   assert.match(result.stderr, /1\/1 checks passed; 1 comparison\(s\) are manual/)
 })
@@ -464,10 +464,10 @@ test('check --file runs a draft ticket body before anything exists on GitHub, so
   writeFileSync(draft, ticketBody(0, { criteria: CRITERIA.replace("console.log('exported 3 trips')", 'process.exit(1)') }))
   const red = flow('check', '--file', draft, '--epic-file', epicFile)
   assert.equal(red.status, 1)
-  const ledger = JSON.parse(red.stdout)
-  assert.equal(ledger.ticket, draft)
-  assert.equal(ledger.checks[0].status, 'failed')
-  assert.deepEqual(ledger.problems, [], 'the COMPARE path is checked against the draft epic settings')
+  const results = JSON.parse(red.stdout)
+  assert.equal(results.ticket, draft)
+  assert.equal(results.checks[0].status, 'failed')
+  assert.deepEqual(results.problems, [], 'the COMPARE path is checked against the draft epic settings')
   assert.equal(fake.calls().length, 0, 'GitHub is not asked anything')
   const withoutEpic = JSON.parse(flow('check', '--file', draft).stdout)
   assert.match(withoutEpic.problems[0].why, /declare no "Design sources:"/)
@@ -568,6 +568,19 @@ test('create-ticket --no-epic creates a lone ticket with no Epic line and links 
   const created = JSON.parse(fake.calls()[0].stdin)
   assert.deepEqual(created.labels, ['flow:ticket', 'flow:planned', 'tier:easy'])
   assert.match(created.body, /^## Scope/)
+})
+
+test('create-ticket --no-epic --repo files the ticket in another repository, and --repo is refused for an epic ticket', () => {
+  const file = join(directory, 'plugin-proposal.md')
+  writeFileSync(file, '## Scope\n\n- the retro step\n\n## Acceptance criteria\n\n```criteria\n- named\n  CHECK: true\n```\n')
+  world({ extra: { [`POST ${R}/issues`]: issue(81) } })
+  const result = flow('create-ticket', '--no-epic', '--repo', 'weekendgoals/ticket-flow', '--file', file, '--title', 'Retro proposal')
+  assert.equal(result.status, 0, result.stderr)
+  assert.deepEqual(fake.calls().map((call) => [call.key, call.repo]), [[`POST ${R}/issues`, 'weekendgoals/ticket-flow']])
+  assert.equal(flow('create-ticket', '--no-epic', '--repo', 'not a slug', '--file', file, '--title', 'x').status, 2)
+  const epicTicket = flow('create-ticket', '1', '--repo', 'weekendgoals/ticket-flow', '--file', file, '--title', 'x')
+  assert.equal(epicTicket.status, 2)
+  assert.match(epicTicket.stderr, /--repo goes with --no-epic/)
 })
 
 test('create-ticket --no-epic refuses blockers, an Epic line and a missing criteria block, creating nothing', () => {
@@ -699,7 +712,7 @@ test('needs-human swaps the state label and mentions the assignee', () => {
   const writes = fake.calls().filter((call) => !call.key.startsWith('GET'))
   assert.deepEqual(writes.map((call) => call.key), [`POST ${R}/issues/3/labels`, `DELETE ${R}/issues/3/labels/flow%3Ain-progress`, `POST ${R}/issues/3/comments`])
   assert.deepEqual(JSON.parse(writes[0].stdin), { labels: ['flow:needs-human'] })
-  assert.equal(JSON.parse(writes[2].stdin).body, '**This ticket needs a person.** @ana The plan says the export is CSV; the code only writes JSON.')
+  assert.equal(JSON.parse(writes[2].stdin).body, '<!-- flow:needs-human -->\n**This ticket needs a person.** @ana The plan says the export is CSV; the code only writes JSON.')
 })
 
 test('needs-human mentions the epic author when nobody is assigned', () => {

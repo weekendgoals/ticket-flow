@@ -1,258 +1,97 @@
 ---
 name: retro
-description: Close the loop on a finished epic — mine its status log, review addenda and shipped work for lessons, then propose updates to instruction files, planning rules, and leftover owed work. Use when the user runs /flow:retro [epic] or when an epic's tickets have all shipped.
+description: Look back at a finished Flow epic — how long each step took, what it cost, what the reviews found, where people had to step in — and propose changes to the plugin or to the project's instruction files, filing only what the user says yes to. Use when the user runs /flow:retro #<epic> after the epic's release pull request is merged.
 ---
 
-# Retro: $ARGUMENTS
+# Retro #$ARGUMENTS
 
-An epic that ships code and teaches nothing was only half harvested. The
-lessons are already in the status log, the review addenda and the
-dispositions; a retro is where they stop being diary entries and start
-being rules. It produces **a report and proposals**, then stops at a gate:
-nothing is edited without approval, and what is approved ships through the
-normal path. The mining runs in a **fresh-context agent** (step 2); the gate
-and the shipping stay with the invoking session.
+A finished epic leaves its whole story on GitHub: every step's comment, the
+cost comments, the reviews, the stops, the release pull request. A retro
+reads that record and asks what should change so the next epic goes better.
+It produces **answers with evidence and proposals**, then stops for the
+user: nothing is filed or edited before they say yes.
 
-## 1. Resolve the epic and check it is over
+`FLOW` below means `node "${CLAUDE_PLUGIN_ROOT}/scripts/flow.mjs"`, run from
+the repository root. `<e>` is the epic number from `$ARGUMENTS`, without the
+`#`.
 
-```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/tickets.mjs" list $ARGUMENTS --json
-```
-
-`$ARGUMENTS` is an epic name; with none, and if the board shows exactly one
-epic with nothing left to start, use that one — otherwise ask.
-
-If tickets are still open, say which and stop, unless the user explicitly
-wants a mid-epic retro. The standing quick epic is the permanent exception:
-it never finishes, so `/flow:retro quick` is always mid-epic, and it is also
-the **era rollover** door (step 6) — the only sanctioned way the quick
-epic's documents get shorter.
-
-## 2. Spawn the miner — fresh context
-
-**If the prompt that launched you says a retro session spawned you, skip
-this step — you are the miner:** execute steps 3 through 5's drafting
-exactly as written, return the report and proposals, and spawn no miner.
-
-The invoking session usually planned this epic or ran its tickets, and
-carries exactly the opinions the record is to be examined against — so it
-mines nothing itself. Fetch the epic's paths first (step 1's output carries
-none, and constructing them by hand is the relative-path guessing the ticket
-skill forbids):
+## 1. Is the epic finished?
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/tickets.mjs" epics --json
+git fetch origin
+FLOW stats <e> --json
 ```
 
-Spawn a fresh-context **miner** with the Agent tool — a general agent, full
-toolset, empty context — telling it: a retro session spawned it for this one
-epic; execute steps 3 through 5's drafting of the `flow:retro` skill exactly
-as written (give it this skill file's absolute path) and return the finished
-report and proposals; it edits no files, creates no tickets, and asks the
-user nothing. Hand it the epic name, the absolute `ticketsDoc`, `statusDoc`
-and `runsDoc` (`epics --json` carries both; `runsDoc` may not exist yet —
-epics that ran attended, and every log written before the run records were
-split out of `status.md`, have no `runs.md`) and `repoRoot`, `contextDir`
-when not null, and the default branch name — its cwd may move mid-task, and
-relative paths break there.
+Read `epics[0]`:
 
-## 3. Read the whole record
+- **Release delivery** (`delivery` is `release`): `releasePullRequest` must
+  be there with `merged: true`. Otherwise stop and say so: "the release pull
+  request is not merged yet" (or "was never opened"). A retro reads the
+  finished record, and the release pull request's review and checks are part
+  of it; looking back early judges work that may still change.
+- **Incremental delivery:** every ticket's `state` must be `done`.
+  Otherwise stop and name the tickets that are not.
 
-The full `status.md` including every addendum, the full `runs.md` when it
-exists — the run records live there, and in `status.md` for epics that ran
-before the split — `tickets.md` as it ended up, `shadow-reviews.md` when the epic declared a
-shadow reviewer, anything in `context/`, and the shipped work itself:
-`git -C <repoRoot> log origin/<default> --oneline | grep <epic's IDs>`. The
-instruction files for the areas the epic touched, as they are **now**, read
-from under `repoRoot`.
+`stats` reads git as this clone has it, which is why it fetches first. When
+it reports rework as unknown because the epic branch is gone, that is fine:
+the default branch still carries every ticket's commits.
 
-## 4. Mine it — nine questions
+## 2. Hand the reading to a fresh agent
 
-- **Did it work?** The **Outcome** line named an observable change, its
-  evidence and a reversal condition — check them: achieved (cite the
-  evidence), not achieved (a planning finding, not a failure to hide), or
-  not yet assessable (say what evidence is still to arrive, and when to look
-  again). Older epics without an Outcome line: say so and move on — do not retrofit
-  one.
+This session may have planned or watched the epic, and carries opinions
+about it that the record should be checked against, not read through. So it
+reads nothing itself: spawn `flow:retro-miner` with the Agent tool,
+**without a `model` parameter** (it runs on the strongest model; what it
+leaves out cannot be checked afterwards). Give it only:
 
-  **Then walk the `## Walkthrough` section of `tickets.md`, scene by scene**,
-  and say of each: **happened**, **did not happen**, or **unknown** — each
-  with its evidence (the status entry, the shipped commit, the criterion that
-  proves it). That section is the only place the epic was written in the words
-  of the person who asked for it, and it is in the record precisely so that
-  this question can be asked: a scene that did not happen is work the plan
-  promised and the board reports as complete, and a scene nobody can decide is
-  a promise that was never made checkable. Both are planning findings, not
-  failures to hide. Epics whose `tickets.md` carries no walkthrough: say so and
-  move on.
-- **What is still owed?** Every **Owed** line and every review finding
-  dispositioned as pre-existing or out of scope: did a shipped ticket
-  actually inherit it? What survives is unfinished work that exists nowhere
-  but the diary.
-- **What was rediscovered more than once?** A command, a quirk, a constraint
-  two or more entries each had to figure out. Anything learned twice was
-  documented zero times — it belongs in the instruction file of the area
-  that taught it.
-- **What did review keep finding?** The same defect class in more than one
-  ticket is a missing invariant. Propose the one instruction-file line (or
-  ground-rule template line) that would have prevented the class. When
-  `shadow-reviews.md` exists (a trial), compare it per ticket against the
-  Claude review addenda: which findings both raised, which only Codex raised
-  — each checked at its `file:line` against the merged code and labelled
-  real, false or unsettled, never taken on Codex's word — which only the
-  Claude reviewer raised, how many shadows failed and why, and each side's
-  cost (Codex's usage from the file, the reviewer's from `tickets.mjs
-  spend`). End with a one-line verdict: does Codex review anything in the
-  next epic.
-- **What does the codebase owe the documents — and the documents the
-  codebase?** Compare what shipped (the epic's ID-prefixed commits) against
-  `tickets.md`'s promises, both ways: scope that quietly did not ship with
-  no Owed line, behaviour that shipped beyond any ticket's scope,
-  instruction files the work made stale. Each gap becomes a draft ticket or
-  an instruction-file edit — only the diff knows about it.
-- **What did planning get wrong?** Tickets that blew past their size,
-  criteria that turned out uncheckable, an order that backfired, scope lines
-  that failed to stop a wander. Sort into fixes to how *this project* plans
-  (ground rules) and lessons that transfer to *any* project — flag the
-  transferable ones as candidates for the methodology itself.
-- **What did the run halt on, and what did each halt buy?** For every
-  `### Run —` record in `runs.md` — and in `status.md`, where the epics that
-  ran before the split keep theirs — read its **Diagnosis:** paragraph
-  first: that is where the run was inspected while the evidence was live, and
-  it names the command re-run by hand, the file and line, and whether the
-  work or the instrument was at fault. Records from runs before 2026-09-14
-  carry none — classify those from the halt line and what the later records
-  show. Then its **Halted on:** line, which names the stop
-  condition, the ticket and the stage: the halt condensed to a sentence, its
-  cause classified as **work** (a defect in the implementation), **plan** (a
-  defective, vacuous or decorative CHECK, a wrong assumption in
-  `tickets.md`), **plugin/environment** (the driver, a spawn failure, a
-  session limit, a buffer, a tooling fault) or **policy** (a budget or bounds
-  trip), what the human did to resume, and whether the later record shows the
-  stop retired a real risk or fired on a clean state. Every halt costs a human
-  a resume, so a stop that keeps firing clean is paid for and buys nothing: a
-  **policy** trip whose later re-review found nothing is a proposal against
-  the policy, and a **plugin/environment** halt is a candidate ticket for the
-  plugin's own repository — flag both as transferable, the way the question
-  above flags transferable planning lessons. The **Diagnosis** is evidence
-  gathered while the halt was fresh, never a verdict to adopt: the
-  classification is yours to make, not the record's to carry, because the run
-  that stopped could not judge its own stop, and you read the records you did
-  not write. **A halt on a recorded deviation** is filed under **plan** when
-  the ticket's documents could not be built as written and under **work**
-  otherwise, and records **what the human decided** — the dated
-  `**Deviations closed:**` line on the ticket branch says whether the
-  departure was accepted or fixed, and a run of halts all closed as
-  "accepted" with nothing changed is what the epic's own reversal clause
-  measures. An epic run attended,
-  with no `### Run —` records: say so and move on.
-- **What did the human find at the release pull request
-  that no gate had surfaced?** Read it from where the human recorded it: the dated addendum
-  the run skill's release pull request body asks for, beneath that run's
-  record in `runs.md`. Write the answer down **even when it is "none found"**
-  — an absent record is indistinguishable from zero, and this is the only
-  measurement of what the gates missed. When no addendum exists, say that
-  instead of reporting a zero nobody observed. Each finding is a gate that did
-  not fire: name which door should have caught it, and propose the change
-  there. An epic with no release pull request — attended, or halted before the
-  end: say so and move on.
-- **What did going wide buy, and what did it cost?** Only for an epic whose
-  run records carry a **Waves:** field (it declared `Parallel:` 2 or 3); any
-  other epic: say "ran serially" and move on. Read every such record's Waves
-  field, Time line and halts, and answer in counts. **Bought:** the
-  wall-clock the barrier saved — each wave's span against the sum of its
-  tickets' `wall`s — and whether the runtime ran the pipelines concurrently
-  at all. **Cost:** every halt that exists only because of waves (a
-  post-merge CHECK failure, a worktree that would not add, a lost-entry merge
-  guard, a counts contradiction), each classified as the halts question
-  classifies them — and a post-merge failure that was the *environment* (a
-  dependency the worktree lacked) is **plugin/environment**, while one that
-  was the code is **plan**: two tickets the plan declared independent were
-  not, which is a finding against the plan review's independence lens too.
-  Every ticket that went BLOCKED, or recorded a criterion as owed, because a
-  fresh worktree lacked what the usual checkout has. The worker seconds
-  against this project's serial runs — the reinstall is paid per ticket.
-  Did the project have an `epics/worktree.json`, and did any worktree's
-  setup fail or run out of its eight minutes? A BLOCKED ticket in a project
-  without the file is a finding against planning, which is told to write it.
-  **Integrity:** is the log whole (the record's doctor line; any entry
-  flagged for its `**Owed:**` line is a corrupted merge until shown
-  otherwise, and is Important whatever else the retro finds), did any relayed
-  board list differ from the board, were worktrees left that the script did
-  not say it was keeping. End with a one-line verdict — **does the next epic
-  declare `Parallel:`, and at what number** — and flag every defect in the
-  plugin's own machinery as transferable, a candidate ticket for the
-  plugin's repository. The first live parallel runs are owed this in full:
-  the plugin shipped these paths tested against stubs and real git, and
-  against no real agent, no real runtime cap and no real project's
-  dependencies.
+- the epic number and the repository's absolute path;
+- the default branch (`FLOW board` prints it first);
+- `FLOW` written out as the full command, and `${CLAUDE_PLUGIN_ROOT}`;
+- the release pull request's number, or "none";
 
-## 5. Propose — the miner drafts, the invoking session gates
+and never your own view of how the epic went, the conversation, or what
+you think should change: told the answer, it confirms it.
 
-Draft, ready to hand back unchanged: instruction-file edits as concrete
-before/after lines, owed work as draft ticket sections ready to append,
-planning lessons with the evidence (quote the log), a **Halts** section —
-one line per halt event with its class, what the human did to resume, and
-whether it retired a real risk or fired on a clean state, the transferable
-ones named as such (a policy proposal, a plugin-repository ticket), and
-"none: this epic ran attended" when there are no run records — because a
-stop that fires clean charges a human for a resume and is invisible in every
-other section — and the epic's token spend from
-`node "${CLAUDE_PLUGIN_ROOT}/scripts/tickets.mjs" spend <epic>`
-— the derived ledger, each ticket counted **once** from wherever its lane
-recorded it (an attended ticket's entry and addendum, a driver-run ticket's
-run record), with `unknown` figures named rather than counted as zero. Do
-not sum the log by hand; if a figure the log carries is missing from the
-ledger, that is a finding about the log's shape. Then, beside it,
-`node "${CLAUDE_PLUGIN_ROOT}/scripts/tickets.mjs" metrics <epic>` — the same
-ledgers crossed with each other and with the commit subjects: **pace per
-worker model**, **rework** (`(review fix)` commits), **what the reviews
-found** (the records' `**Findings:**` lines), **halts by kind** and
-**escaped defects** (`(fixes <ID>)` commits naming a shipped ticket). Quote
-the counts; the `(n/m)` beside a figure says how many of the epic's tickets
-carried it, and an epic mostly unmeasured is a finding about the lane, not a
-cheap epic. Read review effectiveness and escapes together — reviews that
-find nothing and defects that escape are one question from two ends — and
-never read a commit span as a duration: `metrics` reports `wall` only,
-because commits begin when the work is nearly over.
+It returns seven answers, each with links to the comments and commits that
+show it, and numbered proposals (`P1`, `P2`, …).
 
-Back in the invoking session: show the miner's report to the user
-**unedited** — disagreeing with a finding is a comment at the gate, never an
-edit to the evidence. Then **ask, and wait.**
+## 3. Post it and ask
 
-## 6. After approval, ship the lessons the normal way
+Show the user the miner's report **as it is**: if you disagree with an
+answer, say so beside it, never by editing it, because the evidence is the
+point. Then post it on the epic, so the lessons stay with the work:
 
-- Append one final section to the status log — `## Retro — <YYYY-MM-DD>` —
-  with the lessons and where each one went. Append-only; h2 does not collide
-  with the parsed ticket headings.
-- **Instruction-file edits and the retro entry ship via `/flow:quick`** —
-  through a reviewed pull request, never committed to the default branch
-  directly.
-- Leftover owed work becomes tickets: appended to a live epic's `tickets.md`
-  where one owns the area, or a new `/flow:epic` where none does. Never
-  leave it as a memory of this conversation.
-- **Optionally archive the closed epic**: `git mv epics/<name>
-  epics/_archive/<name>`, in the same pull request. The board only discovers
-  epics directly under `epics/`, so the archived epic drops off it — safe
-  **only now**, after the two bullets above have moved its owed items into
-  live tickets; archiving first silently deletes the debt ledger. Moving is
-  not deleting: the log stays in git, and shipped detection reads commit
-  subjects, not folders. The standing `epics/quick/` is never archived
-  whole — it takes the era rollover instead.
-- **For the standing quick epic, the archive step is an era rollover.** After
-  the bullets above have converted its open owed items:
+```bash
+FLOW post <e> --file <report file>
+```
+
+Start the comment with `**Retro.**`. It must read plainly to someone who
+has never used Flow: no internal terms, short sentences.
+
+Then ask, in chat, one line per proposal with your recommendation, which to
+act on. A one-word answer per line is enough; you record it.
+
+## 4. Act only on a yes
+
+- **A plugin change:** file it as a ticket in the plugin's repository,
+  `weekendgoals/ticket-flow` (the repository the GitHub Action template
+  installs the plugin from; ask if the user keeps their own fork):
 
   ```bash
-  git mv epics/quick epics/_archive/quick-<YYYY-MM-DD>
+  FLOW check --file <draft>      # its CHECK must fail today
+  FLOW create-ticket --no-epic --repo weekendgoals/ticket-flow --file <draft> --title "<title>"
   ```
 
-  Then recreate `epics/quick/` from the quick skill's step 2 template, with
-  one extra ground rule naming the ID floor — `Q-IDs continue at Q-<n+1>`,
-  where `Q-<n>` is the archived era's highest number — because the archived
-  headings are no longer read and a reused number would read as already
-  shipped off main's commit subjects. Ship the rollover in the same pull
-  request as the retro entry. Nothing is summarized or rewritten: the era
-  stays verbatim in the archive; the working copy just stops paying for it.
+  Never change the plugin from here: this repository is the user's project,
+  and a fix belongs where the plugin is built and reviewed.
+- **An instruction-file change:** it goes to the default branch, so it goes
+  through a pull request a person merges: run `/flow:quick "<the change>"`
+  with the accepted diff as its scope. Never commit it to the default
+  branch directly.
+- **A rejected proposal:** nothing. Add one line to the retro comment's
+  thread saying which proposals were filed and which were not
+  (`FLOW post <e> --text "..."`), so the next retro can see what was tried.
 
-Then stop. An epic is closed when its lessons are in documents that travel —
-not when someone remembers them.
+Then say in one line that this is a good point to run `/compact` with a
+focus sentence you supply (for example "keep: the filed proposals and their
+issue numbers"), or to start a fresh session.

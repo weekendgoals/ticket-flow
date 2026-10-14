@@ -189,7 +189,7 @@ test('start in an unattended run turns a refusal into needs-human, mentioning th
   const result = flow(work, ['start', '3'], { FLOW_UNATTENDED: '1' })
   assert.equal(result.status, 1)
   const [body] = posted(3)
-  assert.match(body, /^\*\*This ticket needs a person\.\*\* @vadim #3 is waiting for #2 to be done/)
+  assert.match(body, /^<!-- flow:needs-human -->\n\*\*This ticket needs a person\.\*\* @vadim #3 is waiting for #2 to be done/)
   assert.ok(labelCalls().includes(`POST ${R}/issues/3/labels {"labels":["flow:needs-human"]}`))
 })
 
@@ -276,7 +276,7 @@ test('accept runs the criteria on the committed head and posts the results with 
   assert.equal(result.status, 0, result.stderr)
   assert.equal(JSON.parse(result.stdout).sha, sha)
   const [body] = posted(2)
-  assert.match(body, new RegExp(`^<!-- flow:acceptance sha=${sha} passed=true -->`))
+  assert.match(body, new RegExp(`^<!-- flow:acceptance sha=${sha} passed=true seconds=\\d+ -->`))
   assert.match(body, /1 of 1 checks passed/)
   assert.match(body, /\| 1 \| the file exists \| `test -f export.txt` \| pass \|/)
 })
@@ -287,7 +287,7 @@ test('accept posts a failing result and exits 1 when a check fails', () => {
   world({ ticket2: { labels: ['flow:ticket', 'flow:in-review'] }, comments: [STARTED, REVIEWED] })
   const result = flow(work, ['accept', '2'])
   assert.equal(result.status, 1)
-  assert.match(posted(2)[0], /passed=false -->\n\*\*Acceptance failed\*\*/)
+  assert.match(posted(2)[0], /passed=false seconds=\d+ -->\n\*\*Acceptance failed\*\*/)
 })
 
 test('accept refuses when the issue body was edited after work started, naming who edited it', () => {
@@ -395,7 +395,7 @@ test('deliver stops on a merge conflict, merges nothing, and asks a person namin
   assert.equal(result.status, 1)
   assert.equal(git(remote, 'rev-parse', 'epic/trip-export'), before)
   const [body] = posted(2)
-  assert.match(body, /^\*\*This ticket needs a person\.\*\* @vadim Merging `[0-9a-f]{12}` into `epic\/trip-export` conflicts in `README\.md`/)
+  assert.match(body, /^<!-- flow:needs-human -->\n\*\*This ticket needs a person\.\*\* @vadim Merging `[0-9a-f]{12}` into `epic\/trip-export` conflicts in `README\.md`/)
   assert.ok(labelCalls().includes(`POST ${R}/issues/2/labels {"labels":["flow:needs-human"]}`))
 })
 
@@ -488,7 +488,7 @@ test('deliver gives up after the first try and two retries all lose the race, an
   rmSync(hookFile)
   assert.equal(result.status, 1)
   assert.equal(git(remote, 'log', '-1', '--format=%s', 'epic/trip-export'), '#3: keeps moving')
-  assert.match(posted(2)[0], /^\*\*This ticket needs a person\.\*\* @vadim Could not push the merge into `epic\/trip-export`: the branch moved under every attempt \(3 tries\)/)
+  assert.match(posted(2)[0], /^<!-- flow:needs-human -->\n\*\*This ticket needs a person\.\*\* @vadim Could not push the merge into `epic\/trip-export`: the branch moved under every attempt \(3 tries\)/)
 })
 
 const IN_REVIEW = ['flow:ticket', 'flow:in-review']
@@ -552,7 +552,7 @@ test('accept requires a posted review, refuses while Important findings are open
   world({ ticket2: { labels: IN_REVIEW }, comments: [STARTED, review(1, 2), review(2, 1, '2026-10-14T11:30:00Z')] })
   const stuck = flow(work, ['accept', '2'], { FLOW_UNATTENDED: '1' })
   assert.equal(stuck.status, 1)
-  assert.match(posted(2)[0], /^\*\*This ticket needs a person\.\*\* @vadim #2 cannot be accepted: review round 2 still has 1 Important finding\(s\) open after 2 rounds/)
+  assert.match(posted(2)[0], /^<!-- flow:needs-human -->\n\*\*This ticket needs a person\.\*\* @vadim #2 cannot be accepted: review round 2 still has 1 Important finding\(s\) open after 2 rounds/)
   world({ ticket2: { labels: IN_REVIEW }, comments: [STARTED, review(1, 2), review(2, 0, '2026-10-14T11:30:00Z')] })
   assert.equal(flow(work, ['accept', '2']).status, 0)
 })

@@ -71,7 +71,7 @@ function serve(args) {
   const usesStdin = args.includes('--input') && args[args.indexOf('--input') + 1] === '-'
   const stdin = usesStdin ? readFileSync(0, 'utf8') : null
   const key = fixtureKey(args)
-  appendFileSync(process.env.FAKE_GH_LOG, `${JSON.stringify({ key, args, stdin })}\n`)
+  appendFileSync(process.env.FAKE_GH_LOG, `${JSON.stringify({ key, args, stdin, repo: process.env.GH_REPO || null })}\n`)
   const fixtures = JSON.parse(readFileSync(process.env.FAKE_GH_FIXTURES, 'utf8'))
   if (!(key in fixtures)) {
     process.stderr.write(`fake gh: no fixture for "${key}"\n`)

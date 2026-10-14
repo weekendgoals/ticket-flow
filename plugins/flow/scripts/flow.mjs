@@ -20,6 +20,7 @@ import {
   cutTicketBranch,
   pushTicketBranch,
   mergeIntoEpic,
+  commitSubjects,
 } from './delivery.mjs'
 import {
   isUnattended,
@@ -32,6 +33,7 @@ import {
   editsAfter,
   acceptanceComment,
   editedRefusal,
+  needsHumanComment,
   resetComment,
   countResets,
   countStartWithdrawals,
@@ -48,6 +50,7 @@ import {
   RELEASE_CHECK_MARKER,
 } from './ticket-steps.mjs'
 import { loadSources, workflowSources, meterTranscripts, meterComment, readMeterComment } from './meter.mjs'
+import { ticketStats, readEpicComments, summarize, overallStats, formatStats, combineMeters } from './stats.mjs'
 import { COPILOT_REVIEWER_LOGIN, BOTS, configuredBot, copilotUnavailable, botReview, summarizeChecks, sleepSeconds } from './review-bots.mjs'
 import {
   LABELS,
@@ -81,7 +84,8 @@ const USAGE = `usage: flow <command>
   label <n> +<label> -<label> ...        add and remove labels
   create-epic --file <md> --title "<t>"
   create-ticket <epic> --file <md> --title "<t>" [--tier easy|hard] [--blocked-by <n>,<n>]
-  create-ticket --no-epic --file <md> --title "<t>" [--tier easy|hard]
+  create-ticket --no-epic --file <md> --title "<t>" [--tier easy|hard] [--repo <owner>/<name>]
+                                         (--repo: file it in another repository, such as the plugin's own)
   needs-human <n> --text "<why>"         stop a ticket and ask a person
   reset <n> [--once]                     put a ticket whose run died back to planned; its branch keeps its commits
                                          (--once: if it was reset before, ask a person instead)
@@ -96,7 +100,7 @@ const USAGE = `usage: flow <command>
                                          post what the ticket cost, read from session transcripts
   pr-review-request <pr>                 ask Copilot to review (prints copilot, coderabbit or none)
   pr-wait <pr> [--bot copilot|coderabbit|none] [--timeout <s>] [--interval <s>]
-  pr-threads <pr>                        unresolved review threads, as JSON
+  pr-threads <pr> [--all]                unresolved review threads, as JSON (--all: resolved ones too)
   pr-resolve <thread-id> --text "<reply>"
   pr-checks <pr> [--wait] [--timeout <s>] [--interval <s>] [--grace <s>]
 
@@ -106,11 +110,15 @@ const USAGE = `usage: flow <command>
   check-epic <epic> [--tickets <n>,<n>] [--mark]
                                          run the checks of done tickets at the epic branch's head, in a clean copy
   release-pr <epic>                      open the epic's one pull request once every ticket is done
-  design-map <epic> [--out <file>]       write the epic's design map for the design comparison`
+  design-map <epic> [--out <file>]       write the epic's design map for the design comparison
 
-const VALUE_FLAGS = new Set(['--file', '--epic-file', '--text', '--title', '--tier', '--cwd', '--blocked-by', '--bot', '--timeout', '--interval', '--sha', '--epic', '--tickets', '--out', '--workflow', '--important', '--grace'])
+  stats [<epic>] [--since <date>] [--json] [--cwd <dir>]
+                                         how the work went: time per step, tokens per model, review rounds,
+                                         rework, escaped defects, stops; read from the issues' comments and git`
+
+const VALUE_FLAGS = new Set(['--file', '--epic-file', '--text', '--title', '--tier', '--cwd', '--blocked-by', '--bot', '--timeout', '--interval', '--sha', '--epic', '--tickets', '--out', '--workflow', '--important', '--grace', '--since', '--repo'])
 const REPEATABLE_FLAGS = new Set(['--transcripts'])
-const BOOLEAN_FLAGS = new Set(['--json', '--no-epic', '--print', '--wait', '--once', '--mark', '--remove', '--review'])
+const BOOLEAN_FLAGS = new Set(['--json', '--no-epic', '--print', '--wait', '--once', '--mark', '--remove', '--review', '--all'])
 const DEFAULT_WAIT_SECONDS = 1800
 const DEFAULT_POLL_SECONDS = 30
 const DEFAULT_SCREENSHOTS_DIR = '.flow/screenshots/{n}'
@@ -429,8 +437,14 @@ function parseBlockerList(value) {
   return value.split(',').map((part) => issueNumber(part.trim(), 'a blocking ticket number'))
 }
 
+function useRepository(slug) {
+  if (!/^[\w.-]+\/[\w.-]+$/.test(slug)) throw new UsageError(`--repo takes <owner>/<name>, got "${slug}"`)
+  process.env.GH_REPO = slug
+}
+
 function commandCreateTicketWithoutEpic(positional, flags) {
   if (positional.length) throw new UsageError('give an epic number or --no-epic, not both')
+  if (flags.repo !== undefined) useRepository(flags.repo)
   if (!flags.title) throw new UsageError('create-ticket needs --title')
   if (flags.file === undefined) throw new UsageError('create-ticket needs --file')
   if (flags['blocked-by'] !== undefined) throw new UsageError('a ticket with no epic cannot be blocked by other tickets')
@@ -455,6 +469,7 @@ function commandCreateTicketWithoutEpic(positional, flags) {
 
 function commandCreateTicket(positional, flags) {
   if (flags['no-epic']) return commandCreateTicketWithoutEpic(positional, flags)
+  if (flags.repo !== undefined) throw new UsageError('--repo goes with --no-epic: an epic\'s tickets live in the epic\'s repository')
   const epicNumber = issueNumber(positional[0], 'an epic number')
   if (!flags.title) throw new UsageError('create-ticket needs --title')
   if (flags.file === undefined) throw new UsageError('create-ticket needs --file')
@@ -541,8 +556,7 @@ function markNeedsHuman(number, text) {
   const people = issue.assignees.length ? issue.assignees : [epicAuthor || issue.author].filter(Boolean)
   github.addLabels(number, issue.labels.includes(NEEDS_HUMAN_LABEL) ? [] : [NEEDS_HUMAN_LABEL])
   github.removeLabels(number, issue.labels.filter((label) => (STATE_LABELS.includes(label) && label !== NEEDS_HUMAN_LABEL) || label === START_LABEL))
-  const mention = people.map((login) => `@${login}`).join(' ')
-  return github.comment(number, `**This ticket needs a person.** ${mention ? `${mention} ` : ''}${text}`)
+  return github.comment(number, needsHumanComment({ people, text }))
 }
 
 function commandNeedsHuman(positional, flags) {
@@ -658,8 +672,9 @@ function commandAccept(positional, flags) {
   if (review) return review.stop ? refuse(number, state, `#${number} cannot be accepted: ${review.reason}`) : fail(`#${number} cannot be accepted yet: ${review.reason}`)
   if (parsed.criteria.compares.length && !hasComparedTable(comments))
     return fail(`#${number} has a COMPARE criterion and no comment starting "**Compared:**"; post the comparison table (or "**Compared:** not run — <why>") first, because nothing else shows the design was checked`)
+  const began = Date.now()
   const report = runCriteria({ ticket: number, ...parsed.criteria }, { cwd: root })
-  github.comment(number, acceptanceComment({ sha, report }))
+  github.comment(number, acceptanceComment({ sha, report, seconds: Math.round((Date.now() - began) / 1000) }))
   process.stderr.write(`${formatCheckReport(report)}\n`)
   printJson({ sha, ...report })
   return report.allPassed ? 0 : 1
@@ -1009,8 +1024,8 @@ function commandReleasePr(positional) {
   const tickets = epic.tickets.map((ticket) => {
     const comments = github.listComments(ticket.number)
     const merged = lastMerge(comments, github.viewerLogin())
-    const meterComment = [...comments].reverse().find((comment) => readMeterComment(comment.body))
-    return { number: ticket.number, title: ticket.title, mergeSha: merged ? merged.mergeSha : null, meter: meterComment ? readMeterComment(meterComment.body) : null }
+    const meter = combineMeters(comments.map((comment) => readMeterComment(comment.body)).filter(Boolean))
+    return { number: ticket.number, title: ticket.title, mergeSha: merged ? merged.mergeSha : null, meter }
   })
   const base = github.defaultBranch()
   const existing = github.findOpenPullRequest(epic.settings.branch)
@@ -1227,9 +1242,9 @@ function commandPrWait(positional, flags) {
   return 0
 }
 
-function commandPrThreads(positional) {
+function commandPrThreads(positional, flags) {
   const pr = issueNumber(positional[0], 'a pull request number')
-  printJson(github.listReviewThreads(pr).filter((thread) => !thread.resolved))
+  printJson(github.listReviewThreads(pr).filter((thread) => flags.all || !thread.resolved))
 }
 
 function commandPrResolve(positional, flags) {
@@ -1258,6 +1273,86 @@ function commandPrChecks(positional, flags) {
   if (noChecks) return NO_CHECKS_EXIT
   if (summary.failing.length) return 1
   return summary.pending ? CHECKS_PENDING_EXIT : 0
+}
+
+function subjectsOn(root, refs) {
+  if (!root) return null
+  return commitSubjects(root, refs)
+}
+
+function releasePullRequestOf(number) {
+  if (!number) return null
+  try {
+    const pullRequest = github.getPullRequest(number)
+    return { number, url: pullRequest.url, merged: pullRequest.merged, mergedAt: pullRequest.mergedAt }
+  } catch (error) {
+    if (!(error instanceof TrackerError)) throw error
+    return { number, url: null, merged: null, mergedAt: null }
+  }
+}
+
+function epicStats(epicIssue, { root, defaultBranch, defaultSubjects }) {
+  const epic = deriveEpic(epicIssue, github.listSubIssues(epicIssue.number))
+  const delivery = deliveryFor(epic)
+  const epicRecord = readEpicComments(github.listComments(epicIssue.number))
+  const refs = [
+    ...(defaultBranch ? [`origin/${defaultBranch}`] : []),
+    ...(epic.settings.branch ? [`origin/${epic.settings.branch}`] : []),
+    ...epic.tickets.map((ticket) => `origin/${ticketBranchName(ticket.number)}`),
+  ]
+  const subjects = subjectsOn(root, refs)
+  const gitProblem = !root
+    ? 'this directory is not inside a clone of the repository (give --cwd)'
+    : subjects === null
+      ? `none of ${refs.slice(0, 2).join(', ')} is in this clone; run \`git fetch origin\` first`
+      : null
+  const tickets = epic.tickets.map((ticket) =>
+    ticketStats({ ticket, comments: github.listComments(ticket.number), subjects, defaultSubjects, delivery, serialWaves: epicRecord.serialWaves }),
+  )
+  return {
+    number: epic.number,
+    title: epic.title,
+    url: epicIssue.url,
+    state: epicIssue.state,
+    createdAt: epicIssue.createdAt,
+    closedAt: epicIssue.closedAt,
+    delivery,
+    parallel: epic.settings.parallel ?? null,
+    branch: epic.settings.branch || null,
+    releasePullRequest: releasePullRequestOf(epicRecord.releasePullRequest),
+    serialWaves: epicRecord.serialWaves,
+    runStops: epicRecord.runStops,
+    gitProblem,
+    tickets,
+    totals: summarize(tickets),
+  }
+}
+
+function commandStats(positional, flags) {
+  const since = flags.since ?? null
+  if (since !== null && Number.isNaN(Date.parse(since))) throw new UsageError(`--since takes a date such as 2026-10-01, got "${since}"`)
+  if (since !== null && positional.length) throw new UsageError('give an epic number or --since, not both')
+  const root = repositoryRoot(resolve(flags.cwd || process.cwd()))
+  let epicIssues
+  if (positional.length) {
+    const number = issueNumber(positional[0], 'an epic number')
+    const issue = github.getIssue(number)
+    if (!issue.labels.includes(EPIC_LABEL)) throw new UsageError(`#${number} is not an epic (it has no ${EPIC_LABEL} label)`)
+    epicIssues = [issue]
+  } else
+    epicIssues = github
+      .listIssues({ label: EPIC_LABEL, state: 'all' })
+      .filter((issue) => since === null || !issue.createdAt || Date.parse(issue.createdAt) >= Date.parse(since))
+      .sort((a, b) => a.number - b.number)
+  const defaultBranch = github.defaultBranch()
+  const defaultSubjects = defaultBranch ? subjectsOn(root, [`origin/${defaultBranch}`]) : null
+  const result = overallStats(
+    epicIssues.map((issue) => epicStats(issue, { root, defaultBranch, defaultSubjects })),
+    since,
+  )
+  if (flags.json) printJson(result)
+  else console.log(formatStats(result))
+  return 0
 }
 
 function main(argv) {
@@ -1306,7 +1401,7 @@ function main(argv) {
     case 'pr-wait':
       return commandPrWait(positional, flags)
     case 'pr-threads':
-      return commandPrThreads(positional)
+      return commandPrThreads(positional, flags)
     case 'pr-resolve':
       return commandPrResolve(positional, flags)
     case 'pr-checks':
@@ -1325,6 +1420,8 @@ function main(argv) {
       return commandDesignMap(positional, flags)
     case 'dispatch':
       return commandDispatch(positional)
+    case 'stats':
+      return commandStats(positional, flags)
     default:
       throw new UsageError(`unknown command "${command}"`)
   }

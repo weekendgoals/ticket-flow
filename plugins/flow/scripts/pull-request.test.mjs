@@ -122,6 +122,13 @@ test('pr-threads follows every page and lists only unresolved threads, with path
   assert.ok(queries.every((query) => /reviewThreads\(first:100,after:\$cursor\)/.test(query)))
 })
 
+test('pr-threads --all lists the resolved threads too, for a look back at a merged pull request', () => {
+  fake.setFixtures({ 'graphql name={repo} owner={owner} pr=40': threadPage([thread('T1'), thread('T2', { resolved: true })], null) })
+  const result = flow(plain, 'pr-threads', '40', '--all')
+  assert.equal(result.status, 0, result.stderr)
+  assert.deepEqual(JSON.parse(result.stdout).map((entry) => [entry.id, entry.resolved]), [['T1', false], ['T2', true]])
+})
+
 test('pr-threads refuses a page that claims more but gives no way on, instead of looping forever', () => {
   fake.setFixtures({
     'graphql name={repo} owner={owner} pr=40': { data: { repository: { pullRequest: { reviewThreads: { pageInfo: { hasNextPage: true, endCursor: null }, nodes: [] } } } } },

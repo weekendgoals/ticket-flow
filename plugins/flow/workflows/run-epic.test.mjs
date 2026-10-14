@@ -173,6 +173,7 @@ test('a wave whose working copies cannot be set up falls back to one ticket at a
   assert.ok(run.labels.includes('worktree-remove:#2'), 'the copy that was made is removed')
   const fallback = run.calls.find((call) => call.label === 'post:#1:fallback:1')
   assert.match(fallback.prompt, /\*\*Wave 1 runs one ticket at a time\.\*\* .*#3: setup: npm ci — exited 1/)
+  assert.match(fallback.prompt, /<!-- flow:local-run -->\n<!-- flow:serial wave=1 tickets=2,3 -->\n\*\*Wave 1/)
   for (const ticket of [2, 3]) {
     const worker = run.calls.find((call) => call.label === `worker:#${ticket}`)
     assert.match(worker.prompt, /The repository is \/repo: run every command there\./)

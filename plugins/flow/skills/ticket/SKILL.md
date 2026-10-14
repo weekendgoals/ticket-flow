@@ -326,9 +326,11 @@ or failing check that remains stops the ticket: ask a person, naming it.
 ## 10. End
 
 Attended: tell the person the ticket is done, with the merge commit or the
-pull request URL, and say in one line that this is a good point to compact
-the session or start a fresh one. Unattended: exit 0 (nonzero only after a
-stop).
+pull request URL, and say in one line that this is a good point to run
+`/compact` with a focus sentence you supply (for example "keep: #<n> is
+merged as <sha>; next ready ticket is #<m>"), or to start a fresh session:
+the build's detail is on the issue now, and carrying it costs every later
+turn. Unattended: exit 0 (nonzero only after a stop).
 
 ## When a host runs the steps
 
