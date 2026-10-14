@@ -1,6 +1,6 @@
 ---
 name: ticket
-description: Build one Flow ticket from GitHub Issues, start to merged — start its branch, build it on the ticket's model, check it, have a separate reviewer read it, accept it, and merge it into the epic branch (or open its pull request) — posting one comment per step on the issue. Use when the user runs /flow:ticket #<n>, or when a host runs it unattended with FLOW_UNATTENDED=1.
+description: Build one Flow ticket from GitHub Issues, start to merged — start its branch, build it on the ticket's model, check it, have a separate reviewer read it, accept it, and merge it into the epic branch (or open its pull request) — posting one comment per step on the issue. Use when the user runs /flow:ticket #<n>, or when a host (a local run of an epic, or the GitHub Action) runs it unattended.
 ---
 
 # Ticket $ARGUMENTS
@@ -11,11 +11,16 @@ follow the work on GitHub without this session.
 
 `FLOW` below means `node "${CLAUDE_PLUGIN_ROOT}/scripts/flow.mjs"`, run from
 the repository root. `<n>` is the ticket number from `$ARGUMENTS`, without the
-`#`.
+`#`. The other arguments a host may pass are in
+[When a host runs the steps](#when-a-host-runs-the-steps); a person never
+needs them.
 
 ## Attended or unattended
 
-Run `echo "${FLOW_UNATTENDED:-}"` first.
+Run `echo "${FLOW_UNATTENDED:-}"` first. `$ARGUMENTS` containing
+`--unattended` means the same as `1`; then write every `FLOW` command as
+`FLOW_UNATTENDED=1 node "${CLAUDE_PLUGIN_ROOT}/scripts/flow.mjs" ...`, because
+the commands read the variable and this host could not set it for you.
 
 - **Attended** (empty): a person started this session. You **supervise**: a
   worker you spawn builds the ticket, a reviewer you spawn judges it, and you
@@ -57,6 +62,13 @@ delivery) or from the default branch (incremental delivery, or a ticket with
 no epic), labelled the ticket `flow:in-progress`, and posted the start
 comment. Its JSON gives `branch`, `base`, `baseSha`, `delivery` and `model`.
 **Keep `baseSha`**: the review range starts there.
+
+**A ticket can be resumed.** When `ticket/<n>` already exists (an earlier
+run died and `FLOW reset <n>` put the ticket back to planned), `start` checks
+that branch out instead of cutting a new one, says "Resumed" in its comment,
+and gives `resumedAt`, the commit it carries on from. Read
+`git log --oneline <baseSha>..HEAD` and the diff before building anything:
+the work so far is yours to finish, not to redo.
 
 The start comment's time is the line the acceptance step draws: if anyone
 edits the issue body after it, acceptance refuses, because the criteria in
@@ -132,8 +144,17 @@ A `COMPARE:` criterion is never run by `FLOW check` (it needs a browser).
 Serve the design file and the built page, open each at every width the line
 names, run the extractor that
 `node "${CLAUDE_PLUGIN_ROOT}/scripts/fidelity.mjs" extract` prints in each,
-and compare the two reports with
-`node "${CLAUDE_PLUGIN_ROOT}/scripts/fidelity.mjs" diff design.json page.json --map <design map>`.
+and compare the two reports against the epic's design map:
+
+```bash
+FLOW design-map <epic> --out <scratch dir>/design-map.json
+node "${CLAUDE_PLUGIN_ROOT}/scripts/fidelity.mjs" diff design.json page.json \
+  --map <scratch dir>/design-map.json --removed-from <scratch dir>/design-map.json \
+  --source <the COMPARE line's path> [--landmarks <the LANDMARKS names>]
+```
+
+The map comes from the epic issue the person approved, never from a copy
+you edited: what the plan says is not built is the plan's call.
 Post the table it prints as a comment that starts `**Compared:**`, and fix
 or explain every row. With no browser here, post `**Compared:** not run —
 <why>` instead: a comparison nobody ran must read as not run.
@@ -222,9 +243,10 @@ It posts input, output, cache and largest-context figures per step and per
 model, compactions, and time from first to last message. A figure a
 transcript does not record is shown as `unknown`, never estimated.
 
-Unattended: skip this step. The host captured the whole run's output and
-runs `FLOW meter <n> --transcripts <stream file>` after the session ends,
-because a session cannot read the end of its own run.
+Unattended: skip this step. The host meters the run after the session ends,
+because a session cannot read the end of its own run: the GitHub Action runs
+`FLOW meter <n> --transcripts <its output file>`, and a local run of an epic
+runs `FLOW meter <n> --workflow <its run directory>`.
 
 ## 9. Deliver
 
@@ -270,9 +292,9 @@ For a ticket's pull request (and, later, an epic's release pull request).
 5. After a round that pushed fixes, ask for a review again
    (`FLOW pr-review-request <pr>`) and repeat from step 2.
 
-Post one comment per round on the ticket: threads fixed, threads answered,
-checks. After two rounds, a thread or failing check that remains stops the
-ticket: ask a person, naming it.
+Post one comment per round on the ticket, starting `**Pull request round
+<k>:**`: threads fixed, threads answered, checks. After two rounds, a thread
+or failing check that remains stops the ticket: ask a person, naming it.
 
 ## 10. End
 
@@ -280,3 +302,46 @@ Attended: tell the person the ticket is done, with the merge commit or the
 pull request URL, and say in one line that this is a good point to compact
 the session or start a fresh one. Unattended: exit 0 (nonzero only after a
 stop).
+
+## When a host runs the steps
+
+A host that builds a whole epic may pass these after `#<n>`. Each one only
+changes where the skill stops or starts; every step still posts its comment.
+
+- `--unattended`: as if `FLOW_UNATTENDED=1` (see the top).
+- `--until-review`: do steps 1 to 5, label the ticket `flow:in-review`, and
+  stop. End your reply with the line `REVIEW <baseSha>..<head>` (full
+  commits). The host hires the reviewer itself, because an agent it started
+  cannot start another, and because the party under review never picks its
+  judge.
+- `--after-review <round>`: the ticket is in review and the host has put the
+  reviewer's report for that round (1 or 2) into this prompt. Check out
+  `ticket/<n>`, post the report as it is (`FLOW post <n> --file <report>`),
+  then go on from step 6's "Important findings are fixed". When you fixed
+  something in round 1, end with `REVIEW <head before the fixes>..<head>`:
+  the host has the fixes reviewed once more and calls you with
+  `--after-review 2`. When round 2 still has an Important finding open,
+  stop and ask a person, quoting it. Otherwise go on to step 7.
+- `--no-merge`: under release delivery, stop after step 8 instead of
+  delivering, and end your reply with `ACCEPTED <sha>` (the commit
+  `FLOW accept` judged). The host merges the tickets of a wave one at a time
+  (`FLOW merge`), because two tickets merging into one branch at once race.
+  Incremental delivery ignores it: each ticket's pull request is its own.
+- `--pr-loop <pr> [--wait]`: run one round of
+  [the pull request loop](#the-pull-request-loop) on that pull request, then
+  end. The GitHub Action calls it when a review arrives or a check fails, so
+  the round starts at step 3: answer the threads, fix what
+  `FLOW pr-checks <pr>` (without `--wait`) reports failing, push, and when
+  you pushed anything ask for a review again (step 5). Do not wait: the next
+  review or check result starts the next round. With `--wait` (a host that
+  gets no such events), ask for a review first when nobody has (step 1),
+  then wait for it and for the checks (steps 2 and 4) before answering. Check
+  out the pull request's head branch first. Post the round's comment on the
+  ticket (head `ticket/<n>`) or, for a release pull request (head
+  `epic/<name>`), on the epic its body names (`Epic: #<e>`). Count the
+  earlier comments that start `**Pull request round`: after two rounds,
+  stop and ask a person instead of running a third.
+
+A host that stops the skill early reads the result from GitHub, not from
+your reply: `REVIEW` and `ACCEPTED` tell it which step comes next, and it
+checks the labels and comments before acting on them.

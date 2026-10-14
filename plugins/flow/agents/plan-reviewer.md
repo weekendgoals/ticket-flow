@@ -106,7 +106,12 @@ plan quotes its words.
 - **The design, when one is declared.** A ticket that builds something the
   design draws with no `COMPARE` line; no final whole-page comparison (a
   `COMPARE` with no `LANDMARKS`) at every width the design draws; a scope or
-  ground rule that quietly drops an element the design draws.
+  ground rule that quietly drops an element the design draws. Read the
+  epic's `design-map` block against the design files: a drawn element with
+  no landmark, a `LANDMARKS` name the map does not declare, a landmark
+  whose `design` selector matches nothing in its source, and an element the
+  plan drops that is missing from `removed` are all findings, because the
+  comparison judges only what the map names.
 - **A missing or hollow "Not in scope"** where the nearby temptation is
   obvious.
 - **Work the request implies that no ticket owns**, and tickets for problems

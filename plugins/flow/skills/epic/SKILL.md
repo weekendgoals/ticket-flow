@@ -151,8 +151,39 @@ Consequence paths: <globs where a mistake is expensive, e.g. src/auth/**, migrat
 - <what every ticket must respect that a builder with no context would get
   wrong; a fact about the project belongs in its instruction file instead>
 
+## Design map
+
+<only when Design sources is set; the block below>
+
 ## Tickets
 ```
+
+The design map, under `## Design map`, is one fenced block marked
+`design-map` holding JSON:
+
+````markdown
+```design-map
+{
+  "landmarks": [
+    { "name": "hero", "design": "<selector in the design file>", "page": "<selector in the built page>",
+      "source": "<the Design sources path that draws it>", "widths": [1440, 393] }
+  ],
+  "removed": [
+    { "name": "promo", "by": "<the ground rule that drops it>", "date": "<YYYY-MM-DD>" }
+  ]
+}
+```
+````
+
+Each landmark is one thing the design draws that a `COMPARE` line can name.
+`page` is your best guess at the built page's selector; the builder may
+correct it. `source` and `widths` say where the design draws it, so a
+landmark missing from the built page fails there instead of being ignored.
+`removed` lists what the plan deliberately does not build, with the rule
+that decided it: only the plan may say an element is not built, never the
+ticket that failed to build it. The comparison reads the map with
+`FLOW design-map <epic> --out <file>`, and `FLOW create-epic` refuses a map
+it cannot read.
 
 Leave `## Tickets` empty: `create-ticket` adds each ticket there as it is
 created. One `Key: value` per settings line; `FLOW create-epic` refuses
@@ -361,7 +392,10 @@ URL.
 
 ## 7. Hand over
 
-Say that the epic is ready to build, name its first ready ticket, and say
-that `/flow:ticket #<n>` builds it, best in a fresh session (this one is full
-of planning). The unattended run of a whole epic is not rewritten yet; do not
-suggest `/flow:run`. Then stop.
+Say that the epic is ready to build, and that there are three ways, each
+best started in a fresh session (this one is full of planning):
+`/flow:ticket #<n>` builds its first ready ticket with them watching;
+`/flow:run #E` builds the whole epic on this machine with nobody watching;
+and when the project has Flow's GitHub Action (`.github/workflows/flow.yml`),
+the approval has already started it on GitHub, so it must not also run here:
+two hosts would build the same tickets. Then stop.
