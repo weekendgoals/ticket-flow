@@ -45,6 +45,7 @@ jobs:
       cancel-in-progress: false
     outputs:
       epic: ${{ steps.read.outputs.epic }}
+      recovered: ${{ steps.recover.outputs.ran }}
     env:
       TICKET: ${{ github.event.issue.number || inputs.ticket }}
       GH_TOKEN: ${{ secrets.FLOW_TOKEN || github.token }}
@@ -98,8 +99,28 @@ jobs:
           path: .flow/screenshots/
           if-no-files-found: ignore
       - name: a run that stopped without a result is reset once, a start request that never started is withdrawn, and a second time goes to a person
+        id: recover
         if: always()
-        run: $FLOW reset "$TICKET" --once || true
+        run: |
+          [ -f .flow-plugin/plugins/flow/scripts/flow.mjs ] || exit 0
+          $FLOW reset "$TICKET" --once || true
+          echo "ran=true" >> "$GITHUB_OUTPUT"
+
+  route:
+    if: github.event_name == 'issues' && (github.event.label.name == 'flow:approved' || github.event.label.name == 'flow:start')
+    runs-on: ubuntu-latest
+    outputs:
+      epic: ${{ steps.find.outputs.epic }}
+    steps:
+      # The epic number comes from the event alone, so it is known before any job can fail and every scheduler run of one epic shares one concurrency group.
+      - name: find the epic
+        id: find
+        env:
+          APPROVED: ${{ github.event.label.name == 'flow:approved' }}
+          ISSUE: ${{ github.event.issue.number }}
+        run: |
+          if [ "$APPROVED" = "true" ]; then epic="$ISSUE"; else epic="$(jq -r '.issue.body // ""' "$GITHUB_EVENT_PATH" | tr -d '\r' | sed -n 's/^Epic: #\([0-9][0-9]*\)[[:space:]]*$/\1/p' | head -n 1)"; fi
+          echo "epic=$epic" >> "$GITHUB_OUTPUT"
 
   merge:
     needs: ticket
@@ -136,14 +157,14 @@ jobs:
           if [ -n "$merged" ]; then $FLOW check-epic "$EPIC" --tickets "$merged" --mark || true; fi
 
   epic:
-    needs: [ticket, merge]
-    if: always() && github.event_name == 'issues' && (github.event.label.name == 'flow:approved' || github.event.label.name == 'flow:start')
+    needs: [route, ticket, merge]
+    if: always() && needs.route.outputs.epic != ''
     runs-on: ubuntu-latest
     concurrency:
-      group: epic-${{ github.event.label.name == 'flow:approved' && github.event.issue.number || needs.ticket.outputs.epic || format('of-ticket-{0}', github.event.issue.number) }}
+      group: epic-${{ needs.route.outputs.epic }}
       cancel-in-progress: false
     env:
-      EPIC_FROM_JOBS: ${{ github.event.label.name == 'flow:approved' && github.event.issue.number || needs.ticket.outputs.epic }}
+      EPIC: ${{ needs.route.outputs.epic }}
       GH_TOKEN: ${{ secrets.FLOW_TOKEN }}
     steps:
       - uses: actions/checkout@v4
@@ -163,23 +184,22 @@ jobs:
           git config user.name "flow[bot]"
           git config user.email "flow[bot]@users.noreply.github.com"
           echo ".flow-plugin/" >> .git/info/exclude
-      # When the ticket job died before it read the ticket, the epic number comes from the ticket's own "Epic: #n" line.
-      - name: find the epic
-        id: epic
-        run: |
-          epic="$EPIC_FROM_JOBS"
-          if [ -z "$epic" ]; then epic="$(jq -r '.issue.body // ""' "$GITHUB_EVENT_PATH" | sed -n 's/^Epic: #\([0-9][0-9]*\)[[:space:]]*$/\1/p' | head -n 1)"; fi
-          echo "number=$epic" >> "$GITHUB_OUTPUT"
-      - name: start what is ready, or open the release pull request when everything is built
-        if: steps.epic.outputs.number != ''
+      # A ticket job that failed before its own recovery step (its checkout, say) left flow:start on the ticket, and dispatch would count it busy for ever.
+      - name: withdraw a start request the ticket job could not
+        if: github.event.label.name == 'flow:start' && (needs.ticket.result == 'failure' || needs.ticket.result == 'cancelled') && needs.ticket.outputs.recovered != 'true'
         env:
-          EPIC: ${{ steps.epic.outputs.number }}
+          TICKET: ${{ github.event.issue.number }}
+        run: $FLOW reset "$TICKET" --once || true
+      - name: start what is ready, or open the release pull request when everything is built
         run: |
           dispatched="$($FLOW dispatch "$EPIC")"
           echo "$dispatched"
           state="$(echo "$dispatched" | jq -r '.state')"
           if [ "$state" = "built" ] && [ "$($FLOW next "$EPIC" | jq -r '.delivery')" = "release" ]; then
-            $FLOW check-epic "$EPIC" --mark && pr="$($FLOW release-pr "$EPIC" | jq -r '.pullRequest')" && { $FLOW pr-review-request "$pr" || true; }
+            $FLOW check-epic "$EPIC" --mark || exit 1
+            opened="$($FLOW release-pr "$EPIC")" || exit 1
+            pr="$(echo "$opened" | jq -r '.pullRequest')"
+            $FLOW pr-review-request "$pr" || true
           elif [ "$state" = "stopped" ]; then
             $FLOW post "$EPIC" --text "**Run stopped.** Nothing is ready and nothing is in progress; the tickets labelled flow:needs-human say why."
           fi

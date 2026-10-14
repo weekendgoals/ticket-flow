@@ -201,8 +201,19 @@ async function removeWorktrees(tickets) {
 }
 
 async function askPerson(ticket, text) {
-  await runCommand(`${FLOW} needs-human ${ticket} --file - <<'FLOW_TEXT'\n${text}\nFLOW_TEXT`, `needs-human:#${ticket}`, 'It hands the ticket to a person.')
-  log(`#${ticket}: handed to a person`)
+  const asked = await runCommand(`${FLOW} needs-human ${ticket} --file - <<'FLOW_TEXT'\n${text}\nFLOW_TEXT`, `needs-human:#${ticket}`, 'It hands the ticket to a person.')
+  if (asked.exitCode === 0) {
+    toldPerson.add(ticket)
+    log(`#${ticket}: handed to a person`)
+    return true
+  }
+  failedHandOffs.set(ticket, (failedHandOffs.get(ticket) || 0) + 1)
+  log(`#${ticket}: handing it to a person failed (exit ${asked.exitCode})`)
+  return false
+}
+
+function handedOff(ticket) {
+  return toldPerson.has(ticket) || (failedHandOffs.get(ticket) || 0) >= MAX_FAILED_HAND_OFFS
 }
 
 async function recover(ticket, why) {
@@ -215,10 +226,20 @@ async function recover(ticket, why) {
     settled.delete(ticket)
     return 'reset'
   }
-  if (action === 'needs-human') return 'needs-human'
+  if (action === 'needs-human') {
+    toldPerson.add(ticket)
+    return 'needs-human'
+  }
   if (action === 'refused' && reset.json.accepted) return 'accepted'
-  await askPerson(ticket, `The run building this ticket stopped without a result, and it could not be put back to planned${reset.json && reset.json.reason ? `: ${reset.json.reason}` : '.'}`)
-  return 'needs-human'
+  if ((action === 'unstarted' || (action === 'refused' && reset.json.state === 'planned')) && !rebuiltUnstarted.has(ticket)) {
+    rebuiltUnstarted.add(ticket)
+    resetSince.add(ticket)
+    settled.delete(ticket)
+    log(`#${ticket}: it never started, so there is nothing to undo; it is built once more`)
+    return 'reset'
+  }
+  const told = await askPerson(ticket, `The run building this ticket stopped without a result, and it could not be put back to planned${reset.json && reset.json.reason ? `: ${reset.json.reason}` : '.'}`)
+  return told ? 'needs-human' : 'unreached'
 }
 
 async function mergeAndCheck(tickets, delivered, release, wave) {
@@ -281,10 +302,14 @@ function workerModel(board, ticket) {
   return entry && WORKER_MODELS.has(entry.model) ? entry.model : 'opus'
 }
 
+const MAX_FAILED_HAND_OFFS = 2
 const records = []
 const startedHere = new Set()
 const settled = new Set()
 const resetSince = new Set()
+const rebuiltUnstarted = new Set()
+const toldPerson = new Set()
+const failedHandOffs = new Map()
 let board = null
 let round = 0
 let idleRounds = 0
@@ -305,18 +330,21 @@ for (;;) {
     break
   }
   const release = board.delivery !== 'incremental'
-  const orphaned = board.inProgress.filter((ticket) => startedHere.has(ticket))
+  const orphaned = board.inProgress.filter((ticket) => startedHere.has(ticket) && !handedOff(ticket))
   if (orphaned.length) {
     const toMerge = []
+    let progressed = false
     for (const ticket of orphaned) {
       if (settled.has(ticket)) {
-        await askPerson(ticket, 'This run could not finish this ticket: it is still in progress after the run already tried to recover it once.')
+        if (await askPerson(ticket, 'This run could not finish this ticket: it is still in progress after the run already tried to recover it once.')) progressed = true
         continue
       }
-      if ((await recover(ticket, 'it is still in progress, and nothing in this run is working on it')) === 'accepted') toMerge.push(ticket)
+      const recovery = await recover(ticket, 'it is still in progress, and nothing in this run is working on it')
+      if (recovery !== 'unreached') progressed = true
+      if (recovery === 'accepted') toMerge.push(ticket)
     }
     if (toMerge.length) await mergeAndCheck(toMerge, [], release, `${round}:recovered`)
-    idleRounds = 0
+    idleRounds = progressed ? 0 : idleRounds + 1
     continue
   }
   if (!board.ready.length) {
@@ -328,6 +356,7 @@ for (;;) {
   for (const ticket of board.ready) {
     if (chosen.length >= width) break
     if (startedHere.has(ticket) && !resetSince.has(ticket)) {
+      if (handedOff(ticket)) continue
       await askPerson(ticket, 'This run started this ticket before, it is still planned, and nothing put it back: its start fails without saying so. A person looks at why.')
       continue
     }
@@ -343,7 +372,7 @@ for (;;) {
   }
   const results = await runWave({ chosen, wide: chosen.length > 1, wave: round, release })
   records.push(...results)
-  const changed = results.some((result) => ['delivered', 'accepted', 'stopped'].includes(result.outcome) || result.recovery || result.merged)
+  const changed = results.some((result) => ['delivered', 'accepted', 'stopped'].includes(result.outcome) || (result.recovery && result.recovery !== 'unreached') || result.merged)
   idleRounds = changed ? 0 : idleRounds + 1
 }
 

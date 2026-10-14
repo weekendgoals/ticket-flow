@@ -85,14 +85,9 @@ export function releasePrComment({ number, url, existing, epicBranch, base }) {
   return `<!-- flow:release-pr number=${number} -->\n**Release pull request ${existing ? 'already open' : 'opened'}:** ${url} (\`${epicBranch}\` into \`${base}\`). A person reviews and merges it.`
 }
 
-export function releasePrNumber(comments, author) {
-  const found = lastMatch(comments, author, RELEASE_PR_MARKER)
-  return found ? Number(found.match[1]) : null
-}
-
-export function localRunLive(comments, author) {
-  const mine = byAuthor(comments, author).filter((comment) => comment.body.startsWith(LOCAL_RUN_MARKER) || comment.body.startsWith(LOCAL_RUN_END_MARKER))
-  return mine.length > 0 && mine[mine.length - 1].body.startsWith(LOCAL_RUN_MARKER)
+export function localRunLive(comments) {
+  const marks = comments.filter((comment) => comment.body.startsWith(LOCAL_RUN_MARKER) || comment.body.startsWith(LOCAL_RUN_END_MARKER))
+  return marks.length > 0 && marks[marks.length - 1].body.startsWith(LOCAL_RUN_MARKER)
 }
 
 export function mergedComment({ sha, mergeSha, epicBranch, alreadyMerged, attempts = [] }) {

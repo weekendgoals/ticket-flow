@@ -802,6 +802,13 @@ function commandMerge(positional, flags) {
       printJson({ epic: epic.number, merged: [], notMerged: [], reason: 'not a release epic: each ticket has its own pull request' })
       return 0
     }
+    const branchRefusal = epicBranchRefusal(epic)
+    if (branchRefusal) {
+      process.stderr.write(`${branchRefusal}\n`)
+      if (isUnattended()) github.comment(epic.number, `**Nothing was merged.** ${branchRefusal}. The accepted tickets wait; a person fixes the epic's settings.`)
+      printJson({ epic: epic.number, merged: [], notMerged: [], reason: branchRefusal })
+      return 1
+    }
     const waiting = epic.tickets.filter((ticket) => ACCEPTABLE_STATES.has(ticket.state))
     const merged = []
     const notMerged = []
@@ -842,7 +849,7 @@ function commandReset(positional, flags) {
   const account = github.viewerLogin()
   const refused = (reason, accepted = null) => {
     process.stderr.write(`${reason}\n`)
-    printJson({ ticket: number, action: 'refused', reason, accepted })
+    printJson({ ticket: number, action: 'refused', state, reason, accepted })
     return 1
   }
   if (state === 'planned' && issue.labels.includes(START_LABEL)) {
@@ -1094,9 +1101,9 @@ function commandDispatch(positional) {
     process.stderr.write(`${branchRefusal}\n`)
     return 1
   }
-  if (localRunLive(github.listComments(epic.number), github.viewerLogin())) {
+  if (localRunLive(github.listComments(epic.number))) {
     process.stderr.write(
-      `epic #${epic.number} is being built by a /flow:run on someone's machine (its last run comment is not an end), and two hosts would build the same tickets; if that run is gone, post a comment that starts with ${LOCAL_RUN_END_MARKER} on the epic from this account\n`,
+      `epic #${epic.number} is being built by a /flow:run on someone's machine (its last run comment is not an end), and two hosts would build the same tickets; if that run is gone, post a comment that starts with ${LOCAL_RUN_END_MARKER} on the epic, from any account\n`,
     )
     return 1
   }

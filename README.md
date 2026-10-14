@@ -236,7 +236,8 @@ a copied file git does not ignore is one `git add -A` from a commit, so it
 is refused); `setup` lists commands run in the copy, in order, within eight
 minutes in all. They are read from the branch as committed, never from your
 working tree. They are used when tickets are built side by side and when
-`flow check-epic` checks the epic branch.
+`flow check-epic` checks the epic branch, which happens after every merge:
+an epic built one ticket at a time pays `setup` once per ticket.
 
 ### The cost comment
 
@@ -300,8 +301,10 @@ agent reported. A builder that died after its ticket passed acceptance is
 not built again; its accepted commit is merged. A ticket that stops goes to
 a person and the run carries on with the rest. While the run is going, its
 comments on the epic mark it live and `flow dispatch` (the Action's
-scheduler) refuses to start anything; a run that was killed leaves that mark,
-and a comment starting `<!-- flow:local-run-end -->` clears it.
+scheduler) refuses to start anything, whichever account posted them; the
+rule holds only through that mark. A run that was killed leaves it, and a
+comment starting `<!-- flow:local-run-end -->`, posted from any account,
+clears it.
 When nothing is ready and nothing is in progress, it checks every ticket at
 the epic head, opens the release pull request (`flow release-pr`: the
 outcome, the walkthrough, each ticket's merge commit, the cost), answers its
@@ -346,7 +349,8 @@ The jobs:
 
 | Job | Runs when | What it does |
 |---|---|---|
-| `epic` | the epic gets `flow:approved`, and after every ticket | `flow dispatch`: adds `flow:start` to up to `Parallel:` ready tickets. When everything is built: `flow check-epic`, `flow release-pr`, and asks the review bot. Never runs Claude |
+| `route` | the epic gets `flow:approved`, or a ticket `flow:start` | Reads the epic's number from the event alone, so every scheduler run of one epic waits for the last |
+| `epic` | after `route`, and after every ticket | Withdraws a start request whose `ticket` job failed before it could, then `flow dispatch`: adds `flow:start` to up to `Parallel:` ready tickets. When everything is built: `flow check-epic`, then `flow release-pr` (which reuses an open one), and asks the review bot. Never runs Claude |
 | `ticket` | a ticket gets `flow:start`, or by hand with a ticket number | Runs `/flow:ticket #<n> --unattended --no-merge` on the tier's model, posts the cost from the run's output, keeps the screenshots as an artifact, and resets a run that died |
 | `merge` | after `ticket` | One at a time per epic: merges every accepted ticket into the epic branch in the epic's order (`flow merge --epic`), then checks them at the new head |
 | `pr` | a review is submitted, or checks fail, on a `ticket/` or `epic/` pull request | Runs one round of the pull request loop (`/flow:ticket --pr-loop <pr>`). A ticket's pull request is left to its `ticket` job, which runs its own loop, until the ticket is done |

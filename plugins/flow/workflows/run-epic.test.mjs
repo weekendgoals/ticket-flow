@@ -364,3 +364,48 @@ test('a board read that returns nothing is tried once more before the run gives 
   assert.equal(never.out.outcome, 'stopped')
   assert.match(never.out.stopReason, /nobody could read the board/)
 })
+
+test('a hand-off to a person that fails counts as a round that changed nothing, and is tried twice at most, so the run ends', async () => {
+  let reads = 0
+  const run = await drive((label) => {
+    if (label.startsWith('next:')) return ++reads === 1 ? board({ ready: [2] }) : board({ inProgress: [2] })
+    if (label === 'worker:#2') return null
+    if (label === 'reset:#2') return { exitCode: 1, output: 'gh: HTTP 502' }
+    if (label === 'needs-human:#2') return { exitCode: 1, output: 'gh: HTTP 502' }
+    return releaseSteps(label)
+  })
+  assert.equal(run.labels.filter((label) => label === 'needs-human:#2').length, 2)
+  assert.ok(reads <= 5, `${reads} board reads`)
+  assert.equal(run.out.outcome, 'stopped')
+  assert.match(run.out.stopReason, /#2 is in progress outside this run/)
+})
+
+test('a builder that died before its ticket started has nothing to undo: it is built once more, and a second death goes to a person', async () => {
+  const next = boards(board({ ready: [2] }), board({ ready: [2] }), board({ needsHuman: [2] }))
+  const run = await drive((label) => {
+    if (label.startsWith('next:')) return next()
+    if (label === 'worker:#2') return null
+    if (label === 'reset:#2') return { exitCode: 1, output: JSON.stringify({ ticket: 2, action: 'refused', state: 'planned', reason: '#2 is planned; only a ticket left in progress or in review can be reset', accepted: null }) }
+    return releaseSteps(label)
+  })
+  assert.equal(run.labels.filter((label) => label === 'worker:#2').length, 2)
+  assert.equal(run.labels.filter((label) => label === 'needs-human:#2').length, 1)
+  assert.match(run.calls.find((call) => call.label === 'needs-human:#2').prompt, /could not be put back to planned: #2 is planned/)
+})
+
+test('three rounds in a row that change nothing end the run, and a ticket already handed to a person is not asked about again', async () => {
+  let reads = 0
+  const run = await drive((label) => {
+    if (label.startsWith('next:')) {
+      reads++
+      return board({ ready: [2] })
+    }
+    if (label === 'worker:#2') return { result: 'stopped', summary: 'start crashed before it could refuse' }
+    return releaseSteps(label)
+  })
+  assert.equal(run.labels.filter((label) => label === 'worker:#2').length, 1)
+  assert.equal(run.labels.filter((label) => label === 'needs-human:#2').length, 1)
+  assert.equal(run.out.outcome, 'stopped')
+  assert.equal(run.out.stopReason, '3 rounds in a row changed nothing')
+  assert.ok(reads <= 6, `${reads} board reads`)
+})

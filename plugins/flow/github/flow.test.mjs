@@ -82,7 +82,9 @@ test('the template listens for the label that starts a ticket, approval, a manua
   assert.deepEqual(workflow.on.workflow_run.types, ['completed'])
   assert.match(workflow.jobs.ticket.if, /github\.event\.label\.name == 'flow:start'/)
   assert.match(workflow.jobs.ticket.if, /workflow_dispatch/)
-  assert.match(workflow.jobs.epic.if, /github\.event\.label\.name == 'flow:approved'/)
+  assert.match(workflow.jobs.route.if, /github\.event\.label\.name == 'flow:approved'/)
+  assert.match(workflow.jobs.route.if, /github\.event\.label\.name == 'flow:start'/)
+  assert.equal(workflow.jobs.epic.if, "always() && needs.route.outputs.epic != ''")
 })
 
 test('the permissions are the ones the steps need, and no more is assumed', () => {
@@ -126,7 +128,8 @@ test('the scheduler never runs Claude, labels with FLOW_TOKEN so the label start
   assert.match(text, /^# Events made with the default GITHUB_TOKEN start no other workflow, so the scheduler labels tickets with FLOW_TOKEN/m)
   const run = step('epic', (entry) => entry.run && /dispatch/.test(entry.run)).run
   assert.match(run, /\$FLOW dispatch "\$EPIC"/)
-  assert.match(run, /\$FLOW check-epic "\$EPIC" --mark && pr="\$\(\$FLOW release-pr "\$EPIC"/, 'the release pull request opens only after the check passed, whatever shell options a copy runs with')
+  assert.match(run, /\$FLOW check-epic "\$EPIC" --mark \|\| exit 1\n\s*opened="\$\(\$FLOW release-pr "\$EPIC"\)" \|\| exit 1\n/, 'a failed check fails the step and opens nothing, whatever shell options a copy runs with')
+  assert.doesNotMatch(run, /check-epic[^\n]*&&/, 'under bash -e a failed member of an && list does not fail the step')
   assert.match(run, /\$FLOW pr-review-request "\$pr"/)
 })
 
@@ -144,15 +147,28 @@ test('nothing in the template merges into the default branch', () => {
   assert.doesNotMatch(text, /gh pr merge|git push[^\n]*\b(main|master)\b|--base main/)
 })
 
-test('when a ticket job dies before it reads the ticket, the scheduler still runs, finding the epic in the ticket body, and the job withdraws the start request', () => {
-  assert.match(workflow.jobs.epic.if, /github\.event\.label\.name == 'flow:start'/)
-  const find = step('epic', (entry) => entry.id === 'epic')
-  assert.match(find.run, /epic="\$EPIC_FROM_JOBS"/)
-  assert.match(find.run, /jq -r '\.issue\.body \/\/ ""' "\$GITHUB_EVENT_PATH" \| sed -n 's\/\^Epic: #/)
-  const scheduler = step('epic', (entry) => entry.run && /dispatch/.test(entry.run))
-  assert.equal(scheduler.if, "steps.epic.outputs.number != ''")
-  assert.equal(scheduler.env.EPIC, '${{ steps.epic.outputs.number }}')
+test('the epic comes from the event before any job runs, so one epic has one scheduler group whatever the ticket job did', () => {
+  const find = workflow.jobs.route.steps.find((entry) => entry.id === 'find')
+  assert.match(find.run, /if \[ "\$APPROVED" = "true" \]; then epic="\$ISSUE"/)
+  assert.match(find.run, /jq -r '\.issue\.body \/\/ ""' "\$GITHUB_EVENT_PATH" \| tr -d '\\r' \| sed -n 's\/\^Epic: #/)
+  assert.ok(!workflow.jobs.route.steps.some((entry) => entry.uses), 'it needs no checkout, so nothing it depends on can fail first')
+  assert.deepEqual(workflow.jobs.epic.needs, ['route', 'ticket', 'merge'])
+  assert.equal(workflow.jobs.epic.concurrency.group, 'epic-${{ needs.route.outputs.epic }}')
+  assert.equal(workflow.jobs.merge.concurrency.group, 'epic-${{ needs.ticket.outputs.epic }}', 'the merge job shares the epic\'s group')
+  assert.equal(workflow.jobs.epic.env.EPIC, '${{ needs.route.outputs.epic }}')
   assert.match(text, /# execution_file is the output anthropics\/claude-code-action@v1 documents/)
+})
+
+test('a ticket job that failed before its own recovery step has its start request withdrawn by the scheduler, and only then', () => {
+  const recover = step('ticket', (entry) => entry.id === 'recover')
+  assert.match(recover.run, /^\[ -f \.flow-plugin\/plugins\/flow\/scripts\/flow\.mjs \] \|\| exit 0\n\$FLOW reset "\$TICKET" --once \|\| true\necho "ran=true" >> "\$GITHUB_OUTPUT"$/)
+  assert.equal(workflow.jobs.ticket.outputs.recovered, '${{ steps.recover.outputs.ran }}')
+  const withdraw = step('epic', (entry) => /withdraw/.test(entry.name || ''))
+  assert.equal(withdraw.if, "github.event.label.name == 'flow:start' && (needs.ticket.result == 'failure' || needs.ticket.result == 'cancelled') && needs.ticket.outputs.recovered != 'true'")
+  assert.equal(withdraw.env.TICKET, '${{ github.event.issue.number }}')
+  assert.equal(withdraw.run, '$FLOW reset "$TICKET" --once || true')
+  const steps = workflow.jobs.epic.steps
+  assert.ok(steps.indexOf(withdraw) < steps.findIndex((entry) => entry.run && /dispatch/.test(entry.run)), 'withdrawn before dispatch counts the busy tickets')
 })
 
 test('every job runs as one named account: github-actions[bot] without FLOW_TOKEN, otherwise the FLOW_ACCOUNT variable or what GitHub says', () => {

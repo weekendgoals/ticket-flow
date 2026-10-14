@@ -438,6 +438,22 @@ test('merge --epic on an incremental epic merges nothing and is not an error', (
   assert.deepEqual(JSON.parse(result.stdout).merged, [])
 })
 
+test('unattended, merge --epic under an unusable Branch: says so once on the epic and hands no ticket to a person', () => {
+  const repo = repository()
+  const two = ticketBranch(repo, 2, { 'button.txt': 'b\n' })
+  const three = ticketBranch(repo, 3, { 'export.txt': 'e\n' })
+  world({
+    epic: { settings: 'Delivery: release\nBranch: main' },
+    tickets: { 2: { labels: ['flow:ticket', 'flow:in-review'] }, 3: { labels: ['flow:ticket', 'flow:in-review'] } },
+    comments: { 2: [STARTED, accepted(two)], 3: [STARTED, accepted(three)] },
+  })
+  const result = flow(repo.work, ['merge', '--epic', '1'], { FLOW_UNATTENDED: '1' })
+  assert.equal(result.status, 1)
+  assert.equal(posted(1).length, 1)
+  assert.match(posted(1)[0], /^\*\*Nothing was merged\.\*\* .*"Branch: main"/)
+  assert.deepEqual([...posted(2), ...posted(3), ...added(2), ...added(3)], [])
+})
+
 test('post --file - reads the comment from standard input', () => {
   world()
   const result = spawnSync(process.execPath, [FLOW, 'post', '1', '--file', '-'], { cwd: directory, input: '**Wave 1:** #2 on sonnet.\n', encoding: 'utf8', env: { ...process.env, ...fake.env } })
@@ -493,10 +509,11 @@ test('reset answers a refusal in JSON too, naming the accepted commit when that 
   world({ tickets: { 2: { labels: ['flow:ticket', 'flow:in-review'] } }, comments: { 2: [STARTED, accepted('c'.repeat(40))] } })
   const accepted2 = flow(directory, ['reset', '2', '--once'])
   assert.equal(accepted2.status, 1)
-  assert.deepEqual(JSON.parse(accepted2.stdout), { ticket: 2, action: 'refused', reason: JSON.parse(accepted2.stdout).reason, accepted: 'c'.repeat(40) })
+  assert.deepEqual(JSON.parse(accepted2.stdout), { ticket: 2, action: 'refused', state: 'in-review', reason: JSON.parse(accepted2.stdout).reason, accepted: 'c'.repeat(40) })
   world()
-  const planned = flow(directory, ['reset', '2'])
-  assert.equal(JSON.parse(planned.stdout).accepted, null)
+  const planned = JSON.parse(flow(directory, ['reset', '2']).stdout)
+  assert.equal(planned.accepted, null)
+  assert.equal(planned.state, 'planned', 'a run that died before the ticket started has nothing to undo, and can tell')
 })
 
 test('dispatch refuses while a local run is building the epic, and says how to end a run that is gone', () => {
@@ -507,8 +524,12 @@ test('dispatch refuses while a local run is building the epic, and says how to e
   assert.deepEqual(added(2), [])
   world({ comments: { 1: [comment('<!-- flow:local-run -->\n**Wave 1:**'), comment('<!-- flow:local-run-end -->\n**Run stopped.**')] } })
   assert.equal(flow(directory, ['dispatch', '1']).status, 0)
-  world({ comments: { 1: [{ ...comment('<!-- flow:local-run -->\n**Wave 1:**'), user: { login: 'someone-else' } }] } })
-  assert.equal(flow(directory, ['dispatch', '1']).status, 0, 'a marker written by another account is just text')
+  world({ comments: { 1: [{ ...comment('<!-- flow:local-run -->\n**Wave 1:**'), user: { login: 'vadim' } }] } })
+  assert.equal(flow(directory, ['dispatch', '1']).status, 1, 'a person\'s local run posts as that person, and the Action under FLOW_TOKEN must still see it')
+  world({ comments: { 1: [{ ...comment('<!-- flow:local-run -->\n**Wave 1:**'), user: { login: 'vadim' } }, { ...comment('<!-- flow:local-run-end -->\nThat run is gone.'), user: { login: 'ana' } }] } })
+  assert.equal(flow(directory, ['dispatch', '1']).status, 0, 'anyone can clear the mark')
+  world({ comments: { 1: [comment('> <!-- flow:local-run -->\n> quoted')] } })
+  assert.equal(flow(directory, ['dispatch', '1']).status, 0, 'only a mark at the start of a comment counts')
 })
 
 test('the git step itself refuses to merge into a branch outside epic/, whatever a caller passes', async () => {

@@ -286,6 +286,21 @@ at a finished epic.
   count from the latest start (a reset ticket gets two more), and every
   document now gives the same list of reasons a ticket stops.
 
+- **Follow-ups from the stage 3 confirming review.** The Action's `epic`
+  job withdraws a start request whose `ticket` job failed before its own
+  recovery step (a failed checkout left `flow:start` on, and `dispatch`
+  counted the ticket busy for ever). A new `route` job reads the epic's
+  number from the event, so every scheduler run of one epic shares one
+  concurrency group. A failed `check-epic` or `release-pr` now fails the
+  step. In `/flow:run`, a hand-off to a person that fails counts as a round
+  that changed nothing and is tried twice at most (it looped for ever on a
+  GitHub outage), and a builder that died before its ticket started is built
+  once more instead of going straight to a person; `reset`'s refusal names
+  the ticket's state. `merge --epic` under an unusable `Branch:` posts once
+  on the epic instead of handing every accepted ticket to a person. The
+  one-host mark counts whoever posted it, so a person's local run and the
+  Action under `FLOW_TOKEN` see each other, and anyone can clear it.
+
 ### Stage 4: looking back
 
 - **New: `flow stats [<epic>] [--since <date>] [--json]`.** Reads every

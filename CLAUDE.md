@@ -48,7 +48,7 @@ as of 2026-10-15; the pass count grows, the fail line stays `# fail 0`.
   end to end against the fake `gh`; one case needs `git` on PATH.
 - `node --test plugins/flow/scripts/lifecycle.test.mjs` — `# pass 38`. The
   ticket steps in throwaway repositories with a bare remote; needs `git`, `sh`.
-- `node --test plugins/flow/scripts/epic-run.test.mjs` — `# pass 27`. The
+- `node --test plugins/flow/scripts/epic-run.test.mjs` — `# pass 28`. The
   whole-epic commands, the same way.
 - `pull-request.test.mjs` `# pass 19`, `issue-body.test.mjs` `# pass 25`,
   `checks.test.mjs` `# pass 26` (real shell commands in a temp dir),
@@ -58,8 +58,8 @@ as of 2026-10-15; the pass count grows, the fail line stays `# fail 0`.
   its transcripts; no test reads a real one (they belong to whoever ran them).
 - `node --test plugins/flow/scripts/worktree-setup.test.mjs` — `# pass 18`;
   needs `git`, POSIX `sh` and `sleep`.
-- `node --test plugins/flow/workflows/run-epic.test.mjs` — `# pass 20`
-  (stubbed `agent`, no git), `plugins/flow/github/flow.test.mjs` `# pass 10`.
+- `node --test plugins/flow/workflows/run-epic.test.mjs` — `# pass 23`
+  (stubbed `agent`, no git), `plugins/flow/github/flow.test.mjs` `# pass 11`.
 - **Syntax:** `node --check` on every `.mjs` under `plugins/flow/scripts/`.
   It does not work on `workflows/run-epic.mjs` (a module body with a
   top-level `return`); parse that one the way the workflow runtime does:

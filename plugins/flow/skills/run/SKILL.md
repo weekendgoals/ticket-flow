@@ -37,8 +37,11 @@ git status --porcelain --untracked-files=no   # must print nothing
   `"startRequested": true` (the `flow:start` label), or the project runs
   Flow's GitHub Action (`grep -l 'flow:start' .github/workflows/*` finds a
   file). Stop and say so, because two hosts would build the same tickets
-  and race to merge them. The other way round is guarded in code: while
-  this run's comments on the epic show it live, `flow dispatch` refuses.
+  and race to merge them. The other way round holds only through the run's
+  comments on the epic: while the latest one that starts with
+  `<!-- flow:local-run -->` or `<!-- flow:local-run-end -->` is not an end,
+  whoever posted it, `flow dispatch` refuses. It is a sign, not a lock:
+  anyone can post one.
 - **A ticket already in progress or in review** (`inProgress` in the JSON)
   is either someone's live work or a run that died. Ask the person which.
   Dead: run `FLOW reset <n>` (it goes back to planned and its branch keeps
@@ -101,8 +104,8 @@ an agent reported.
 
 If the run itself is killed, its last comment on the epic is a wave, not an
 end, and `flow dispatch` keeps refusing: post a comment on the epic that
-starts with `<!-- flow:local-run-end -->` (`FLOW post <e> --text ...`) once
-you know it is gone.
+starts with `<!-- flow:local-run-end -->` (`FLOW post <e> --text ...`, or
+by hand on GitHub, from any account) once you know it is gone.
 
 When nothing is ready and nothing is in progress, the script runs every
 done ticket's checks at the epic head, opens the release pull request
