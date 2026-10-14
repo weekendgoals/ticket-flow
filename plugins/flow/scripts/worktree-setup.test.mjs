@@ -1,8 +1,3 @@
-// worktree-setup.test.mjs — REAL git, real worktrees, in throwaway directories.
-// The refusal that matters here asks git a question (`check-ignore`, in a
-// linked worktree, where `.git` is a file), and an assumption about git's
-// answer is tested against git — the merge driver's suite says why.
-
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
@@ -25,16 +20,14 @@ const cli = (...args) => {
   return { out: r.stdout, err: r.stderr, code: r.status }
 }
 
-// A main checkout with `config` committed, local untracked `files`, and a
-// linked worktree cut from the commit — the shape the run's worktree step makes.
 function project(name, { config, gitignore = '.env\nnode_modules/\n', files = { '.env': 'SECRET=1\n' } } = {}) {
   const repo = join(base, name, 'repo')
   const worktree = join(base, name, 'wt')
-  mkdirSync(join(repo, 'epics'), { recursive: true })
+  mkdirSync(repo, { recursive: true })
   git(repo, 'init', '-q', '--initial-branch=main')
   writeFileSync(join(repo, '.gitignore'), gitignore)
   writeFileSync(join(repo, 'README.md'), 'x\n')
-  if (config !== undefined) writeFileSync(join(repo, 'epics/worktree.json'), typeof config === 'string' ? config : JSON.stringify(config))
+  if (config !== undefined) writeFileSync(join(repo, '.flow.json'), typeof config === 'string' ? config : JSON.stringify(config))
   git(repo, 'add', '-A')
   git(repo, 'commit', '-q', '-m', 'init')
   for (const [rel, text] of Object.entries(files)) {
@@ -65,14 +58,14 @@ test('a project that declares nothing gets the worktree it always got', () => {
   const p = project('absent')
   const r = cli(...p.args)
   assert.equal(r.code, 0)
-  assert.match(r.out, /no epics\/worktree\.json on this branch/)
+  assert.match(r.out, /no "copy" or "setup" in \.flow\.json on this branch/)
   assert.ok(!existsSync(join(p.worktree, '.env')))
   assert.equal(JSON.parse(cli(...p.args, '--json').out).configured, false)
 })
 
 test('the config is read as committed on the branch, never from the main checkout\'s working tree', () => {
   const p = project('committed', { config: { setup: ['echo committed > marker'] }, gitignore: 'marker\n.env\n' })
-  writeFileSync(join(p.repo, 'epics/worktree.json'), JSON.stringify({ setup: ['echo uncommitted > marker'] }))
+  writeFileSync(join(p.repo, '.flow.json'), JSON.stringify({ setup: ['echo uncommitted > marker'] }))
   assert.equal(cli(...p.args).code, 0)
   assert.equal(readFileSync(join(p.worktree, 'marker'), 'utf8'), 'committed\n')
 })
@@ -83,7 +76,6 @@ test('a file git does not ignore is never copied', () => {
   assert.equal(r.code, 1)
   assert.match(r.out, /git does not ignore \.env in the worktree/)
   assert.ok(!existsSync(join(p.worktree, '.env')), 'refused before the copy, not after')
-  // a tracked file is the same refusal: check-ignore does not call it ignored
   const t = project('tracked', { config: { copy: ['README.md'] } })
   assert.equal(cli(...t.args).code, 1)
 })
@@ -92,13 +84,12 @@ test('what git calls ignored is asked of real git: a negated pattern and a track
   const neg = project('negated', { config: { copy: ['keep.env'] }, gitignore: '*.env\n!keep.env\n', files: { 'keep.env': 'K=1\n' } })
   assert.equal(cli(...neg.args).code, 1)
   assert.ok(!existsSync(join(neg.worktree, 'keep.env')))
-  // tracked, and matching a pattern: check-ignore does not report tracked paths, so the committed copy is never overwritten
   const repo = join(base, 'tracked-pattern', 'repo')
   const worktree = join(base, 'tracked-pattern', 'wt')
-  mkdirSync(join(repo, 'epics'), { recursive: true })
+  mkdirSync(repo, { recursive: true })
   git(repo, 'init', '-q', '--initial-branch=main')
   writeFileSync(join(repo, 'sample.env'), 'COMMITTED=1\n')
-  writeFileSync(join(repo, 'epics/worktree.json'), JSON.stringify({ copy: ['sample.env'] }))
+  writeFileSync(join(repo, '.flow.json'), JSON.stringify({ copy: ['sample.env'] }))
   git(repo, 'add', '-A')
   writeFileSync(join(repo, '.gitignore'), '*.env\n')
   git(repo, 'add', '.gitignore')
@@ -115,7 +106,7 @@ test('a copy that names a directory, or that the filesystem refuses, fails with 
   assert.equal(d.code, 1)
   assert.match(d.out, /FAILED at copy secrets/)
   const fs = project('fs-error', { config: { copy: ['blocked.env'] }, gitignore: 'blocked.env\n', files: { 'blocked.env': 'x' } })
-  mkdirSync(join(fs.worktree, 'blocked.env')) // the destination is an (ignored) directory
+  mkdirSync(join(fs.worktree, 'blocked.env'))
   const r = cli(...fs.args)
   assert.equal(r.code, 1, r.err)
   assert.match(r.out, /FAILED at copy blocked\.env\n\w+: /)
@@ -125,20 +116,17 @@ test('a copy that names a directory, or that the filesystem refuses, fails with 
 test('a symbolic link is never read from and never written through', () => {
   const outside = join(base, 'outside-secret')
   writeFileSync(outside, 'OUTSIDE=1\n')
-  // the source is a link out of the checkout
   const src = project('symlink-source', { config: { copy: ['.env'] }, files: {} })
   symlinkSync(outside, join(src.repo, '.env'))
   const a = cli(...src.args)
   assert.equal(a.code, 1)
   assert.match(a.out, /is a symbolic link/)
   assert.ok(!existsSync(join(src.worktree, '.env')))
-  // a directory on the way is a link out of the checkout
   const dirLink = project('symlink-dir', { config: { copy: ['local/.env'] }, gitignore: 'local\n.env\n', files: {} })
   mkdirSync(join(base, 'elsewhere'), { recursive: true })
   writeFileSync(join(base, 'elsewhere/.env'), 'ELSEWHERE=1\n')
   symlinkSync(join(base, 'elsewhere'), join(dirLink.repo, 'local'))
   assert.equal(cli(...dirLink.args).code, 1)
-  // the destination is a link left in the worktree (a re-run after a halt)
   const dst = project('symlink-dest', { config: { copy: ['.env'] } })
   const target = join(base, 'overwritten')
   writeFileSync(target, 'KEEP\n')
@@ -150,7 +138,6 @@ test('a symbolic link is never read from and never written through', () => {
 })
 
 test('a later copy that un-ignores an earlier one fails the setup and removes what git would now stage', () => {
-  // local/.gitignore, copied second, carries `!.env` — each copy passed its own check when it was made
   const p = project('unignore', {
     config: { copy: ['local/.env', 'local/.gitignore'] },
     gitignore: '.env\nlocal/.gitignore\n',
@@ -162,7 +149,6 @@ test('a later copy that un-ignores an earlier one fails the setup and removes wh
   assert.ok(!existsSync(join(p.worktree, 'local/.env')), 'removed: left in place it is one `git add -A` from a commit')
   git(p.worktree, 'add', '-A')
   assert.doesNotMatch(git(p.worktree, 'status', '--porcelain'), /\.env$/m)
-  // and a setup command that rewrites the rules is caught the same way
   const s = project('unignore-setup', { config: { copy: ['.env'], setup: ["echo '!.env' >> .gitignore"] } })
   const out = cli(...s.args)
   assert.equal(out.code, 1)
@@ -171,7 +157,6 @@ test('a later copy that un-ignores an earlier one fails the setup and removes wh
 })
 
 test('the sweep runs on EVERY failure, repeats until nothing changes, and never deletes on git failing', () => {
-  // a halted run leaves the worktree in place: the same two copies, then a third that fails
   const early = project('sweep-early', {
     config: { copy: ['local/.env', 'local/.gitignore', 'missing.env'] },
     gitignore: '.env\nlocal/.gitignore\n',
@@ -181,7 +166,6 @@ test('the sweep runs on EVERY failure, repeats until nothing changes, and never 
   assert.equal(e.code, 1)
   assert.match(e.out, /FAILED at copy missing\.env/)
   assert.ok(!existsSync(join(early.worktree, 'local/.env')), 'the early return does not leave the exposed secret behind')
-  // removing one file can expose another: the nested ignore file that was hiding the secret
   const cascade = project('sweep-cascade', {
     config: { copy: ['local/nested/.env', 'local/nested/.gitignore', 'local/.gitignore'] },
     gitignore: '.env\n.gitignore\n',
@@ -190,7 +174,6 @@ test('the sweep runs on EVERY failure, repeats until nothing changes, and never 
   assert.equal(cli(...cascade.args).code, 1)
   git(cascade.worktree, 'add', '-A')
   assert.doesNotMatch(git(cascade.worktree, 'status', '--porcelain'), /\.env$/m, 'nothing the cleanup left is a staged secret')
-  // git failing is not "not ignored": a setup command that puts the copied file behind a link deletes nothing outside
   const outside = join(base, 'sweep-outside')
   mkdirSync(outside, { recursive: true })
   writeFileSync(join(outside, '.env'), 'KEEP\n')
@@ -201,14 +184,14 @@ test('the sweep runs on EVERY failure, repeats until nothing changes, and never 
   assert.match(l.out, /NOT CHECKED — git could not say/)
 })
 
-test('a committed epics/worktree.json that is a symbolic link is refused: what runs is what was pushed', () => {
+test('a committed .flow.json that is a symbolic link is refused: what runs is what was pushed', () => {
   const repo = join(base, 'config-link', 'repo')
   const worktree = join(base, 'config-link', 'wt')
-  mkdirSync(join(repo, 'epics'), { recursive: true })
+  mkdirSync(repo, { recursive: true })
   git(repo, 'init', '-q', '--initial-branch=main')
   const target = join(base, 'config-link', 'outside.json')
   writeFileSync(target, JSON.stringify({ setup: ['echo ran > marker'] }))
-  symlinkSync(target, join(repo, 'epics/worktree.json'))
+  symlinkSync(target, join(repo, '.flow.json'))
   git(repo, 'add', '-A')
   git(repo, 'commit', '-q', '-m', 'init')
   git(repo, 'worktree', 'add', '-q', '--detach', worktree, 'HEAD')
@@ -222,7 +205,6 @@ test('the budget is one clock: copies are inside it too', () => {
   const p = project('copy-budget', { config: { copy: ['.env'], setup: ['echo ran > marker'] } })
   const r = cli(...p.args, '--budget-ms', '1')
   assert.equal(r.code, 1)
-  // one millisecond is spent before the first copy or during it — either way it is a FAILED line, never exit 0
   assert.match(r.out, /FAILED at (copy \.env|setup: echo ran > marker)\n/)
   assert.ok(!existsSync(join(p.worktree, 'marker')))
 })
@@ -231,7 +213,7 @@ test('the setup has a budget that ends before the shell call around it does, and
   const p = project('slow', { config: { setup: ['echo started', 'sleep 5', 'echo never > marker'] }, gitignore: 'marker\n.env\n' })
   const r = cli(...p.args, '--budget-ms', '400')
   assert.equal(r.code, 1)
-  assert.match(r.out, /FAILED at setup: sleep 5\nthe setup's 0\.4-second budget ran out — it exists because the run's worktree step is one shell call/)
+  assert.match(r.out, /FAILED at setup: sleep 5\nthe setup's 0\.4-second budget ran out — it exists because the step that sets a worktree up is one shell call/)
   assert.ok(!existsSync(join(p.worktree, 'marker')))
   const spent = project('spent', { config: { setup: ['sleep 1', 'echo never > marker'] }, gitignore: 'marker\n.env\n' })
   const s = cli(...spent.args, '--budget-ms', '300')
@@ -262,7 +244,7 @@ test('a config it cannot read as the documented shape is exit 2, by entry', () =
   for (const [config, re] of [
     ['{ not json', /not valid JSON/],
     [[], /must be a JSON object/],
-    [{ comands: ['npm ci'] }, /unknown key "comands"/],
+    [{ comands: ['npm ci'] }, /unknown key "comands" — the keys are "copy", "setup", "screenshots", "screenshotsDir"/],
     [{ copy: '.env' }, /"copy" must be an array/],
     [{ copy: ['../outside/.env'] }, /copy\[0\] \("\.\.\/outside\/\.env"\) must be a path inside the repository/],
     [{ copy: ['/etc/passwd'] }, /must be a path inside the repository/],
@@ -288,9 +270,8 @@ test('--validate reads a file or stdin, and copies and runs nothing', () => {
   assert.equal(piped.status, 2)
   assert.match(piped.stderr, /unknown key "comands"/)
   assert.equal(cli('--validate', join(base, 'nowhere.json')).code, 2)
-  // with --repo: the two failures shape cannot see, asked of the main checkout
   const p = project('validate-repo', { config: { copy: ['.env', 'gone.env', 'README.md'] }, gitignore: '*.env\n' })
-  const v = cli('--validate', join(p.repo, 'epics/worktree.json'), '--repo', p.repo)
+  const v = cli('--validate', join(p.repo, '.flow.json'), '--repo', p.repo)
   assert.equal(v.code, 1)
   assert.match(v.out, /copy "gone\.env": .* is not a file in this checkout/)
   assert.match(v.out, /copy "README\.md": git does not ignore it/)
@@ -306,4 +287,32 @@ test('usage errors: missing flags, a path that is no directory, and the main che
   const same = cli('--repo', p.repo, '--worktree', p.repo)
   assert.equal(same.code, 2)
   assert.match(same.err, /never the main checkout/)
+})
+
+test('the screenshot keys of .flow.json sit beside the setup keys, and a file with neither copy nor setup sets nothing up', () => {
+  const p = project('screenshots-only', { config: { screenshots: 'npm run shots', screenshotsDir: '.flow/shots/{n}' } })
+  const r = cli(...p.args)
+  assert.equal(r.code, 0, r.err)
+  assert.match(r.out, /nothing to set up/)
+  const both = project('screenshots-and-setup', { config: { screenshots: 'npm run shots', setup: ['echo ran > marker'] }, gitignore: 'marker\n.env\n' })
+  assert.equal(cli(...both.args).code, 0)
+  assert.equal(readFileSync(join(both.worktree, 'marker'), 'utf8'), 'ran\n')
+})
+
+test('createWorktree checks a ref out detached beside the repository, replaces a stale one, and removeWorktree leaves nothing behind', async () => {
+  const { createWorktree, removeWorktree, worktreePath } = await import('./worktree-setup.mjs')
+  const p = project('create')
+  const head = git(p.repo, 'rev-parse', 'HEAD').trim()
+  const path = worktreePath(p.repo, 'ticket-7')
+  assert.equal(path, join(dirname(p.repo), '.flow-worktrees', 'repo', 'ticket-7'))
+  const made = createWorktree(p.repo, { path, ref: head })
+  assert.equal(made.ok, true, made.reason)
+  assert.equal(git(path, 'rev-parse', 'HEAD').trim(), head)
+  writeFileSync(join(path, 'leftover.txt'), 'from a run that died\n')
+  assert.equal(createWorktree(p.repo, { path, ref: head }).ok, true)
+  assert.ok(!existsSync(join(path, 'leftover.txt')), 'a stale worktree is replaced, not reused')
+  removeWorktree(p.repo, path)
+  assert.ok(!existsSync(path))
+  assert.doesNotMatch(git(p.repo, 'worktree', 'list'), /ticket-7/)
+  assert.equal(createWorktree(p.repo, { path, ref: 'no-such-ref' }).ok, false)
 })
