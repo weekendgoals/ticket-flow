@@ -256,7 +256,11 @@ export function withTicketListed(epicBody, number, title) {
   const normalized = normalizeNewlines(epicBody)
   const entry = `- [ ] #${number} — ${title}`
   const scanned = scanLines(normalized)
-  const headingIndex = scanned.findIndex((line) => line.fence === null && /^##[ \t]+tickets[ \t]*$/i.test(line.line))
+  const isTicketsHeading = (line) => {
+    const heading = line.fence === null ? line.line.match(SECTION_HEADING) : null
+    return Boolean(heading) && heading[1].trim().toLowerCase() === 'tickets'
+  }
+  const headingIndex = scanned.findIndex(isTicketsHeading)
   const lines = normalized.split('\n')
   if (headingIndex === -1) return `${normalized.replace(/\n+$/, '')}\n\n## Tickets\n\n${entry}\n`
   let end = headingIndex + 1

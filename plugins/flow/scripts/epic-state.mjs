@@ -96,6 +96,8 @@ export function deriveEpic(epicIssue, subIssues) {
     const ticketProblems = []
     if (stateProblem) ticketProblems.push(`#${issue.number} ${stateProblem}`)
     if (parsed.blockedByProblem) ticketProblems.push(`#${issue.number} ${parsed.blockedByProblem}`)
+    for (const problem of parsed.criteria.problems)
+      ticketProblems.push(`#${issue.number} has acceptance criteria that cannot decide it: ${problem.why}${problem.line === null ? '' : ` (body line ${problem.line})`}`)
     if (parsed.epic !== null && parsed.epic !== epicIssue.number)
       ticketProblems.push(`#${issue.number} says "Epic: #${parsed.epic}" but is a sub-issue of epic #${epicIssue.number}`)
     const outsideBlockers = parsed.blockedBy.filter((number) => !members.has(number))

@@ -72,6 +72,17 @@ a whole epic and the retro follow.
 - **`METHODOLOGY.md`** is now a short list of the lessons that still decide
   the design.
 
+- **Follow-ups from the stage 1 review.** A planned ticket whose criteria
+  cannot decide it (block deleted, empty or malformed) now waits with that
+  reason on `board`, `next` and `doctor` instead of being listed ready.
+  `check <n>` runs the criteria before reading the body's edit history, and
+  when that history cannot be read it reports `edits: null` with a named
+  problem and fails, rather than failing with no results. `link` refuses a
+  target that is an epic or has no `flow:ticket` label. A `## Tickets ##`
+  heading is found when a ticket is added to the list, instead of a second
+  `## Tickets` section being appended. The epic skill checks the branch name
+  with the full `refs/heads/epic/<name>`.
+
 ### Stage 2: one ticket, start to merged
 
 - **New `flow` commands that carry a ticket through its steps, each refusing

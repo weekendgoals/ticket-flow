@@ -56,7 +56,7 @@ test('the runner alone passes an empty list; refusing a ticket with no criteria 
   const report = reportFor('- prose criterion, verified by hand')
   assert.equal(report.total, 0)
   assert.equal(report.allPassed, true)
-  assert.match(formatCheckReport(report), /has no CHECK criteria/)
+  assert.match(formatCheckReport(report), /^0\/0 checks passed$/)
 })
 
 test('malformed CHECK/EXPECT lines fail rather than silently never running', () => {

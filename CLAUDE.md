@@ -46,12 +46,12 @@ Every suite needs Node ≥ 20 and nothing else unless noted; pass each test
 file path explicitly (`node --test <directory>` finds nothing here). Counts
 as of 2026-10-15; the pass count grows, the fail line stays `# fail 0`.
 
-- `node --test plugins/flow/scripts/flow.test.mjs` — `# pass 44`. The CLI
+- `node --test plugins/flow/scripts/flow.test.mjs` — `# pass 46`. The CLI
   end to end against the fake `gh`; one case needs `git` on PATH.
 - `node --test plugins/flow/scripts/lifecycle.test.mjs` — `# pass 22`. The
   ticket steps in throwaway repositories with a bare remote; needs `git`, `sh`.
 - `node --test plugins/flow/scripts/pull-request.test.mjs` — `# pass 16`.
-- `node --test plugins/flow/scripts/issue-body.test.mjs` — `# pass 21`.
+- `node --test plugins/flow/scripts/issue-body.test.mjs` — `# pass 23`.
 - `node --test plugins/flow/scripts/checks.test.mjs` — `# pass 26`. Runs real
   shell commands in a temp dir.
 - `node --test plugins/flow/scripts/tracker/github.test.mjs` — `# pass 18`.

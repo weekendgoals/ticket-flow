@@ -57,7 +57,9 @@ A traveller exports a trip.
 ${tickets.map((number) => `- [ ] #${number} — ticket ${number}`).join('\n')}
 `
 
-const ticketBody = (epic, { blockedBy = null, criteria = '' } = {}) => `Epic: #${epic}
+const DECIDABLE = '```criteria\n- it works\n  CHECK: true\n```'
+
+const ticketBody = (epic, { blockedBy = null, criteria = DECIDABLE } = {}) => `Epic: #${epic}
 ${blockedBy === null ? '' : `${blockedBy}\n`}
 ## Scope
 
@@ -386,7 +388,7 @@ test('check exits 1 on a malformed criterion even with nothing to run', () => {
 
 test('check fails a ticket whose criteria block was deleted, and carries the body edits that show who did it', () => {
   world({
-    epics: [{ epic: issue(1, { body: epicBody([3]), labels: epicLabels() }), tickets: [ticket(3, 1, 'in-progress')] }],
+    epics: [{ epic: issue(1, { body: epicBody([3]), labels: epicLabels() }), tickets: [ticket(3, 1, 'in-progress', { criteria: '' })] }],
     extra: {
       'graphql name={repo} number=3 owner={owner}': {
         data: { repository: { issue: { userContentEdits: { pageInfo: { hasNextPage: false }, nodes: [{ editedAt: '2026-10-14T09:30:00Z', editor: { login: 'someone' } }] } } } },
@@ -401,6 +403,32 @@ test('check fails a ticket whose criteria block was deleted, and carries the bod
   assert.match(report.problems[0].why, /no ```criteria block/)
   assert.deepEqual(report.edits, [{ editedAt: '2026-10-14T09:30:00Z', editor: 'someone' }])
   assert.match(result.stderr, /nothing decides this ticket/)
+})
+
+test('check runs the criteria even when the edit history cannot be read, and fails with that named', () => {
+  world({
+    epics: [{ epic: issue(1, { body: epicBody([3]), labels: epicLabels() }), tickets: [ticket(3, 1, 'in-progress')] }],
+    extra: { 'graphql name={repo} number=3 owner={owner}': { $exit: 1, $stderr: 'gh: Something went wrong (HTTP 502)' } },
+  })
+  const result = flow('check', '3')
+  assert.equal(result.status, 1)
+  const report = JSON.parse(result.stdout)
+  assert.deepEqual([report.total, report.passed, report.edits, report.allPassed], [1, 1, null, false])
+  assert.match(report.problems[0].why, /edit history could not be read .*HTTP 502/)
+})
+
+test('a planned ticket whose criteria cannot decide it waits, with the reason, instead of being ready', () => {
+  const broken = issue(3, { title: 'ticket 3', body: 'Epic: #1\n## Acceptance criteria\n', labels: ['flow:ticket', 'flow:planned'] })
+  world({ epics: [{ epic: issue(1, { body: epicBody([3]), labels: epicLabels() }), tickets: [broken] }] })
+  const result = flow('next', '1')
+  assert.equal(result.status, 1)
+  const next = JSON.parse(result.stdout)
+  assert.deepEqual(next.ready, [])
+  assert.equal(next.waiting[0].n, 3)
+  assert.match(next.waiting[0].problem, /#3 has acceptance criteria that cannot decide it: no ```criteria block/)
+  const doctor = flow('doctor')
+  assert.equal(doctor.status, 1)
+  assert.match(doctor.stdout, /#3 has acceptance criteria that cannot decide it/)
 })
 
 test('check fails an empty criteria block, and passes one that holds only a design comparison', () => {
@@ -621,7 +649,7 @@ test('create-ticket that cannot link names flow link as the recovery, and flow l
 })
 
 test('flow link is a no-op on a ticket already linked and listed, and refuses one that names another epic', () => {
-  world({ epics: [tripExport()], others: [issue(80, { body: 'Epic: #7\n' })] })
+  world({ epics: [tripExport()], others: [issue(80, { body: 'Epic: #7\n', labels: ['flow:ticket', 'flow:planned'] }), issue(81, { labels: ['flow:epic'] }), issue(82, { labels: ['bug'] })] })
   const again = flow('link', '1', '3')
   assert.equal(again.status, 0, again.stderr)
   assert.match(again.stdout, /#3 was already linked to epic #1/)
@@ -629,6 +657,11 @@ test('flow link is a no-op on a ticket already linked and listed, and refuses on
   const wrong = flow('link', '1', '80')
   assert.equal(wrong.status, 1)
   assert.match(wrong.stderr, /#80 says "Epic: #7", not #1/)
+  const epicByTypo = flow('link', '1', '81')
+  assert.equal(epicByTypo.status, 1)
+  assert.match(epicByTypo.stderr, /#81 is not a ticket \(it is an epic\); nothing was changed/)
+  assert.match(flow('link', '1', '82').stderr, /#82 is not a ticket \(it has no flow:ticket label\)/)
+  assert.ok(!fake.calls().some((call) => !call.key.startsWith('GET')), 'nothing was written')
 })
 
 test('create-ticket refuses a parent that is not an epic', () => {

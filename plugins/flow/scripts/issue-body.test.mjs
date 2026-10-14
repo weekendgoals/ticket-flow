@@ -12,6 +12,7 @@ import {
   withEpicLine,
   withBlockedBy,
   withTicketListed,
+  withTicketChecked,
 } from './issue-body.mjs'
 
 const EPIC_BODY = `## Outcome
@@ -275,4 +276,16 @@ test('withTicketListed appends to the Tickets task list in order, once, and crea
   assert.equal(withTicketListed(second, 6, 'second'), second)
   const created = withTicketListed('## Outcome\n\nx\n', 9, 'only')
   assert.deepEqual(parseEpicBody(created).tickets, [{ number: 9, checked: false, title: 'only' }])
+})
+
+test('withTicketListed finds a "## Tickets ##" heading the section parser accepts, instead of adding a second section', () => {
+  const body = '## Outcome\n\nx\n\n## Tickets ##\n\n- [ ] #2 — first\n'
+  const listed = withTicketListed(body, 3, 'second')
+  assert.equal(listed, '## Outcome\n\nx\n\n## Tickets ##\n\n- [ ] #2 — first\n- [ ] #3 — second\n')
+  assert.deepEqual(parseEpicBody(listed).tickets.map((task) => task.number), [2, 3])
+})
+
+test('withTicketChecked ticks one ticket off the list and leaves the rest', () => {
+  const body = '## Tickets\n\n- [ ] #2 — first\n- [ ] #3 — second\n\n```\n- [ ] #2 — in a fence\n```\n'
+  assert.equal(withTicketChecked(body, 2), '## Tickets\n\n- [x] #2 — first\n- [ ] #3 — second\n\n```\n- [ ] #2 — in a fence\n```\n')
 })

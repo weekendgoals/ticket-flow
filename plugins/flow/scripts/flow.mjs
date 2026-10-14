@@ -53,7 +53,7 @@ const USAGE = `usage: flow <command>
   init                                   create the Flow labels in this repository
   doctor                                 check gh, the repository, the labels and every open epic
   board [<epic>] [--json]                list open epics, or one epic's tickets
-  next <epic>                            what can start now, as JSON (exit 1 when the epic is stuck)
+  next <epic>                            what can start now, as JSON (exit 1 when the epic is not approved, empty or stuck)
   ticket <n>                             one ticket, parsed, as JSON
   check <n> [--cwd <dir>]                run a ticket's CHECK criteria (exit 1 unless all pass)
   check --file <md> [--epic-file <md>]   the same, for a draft ticket body not yet on GitHub
@@ -308,8 +308,17 @@ function commandCheck(positional, flags) {
   if (!fromDraft && flags['epic-file'] !== undefined) throw new UsageError('--epic-file goes with --file')
   const ticket = fromDraft ? flags.file : issueNumber(positional[0], 'a ticket number')
   const criteria = fromDraft ? draftCriteria(flags) : loadTicket(ticket).parsed.criteria
-  const edits = fromDraft ? null : github.bodyEditHistory(ticket)
-  const report = { ...runCriteria({ ticket, ...criteria }, { cwd: flags.cwd || gitTopLevel() }), edits }
+  const report = runCriteria({ ticket, ...criteria }, { cwd: flags.cwd || gitTopLevel() })
+  report.edits = null
+  if (!fromDraft) {
+    try {
+      report.edits = github.bodyEditHistory(ticket)
+    } catch (error) {
+      if (!(error instanceof TrackerError)) throw error
+      report.problems = [...report.problems, { line: null, text: 'body edit history', why: `the issue body's edit history could not be read (${error.message}), so nothing proves the criteria are the ones that were approved` }]
+      report.allPassed = false
+    }
+  }
   process.stderr.write(`${formatCheckReport(report)}\n`)
   printJson(report)
   return report.allPassed ? 0 : 1
@@ -414,7 +423,7 @@ function commandCreateTicket(positional, flags) {
   const parsed = parseTicketBody(body, epicPlan.settings.designSources)
   const problems = [
     ...(parsed.blockedByProblem ? [parsed.blockedByProblem] : []),
-    ...parsed.criteria.problems.map((problem) => `line ${problem.line}: ${problem.why}: ${problem.text}`),
+    ...parsed.criteria.problems.map((problem) => `line ${problem.line ?? '?'}: ${problem.why}: ${problem.text}`),
   ]
   const members = new Set(github.listSubIssues(epicNumber).map((issue) => issue.number))
   const outside = parsed.blockedBy.filter((number) => !members.has(number))
@@ -445,6 +454,10 @@ function commandLink(positional) {
   const epic = github.getIssue(epicNumber)
   if (!epic.labels.includes(EPIC_LABEL)) throw new UsageError(`#${epicNumber} is not an epic (it has no ${EPIC_LABEL} label)`)
   const ticket = github.getIssue(ticketNumber)
+  if (ticket.labels.includes(EPIC_LABEL) || !ticket.labels.includes(TICKET_LABEL)) {
+    process.stderr.write(`#${ticketNumber} is not a ticket (it ${ticket.labels.includes(EPIC_LABEL) ? `is an epic` : `has no ${TICKET_LABEL} label`}); nothing was changed\n`)
+    return 1
+  }
   const named = parseTicketBody(ticket.body).epic
   if (named !== null && named !== epicNumber) {
     process.stderr.write(`#${ticketNumber} says "Epic: #${named}", not #${epicNumber}; nothing was changed\n`)

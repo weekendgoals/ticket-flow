@@ -198,10 +198,6 @@ const STATUS_MARK = { passed: '✓', skipped: '↓', failed: '✗' }
 export function formatCheckReport(report) {
   const out = []
   const { checks, compares, problems } = report
-  if (!checks.length && !compares.length && !problems.length) {
-    out.push(`${typeof report.ticket === 'number' ? `#${report.ticket}` : report.ticket} has no CHECK criteria; nothing to run`)
-    return out.join('\n')
-  }
   for (const result of checks) {
     out.push(`${STATUS_MARK[result.status]} ${result.n}/${checks.length} ${result.criterion || '(no criterion bullet above the CHECK line)'}`)
     out.push(`    $ ${result.check}`)

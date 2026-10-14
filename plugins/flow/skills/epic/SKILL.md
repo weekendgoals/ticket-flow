@@ -303,7 +303,7 @@ On yes, first make sure the branch name is free, before anything is created:
 ```bash
 FLOW doctor                     # if it reports missing labels: FLOW init
 FLOW board                      # its first line names the default branch
-git ls-remote --heads origin epic/<short-name>
+git ls-remote origin refs/heads/epic/<short-name>
 ```
 
 If `ls-remote` prints a line, the branch already exists, possibly left over
