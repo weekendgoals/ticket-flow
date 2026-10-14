@@ -182,11 +182,21 @@ test('pr-checks --wait polls until nothing is pending', () => {
   assert.equal(fake.calls().length, 3)
 })
 
-test('pr-checks treats a pull request with no checks as nothing pending and nothing failing', () => {
-  fake.setFixtures({ [CHECKS_KEY]: { $exit: 1, $stderr: "no checks reported on the 'ticket/2' branch" } })
-  const result = flow(plain, 'pr-checks', '40')
-  assert.equal(result.status, 0, result.stderr)
-  assert.deepEqual(JSON.parse(result.stdout).checks, [])
+test('pr-checks never reads "no checks" as green: it exits 4, and under --wait it first waits for checks to appear', () => {
+  const none = { $exit: 1, $stderr: "no checks reported on the 'ticket/2' branch" }
+  fake.setFixtures({ [CHECKS_KEY]: none })
+  const once = flow(plain, 'pr-checks', '40')
+  assert.equal(once.status, 4)
+  assert.deepEqual([JSON.parse(once.stdout).noChecks, JSON.parse(once.stdout).checks], [true, []])
+  fake.clearCalls()
+  const afterGrace = flow(plain, 'pr-checks', '40', '--wait', '--interval', '0', '--grace', '0')
+  assert.equal(afterGrace.status, 4)
+  fake.setFixtures({ [CHECKS_KEY]: { $sequence: [none, none, { $exit: 8, $stdout: [check('unit', 'pending')] }, [check('unit', 'pass')]] } })
+  fake.clearCalls()
+  const appeared = flow(plain, 'pr-checks', '40', '--wait', '--interval', '0', '--timeout', '30', '--grace', '30')
+  assert.equal(appeared.status, 0, appeared.stderr)
+  assert.equal(JSON.parse(appeared.stdout).noChecks, false)
+  assert.equal(fake.calls().length, 4)
 })
 
 test('pr-checks does not take a gh failure for a result', () => {
@@ -195,4 +205,25 @@ test('pr-checks does not take a gh failure for a result', () => {
   assert.equal(result.status, 1)
   assert.match(result.stderr, /Could not resolve to a PullRequest/)
   assert.equal(result.stdout, '')
+})
+
+test('pr-wait follows the head when it moves between probes, and takes only a review of the new head', () => {
+  const moved = { ...pull, head: { ref: 'ticket/2', sha: 'c'.repeat(40) } }
+  fake.setFixtures({
+    [`GET ${R}/pulls/40`]: { $sequence: [pull, moved, moved] },
+    [`GET ${R}/pulls/40/reviews?per_page=100`]: {
+      $sequence: [[], [review('copilot-pull-request-reviewer[bot]', HEAD)], [review('copilot-pull-request-reviewer[bot]', HEAD), review('copilot-pull-request-reviewer[bot]', 'c'.repeat(40), 'APPROVED')]],
+    },
+  })
+  const result = flow(plain, 'pr-wait', '40', '--interval', '0', '--timeout', '30')
+  assert.equal(result.status, 0, result.stderr)
+  assert.deepEqual([JSON.parse(result.stdout).state, JSON.parse(result.stdout).head], ['APPROVED', 'c'.repeat(40)])
+})
+
+test('pr-threads flags a thread with more comments than one page holds', () => {
+  const long = thread('T7')
+  long.comments.totalCount = 140
+  fake.setFixtures({ 'graphql name={repo} owner={owner} pr=40': threadPage([long, thread('T8')], null) })
+  const threads = JSON.parse(flow(plain, 'pr-threads', '40').stdout)
+  assert.deepEqual(threads.map((entry) => entry.moreComments), [true, false])
 })

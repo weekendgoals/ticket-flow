@@ -171,9 +171,13 @@ becomes `flow:needs-human`). Each step posts one comment on the issue:
    commits and reviewed once more; one still open after that goes to a
    person.
 5. **Accept** (`flow accept`): the criteria run on the committed head and
-   the results are posted with that commit. If the issue body (which holds
-   the criteria) was edited after the start, acceptance is refused and names
-   who edited it.
+   the results are posted with that commit. It is refused while untracked
+   files sit in the tree, before a review is posted or while one has an
+   Important finding open, when a design comparison has no posted
+   `**Compared:**` table, and when the issue body (which holds the criteria)
+   was edited after the start, naming who edited it. Flow reads its own
+   comments only from the account running it, so start, accept and deliver
+   run under one GitHub account.
 6. **Cost** (`flow meter`): what each step cost, posted as a table.
 7. **Deliver** (`flow deliver`): only the accepted commit. Release: merged
    into the epic branch with `--no-ff` and labelled `flow:done`; if the
@@ -181,9 +185,12 @@ becomes `flow:needs-human`). Each step posts one comment on the issue:
    Incremental: a pull request into the default branch, then the pull
    request loop below.
 
-A ticket stops for a person in three cases only: acceptance still failing
-after two rounds of fixes, a contradiction between the ticket and the code,
-and a merge conflict. Everything else is retried or noted in a comment.
+A ticket stops for a person only when a decision is needed that no agent may
+make: a gate still fails after two rounds of fixes (acceptance, an Important
+review finding, a pull request thread or check); the plan and the work
+disagree (the ticket contradicts the code, a check looks wrong, the issue
+body changed after the start); or a merge conflict. Everything else is
+retried or noted in a comment.
 
 **A ticket whose run died can be resumed.** `flow reset <n>` puts a ticket
 left in progress back to planned, with a comment, and keeps its branch;
@@ -197,7 +204,7 @@ once per ticket; a second death goes to a person.
 `.coderabbit.yaml` is reviewed by CodeRabbit instead); `flow pr-wait` waits
 for that review; `flow pr-threads` lists the unresolved threads, and each is
 fixed or answered, then closed with `flow pr-resolve` and a reply;
-`flow pr-checks --wait` waits for CI, and a failure is fixed. Two rounds,
+`flow pr-checks --wait` waits for CI, and a failure is fixed; a pull request no check ever appears on is said to have no CI, never read as passing. Two rounds,
 then a person. One comment per round on the ticket.
 
 ### `.flow.json`
@@ -343,6 +350,7 @@ every answer is read from GitHub (through `gh`) and git.
 | `check <n> [--cwd <dir>]` | Runs the ticket's criteria from the repository root (or `--cwd`). JSON results on stdout, with every edit of the issue body (who, when); a readable table on stderr. Exits 1 unless every check passed, and when the ticket has no criteria |
 | `check --file <md> [--epic-file <md>]` | The same for a draft that is not on GitHub yet |
 | `post <n> --file <md>` or `--text "<md>"` | Adds a comment |
+| `post <n> --review --important <k> --file <md>` | Posts a reviewer's report as the next numbered review round, with how many Important findings it leaves open |
 | `label <n> +<label> -<label> …` | Adds and removes labels; refuses to leave two state labels on one issue |
 | `create-epic --file <md> --title "<t>"` | Creates the epic issue; prints its number |
 | `create-ticket <epic> --file <md> --title "<t>" [--tier easy\|hard] [--blocked-by <n>,<n>]` | Creates the ticket, writes its `Epic:` and `Blocked by:` lines, links it as a sub-issue and adds it to the epic's task list; prints its number |
@@ -359,7 +367,7 @@ every answer is read from GitHub (through `gh`) and git.
 | `pr-wait <pr> [--bot …] [--timeout <s>] [--interval <s>]` | Waits for the bot's review of the current head |
 | `pr-threads <pr>` | Unresolved review threads as JSON |
 | `pr-resolve <thread-id> --text "<reply>"` | Replies on a thread, then resolves it |
-| `pr-checks <pr> [--wait]` | CI checks as JSON; exit 1 when one failed, 3 when some are still running |
+| `pr-checks <pr> [--wait] [--grace <s>]` | CI checks as JSON; exit 1 when one failed, 3 when some are still running, 4 when none appeared (under `--wait` it gives them 90 seconds first) |
 | `reset <n> [--once]` | Puts a ticket whose run died back to planned; its branch keeps its commits. Refuses a ticket that passed acceptance (it is waiting to be merged). `--once`: if it was reset before, asks a person instead |
 | `merge <n> [--sha <sha>]` | Merges the accepted commit into the epic branch; with `--sha`, refuses unless that is the accepted commit |
 | `merge --epic <epic>` | Merges every accepted ticket of the epic, in the epic's order |

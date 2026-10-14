@@ -252,7 +252,7 @@ export function listPullRequestReviews(number) {
 }
 
 const REVIEW_THREADS_QUERY =
-  'query($owner:String!,$name:String!,$pr:Int!,$cursor:String){repository(owner:$owner,name:$name){pullRequest(number:$pr){reviewThreads(first:100,after:$cursor){pageInfo{hasNextPage endCursor}nodes{id isResolved isOutdated path line comments(first:50){nodes{body url author{login}}}}}}}}'
+  'query($owner:String!,$name:String!,$pr:Int!,$cursor:String){repository(owner:$owner,name:$name){pullRequest(number:$pr){reviewThreads(first:100,after:$cursor){pageInfo{hasNextPage endCursor}nodes{id isResolved isOutdated path line comments(first:100){totalCount nodes{body url author{login}}}}}}}}'
 
 export function listReviewThreads(number) {
   const threads = []
@@ -273,6 +273,7 @@ export function listReviewThreads(number) {
         author: comments.length ? comments[0].author : null,
         body: comments.length ? comments[0].body : '',
         comments,
+        moreComments: (node.comments.totalCount ?? comments.length) > comments.length,
       })
     }
     if (!page.pageInfo.hasNextPage) return threads
@@ -316,4 +317,16 @@ export function pullRequestChecks(number) {
     bucket: check.bucket,
     link: check.link || null,
   }))
+}
+
+const VIEWER_QUERY = 'query{viewer{login}}'
+let viewerLoginOnce = null
+
+export function viewerLogin() {
+  if (viewerLoginOnce) return viewerLoginOnce
+  const data = graphql(VIEWER_QUERY, {}, { inRepository: false })
+  const login = data && data.viewer && data.viewer.login
+  if (!login) throw new TrackerError('GitHub did not say which account `gh` is signed in as')
+  viewerLoginOnce = login
+  return login
 }

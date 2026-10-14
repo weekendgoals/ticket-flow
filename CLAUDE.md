@@ -8,18 +8,16 @@ skill and host calls. `README.md` is the user manual; `METHODOLOGY.md` holds
 the lessons behind the rules and no rules of its own — if it contradicts a
 skill, the skill wins.
 
-Stages 1 to 3 (this state) rewrote planning, building one ticket and
-building a whole epic on two hosts (`/flow:run` with `workflows/run-epic.mjs`,
-and the GitHub Action template `github/flow.yml`). Still 2.x: skill `retro`
-(stage 4); leave it alone. `scripts/fidelity.mjs` with its test and fixtures
-stays as it is.
+Stages 1 to 3 (this state) rewrote planning, one ticket and a whole epic on
+two hosts (`/flow:run` via `workflows/run-epic.mjs`, and the Action
+`github/flow.yml`). Still 2.x: skill `retro` (stage 4); leave it alone.
+`scripts/fidelity.mjs` with its test and fixtures stays as it is.
 
 ## Ticket Flow policy
 
-Use Ticket Flow only when the user explicitly invokes `/flow:*` or asks to
-use the Flow methodology. Ordinary implementation requests run directly:
-implement, verify, report, no epic or tickets. "Direct" or "without Flow"
-always overrides it.
+Use Ticket Flow only when the user invokes `/flow:*` or asks for the Flow
+methodology; ordinary requests run directly (implement, verify, report, no
+epic). "Direct" or "without Flow" always overrides it.
 
 ## Layout
 
@@ -46,15 +44,15 @@ Every suite needs Node ≥ 20 and nothing else unless noted; pass each test
 file path explicitly (`node --test <directory>` finds nothing here). Counts
 as of 2026-10-15; the pass count grows, the fail line stays `# fail 0`.
 
-- `node --test plugins/flow/scripts/flow.test.mjs` — `# pass 46`. The CLI
+- `node --test plugins/flow/scripts/flow.test.mjs` — `# pass 47`. The CLI
   end to end against the fake `gh`; one case needs `git` on PATH.
-- `node --test plugins/flow/scripts/lifecycle.test.mjs` — `# pass 23`. The
+- `node --test plugins/flow/scripts/lifecycle.test.mjs` — `# pass 35`. The
   ticket steps in throwaway repositories with a bare remote; needs `git`, `sh`.
 - `node --test plugins/flow/scripts/epic-run.test.mjs` — `# pass 21`. The
   whole-epic commands, the same way.
-- `pull-request.test.mjs` `# pass 16`, `issue-body.test.mjs` `# pass 24`,
+- `pull-request.test.mjs` `# pass 18`, `issue-body.test.mjs` `# pass 24`,
   `checks.test.mjs` `# pass 26` (real shell commands in a temp dir),
-  `tracker/github.test.mjs` `# pass 18`, `fidelity.test.mjs` `# pass 54`,
+  `tracker/github.test.mjs` `# pass 19`, `fidelity.test.mjs` `# pass 54`,
   each under `plugins/flow/scripts/`.
 - `node --test plugins/flow/scripts/meter.test.mjs` — `# pass 16`. Builds
   its transcripts; no test reads a real one (they belong to whoever ran them).
@@ -113,11 +111,13 @@ so a local run and the pull-request gate cannot drift apart.
   a summary: an explanation of why code is right makes a reviewer agree.
 - **Criteria edited after a ticket starts refuse acceptance** (the latest
   start comment draws the line): whoever edited the gate may not be who
-  approved it. Only the commit a passing acceptance named is merged.
-- **Two review rounds, then a person** (also for acceptance fixes and the
-  pull-request loop). A ticket stops only for that, a contradiction between
-  ticket and code, a merge conflict, or checks failing at the epic head
-  after it merged; a halt on infrastructure is noise.
+  approved it. Only the commit a passing acceptance named is merged. Flow's
+  markers count only from the account running it, at a comment's start:
+  anyone can post or quote one.
+- **A ticket stops only when no agent may decide**: a gate failing after two
+  rounds of fixes (acceptance, review, pull request; `accept` counts review
+  rounds), plan and work disagreeing, or a merge conflict; an epic also for
+  checks failing at its head after merging. Infrastructure halts are noise.
 - **The run driver re-reads GitHub and trusts no agent's report.** Each
   round starts from `flow next`; an agent's answer only routes the next step,
   and every gate is a command that reads the issue. A dead builder is reset

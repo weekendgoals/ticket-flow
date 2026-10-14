@@ -1,8 +1,11 @@
 export const STARTED_MARKER = '<!-- flow:started -->'
-export const ACCEPTANCE_MARKER = /<!-- flow:acceptance sha=([0-9a-f]{7,40}) passed=(true|false) -->/
+export const ACCEPTANCE_MARKER = /^<!-- flow:acceptance sha=([0-9a-f]{7,40}) passed=(true|false) -->/
 export const METER_MARKER = '<!-- flow:meter -->'
 export const RESET_MARKER = '<!-- flow:reset -->'
-export const MERGED_MARKER = /<!-- flow:merged sha=([0-9a-f]{7,40}) accepted=([0-9a-f]{7,40}) -->/
+export const MERGED_MARKER = /^<!-- flow:merged sha=([0-9a-f]{7,40}) accepted=([0-9a-f]{7,40}) -->/
+export const REVIEW_MARKER = /^<!-- flow:review round=(\d+) important=(\d+) -->/
+export const COMPARED_HEADING = '**Compared:**'
+export const MAX_REVIEW_ROUNDS = 2
 export const RELEASE_CHECK_MARKER = '<!-- flow:release-check -->'
 export const RELEASE_PR_MARKER = /<!-- flow:release-pr number=(\d+) -->/
 export const UNATTENDED_VARIABLE = 'FLOW_UNATTENDED'
@@ -38,6 +41,7 @@ export function startRefusal({ ticket, state, parsed, epic }) {
   if (!entry) return `#${ticket} says it belongs to epic #${epic.number}, but it is not one of that epic's sub-issues; run \`flow link ${epic.number} ${ticket}\``
   if (!epic.approved) return `epic #${epic.number} is not approved yet; a person adds the flow:approved label to approve it`
   if (entry.problems.length) return entry.problems.join('; ')
+  if (entry.epicProblem) return entry.epicProblem
   if (entry.inCycle) return `#${ticket} is part of a blocking cycle, so it can never start; fix the "Blocked by" lines`
   if (entry.unfinishedBlockers.length) return `#${ticket} is waiting for ${entry.unfinishedBlockers.map((n) => `#${n}`).join(', ')} to be done`
   return null
@@ -62,30 +66,69 @@ export function countResets(comments) {
   return comments.filter((comment) => comment.body.startsWith(RESET_MARKER)).length
 }
 
-export function mergedComment({ sha, mergeSha, epicBranch, alreadyMerged }) {
+export function mergedComment({ sha, mergeSha, epicBranch, alreadyMerged, attempts = [] }) {
   const how = alreadyMerged ? `was already in \`${epicBranch}\` (at \`${mergeSha.slice(0, 12)}\`)` : `merged into \`${epicBranch}\` as \`${mergeSha.slice(0, 12)}\``
-  return `<!-- flow:merged sha=${mergeSha} accepted=${sha} -->\n**Done.** The accepted commit \`${sha.slice(0, 12)}\` ${how}.`
+  const retried = attempts.length > 1 ? `\n\n\`${epicBranch}\` moved while this was merging, so the merge was made again on its new head (${attempts.length} tries).` : ''
+  return `<!-- flow:merged sha=${mergeSha} accepted=${sha} -->\n**Done.** The accepted commit \`${sha.slice(0, 12)}\` ${how}.${retried}`
 }
 
-export function lastMerge(comments) {
-  for (let index = comments.length - 1; index >= 0; index--) {
-    const match = comments[index].body.match(MERGED_MARKER)
-    if (match) return { mergeSha: match[1], accepted: match[2] }
+export function sameLogin(a, b) {
+  const plain = (login) => String(login || '').toLowerCase().replace(/\[bot\]$/, '')
+  return plain(a) !== '' && plain(a) === plain(b)
+}
+
+function byAuthor(comments, author) {
+  return comments.filter((comment) => sameLogin(comment.author, author))
+}
+
+function lastMatch(comments, author, marker) {
+  const mine = byAuthor(comments, author)
+  for (let index = mine.length - 1; index >= 0; index--) {
+    const match = mine[index].body.match(marker)
+    if (match) return { match, comment: mine[index] }
   }
   return null
 }
 
-export function lastStart(comments) {
-  const found = comments.filter((comment) => comment.body.startsWith(STARTED_MARKER))
+export function lastMerge(comments, author) {
+  const found = lastMatch(comments, author, MERGED_MARKER)
+  return found ? { mergeSha: found.match[1], accepted: found.match[2] } : null
+}
+
+export function lastStart(comments, author) {
+  const found = byAuthor(comments, author).filter((comment) => comment.body.startsWith(STARTED_MARKER))
   return found.length ? found[found.length - 1] : null
 }
 
-export function lastAcceptance(comments) {
-  for (let index = comments.length - 1; index >= 0; index--) {
-    const match = comments[index].body.match(ACCEPTANCE_MARKER)
-    if (match) return { sha: match[1], passed: match[2] === 'true', at: comments[index].createdAt }
-  }
-  return null
+export function lastAcceptance(comments, author) {
+  const found = lastMatch(comments, author, ACCEPTANCE_MARKER)
+  return found ? { sha: found.match[1], passed: found.match[2] === 'true', at: found.comment.createdAt } : null
+}
+
+export function reviewMarker({ round, important }) {
+  return `<!-- flow:review round=${round} important=${important} -->`
+}
+
+export function reviewRounds(comments, author, since = null) {
+  const sinceTime = since ? Date.parse(since) : null
+  return byAuthor(comments, author)
+    .filter((comment) => sinceTime === null || Date.parse(comment.createdAt) >= sinceTime)
+    .map((comment) => comment.body.match(REVIEW_MARKER))
+    .filter(Boolean)
+    .map((match) => ({ round: Number(match[1]), important: Number(match[2]) }))
+}
+
+export function reviewRefusal(rounds) {
+  if (!rounds.length) return { reason: 'no review is posted for this work; post the reviewer\'s report with `flow post <n> --review --important <count> --file <report>` first', stop: false }
+  const last = rounds[rounds.length - 1]
+  if (last.important === 0) return null
+  if (rounds.length >= MAX_REVIEW_ROUNDS)
+    return { reason: `review round ${last.round} still has ${last.important} Important finding(s) open after ${rounds.length} rounds; a person decides what happens next`, stop: true }
+  return { reason: `review round ${last.round} has ${last.important} Important finding(s) open; fix them and post the second review over the fixes first`, stop: false }
+}
+
+export function hasComparedTable(comments) {
+  return comments.some((comment) => comment.body.trimStart().startsWith(COMPARED_HEADING))
 }
 
 export function editsAfter(edits, since) {
@@ -99,7 +142,7 @@ function cell(text) {
 
 const RESULT_WORDS = { passed: 'pass', failed: 'FAIL', skipped: 'SKIPPED (does not pass)' }
 
-export function acceptanceComment({ sha, report, untrackedCount = 0 }) {
+export function acceptanceComment({ sha, report }) {
   const lines = [`<!-- flow:acceptance sha=${sha} passed=${report.allPassed} -->`]
   lines.push(`**Acceptance ${report.allPassed ? 'passed' : 'failed'}** at \`${sha.slice(0, 12)}\`: ${report.passed} of ${report.total} checks passed${report.skipped ? `, ${report.skipped} skipped` : ''}.`)
   if (report.checks.length) {
@@ -115,7 +158,6 @@ export function acceptanceComment({ sha, report, untrackedCount = 0 }) {
     lines.push('', 'Lines in the criteria that cannot run, which fail acceptance:')
     for (const problem of report.problems) lines.push(`- line ${problem.line ?? '?'}: ${problem.why}`)
   }
-  if (untrackedCount) lines.push('', `${untrackedCount} file(s) in the working tree are not committed: the checks ran with them present, but they are not part of \`${sha.slice(0, 12)}\`.`)
   return lines.join('\n')
 }
 

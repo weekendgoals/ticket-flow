@@ -77,9 +77,9 @@ export function findCycles(graph) {
   return cycles
 }
 
-function shownState(ticket, approved) {
+function shownState(ticket, approved, epicProblem) {
   if (ticket.state !== 'planned' || !approved) return ticket.state
-  const blocked = ticket.problems.length > 0 || ticket.inCycle || ticket.unfinishedBlockers.length > 0
+  const blocked = Boolean(epicProblem) || ticket.problems.length > 0 || ticket.inCycle || ticket.unfinishedBlockers.length > 0
   return blocked ? 'waiting' : 'ready'
 }
 
@@ -127,10 +127,16 @@ export function deriveEpic(epicIssue, subIssues) {
     problems.push(`epic #${epicIssue.number} has a blocking cycle: ${cycle.map((number) => `#${number}`).join(' → ')}; none of these can ever start`)
 
   const approved = epicIssue.labels.includes(APPROVED_LABEL)
+  const blockingProblem =
+    plan.settings.delivery === 'release' && !plan.settings.branch
+      ? `epic #${epicIssue.number} has no "Branch:" setting, so its tickets have no epic branch to start from or merge into`
+      : null
+  if (blockingProblem) problems.push(blockingProblem)
   for (const ticket of tickets) {
     ticket.unfinishedBlockers = ticket.blockedBy.filter((number) => !byNumber.has(number) || byNumber.get(number).state !== 'done')
     ticket.inCycle = inCycle.has(ticket.number)
-    ticket.shownState = shownState(ticket, approved)
+    ticket.shownState = shownState(ticket, approved, blockingProblem)
+    ticket.epicProblem = blockingProblem
     problems.push(...ticket.problems)
   }
 
@@ -157,7 +163,7 @@ export function nextSteps(epic) {
       .map((ticket) => ({
         n: ticket.number,
         blockedBy: ticket.unfinishedBlockers,
-        ...(ticket.problems.length ? { problem: ticket.problems[0] } : {}),
+        ...(ticket.problems.length || ticket.epicProblem ? { problem: ticket.problems[0] || ticket.epicProblem } : {}),
       })),
     inProgress: pick('in-progress', 'in-review'),
     done: pick('done'),

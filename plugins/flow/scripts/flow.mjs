@@ -36,6 +36,10 @@ import {
   countResets,
   mergedComment,
   lastMerge,
+  reviewMarker,
+  reviewRounds,
+  reviewRefusal,
+  hasComparedTable,
   RELEASE_CHECK_MARKER,
 } from './ticket-steps.mjs'
 import { loadSources, workflowSources, meterTranscripts, meterComment, readMeterComment } from './meter.mjs'
@@ -66,6 +70,8 @@ const USAGE = `usage: flow <command>
   check --file <md> [--epic-file <md>]   the same, for a draft ticket body not yet on GitHub
   link <epic> <n>                        finish linking a ticket to its epic (safe to repeat)
   post <n> --file <md> | --text "<md>"   add a comment (--file - reads it from standard input)
+  post <n> --review --important <k> --file <md>
+                                         the reviewer's report, as the next numbered review round
   label <n> +<label> -<label> ...        add and remove labels
   create-epic --file <md> --title "<t>"
   create-ticket <epic> --file <md> --title "<t>" [--tier easy|hard] [--blocked-by <n>,<n>]
@@ -86,7 +92,7 @@ const USAGE = `usage: flow <command>
   pr-wait <pr> [--bot copilot|coderabbit|none] [--timeout <s>] [--interval <s>]
   pr-threads <pr>                        unresolved review threads, as JSON
   pr-resolve <thread-id> --text "<reply>"
-  pr-checks <pr> [--wait] [--timeout <s>] [--interval <s>]
+  pr-checks <pr> [--wait] [--timeout <s>] [--interval <s>] [--grace <s>]
 
   next, dispatch and the commands below run a whole epic:
   dispatch <epic>                        ask a host to start ready tickets (adds flow:start, up to Parallel:)
@@ -96,13 +102,15 @@ const USAGE = `usage: flow <command>
   release-pr <epic>                      open the epic's one pull request once every ticket is done
   design-map <epic> [--out <file>]       write the epic's design map for the design comparison`
 
-const VALUE_FLAGS = new Set(['--file', '--epic-file', '--text', '--title', '--tier', '--cwd', '--blocked-by', '--bot', '--timeout', '--interval', '--sha', '--epic', '--tickets', '--out', '--workflow'])
+const VALUE_FLAGS = new Set(['--file', '--epic-file', '--text', '--title', '--tier', '--cwd', '--blocked-by', '--bot', '--timeout', '--interval', '--sha', '--epic', '--tickets', '--out', '--workflow', '--important', '--grace'])
 const REPEATABLE_FLAGS = new Set(['--transcripts'])
-const BOOLEAN_FLAGS = new Set(['--json', '--no-epic', '--print', '--wait', '--once', '--mark', '--remove'])
+const BOOLEAN_FLAGS = new Set(['--json', '--no-epic', '--print', '--wait', '--once', '--mark', '--remove', '--review'])
 const DEFAULT_WAIT_SECONDS = 1800
 const DEFAULT_POLL_SECONDS = 30
 const DEFAULT_SCREENSHOTS_DIR = '.flow/screenshots/{n}'
 const CHECKS_PENDING_EXIT = 3
+const NO_CHECKS_EXIT = 4
+const DEFAULT_NO_CHECKS_GRACE_SECONDS = 90
 
 class UsageError extends Error {}
 
@@ -345,8 +353,22 @@ function commandCheck(positional, flags) {
 
 function commandPost(positional, flags) {
   const number = issueNumber(positional[0])
-  const posted = github.comment(number, readText(flags))
-  console.log(posted.url || `commented on #${number}`)
+  const text = readText(flags)
+  if (flags.important !== undefined && !flags.review) throw new UsageError('--important goes with --review')
+  if (!flags.review) {
+    const posted = github.comment(number, text)
+    console.log(posted.url || `commented on #${number}`)
+    return 0
+  }
+  if (flags.important === undefined || !/^\d+$/.test(flags.important))
+    throw new UsageError('--review needs --important <count>: how many Important findings the report leaves open')
+  const account = github.viewerLogin()
+  const comments = github.listComments(number)
+  const started = lastStart(comments, account)
+  const round = reviewRounds(comments, account, started ? started.createdAt : null).length + 1
+  const posted = github.comment(number, `${reviewMarker({ round, important: Number(flags.important) })}\n**Review, round ${round}**\n\n${text}`)
+  console.log(posted.url || `review round ${round} posted on #${number}`)
+  return 0
 }
 
 function commandLabel(argv) {
@@ -555,10 +577,12 @@ function commandStart(positional, flags) {
   let reason = startRefusal({ ticket: number, state, parsed, epic })
   if (!reason && delivery === 'release' && !epic.settings.branch)
     reason = `epic #${epic.number} has no "Branch:" setting, so there is no epic branch to build on`
-  const changes = reason ? [] : trackedChanges(root)
-  if (changes.length)
-    reason = `the working tree has uncommitted changes (${describeChanges(changes)}); commit or stash them first, so nothing unrelated rides into the ticket`
   if (reason) return refuse(number, state, reason)
+  const changes = trackedChanges(root)
+  if (changes.length) {
+    process.stderr.write(`the working tree has uncommitted changes (${describeChanges(changes)}); commit or stash them first, so nothing unrelated rides into the ticket\n`)
+    return 1
+  }
   const base = delivery === 'release' ? epic.settings.branch : github.defaultBranch()
   if (!base) return refuse(number, state, 'the default branch of this repository is unknown, so there is nothing to start the ticket from')
   const branch = ticketBranchName(number)
@@ -603,17 +627,26 @@ function commandAccept(positional, flags) {
   if (currentBranch(root) !== branch) return fail(`check out ${branch} first: acceptance runs on that branch's committed head`)
   const changes = trackedChanges(root)
   if (changes.length) return fail(`the working tree has uncommitted changes (${describeChanges(changes)}); acceptance judges the committed head, so commit or discard them first`)
+  const untracked = untrackedFiles(root)
+  if (untracked.length)
+    return fail(`the working tree has ${untracked.length} untracked file(s) (${untracked.slice(0, 5).join(', ')}${untracked.length > 5 ? ', …' : ''}); the checks would run with them present although the commit does not contain them, so commit, remove or ignore them first`)
   const sha = resolveCommit(root, 'HEAD')
-  const started = lastStart(github.listComments(number))
-  if (!started) return fail(`#${number} has no "Started" comment, so nobody can tell whether its criteria changed during the work; it was not started with \`flow start\``)
+  const account = github.viewerLogin()
+  const comments = github.listComments(number)
+  const started = lastStart(comments, account)
+  if (!started) return fail(`#${number} has no "Started" comment from ${account}, the account running this, so nobody can tell whether its criteria changed during the work; start it with \`flow start\` under this account`)
   const edits = editsAfter(github.bodyEditHistory(number), started.createdAt)
   if (edits.length) {
     const refusal = editedRefusal({ edits, startedAt: started.createdAt })
     github.comment(number, refusal)
     return fail(refusal.replace(/\*\*/g, ''))
   }
+  const review = reviewRefusal(reviewRounds(comments, account, started.createdAt))
+  if (review) return review.stop ? refuse(number, state, `#${number} cannot be accepted: ${review.reason}`) : fail(`#${number} cannot be accepted yet: ${review.reason}`)
+  if (parsed.criteria.compares.length && !hasComparedTable(comments))
+    return fail(`#${number} has a COMPARE criterion and no comment starting "**Compared:**"; post the comparison table (or "**Compared:** not run — <why>") first, because nothing else shows the design was checked`)
   const report = runCriteria({ ticket: number, ...parsed.criteria }, { cwd: root })
-  github.comment(number, acceptanceComment({ sha, report, untrackedCount: untrackedFiles(root).length }))
+  github.comment(number, acceptanceComment({ sha, report }))
   process.stderr.write(`${formatCheckReport(report)}\n`)
   printJson({ sha, ...report })
   return report.allPassed ? 0 : 1
@@ -634,8 +667,10 @@ function mergeAcceptedTicket({ number, root, expectedSha = null }) {
   const fail = (reason) => ({ code: 1, reason })
   if (deliveryFor(epic) !== 'release') return fail(`#${number} is not in a release epic; it is delivered by its own pull request (\`flow deliver ${number}\`)`)
   if (!ACCEPTABLE_STATES.has(state)) return fail(`#${number} is ${state}; only a ticket in progress or in review can be merged`)
-  const acceptance = lastAcceptance(github.listComments(number))
-  if (!acceptance || !acceptance.passed) return fail(`#${number} has no passing acceptance comment; run \`flow accept ${number}\` on the reviewed head first`)
+  const comments = github.listComments(number)
+  const acceptance = lastAcceptance(comments, github.viewerLogin())
+  if (!acceptance || !acceptance.passed) return fail(`#${number} has no passing acceptance comment from this account; run \`flow accept ${number}\` on the reviewed head first`)
+  if (parsed.criteria.compares.length && !hasComparedTable(comments)) return fail(`#${number} has a COMPARE criterion and no "**Compared:**" comment; it is not merged without the comparison`)
   const sha = acceptance.sha
   if (expectedSha && !sha.startsWith(expectedSha) && !expectedSha.startsWith(sha))
     return fail(`#${number} was accepted at ${sha.slice(0, 12)}, not at ${expectedSha.slice(0, 12)}; only the commit the acceptance comment names is merged`)
@@ -663,7 +698,7 @@ function mergeAcceptedTicket({ number, root, expectedSha = null }) {
   }
   github.addLabels(number, ['flow:done'])
   github.removeLabels(number, issue.labels.filter((label) => STATE_LABELS.includes(label) && label !== 'flow:done'))
-  github.comment(number, mergedComment({ sha, mergeSha: result.mergeSha, epicBranch, alreadyMerged: result.kind === 'already-merged' }))
+  github.comment(number, mergedComment({ sha, mergeSha: result.mergeSha, epicBranch, alreadyMerged: result.kind === 'already-merged', attempts: result.attempts }))
   const checked = withTicketChecked(epicIssue.body, number)
   if (checked !== normalizeNewlines(epicIssue.body)) github.updateIssueBody(epic.number, checked)
   return { code: 0, json: { ticket: number, delivery: 'release', accepted: sha, epicBranch, merge: result.mergeSha, outcome: result.kind, attempts: result.attempts } }
@@ -689,9 +724,14 @@ function commandDeliver(positional, flags) {
     printJson(merged.json)
     return 0
   }
-  const acceptance = lastAcceptance(github.listComments(number))
+  const comments = github.listComments(number)
+  const acceptance = lastAcceptance(comments, github.viewerLogin())
   if (!acceptance || !acceptance.passed) {
-    process.stderr.write(`#${number} has no passing acceptance comment; run \`flow accept ${number}\` on the reviewed head first\n`)
+    process.stderr.write(`#${number} has no passing acceptance comment from this account; run \`flow accept ${number}\` on the reviewed head first\n`)
+    return 1
+  }
+  if (parsed.criteria.compares.length && !hasComparedTable(comments)) {
+    process.stderr.write(`#${number} has a COMPARE criterion and no "**Compared:**" comment; it is not delivered without the comparison\n`)
     return 1
   }
   const sha = acceptance.sha
@@ -728,7 +768,7 @@ function commandMerge(positional, flags) {
     const merged = []
     const notMerged = []
     for (const ticket of waiting) {
-      if (!lastAcceptance(github.listComments(ticket.number))?.passed) continue
+      if (!lastAcceptance(github.listComments(ticket.number), github.viewerLogin())?.passed) continue
       const outcome = mergeAcceptedTicket({ number: ticket.number, root })
       if (outcome.code === 0) merged.push(outcome.json)
       else notMerged.push({ ticket: ticket.number, reason: outcome.reason })
@@ -756,8 +796,9 @@ function commandReset(positional, flags) {
   }
   const branch = ticketBranchName(number)
   const comments = github.listComments(number)
-  const started = lastStart(comments)
-  const acceptance = lastAcceptance(comments)
+  const account = github.viewerLogin()
+  const started = lastStart(comments, account)
+  const acceptance = lastAcceptance(comments, account)
   if (acceptance && acceptance.passed && (!started || Date.parse(acceptance.at) >= Date.parse(started.createdAt))) {
     process.stderr.write(`#${number} passed acceptance at ${acceptance.sha.slice(0, 12)} and is waiting to be merged, not abandoned; run \`flow merge ${number}\`\n`)
     return 1
@@ -937,7 +978,7 @@ function commandReleasePr(positional) {
   }
   const tickets = epic.tickets.map((ticket) => {
     const comments = github.listComments(ticket.number)
-    const merged = lastMerge(comments)
+    const merged = lastMerge(comments, github.viewerLogin())
     const meterComment = [...comments].reverse().find((comment) => readMeterComment(comment.body))
     return { number: ticket.number, title: ticket.title, mergeSha: merged ? merged.mergeSha : null, meter: meterComment ? readMeterComment(meterComment.body) : null }
   })
@@ -1048,8 +1089,8 @@ function commandScreenshots(positional, flags) {
   }
   const paths = images.map((name) => relative(root, join(directory, name)))
   git(root, ['add', '--force', '--', ...paths])
-  const staged = git(root, ['diff', '--cached', '--name-only']).stdout
-  if (staged) git(root, ['commit', '--quiet', '-m', `#${number}: screenshots of the built screens`])
+  const staged = git(root, ['diff', '--cached', '--name-only', '--', ...paths]).stdout
+  if (staged) git(root, ['commit', '--quiet', '-m', `#${number}: screenshots of the built screens`, '--', ...paths])
   const sha = resolveCommit(root, 'HEAD')
   const pushed = git(root, ['push', '--quiet', 'origin', `HEAD:refs/heads/${branch}`], { allowFailure: true })
   if (!pushed.ok) {
@@ -1164,12 +1205,16 @@ function commandPrChecks(positional, flags) {
   const timing = flags.wait
     ? { timeout: seconds(flags.timeout, DEFAULT_WAIT_SECONDS, '--timeout'), interval: seconds(flags.interval, DEFAULT_POLL_SECONDS, '--interval') }
     : { timeout: 0, interval: 0 }
+  const graceUntil = Date.now() + (flags.wait ? seconds(flags.grace, DEFAULT_NO_CHECKS_GRACE_SECONDS, '--grace') : 0) * 1000
   const outcome = pollUntil(timing, () => {
     const summary = summarizeChecks(github.pullRequestChecks(pr))
-    return { done: summary.pending === 0, summary }
+    const noChecksYet = summary.checks.length === 0 && Date.now() < graceUntil
+    return { done: summary.pending === 0 && !noChecksYet, summary }
   })
   const { summary } = outcome
-  printJson({ pr, ...summary })
+  const noChecks = summary.checks.length === 0
+  printJson({ pr, noChecks, ...summary })
+  if (noChecks) return NO_CHECKS_EXIT
   if (summary.failing.length) return 1
   return summary.pending ? CHECKS_PENDING_EXIT : 0
 }

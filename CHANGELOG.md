@@ -143,6 +143,30 @@ with nobody watching, locally or as a GitHub Action. The retro follows.
   entries and addenda, the revert check written into a log, and the run
   meter's run-record lines.
 
+- **Fixes from the stage 2 review.**
+  - Flow's own comments (start, review round, acceptance, merge) count only
+    when posted by the account running the command, and only with the
+    marker at the start of the comment. Before, anyone could post a later
+    start comment to move the line the edit check draws, or quote an
+    acceptance to have its commit merged.
+  - `accept` refuses untracked files (the checks would see what the commit
+    does not hold), a missing review, a review round with an Important
+    finding open (and, after two rounds, stops the ticket), and a `COMPARE:`
+    criterion with no `**Compared:**` comment; `deliver` and `merge` refuse
+    the last as well.
+  - `flow post --review --important <k>` posts a reviewer's report as the
+    next numbered round, which is what `accept` counts.
+  - `screenshots` commits only the images, never something else already
+    staged.
+  - `pr-checks` never reads "no checks" as passing: it exits 4, and under
+    `--wait` gives the checks 90 seconds (`--grace`) to appear first.
+  - A release epic with no `Branch:` setting lists nothing ready, with the
+    reason, so `next` and `start` agree. An unattended `start` on a dirty
+    working tree exits nonzero without marking the ticket: the host is at
+    fault, not the ticket.
+  - `pr-threads` flags a thread with more comments than one page holds; the
+    Done comment says when the merge was made again on a moved epic branch.
+
 ### Stage 3: an epic built with nobody watching, on two hosts
 
 - **`/flow:run #<epic>` rewritten, and `workflows/run-epic.mjs` with it**

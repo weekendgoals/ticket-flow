@@ -37,11 +37,20 @@ first comment.
 run `FLOW needs-human <n> --text "<why>"`: it labels the ticket
 `flow:needs-human`, mentions whoever is assigned (or the epic's author), and
 is the only way a ticket stops. Then end: attended, tell the person what you
-posted; unattended, exit nonzero. There are three reasons to stop and no
-others: the acceptance checks are still failing after two rounds of fixes; the
-ticket and the code contradict each other; a merge conflict you cannot
-resolve. Anything else (a flaky command, a slow review bot, a network error)
-is retried, mentioned in a comment, or worked around.
+posted; unattended, exit nonzero. A ticket stops only when a decision is
+needed that no agent may make, and these are all of them:
+
+1. **A gate still fails after two rounds of fixes**: the acceptance checks,
+   an Important review finding, or a pull request thread or check.
+2. **The plan and the work disagree**: the ticket contradicts the code, a
+   CHECK itself looks wrong, or the issue body changed after the work
+   started.
+3. **A merge conflict** with the epic branch.
+
+Anything else (a flaky command, a slow review bot, a network error, a dirty
+working tree on the host) is retried, mentioned in a comment, or worked
+around; a stop on infrastructure is a false alarm that teaches people to
+ignore stops.
 
 ## 1. Start
 
@@ -185,6 +194,8 @@ Spawn `flow:ticket-reviewer` with the Agent tool, **without a `model`
 parameter** (the agent runs on the strongest model; what a reviewer misses
 cannot be checked afterwards). Note its `agentId`. Give it:
 
+- the ticket number `#<n>`, and `gh issue view <n> --comments` to read the
+  comments it needs (a `**Compared:**` table) and nothing else;
 - the commit range `<baseSha>..HEAD` and the repository path;
 - the ticket body;
 - the epic's ground rules and design sources, when there is an epic;
@@ -195,14 +206,20 @@ cannot be checked afterwards). Note its `agentId`. Give it:
 the reviewer's value is that it did not watch the work being done, and an
 explanation of why the code is right is what makes a reviewer agree with it.
 
-Post its report on the issue as it is (`FLOW post <n> --file <report>`).
+Post its report on the issue as it is, as a numbered review round:
+`FLOW post <n> --review --important <k> --file <report>`, where `<k>` is the
+number of Important findings the report lists. `FLOW accept` reads these
+rounds: it refuses while the latest round has an Important finding open, and
+after two rounds with one still open it is a stop, so an unattended run
+cannot loop.
 
 **Important findings are fixed.** Attended: spawn a fresh worker on the same
 model with the findings, the branch and the worker rules; unattended: fix
 them yourself. Each fix is its own commit, `#<n>: <what> (review fix)`; that
 suffix is how fixes are counted later. Then run `FLOW check <n>` again and
 spawn the reviewer once more, **over the fix commits only**
-(`<head before the fixes>..HEAD`), and post that report too.
+(`<head before the fixes>..HEAD`), and post that report the same way (it
+becomes round 2).
 
 After that second round, an Important finding still open stops the ticket:
 ask a person, quoting the finding. Two rounds is the limit because a third
@@ -217,11 +234,19 @@ inside the scope.
 FLOW accept <n>
 ```
 
-It runs on `ticket/<n>`'s committed head with no uncommitted changes to
-tracked files, refuses (and posts why, naming who edited) if the issue body
-was edited after the start comment, runs the criteria from the issue, and
-posts the results with the commit they judged. Only that commit can be
-delivered.
+It runs on `ticket/<n>`'s committed head and refuses when anything could
+make the result describe something other than that commit, or skip a step:
+uncommitted changes, untracked files (the checks would see them; commit,
+remove or ignore them), no review round posted or one with an Important
+finding open, a `COMPARE:` criterion with no `**Compared:**` comment, or an
+issue body edited after the start comment (it posts that refusal, naming
+who edited). Otherwise it runs the criteria from the issue and posts the
+results with the commit they judged. Only that commit can be delivered.
+
+`start`, `accept` and `deliver` read their own earlier comments only from
+the account running them, so a comment anyone else posts (or quotes) cannot
+move the line the edit check draws or name a commit to merge. Run all three
+under one GitHub account.
 
 - **It fails on a check:** fix (a `(review fix)` commit), run `FLOW accept`
   again. Two failed rounds of fixes after the review stop the ticket: ask a
@@ -287,8 +312,10 @@ For a ticket's pull request (and, later, an epic's release pull request).
    `FLOW pr-resolve <thread-id> --text "<what you changed, or why not>"`.
    Never resolve a thread without saying why.
 4. Push, then `FLOW pr-checks <pr> --wait`. A failing check is fixed and
-   pushed. It exits 0 when everything passed, 1 when something failed, and 3
-   when checks were still running at the timeout.
+   pushed. It exits 0 when everything passed, 1 when something failed, 3
+   when checks were still running at the timeout, and 4 when no check ever
+   appeared (it waits 90 seconds for them first). On 4 the project has no CI
+   for this pull request: say so in the round's comment and go on.
 5. After a round that pushed fixes, ask for a review again
    (`FLOW pr-review-request <pr>`) and repeat from step 2.
 
@@ -316,7 +343,8 @@ changes where the skill stops or starts; every step still posts its comment.
   judge.
 - `--after-review <round>`: the ticket is in review and the host has put the
   reviewer's report for that round (1 or 2) into this prompt. Check out
-  `ticket/<n>`, post the report as it is (`FLOW post <n> --file <report>`),
+  `ticket/<n>`, post the report as it is
+  (`FLOW post <n> --review --important <k> --file <report>`),
   then go on from step 6's "Important findings are fixed". When you fixed
   something in round 1, end with `REVIEW <head before the fixes>..<head>`:
   the host has the fixes reviewed once more and calls you with

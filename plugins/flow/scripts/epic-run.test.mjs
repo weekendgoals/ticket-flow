@@ -123,6 +123,7 @@ function world({ epicLabels = ['flow:epic', 'flow:approved'], epic = {}, tickets
   const issues = Object.entries(merged).map(([number, ticket]) => issue(Number(number), { title: ticket.title, body: ticketBody(ticket.criteria, ticket.blockedBy || ''), labels: ticket.labels, assignees: ticket.assignees || [] }))
   const fixtures = {
     [`GET ${R}`]: { full_name: 'o/r', default_branch: 'main', has_issues: true },
+    graphql: { data: { viewer: { login: 'flow-bot' } } },
     [`GET ${R}/issues/1`]: epicIssue,
     [`GET ${R}/issues/1/sub_issues?per_page=100`]: issues,
     [`GET ${R}/issues/1/comments?per_page=100`]: comments[1] || [],

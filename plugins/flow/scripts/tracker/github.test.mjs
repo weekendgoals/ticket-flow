@@ -224,3 +224,11 @@ test('findOpenPullRequest asks for the head branch qualified by the repository o
   fake.setFixtures({ [`GET ${R}`]: { full_name: 'o/r', default_branch: 'main', has_issues: true }, [`GET ${R}/pulls?head=o%3Aticket%2F2&state=open&per_page=100`]: [] })
   assert.equal(github.findOpenPullRequest('ticket/2'), null)
 })
+
+test('viewerLogin asks GitHub once which account gh is signed in as, and remembers it for the rest of the command', () => {
+  fake.setFixtures({ graphql: { data: { viewer: { login: 'flow-bot' } } } })
+  assert.equal(github.viewerLogin(), 'flow-bot')
+  assert.equal(github.viewerLogin(), 'flow-bot')
+  assert.equal(fake.calls().length, 1)
+  assert.match(fake.calls()[0].args.find((arg) => arg.startsWith('query=')), /viewer\{login\}/)
+})

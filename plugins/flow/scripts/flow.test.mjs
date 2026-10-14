@@ -265,6 +265,16 @@ test('approving an epic on GitHub is the only step: its planned tickets become r
   assert.ok(!fake.calls().some((call) => !call.key.startsWith('GET') && !call.key.startsWith('graphql')), 'next writes nothing')
 })
 
+test('a release epic with no Branch setting lists nothing ready, with the reason, so next and start agree', () => {
+  const epic = issue(1, { title: 'Trip export', body: epicBody([2], 'Delivery: release'), labels: epicLabels() })
+  world({ epics: [{ epic, tickets: [ticket(2, 1, 'planned')] }] })
+  const result = flow('next', '1')
+  assert.equal(result.status, 1)
+  const next = JSON.parse(result.stdout)
+  assert.deepEqual(next.ready, [])
+  assert.match(next.waiting[0].problem, /epic #1 has no "Branch:" setting/)
+})
+
 test('next exits 0 on a built epic, where every ticket is done', () => {
   world({ epics: [{ epic: issue(40, { body: epicBody([41, 42]), labels: epicLabels() }), tickets: [ticket(41, 40, 'done'), ticket(42, 40, 'done')] }] })
   const result = flow('next', '40')
