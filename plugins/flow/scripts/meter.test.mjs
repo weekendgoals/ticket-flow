@@ -5,7 +5,7 @@ import { mkdtempSync, rmSync, writeFileSync, realpathSync, mkdirSync } from 'nod
 import { join, dirname } from 'node:path'
 import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
-import { meterTranscripts, meterComment, readMeterComment, loadSources, assignStreamRoles } from './meter.mjs'
+import { meterTranscripts, meterComment, readMeterComment, loadSources, assignStreamRoles, workflowSources, workflowAgents } from './meter.mjs'
 import { installFakeGh } from './tracker/fake-gh.mjs'
 
 const FLOW = join(dirname(fileURLToPath(import.meta.url)), 'flow.mjs')
@@ -210,4 +210,101 @@ test('flow meter prints with --print and posts the comment otherwise', () => {
   const missing = run('12', '--transcripts', join(directory, 'nope.jsonl'))
   assert.equal(missing.status, 1)
   assert.match(missing.stderr, /no transcript at/)
+})
+
+function realShapeStream() {
+  const sessionId = 's-real'
+  const realUsage = (input, output, cacheCreation, cacheRead) => ({
+    input_tokens: input,
+    cache_creation_input_tokens: cacheCreation,
+    cache_read_input_tokens: cacheRead,
+    cache_creation: { ephemeral_5m_input_tokens: 0, ephemeral_1h_input_tokens: cacheCreation },
+    output_tokens: output,
+    service_tier: 'standard',
+    inference_geo: 'global',
+  })
+  const assistantLine = (id, model, figures, timestamp, parent = null, content = [{ type: 'text', text: 'x' }]) => ({
+    type: 'assistant',
+    message: { model, id, type: 'message', role: 'assistant', content, container: null, stop_reason: null, stop_sequence: null, stop_details: null, usage: figures, input_transformations: [], diagnostics: null, context_management: null },
+    parent_tool_use_id: parent,
+    session_id: sessionId,
+    uuid: `u-${id}`,
+    timestamp,
+    request_id: `req-${id}`,
+  })
+  return jsonl([
+    { type: 'system', subtype: 'hook_started', hook_id: 'h', hook_name: 'SessionStart', hook_event: 'SessionStart', uuid: 'u0', session_id: sessionId },
+    { type: 'system', subtype: 'init', cwd: '/w', session_id: sessionId, tools: ['Bash'], mcp_servers: [], model: 'claude-opus-5', permissionMode: 'default', slash_commands: [], apiKeySource: 'none', claude_code_version: '2', agents: [], skills: [], plugins: [], uuid: 'u1' },
+    assistantLine('m1', 'claude-opus-5', realUsage(2, 4, 14282, 10976), '2026-10-15T08:00:00.000Z', null, [
+      { type: 'tool_use', id: 'toolu_rev', name: 'Agent', input: { subagent_type: 'flow:ticket-reviewer', prompt: 'p' } },
+    ]),
+    assistantLine('m2', 'claude-fable-5', realUsage(5, 50, 2000, 0), '2026-10-15T08:00:20.000Z', 'toolu_rev'),
+    assistantLine('m3', 'claude-opus-5', realUsage(3, 6, 10, 25258), '2026-10-15T08:00:30.000Z'),
+    { type: 'rate_limit_event', rate_limit_info: { status: 'allowed', resetsAt: 1, rateLimitType: 'five_hour' }, uuid: 'u9', session_id: sessionId },
+    {
+      type: 'result',
+      subtype: 'success',
+      is_error: false,
+      duration_ms: 42274,
+      duration_api_ms: 30052,
+      num_turns: 3,
+      result: 'ok',
+      session_id: sessionId,
+      total_cost_usd: 0.5,
+      usage: { input_tokens: 10, cache_creation_input_tokens: 16292, cache_read_input_tokens: 36234, output_tokens: 60, server_tool_use: { web_search_requests: 0 }, service_tier: 'standard', iterations: [] },
+      modelUsage: {
+        'claude-opus-5': { inputTokens: 5, outputTokens: 10, cacheReadInputTokens: 36234, cacheCreationInputTokens: 14292, webSearchRequests: 0, costUSD: 0.4, contextWindow: 1000000, maxOutputTokens: 64000 },
+        'claude-fable-5': { inputTokens: 5, outputTokens: 50, cacheReadInputTokens: 0, cacheCreationInputTokens: 2000, webSearchRequests: 0, costUSD: 0.1, contextWindow: 1000000, maxOutputTokens: 64000 },
+      },
+      permission_denials: [],
+      uuid: 'u10',
+    },
+  ])
+}
+
+test('the stream shape a real headless run writes: usage per message, the reviewer by parent_tool_use_id, the run timed by its result line', () => {
+  const meter = meterTranscripts([{ role: null, text: realShapeStream() }])
+  assert.deepEqual(Object.keys(meter.roles), ['worker', 'reviewer', 'fixes'])
+  assert.deepEqual([meter.roles.worker.input, meter.roles.worker.cacheCreation, meter.roles.worker.peakContext], [2, 14282, 25260])
+  assert.deepEqual([meter.roles.reviewer.output, Object.keys(meter.roles.reviewer.models)], [50, ['claude-fable-5']])
+  assert.equal(meter.roles.fixes.cacheReads, 25258)
+  assert.equal(meter.total.wallSeconds, 42, 'the result line spans the whole run, longer than the first to last message')
+  assert.deepEqual(meter.reported.models['claude-fable-5'], { input: 5, output: 50, cacheCreation: 2000, cacheReads: 0 })
+  assert.equal(meter.reported.turns, 3)
+  const body = meterComment({ ticket: 4, sourceCount: 1, meter })
+  assert.match(body, /As the headless run reported it at its end \(1 run\(s\), 3 turn\(s\)\)/)
+  assert.match(body, /\| claude-opus-5 \| 5 \| 10 \| 14,292 \| 36,234 \|/)
+})
+
+test('the GitHub Action writes the same messages as one JSON array, and that reads the same', () => {
+  const asArray = `[${realShapeStream().split('\n').join(',\n')}]`
+  const fromLines = meterTranscripts([{ role: null, text: realShapeStream() }])
+  const fromArray = meterTranscripts([{ role: null, text: asArray }])
+  assert.deepEqual(fromArray, fromLines)
+})
+
+test('a workflow run is metered per ticket from its journal: worker, reviewer and fixes by the agent labels', () => {
+  const run = join(directory, 'wf_run')
+  mkdirSync(run, { recursive: true })
+  writeFileSync(
+    join(run, 'journal.jsonl'),
+    jsonl([
+      { type: 'launched' },
+      { type: 'started', agentId: 'a1', key: 'k1', label: 'next:#7', phase: 'Wave 1' },
+      { type: 'started', agentId: 'a2', key: 'k2', label: 'worker:#8', phase: 'Wave 1' },
+      { type: 'started', agentId: 'a3', key: 'k3', label: 'reviewer:#8', phase: 'Wave 1' },
+      { type: 'started', agentId: 'a4', key: 'k4', label: 'fixes:#8', phase: 'Wave 1' },
+      { type: 'started', agentId: 'a5', key: 'k5', label: 'reviewer:#8:2', phase: 'Wave 1' },
+      { type: 'started', agentId: 'a6', key: 'k6', label: 'worker:#80', phase: 'Wave 1' },
+      { type: 'result', agentId: 'a2', key: 'k2', result: 'x' },
+    ]),
+  )
+  for (const [id, model, input] of [['a1', 'claude-sonnet-5', 1], ['a2', 'claude-opus-5', 100], ['a3', 'claude-fable-5', 200], ['a4', 'claude-opus-5', 30], ['a6', 'claude-opus-5', 9999]])
+    writeFileSync(join(run, `agent-${id}.jsonl`), jsonl([assistant(`m-${id}`, model, usage(input, 1), '2026-10-15T09:00:00Z')]))
+  const sources = workflowSources(run, 8)
+  assert.deepEqual(sources.map((source) => source.role), ['worker', 'reviewer', 'fixes'], 'a missing transcript is left out, and #80 is not #8')
+  const { roles } = meterTranscripts(sources)
+  assert.deepEqual([roles.worker.input, roles.reviewer.input, roles.fixes.input], [100, 200, 30])
+  assert.deepEqual(workflowAgents('{"type":"started","agentId":"z","label":"check-epic:#8"}', 8), [])
+  assert.throws(() => workflowSources(directory, 8), /no journal\.jsonl/)
 })

@@ -16,7 +16,19 @@ const USAGE_FIELDS = {
 }
 const FIGURES = Object.keys(USAGE_FIELDS)
 
+function parseWholeArray(text) {
+  if (!text.trimStart().startsWith('[')) return null
+  try {
+    const parsed = JSON.parse(text)
+    return Array.isArray(parsed) ? parsed.filter((line) => line && typeof line === 'object') : null
+  } catch {
+    return null
+  }
+}
+
 function parseLines(text) {
+  const whole = parseWholeArray(text)
+  if (whole) return whole
   const lines = []
   for (const raw of text.split('\n')) {
     if (!raw.trim()) continue
@@ -67,7 +79,19 @@ export function assignStreamRoles(lines) {
 }
 
 function emptyGroup() {
-  return { usages: new Map(), anonymous: 0, models: [], boundaries: 0, summaries: 0, first: null, last: null, durationMs: null }
+  return { usages: new Map(), anonymous: 0, models: [], boundaries: 0, summaries: 0, first: null, last: null, durationMs: null, reported: null }
+}
+
+const REPORTED_FIELDS = { input: 'inputTokens', output: 'outputTokens', cacheCreation: 'cacheCreationInputTokens', cacheReads: 'cacheReadInputTokens' }
+
+function reportedByRun(line) {
+  if (!line.modelUsage || typeof line.modelUsage !== 'object') return null
+  const models = {}
+  for (const [model, figures] of Object.entries(line.modelUsage)) {
+    if (!MODEL_NAME.test(model) || !figures || typeof figures !== 'object') continue
+    models[model] = Object.fromEntries(Object.entries(REPORTED_FIELDS).map(([name, field]) => [name, typeof figures[field] === 'number' ? figures[field] : null]))
+  }
+  return { models, turns: typeof line.num_turns === 'number' ? line.num_turns : null, durationMs: typeof line.duration_ms === 'number' ? line.duration_ms : null }
 }
 
 function addLine(group, line) {
@@ -78,12 +102,16 @@ function addLine(group, line) {
   }
   if (isCompactionBoundary(line)) group.boundaries++
   if (isCompactionSummary(line)) group.summaries++
-  if (line.type === 'result' && typeof line.duration_ms === 'number') group.durationMs = line.duration_ms
+  if (line.type === 'result' && typeof line.duration_ms === 'number') group.durationMs = (group.durationMs || 0) + line.duration_ms
+  if (line.type === 'result') {
+    const reported = reportedByRun(line)
+    if (reported) group.reported = [...(group.reported || []), reported]
+  }
   if (line.type !== 'assistant' || !line.message) return
   const model = line.message.model
   const usage = line.message.usage
   if (usage && typeof usage === 'object') {
-    const key = line.message.id ?? line.requestId ?? `anonymous-${group.anonymous++}`
+    const key = line.message.id ?? line.requestId ?? line.request_id ?? `anonymous-${group.anonymous++}`
     group.usages.set(key, { usage, model: typeof model === 'string' && model !== SYNTHETIC_MODEL && MODEL_NAME.test(model) ? model : null })
   }
   if (typeof model === 'string' && model !== SYNTHETIC_MODEL && MODEL_NAME.test(model) && !group.models.includes(model)) group.models.push(model)
@@ -116,8 +144,19 @@ function summarizeGroup(group) {
     first: group.first,
     last: group.last,
     durationMs: group.durationMs,
+    reported: group.reported,
     models: byModel,
   }
+}
+
+function combineReported(summaries) {
+  const runs = summaries.flatMap((summary) => summary.reported || [])
+  if (!runs.length) return null
+  const models = {}
+  for (const run of runs)
+    for (const [model, figures] of Object.entries(run.models))
+      models[model] = models[model] ? Object.fromEntries(Object.keys(figures).map((name) => [name, sumOrUnknown([models[model][name], figures[name]])])) : { ...figures }
+  return { runs: runs.length, turns: sumOrUnknown(runs.map((run) => run.turns)), models }
 }
 
 function sumOrUnknown(values) {
@@ -157,17 +196,21 @@ export function meterTranscripts(sources) {
   const lasts = summaries.map((summary) => summary.last).filter((time) => time !== null)
   const durations = summaries.map((summary) => summary.durationMs).filter((duration) => duration !== null)
   const everyRoleTimed = summaries.length > 0 && summaries.every((summary) => summary.first !== null)
+  const spanSeconds = everyRoleTimed ? Math.round((Math.max(...lasts) - Math.min(...firsts)) / 1000) : null
+  const runSeconds = durations.length ? Math.round(Math.max(...durations) / 1000) : null
   const total = {
     ...(summaries.length ? combine(summaries) : figuresOf([])),
     compactions: summaries.reduce((sum, summary) => sum + summary.compactions, 0),
-    wallSeconds: everyRoleTimed ? Math.round((Math.max(...lasts) - Math.min(...firsts)) / 1000) : durations.length ? Math.round(Math.max(...durations) / 1000) : null,
+    wallSeconds: spanSeconds === null ? runSeconds : runSeconds === null ? spanSeconds : Math.max(spanSeconds, runSeconds),
   }
+  const reported = combineReported(summaries)
   for (const summary of summaries) {
     delete summary.first
     delete summary.last
     delete summary.durationMs
+    delete summary.reported
   }
-  return { roles, models, total }
+  return { roles, models, total, ...(reported ? { reported } : {}) }
 }
 
 export function transcriptFiles(path) {
@@ -193,6 +236,36 @@ export function parseTranscriptArgument(value) {
   const match = value.match(/^([a-z][a-z-]*)=(.+)$/)
   if (match && ROLES.includes(match[1])) return { role: match[1], path: match[2] }
   return { role: null, path: value }
+}
+
+const WORKFLOW_ROLE_LABEL = /^(worker|reviewer|fixes):#(\d+)(?::.*)?$/
+
+export function workflowAgents(journalText, ticket) {
+  const agents = []
+  for (const raw of journalText.split('\n')) {
+    if (!raw.trim()) continue
+    let entry
+    try {
+      entry = JSON.parse(raw)
+    } catch {
+      continue
+    }
+    if (entry.type !== 'started' || !entry.agentId) continue
+    const match = String(entry.label || '').match(WORKFLOW_ROLE_LABEL)
+    if (match && Number(match[2]) === ticket) agents.push({ agentId: entry.agentId, role: match[1], label: entry.label })
+  }
+  return agents
+}
+
+export function workflowSources(directory, ticket) {
+  const journal = join(directory, 'journal.jsonl')
+  if (!existsSync(journal)) throw new Error(`no journal.jsonl in ${directory}; give the directory of one workflow run (…/subagents/workflows/<run id>/)`)
+  const sources = []
+  for (const agent of workflowAgents(readFileSync(journal, 'utf8'), ticket)) {
+    const file = join(directory, `agent-${agent.agentId}.jsonl`)
+    if (existsSync(file)) sources.push({ file, role: agent.role, text: readFileSync(file, 'utf8') })
+  }
+  return sources
 }
 
 export function loadSources(values) {
@@ -223,6 +296,11 @@ export function meterComment({ ticket, sourceCount, meter }) {
     lines.push('', '| Model | Input | Output | Cache writes | Cache reads | Largest context |', '|---|---|---|---|---|---|')
     for (const [model, figures] of Object.entries(meter.models))
       lines.push(`| ${model} | ${shown(figures.input)} | ${shown(figures.output)} | ${shown(figures.cacheCreation)} | ${shown(figures.cacheReads)} | ${shown(figures.peakContext)} |`)
+  }
+  if (meter.reported) {
+    lines.push('', `As the headless run reported it at its end (${meter.reported.runs} run(s), ${shown(meter.reported.turns)} turn(s)), subagents included:`, '', '| Model | Input | Output | Cache writes | Cache reads |', '|---|---|---|---|---|')
+    for (const [model, figures] of Object.entries(meter.reported.models))
+      lines.push(`| ${model} | ${shown(figures.input)} | ${shown(figures.output)} | ${shown(figures.cacheCreation)} | ${shown(figures.cacheReads)} |`)
   }
   lines.push('', '```json', JSON.stringify({ flowMeter: METER_FORMAT_VERSION, ticket, ...meter }), '```')
   return lines.join('\n')
