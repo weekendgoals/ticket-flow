@@ -207,7 +207,9 @@ Rules for tickets, each with its reason:
   result>". Where a command can decide it, put it in the one ```` ```criteria
   ```` block as a `CHECK:` line indented under its bullet, with an optional
   `EXPECT:` (exit code 0 alone decides when there is no EXPECT). A CHECK
-  outside that block never runs and `FLOW` refuses it.
+  outside that block never runs and `FLOW` refuses it. **Every ticket has the
+  block, with at least one CHECK or COMPARE**: a ticket with none fails its
+  check, so nobody can turn a ticket green by deleting the block.
 - **Write the EXPECT so a skipped run cannot satisfy it.** A suite that skips
   itself (no database, no credentials) exits 0 and still prints test titles.
   Point EXPECT at a line that proves the run, such as a pass count
@@ -292,13 +294,27 @@ Show the user, in this order:
 
 **Ask: "Create this on GitHub?" and wait.** Nothing is created before a yes.
 If the user wants a teammate to approve on GitHub instead, create everything
-in step 6 but leave out the two label commands at the end, and say that
-adding `flow:approved` to the epic is the teammate's approval.
+below but leave out the approval label at the end, and say that adding
+`flow:approved` to the epic is the teammate's approval: until then no ticket
+can start, because tickets become ready only on an approved epic.
 
-On yes:
+On yes, first make sure the branch name is free, before anything is created:
 
 ```bash
 FLOW doctor                     # if it reports missing labels: FLOW init
+FLOW board                      # its first line names the default branch
+git ls-remote --heads origin epic/<short-name>
+```
+
+If `ls-remote` prints a line, the branch already exists, possibly left over
+from older work: **stop**, tell the user, and ask for another short name (then
+change `Branch:` in `epic.md`) or for them to delete the old branch by hand.
+Never force-push over it: its commits would ride into, or vanish from,
+somebody's work.
+
+Then create the epic:
+
+```bash
 FLOW create-epic --file <draft-dir>/epic.md --title "<epic title>"
 ```
 
@@ -309,9 +325,16 @@ FLOW create-ticket E --file <draft-dir>/NN-<name>.md --title "<title>" --tier ea
 ```
 
 `--blocked-by` takes the issue numbers printed for the earlier tickets this
-one waits for. Each call prints the new ticket's number; keep the mapping. If
-a call fails, stop and tell the user which tickets exist, because a half
-created epic must not be mistaken for a whole one.
+one waits for. Each call prints the new ticket's number; keep the mapping.
+`create-ticket` refuses a ticket with no criteria block, an unreadable
+blocker or a malformed criterion before creating anything: fix the draft and
+run it again.
+
+If it says it **created the ticket but could not link it**, never run
+`create-ticket` again (that makes a duplicate): run the `FLOW link E <n>` it
+names, which is safe to repeat, until it succeeds. For any other failure,
+stop and tell the user which tickets exist, because a half-created epic must
+not be mistaken for a whole one.
 
 Cut and push the epic branch from the default branch on the remote, never
 from whatever is checked out (a stale local branch would ride into every
@@ -322,15 +345,19 @@ git fetch origin
 git push origin origin/<default-branch>:refs/heads/epic/<short-name>
 ```
 
-Then mark it approved and every ticket ready:
+If the push is rejected, stop and show the user git's message; do not retry
+with `--force`.
+
+Then approve the epic (skip this when a teammate approves on GitHub):
 
 ```bash
 FLOW label E +flow:approved
-FLOW label <n> +flow:ready -flow:planned     # for every ticket
 ```
 
-Run `FLOW board E` and check every ticket is there, in order, with the right
-tier and waits. Print the epic's URL.
+Tickets keep `flow:planned` until they start; Flow works out which are ready
+from the approval and their blockers. Run `FLOW board E` and check every
+ticket is there, in order, with the right tier and waits. Print the epic's
+URL.
 
 ## 7. Hand over
 

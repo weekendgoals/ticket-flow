@@ -123,17 +123,17 @@ export function parseChecks(text, designSources = null, { firstLine = 1 } = {}) 
   return { checks, compares, problems }
 }
 
-function describeRunError(error) {
-  if (error.code === 'ETIMEDOUT') return `timed out after ${CHECK_TIMEOUT_MS / 1000}s`
+function describeRunError(error, timeoutMs) {
+  if (error.code === 'ETIMEDOUT') return `timed out after ${timeoutMs / 1000}s`
   if (error.code === 'ENOBUFS')
     return `printed more than ${CHECK_MAX_BUFFER / 1024 / 1024} MB of output and was killed; quieten the command (drop debug logging, or pipe through tail) so its result can be read`
   return error.message
 }
 
-export function runCheck(check, { cwd, ran = null } = {}) {
+export function runCheck(check, { cwd, ran = null, timeoutMs = CHECK_TIMEOUT_MS } = {}) {
   const result =
     (ran && ran.get(check.check)) ||
-    spawnSync(check.check, { cwd, shell: true, encoding: 'utf8', timeout: CHECK_TIMEOUT_MS, maxBuffer: CHECK_MAX_BUFFER })
+    spawnSync(check.check, { cwd, shell: true, encoding: 'utf8', timeout: timeoutMs, maxBuffer: CHECK_MAX_BUFFER })
   if (ran) ran.set(check.check, result)
   const output = `${result.stdout || ''}${result.stderr || ''}`
   const lines = output.split('\n')
@@ -154,7 +154,7 @@ export function runCheck(check, { cwd, ran = null } = {}) {
   const passed = exitedCleanly && expectFound && !skipped
   const status = passed ? 'passed' : skipped ? 'skipped' : 'failed'
   let evidence
-  if (result.error) evidence = `command could not run: ${describeRunError(result.error)}`
+  if (result.error) evidence = `command could not run: ${describeRunError(result.error, timeoutMs)}`
   else if (skipped) evidence = decidingLine.trim().slice(0, 300)
   else if (passed) evidence = check.expect ? (decidingLine || check.expect).trim().slice(0, 300) : 'exit 0'
   else if (!exitedCleanly)
@@ -167,7 +167,7 @@ export function runChecks(checks, options = {}) {
   return checks.map((check, index) => ({ n: index + 1, ...runCheck(check, options) }))
 }
 
-export function buildLedger({ ticket, checks, compares, problems }, options = {}) {
+export function runCriteria({ ticket, checks, compares, problems }, options = {}) {
   const results = runChecks(checks, options)
   const passed = results.filter((result) => result.passed).length
   const skipped = results.filter((result) => result.status === 'skipped').length
@@ -195,11 +195,11 @@ export function buildLedger({ ticket, checks, compares, problems }, options = {}
 
 const STATUS_MARK = { passed: '✓', skipped: '↓', failed: '✗' }
 
-export function formatLedger(ledger) {
+export function formatCheckReport(report) {
   const out = []
-  const { checks, compares, problems } = ledger
+  const { checks, compares, problems } = report
   if (!checks.length && !compares.length && !problems.length) {
-    out.push(`${typeof ledger.ticket === 'number' ? `#${ledger.ticket}` : ledger.ticket} has no CHECK criteria; nothing to run`)
+    out.push(`${typeof report.ticket === 'number' ? `#${report.ticket}` : report.ticket} has no CHECK criteria; nothing to run`)
     return out.join('\n')
   }
   for (const result of checks) {
@@ -216,8 +216,8 @@ export function formatLedger(ledger) {
   }
   for (const problem of problems) out.push(`! line ${problem.line}: ${problem.why}: ${problem.text}`)
   out.push(
-    `${ledger.passed}/${ledger.total} checks passed` +
-      (ledger.skipped ? `, ${ledger.skipped} skipped, which does not pass` : '') +
+    `${report.passed}/${report.total} checks passed` +
+      (report.skipped ? `, ${report.skipped} skipped, which does not pass` : '') +
       (compares.length ? `; ${compares.length} comparison(s) are manual and counted in neither total nor passed` : '') +
       (problems.length ? `; ${problems.length} malformed line(s), which fail the check` : ''),
   )

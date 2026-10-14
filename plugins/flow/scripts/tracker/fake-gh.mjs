@@ -72,7 +72,8 @@ function serve(args) {
   const exitCode = isScripted ? response.$exit : 0
   const payload = isScripted ? response.$stdout : response
   if (isScripted && response.$stderr) process.stderr.write(`${response.$stderr}\n`)
-  if (payload !== undefined && payload !== null) {
+  if (isScripted && typeof response.$raw === 'string') process.stdout.write(response.$raw)
+  else if (payload !== undefined && payload !== null) {
     const slurped = args.includes('--slurp') ? [payload] : payload
     process.stdout.write(typeof slurped === 'string' ? slurped : JSON.stringify(slurped))
   }

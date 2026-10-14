@@ -26,7 +26,8 @@ always overrides it.
 ## Layout
 
 - `scripts/flow.mjs` — the CLI: `init`, `doctor`, `board`, `next`, `ticket`,
-  `check`, `post`, `label`, `create-epic`, `create-ticket`, `needs-human`.
+  `check`, `post`, `label`, `create-epic`, `create-ticket`, `link`,
+  `needs-human`.
 - `scripts/tracker/github.mjs` — every `gh` call, as plain functions, so a
   Jira tracker can sit behind the same surface later.
 - `scripts/tracker/fake-gh.mjs` — the fake `gh` the tests put first on PATH:
@@ -43,12 +44,12 @@ Every suite needs Node ≥ 20 and nothing else unless noted; pass each test
 file path explicitly (`node --test <directory>` finds nothing here). Counts
 as of 2026-10-14; the pass count grows, the fail line stays `# fail 0`.
 
-- `node --test plugins/flow/scripts/flow.test.mjs` — `# pass 35`. The CLI
+- `node --test plugins/flow/scripts/flow.test.mjs` — `# pass 42`. The CLI
   end to end against the fake `gh`; one case needs `git` on PATH.
-- `node --test plugins/flow/scripts/issue-body.test.mjs` — `# pass 20`.
-- `node --test plugins/flow/scripts/checks.test.mjs` — `# pass 25`. Runs real
+- `node --test plugins/flow/scripts/issue-body.test.mjs` — `# pass 21`.
+- `node --test plugins/flow/scripts/checks.test.mjs` — `# pass 26`. Runs real
   shell commands in a temp dir.
-- `node --test plugins/flow/scripts/tracker/github.test.mjs` — `# pass 14`.
+- `node --test plugins/flow/scripts/tracker/github.test.mjs` — `# pass 16`.
 - `node --test plugins/flow/scripts/fidelity.test.mjs` — `# pass 54`.
 - `node --test plugins/flow/scripts/meter.test.mjs` — `# pass 37`.
 - `node --test plugins/flow/scripts/worktree-setup.test.mjs` — `# pass 17`;
@@ -86,9 +87,18 @@ drift apart.
   parse is a named problem the board, `next` and `doctor` print, and the
   ticket waits. Never make the parse tolerant: a tolerant parse once stalled
   tickets on prose with nothing saying why.
-- **`next` exits 1 when an epic is stuck** (unfinished tickets, none ready,
-  none in progress, or no tickets at all). A driver reads exit 0 with nothing
-  ready as "built"; a stuck epic must never read that way.
+- **Ready is derived, never a label.** A `flow:planned` ticket is ready when
+  its epic has `flow:approved`, every blocker is `flow:done` and it has no
+  problem. Approval is enforced there, in the one command a driver runs, so
+  a single label on GitHub approves an epic and nothing can start without it.
+- **`next` exits 1 when an epic is not approved, has no tickets, or is stuck**
+  (unfinished tickets, none ready, none in progress). A driver reads exit 0
+  with nothing ready as "built"; none of these may read that way.
+- **A ticket with no criteria fails its check.** The issue body is editable by
+  anyone with write access, so a missing or empty ```` ```criteria ```` block
+  is a problem, never an empty pass; `check` also returns the body's edit
+  history so a later step can see who changed it. `create-ticket` refuses
+  such a ticket at the door.
 - **The criteria grammar is one format** shared by `checks.mjs`, the epic
   skill's template and every step that runs criteria. A change to
   CHECK/EXPECT/COMPARE/LANDMARKS moves the parser, the skill and the tests in

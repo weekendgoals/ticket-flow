@@ -126,7 +126,7 @@ silence.
 answer: a business rule nobody wrote down, an intended behaviour the code
 permits two readings of, a value that is hard-coded with no record of who
 chose it. Name the two readings where there are two. These are the planner's
-to carry into its clarify pass — and they are the most valuable thing you
+to carry to the user as questions — and they are the most valuable thing you
 produce, because they are the questions nobody knew to ask.
 
 **Nothing else.** No recommendations section, no summary, no "what I would

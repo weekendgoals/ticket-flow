@@ -66,8 +66,10 @@ Blocked by: #12, #13
   else. Without it the ticket is independent. A line that mentions blocking
   but cannot be read is reported as a problem by `board`, `next` and
   `doctor`, and the ticket waits: Flow never guesses what a sentence meant.
-- `## Acceptance criteria` holds one fenced block marked `criteria`, whose
-  lines are the commands that decide the ticket:
+- `## Acceptance criteria` holds one fenced block marked `criteria`, with at
+  least one `CHECK` or `COMPARE`. A ticket without it fails `flow check`, so
+  deleting the block cannot turn a ticket green. Its lines are the commands
+  that decide the ticket:
 
   ````
   ```criteria
@@ -89,15 +91,17 @@ Blocked by: #12, #13
 
 | Label | Meaning |
 |---|---|
-| `flow:planned` | Written; the epic is not approved yet |
-| `flow:ready` | Approved, free to start once its blockers are done |
+| `flow:planned` | Not started yet |
 | `flow:in-progress` | Being built |
 | `flow:in-review` | Built, being reviewed |
 | `flow:done` | Merged into the epic branch |
 | `flow:needs-human` | Stopped; a person has to decide something |
 
-"Waiting" is never a label: it is a ready ticket with an unfinished blocker,
-worked out each time. `flow:approved` on the epic is the sign-off.
+"Ready" and "waiting" are never labels; they are worked out each time. A
+planned ticket is **ready** when its epic has `flow:approved` (the sign-off),
+every ticket it is blocked by is `flow:done`, and nothing about it is
+unreadable; otherwise it is **waiting**. Until the epic is approved, no
+ticket is ready, so approving on GitHub is a single label.
 `tier:easy` tickets are built by Sonnet, `tier:hard` (or no tier label) by
 Opus.
 
@@ -134,8 +138,9 @@ conversation is always one of them.
 5. A separate **plan reviewer** reads the drafts, re-runs the checks, and
    reports what will fail.
 6. **Stops for your approval.** Nothing is created on GitHub before you say
-   yes. Then it creates the epic and its tickets, pushes `epic/<name>` from
-   the default branch, marks the epic approved and the tickets ready, and
+   yes. Then it checks the branch name is free, creates the epic and its
+   tickets, pushes `epic/<name>` from the default branch, adds
+   `flow:approved` to the epic (or leaves that to a teammate on GitHub), and
    prints the epic's URL.
 
 ## The `flow` command
@@ -145,17 +150,18 @@ every answer is read from GitHub (through `gh`) and git.
 
 | Command | What it does |
 |---|---|
-| `init` | Creates the eleven labels. Safe to run again |
+| `init` | Creates the ten labels. Safe to run again |
 | `doctor` | Checks `gh`, sign-in, that issues are on, the labels, the default branch, and every open epic's `Blocked by` lines (unreadable, outside the epic, cycles). Prints `ok` or one sentence per problem |
-| `board [<epic>] [--json]` | Open epics with approval, progress and branch; or one epic's tickets with tier, state and blockers |
-| `next <epic>` | JSON: `ready`, `waiting`, `inProgress`, `done`, `needsHuman`, `planned`, `problems`. Exits 1 when the epic is stuck (unfinished tickets, none ready, none in progress) or has no tickets |
+| `board [<epic>] [--json]` | The default branch, then open epics with approval, progress and branch; or one epic's tickets with tier, state and blockers |
+| `next <epic>` | JSON: `approved`, `ready`, `waiting`, `inProgress`, `done`, `needsHuman`, `planned`, `problems`. Exits 1 when the epic is not approved, has no tickets, or is stuck (unfinished tickets, none ready, none in progress) |
 | `ticket <n>` | One ticket parsed, as JSON, including who edited its body and when |
-| `check <n> [--cwd <dir>]` | Runs the ticket's criteria from the repository root (or `--cwd`). JSON results on stdout, a readable table on stderr; exits 1 unless every check passed |
+| `check <n> [--cwd <dir>]` | Runs the ticket's criteria from the repository root (or `--cwd`). JSON results on stdout, with every edit of the issue body (who, when); a readable table on stderr. Exits 1 unless every check passed, and when the ticket has no criteria |
 | `check --file <md> [--epic-file <md>]` | The same for a draft that is not on GitHub yet |
 | `post <n> --file <md>` or `--text "<md>"` | Adds a comment |
 | `label <n> +<label> -<label> …` | Adds and removes labels; refuses to leave two state labels on one issue |
 | `create-epic --file <md> --title "<t>"` | Creates the epic issue; prints its number |
 | `create-ticket <epic> --file <md> --title "<t>" [--tier easy\|hard] [--blocked-by <n>,<n>]` | Creates the ticket, writes its `Epic:` and `Blocked by:` lines, links it as a sub-issue and adds it to the epic's task list; prints its number |
+| `link <epic> <n>` | Finishes a `create-ticket` that created the issue but could not link it. Safe to repeat |
 | `needs-human <n> --text "<why>"` | Marks the ticket `flow:needs-human` and asks a person, by mention |
 
 ## What is not rewritten yet

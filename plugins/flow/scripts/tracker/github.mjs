@@ -172,12 +172,14 @@ export function ensureLabels(wanted) {
 }
 
 const EDIT_HISTORY_QUERY =
-  'query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){issue(number:$number){userContentEdits(first:100){nodes{editedAt editor{login}}}}}}'
+  'query($owner:String!,$name:String!,$number:Int!,$endCursor:String){repository(owner:$owner,name:$name){issue(number:$number){userContentEdits(first:100,after:$endCursor){pageInfo{hasNextPage endCursor}nodes{editedAt editor{login}}}}}}'
 
 export function bodyEditHistory(number) {
   const output = runGh([
     'api',
     'graphql',
+    '--paginate',
+    '--slurp',
     '-f',
     `query=${EDIT_HISTORY_QUERY}`,
     '-F',
@@ -187,10 +189,13 @@ export function bodyEditHistory(number) {
     '-F',
     `number=${number}`,
   ])
-  const data = parseJson(output, 'graphql edit history')
-  const issue = data && data.data && data.data.repository && data.data.repository.issue
-  if (!issue) throw new TrackerError(`issue #${number} has no edit history to read`)
-  return issue.userContentEdits.nodes
+  const pages = parseJson(output, 'graphql edit history')
+  return pages
+    .flatMap((page) => {
+      const issue = page && page.data && page.data.repository && page.data.repository.issue
+      if (!issue) throw new TrackerError(`issue #${number} has no edit history to read`)
+      return issue.userContentEdits.nodes
+    })
     .map((node) => ({ editedAt: node.editedAt, editor: node.editor ? node.editor.login : null }))
     .sort((a, b) => a.editedAt.localeCompare(b.editedAt))
 }

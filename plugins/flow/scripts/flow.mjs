@@ -3,8 +3,8 @@ import { readFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import * as github from './tracker/github.mjs'
 import { TrackerError } from './tracker/github.mjs'
-import { parseEpicBody, parseTicketBody, withEpicLine, withBlockedBy, withTicketListed } from './issue-body.mjs'
-import { buildLedger, formatLedger } from './checks.mjs'
+import { parseEpicBody, parseTicketBody, withEpicLine, withBlockedBy, withTicketListed, normalizeNewlines } from './issue-body.mjs'
+import { runCriteria, formatCheckReport } from './checks.mjs'
 import {
   LABELS,
   EPIC_LABEL,
@@ -28,6 +28,7 @@ const USAGE = `usage: flow <command>
   ticket <n>                             one ticket, parsed, as JSON
   check <n> [--cwd <dir>]                run a ticket's CHECK criteria (exit 1 unless all pass)
   check --file <md> [--epic-file <md>]   the same, for a draft ticket body not yet on GitHub
+  link <epic> <n>                        finish linking a ticket to its epic (safe to repeat)
   post <n> --file <md> | --text "<md>"   add a comment
   label <n> +<label> -<label> ...        add and remove labels
   create-epic --file <md> --title "<t>"
@@ -152,9 +153,10 @@ function commandDoctor() {
 function commandBoard(positional, flags) {
   if (positional.length) {
     const epic = loadEpic(issueNumber(positional[0], 'an epic number'))
-    if (flags.json) return printJson(epic)
+    const defaultBranch = github.defaultBranch()
+    if (flags.json) return printJson({ defaultBranch, ...epic })
     console.log(`#${epic.number} ${epic.title}`)
-    console.log(`${epic.approved ? 'approved' : 'not approved'} · branch ${epic.settings.branch || '(none set)'} · ${epic.settings.delivery || 'unreadable'} delivery · parallel ${epic.settings.parallel ?? 'unreadable'}`)
+    console.log(`${epic.approved ? 'approved' : 'not approved'} · branch ${epic.settings.branch || '(none set)'} from ${defaultBranch || '(unknown default branch)'} · ${epic.settings.delivery || 'unreadable'} delivery · parallel ${epic.settings.parallel ?? 'unreadable'}`)
     console.log('')
     if (!epic.tickets.length) console.log('no tickets')
     else
@@ -176,6 +178,7 @@ function commandBoard(positional, flags) {
     }
     return
   }
+  const defaultBranch = github.defaultBranch()
   const epics = github.listIssues({ label: EPIC_LABEL }).map((issue) => deriveEpic(issue, github.listSubIssues(issue.number)))
   const rows = epics.map((epic) => ({
     number: epic.number,
@@ -186,8 +189,10 @@ function commandBoard(positional, flags) {
     branch: epic.settings.branch,
     problems: epic.problems.length,
   }))
-  if (flags.json) return printJson(rows)
+  if (flags.json) return printJson({ defaultBranch, epics: rows })
+  console.log(`default branch: ${defaultBranch || '(unknown)'}`)
   if (!rows.length) return console.log('no open epics')
+  console.log('')
   console.log(
     formatTable(
       ['#', 'title', 'approved', 'done', 'branch'],
@@ -250,10 +255,11 @@ function commandCheck(positional, flags) {
   if (!fromDraft && flags['epic-file'] !== undefined) throw new UsageError('--epic-file goes with --file')
   const ticket = fromDraft ? flags.file : issueNumber(positional[0], 'a ticket number')
   const criteria = fromDraft ? draftCriteria(flags) : loadTicket(ticket).parsed.criteria
-  const ledger = buildLedger({ ticket, ...criteria }, { cwd: flags.cwd || gitTopLevel() })
-  process.stderr.write(`${formatLedger(ledger)}\n`)
-  printJson(ledger)
-  return ledger.allPassed ? 0 : 1
+  const edits = fromDraft ? null : github.bodyEditHistory(ticket)
+  const report = { ...runCriteria({ ticket, ...criteria }, { cwd: flags.cwd || gitTopLevel() }), edits }
+  process.stderr.write(`${formatCheckReport(report)}\n`)
+  printJson(report)
+  return report.allPassed ? 0 : 1
 }
 
 function commandPost(positional, flags) {
@@ -269,8 +275,9 @@ function commandLabel(argv) {
   const add = []
   const remove = []
   for (const change of changes) {
-    if (/^\+.+/.test(change)) add.push(change.slice(1))
-    else if (/^-.+/.test(change)) remove.push(change.slice(1))
+    if (/^\+[^+]/.test(change)) add.push(change.slice(1))
+    else if (/^-[^-]/.test(change)) remove.push(change.slice(1))
+    else if (change.startsWith('--')) throw new UsageError(`unknown option ${change}`)
     else throw new UsageError(`"${change}" is neither +<label> nor -<label>`)
   }
   const issue = github.getIssue(number)
@@ -314,6 +321,11 @@ function commandCreateTicket(positional, flags) {
   const blockers = parseBlockerList(flags['blocked-by'])
   const epic = github.getIssue(epicNumber)
   if (!epic.labels.includes(EPIC_LABEL)) throw new UsageError(`#${epicNumber} is not an epic (it has no ${EPIC_LABEL} label)`)
+  const epicPlan = parseEpicBody(epic.body)
+  if (epicPlan.problems.length) {
+    for (const problem of epicPlan.problems) process.stderr.write(`epic #${epicNumber}: ${problem}\n`)
+    return 1
+  }
   let body
   try {
     body = withBlockedBy(withEpicLine(readFileSync(flags.file, 'utf8'), epicNumber), blockers)
@@ -321,7 +333,7 @@ function commandCreateTicket(positional, flags) {
     process.stderr.write(`${error.message}\n`)
     return 1
   }
-  const parsed = parseTicketBody(body, parseEpicBody(epic.body).settings.designSources)
+  const parsed = parseTicketBody(body, epicPlan.settings.designSources)
   const problems = [
     ...(parsed.blockedByProblem ? [parsed.blockedByProblem] : []),
     ...parsed.criteria.problems.map((problem) => `line ${problem.line}: ${problem.why}: ${problem.text}`),
@@ -339,11 +351,42 @@ function commandCreateTicket(positional, flags) {
     github.addSubIssue(epicNumber, created.id)
     github.updateIssueBody(epicNumber, withTicketListed(epic.body, created.number, flags.title))
   } catch (error) {
-    process.stderr.write(`created #${created.number}, but could not link it to epic #${epicNumber}: ${error.message}\n`)
+    process.stderr.write(
+      `created #${created.number}, but could not link it to epic #${epicNumber}: ${error.message}\nFinish with \`flow link ${epicNumber} ${created.number}\`; running create-ticket again would create a duplicate.\n`,
+    )
     console.log(created.number)
     return 1
   }
   console.log(created.number)
+  return 0
+}
+
+function commandLink(positional) {
+  const epicNumber = issueNumber(positional[0], 'an epic number')
+  const ticketNumber = issueNumber(positional[1], 'a ticket number')
+  const epic = github.getIssue(epicNumber)
+  if (!epic.labels.includes(EPIC_LABEL)) throw new UsageError(`#${epicNumber} is not an epic (it has no ${EPIC_LABEL} label)`)
+  const ticket = github.getIssue(ticketNumber)
+  const named = parseTicketBody(ticket.body).epic
+  if (named !== null && named !== epicNumber) {
+    process.stderr.write(`#${ticketNumber} says "Epic: #${named}", not #${epicNumber}; nothing was changed\n`)
+    return 1
+  }
+  const done = []
+  if (named === null) {
+    github.updateIssueBody(ticketNumber, withEpicLine(ticket.body, epicNumber))
+    done.push(`wrote "Epic: #${epicNumber}" into #${ticketNumber}`)
+  }
+  if (!github.listSubIssues(epicNumber).some((issue) => issue.number === ticketNumber)) {
+    github.addSubIssue(epicNumber, ticket.id)
+    done.push(`made #${ticketNumber} a sub-issue of #${epicNumber}`)
+  }
+  const listed = withTicketListed(epic.body, ticketNumber, ticket.title)
+  if (listed !== normalizeNewlines(epic.body)) {
+    github.updateIssueBody(epicNumber, listed)
+    done.push(`listed #${ticketNumber} under the epic's tickets`)
+  }
+  console.log(done.length ? done.join('; ') : `#${ticketNumber} was already linked to epic #${epicNumber}`)
   return 0
 }
 
@@ -386,6 +429,8 @@ function main(argv) {
       return commandCreateEpic(flags)
     case 'create-ticket':
       return commandCreateTicket(positional, flags)
+    case 'link':
+      return commandLink(positional)
     case 'needs-human':
       return commandNeedsHuman(positional, flags)
     default:

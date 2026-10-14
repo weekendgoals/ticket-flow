@@ -201,6 +201,10 @@ export function parseCriteriaSection(sectionText, firstLine = 1) {
   return { text: block ? block.lines.join('\n') : null, firstLine: block ? block.firstLine : null, problems }
 }
 
+export const MISSING_CRITERIA_BLOCK =
+  'no ```criteria block under "## Acceptance criteria", so nothing decides this ticket; anyone who can edit the issue could otherwise turn a red ticket green by deleting the block'
+export const EMPTY_CRITERIA_BLOCK = 'the ```criteria block has no CHECK or COMPARE line, so nothing decides this ticket'
+
 export function parseTicketBody(body, designSources = null) {
   const normalized = normalizeNewlines(body)
   const { section } = splitSections(normalized)
@@ -209,6 +213,11 @@ export function parseTicketBody(body, designSources = null) {
   const criteriaSection = section('acceptance criteria')
   const block = criteriaSection ? parseCriteriaSection(criteriaSection.raw, criteriaSection.firstLine) : { text: null, firstLine: null, problems: [] }
   const parsed = block.text === null ? { checks: [], compares: [], problems: [] } : parseChecks(block.text, designSources, { firstLine: block.firstLine })
+  const missing = []
+  if (block.text === null)
+    missing.push({ line: criteriaSection ? criteriaSection.firstLine - 1 : null, text: '## Acceptance criteria', why: MISSING_CRITERIA_BLOCK })
+  else if (!parsed.checks.length && !parsed.compares.length && !parsed.problems.length)
+    missing.push({ line: block.firstLine - 1, text: '```criteria', why: EMPTY_CRITERIA_BLOCK })
   return {
     epic: parseEpicLine(normalized),
     blockedBy,
@@ -217,7 +226,7 @@ export function parseTicketBody(body, designSources = null) {
     notInScope: text('not in scope'),
     acceptanceCriteria: text('acceptance criteria'),
     notes: text('notes'),
-    criteria: { checks: parsed.checks, compares: parsed.compares, problems: [...block.problems, ...parsed.problems] },
+    criteria: { checks: parsed.checks, compares: parsed.compares, problems: [...missing, ...block.problems, ...parsed.problems] },
   }
 }
 

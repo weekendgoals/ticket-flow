@@ -16,16 +16,28 @@ contract change. This is stage 1 of the rewrite: planning and the `flow`
 command are done; building, review, the unattended run and the retro follow.
 
 - **New: `scripts/flow.mjs`**, one command-line tool both the local run and a
-  GitHub Action will call: `init` (creates the eleven labels), `doctor`,
-  `board`, `next` (JSON of what can start; exits 1 when the epic is stuck or
-  has no tickets), `ticket` (the parsed ticket, with who edited its body and
-  when), `check` (runs a ticket's criteria from the issue, or from a draft
-  file with `--file`), `post`, `label` (refuses two state labels on one
-  issue), `create-epic`, `create-ticket` (writes the `Epic:` and `Blocked by:`
-  lines, links the sub-issue, adds it to the epic's task list, and refuses an
-  unreadable blocker line, a blocker outside the epic or a malformed
-  criterion before creating anything) and `needs-human` (the one way a
-  ticket stops: a label and a comment that mentions a person).
+  GitHub Action will call: `init` (creates the ten labels), `doctor`,
+  `board` (names the default branch first), `next` (JSON of what can start;
+  exits 1 when the epic is not approved, is stuck or has no tickets),
+  `ticket` (the parsed ticket, with who edited its body and when), `check`
+  (runs a ticket's criteria from the issue, returning the body's edit
+  history too, or from a draft file with `--file`), `post`, `label` (refuses
+  two state labels on one issue), `create-epic`, `create-ticket` (writes the
+  `Epic:` and `Blocked by:` lines, links the sub-issue, adds it to the epic's
+  task list, and refuses unreadable epic settings, a ticket with no criteria
+  block, an unreadable blocker line, a blocker outside the epic or a
+  malformed criterion before creating anything), `link` (finishes a ticket
+  that was created but not linked; safe to repeat) and `needs-human` (the
+  one way a ticket stops: a label and a comment that mentions a person).
+- **Ready is worked out, not a label.** A ticket keeps `flow:planned` until
+  it starts, and is ready once its epic has `flow:approved` and every blocker
+  is `flow:done`, so approving an epic on GitHub is one label and no ticket
+  can start without it.
+- **A ticket with no criteria fails its check.** In 2.x no criteria at all
+  passed; now that anyone with write access can edit the issue, deleting the
+  ```` ```criteria ```` block would turn a red ticket green, so a missing or
+  empty block is a problem. A block holding only a design comparison still
+  passes `check`: the comparison is gated by its posted table.
 - **Unchanged in behaviour: the criteria grammar.** `CHECK:`, `EXPECT:`,
   `COMPARE:` and `LANDMARKS:` parse and run exactly as in 2.x, including
   skip detection, the near-miss and never-passes shapes, the ten-minute

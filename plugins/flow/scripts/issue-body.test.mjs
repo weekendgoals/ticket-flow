@@ -193,22 +193,35 @@ test('the task list reads checked and unchecked items, with or without a dash be
   ])
 })
 
-test('criteria: no block is no criteria, and nothing is a problem', () => {
-  const ticket = parseTicketBody('Epic: #1\n\n## Acceptance criteria\n\n- prose, checked by hand\n')
-  assert.deepEqual(ticket.criteria, { checks: [], compares: [], problems: [] })
+test('criteria: a ticket with no criteria block is a problem, because deleting the block must not turn a ticket green', () => {
+  const prose = parseTicketBody('Epic: #1\n\n## Acceptance criteria\n\n- prose, checked by hand\n')
+  assert.deepEqual(prose.criteria.checks, [])
+  assert.equal(prose.criteria.problems.length, 1)
+  assert.match(prose.criteria.problems[0].why, /no ```criteria block/)
+  assert.equal(prose.criteria.problems[0].line, 3)
+  const noSection = parseTicketBody('Epic: #1\n\n## Scope\n\n- x\n')
+  assert.match(noSection.criteria.problems[0].why, /no ```criteria block/)
+  assert.equal(noSection.criteria.problems[0].line, null)
+})
+
+test('criteria: an empty block is a problem, and a block holding only a COMPARE is not', () => {
+  const empty = parseTicketBody('## Acceptance criteria\n\n```criteria\n- prose\n```\n')
+  assert.match(empty.criteria.problems[0].why, /no CHECK or COMPARE line/)
+  const compareOnly = parseTicketBody('## Acceptance criteria\n\n```criteria\n- page\n  COMPARE: d.html @ 1440\n```\n', ['d.html'])
+  assert.deepEqual(compareOnly.criteria.problems, [])
 })
 
 test('criteria: a CHECK outside the criteria block never runs, so it is a problem', () => {
   const ticket = parseTicketBody('Epic: #1\n\n## Acceptance criteria\n\n- it runs\n  CHECK: true\n')
   assert.equal(ticket.criteria.checks.length, 0)
-  assert.equal(ticket.criteria.problems.length, 1)
-  assert.match(ticket.criteria.problems[0].why, /outside the ```criteria block never runs/)
-  assert.equal(ticket.criteria.problems[0].line, 6, 'the line number is the line in the issue body')
+  const outside = ticket.criteria.problems.filter((problem) => /outside the ```criteria block never runs/.test(problem.why))
+  assert.equal(outside.length, 1)
+  assert.equal(outside[0].line, 6, 'the line number is the line in the issue body')
 })
 
 test('criteria: lines in a fence not marked criteria, two criteria blocks, and a block that never closes are problems', () => {
   const unmarked = parseTicketBody('## Acceptance criteria\n\n```\n- it runs\n  CHECK: true\n```\n')
-  assert.match(unmarked.criteria.problems[0].why, /not marked ```criteria/)
+  assert.ok(unmarked.criteria.problems.some((problem) => /not marked ```criteria/.test(problem.why)))
   const two = parseTicketBody('## Acceptance criteria\n\n```criteria\n- a\n  CHECK: true\n```\n\n```criteria\n- b\n  CHECK: false\n```\n')
   assert.equal(two.criteria.checks.length, 1)
   assert.match(two.criteria.problems[0].why, /2 criteria blocks/)

@@ -7,7 +7,6 @@ export const NEEDS_HUMAN_LABEL = 'flow:needs-human'
 
 export const STATE_BY_LABEL = {
   'flow:planned': 'planned',
-  'flow:ready': 'ready',
   'flow:in-progress': 'in-progress',
   'flow:in-review': 'in-review',
   'flow:done': 'done',
@@ -21,8 +20,7 @@ export const LABELS = [
   { name: EPIC_LABEL, color: '5319e7', description: 'Flow epic: the plan for one piece of work' },
   { name: TICKET_LABEL, color: '1d76db', description: 'Flow ticket: one step of an epic' },
   { name: APPROVED_LABEL, color: '0e8a16', description: 'A person signed off this epic plan' },
-  { name: 'flow:planned', color: 'c5def5', description: 'Written, waiting for the epic to be approved' },
-  { name: 'flow:ready', color: 'bfdadc', description: 'Approved and free to start once its blockers are done' },
+  { name: 'flow:planned', color: 'c5def5', description: 'Not started yet; ready once the epic is approved and its blockers are done' },
   { name: 'flow:in-progress', color: 'fbca04', description: 'Someone is building this ticket now' },
   { name: 'flow:in-review', color: 'd4c5f9', description: 'Built, being reviewed' },
   { name: 'flow:done', color: '0e8a16', description: 'Merged into the epic branch' },
@@ -34,7 +32,7 @@ export const LABELS = [
 export function ticketState(labels) {
   const states = labels.filter((label) => STATE_LABELS.includes(label)).map((label) => STATE_BY_LABEL[label])
   if (states.length === 1) return { state: states[0], problem: null }
-  if (!states.length) return { state: 'unlabelled', problem: 'has no state label (flow:planned, flow:ready, …)' }
+  if (!states.length) return { state: 'unlabelled', problem: 'has no state label (flow:planned, flow:in-progress, …)' }
   return { state: 'conflicting', problem: `has ${states.length} state labels at once (${states.join(', ')}); keep one` }
 }
 
@@ -77,6 +75,12 @@ export function findCycles(graph) {
   return cycles
 }
 
+function shownState(ticket, approved) {
+  if (ticket.state !== 'planned' || !approved) return ticket.state
+  const blocked = ticket.problems.length > 0 || ticket.inCycle || ticket.unfinishedBlockers.length > 0
+  return blocked ? 'waiting' : 'ready'
+}
+
 export function deriveEpic(epicIssue, subIssues) {
   const plan = parseEpicBody(epicIssue.body)
   const designSources = plan.settings.designSources
@@ -117,11 +121,11 @@ export function deriveEpic(epicIssue, subIssues) {
   for (const cycle of cycles)
     problems.push(`epic #${epicIssue.number} has a blocking cycle: ${cycle.map((number) => `#${number}`).join(' → ')}; none of these can ever start`)
 
+  const approved = epicIssue.labels.includes(APPROVED_LABEL)
   for (const ticket of tickets) {
     ticket.unfinishedBlockers = ticket.blockedBy.filter((number) => !byNumber.has(number) || byNumber.get(number).state !== 'done')
     ticket.inCycle = inCycle.has(ticket.number)
-    const blocked = ticket.blockedByProblem !== null || ticket.outsideBlockers.length > 0 || ticket.unfinishedBlockers.length > 0
-    ticket.shownState = ticket.state === 'ready' && blocked ? 'waiting' : ticket.state
+    ticket.shownState = shownState(ticket, approved)
     problems.push(...ticket.problems)
   }
 
@@ -129,7 +133,7 @@ export function deriveEpic(epicIssue, subIssues) {
     number: epicIssue.number,
     title: epicIssue.title,
     author: epicIssue.author,
-    approved: epicIssue.labels.includes(APPROVED_LABEL),
+    approved,
     settings: plan.settings,
     tickets,
     cycles,
@@ -141,13 +145,14 @@ export function nextSteps(epic) {
   const pick = (...states) => epic.tickets.filter((ticket) => states.includes(ticket.shownState)).map((ticket) => ticket.number)
   const result = {
     epic: epic.number,
+    approved: epic.approved,
     ready: pick('ready'),
     waiting: epic.tickets
       .filter((ticket) => ticket.shownState === 'waiting')
       .map((ticket) => ({
         n: ticket.number,
         blockedBy: ticket.unfinishedBlockers,
-        ...(ticket.blockedByProblem ? { problem: ticket.blockedByProblem } : {}),
+        ...(ticket.problems.length ? { problem: ticket.problems[0] } : {}),
       })),
     inProgress: pick('in-progress', 'in-review'),
     done: pick('done'),
@@ -156,7 +161,9 @@ export function nextSteps(epic) {
     problems: epic.problems,
   }
   const unfinished = epic.tickets.filter((ticket) => ticket.state !== 'done').length
-  const stuckReason = !epic.tickets.length
+  const stuckReason = !epic.approved
+    ? `epic #${epic.number} is not approved; a person adds the ${APPROVED_LABEL} label to approve it`
+    : !epic.tickets.length
     ? `epic #${epic.number} has no tickets, so there is nothing built and nothing to start`
     : unfinished > 0 && !result.ready.length && !result.inProgress.length
       ? `epic #${epic.number} is stuck: ${unfinished} ticket(s) are not done, none is ready and none is in progress`

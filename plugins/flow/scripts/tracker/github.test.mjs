@@ -174,6 +174,26 @@ test('bodyEditHistory asks GraphQL for the edits and returns them oldest first',
   assert.match(call.args.find((arg) => arg.startsWith('query=')), /userContentEdits/)
 })
 
+test('bodyEditHistory follows every page, so an issue edited more than 100 times loses none of its history', () => {
+  const page = (nodes, hasNextPage) => ({ data: { repository: { issue: { userContentEdits: { pageInfo: { hasNextPage, endCursor: hasNextPage ? 'c1' : null }, nodes } } } } })
+  const first = Array.from({ length: 100 }, (_, index) => ({ editedAt: `2026-10-01T00:00:${String(index % 60).padStart(2, '0')}Z`, editor: { login: 'a' } }))
+  fake.setFixtures({
+    'graphql name={repo} number=8 owner={owner}': { $exit: 0, $raw: JSON.stringify([page(first, true), page([{ editedAt: '2026-10-20T00:00:00Z', editor: { login: 'late' } }], false)]) },
+  })
+  const edits = github.bodyEditHistory(8)
+  assert.equal(edits.length, 101)
+  assert.equal(edits[100].editor, 'late')
+  const call = fake.calls()[0]
+  assert.ok(call.args.includes('--paginate') && call.args.includes('--slurp'))
+  assert.match(call.args.find((arg) => arg.startsWith('query=')), /\$endCursor:String.*after:\$endCursor.*pageInfo\{hasNextPage endCursor\}/)
+})
+
+test('the fake gh fails loudly on a call nobody prepared for, so a test cannot pass by accident', () => {
+  fake.setFixtures({})
+  assert.throws(() => github.getIssue(404), (error) => error instanceof github.TrackerError && /fake gh: no fixture for "GET repos\/\{owner\}\/\{repo\}\/issues\/404"/.test(error.message))
+  assert.equal(fake.calls()[0].key, `GET ${R}/issues/404`, 'and the call is still recorded')
+})
+
 test('authStatus reports a signed-out gh without throwing', () => {
   fake.setFixtures({ 'auth status': { $exit: 1, $stderr: 'You are not logged into any GitHub hosts.' } })
   assert.deepEqual(github.authStatus(), { ok: false, message: 'You are not logged into any GitHub hosts.' })
