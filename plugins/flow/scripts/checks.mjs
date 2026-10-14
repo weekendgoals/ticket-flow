@@ -199,7 +199,7 @@ export function formatLedger(ledger) {
   const out = []
   const { checks, compares, problems } = ledger
   if (!checks.length && !compares.length && !problems.length) {
-    out.push(`#${ledger.ticket} has no CHECK criteria; nothing to run`)
+    out.push(`${typeof ledger.ticket === 'number' ? `#${ledger.ticket}` : ledger.ticket} has no CHECK criteria; nothing to run`)
     return out.join('\n')
   }
   for (const result of checks) {

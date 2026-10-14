@@ -352,6 +352,25 @@ test('check exits 1 on a malformed criterion even with nothing to run', () => {
   assert.match(JSON.parse(result.stdout).problems[0].why, /outside the ```criteria block/)
 })
 
+test('check --file runs a draft ticket body before anything exists on GitHub, so a CHECK can be proven red', () => {
+  world({})
+  const epicFile = join(directory, 'draft-epic.md')
+  writeFileSync(epicFile, epicBody([], 'Design sources: designs/map.html'))
+  const draft = join(directory, 'draft-ticket.md')
+  writeFileSync(draft, ticketBody(0, { criteria: CRITERIA.replace("console.log('exported 3 trips')", 'process.exit(1)') }))
+  const red = flow('check', '--file', draft, '--epic-file', epicFile)
+  assert.equal(red.status, 1)
+  const ledger = JSON.parse(red.stdout)
+  assert.equal(ledger.ticket, draft)
+  assert.equal(ledger.checks[0].status, 'failed')
+  assert.deepEqual(ledger.problems, [], 'the COMPARE path is checked against the draft epic settings')
+  assert.equal(fake.calls().length, 0, 'GitHub is not asked anything')
+  const withoutEpic = JSON.parse(flow('check', '--file', draft).stdout)
+  assert.match(withoutEpic.problems[0].why, /declare no "Design sources:"/)
+  assert.equal(flow('check', '3', '--file', draft).status, 2)
+  assert.equal(flow('check', '3', '--epic-file', epicFile).status, 2)
+})
+
 test('post adds a comment from --text or --file', () => {
   world({ extra: { [`POST ${R}/issues/3/comments`]: { id: 1, html_url: 'https://github.com/o/r/issues/3#issuecomment-1' } } })
   const result = flow('post', '3', '--text', 'Started on `opus`, branch `3-export`.')

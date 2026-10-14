@@ -24,10 +24,10 @@ planner decomposes; you report what it decomposes against.
 
 The **in-scope areas** as repository paths, and the instruction file that binds
 each (`CLAUDE.md` or `AGENTS.md`, root and per-area); **the plugin's root
-path** — `tickets.mjs` is on no PATH, so where you run it the command is
-`node "<plugin root>/scripts/tickets.mjs" <subcommand>`, from the repository
-root, and `list` plus `doctor` are what say which other epics are open and
-where they overlap these areas; and **a list of questions**. If you were given
+path** — the `flow` command is on no PATH, so where you run it the command is
+`node "<plugin root>/scripts/flow.mjs" board`, from the repository root, and
+it lists the open epics on GitHub so you can say where they overlap these
+areas; and **a list of questions**. If you were given
 no plugin root, put that under **Could not establish** rather than guessing at
 a path; if you were given no questions, ask for them — a researcher choosing
 its own questions is a researcher choosing its own subject.
@@ -115,8 +115,8 @@ patterns, commands. One line each, and this is also where the two things you
 were not able to do go, each with its reason on the line: **a question you
 refused** (quoted, marked solution-shaped, with the present-tense question it
 would have to become) and **a lookup you could not run** (no plugin root, so
-`tickets.mjs list` and `doctor` went unrun and nobody knows which other epics
-touch these areas). They belong here rather than in a fourth section because
+`flow board` went unrun and nobody knows which other epics touch these
+areas). They belong here rather than in a fourth section because
 they are the same thing the section is for — a question that has no answer in
 this report, and the reason. Write "none" when there is nothing: an omitted
 section reads as "everything was found", which is a claim rather than a
@@ -144,6 +144,7 @@ has a shape that outlives a repository; a line number does not.
 Your tools are read-only where the harness can make them so: no Edit, no
 Write. **You write nothing in the repository** — not a research document, not
 a note, not a scratch file. The shell is for `grep`, `git log`, `git show` and
-the plugin's board commands — a window, not a hand. Everything you found goes
-in the report, where the planner puts what matters into `tickets.md` and the
-rest is deliberately thrown away.
+`flow board` — a window, not a hand. You never create, edit, label or comment
+on a GitHub issue. Everything you found goes in the report, where the planner
+puts what matters into the epic and ticket bodies and the rest is
+deliberately thrown away.

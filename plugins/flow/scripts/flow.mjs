@@ -27,13 +27,14 @@ const USAGE = `usage: flow <command>
   next <epic>                            what can start now, as JSON (exit 1 when the epic is stuck)
   ticket <n>                             one ticket, parsed, as JSON
   check <n> [--cwd <dir>]                run a ticket's CHECK criteria (exit 1 unless all pass)
+  check --file <md> [--epic-file <md>]   the same, for a draft ticket body not yet on GitHub
   post <n> --file <md> | --text "<md>"   add a comment
   label <n> +<label> -<label> ...        add and remove labels
   create-epic --file <md> --title "<t>"
   create-ticket <epic> --file <md> --title "<t>" [--tier easy|hard] [--blocked-by <n>,<n>]
   needs-human <n> --text "<why>"         stop a ticket and ask a person`
 
-const VALUE_FLAGS = new Set(['--file', '--text', '--title', '--tier', '--cwd', '--blocked-by'])
+const VALUE_FLAGS = new Set(['--file', '--epic-file', '--text', '--title', '--tier', '--cwd', '--blocked-by'])
 const BOOLEAN_FLAGS = new Set(['--json'])
 
 class UsageError extends Error {}
@@ -238,10 +239,18 @@ function commandTicket(positional) {
   })
 }
 
+function draftCriteria(flags) {
+  const designSources = flags['epic-file'] === undefined ? null : parseEpicBody(readFileSync(flags['epic-file'], 'utf8')).settings.designSources
+  return parseTicketBody(readFileSync(flags.file, 'utf8'), designSources).criteria
+}
+
 function commandCheck(positional, flags) {
-  const number = issueNumber(positional[0], 'a ticket number')
-  const { parsed } = loadTicket(number)
-  const ledger = buildLedger({ ticket: number, ...parsed.criteria }, { cwd: flags.cwd || gitTopLevel() })
+  const fromDraft = flags.file !== undefined
+  if (fromDraft && positional.length) throw new UsageError('give a ticket number or --file, not both')
+  if (!fromDraft && flags['epic-file'] !== undefined) throw new UsageError('--epic-file goes with --file')
+  const ticket = fromDraft ? flags.file : issueNumber(positional[0], 'a ticket number')
+  const criteria = fromDraft ? draftCriteria(flags) : loadTicket(ticket).parsed.criteria
+  const ledger = buildLedger({ ticket, ...criteria }, { cwd: flags.cwd || gitTopLevel() })
   process.stderr.write(`${formatLedger(ledger)}\n`)
   printJson(ledger)
   return ledger.allPassed ? 0 : 1
