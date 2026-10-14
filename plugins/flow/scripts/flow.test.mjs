@@ -517,6 +517,33 @@ test('create-ticket creates the ticket, links it as a sub-issue and adds it to t
   assert.match(JSON.parse(writes[2].stdin).body, /- \[ \] #2 — ticket 2\n- \[ \] #71 — The download button/)
 })
 
+test('create-ticket --no-epic creates a lone ticket with no Epic line and links it to nothing', () => {
+  const file = join(directory, 'lone.md')
+  writeFileSync(file, '## Scope\n\n- the typo\n\n## Acceptance criteria\n\n```criteria\n- fixed\n  CHECK: true\n```\n')
+  world({ extra: { [`POST ${R}/issues`]: issue(80) } })
+  const result = flow('create-ticket', '--no-epic', '--file', file, '--title', 'Fix the typo', '--tier', 'easy')
+  assert.equal(result.status, 0, result.stderr)
+  assert.equal(result.stdout.trim(), '80')
+  assert.deepEqual(fake.calls().map((call) => call.key), [`POST ${R}/issues`])
+  const created = JSON.parse(fake.calls()[0].stdin)
+  assert.deepEqual(created.labels, ['flow:ticket', 'flow:planned', 'tier:easy'])
+  assert.match(created.body, /^## Scope/)
+})
+
+test('create-ticket --no-epic refuses blockers, an Epic line and a missing criteria block, creating nothing', () => {
+  world({})
+  const file = join(directory, 'lone-bad.md')
+  writeFileSync(file, '## Scope\n\n- x\n\n## Acceptance criteria\n\n```criteria\n- x\n  CHECK: true\n```\n')
+  assert.match(flow('create-ticket', '--no-epic', '--file', file, '--title', 'x', '--blocked-by', '3').stderr, /cannot be blocked by other tickets/)
+  writeFileSync(file, 'Epic: #4\n\n## Scope\n\n- x\n\n## Acceptance criteria\n\n```criteria\n- x\n  CHECK: true\n```\n')
+  assert.match(flow('create-ticket', '--no-epic', '--file', file, '--title', 'x').stderr, /says "Epic: #4"; create it with `flow create-ticket 4`/)
+  writeFileSync(file, '## Scope\n\n- x\n')
+  const missing = flow('create-ticket', '--no-epic', '--file', file, '--title', 'x')
+  assert.equal(missing.status, 1)
+  assert.match(missing.stderr, /no ```criteria block/)
+  assert.ok(!fake.calls().some((call) => call.key === `POST ${R}/issues`))
+})
+
 test('create-ticket defaults to the hard tier', () => {
   const file = join(directory, 'ticket-hard.md')
   writeFileSync(file, '## Scope\n\n- x\n\n## Acceptance criteria\n\n```criteria\n- x\n  CHECK: false\n```\n')

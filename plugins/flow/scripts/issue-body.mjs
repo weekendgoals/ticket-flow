@@ -271,3 +271,15 @@ export function withTicketListed(epicBody, number, title) {
   else lines.splice(headingIndex + 1, 0, '', entry)
   return lines.join('\n')
 }
+
+export function withTicketChecked(epicBody, number) {
+  const normalized = normalizeNewlines(epicBody)
+  const scanned = scanLines(normalized)
+  const lines = normalized.split('\n')
+  scanned.forEach((entry, index) => {
+    if (entry.fence !== null) return
+    const match = entry.line.match(TASK_LINE)
+    if (match && match[2] === String(number) && match[1] === ' ') lines[index] = entry.line.replace('[ ]', '[x]')
+  })
+  return lines.join('\n')
+}

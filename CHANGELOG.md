@@ -12,8 +12,9 @@ An epic is an issue labelled `flow:epic` whose body is the plan; each ticket is
 a sub-issue with its scope, what is out of scope and its acceptance criteria;
 state is labels; progress is one comment per step. Major: every heading
 format, the ticket ID shape (`#12` instead of `PAY-3`) and every command
-contract change. This is stage 1 of the rewrite: planning and the `flow`
-command are done; building, review, the unattended run and the retro follow.
+contract change. Stages 1 and 2 of the rewrite are done: planning, the `flow`
+command, and building one ticket from ready to merged. The unattended run of
+a whole epic and the retro follow.
 
 - **New: `scripts/flow.mjs`**, one command-line tool both the local run and a
   GitHub Action will call: `init` (creates the ten labels), `doctor`,
@@ -66,12 +67,67 @@ command are done; building, review, the unattended run and the retro follow.
   guard hook, and the `board`, `tickets`, `spend` and `doctor` skills
   (`flow board` and `flow doctor` replace the last two). The repository's
   own 2.x `epics/` records stay on the default branch's history.
-- **Not yet rewritten, and not working with a 3.0 epic:** `/flow:ticket`,
-  `/flow:review`, `/flow:run`, `/flow:retro`, `/flow:quick`, the
-  `ticket-reviewer` agent, `workflows/run-epic.mjs`, `meter.mjs` and
-  `worktree-setup.mjs`.
+- **Not yet rewritten, and not working with a 3.0 epic:** `/flow:run`,
+  `/flow:retro`, `workflows/run-epic.mjs` and `worktree-setup.mjs`.
 - **`METHODOLOGY.md`** is now a short list of the lessons that still decide
   the design.
+
+### Stage 2: one ticket, start to merged
+
+- **New `flow` commands that carry a ticket through its steps, each refusing
+  at the door rather than trusting the caller.** `start <n>` refuses a
+  ticket that is not ready or a working tree with uncommitted changes, cuts
+  `ticket/<n>` from the epic branch on origin (release) or the default
+  branch (incremental, or no epic), labels it `flow:in-progress` and posts
+  who builds it, attended or unattended (`FLOW_UNATTENDED=1`), on which
+  model. `accept <n>` runs the criteria on the branch's committed head,
+  refuses when the issue body was edited after the start comment (naming who
+  edited it), and posts the results with the commit they judged. `deliver
+  <n>` takes only that accepted commit: under release delivery it merges it
+  into the epic branch with `--no-ff` from a temporary worktree, retries
+  twice when the branch moved, asks a person on a conflict or a third lost
+  race, labels the ticket `flow:done` and ticks it off the epic; under
+  incremental delivery it pushes the commit and opens a pull request that
+  closes the ticket. Unattended, a refusal from `start` or `deliver` asks a
+  person on the issue itself.
+- **`flow screenshots <n>`** runs the `screenshots` command from
+  `.flow.json`, commits the PNGs on the ticket branch and posts them on the
+  issue, linked by commit so the links survive the branch.
+- **The pull-request loop:** `pr-review-request` (asks Copilot, as
+  `copilot-pull-request-reviewer[bot]`; prints `coderabbit` where
+  `.coderabbit.yaml` exists and `none` where Copilot is not available),
+  `pr-wait` (the bot's review of the current head, or `timeout`),
+  `pr-threads` (unresolved review threads, every page), `pr-resolve` (reply,
+  then resolve; a reply is required) and `pr-checks` (`gh pr checks` as
+  JSON, `--wait` to poll; exit 1 failing, 3 still running).
+- **`flow meter <n> --transcripts [role=]<path> ...`** replaces the 2.x run
+  meter. It reads Claude Code transcripts (a file, a directory, or a headless
+  run's `stream-json` output, split into worker, reviewer and fixes by which
+  agent launched what) and posts input, output, cache writes, cache reads,
+  largest context, compactions and time, per step and per model, with the
+  same figures as JSON. A figure no transcript records is `unknown`, never
+  estimated; a message written as several lines is counted once; text a
+  tool printed is never read as a model or a compaction.
+- **`flow create-ticket --no-epic`** creates a ticket that belongs to no
+  epic, for `/flow:quick`; such a ticket counts as approved.
+- **`/flow:ticket #<n>` rewritten** for GitHub Issues: start, read, build on
+  the ticket's model (Sonnet for `tier:easy`, Opus otherwise), check,
+  screenshots, a fresh-context review that never sees the builder's
+  reasoning, at most two review rounds, accept, cost, deliver, and the pull
+  request loop; one comment per step. It stops for a person in three cases
+  only: acceptance still failing after two rounds of fixes, a contradiction
+  between the ticket and the code, a conflict it cannot resolve.
+- **`ticket-reviewer`** runs on the strongest model and adds four things to
+  look for: code comments, UI logic without a component test or an
+  end-to-end test added for a feature rather than a journey, translations
+  outside the Translations ticket, and a design comparison with no posted
+  table. **`/flow:review`** runs the same rules by hand and only reports.
+- **`/flow:quick`** writes one ticket with no epic and runs `/flow:ticket`
+  on it; sign-in, payments, data migrations, deletion and shared
+  infrastructure still go through `/flow:epic`.
+- **Removed:** the 2.x supervisor and interactive modes, the status log
+  entries and addenda, the revert check written into a log, and the run
+  meter's run-record lines.
 
 ## 2.6.0 — 2026-09-22
 

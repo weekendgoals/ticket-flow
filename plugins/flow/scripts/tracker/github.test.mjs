@@ -210,3 +210,17 @@ test('a missing gh is a TrackerError that says so', () => {
     process.env.PATH = saved
   }
 })
+
+test('pull requests and their reviews come back in the tracker shape', () => {
+  fake.setFixtures({
+    [`GET ${R}/pulls/40`]: { number: 40, html_url: 'https://github.com/o/r/pull/40', state: 'open', head: { ref: 'ticket/2', sha: 'abc' }, base: { ref: 'main' } },
+    [`GET ${R}/pulls/40/reviews?per_page=100`]: [{ id: 3, user: { login: 'copilot-pull-request-reviewer[bot]' }, state: 'COMMENTED', commit_id: 'abc', submitted_at: '2026-10-14T12:00:00Z' }],
+  })
+  assert.deepEqual(github.getPullRequest(40), { number: 40, url: 'https://github.com/o/r/pull/40', state: 'open', head: 'ticket/2', headSha: 'abc', base: 'main' })
+  assert.deepEqual(github.listPullRequestReviews(40), [{ id: 3, author: 'copilot-pull-request-reviewer[bot]', state: 'COMMENTED', commit: 'abc', submittedAt: '2026-10-14T12:00:00Z' }])
+})
+
+test('findOpenPullRequest asks for the head branch qualified by the repository owner', () => {
+  fake.setFixtures({ [`GET ${R}`]: { full_name: 'o/r', default_branch: 'main', has_issues: true }, [`GET ${R}/pulls?head=o%3Aticket%2F2&state=open&per_page=100`]: [] })
+  assert.equal(github.findOpenPullRequest('ticket/2'), null)
+})

@@ -13,7 +13,7 @@ export class TrackerError extends Error {
   }
 }
 
-function runGh(args, { input = null } = {}) {
+function runGh(args, { input = null, acceptedExitCodes = [] } = {}) {
   const result = spawnSync('gh', args, {
     encoding: 'utf8',
     input: input ?? undefined,
@@ -23,7 +23,8 @@ function runGh(args, { input = null } = {}) {
   if (result.error && result.error.code === 'ENOENT')
     throw new TrackerError('the GitHub CLI `gh` is not installed or not on PATH', { missing: true })
   if (result.error) throw new TrackerError(`gh could not run: ${result.error.message}`)
-  if (result.status !== 0) {
+  const accepted = acceptedExitCodes.includes(result.status) && (result.stdout || '').trim() !== ''
+  if (result.status !== 0 && !accepted) {
     const stderr = (result.stderr || '').trim()
     const status = stderr.match(/\(HTTP (\d{3})\)/)
     throw new TrackerError(`gh ${args.slice(0, 3).join(' ')} failed: ${stderr || `exit ${result.status}`}`, {
@@ -198,4 +199,121 @@ export function bodyEditHistory(number) {
     })
     .map((node) => ({ editedAt: node.editedAt, editor: node.editor ? node.editor.login : null }))
     .sort((a, b) => a.editedAt.localeCompare(b.editedAt))
+}
+
+function graphql(query, variables, { inRepository = true } = {}) {
+  const args = ['api', 'graphql', '-f', `query=${query}`, ...(inRepository ? ['-F', 'owner={owner}', '-F', 'name={repo}'] : [])]
+  for (const [name, value] of Object.entries(variables)) {
+    if (value === null || value === undefined) continue
+    args.push(typeof value === 'number' ? '-F' : '-f', `${name}=${value}`)
+  }
+  const response = parseJson(runGh(args), 'graphql')
+  if (response.errors && response.errors.length) throw new TrackerError(`GitHub GraphQL refused the request: ${response.errors.map((error) => error.message).join('; ')}`)
+  return response.data
+}
+
+function normalizePullRequest(raw) {
+  return {
+    number: raw.number,
+    url: raw.html_url || null,
+    state: raw.state,
+    head: raw.head ? raw.head.ref : null,
+    headSha: raw.head ? raw.head.sha : null,
+    base: raw.base ? raw.base.ref : null,
+  }
+}
+
+export function getPullRequest(number) {
+  return normalizePullRequest(apiGet(`${REPO}/pulls/${number}`))
+}
+
+export function findOpenPullRequest(head) {
+  const owner = repoSlug().split('/')[0]
+  const found = apiList(`${REPO}/pulls?head=${encodeURIComponent(`${owner}:${head}`)}&state=open&per_page=100`)
+  return found.length ? normalizePullRequest(found[0]) : null
+}
+
+export function createPullRequest({ title, head, base, body }) {
+  return normalizePullRequest(apiWrite('POST', `${REPO}/pulls`, { title, head, base, body }))
+}
+
+export function requestReviewers(number, reviewers) {
+  apiWrite('POST', `${REPO}/pulls/${number}/requested_reviewers`, { reviewers })
+}
+
+export function listPullRequestReviews(number) {
+  return apiList(`${REPO}/pulls/${number}/reviews?per_page=100`).map((raw) => ({
+    id: raw.id,
+    author: raw.user ? raw.user.login : null,
+    state: raw.state,
+    commit: raw.commit_id || null,
+    submittedAt: raw.submitted_at || null,
+  }))
+}
+
+const REVIEW_THREADS_QUERY =
+  'query($owner:String!,$name:String!,$pr:Int!,$cursor:String){repository(owner:$owner,name:$name){pullRequest(number:$pr){reviewThreads(first:100,after:$cursor){pageInfo{hasNextPage endCursor}nodes{id isResolved isOutdated path line comments(first:50){nodes{body url author{login}}}}}}}}'
+
+export function listReviewThreads(number) {
+  const threads = []
+  let cursor = null
+  for (;;) {
+    const data = graphql(REVIEW_THREADS_QUERY, { pr: number, cursor })
+    const pullRequest = data && data.repository && data.repository.pullRequest
+    if (!pullRequest) throw new TrackerError(`pull request #${number} was not found`)
+    const page = pullRequest.reviewThreads
+    for (const node of page.nodes) {
+      const comments = node.comments.nodes.map((comment) => ({ author: comment.author ? comment.author.login : null, body: comment.body, url: comment.url }))
+      threads.push({
+        id: node.id,
+        resolved: node.isResolved,
+        outdated: node.isOutdated,
+        path: node.path,
+        line: node.line,
+        author: comments.length ? comments[0].author : null,
+        body: comments.length ? comments[0].body : '',
+        comments,
+      })
+    }
+    if (!page.pageInfo.hasNextPage) return threads
+    if (!page.pageInfo.endCursor || page.pageInfo.endCursor === cursor) throw new TrackerError(`GitHub returned a review thread page with no way to the next one for pull request #${number}`)
+    cursor = page.pageInfo.endCursor
+  }
+}
+
+const REPLY_TO_THREAD_MUTATION =
+  'mutation($thread:ID!,$body:String!){addPullRequestReviewThreadReply(input:{pullRequestReviewThreadId:$thread,body:$body}){comment{url}}}'
+const RESOLVE_THREAD_MUTATION = 'mutation($thread:ID!){resolveReviewThread(input:{threadId:$thread}){thread{id isResolved}}}'
+
+export function replyToReviewThread(threadId, body) {
+  const data = graphql(REPLY_TO_THREAD_MUTATION, { thread: threadId, body }, { inRepository: false })
+  return { url: data.addPullRequestReviewThreadReply.comment.url }
+}
+
+export function resolveReviewThread(threadId) {
+  const data = graphql(RESOLVE_THREAD_MUTATION, { thread: threadId }, { inRepository: false })
+  return { resolved: data.resolveReviewThread.thread.isResolved }
+}
+
+const CHECK_FIELDS = 'bucket,link,name,state,workflow'
+const PR_CHECKS_FAILING_EXIT = 1
+const PR_CHECKS_PENDING_EXIT = 8
+const NO_CHECKS_REPORTED = /no checks reported/i
+
+export function pullRequestChecks(number) {
+  let output
+  try {
+    output = runGh(['pr', 'checks', String(number), '--json', CHECK_FIELDS], { acceptedExitCodes: [PR_CHECKS_FAILING_EXIT, PR_CHECKS_PENDING_EXIT] })
+  } catch (error) {
+    if (NO_CHECKS_REPORTED.test(error.stderr || '')) return []
+    throw error
+  }
+  if (!output.trim()) return []
+  return parseJson(output, `pr checks ${number}`).map((check) => ({
+    name: check.name,
+    workflow: check.workflow || '',
+    state: check.state,
+    bucket: check.bucket,
+    link: check.link || null,
+  }))
 }

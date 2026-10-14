@@ -57,6 +57,16 @@ export function installFakeGh(directory, { fixtures = {}, logFile = join(directo
   }
 }
 
+function sequenceStep(response, key) {
+  const isSequence = response !== null && typeof response === 'object' && !Array.isArray(response) && Array.isArray(response.$sequence)
+  if (!isSequence) return response
+  const earlier = readFileSync(process.env.FAKE_GH_LOG, 'utf8')
+    .split('\n')
+    .filter(Boolean)
+    .filter((line) => JSON.parse(line).key === key).length
+  return response.$sequence[Math.min(earlier - 1, response.$sequence.length - 1)]
+}
+
 function serve(args) {
   const usesStdin = args.includes('--input') && args[args.indexOf('--input') + 1] === '-'
   const stdin = usesStdin ? readFileSync(0, 'utf8') : null
@@ -67,7 +77,7 @@ function serve(args) {
     process.stderr.write(`fake gh: no fixture for "${key}"\n`)
     process.exit(1)
   }
-  const response = fixtures[key]
+  const response = sequenceStep(fixtures[key], key)
   const isScripted = response !== null && typeof response === 'object' && !Array.isArray(response) && '$exit' in response
   const exitCode = isScripted ? response.$exit : 0
   const payload = isScripted ? response.$stdout : response

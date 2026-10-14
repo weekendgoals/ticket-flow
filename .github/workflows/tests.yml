@@ -22,6 +22,9 @@ jobs:
           node --check plugins/flow/scripts/issue-body.mjs
           node --check plugins/flow/scripts/checks.mjs
           node --check plugins/flow/scripts/epic-state.mjs
+          node --check plugins/flow/scripts/delivery.mjs
+          node --check plugins/flow/scripts/ticket-steps.mjs
+          node --check plugins/flow/scripts/review-bots.mjs
           node --check plugins/flow/scripts/tracker/github.mjs
           node --check plugins/flow/scripts/tracker/fake-gh.mjs
           node --check plugins/flow/scripts/fidelity.mjs
@@ -36,6 +39,8 @@ jobs:
           node --test plugins/flow/scripts/issue-body.test.mjs
           node --test plugins/flow/scripts/checks.test.mjs
           node --test plugins/flow/scripts/tracker/github.test.mjs
+          node --test plugins/flow/scripts/lifecycle.test.mjs
+          node --test plugins/flow/scripts/pull-request.test.mjs
           node --test plugins/flow/scripts/fidelity.test.mjs
           node --test plugins/flow/scripts/meter.test.mjs
           node --test plugins/flow/scripts/worktree-setup.test.mjs
