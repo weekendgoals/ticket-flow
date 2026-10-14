@@ -34,6 +34,11 @@ import {
   editedRefusal,
   resetComment,
   countResets,
+  countStartWithdrawals,
+  startWithdrawnComment,
+  releasePrComment,
+  localRunLive,
+  LOCAL_RUN_END_MARKER,
   mergedComment,
   lastMerge,
   reviewMarker,
@@ -57,6 +62,7 @@ import {
   ticketTier,
   deriveEpic,
   nextSteps,
+  epicBranchProblem,
 } from './epic-state.mjs'
 
 const USAGE = `usage: flow <command>
@@ -156,6 +162,14 @@ function formatTable(headers, rows) {
   const widths = headers.map((header, column) => Math.max(header.length, ...rows.map((row) => String(row[column]).length)))
   const render = (cells) => cells.map((cell, column) => String(cell).padEnd(widths[column])).join('  ').trimEnd()
   return [render(headers), render(widths.map((width) => '-'.repeat(width))), ...rows.map(render)].join('\n')
+}
+
+function epicBranchRefusal(epic) {
+  const problem = epicBranchProblem(epic)
+  if (problem) return problem
+  if (epic.settings.branch && epic.settings.branch === github.defaultBranch())
+    return `epic #${epic.number}'s "Branch: ${epic.settings.branch}" is the default branch, and nothing in Flow merges or pushes into the default branch`
+  return null
 }
 
 function loadEpic(number) {
@@ -575,8 +589,7 @@ function commandStart(positional, flags) {
   if (notAnEpic) return refuse(number, state, `#${number} says "Epic: #${parsed.epic}", but #${parsed.epic} is not an epic`)
   const delivery = deliveryFor(epic)
   let reason = startRefusal({ ticket: number, state, parsed, epic })
-  if (!reason && delivery === 'release' && !epic.settings.branch)
-    reason = `epic #${epic.number} has no "Branch:" setting, so there is no epic branch to build on`
+  if (!reason && delivery === 'release') reason = epicBranchRefusal(epic)
   if (reason) return refuse(number, state, reason)
   const changes = trackedChanges(root)
   if (changes.length) {
@@ -680,14 +693,12 @@ function mergeAcceptedTicket({ number, root, expectedSha = null }) {
     const reason = `the accepted commit ${sha} is not in this clone; fetch the ticket branch, then merge again`
     return { code: refuse(number, state, reason), reason }
   }
+  const branchRefusal = epicBranchRefusal(epic)
+  if (branchRefusal) return { code: refuse(number, state, branchRefusal), reason: branchRefusal }
+  const epicBranch = epic.settings.branch
   const pushed = pushTicketBranch(root, { sha, branch })
   if (!pushed.ok) {
     const reason = `#${number} was not merged: ${pushed.reason}`
-    return { code: refuse(number, state, reason), reason }
-  }
-  const epicBranch = epic.settings.branch
-  if (!epicBranch) {
-    const reason = `epic #${epic.number} has no "Branch:" setting, so there is no epic branch to merge into`
     return { code: refuse(number, state, reason), reason }
   }
   const result = mergeIntoEpic(root, { sha, epicBranch, subject: `Merge #${number}: ${issue.title}` })
@@ -790,20 +801,32 @@ function commandReset(positional, flags) {
   const number = issueNumber(positional[0], 'a ticket number')
   const issue = github.getIssue(number)
   const { state } = ticketState(issue.labels)
-  if (!ACCEPTABLE_STATES.has(state)) {
-    process.stderr.write(`#${number} is ${state}; only a ticket left in progress or in review can be reset\n`)
-    return 1
-  }
-  const branch = ticketBranchName(number)
   const comments = github.listComments(number)
   const account = github.viewerLogin()
-  const started = lastStart(comments, account)
-  const acceptance = lastAcceptance(comments, account)
-  if (acceptance && acceptance.passed && (!started || Date.parse(acceptance.at) >= Date.parse(started.createdAt))) {
-    process.stderr.write(`#${number} passed acceptance at ${acceptance.sha.slice(0, 12)} and is waiting to be merged, not abandoned; run \`flow merge ${number}\`\n`)
+  const refused = (reason, accepted = null) => {
+    process.stderr.write(`${reason}\n`)
+    printJson({ ticket: number, action: 'refused', reason, accepted })
     return 1
   }
-  const earlier = countResets(comments)
+  if (state === 'planned' && issue.labels.includes(START_LABEL)) {
+    const withdrawn = countStartWithdrawals(comments, account)
+    if (flags.once && withdrawn > 0) {
+      markNeedsHuman(number, `A job asked to build this ticket stopped before the ticket started, and that already happened once before. A person looks at the job's log; the ticket itself was never started.`)
+      printJson({ ticket: number, action: 'needs-human', withdrawn })
+      return 0
+    }
+    github.removeLabels(number, [START_LABEL])
+    github.comment(number, startWithdrawnComment())
+    printJson({ ticket: number, action: 'unstarted', withdrawn: withdrawn + 1 })
+    return 0
+  }
+  if (!ACCEPTABLE_STATES.has(state)) return refused(`#${number} is ${state}; only a ticket left in progress or in review can be reset`)
+  const branch = ticketBranchName(number)
+  const started = lastStart(comments, account)
+  const acceptance = lastAcceptance(comments, account)
+  if (acceptance && acceptance.passed && (!started || Date.parse(acceptance.at) >= Date.parse(started.createdAt)))
+    return refused(`#${number} passed acceptance at ${acceptance.sha.slice(0, 12)} and is waiting to be merged, not abandoned; run \`flow merge ${number}\``, acceptance.sha)
+  const earlier = countResets(comments, account)
   if (flags.once && earlier > 0) {
     markNeedsHuman(number, `The run working on this ticket stopped without a result, and it already had once before (it was reset ${earlier} time(s)). \`${branch}\` keeps its commits; a person decides how to go on.`)
     printJson({ ticket: number, action: 'needs-human', resets: earlier })
@@ -826,11 +849,12 @@ function commandCheckEpic(positional, flags) {
   const epicNumber = issueNumber(positional[0], 'an epic number')
   const root = requireRepository(flags)
   const epic = loadEpic(epicNumber)
-  const epicBranch = epic.settings.branch
-  if (!epicBranch) {
-    process.stderr.write(`epic #${epicNumber} has no "Branch:" setting, so there is no epic branch to check\n`)
+  const branchRefusal = epicBranchRefusal(epic) || (epic.settings.branch ? null : `epic #${epicNumber} has no "Branch:" setting, so there is no epic branch to check`)
+  if (branchRefusal) {
+    process.stderr.write(`${branchRefusal}\n`)
     return 1
   }
+  const epicBranch = epic.settings.branch
   const listed = flags.tickets === undefined ? null : parseBlockerList(flags.tickets)
   const outside = (listed || []).filter((number) => !epic.tickets.some((ticket) => ticket.number === number))
   if (outside.length) throw new UsageError(`${outside.map((number) => `#${number}`).join(', ')} is not a ticket of epic #${epicNumber}`)
@@ -900,6 +924,11 @@ function commandWorktree(positional, flags) {
   }
   const { parsed } = loadTicket(number)
   const { epic } = loadOptionalEpic(parsed.epic)
+  const branchRefusal = deliveryFor(epic) === 'release' ? epicBranchRefusal(epic) : null
+  if (branchRefusal) {
+    process.stderr.write(`${branchRefusal}\n`)
+    return 1
+  }
   const base = deliveryFor(epic) === 'release' ? epic.settings.branch : github.defaultBranch()
   if (!base) {
     process.stderr.write(`#${number} has no branch to start from (no epic branch, or the default branch is unknown)\n`)
@@ -961,12 +990,13 @@ function commandReleasePr(positional) {
   const epicIssue = github.getIssue(epicNumber)
   if (!epicIssue.labels.includes(EPIC_LABEL)) throw new UsageError(`#${epicNumber} is not an epic (it has no ${EPIC_LABEL} label)`)
   const epic = deriveEpic(epicIssue, github.listSubIssues(epicNumber))
+  const branchRefusal = deliveryFor(epic) === 'release' ? epicBranchRefusal(epic) : null
   const refusal = !epic.approved
     ? `epic #${epicNumber} is not approved`
     : deliveryFor(epic) !== 'release'
       ? `epic #${epicNumber} is not a release epic; each of its tickets has its own pull request`
-      : !epic.settings.branch
-        ? `epic #${epicNumber} has no "Branch:" setting`
+      : branchRefusal
+        ? branchRefusal
         : !epic.tickets.length
           ? `epic #${epicNumber} has no tickets`
           : epic.tickets.some((ticket) => ticket.state !== 'done')
@@ -988,7 +1018,7 @@ function commandReleasePr(positional) {
     existing || github.createPullRequest({ title: epic.title, head: epic.settings.branch, base, body: releaseBody({ epic, plan: parseEpicBody(epicIssue.body), tickets }) })
   github.comment(
     epicNumber,
-    `<!-- flow:release-pr number=${pullRequest.number} -->\n**Release pull request ${existing ? 'already open' : 'opened'}:** ${pullRequest.url} (\`${epic.settings.branch}\` into \`${base}\`). A person reviews and merges it.`,
+    releasePrComment({ number: pullRequest.number, url: pullRequest.url, existing: Boolean(existing), epicBranch: epic.settings.branch, base }),
   )
   printJson({ epic: epicNumber, pullRequest: pullRequest.number, url: pullRequest.url, base, existing: Boolean(existing) })
   return 0
@@ -1020,6 +1050,17 @@ function commandDispatch(positional) {
   const { result, stuckReason } = nextSteps(epic)
   if (!epic.approved) {
     process.stderr.write(`${stuckReason}\n`)
+    return 1
+  }
+  const branchRefusal = deliveryFor(epic) === 'release' ? epicBranchRefusal(epic) : null
+  if (branchRefusal) {
+    process.stderr.write(`${branchRefusal}\n`)
+    return 1
+  }
+  if (localRunLive(github.listComments(epic.number), github.viewerLogin())) {
+    process.stderr.write(
+      `epic #${epic.number} is being built by a /flow:run on someone's machine (its last run comment is not an end), and two hosts would build the same tickets; if that run is gone, post a comment that starts with ${LOCAL_RUN_END_MARKER} on the epic from this account\n`,
+    )
     return 1
   }
   const flagged = epic.tickets.filter((ticket) => ticket.state === 'planned' && ticket.labels.includes(START_LABEL)).map((ticket) => ticket.number)

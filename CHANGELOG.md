@@ -239,6 +239,28 @@ with nobody watching, locally or as a GitHub Action. The retro follows.
   its first to last message. It also reads the JSON array the GitHub Action
   writes, and one ticket's agents out of a workflow run
   (`flow meter <n> --workflow <run dir>`).
+- **Follow-ups from the stage 3 review.** `Branch:` must name a branch under
+  `epic/`: anything else (`main`, `feature/x`) is a problem `create-epic`,
+  `next` and `board` report, and every command that pushes or judges the
+  epic branch (`start`, `merge`, `deliver`, `check-epic`, `worktree`,
+  `release-pr`, `dispatch`) refuses it, as it refuses the default branch; a
+  merge into anything outside `epic/` is refused at the git step too. The
+  local run never passes a commit an agent reported: `flow merge <n>` takes
+  the one the acceptance comment names, a builder that died after
+  acceptance gets its ticket merged rather than reset, and a reset that
+  refuses for any other reason hands the ticket to a person instead of
+  looping. `reset` answers refusals in JSON and, on a planned ticket whose
+  `flow:start` request never started, takes the label off (a second time,
+  asks a person). One at a time, each ticket is checked at the epic head
+  after it merges itself. The run stops after three rounds that changed
+  nothing rather than after forty rounds in all, and a ticket it started
+  twice with no reset between goes to a person. Its comments mark the epic
+  as being built locally, and `dispatch` refuses while they do; `next`
+  shows each ticket's start request and the run skill refuses an epic being
+  built on GitHub. The Action finds the epic from the ticket body when the
+  ticket job died before reading it, and opens the release pull request only
+  after a passing check, written with `&&`. `worktree-setup.mjs` keeps only
+  `--validate` on the command line.
 - **`/flow:epic`** now names all three ways to build a signed-off epic, and
   warns that a project with the Action is already building it on GitHub.
 - **`flow next`** adds `delivery`, `parallel`, `branch` and each ticket's

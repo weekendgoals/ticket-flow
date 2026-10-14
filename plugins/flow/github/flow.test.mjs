@@ -126,7 +126,7 @@ test('the scheduler never runs Claude, labels with FLOW_TOKEN so the label start
   assert.match(text, /^# Events made with the default GITHUB_TOKEN start no other workflow, so the scheduler labels tickets with FLOW_TOKEN/m)
   const run = step('epic', (entry) => entry.run && /dispatch/.test(entry.run)).run
   assert.match(run, /\$FLOW dispatch "\$EPIC"/)
-  assert.match(run, /\$FLOW check-epic "\$EPIC" --mark\n.*\$FLOW release-pr "\$EPIC"/)
+  assert.match(run, /\$FLOW check-epic "\$EPIC" --mark && pr="\$\(\$FLOW release-pr "\$EPIC"/, 'the release pull request opens only after the check passed, whatever shell options a copy runs with')
   assert.match(run, /\$FLOW pr-review-request "\$pr"/)
 })
 
@@ -142,4 +142,15 @@ test('the pull request job answers reviews and failed checks on ticket and epic 
 
 test('nothing in the template merges into the default branch', () => {
   assert.doesNotMatch(text, /gh pr merge|git push[^\n]*\b(main|master)\b|--base main/)
+})
+
+test('when a ticket job dies before it reads the ticket, the scheduler still runs, finding the epic in the ticket body, and the job withdraws the start request', () => {
+  assert.match(workflow.jobs.epic.if, /github\.event\.label\.name == 'flow:start'/)
+  const find = step('epic', (entry) => entry.id === 'epic')
+  assert.match(find.run, /epic="\$EPIC_FROM_JOBS"/)
+  assert.match(find.run, /jq -r '\.issue\.body \/\/ ""' "\$GITHUB_EVENT_PATH" \| sed -n 's\/\^Epic: #/)
+  const scheduler = step('epic', (entry) => entry.run && /dispatch/.test(entry.run))
+  assert.equal(scheduler.if, "steps.epic.outputs.number != ''")
+  assert.equal(scheduler.env.EPIC, '${{ steps.epic.outputs.number }}')
+  assert.match(text, /# execution_file is the output anthropics\/claude-code-action@v1 documents/)
 })

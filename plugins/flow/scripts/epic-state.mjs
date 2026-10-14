@@ -1,4 +1,4 @@
-import { parseEpicBody, parseTicketBody } from './issue-body.mjs'
+import { parseEpicBody, parseTicketBody, rejectedBranchProblem } from './issue-body.mjs'
 
 export const EPIC_LABEL = 'flow:epic'
 export const TICKET_LABEL = 'flow:ticket'
@@ -30,6 +30,12 @@ export const LABELS = [
   { name: TIER_LABELS.easy, color: 'ededed', description: 'Straightforward ticket, built by the faster model' },
   { name: TIER_LABELS.hard, color: '555555', description: 'Demanding ticket, built by the strongest model' },
 ]
+
+export function epicBranchProblem(epic) {
+  if ((epic.settings.delivery || 'release') !== 'release' || epic.settings.branch) return null
+  if (epic.settings.rejectedBranch) return `epic #${epic.number}: ${rejectedBranchProblem(epic.settings.rejectedBranch)}`
+  return `epic #${epic.number} has no "Branch:" setting, so its tickets have no epic branch to start from or merge into`
+}
 
 export function ticketState(labels) {
   const states = labels.filter((label) => STATE_LABELS.includes(label)).map((label) => STATE_BY_LABEL[label])
@@ -127,11 +133,8 @@ export function deriveEpic(epicIssue, subIssues) {
     problems.push(`epic #${epicIssue.number} has a blocking cycle: ${cycle.map((number) => `#${number}`).join(' → ')}; none of these can ever start`)
 
   const approved = epicIssue.labels.includes(APPROVED_LABEL)
-  const blockingProblem =
-    plan.settings.delivery === 'release' && !plan.settings.branch
-      ? `epic #${epicIssue.number} has no "Branch:" setting, so its tickets have no epic branch to start from or merge into`
-      : null
-  if (blockingProblem) problems.push(blockingProblem)
+  const blockingProblem = epicBranchProblem({ number: epicIssue.number, settings: plan.settings })
+  if (blockingProblem && !plan.settings.rejectedBranch) problems.push(blockingProblem)
   for (const ticket of tickets) {
     ticket.unfinishedBlockers = ticket.blockedBy.filter((number) => !byNumber.has(number) || byNumber.get(number).state !== 'done')
     ticket.inCycle = inCycle.has(ticket.number)
@@ -173,7 +176,7 @@ export function nextSteps(epic) {
     delivery: epic.settings.delivery,
     parallel: epic.settings.parallel,
     branch: epic.settings.branch,
-    tickets: epic.tickets.map((ticket) => ({ n: ticket.number, title: ticket.title, tier: ticket.tier, model: MODEL_BY_TIER[ticket.tier], state: ticket.shownState })),
+    tickets: epic.tickets.map((ticket) => ({ n: ticket.number, title: ticket.title, tier: ticket.tier, model: MODEL_BY_TIER[ticket.tier], state: ticket.shownState, startRequested: ticket.labels.includes(START_LABEL) })),
   }
   const unfinished = epic.tickets.filter((ticket) => ticket.state !== 'done').length
   const stuckReason = !epic.approved

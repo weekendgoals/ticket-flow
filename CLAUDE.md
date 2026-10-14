@@ -48,20 +48,19 @@ as of 2026-10-15; the pass count grows, the fail line stays `# fail 0`.
   end to end against the fake `gh`; one case needs `git` on PATH.
 - `node --test plugins/flow/scripts/lifecycle.test.mjs` — `# pass 35`. The
   ticket steps in throwaway repositories with a bare remote; needs `git`, `sh`.
-- `node --test plugins/flow/scripts/epic-run.test.mjs` — `# pass 21`. The
+- `node --test plugins/flow/scripts/epic-run.test.mjs` — `# pass 26`. The
   whole-epic commands, the same way.
-- `pull-request.test.mjs` `# pass 18`, `issue-body.test.mjs` `# pass 24`,
+- `pull-request.test.mjs` `# pass 18`, `issue-body.test.mjs` `# pass 25`,
   `checks.test.mjs` `# pass 26` (real shell commands in a temp dir),
   `tracker/github.test.mjs` `# pass 19`, `fidelity.test.mjs` `# pass 54`,
   each under `plugins/flow/scripts/`.
 - `node --test plugins/flow/scripts/meter.test.mjs` — `# pass 16`. Builds
   its transcripts; no test reads a real one (they belong to whoever ran them).
-- `node --test plugins/flow/scripts/worktree-setup.test.mjs` — `# pass 19`;
+- `node --test plugins/flow/scripts/worktree-setup.test.mjs` — `# pass 18`;
   needs `git`, POSIX `sh` and `sleep`.
-- `node --test plugins/flow/workflows/run-epic.test.mjs` — `# pass 16`.
+- `node --test plugins/flow/workflows/run-epic.test.mjs` — `# pass 20`.
   Evaluates the module body with stubbed `agent`; no git, no network.
-- `node --test plugins/flow/github/flow.test.mjs` — `# pass 8`. Reads the
-  Action template with a small YAML reader written in the test.
+- `node --test plugins/flow/github/flow.test.mjs` — `# pass 9` (the Action).
 - **Syntax:** `node --check` on every `.mjs` under `plugins/flow/scripts/`.
   It does not work on `workflows/run-epic.mjs` (a module body with a
   top-level `return`); parse that one the way the workflow runtime does:
@@ -105,7 +104,7 @@ so a local run and the pull-request gate cannot drift apart.
   silently never running.
 - **A person merges into the default branch, and nothing runs after.** No
   agent merges or pushes toward it; both hosts end at the release pull
-  request. The one sanctioned agent merge is a ticket into its epic branch,
+  request. `Branch:` must start with `epic/`, refused everywhere otherwise. The one sanctioned agent merge is a ticket into its epic branch,
   by the accepted commit, never by a name that could move.
 - **The reviewer never sees the builder's transcript or reasoning**, not even
   a summary: an explanation of why code is right makes a reviewer agree.
@@ -120,7 +119,8 @@ so a local run and the pull-request gate cannot drift apart.
   checks failing at its head after merging. Infrastructure halts are noise.
 - **The run driver re-reads GitHub and trusts no agent's report.** Each
   round starts from `flow next`; an agent's answer only routes the next step,
-  and every gate is a command that reads the issue. A dead builder is reset
+  never names a commit to merge, and every gate is a command that reads the
+  issue. A dead builder is reset
   once, then goes to a person.
 - **A parallel failure falls back to serial and never halts**: the wave
   runs one ticket at a time, with a comment on the epic.

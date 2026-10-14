@@ -432,3 +432,72 @@ test('a ticket handed to a person loses flow:start, so starting it again later i
   assert.equal(result.status, 0, result.stderr)
   assert.deepEqual(removed(2), ['flow:planned', 'flow:start'])
 })
+
+test('an epic whose Branch: is the default branch or not under epic/ is refused at every door that pushes or judges, and origin/main never moves', () => {
+  for (const branch of ['main', 'feature/x']) {
+    const repo = repository()
+    const sha = ticketBranch(repo, 2, { 'button.txt': 'b\n' })
+    const mainBefore = git(repo.remote, 'rev-parse', 'main')
+    world({ epic: { settings: `Delivery: release\nBranch: ${branch}\nParallel: 2` }, tickets: { 2: { labels: ['flow:ticket', 'flow:in-review'] }, 3: { labels: ['flow:ticket', 'flow:done'] } }, comments: { 2: [STARTED, accepted(sha)] } })
+    const refusal = new RegExp(`"Branch: ${branch.replace('/', '\\/')}" is not an epic branch`)
+    for (const args of [['merge', '2'], ['merge', '2', '--sha', sha], ['merge', '--epic', '1'], ['deliver', '2'], ['check-epic', '1'], ['release-pr', '1'], ['dispatch', '1'], ['worktree', '3']]) {
+      const result = flow(repo.work, args)
+      assert.notEqual(result.status, 0, `${branch}: ${args.join(' ')}`)
+      assert.match(`${result.stderr}${result.stdout}`, refusal, `${branch}: ${args.join(' ')}`)
+    }
+    world({ epic: { settings: `Delivery: release\nBranch: ${branch}` } })
+    const start = flow(repo.work, ['start', '3'])
+    assert.equal(start.status, 1)
+    assert.equal(git(repo.remote, 'rev-parse', 'main'), mainBefore)
+    assert.ok(!fake.calls().some((call) => call.key === `POST ${R}/pulls`))
+    const next = JSON.parse(flow(repo.work, ['next', '1']).stdout)
+    assert.ok(next.problems.some((problem) => refusal.test(problem)), 'next shows it')
+    assert.deepEqual(next.ready, [])
+  }
+})
+
+test('reset on a planned ticket whose start request never started takes flow:start off and says why; a second time it asks a person', () => {
+  world({ tickets: { 2: { labels: ['flow:ticket', 'flow:planned', 'flow:start'] } } })
+  const first = flow(directory, ['reset', '2', '--once'])
+  assert.equal(first.status, 0, first.stderr)
+  assert.equal(JSON.parse(first.stdout).action, 'unstarted')
+  assert.deepEqual(removed(2), ['flow:start'])
+  assert.match(posted(2)[0], /^<!-- flow:start-withdrawn -->\n\*\*Start request withdrawn\.\*\*/)
+  fake.clearCalls()
+  world({ tickets: { 2: { labels: ['flow:ticket', 'flow:planned', 'flow:start'] } }, comments: { 2: [comment('<!-- flow:start-withdrawn -->\n**Start request withdrawn.**')] } })
+  const second = flow(directory, ['reset', '2', '--once'])
+  assert.equal(JSON.parse(second.stdout).action, 'needs-human')
+  assert.deepEqual(added(2), ['flow:needs-human'])
+})
+
+test('reset answers a refusal in JSON too, naming the accepted commit when that is why', () => {
+  world({ tickets: { 2: { labels: ['flow:ticket', 'flow:in-review'] } }, comments: { 2: [STARTED, accepted('c'.repeat(40))] } })
+  const accepted2 = flow(directory, ['reset', '2', '--once'])
+  assert.equal(accepted2.status, 1)
+  assert.deepEqual(JSON.parse(accepted2.stdout), { ticket: 2, action: 'refused', reason: JSON.parse(accepted2.stdout).reason, accepted: 'c'.repeat(40) })
+  world()
+  const planned = flow(directory, ['reset', '2'])
+  assert.equal(JSON.parse(planned.stdout).accepted, null)
+})
+
+test('dispatch refuses while a local run is building the epic, and says how to end a run that is gone', () => {
+  world({ comments: { 1: [comment('<!-- flow:local-run -->\n**Wave 1:** #2 on sonnet.')] } })
+  const live = flow(directory, ['dispatch', '1'])
+  assert.equal(live.status, 1)
+  assert.match(live.stderr, /being built by a \/flow:run .* post a comment that starts with <!-- flow:local-run-end -->/)
+  assert.deepEqual(added(2), [])
+  world({ comments: { 1: [comment('<!-- flow:local-run -->\n**Wave 1:**'), comment('<!-- flow:local-run-end -->\n**Run stopped.**')] } })
+  assert.equal(flow(directory, ['dispatch', '1']).status, 0)
+  world({ comments: { 1: [{ ...comment('<!-- flow:local-run -->\n**Wave 1:**'), user: { login: 'someone-else' } }] } })
+  assert.equal(flow(directory, ['dispatch', '1']).status, 0, 'a marker written by another account is just text')
+})
+
+test('the git step itself refuses to merge into a branch outside epic/, whatever a caller passes', async () => {
+  const { mergeIntoEpic } = await import('./delivery.mjs')
+  const repo = repository()
+  const sha = ticketBranch(repo, 2, { 'button.txt': 'b\n' })
+  const before = git(repo.remote, 'rev-parse', 'main')
+  const result = mergeIntoEpic(repo.work, { sha, epicBranch: 'main', subject: 'Merge #2' })
+  assert.deepEqual([result.ok, result.kind], [false, 'not-an-epic-branch'])
+  assert.equal(git(repo.remote, 'rev-parse', 'main'), before)
+})

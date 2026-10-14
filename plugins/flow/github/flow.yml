@@ -84,6 +84,7 @@ jobs:
           plugins: flow@ticket-flow
           prompt: /flow:ticket #${{ env.TICKET }} --unattended --no-merge
           claude_args: --model ${{ steps.read.outputs.model }} --allowedTools "Bash,Read,Edit,Write,Glob,Grep,Agent,Task,Skill,WebFetch"
+      # execution_file is the output anthropics/claude-code-action@v1 documents for the run's messages as JSON (action.yml, outputs).
       - name: post what it cost
         if: always() && steps.claude.outputs.execution_file != ''
         run: $FLOW meter "$TICKET" --transcripts "${{ steps.claude.outputs.execution_file }}" || true
@@ -94,7 +95,7 @@ jobs:
           name: screenshots-${{ env.TICKET }}
           path: .flow/screenshots/
           if-no-files-found: ignore
-      - name: a run that stopped without a result is reset once, then goes to a person
+      - name: a run that stopped without a result is reset once, a start request that never started is withdrawn, and a second time goes to a person
         if: always()
         run: $FLOW reset "$TICKET" --once || true
 
@@ -134,13 +135,13 @@ jobs:
 
   epic:
     needs: [ticket, merge]
-    if: always() && ((github.event_name == 'issues' && github.event.label.name == 'flow:approved') || needs.ticket.outputs.epic != '')
+    if: always() && github.event_name == 'issues' && (github.event.label.name == 'flow:approved' || github.event.label.name == 'flow:start')
     runs-on: ubuntu-latest
     concurrency:
-      group: epic-${{ github.event.label.name == 'flow:approved' && github.event.issue.number || needs.ticket.outputs.epic }}
+      group: epic-${{ github.event.label.name == 'flow:approved' && github.event.issue.number || needs.ticket.outputs.epic || format('of-ticket-{0}', github.event.issue.number) }}
       cancel-in-progress: false
     env:
-      EPIC: ${{ github.event.label.name == 'flow:approved' && github.event.issue.number || needs.ticket.outputs.epic }}
+      EPIC_FROM_JOBS: ${{ github.event.label.name == 'flow:approved' && github.event.issue.number || needs.ticket.outputs.epic }}
       GH_TOKEN: ${{ secrets.FLOW_TOKEN }}
     steps:
       - uses: actions/checkout@v4
@@ -160,15 +161,23 @@ jobs:
           git config user.name "flow[bot]"
           git config user.email "flow[bot]@users.noreply.github.com"
           echo ".flow-plugin/" >> .git/info/exclude
+      # When the ticket job died before it read the ticket, the epic number comes from the ticket's own "Epic: #n" line.
+      - name: find the epic
+        id: epic
+        run: |
+          epic="$EPIC_FROM_JOBS"
+          if [ -z "$epic" ]; then epic="$(jq -r '.issue.body // ""' "$GITHUB_EVENT_PATH" | sed -n 's/^Epic: #\([0-9][0-9]*\)[[:space:]]*$/\1/p' | head -n 1)"; fi
+          echo "number=$epic" >> "$GITHUB_OUTPUT"
       - name: start what is ready, or open the release pull request when everything is built
+        if: steps.epic.outputs.number != ''
+        env:
+          EPIC: ${{ steps.epic.outputs.number }}
         run: |
           dispatched="$($FLOW dispatch "$EPIC")"
           echo "$dispatched"
           state="$(echo "$dispatched" | jq -r '.state')"
           if [ "$state" = "built" ] && [ "$($FLOW next "$EPIC" | jq -r '.delivery')" = "release" ]; then
-            $FLOW check-epic "$EPIC" --mark
-            pr="$($FLOW release-pr "$EPIC" | jq -r '.pullRequest')"
-            $FLOW pr-review-request "$pr" || true
+            $FLOW check-epic "$EPIC" --mark && pr="$($FLOW release-pr "$EPIC" | jq -r '.pullRequest')" && { $FLOW pr-review-request "$pr" || true; }
           elif [ "$state" = "stopped" ]; then
             $FLOW post "$EPIC" --text "**Run stopped.** Nothing is ready and nothing is in progress; the tickets labelled flow:needs-human say why."
           fi

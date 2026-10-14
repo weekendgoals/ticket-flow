@@ -53,7 +53,8 @@ function happyTicket(label) {
 }
 
 function releaseSteps(label) {
-  if (/^check-epic:#1:release$/.test(label)) return ok('{"allPassed":true}')
+  if (/^check-epic:#1:/.test(label)) return ok('{"allPassed":true}')
+  if (/^needs-human:/.test(label)) return ok('')
   if (/^release-pr:/.test(label)) return ok('{"epic":1,"pullRequest":40,"url":"https://github.com/o/r/pull/40"}')
   if (/^pr-loop:/.test(label)) return { result: 'clean', summary: 'nothing open' }
   if (/^post:/.test(label)) return ok('https://github.com/o/r/issues/1#c')
@@ -71,11 +72,13 @@ test('a serial run builds the ready tickets one per round, each by the skill on 
     'worker:#2',
     'reviewer:#2',
     'fixes:#2',
+    'check-epic:#1:1',
     'next:#1:2',
     'post:#1:wave:2',
     'worker:#3',
     'reviewer:#3',
     'fixes:#3',
+    'check-epic:#1:2',
     'next:#1:3',
     'next:#1:final',
     'check-epic:#1:release',
@@ -88,6 +91,8 @@ test('a serial run builds the ready tickets one per round, each by the skill on 
   assert.match(worker.prompt, /skill "flow:ticket" and args "#2 --unattended --until-review"/)
   assert.doesNotMatch(worker.prompt, /--no-merge/)
   assert.equal(run.calls.find((call) => call.label === 'worker:#3').model, 'opus')
+  assert.match(run.calls.find((call) => call.label === 'check-epic:#1:1').prompt, /check-epic 1 --tickets 2 --mark/, 'a ticket that merged itself is checked at the epic head too')
+  assert.match(run.calls.find((call) => call.label === 'post:#1:wave:1').prompt, /<!-- flow:local-run -->\n\*\*Wave 1:\*\*/)
   const end = run.calls.find((call) => call.label === 'post:#1:end')
   assert.match(end.prompt, /\*\*Run finished: built\.\*\* Release pull request: https:\/\/github\.com\/o\/r\/pull\/40/)
 })
@@ -148,9 +153,9 @@ test('Parallel: 2 builds two tickets side by side in their own working copies, a
   const worker = run.calls.find((call) => call.label === 'worker:#3')
   assert.match(worker.prompt, /Work only in \/wt\/ticket-3/)
   assert.match(worker.prompt, /args "#3 --unattended --until-review --no-merge"/)
-  assert.match(run.calls.find((call) => call.label === 'merge:#2').prompt, /FLOW_UNATTENDED=1 node "\/plugins\/flow\/scripts\/flow\.mjs" merge 2 --sha a{40}/)
+  assert.match(run.calls.find((call) => call.label === 'merge:#2').prompt, /FLOW_UNATTENDED=1 node "\/plugins\/flow\/scripts\/flow\.mjs" merge 2\n/, 'the acceptance comment names the commit, never an agent')
   assert.match(run.calls.find((call) => call.label === 'check-epic:#1:1').prompt, /check-epic 1 --tickets 2,3 --mark/)
-  assert.ok(run.labels.indexOf('worktree-remove:#2') > run.labels.indexOf('check-epic:#1:1'))
+  assert.ok(run.labels.indexOf('worktree-remove:#2') < run.labels.indexOf('merge:#2'), 'the working copies are gone before the merges, so no ticket branch is still checked out in one')
   assert.ok(!run.labels.includes('worker:#4'), 'Parallel: 2 takes two of the three ready tickets')
   assert.match(run.calls.find((call) => call.label === 'reviewer:#3').prompt, /Repository: \/wt\/ticket-3\./)
 })
@@ -213,17 +218,68 @@ test('a ticket the skill stopped is left to its person, and the run carries on',
   assert.equal(run.out.outcome, 'stopped')
 })
 
-test('a ticket this run started that is still in progress at the next round is recovered before anything else starts', async () => {
-  const next = boards(board({ ready: [2] }), board({ inProgress: [2] }), board({ done: [2] }))
+test('a worker that dies after its ticket passed acceptance gets its ticket merged, from the acceptance comment, not reset', async () => {
+  const next = boards(board({ ready: [2] }), board({ done: [2] }))
   const run = await drive((label) => {
     if (label.startsWith('next:')) return next()
-    if (label === 'fixes:#2') return { result: 'accepted', sha: 'not-a-sha', summary: 'claims accepted in a serial run' }
-    if (label === 'merge:#2') return { exitCode: 1, output: '' }
-    if (label === 'reset:#2') return ok('{"action":"reset"}')
+    if (label === 'fixes:#2') return null
+    if (label === 'reset:#2') return { exitCode: 1, output: JSON.stringify({ ticket: 2, action: 'refused', reason: '#2 passed acceptance at cccccccccccc and is waiting to be merged, not abandoned', accepted: 'c'.repeat(40) }) }
+    if (label === 'merge:#2') return ok('{"ticket":2}')
     return happyTicket(label) ?? releaseSteps(label)
   })
-  assert.ok(run.labels.includes('reset:#2'))
-  assert.match(run.calls.find((call) => call.label === 'merge:#2').prompt, /merge 2\n/, 'a malformed commit is not passed on')
+  assert.deepEqual(run.labels.slice(2, 8), ['worker:#2', 'reviewer:#2', 'fixes:#2', 'reset:#2', 'merge:#2', 'check-epic:#1:1'])
+  assert.match(run.calls.find((call) => call.label === 'merge:#2').prompt, /merge 2\n/)
+  assert.equal(run.labels.filter((label) => label === 'reset:#2').length, 1)
+  assert.equal(run.out.outcome, 'built')
+})
+
+test('an accepted ticket the driver cannot merge goes to a person after one recovery, instead of looping', async () => {
+  let reads = 0
+  const run = await drive((label) => {
+    if (label.startsWith('next:')) return ++reads === 1 ? board({ ready: [2] }) : reads <= 3 ? board({ inProgress: [2] }) : board({ needsHuman: [2] })
+    if (label === 'fixes:#2') return { result: 'accepted', sha: 'f'.repeat(40), summary: 'accepted in a serial run' }
+    if (label === 'merge:#2') return { exitCode: 1, output: '' }
+    if (label === 'reset:#2') return { exitCode: 1, output: JSON.stringify({ ticket: 2, action: 'refused', reason: 'waiting to be merged', accepted: 'f'.repeat(40) }) }
+    return happyTicket(label) ?? releaseSteps(label)
+  })
+  assert.equal(run.labels.filter((label) => label === 'reset:#2').length, 1)
+  assert.equal(run.labels.filter((label) => label === 'needs-human:#2').length, 1)
+  assert.ok(run.out.rounds < 6, `ended after ${run.out.rounds} rounds`)
+  assert.equal(run.out.outcome, 'stopped')
+})
+
+test('a reset that refuses for any other reason hands the ticket to a person with that reason', async () => {
+  const next = boards(board({ ready: [2] }), board({ needsHuman: [2] }))
+  const run = await drive((label) => {
+    if (label.startsWith('next:')) return next()
+    if (label === 'worker:#2') return null
+    if (label === 'reset:#2') return { exitCode: 1, output: JSON.stringify({ ticket: 2, action: 'refused', reason: '#2 is done; only a ticket left in progress or in review can be reset', accepted: null }) }
+    return releaseSteps(label)
+  })
+  assert.match(run.calls.find((call) => call.label === 'needs-human:#2').prompt, /could not be put back to planned: #2 is done/)
+  assert.ok(!run.labels.includes('merge:#2'))
+})
+
+test('a ticket started twice by this run with no reset between goes to a person instead of a third worker', async () => {
+  const next = boards(board({ ready: [2] }), board({ ready: [2] }), board({ needsHuman: [2] }))
+  const run = await drive((label) => {
+    if (label.startsWith('next:')) return next()
+    if (label === 'worker:#2') return { result: 'stopped', summary: 'start crashed before it could refuse' }
+    return releaseSteps(label)
+  })
+  assert.equal(run.labels.filter((label) => label === 'worker:#2').length, 1)
+  assert.match(run.calls.find((call) => call.label === 'needs-human:#2').prompt, /started this ticket before, it is still planned/)
+})
+
+test('rounds that change nothing end the run; a long serial epic does not', async () => {
+  const serial = Array.from({ length: 45 }, (_, index) => board({ ready: [index + 2], done: [] }))
+  let reads = 0
+  const long = await drive((label) => {
+    if (label.startsWith('next:')) return reads < 45 ? serial[reads++] : board({ done: [2] })
+    return happyTicket(label) ?? releaseSteps(label)
+  })
+  assert.equal(long.out.outcome, 'built', long.out.stopReason)
+  assert.equal(long.labels.filter((label) => label.startsWith('worker:')).length, 45)
 })
 
 test('a ticket in progress that this run did not start is never touched; with nothing else ready the run stops and says why', async () => {
@@ -262,10 +318,16 @@ test('the release pull request loop runs a second round only after a round that 
   let rounds = 0
   const run = await drive((label) => {
     if (label.startsWith('next:')) return board({ done: [2] })
-    if (label.startsWith('pr-loop:')) return { result: ++rounds === 1 ? 'pushed' : 'pushed', summary: 'fixed a thread' }
+    if (label.startsWith('pr-loop:')) return { result: ++rounds === 1 ? 'pushed' : 'clean', summary: 'fixed a thread' }
     return releaseSteps(label)
   })
   assert.deepEqual(run.labels.filter((label) => label.startsWith('pr-loop:')), ['pr-loop:#1:1', 'pr-loop:#1:2'])
+  const clean = await drive((label) => {
+    if (label.startsWith('next:')) return board({ done: [2] })
+    if (label.startsWith('pr-loop:')) return { result: 'clean', summary: 'nothing open' }
+    return releaseSteps(label)
+  })
+  assert.deepEqual(clean.labels.filter((label) => label.startsWith('pr-loop:')), ['pr-loop:#1:1'])
   assert.match(run.calls.find((call) => call.label === 'pr-loop:#1:1').prompt, /args "--pr-loop 40 --wait --unattended"/)
 })
 

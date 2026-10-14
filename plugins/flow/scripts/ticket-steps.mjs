@@ -2,12 +2,15 @@ export const STARTED_MARKER = '<!-- flow:started -->'
 export const ACCEPTANCE_MARKER = /^<!-- flow:acceptance sha=([0-9a-f]{7,40}) passed=(true|false) -->/
 export const METER_MARKER = '<!-- flow:meter -->'
 export const RESET_MARKER = '<!-- flow:reset -->'
+export const START_WITHDRAWN_MARKER = '<!-- flow:start-withdrawn -->'
+export const LOCAL_RUN_MARKER = '<!-- flow:local-run -->'
+export const LOCAL_RUN_END_MARKER = '<!-- flow:local-run-end -->'
 export const MERGED_MARKER = /^<!-- flow:merged sha=([0-9a-f]{7,40}) accepted=([0-9a-f]{7,40}) -->/
 export const REVIEW_MARKER = /^<!-- flow:review round=(\d+) important=(\d+) -->/
 export const COMPARED_HEADING = '**Compared:**'
 export const MAX_REVIEW_ROUNDS = 2
 export const RELEASE_CHECK_MARKER = '<!-- flow:release-check -->'
-export const RELEASE_PR_MARKER = /<!-- flow:release-pr number=(\d+) -->/
+export const RELEASE_PR_MARKER = /^<!-- flow:release-pr number=(\d+) -->/
 export const UNATTENDED_VARIABLE = 'FLOW_UNATTENDED'
 
 export function isUnattended(environment = process.env) {
@@ -62,8 +65,30 @@ export function resetComment({ host, branch }) {
   return `${RESET_MARKER}\n**Reset** by an ${host}: the run working on this ticket stopped without a result. It is planned again; \`${branch}\` keeps its commits, and the next start carries on from them.`
 }
 
-export function countResets(comments) {
-  return comments.filter((comment) => comment.body.startsWith(RESET_MARKER)).length
+export function countResets(comments, author) {
+  return byAuthor(comments, author).filter((comment) => comment.body.startsWith(RESET_MARKER)).length
+}
+
+export function countStartWithdrawals(comments, author) {
+  return byAuthor(comments, author).filter((comment) => comment.body.startsWith(START_WITHDRAWN_MARKER)).length
+}
+
+export function startWithdrawnComment() {
+  return `${START_WITHDRAWN_MARKER}\n**Start request withdrawn.** The job asked to build this ticket stopped before the ticket started, so \`flow:start\` is taken off; the ticket is planned, and the next start request builds it.`
+}
+
+export function releasePrComment({ number, url, existing, epicBranch, base }) {
+  return `<!-- flow:release-pr number=${number} -->\n**Release pull request ${existing ? 'already open' : 'opened'}:** ${url} (\`${epicBranch}\` into \`${base}\`). A person reviews and merges it.`
+}
+
+export function releasePrNumber(comments, author) {
+  const found = lastMatch(comments, author, RELEASE_PR_MARKER)
+  return found ? Number(found.match[1]) : null
+}
+
+export function localRunLive(comments, author) {
+  const mine = byAuthor(comments, author).filter((comment) => comment.body.startsWith(LOCAL_RUN_MARKER) || comment.body.startsWith(LOCAL_RUN_END_MARKER))
+  return mine.length > 0 && mine[mine.length - 1].body.startsWith(LOCAL_RUN_MARKER)
 }
 
 export function mergedComment({ sha, mergeSha, epicBranch, alreadyMerged, attempts = [] }) {

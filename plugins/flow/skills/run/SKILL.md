@@ -33,10 +33,12 @@ git status --porcelain --untracked-files=no   # must print nothing
   person decides. Approving is their call, never yours.
 - A dirty working tree would ride into the first ticket built here: ask the
   person to commit or stash it.
-- **The project runs Flow's GitHub Action** (`grep -l 'flow:start'
-  .github/workflows/*` finds a file): then approving the epic already
-  started it on GitHub. Stop and say so, because two hosts would build the
-  same tickets and race to merge them.
+- **The epic is being built on GitHub**: a ticket in `next`'s `tickets` has
+  `"startRequested": true` (the `flow:start` label), or the project runs
+  Flow's GitHub Action (`grep -l 'flow:start' .github/workflows/*` finds a
+  file). Stop and say so, because two hosts would build the same tickets
+  and race to merge them. The other way round is guarded in code: while
+  this run's comments on the epic show it live, `flow dispatch` refuses.
 - **A ticket already in progress or in review** (`inProgress` in the JSON)
   is either someone's live work or a run that died. Ask the person which.
   Dead: run `FLOW reset <n>` (it goes back to planned and its branch keeps
@@ -78,7 +80,8 @@ round the script:
 5. side by side: merges the accepted commits into the epic branch one at a
    time, in document order, then runs those tickets' checks again at the
    new epic head (`FLOW check-epic --mark`), because two tickets that pass
-   alone can break each other. One at a time: each ticket merges itself.
+   alone can break each other. One at a time: each ticket merges itself,
+   and its checks run again at the epic head the same way.
 
 It posts each wave and its end on the epic issue. When the separate
 working copies cannot be set up, that wave runs one ticket at a time and
@@ -90,7 +93,15 @@ a merge conflict), or when its checks fail at the epic head after merging;
 then it is labelled `flow:needs-human`, its assignee (or the epic's author)
 is mentioned, and the run carries on with the others. A builder that dies
 without a result (a session limit, a crash) is reset and built again once,
-from its branch; a second death goes to a person.
+from its branch; a second death goes to a person. A builder that died after
+its ticket passed acceptance is not built again: the accepted commit is
+merged. Every merge takes the commit the acceptance comment names, never one
+an agent reported.
+
+If the run itself is killed, its last comment on the epic is a wave, not an
+end, and `flow dispatch` keeps refusing: post a comment on the epic that
+starts with `<!-- flow:local-run-end -->` (`FLOW post <e> --text ...`) once
+you know it is gone.
 
 When nothing is ready and nothing is in progress, the script runs every
 done ticket's checks at the epic head, opens the release pull request

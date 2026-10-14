@@ -12,10 +12,8 @@ export const WORKTREES_FOLDER = '.flow-worktrees'
 
 export class ConfigError extends Error {}
 
-const USAGE = `usage:
-  worktree-setup.mjs --repo <main checkout> --worktree <worktree root> [--json]
-                     [--budget-ms <n>]   (default 480000; the tests shorten it)
-  worktree-setup.mjs --validate <file | -> [--repo <main checkout>]`
+const USAGE = `usage: worktree-setup.mjs --validate <file | -> [--repo <main checkout>]
+  checks a .flow.json; flow worktree and flow check-epic do the setup itself`
 
 export function validateConfig(config, label = CONFIG) {
   if (!config || typeof config !== 'object' || Array.isArray(config)) throw new ConfigError(`${label}: must be a JSON object`)
@@ -216,38 +214,8 @@ function validate(source, repo) {
 }
 
 export function run(argv) {
-  if (argv[0] === '--validate') {
-    if (argv.length !== 2 && !(argv.length === 4 && argv[2] === '--repo')) throw new ConfigError(USAGE)
-    return validate(argv[1], argv.length === 4 ? resolve(argv[3]) : null)
-  }
-  const flags = { '--repo': null, '--worktree': null, '--budget-ms': null }
-  let json = false
-  for (let index = 0; index < argv.length; index++) {
-    const arg = argv[index]
-    if (arg === '--json') json = true
-    else if (Object.prototype.hasOwnProperty.call(flags, arg)) {
-      const value = argv[++index]
-      if (value === undefined || value.startsWith('--')) throw new ConfigError(`${arg} needs a value\n${USAGE}`)
-      flags[arg] = value
-    } else throw new ConfigError(`unknown argument "${arg}"\n${USAGE}`)
-  }
-  if (!flags['--repo'] || !flags['--worktree']) throw new ConfigError(USAGE)
-  const repo = resolve(flags['--repo'])
-  const worktree = resolve(flags['--worktree'])
-  for (const [label, path] of [['--repo', repo], ['--worktree', worktree]])
-    if (!existsSync(path) || !statSync(path).isDirectory()) throw new ConfigError(`${label}: ${path} is not a directory`)
-  if (repo === worktree) throw new ConfigError('--repo and --worktree are the same directory — this script sets up a worktree, never the main checkout')
-  const lines = []
-  const budgetMs = flags['--budget-ms'] === null ? BUDGET_MS : Number(flags['--budget-ms'])
-  if (!Number.isInteger(budgetMs) || budgetMs <= 0) throw new ConfigError(`--budget-ms "${flags['--budget-ms']}" is not a whole number of milliseconds`)
-  const result = apply({ repo, worktree, log: (line) => lines.push(line), budgetMs })
-  const code = result.failure ? 1 : 0
-  if (json) return { stdout: JSON.stringify(result, null, 2), code }
-  if (!result.configured) return { stdout: `no "copy" or "setup" in ${CONFIG} on this branch — nothing to set up; the worktree has only what git tracks`, code }
-  const out = [...lines]
-  if (result.failure) out.push(`FAILED at ${result.failure.step}\n${result.failure.detail}`)
-  else out.push(`worktree set up from ${CONFIG}: ${result.copied.length} file${result.copied.length === 1 ? '' : 's'} copied, ${result.ran.length} command${result.ran.length === 1 ? '' : 's'} run`)
-  return { stdout: out.join('\n'), code }
+  if (argv[0] !== '--validate' || (argv.length !== 2 && !(argv.length === 4 && argv[2] === '--repo'))) throw new ConfigError(USAGE)
+  return validate(argv[1], argv.length === 4 ? resolve(argv[3]) : null)
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

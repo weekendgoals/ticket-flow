@@ -10,7 +10,12 @@ const TASK_LINE = /^[ \t]*[-*][ \t]+\[([ xX])\][ \t]+#(\d+)\b[ \t]*(?:[—–-][
 const SETTING_LINE = /^[ \t]*(?:[-*][ \t]+)?([A-Za-z][A-Za-z ]*?)[ \t]*:[ \t]*(.*?)[ \t]*$/
 
 export const DESIGN_MAP_FENCE = 'design-map'
+export const EPIC_BRANCH = /^epic\/[A-Za-z0-9][A-Za-z0-9._-]*(?:\/[A-Za-z0-9][A-Za-z0-9._-]*)*$/
 export const DELIVERY_MODES = ['release', 'incremental']
+
+export function isEpicBranch(name) {
+  return typeof name === 'string' && EPIC_BRANCH.test(name) && !name.includes('..') && !name.endsWith('.lock')
+}
 export const MAX_PARALLEL = 3
 
 export function normalizeNewlines(text) {
@@ -111,8 +116,12 @@ function splitList(value) {
     .filter(Boolean)
 }
 
+export function rejectedBranchProblem(value) {
+  return `"Branch: ${value}" is not an epic branch: it must start with epic/, because Flow merges every ticket into it and must never push to the default branch`
+}
+
 export function parseSettings(text) {
-  const settings = { delivery: 'release', parallel: 1, designSources: null, consequencePaths: [], branch: null, other: {} }
+  const settings = { delivery: 'release', parallel: 1, designSources: null, consequencePaths: [], branch: null, rejectedBranch: null, other: {} }
   const problems = []
   for (const entry of scanLines(text || '')) {
     if (entry.fence !== null || !entry.line.trim()) continue
@@ -142,7 +151,11 @@ export function parseSettings(text) {
     } else if (key === 'consequence paths') {
       settings.consequencePaths = splitList(value)
     } else if (key === 'branch') {
-      settings.branch = value || null
+      if (!value || isEpicBranch(value)) settings.branch = value || null
+      else {
+        settings.rejectedBranch = value
+        problems.push(rejectedBranchProblem(value))
+      }
     } else {
       settings.other[match[1].trim()] = value
     }

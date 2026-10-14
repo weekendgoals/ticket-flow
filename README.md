@@ -46,7 +46,7 @@ use the Flow methodology. Ordinary implementation requests run directly.
 |---|---|
 | `## Outcome` | What will visibly change, for whom, how anyone will know it worked, and what would make us undo it |
 | `## Sources` | Where the request came from |
-| `## Settings` | One `Key: value` per line: `Delivery: release` or `incremental` (default `release`), `Parallel: 1` to `3` (default `1`), `Branch: epic/<name>`, `Design sources: <paths>`, `Consequence paths: <globs>` |
+| `## Settings` | One `Key: value` per line: `Delivery: release` or `incremental` (default `release`), `Parallel: 1` to `3` (default `1`), `Branch: epic/<name>` (it must start with `epic/`: every ticket is merged into it, and a branch such as `main` is refused everywhere, so nothing can push to the default branch), `Design sources: <paths>`, `Consequence paths: <globs>` |
 | `## Walkthrough` | In plain language, what a person will be able to do, scene by scene. No ticket numbers, no file names |
 | `## Ground rules` | What every ticket must respect |
 | `## Design map` | Only with `Design sources:`: one fenced `design-map` block of JSON naming each thing the design draws (`landmarks`) and what the plan deliberately does not build (`removed`). The design comparison reads it with `flow design-map` |
@@ -288,8 +288,16 @@ Each round it:
    (`flow check-epic`), because two tickets that pass alone can break each
    other. If the copies cannot be set up, that round runs one ticket at a
    time and the epic gets a comment saying so; the run never stops for it.
+   One at a time, each ticket merges itself and is checked at the epic head
+   the same way.
 
-A ticket that stops goes to a person and the run carries on with the rest.
+Every merge takes the commit the acceptance comment names, never one an
+agent reported. A builder that died after its ticket passed acceptance is
+not built again; its accepted commit is merged. A ticket that stops goes to
+a person and the run carries on with the rest. While the run is going, its
+comments on the epic mark it live and `flow dispatch` (the Action's
+scheduler) refuses to start anything; a run that was killed leaves that mark,
+and a comment starting `<!-- flow:local-run-end -->` clears it.
 When nothing is ready and nothing is in progress, it checks every ticket at
 the epic head, opens the release pull request (`flow release-pr`: the
 outcome, the walkthrough, each ticket's merge commit, the cost), answers its
@@ -308,6 +316,11 @@ your project's `.github/workflows/`, then add these repository secrets:
   with read and write access to contents, issues and pull requests. Labels
   added with the default `GITHUB_TOKEN` start no other workflow, and the
   scheduler starts tickets by adding a label.
+
+A runner has no checkout with your ignored files, so a `.flow.json` `copy`
+entry (such as `.env`) fails the epic check there: write those files in a
+step before the jobs that need them (from secrets), or keep `copy` empty for
+epics built on GitHub.
 
 If your CI runs on GitHub Actions, put its workflow names under
 `workflow_run` in the file: suites made by Actions send no `check_suite`
@@ -368,12 +381,12 @@ every answer is read from GitHub (through `gh`) and git.
 | `pr-threads <pr>` | Unresolved review threads as JSON |
 | `pr-resolve <thread-id> --text "<reply>"` | Replies on a thread, then resolves it |
 | `pr-checks <pr> [--wait] [--grace <s>]` | CI checks as JSON; exit 1 when one failed, 3 when some are still running, 4 when none appeared (under `--wait` it gives them 90 seconds first) |
-| `reset <n> [--once]` | Puts a ticket whose run died back to planned; its branch keeps its commits. Refuses a ticket that passed acceptance (it is waiting to be merged). `--once`: if it was reset before, asks a person instead |
+| `reset <n> [--once]` | Puts a ticket whose run died back to planned; its branch keeps its commits. On a planned ticket whose `flow:start` request never started, takes the label off. Refuses a ticket that passed acceptance (it is waiting to be merged), answering in JSON either way. `--once`: if it was reset (or its request withdrawn) before, asks a person instead |
 | `merge <n> [--sha <sha>]` | Merges the accepted commit into the epic branch; with `--sha`, refuses unless that is the accepted commit |
 | `merge --epic <epic>` | Merges every accepted ticket of the epic, in the epic's order |
 | `check-epic <epic> [--tickets <n>,<n>] [--mark]` | Runs the done tickets' checks (or the listed ones') at the epic branch's head, in a clean copy set up from `.flow.json`, and posts the result on the epic. `--mark` hands each failing ticket to a person; it stays merged |
 | `worktree <n> [--remove]` | A separate working copy for one ticket, at `../.flow-worktrees/<repository>/ticket-<n>`, set up from `.flow.json` |
-| `dispatch <epic>` | Adds `flow:start` to up to `Parallel:` ready tickets; says whether the epic is `running`, `built` or `stopped` |
+| `dispatch <epic>` | Adds `flow:start` to up to `Parallel:` ready tickets; says whether the epic is `running`, `built` or `stopped`. Refuses while a `/flow:run` is building the epic |
 | `release-pr <epic>` | Opens the epic's pull request once every ticket is done, and posts it on the epic |
 | `design-map <epic> [--out <file>]` | Writes the epic's design map for the design comparison |
 

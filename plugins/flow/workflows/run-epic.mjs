@@ -23,7 +23,9 @@ if (!epic || !SAFE_PATH(repoRoot) || !SAFE_PATH(pluginRoot))
 const FLOW = `FLOW_UNATTENDED=1 node "${pluginRoot}/scripts/flow.mjs"`
 const PROXY = { model: 'sonnet', effort: 'low' }
 const WORKER_MODELS = new Set(['sonnet', 'opus'])
-const MAX_ROUNDS = 40
+const MAX_IDLE_ROUNDS = 3
+const LOCAL_RUN_MARKER = '<!-- flow:local-run -->'
+const LOCAL_RUN_END_MARKER = '<!-- flow:local-run-end -->'
 
 const BOARD_SCHEMA = {
   type: 'object',
@@ -198,34 +200,48 @@ async function removeWorktrees(tickets) {
   await parallel(tickets.map((ticket) => () => runCommand(`${FLOW} worktree ${ticket} --remove`, `worktree-remove:#${ticket}`)))
 }
 
-async function recover(ticket, why) {
-  log(`#${ticket}: ${why}; putting it back to planned once, or asking a person if that already happened`)
-  const reset = await runCommand(`${FLOW} reset ${ticket} --once`, `reset:#${ticket}`, 'It prints JSON whose "action" is "reset" or "needs-human".')
-  return reset.json ? reset.json.action : 'unknown'
+async function askPerson(ticket, text) {
+  await runCommand(`${FLOW} needs-human ${ticket} --file - <<'FLOW_TEXT'\n${text}\nFLOW_TEXT`, `needs-human:#${ticket}`, 'It hands the ticket to a person.')
+  log(`#${ticket}: handed to a person`)
 }
 
-async function integrateWave(results, wave) {
-  const merged = []
-  for (const result of results) {
-    if (result.outcome !== 'accepted') continue
-    const sha = /^[0-9a-f]{7,40}$/.test(String(result.sha || '')) ? ` --sha ${result.sha}` : ''
-    const merge = await runCommand(`${FLOW} merge ${result.ticket}${sha}`, `merge:#${result.ticket}`, 'It merges the accepted commit into the epic branch and prints JSON, or explains on standard error why not.')
-    if (merge.exitCode === 0) {
-      merged.push(result.ticket)
-      log(`#${result.ticket}: merged into the epic branch`)
-    } else log(`#${result.ticket}: not merged (exit ${merge.exitCode}); the ticket says why`)
+async function recover(ticket, why) {
+  settled.add(ticket)
+  log(`#${ticket}: ${why}; putting it back to planned once, or asking a person if that already happened`)
+  const reset = await runCommand(`${FLOW} reset ${ticket} --once`, `reset:#${ticket}`, 'It prints JSON whose "action" says what it did, also when it refuses.')
+  const action = reset.json ? reset.json.action : null
+  if (action === 'reset') {
+    resetSince.add(ticket)
+    settled.delete(ticket)
+    return 'reset'
   }
-  if (!merged.length) return merged
+  if (action === 'needs-human') return 'needs-human'
+  if (action === 'refused' && reset.json.accepted) return 'accepted'
+  await askPerson(ticket, `The run building this ticket stopped without a result, and it could not be put back to planned${reset.json && reset.json.reason ? `: ${reset.json.reason}` : '.'}`)
+  return 'needs-human'
+}
+
+async function mergeAndCheck(tickets, delivered, release, wave) {
+  const merged = []
+  for (const ticket of tickets) {
+    const merge = await runCommand(`${FLOW} merge ${ticket}`, `merge:#${ticket}`, 'It merges the commit the acceptance comment names into the epic branch and prints JSON, or explains on standard error why not.')
+    if (merge.exitCode === 0) {
+      merged.push(ticket)
+      log(`#${ticket}: merged into the epic branch`)
+    } else log(`#${ticket}: not merged (exit ${merge.exitCode}); the ticket says why`)
+  }
+  const landed = release ? [...delivered, ...merged] : merged
+  if (!landed.length) return merged
   const check = await runCommand(
-    `${FLOW} check-epic ${epic} --tickets ${merged.join(',')} --mark`,
+    `${FLOW} check-epic ${epic} --tickets ${landed.join(',')} --mark`,
     `check-epic:#${epic}:${wave}`,
-    'It runs the merged tickets\' checks at the epic branch head and prints JSON; a failing ticket is handed to a person by the command itself.',
+    'It runs the landed tickets\' checks at the epic branch head and prints JSON; a failing ticket is handed to a person by the command itself.',
   )
-  log(check.exitCode === 0 ? `wave ${wave}: every merged ticket still passes at the epic head` : `wave ${wave}: the epic check failed or could not run; see the epic issue`)
+  log(check.exitCode === 0 ? `wave ${wave}: every landed ticket still passes at the epic head` : `wave ${wave}: the epic check failed or could not run; see the epic issue`)
   return merged
 }
 
-async function runWave({ chosen, wide, wave }) {
+async function runWave({ chosen, wide, wave, release }) {
   const phaseName = `Wave ${wave}`
   phase(phaseName)
   let roots = null
@@ -234,13 +250,13 @@ async function runWave({ chosen, wide, wave }) {
     roots = made.roots
     if (!roots)
       await postOnEpic(
-        `**Wave ${wave} runs one ticket at a time.** The separate working copies for building side by side could not be set up (${made.failures.join('; ')}), so this wave is built in the main checkout instead. Nothing was stopped for this.`,
+        `${LOCAL_RUN_MARKER}\n**Wave ${wave} runs one ticket at a time.** The separate working copies for building side by side could not be set up (${made.failures.join('; ')}), so this wave is built in the main checkout instead. Nothing was stopped for this.`,
         `post:#${epic}:fallback:${wave}`,
       )
   }
   const sideBySide = Boolean(roots)
   await postOnEpic(
-    `**Wave ${wave}:** ${chosen.map((entry) => `#${entry.n} on ${entry.model}`).join(', ')}${sideBySide ? ', side by side' : chosen.length > 1 ? ', one at a time' : ''}.`,
+    `${LOCAL_RUN_MARKER}\n**Wave ${wave}:** ${chosen.map((entry) => `#${entry.n} on ${entry.model}`).join(', ')}${sideBySide ? ', side by side' : chosen.length > 1 ? ', one at a time' : ''}.`,
     `post:#${epic}:wave:${wave}`,
   )
   let results
@@ -251,9 +267,12 @@ async function runWave({ chosen, wide, wave }) {
     for (const entry of chosen) results.push(await buildTicket({ ticket: entry.n, model: entry.model, root: repoRoot, wide: false, phaseName }))
   }
   results = results.map((result, index) => result || { ticket: chosen[index].n, outcome: 'died', step: 'unknown' })
-  await integrateWave(results, wave)
   if (sideBySide) await removeWorktrees(chosen.map((entry) => entry.n))
   for (const result of results) if (result.outcome === 'died') result.recovery = await recover(result.ticket, `the run building it stopped without a result (${result.step})`)
+  const toMerge = results.filter((result) => result.outcome === 'accepted' || result.recovery === 'accepted').map((result) => result.ticket)
+  const delivered = results.filter((result) => result.outcome === 'delivered').map((result) => result.ticket)
+  const merged = await mergeAndCheck(toMerge, delivered, release, wave)
+  for (const result of results) if (merged.includes(result.ticket)) result.merged = true
   return results
 }
 
@@ -264,15 +283,14 @@ function workerModel(board, ticket) {
 
 const records = []
 const startedHere = new Set()
+const settled = new Set()
+const resetSince = new Set()
 let board = null
 let round = 0
+let idleRounds = 0
 let stopReason = null
 for (;;) {
   round++
-  if (round > MAX_ROUNDS) {
-    stopReason = `the run went ${MAX_ROUNDS} rounds without finishing`
-    break
-  }
   board = (await readBoard(round)) || (await readBoard(`${round}:retry`))
   if (!board) {
     stopReason = 'nobody could read the board from GitHub'
@@ -282,18 +300,51 @@ for (;;) {
     stopReason = `epic #${epic} is not approved`
     break
   }
+  if (idleRounds >= MAX_IDLE_ROUNDS) {
+    stopReason = `${MAX_IDLE_ROUNDS} rounds in a row changed nothing`
+    break
+  }
+  const release = board.delivery !== 'incremental'
   const orphaned = board.inProgress.filter((ticket) => startedHere.has(ticket))
-  for (const ticket of orphaned) await recover(ticket, 'it is still in progress, and nothing in this run is working on it')
-  if (orphaned.length) continue
+  if (orphaned.length) {
+    const toMerge = []
+    for (const ticket of orphaned) {
+      if (settled.has(ticket)) {
+        await askPerson(ticket, 'This run could not finish this ticket: it is still in progress after the run already tried to recover it once.')
+        continue
+      }
+      if ((await recover(ticket, 'it is still in progress, and nothing in this run is working on it')) === 'accepted') toMerge.push(ticket)
+    }
+    if (toMerge.length) await mergeAndCheck(toMerge, [], release, `${round}:recovered`)
+    idleRounds = 0
+    continue
+  }
   if (!board.ready.length) {
     if (board.inProgress.length) stopReason = `${board.inProgress.map((ticket) => `#${ticket}`).join(', ')} is in progress outside this run; nothing else is ready`
     break
   }
   const width = board.parallel >= 1 && board.parallel <= 3 ? board.parallel : 1
-  const chosen = board.ready.slice(0, width).map((ticket) => ({ n: ticket, model: workerModel(board, ticket) }))
-  for (const entry of chosen) startedHere.add(entry.n)
-  const results = await runWave({ chosen, wide: chosen.length > 1, wave: round })
+  const chosen = []
+  for (const ticket of board.ready) {
+    if (chosen.length >= width) break
+    if (startedHere.has(ticket) && !resetSince.has(ticket)) {
+      await askPerson(ticket, 'This run started this ticket before, it is still planned, and nothing put it back: its start fails without saying so. A person looks at why.')
+      continue
+    }
+    chosen.push({ n: ticket, model: workerModel(board, ticket) })
+  }
+  if (!chosen.length) {
+    idleRounds++
+    continue
+  }
+  for (const entry of chosen) {
+    startedHere.add(entry.n)
+    resetSince.delete(entry.n)
+  }
+  const results = await runWave({ chosen, wide: chosen.length > 1, wave: round, release })
   records.push(...results)
+  const changed = results.some((result) => ['delivered', 'accepted', 'stopped'].includes(result.outcome) || result.recovery || result.merged)
+  idleRounds = changed ? 0 : idleRounds + 1
 }
 
 phase('Release')
@@ -335,7 +386,7 @@ const closing =
   outcome === 'built'
     ? `**Run finished: built.**${releasePullRequest ? ` Release pull request: ${releasePullRequest.url}. A person reviews and merges it.` : ' Every ticket was delivered by its own pull request.'}`
     : `**Run stopped.** ${stopReason || 'Nothing more can start.'}${needsHuman.length ? ` These tickets need a person: ${needsHuman.map((ticket) => `#${ticket}`).join(', ')}.` : ''}${ticketsLeft.length ? ` Not done: ${ticketsLeft.map((ticket) => `#${ticket}`).join(', ')}.` : ''}`
-await postOnEpic(closing, `post:#${epic}:end`)
+await postOnEpic(`${LOCAL_RUN_END_MARKER}\n${closing}`, `post:#${epic}:end`)
 log(closing.replace(/\*\*/g, ''))
 
 return { outcome, epic, releasePullRequest, needsHuman, notDone: ticketsLeft, stopReason, rounds: round, tickets: records }

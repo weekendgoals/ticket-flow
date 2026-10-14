@@ -239,7 +239,7 @@ test('next lists ready, waiting, in-progress and done tickets, and exits 0 while
   assert.deepEqual(next.done, [2])
   assert.deepEqual(next.problems, [])
   assert.deepEqual([next.delivery, next.parallel], ['release', 1])
-  assert.deepEqual(next.tickets.find((ticket) => ticket.n === 5), { n: 5, title: next.tickets.find((ticket) => ticket.n === 5).title, tier: 'hard', model: 'opus', state: 'in-progress' })
+  assert.deepEqual(next.tickets.find((ticket) => ticket.n === 5), { n: 5, title: next.tickets.find((ticket) => ticket.n === 5).title, tier: 'hard', model: 'opus', state: 'in-progress', startRequested: false })
 })
 
 test('next on an unapproved epic reports approved false, nothing ready, and exits 1', () => {

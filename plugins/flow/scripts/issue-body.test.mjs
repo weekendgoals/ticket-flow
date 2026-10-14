@@ -109,7 +109,7 @@ test('an epic body yields its outcome, settings and ordered ticket list', () => 
 })
 
 test('settings default to a serial release, and a value that cannot be read is a problem, never a default', () => {
-  assert.deepEqual(parseSettings('').settings, { delivery: 'release', parallel: 1, designSources: null, consequencePaths: [], branch: null, other: {} })
+  assert.deepEqual(parseSettings('').settings, { delivery: 'release', parallel: 1, designSources: null, consequencePaths: [], branch: null, rejectedBranch: null, other: {} })
   const bad = parseSettings('Delivery: incremetal\nParallel: 4\nthis line is prose')
   assert.equal(bad.settings.delivery, null)
   assert.equal(bad.settings.parallel, null)
@@ -301,4 +301,16 @@ test('the design map is one ```design-map block of JSON in the epic body, read w
   assert.match(parseDesignMap('```design-map\n{"landmarks":[{"name":"a"}]}\n```').problem, /cannot read the design map: .*has no "design"/)
   assert.match(parseDesignMap(`\`\`\`design-map\n${JSON.stringify(map)}\n\`\`\`\n\n\`\`\`design-map\n${JSON.stringify(map)}\n\`\`\``).problem, /there are 2 ```design-map blocks \(lines 1, 5\)/)
   assert.ok(parseEpicBody('## Settings\n\nDelivery: release\n\n```design-map\n[]\n```').problems.some((problem) => /design map/.test(problem)), 'a broken map is a problem with the plan, so create-epic refuses it')
+})
+
+test('Branch: must name a branch under epic/, because tickets are merged into it and the default branch is never a target', () => {
+  assert.equal(parseSettings('Branch: epic/trip-export').settings.branch, 'epic/trip-export')
+  assert.equal(parseSettings('Branch: epic/q4/export').settings.branch, 'epic/q4/export')
+  for (const value of ['main', 'feature/x', 'epic/', 'epic/../main', 'epic/a.lock', 'refs/heads/epic/x', 'epic/a b']) {
+    const parsed = parseSettings(`Branch: ${value}`)
+    assert.equal(parsed.settings.branch, null, value)
+    assert.equal(parsed.settings.rejectedBranch, value)
+    assert.match(parsed.problems[0], /is not an epic branch: it must start with epic\//, value)
+  }
+  assert.ok(parseEpicBody('## Settings\n\nBranch: main\n').problems.length, 'so create-epic refuses it')
 })

@@ -118,6 +118,8 @@ function attemptMerge(cwd, { sha, epicBranch, subject }) {
 }
 
 export function mergeIntoEpic(cwd, { sha, epicBranch, subject, retries = PUSH_RETRIES }) {
+  if (!/^epic\//.test(String(epicBranch || '')))
+    return { ok: false, kind: 'not-an-epic-branch', reason: `${epicBranch} is not an epic branch, and nothing here merges into any other branch` }
   if (!resolveCommit(cwd, sha)) return { ok: false, kind: 'unknown-commit', reason: `commit ${sha} is not in this clone; fetch the ticket branch first` }
   const attempts = []
   for (let attempt = 0; attempt <= retries; attempt++) {
