@@ -3,11 +3,11 @@
 A Claude Code plugin that plans work as **epics** and **tickets** and keeps
 them in **GitHub Issues**. GitHub is the board; git is the proof.
 
-This is **Flow 3.0, stages 1 to 3**: planning (`/flow:epic`), building one
-ticket (`/flow:ticket`, `/flow:quick`, `/flow:review`), building a whole epic
-with nobody watching (`/flow:run` here, or the GitHub Action in your
-project) and the `flow` command-line tool are rewritten. The retro is still
-the 2.x version (see [What is not rewritten yet](#what-is-not-rewritten-yet)).
+This is **Flow 3.0**: planning (`/flow:epic`), building one ticket
+(`/flow:ticket`, `/flow:quick`, `/flow:review`), building a whole epic with
+nobody watching (`/flow:run` here, or the GitHub Action in your project),
+looking back at a finished epic (`flow stats`, `/flow:retro`) and the `flow`
+command-line tool.
 
 ## Install
 
@@ -368,7 +368,7 @@ every answer is read from GitHub (through `gh`) and git.
 | `create-epic --file <md> --title "<t>"` | Creates the epic issue; prints its number |
 | `create-ticket <epic> --file <md> --title "<t>" [--tier easy\|hard] [--blocked-by <n>,<n>]` | Creates the ticket, writes its `Epic:` and `Blocked by:` lines, links it as a sub-issue and adds it to the epic's task list; prints its number |
 | `link <epic> <n>` | Finishes a `create-ticket` that created the issue but could not link it. Safe to repeat |
-| `create-ticket --no-epic --file <md> --title "<t>" [--tier easy\|hard]` | Creates a ticket that belongs to no epic (counts as approved) |
+| `create-ticket --no-epic --file <md> --title "<t>" [--tier easy\|hard] [--repo <owner>/<name>]` | Creates a ticket that belongs to no epic (counts as approved); `--repo` files it in another repository, such as the plugin's |
 | `needs-human <n> --text "<why>"` | Marks the ticket `flow:needs-human` and asks a person, by mention |
 | `start <n>` | Starts a ready ticket: branch, label, first comment. JSON out; refuses otherwise (unattended: and asks a person) |
 | `accept <n>` | Runs the criteria on `ticket/<n>`'s committed head and posts the results with the commit; refuses an issue body edited after the start |
@@ -378,7 +378,7 @@ every answer is read from GitHub (through `gh`) and git.
 | `meter <n> --workflow <run dir> [--print]` | The same, for one ticket of a `/flow:run` workflow run |
 | `pr-review-request <pr>` | Asks Copilot to review; prints `copilot`, `coderabbit` or `none` |
 | `pr-wait <pr> [--bot …] [--timeout <s>] [--interval <s>]` | Waits for the bot's review of the current head |
-| `pr-threads <pr>` | Unresolved review threads as JSON |
+| `pr-threads <pr> [--all]` | Unresolved review threads as JSON; `--all` adds the resolved ones |
 | `pr-resolve <thread-id> --text "<reply>"` | Replies on a thread, then resolves it |
 | `pr-checks <pr> [--wait] [--grace <s>]` | CI checks as JSON; exit 1 when one failed, 3 when some are still running, 4 when none appeared (under `--wait` it gives them 90 seconds first) |
 | `reset <n> [--once]` | Puts a ticket whose run died back to planned; its branch keeps its commits. On a planned ticket whose `flow:start` request never started, takes the label off. Refuses a ticket that passed acceptance (it is waiting to be merged), answering in JSON either way. `--once`: if it was reset (or its request withdrawn) before, asks a person instead |
@@ -389,11 +389,61 @@ every answer is read from GitHub (through `gh`) and git.
 | `dispatch <epic>` | Adds `flow:start` to up to `Parallel:` ready tickets; says whether the epic is `running`, `built` or `stopped`. Refuses while a `/flow:run` is building the epic |
 | `release-pr <epic>` | Opens the epic's pull request once every ticket is done, and posts it on the epic |
 | `design-map <epic> [--out <file>]` | Writes the epic's design map for the design comparison |
+| `stats [<epic>] [--since <date>] [--json] [--cwd <dir>]` | How the work went, per ticket, per epic and across epics; see [Looking back](#looking-back) |
 
-## What is not rewritten yet
+## Looking back
 
-`/flow:retro` (stage 4) still reads the 2.x `epics/<name>/` files, which 3.0
-no longer writes, so it does not work with an epic planned by 3.0.
+### `flow stats [<epic>] [--since <date>] [--json]`
+
+How the work went, read from the issues' comments and from git, and nothing
+else. Per ticket, and summed per epic:
+
+- **time per step**: building, review and fixes (from the cost comment),
+  acceptance (how long its checks ran), delivery (from the passing
+  acceptance to the merge, or to the last pull request comment when each
+  ticket has its own pull request) and the whole ticket from its first
+  start;
+- **tokens** in, out, cache writes and cache reads, per model, the largest
+  context any one request held, and compactions;
+- **review rounds** and their Important findings;
+- **rework**: commits ending `(review fix)`; **escaped defects**: commits on
+  the default branch ending `(fixes #n)`, counted against ticket `#n`;
+- **stops for a person**, each with its reason and a link, runs that
+  stopped, and tickets that were planned side by side but built one at a
+  time, with the reason.
+
+Without an epic it covers every epic (`--since 2026-10-01` leaves out those
+created earlier) and ends with the pace: done tickets per day and the median
+ticket from start to end. A figure no comment or commit carries reads
+`unknown`; a sum that only some tickets carry says how many (`1,800 (1/2)`).
+Nothing is estimated. Run it inside a clone (or with `--cwd`), fetched: rework
+and escapes come from its `origin/` branches.
+
+### `/flow:retro #<epic>`
+
+After the release pull request is merged (or, when each ticket had its own
+pull request, after every ticket is done), it hands the record to a separate
+**retro miner**, which never saw the work being done, and gets back seven
+answers, each with links to the comments and commits behind it:
+
+1. which stops needed a person, and whether the plugin could have answered
+   the question itself;
+2. which review findings were real defects and which were taste, and what
+   the pull request bot found that the local reviewer did not, or the
+   reverse;
+3. where the time went;
+4. which tickets were planned side by side and built one at a time, and why;
+5. whether an acceptance check passed while the outcome was not met, or
+   failed while the code was right;
+6. which rule in the project's instruction files was broken or missing;
+7. what should change: in the plugin, in the project's instruction files,
+   or nothing.
+
+The answers are posted on the epic, and you are asked about each proposal.
+Only a yes files anything: a plugin change becomes an issue in the plugin's
+repository (`flow create-ticket --no-epic --repo <owner>/<name>`), and an
+instruction-file change goes through `/flow:quick` to a pull request you
+merge.
 
 ## Agents
 
@@ -405,8 +455,10 @@ no longer writes, so it does not work with an epic planned by 3.0.
 - **ticket-reviewer** — reviews one ticket's commits with no memory of
   writing them and never sees the builder's reasoning. It reports and never
   fixes.
+- **retro-miner** — reads a finished epic's record for `/flow:retro` and
+  answers its questions with evidence. It proposes changes and files none.
 
-All three run on the strongest model available: what a reviewer or
+All four run on the strongest model available: what a reviewer or
 researcher left out cannot be checked afterwards.
 
 ## Further reading
