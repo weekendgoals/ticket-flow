@@ -12,9 +12,9 @@ An epic is an issue labelled `flow:epic` whose body is the plan; each ticket is
 a sub-issue with its scope, what is out of scope and its acceptance criteria;
 state is labels; progress is one comment per step. Major: every heading
 format, the ticket ID shape (`#12` instead of `PAY-3`) and every command
-contract change. Stages 1 and 2 of the rewrite are done: planning, the `flow`
-command, and building one ticket from ready to merged. The unattended run of
-a whole epic and the retro follow.
+contract change. Stages 1 to 3 of the rewrite are done: planning, the `flow`
+command, building one ticket from ready to merged, and building a whole epic
+with nobody watching, locally or as a GitHub Action. The retro follows.
 
 - **New: `scripts/flow.mjs`**, one command-line tool both the local run and a
   GitHub Action will call: `init` (creates the ten labels), `doctor`,
@@ -68,7 +68,8 @@ a whole epic and the retro follow.
   (`flow board` and `flow doctor` replace the last two). The repository's
   own 2.x `epics/` records stay on the default branch's history.
 - **Not yet rewritten, and not working with a 3.0 epic:** `/flow:run`,
-  `/flow:retro`, `workflows/run-epic.mjs` and `worktree-setup.mjs`.
+  `/flow:retro`, `workflows/run-epic.mjs` and `worktree-setup.mjs` (all but
+  the retro were rewritten in stage 3).
 - **`METHODOLOGY.md`** is now a short list of the lessons that still decide
   the design.
 
@@ -141,6 +142,85 @@ a whole epic and the retro follow.
 - **Removed:** the 2.x supervisor and interactive modes, the status log
   entries and addenda, the revert check written into a log, and the run
   meter's run-record lines.
+
+### Stage 3: an epic built with nobody watching, on two hosts
+
+- **`/flow:run #<epic>` rewritten, and `workflows/run-epic.mjs` with it**
+  (3,453 lines to 341). The skill checks (`flow doctor`, `flow next`,
+  a clean tree, no ticket in progress that someone may still be working on,
+  `.flow.json` for side-by-side builds) and starts the workflow. Each round
+  the workflow reads what is ready from GitHub, builds up to `Parallel:`
+  tickets with `/flow:ticket` on the ticket's model, starts the ticket
+  reviewer itself, has the builder fix what it found (two rounds), and, side
+  by side, merges the accepted commits into the epic branch one at a time in
+  the epic's order and checks them again at the new head. A wave whose
+  working copies cannot be set up runs one ticket at a time, with a comment
+  on the epic, and never stops the run. A builder that dies is reset and
+  built again once from its branch; a second death goes to a person. The run
+  ends at the release pull request, answers its review and CI for two
+  rounds, and posts its result on the epic. Gone with the 2.x driver: the
+  shell proxies that re-ran every command, fifteen halt kinds, the review
+  tiers, the fix-bounds gate, the per-ticket budget, the run log and its
+  ledger lines.
+- **New: the GitHub Action template, `plugins/flow/github/flow.yml`.** A
+  project copies it into `.github/workflows/`. `epic` (on approval and after
+  every ticket) adds `flow:start` to up to `Parallel:` ready tickets and,
+  once everything is built, checks the epic and opens the release pull
+  request; it never runs Claude. `ticket` (on `flow:start`, or by hand) runs
+  `/flow:ticket #<n> --unattended --no-merge` on the tier's model through
+  `anthropics/claude-code-action@v1` with this marketplace's plugin, posts
+  the cost, keeps the screenshots and resets a run that died. `merge`, one
+  at a time per epic, merges every accepted ticket in order and checks them
+  at the new head. `pr` answers reviews and failed checks on ticket and epic
+  pull requests, one round per event, leaving a ticket's pull request to its
+  `ticket` job until the ticket is done. Labels are added with a `FLOW_TOKEN` secret, because labels
+  added with the default token start no other workflow.
+- **New `flow` commands for running an epic:** `merge <n> [--sha]` and
+  `merge --epic <epic>` (the accepted commit only, refusing any other),
+  `check-epic <epic> [--tickets] [--mark]` (the done tickets' checks at the
+  epic head in a clean copy, posted on the epic; `--mark` hands a failing
+  ticket to a person and it stays merged), `worktree <n> [--remove]`,
+  `dispatch <epic>`, `release-pr <epic>` (refuses until every ticket is
+  done; the body has the outcome, the walkthrough, each ticket's merge
+  commit and the cost, and closes the epic and its tickets when a person
+  merges it), `design-map <epic>` and `reset <n> [--once]`.
+- **A ticket can be resumed.** `flow reset <n>` puts a ticket left in
+  progress or in review back to planned, keeps its branch and says so; it
+  refuses a ticket that passed acceptance, which is waiting to be merged.
+  `flow start` on a ticket whose branch exists now checks that branch out
+  and carries on from it ("Resumed") instead of refusing; it refuses only
+  when the branch moved both locally and on origin. Acceptance still draws
+  its line at the latest start comment.
+- **`/flow:ticket` takes arguments a host passes**: `--unattended` (for a
+  host that cannot set `FLOW_UNATTENDED`), `--until-review` and
+  `--after-review <round>` (the host starts the reviewer, because an agent
+  it started cannot start another), `--no-merge` (the host merges a wave's
+  tickets one at a time) and `--pr-loop <pr> [--wait]` (one round of the pull
+  request loop; `--wait` for a host that gets no review or check events). A
+  person never needs them.
+- **The design map moves into the epic body**, as a fenced `design-map`
+  block under `## Design map` (the 2.x `design-map.json` shape).
+  `flow create-epic` refuses a map the comparison cannot read, and the
+  ticket skill's comparison reads it with `flow design-map`. The plan
+  reviewer checks the map against the design files.
+- **`.flow.json` gains `copy` and `setup`**, replacing 2.x's
+  `epics/worktree.json`: what a fresh working copy needs, read from the
+  branch as committed. A file git does not ignore is still never copied,
+  nothing is read or written through a symbolic link, and the setup still
+  has eight minutes.
+- **The meter reads the real headless shape**, checked against one real
+  `claude -p --output-format stream-json --verbose` run: messages deduplicated
+  by `request_id` as well, the result line's `modelUsage` shown as the run's
+  own totals, and the run timed by its `duration_ms` when that is longer than
+  its first to last message. It also reads the JSON array the GitHub Action
+  writes, and one ticket's agents out of a workflow run
+  (`flow meter <n> --workflow <run dir>`).
+- **`/flow:epic`** now names all three ways to build a signed-off epic, and
+  warns that a project with the Action is already building it on GitHub.
+- **`flow next`** adds `delivery`, `parallel`, `branch` and each ticket's
+  tier, model and state to its JSON; **`flow post --file -`** reads standard
+  input; **`flow:start`** is the eleventh label, taken off when the ticket
+  starts or goes to a person.
 
 ## 2.6.0 — 2026-09-22
 

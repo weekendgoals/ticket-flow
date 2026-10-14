@@ -40,8 +40,10 @@ jobs:
           node --test plugins/flow/scripts/checks.test.mjs
           node --test plugins/flow/scripts/tracker/github.test.mjs
           node --test plugins/flow/scripts/lifecycle.test.mjs
+          node --test plugins/flow/scripts/epic-run.test.mjs
           node --test plugins/flow/scripts/pull-request.test.mjs
           node --test plugins/flow/scripts/fidelity.test.mjs
           node --test plugins/flow/scripts/meter.test.mjs
           node --test plugins/flow/scripts/worktree-setup.test.mjs
           node --test plugins/flow/workflows/run-epic.test.mjs
+          node --test plugins/flow/github/flow.test.mjs

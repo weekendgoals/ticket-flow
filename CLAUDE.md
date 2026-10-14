@@ -8,11 +8,11 @@ skill and host calls. `README.md` is the user manual; `METHODOLOGY.md` holds
 the lessons behind the rules and no rules of its own — if it contradicts a
 skill, the skill wins.
 
-Stages 1 and 2 (this state) rewrote planning and building one ticket: the
-CLI and its modules, skills `epic`, `ticket`, `review`, `quick`, and all
-three agents. Still 2.x and due for rewrite: skills `run` and `retro`,
-`workflows/`, `scripts/worktree-setup.mjs`; leave them alone until their
-stage. `scripts/fidelity.mjs` with its test and fixtures stays as it is.
+Stages 1 to 3 (this state) rewrote planning, building one ticket and
+building a whole epic on two hosts (`/flow:run` with `workflows/run-epic.mjs`,
+and the GitHub Action template `github/flow.yml`). Still 2.x: skill `retro`
+(stage 4); leave it alone. `scripts/fidelity.mjs` with its test and fixtures
+stays as it is.
 
 ## Ticket Flow policy
 
@@ -26,19 +26,19 @@ always overrides it.
 - `scripts/flow.mjs` — the CLI: planning (`init`, `doctor`, `board`, `next`,
   `ticket`, `check`, `post`, `label`, `create-epic`, `create-ticket`, `link`,
   `needs-human`), one ticket's steps (`start`, `accept`, `deliver`,
-  `screenshots`, `meter`) and the pull-request loop (`pr-*`).
-- `scripts/tracker/github.mjs` — every `gh` call, as plain functions, so a
-  Jira tracker can sit behind the same surface later.
-- `scripts/tracker/fake-gh.mjs` — the fake `gh` the tests put first on PATH:
-  canned JSON keyed by method and path, every call recorded.
-- `scripts/issue-body.mjs` — reads epic and ticket bodies: sections,
-  settings, `Epic:`, `Blocked by:`, the task list, the criteria block.
-- `scripts/checks.mjs` — the CHECK/EXPECT/COMPARE/LANDMARKS grammar and runner.
-- `scripts/epic-state.mjs` — labels, derived state (`ready`, `waiting`),
-  cycles, the stuck verdict.
-- `ticket-steps.mjs` (when a ticket may start; the comments steps post and
-  read back), `delivery.mjs` (every git call: branch, merge in a temporary
-  worktree, retries), `review-bots.mjs` (Copilot or CodeRabbit), `meter.mjs`.
+  `screenshots`, `meter`, `reset`), the pull-request loop (`pr-*`) and a
+  whole epic (`dispatch`, `worktree`, `merge`, `check-epic`, `release-pr`,
+  `design-map`).
+- `scripts/tracker/github.mjs` — every `gh` call, as plain functions (a Jira
+  tracker can sit behind the same surface); `tracker/fake-gh.mjs` is the
+  fake `gh` the tests put first on PATH.
+- `issue-body.mjs` (epic and ticket bodies, the design map), `checks.mjs`
+  (the criteria grammar and runner), `epic-state.mjs` (labels, derived
+  state, cycles, stuck), `ticket-steps.mjs` (the comments steps post and read
+  back), `delivery.mjs` (every git call), `review-bots.mjs`, `meter.mjs`,
+  `worktree-setup.mjs` (`.flow.json` `copy`/`setup` in a fresh copy).
+- `workflows/run-epic.mjs` — the `/flow:run` loop as a workflow script.
+  `github/flow.yml` — the Action a project copies; it calls the same CLI.
 
 ## Commands
 
@@ -48,28 +48,29 @@ as of 2026-10-15; the pass count grows, the fail line stays `# fail 0`.
 
 - `node --test plugins/flow/scripts/flow.test.mjs` — `# pass 46`. The CLI
   end to end against the fake `gh`; one case needs `git` on PATH.
-- `node --test plugins/flow/scripts/lifecycle.test.mjs` — `# pass 22`. The
+- `node --test plugins/flow/scripts/lifecycle.test.mjs` — `# pass 23`. The
   ticket steps in throwaway repositories with a bare remote; needs `git`, `sh`.
-- `node --test plugins/flow/scripts/pull-request.test.mjs` — `# pass 16`.
-- `node --test plugins/flow/scripts/issue-body.test.mjs` — `# pass 23`.
-- `node --test plugins/flow/scripts/checks.test.mjs` — `# pass 26`. Runs real
-  shell commands in a temp dir.
-- `node --test plugins/flow/scripts/tracker/github.test.mjs` — `# pass 18`.
-- `node --test plugins/flow/scripts/fidelity.test.mjs` — `# pass 54`.
-- `node --test plugins/flow/scripts/meter.test.mjs` — `# pass 13`. Builds
+- `node --test plugins/flow/scripts/epic-run.test.mjs` — `# pass 21`. The
+  whole-epic commands, the same way.
+- `pull-request.test.mjs` `# pass 16`, `issue-body.test.mjs` `# pass 24`,
+  `checks.test.mjs` `# pass 26` (real shell commands in a temp dir),
+  `tracker/github.test.mjs` `# pass 18`, `fidelity.test.mjs` `# pass 54`,
+  each under `plugins/flow/scripts/`.
+- `node --test plugins/flow/scripts/meter.test.mjs` — `# pass 16`. Builds
   its transcripts; no test reads a real one (they belong to whoever ran them).
-- `node --test plugins/flow/scripts/worktree-setup.test.mjs` — `# pass 17`;
+- `node --test plugins/flow/scripts/worktree-setup.test.mjs` — `# pass 19`;
   needs `git`, POSIX `sh` and `sleep`.
-- `node --test plugins/flow/workflows/run-epic.test.mjs` — `# pass 182`.
+- `node --test plugins/flow/workflows/run-epic.test.mjs` — `# pass 16`.
+  Evaluates the module body with stubbed `agent`; no git, no network.
+- `node --test plugins/flow/github/flow.test.mjs` — `# pass 8`. Reads the
+  Action template with a small YAML reader written in the test.
 - **Syntax:** `node --check` on every `.mjs` under `plugins/flow/scripts/`.
   It does not work on `workflows/run-epic.mjs` (a module body with a
   top-level `return`); parse that one the way the workflow runtime does:
   `node -e 'const s=require("fs").readFileSync("plugins/flow/workflows/run-epic.mjs","utf8").replace(/^export const meta/m,"const meta");new (Object.getPrototypeOf(async function(){}).constructor)("agent","parallel","pipeline","log","phase","args","budget",s)'`
-- **Doctor:** `node plugins/flow/scripts/flow.mjs doctor` — prints `ok` and
-  exits 0 on a repository set up for Flow. It needs a signed-in `gh`, so CI
-  does not run it.
-- **Live plugin dev:** `/plugin marketplace add ~/projects/ticket-flow`, then
-  `/reload-plugins`.
+- **Doctor:** `node plugins/flow/scripts/flow.mjs doctor` prints `ok` on a
+  repository set up for Flow; it needs a signed-in `gh`, so CI skips it.
+- **Live plugin dev:** `/plugin marketplace add ~/projects/ticket-flow`.
 
 CI (`.github/workflows/tests.yml`) runs every suite and syntax check above,
 so a local run and the pull-request gate cannot drift apart.
@@ -79,31 +80,25 @@ so a local run and the pull-request gate cannot drift apart.
 - **Zero dependencies, nothing stored.** No npm package, no package.json, no
   cache or state file. Every fact is read from GitHub (through `gh`) and git
   each time; a stored copy drifts from the board it copies.
-- **No code comments.** Names carry the meaning; a comment is a second copy
-  of the code that nobody tests. This applies to the plugin's own code and to
-  anything ported into it.
+- **No code comments**, in the plugin's code or anything ported into it:
+  names carry the meaning, and a comment is a second copy nobody tests.
 - **Every `gh` call goes through `tracker/github.mjs`**, as `gh api` with
-  JSON in and JSON out, writes sent on stdin. Never scrape `gh`'s text
-  output: it changes between versions.
-- **Tests never reach the network or real GitHub.** They put the fake `gh`
-  first on PATH; an unexpected call fails the test instead of falling through.
+  JSON in and out; never scrape `gh`'s text, which changes between versions.
+- **Tests never reach the network or real GitHub**: the fake `gh` fails an
+  unexpected call instead of letting it fall through.
 - **`Blocked by:` is strict.** `Blocked by: #12, #14` at the start of a line,
   issue numbers and commas only. A line that mentions blocking and does not
   parse is a named problem the board, `next` and `doctor` print, and the
   ticket waits. Never make the parse tolerant: a tolerant parse once stalled
   tickets on prose with nothing saying why.
-- **Ready is derived, never a label.** A `flow:planned` ticket is ready when
-  its epic has `flow:approved`, every blocker is `flow:done` and it has no
-  problem. Approval is enforced there, in the one command a driver runs, so
-  a single label on GitHub approves an epic and nothing can start without it.
-- **`next` exits 1 when an epic is not approved, has no tickets, or is stuck**
-  (unfinished tickets, none ready, none in progress). A driver reads exit 0
-  with nothing ready as "built"; none of these may read that way.
-- **A ticket with no criteria fails its check.** The issue body is editable by
-  anyone with write access, so a missing or empty ```` ```criteria ```` block
-  is a problem, never an empty pass; `check` also returns the body's edit
-  history so a later step can see who changed it. `create-ticket` refuses
-  such a ticket at the door.
+- **Ready is derived, never a label**: planned, epic `flow:approved`, every
+  blocker `flow:done`, no problem. Approval is enforced there, in the one
+  command a driver runs, so nothing can start without it.
+- **`next` exits 1 when an epic is not approved, has no tickets, or is
+  stuck**, because a driver reads exit 0 with nothing ready as "built".
+- **A ticket with no criteria fails its check**: anyone with write access can
+  edit the body, so a missing or empty ```` ```criteria ```` block is a
+  problem, never an empty pass, and `create-ticket` refuses it.
 - **The criteria grammar is one format** shared by `checks.mjs`, the epic
   skill's template and every step that runs criteria. A change to
   CHECK/EXPECT/COMPARE/LANDMARKS moves the parser, the skill and the tests in
@@ -111,19 +106,26 @@ so a local run and the pull-request gate cannot drift apart.
   in neither total nor passed; a malformed line fails the check rather than
   silently never running.
 - **A person merges into the default branch, and nothing runs after.** No
-  agent merges or pushes toward the default branch. The one sanctioned agent
-  merge is a ticket branch into its epic branch, by the verified commit, never
-  by a name that could move.
+  agent merges or pushes toward it; both hosts end at the release pull
+  request. The one sanctioned agent merge is a ticket into its epic branch,
+  by the accepted commit, never by a name that could move.
 - **The reviewer never sees the builder's transcript or reasoning**, not even
-  a summary: an explanation of why the code is right is what makes a
-  reviewer agree with it.
-- **Criteria edited after a ticket starts refuse acceptance.** `accept`
-  compares the body's edit history with the start comment, because the
-  criteria are the gate and whoever edited them may not be who approved them.
-  `deliver` takes only the commit a passing acceptance named.
+  a summary: an explanation of why code is right makes a reviewer agree.
+- **Criteria edited after a ticket starts refuse acceptance** (the latest
+  start comment draws the line): whoever edited the gate may not be who
+  approved it. Only the commit a passing acceptance named is merged.
 - **Two review rounds, then a person** (also for acceptance fixes and the
   pull-request loop). A ticket stops only for that, a contradiction between
-  ticket and code, or a merge conflict; a halt on infrastructure is noise.
+  ticket and code, a merge conflict, or checks failing at the epic head
+  after it merged; a halt on infrastructure is noise.
+- **The run driver re-reads GitHub and trusts no agent's report.** Each
+  round starts from `flow next`; an agent's answer only routes the next step,
+  and every gate is a command that reads the issue. A dead builder is reset
+  once, then goes to a person.
+- **A parallel failure falls back to serial and never halts**: the wave
+  runs one ticket at a time, with a comment on the epic.
+- **Merges into an epic branch are one at a time**, in the epic's order
+  whichever ticket finished first, each wave followed by `check-epic`.
 - **The meter never estimates**: a figure no transcript records is `unknown`.
 - **Reviewers report and never fix; the researcher observes and never
   proposes.** Never give `plan-reviewer` or `ticket-reviewer` write
@@ -131,14 +133,12 @@ so a local run and the pull-request gate cannot drift apart.
   or the ticket list: told the answer, it confirms it.
 - **Reviewers and the researcher run on the strongest model.** Never pin a
   cheaper one to save cost: what they miss cannot be checked afterwards.
-- **A gate lives in the command its actor runs.** A refusal in a sibling
-  command guards nothing, and the recovery it advertises must work from the
-  refused state.
-- **Skills are self-sufficient.** An agent running a skill never needs
-  another document; each rule carries its reason in one short clause.
-- **Plain language.** Skills and what they post are written for a person who
-  does not know Flow. The 2.x vocabulary (deviation, owed, addendum, ledger,
-  preamble, lane, supervisor, consequence tier, disposition) is retired.
+- **A gate lives in the command its actor runs**, and the recovery it
+  advertises must work from the refused state.
+- **Skills are self-sufficient**; each rule carries its reason in a clause.
+- **Plain language**, for a person who does not know Flow. The 2.x words
+  (deviation, owed, addendum, ledger, preamble, lane, supervisor,
+  consequence tier, disposition) are retired.
 - **A CHANGELOG.md entry for every behaviour change**, in the same commit:
   installed projects update live, so an unrecorded change is a silent one.
   Entries collect under the newest unreleased heading; the pull request that
