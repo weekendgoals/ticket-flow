@@ -1,58 +1,12 @@
 # ticket-flow
 
-A Claude Code plugin that runs work as **epics** and **tickets**, from a request
-through to a reviewed pull request — and derives the board from git instead of
-asking anyone to maintain one.
+A Claude Code plugin that plans work as **epics** and **tickets** and keeps
+them in **GitHub Issues**. GitHub is the board; git is the proof.
 
-Nine skills, two reviewer agents, one board script, one workflow script
-(`/flow:run`'s ticket loop), one session hook. No database,
-no config file, no state stored anywhere — except one per-session marker in
-the OS temp dir (the in-session-work guard's memory of the current
-conversation; it dies with the session's context and never touches the
-repository).
-
-| | |
-|---|---|
-| `/flow:epic <name> [source...]` | Turn a request, report or conversation into `epics/<name>/`. Sources are files, globs or URLs, saved into `context/`; with none, the conversation is the brief. Where the brief **names a solution** or the epic spans more than one area, a fresh-context **researcher** — given the areas and a list of present-tense questions, and deliberately not the brief, the solution or the ticket list — reports what is true today with a `file:line` for every claim, so the decomposition is made against the code rather than against a reading of it taken under somebody's proposal. The shape is agreed **before** the document is written, a fresh-context **plan reviewer** challenges the decomposition — holding the **design** too, where the epic declares one, so that an element the drawing has and the map does not is caught before sign-off — then it **stops for sign-off** and commits — no pull request. An epic that declares `Design sources:` writes `design-map.json` beside its tickets and **ends with a whole-page fidelity ticket, then a human render-and-read ticket** (the differ decides computed style; composition and behaviour are a person's to judge, and the release waits on that ticket); what the plan deliberately does not build is declared in that map's `removed` list, where a comparison prints it as a decision instead of a hole. Both human gates render the plan as a **styled page** (`plan-page.mjs`, published as an artifact): one URL that evolves from shape checkpoint to sign-off, never committed, carrying a **walkthrough** of what the epic will let a person do — scene by scene, each scene tied to the tickets that build it — and a select-to-comment popover whose block you paste back into the chat |
-| `/flow:ticket <ID>` | One ticket end to end: branch, implement, verify, log, commit, review, fix, push, pull request. Runs **supervisor-mode by default** — a fresh-context worker implements from the documents and the supervisor hires the reviewer; `--interactive` runs in-session, once per session (a hook refuses a second interactive run; supervisor runs stay open) |
-| `/flow:run <epic>` | Run a `Delivery: release` epic end to end with nobody present: verifies sign-off happened, then hands the loop to a shipped **workflow script** — **code-controlled, agent-executed** — that takes the tickets in document order. Per ticket: refresh the epic branch and read the board, a **fresh-context worker** implements and stops at its pushed branch (**release tickets open no pull request of their own** — the release pull request at the end is the epic's only one), the **driver hires the reviewer** priced by a code-floored tier, a disposition agent fixes and records, fixes get one bounded re-review at the consequence tier — below it a code gate checks the fix diff stayed inside the files the review saw or its findings named and under a line budget, and a trip buys that same re-review at the consequence tier instead of halting (only a fix diff nothing could measure still halts) — the ticket's `CHECK`/`EXPECT` acceptance criteria are **re-run from the signed-off document** (`tickets.mjs check <ID> --from origin/epic/<name>`) and gated on in code, then the branch's review addendum, the departures its status entry records (**any `**Deviation:**` line halts the run — closed or not, because nobody present could have closed it**) and its exact head SHA are checked **in code before any agent that could merge exists**; only then does a merge agent merge that verified SHA — which cannot be retargeted — into the epic branch, and the board — not an agent — confirms the result. It halts on any stop condition, because each one is a code path rather than a judgment call. The session ends by **opening** the release pull request. Requires the Workflow tool; never merges toward the default branch |
-| `/flow:quick <description>` | The **cheap lane**: one small, low-risk piece of work, implemented **in-session** with a written scope, verification with counts, a short log entry and a pull request — and a fresh-context reviewer **only when behaviour changes** (prose-only diffs — documentation and comments, nothing a machine reads — get none; the PR is the review). Size- **and risk-gated**: auth, secrets, migrations and other consequential work is routed to `/flow:epic` at any size |
-| `/flow:tickets [epic]` | The board — shipped, in flight, blocked, todo |
-| `/flow:board [epic]` | The same board as a **styled HTML page**, published as an artifact you can open and share, with a **Tokens** column from the recorded spend ledger. A rendering of derived state, rebuilt from git on every run — never committed, never a second store |
-| `/flow:spend [epic]` | The **recorded token ledger** — per ticket, per role (worker, reviewer, re-review, disposition, proxies) and per epic, derived from the status logs' Tokens lines, addendum phrases and run records — and beside it the **recorded time**: seconds per role and each ticket's wall-clock, from the run records' Time lines, plus the **cache reads**, the **peak context** each role reached, the **model** each role ran on and what each review **found**, from theirs. `unknown` stays unknown, nothing is estimated. The same skill runs `tickets.mjs metrics [epic]`: **pace per worker model, rework, review effectiveness, halts by kind and escaped defects**, derived from those ledgers and the commit subjects |
-| `/flow:review [range]` | Review a commit range and report. Used by `/flow:ticket`; runnable on its own |
-| `/flow:doctor` | Is this project ready for the flow? Preconditions, merge settings, instruction-file quality, and headings that would silently misparse |
-| `/flow:retro [epic]` | Close a finished epic: a **fresh-context miner** reads the status log and review addenda and drafts the lessons and owed work — the invoking session often planned or ran the epic, so it mines nothing itself — then the approval gate and the shipping stay in-session, into instruction files and tickets. Its **seventh question asks what the run halted on and what each halt bought**: every `### Run —` record's halt classified as **work**, **plan**, **plugin/environment** or **policy**, with what the human did to resume and whether the stop retired a real risk or fired on a clean state — a policy stop that keeps firing clean becomes a proposal against the policy, a plugin halt a ticket for the plugin's own repository |
-
-You review the pull request and merge it. **There is no command after the
-merge.** In a release epic the pull request you review is the release one —
-the gate moves, it never disappears.
-
-## Flow is opt-in
-
-Flow is invoked, never inferred. A plain implementation request is direct
-development — implement, verify, report, no epic or ticket documents. The
-methodology engages only when you type a `/flow:*` command or ask for it by
-name. That gives every request three lanes, priced by what they buy:
-
-- **Direct** — "fix the typo". No ticket, no log, no separate reviewer. The
-  agent's normal behaviour; Flow stays out of the way.
-- **Quick** — `/flow:quick <request>`. A small isolated change that deserves
-  a durable record and a pull request.
-- **Epic** — `/flow:epic <name>`. Risky, uncertain, or multi-ticket work
-  that deserves planning, adversarial review, and a sign-off gate.
-
-To make the contract explicit in a project that installs the plugin, add
-this to its `CLAUDE.md`:
-
-```markdown
-## Ticket Flow policy
-
-Use Ticket Flow only when the user explicitly invokes `/flow:*` or asks to
-use the Flow methodology. Ordinary implementation requests run directly:
-implement, verify, and report without creating epic or ticket documents.
-"Direct" or "without Flow" always overrides the methodology.
-```
+This is **Flow 3.0, stage 1**: planning (`/flow:epic`) and the `flow`
+command-line tool are rewritten. Building, reviewing and the unattended run
+are still the 2.x versions and are being rewritten next (see
+[What is not rewritten yet](#what-is-not-rewritten-yet)).
 
 ## Install
 
@@ -61,734 +15,174 @@ implement, verify, and report without creating epic or ticket documents.
 /plugin install flow@ticket-flow
 ```
 
-Local edits are picked up live; run `/reload-plugins` to pick them up mid-session.
+You also need the GitHub CLI, signed in: `gh auth login`. Then, once per
+repository:
 
-## What it expects from a project
-
-Almost nothing, and nothing you have to create up front — and `/flow:doctor`
-checks all of it, so run that first in a new project.
-
-- **A git repository with a remote**, and `gh` authenticated. Without `gh` the
-  board degrades to git-only facts and says so.
-- **`epics/` at the repository root.** `/flow:epic` creates it. An epic is any
-  directory under it containing `tickets.md`; there is no index to keep honest.
-- **Agent instructions** — `CLAUDE.md` or `AGENTS.md` at the root, and ideally
-  one per service or workspace. The skills read run and test commands from them
-  rather than guessing, so a project that documents its own commands needs no
-  plugin configuration at all.
-- **Never squash a multi-ticket pull request.** The board reads per-ticket
-  commit subjects off the default branch to decide what has shipped. A
-  single-ticket pull request titled `<ID>: <title>` survives squash — the squash
-  commit inherits the title — so orgs that mandate squash can use incremental
-  delivery as-is. A **release** pull request carries many tickets and must
-  merge with a merge commit.
-
-## The three documents
-
-| Document | Job | Mutation rule |
-|---|---|---|
-| `CLAUDE.md` (root, and per area) | What the project **is** | Edited in place, **in the same commit** as the change it describes |
-| `epics/<e>/tickets.md` | What the work **is** | Written up front. Edited to re-plan, never to record progress |
-| `epics/<e>/status.md` | What **happened** | Append-only. Corrections are dated addenda |
-| `epics/<e>/runs.md` | What the **runs** did | Append-only. Corrections are dated addenda |
-| `epics/<e>/design-map.json` | What the design **draws**, and what the plan deliberately does not build | Written with the plan and signed off with it. Workers edit its `page` selectors; its **`removed` list is planning's**, and the differ honours removals only from the signed-off ref |
-| `epics/<e>/context/` | What it was based on | Frozen. Add, never rewrite |
-
-`runs.md` exists because two writers used to share one file tail: a ticket
-worker appends its entry on a ticket branch while an unattended run appends
-its record on the epic branch, and every mid-ticket halt then cost a hand
-merge. It is created by the first run record written after an epic splits
-them out; logs written before the split keep their records in `status.md`
-and are still read there, because an append-only log is never rewritten.
-
-**Both planning gates render the plan as a page**, and the page carries a
-**walkthrough**: three to seven scenes saying who does what, what they see once
-the epic ships, and what happens today instead — in the order a person meets
-them, not the order the work is built. It is the counterpart of the release
-walkthrough below: that one shows what *was* built, after the fact; this one
-shows what *will* be, while a sentence still costs a sentence. The scenes name
-their tickets structurally, and `plan-page.mjs` refuses to render a scene that
-names a ticket the plan does not carry (and lists, under the walkthrough, every
-ticket no scene names) — a promise nobody has to build is the one fiction this
-section reliably produces. The same scenes are written into `tickets.md` as a
-`## Walkthrough` section in the preamble, which is what survives the page: the
-page is never committed, while `tickets.mjs brief` hands the whole preamble to
-every worker and the retro asks, scene by scene, whether it happened.
-
-**That guard stands at both doors.** The renderer checks the plan JSON, which
-is thrown away; `/flow:doctor` checks the copy that survives, reading each
-scene's `**Tickets:** <ID>[, <ID>]` line — strict like `**Blocked by:**`: bold
-label, bare ticket IDs of this epic, commas and nothing else — and naming, by
-scene number and line, any ID the epic does not have and any line that will not
-parse. Only inside that section, where `**Tickets:**` means a scene's tickets
-and nowhere else. The repair is to edit `tickets.md`: it is the plan, edited to
-re-plan, and the append-only rule is the status log's.
-
-**Comment on a plan page by selecting text.** A popover takes a note and copies
-
-```
-> [<anchor>] <the text you selected>
-<your comment>
+```bash
+node <plugin root>/scripts/flow.mjs init      # creates the labels
+node <plugin root>/scripts/flow.mjs doctor    # prints "ok" when everything is in place
 ```
 
-to the clipboard; you paste it into the chat and the session answers it, updates
-the plan and re-renders at the same URL. The anchor is the section or ticket the
-selection started in (`outcome`, `walkthrough`, `scene-2`, `PAY-3`, …), or
-`page` under none. Nothing is stored, nothing is sent, and no parser reads these
-blocks — chat is the channel. With JavaScript off the page reads exactly as it
-does with it; the popover is additive, and the page does not advertise it.
+## Flow is opt-in
 
-The status log is a **diary, not a dashboard**. "Which tickets are done" is
-answered by `/flow:tickets`, computed fresh from ticket headings, status-log
-headings, git branches, commit subjects on the default branch, and `gh pr list`.
-Never add a status column anywhere — a hand-maintained mirror of a derivable fact
-drifts within days.
+A plain request ("fix the typo", "add this button") is ordinary
+development: no epic, no tickets. Flow runs only when you type `/flow:epic`
+or ask for Flow by name. To make that explicit in a project, add to its
+`CLAUDE.md`:
 
-The board also names **work that belongs to no ticket**. Under an epic whose
-branch carries them it prints one line — `2 unticketed commits on epic/<name>
-(1 subjected "<name>: …")` — and `list <epic> --json` lists them by sha and
-subject: the non-merge commits between the default branch and the epic branch
-that touch anything outside `epics/` and open with no ticket ID. Such a commit
-reaches no status entry, no spend line and no reviewer, however right it is.
-Work that belongs to the epic as a whole — a release review's fixes — is
-subjected `<epic-name>: …`; `/flow:doctor` warns only about commits that name
-neither a ticket nor their epic, and the repair is a record (a ticket with a
-status entry, or `/flow:quick`), never a rewritten history.
+```markdown
+## Ticket Flow policy
 
-**Keeping the default branch tidy.** The documents ride the same branches and
-pull requests as the code — that is what makes the record travel — but they
-need not dominate the diff or the language stats. Two practices, both optional:
+Use Ticket Flow only when the user explicitly invokes `/flow:*` or asks to
+use the Flow methodology. Ordinary implementation requests run directly.
+```
 
-- Add to `.gitattributes`:
+## How work is kept on GitHub
 
-  ```
-  epics/** linguist-generated=true
-  ```
+**An epic** is an issue labelled `flow:epic`. Its body is the plan:
 
-  GitHub then collapses the epic documents in pull-request diffs and keeps
-  them out of language statistics. Collapsed is not hidden — a reviewer
-  expands them with a click, and the release pull request's evidence trail is
-  intact; the review effort just lands on the change instead of the record.
-- **After a retro**, a closed epic's folder may move to `epics/_archive/<name>`
-  (a plain `git mv`, in a reviewed pull request like any change). The board
-  only discovers epics directly under `epics/`, so an archived epic drops off
-  it — which is safe **only after** the retro has converted its owed items
-  into live tickets and its lessons into instruction files; archiving first
-  silently deletes the debt ledger. Moving is not deleting: the log stays in
-  git, fully readable, and shipped detection never depended on the folder —
-  it reads commit subjects. The standing `epics/quick/` is never archived
-  whole — it **rolls over by era** instead: when its log grows long
-  (roughly 25 entries), `/flow:retro quick` converts the open owed items to
-  tickets, archives the era to `epics/_archive/quick-<date>` verbatim, and
-  recreates a fresh quick epic whose preamble records the ID floor
-  (`Q-IDs continue at Q-<n+1>`), so numbering never collides with shipped
-  work.
-
-## Release or incremental
-
-Every epic declares one **Delivery** line in its ticket document. Either way
-the epic has exactly one branch, `epic/<name>`, created by `/flow:epic` to
-hold its documents.
-
-**release** (the default for a multi-ticket epic) — after sign-off,
-`/flow:run <epic>` executes the tickets unattended: each in a fresh-context
-agent that implements, is reviewed on its pushed branch, fixes findings,
-and has its verified head merged into `epic/<name>` — no per-ticket pull
-request exists; the release pull request the run ends by **opening** is the
-epic's only one, and it is where the whole evidence trail reaches the
-human. The loop itself is a workflow script the plugin ships
-(`workflows/run-epic.mjs`), so every stop condition is code that returns
-rather than prose an agent could reason past. The human makes two decisions — approve the plan, approve the
-release — instead of clicking merge between every ticket. The release body is **built from the log, at whichever door opens the pull
-request**: its `## Owed` section is pasted from `tickets.mjs owed <epic>` and
-its `## Unticketed commits` section from the board, both written even when
-empty, and it closes by asking the human for the release-PR addendum. A run
-that halted never reaches that step, so after the last ticket is finished by
-hand the route is re-running `/flow:run <epic>` — nothing left to start, it
-makes the release check and goes to the pull request — or, when the run refuses the board (an
-abandoned ticket reads `blocked`), opening it by hand following the run
-skill's step 7 section for section. **The human gate
-moves to the release pull request; it does not disappear.** Main never sees
-an agent merge in any mode — an unreviewed ticket is never merged anywhere.
-Release epics are bounded: roughly 3–6 tickets, days not weeks, a release
-diff a human can actually review — beyond that, split the epic or go
-incremental, because a long-lived epic branch accumulates integration risk
-and delays real feedback.
-
-**incremental** — each ticket opens its own human-gated pull request against
-the default branch and is merged before the next starts. Choose it when
-per-ticket production feedback matters, when main moves fast in the same
-area, or when a migration needs staged deployment. `/flow:ticket` checks
-that the previous ticket's pull request actually landed, and stops rather
-than silently branching off unmerged work.
-
-One line, one decision — there are no separate topology and run-mode
-declarations, so "unattended merges toward main" is not even declarable: a
-release epic's unattended merges target `epic/<name>` by construction, and
-an absent line means incremental. Running one ticket of a release epic by
-hand with `/flow:ticket` remains available as the escape hatch for
-resolving a halt or watching one consequential ticket closely — it is
-recovery, not a planned mode.
-
-In both deliveries the epic's **first** ticket branches from `epic/<name>`, so
-the ticket document, status log and context travel to the default branch with
-it. A ticket that skipped that step would leave the board blind to its own
-epic.
-
-What is never allowed is one pull request carrying a whole epic that nobody
-planned as a release. Past roughly 400 changed lines, review stops finding
-defects — and an epic-sized diff is the situation where documentation gets
-deleted to make the diff smaller, which destroys the only memory the next
-session has.
-
-## Unattended runs
-
-A run **halts** rather than improvises: on a blocked ticket, an Important
-review finding it cannot fix, a document/code contradiction, a merge
-conflict, reviewer-spawn failure after its fallback, a permission prompt
-firing mid-run, a review fix that adds files where the ticket never worked
-(the signature of `git add -A` sweeping somebody else's untracked files into
-the ticket — every agent the driver lets commit is told to stage by name, and
-this is the code floor under that sentence), or any failing command — with one tolerated exception: a
-404 or 403 from the two branch-protection probes is the answer that check
-exists to read, not a failure. Halting is the mechanism working —
-a run that pushes through is a run whose release pull request can no longer
-be trusted.
-
-**A parallel run sets each worktree up from `epics/worktree.json`**, a
-project-level file every epic shares: `{"copy": [".env"], "setup": ["npm
-ci"]}`. `copy` files come from your main checkout (only files git ignores —
-anything else is refused, because a copied secret would be one `git add -A`
-from a commit); `setup` commands run inside the worktree. It is read as
-committed on the epic branch, so what runs is what was pushed. Without the
-file a worktree has only what git tracks and each worker installs what it
-thinks the project needs.
-
-**A run ends by checking what it is about to release.** Each ticket's
-`CHECK` criteria pass before its own merge; nothing re-ran them after the
-tickets that came later, or after `main` was merged into the epic. So before
-it reports `completed`, the run re-runs every landed ticket's checks at the
-epic head and halts — no release pull request — if one no longer passes.
-`tickets.mjs check-epic <epic>` is the same check by hand — it fetches the
-epic branch, refuses a checkout that is not at the remote's commit or has
-uncommitted changes, and also shows any ticket whose criteria changed since
-sign-off. After a parallel run both happen in a worktree set up from
-`epics/worktree.json`, because the main checkout never saw what the tickets
-installed.
-
-**The release pull request comes with a walkthrough.** `release-page.mjs
-<epic> --check <check-epic.json>` renders one self-contained page for the
-person deciding the merge: the never-squash rule and the size, the release
-check's ledger (with any criteria that changed since sign-off), then one
-section per ticket in build order — built, verified, compared, deviations,
-owed, review addenda, commits — then what is still owed, the commits no
-ticket covers, and the last run record. It is derived from git, the status
-log and the run record, published as an artifact and linked from the body;
-it is never committed, and it replaces nothing in the body.
-
-**A run is serial unless the epic says otherwise.** With `Parallel: 2` (or
-`3`) in the preamble it works the board's *ready* set in **waves**: up to
-that many tickets' pipelines — worker, review, disposition, acceptance, the
-merge gates — side by side, each in its own git worktree beside the
-repository (`../.flow-worktrees/<repo>/<epic>/<id>`), and then their merges
-**one at a time, in document order**, whichever finished first; then it
-refreshes and asks the board again. `**Blocked by:**` lines are what keep a
-ticket out of a wave it must not share, which is why in a parallel epic a
-ticket *without* one is declared independent, and why the plan reviewer reads
-every pair that could share a wave. Four things exist because of waves, and a
-serial run has none of them: the status log is merged by the plugin's own
-append driver (`scripts/merge-append.mjs` — every ticket appends to the end
-of one file, and git's `union` driver, which looks made for that, silently
-moves lines between entries); each merge after a wave's first is followed by
-**that ticket's CHECKs re-run on the merged epic branch**, since nobody
-judged the combination; a halt in one pipeline lets its passed siblings
-integrate before the run stops; and `Ticket budget:` cannot be declared,
-because a per-ticket ceiling is a delta on one meter. Two practical costs to
-know before declaring it: a fresh worktree has nothing git does not track —
-no installed dependencies, no build output, no local `.env` — so every
-worktree is set up again, by `epics/worktree.json` when the project has one
-(inside eight minutes each) and by each worker's own reading of the project's
-instructions when it does not, and a project whose verification needs state
-neither can reproduce — a running service — will see BLOCKED tickets; and the ceiling is
-3 because what a wave produces still has to be reviewed by one human at the
-release pull request.
-
-Two things are **environment setup, not plugin code**. Both must exist
-before the first unattended run — protection alone may instead be waived by
-the human at sign-off, the waiver recorded as a decision in the epic's
-`tickets.md` — and both are probed while the epic is
-planned, not discovered on run day: declaring `Delivery: release`
-obligates the plan to run the probes and record the result (the first live
-run hit an unprobed free-plan 403, and its waiver landed seconds before
-start):
-
-- **A pre-authorized permission surface.** The session must already be
-  allowed to run git, `gh`, the project's test commands, file edits, agent
-  spawns, and the Workflow launch that runs the ticket loop, all without
-  prompting — a prompt mid-run stops the run, because nobody is there to
-  answer it, and the workflow-launch prompt would fire before any loop code
-  exists to catch it.
-- **Branch protection on the default branch** — require pull requests, block
-  force pushes, human-only merge. The skills are soft enforcement obeyed by a
-  cooperating agent; protection is the hard floor that holds even against a
-  misbehaving one.
-
-## Why the reviewers and the researcher are separate agents
-
-A session that has just spent hours justifying its own decisions is the worst
-possible reviewer of them — and that is as true of a plan as of a diff.
-`flow:ticket-reviewer` starts empty, sees only the commit range and the
-documents, and **reports without fixing** — because an agent that can edit its
-own finding will edit it into agreement. Fixes land as new commits, never
-amendments, so the review stays auditable against exactly what was reviewed.
-`flow:plan-reviewer` does the same to a draft epic before sign-off, reading the
-decomposition against the actual code — a wrong split caught there costs one
-edit instead of every ticket built on it.
-
-**Both are given the design, where the epic declares one.** The plan reviewer
-gets the design sources and the design map, because an element the drawing has
-and the map does not is invisible to everything downstream. The ticket
-reviewer gets them too, plus the entry's `**Compared:**` table — which is a
-**claim**, not evidence: it re-runs the differ where the project's instruction
-file says how to serve and drive a page, and otherwise audits the table
-against the design source's markup and **says the page was not rendered** (the
-Codex shadow reviewer, sandboxed with no network, never renders, and its
-packet says so). A table the re-run contradicts is Important, as is a
-`removed` entry the ticket's own diff added or changed — the design map's
-removal list is planning's, and the party under review is the one that must
-never declare its own missing element removed.
-
-**The hirer is never the party under review.** In `/flow:ticket`'s default
-lane the supervisor hires the reviewer, not the worker that wrote the code;
-in `/flow:run` the driver script does the same one level up — the worker
-stops at its pushed branch, the script hires the reviewer, and a code
-gate on the reviewer's structured findings decides whether anything merges.
-A worker that picked its own judge would recreate self-review one level down.
-
-`flow:researcher` is the third fresh context and the only one that runs
-**before** anything is written. A planning session that has read the brief has
-usually read a proposed solution with it — "add a cache", "use library X" —
-and its reading of the code from then on is a search for confirmation: it
-opens the files the proposal implies and leaves the rest closed. So
-`/flow:epic` sends out for facts instead, where the brief names a solution or
-the epic spans more than one area. The researcher is given the in-scope areas,
-their instruction files and a list of concrete questions, and is **not** given
-the brief, the proposed solution, the ticket list or the Outcome line — the
-strip is the mechanism, because a researcher told the wanted answer confirms
-it. It answers questions about the present ("how does X reach Y today", "which
-tests cover Z"), refuses solution-shaped ones ("would a cache here work") and
-names the present-tense question each would have to become, cites `file:line`
-for every claim, and reports what it looked for and could not find as a
-finding of its own. It proposes nothing — no design, no ordering, no
-recommendations — because a researcher who starts solving stops observing. It
-runs on the strongest model: a `file:line` proves a present claim, but nothing
-proves an absence, and the file nobody opened leaves no trace in the report.
-The
-facts land in the plan page's grounding lines and in the bodies of the tickets
-that need them; **no research document is committed**, since `tickets.md` is
-the record. Where a fact contradicts the solution the brief named, the planner
-raises it at the shape stop, as a question for the person who wrote the brief.
-
-They ship under their own names rather than generic ones, because project and
-user `.claude/agents/` definitions override same-named plugin agents. If you
-already have a `code-review-expert`, they do not collide.
-
-Review effort is **tiered by consequence, not fixed at maximum** —
-independent review always runs, maximum-capability review only where it can
-pay. The plan reviewer runs once per epic and is pinned to the strongest
-model available: a wrong decomposition is the most expensive defect in the
-system. The ticket
-reviewer scales — a fast model at low effort for prose-only diffs
-(documentation and comments), a named cost-efficient model at high effort
-for everything else below the risk list (including the shapes that look
-like prose but are not: configuration, user-facing strings, CLI output,
-skill/agent Markdown — named deliberately, never inherited: the session
-launching a run is often the most expensive class available, and routine
-review must not be priced by that accident), and a strong model at `xhigh`
-for the consequence list (auth, secrets, migrations, data rewrites, network
-exposure, payments, fail-open) — and the quick lane skips the reviewer
-entirely for prose-only diffs, because there the pull request is the
-review. An epic can pin the **ticket
-reviewer's** model with an optional `Reviewer model: <model>` line in its
-tickets.md preamble, parsed like the Delivery line (first word after the
-colon; prose after it is ignored) — it overrides the tiers, so redirecting
-review is an edit to the epic's documents, not a mid-run conversational
-directive. The line does not govern the plan reviewer: it lives in the very
-draft the plan reviewer is judging, and configuration binds only after
-sign-off approves it.
-
-In an unattended run the tier is not taken on the worker's word: the worker
-reports the tier its diff earns, but the driver lists the branch's changed
-files itself (a read-only fast-model step) and **floors the tier in code**
-— docs-only files may price `prose`, anything else at least `normal`, and
-files matching the epic's optional `Consequence paths: <glob>[, <glob>]`
-preamble line price `consequence`. The report can raise the price, never
-lower it: the worker is the party under review, and the reviewed party does
-not price its own judge.
-
-The **implementing workers'** model is configurable the same way: a
-`Worker model: <model>` preamble line pins the workers, and the epic
-template now carries `Worker model: opus` by default — plan on the
-strongest model, implement on a capable one at a fraction of the price.
-Absent the line, every worker inherits the model of the session that
-spawns it, which is a decision worth making deliberately rather than
-inheriting by accident. None of these lines is a settings file: model
-choice lives in the versioned epic document, visible at sign-off, like
-every other configuration this plugin has.
-
-Those two lines are chosen **together, as a pairing**, per epic. Two
-profiles are known-good: **capable-implementer** (`Worker model: opus`,
-tiered review — for gnarly code and thin specs) and **strong-judge**
-(`Worker model: sonnet`, `Reviewer model: opus` — the cheap implementer
-under a stronger judge, for well-specified tickets out of a clarified,
-plan-reviewed epic; worker spend is the largest per-ticket line item, so
-this is the biggest cost knob the flow has). Decide from the previous run
-records' evidence — Important findings per ticket and observed spend —
-and never cheapen the *plan* side to match: a weak plan produces tickets
-that are confidently, reviewably wrong.
-
-**The whole configuration surface is ten optional preamble lines** in the
-epic's `tickets.md` — one place, one syntax (label at line start, value
-first after the colon, prose after it ignored), every near-miss flagged by
-`/flow:doctor`:
-
-| Line | Example | Controls | Absent |
-|---|---|---|---|
-| `Delivery:` | `release` | how work reaches main: unattended into `epic/<name>` with one release PR, or one human-gated PR per ticket | `incremental` |
-| `Worker model:` | `opus` | the implementing workers | workers inherit the spawning session's model |
-| `Worker runner:` | `codex` | who implements in an unattended run: a Claude subagent, or OpenAI's Codex CLI through `scripts/runners/codex.mjs` — sandboxed with `.git` read-only and no network; the runner branches, commits, pushes, and reconciles the model's report with git. The run starts it detached (`--start`) and polls it (`--wait`) in slices under the agent shell tool's 10-minute limit, so a ticket keeps its 60-minute timeout; the proxy stops it (`--cancel`) before any report the runner did not give, the run skill does before touching the tree after a halt, and the runner commits only on its ticket branch | `claude` |
-| `Shadow reviewer:` | `codex` | a trial: in an unattended run, consequence-tier tickets also get a read-only Codex review of the same packet through `scripts/runners/codex-review.mjs`, recorded in `epics/<name>/shadow-reviews.md` and compared at the retro — it gates nothing | none |
-| `Reviewer model:` | `opus` | the ticket reviewer, overriding the tier table | the consequence tiers pick (haiku/sonnet/opus) |
-| `Planner model:` | `fable` | the plan reviewer for this epic | the agent definition's pinned strongest |
-| `Consequence paths:` | `src/auth/**, migrations/**` | globs that force the consequence review tier in a run — the code floor under the worker's self-reported tier | tier floor still applies (docs-only vs code), globs add nothing |
-| `Fix bounds exclude:` | `src/messages/*.json` | globs the run's fix-bounds gate leaves out of the review-fix diff (as it already leaves out `epics/`) — for files a fix fans out into mechanically, translation catalogs being the canonical case | every fixed file counts toward the bounds |
-| `Design sources:` | `designs/City Desktop.html, designs/map.html` | the files holding what the design draws — anything a browser can render and `getComputedStyle` can read; repository-relative, and free to live outside the epic's `context/`. This is what hands the design to the brief and to both reviewers. The one line that carries **no prose**: the whole text between commas is the path, because designers name files with spaces in them | no design is declared, and nothing downstream is handed one |
-| `Parallel:` | `2` | the most tickets an unattended release run may have in flight at once — `2` or `3`; the ceiling is review bandwidth, not machines. In a parallel epic a ticket with no `**Blocked by:**` line is declared independent of the others. Parsed by the board and near-miss-flagged by `doctor`; applied by the run driver, which refuses it together with `Ticket budget:` | a serial run, one ticket at a time, exactly as before the line existed |
-| `Ticket budget:` | `250k` | per-ticket output-token ceiling in a run (a shadow review's spend is left out); an over-budget ticket stays merged and the run halts before the next. The only line a run re-reads: each ticket's resolve step fetches the epic branch and reads the signed-off document from it before the merge, so raising it mid-run (committed and pushed) governs the running ticket, and a ticket branch cannot raise its own ceiling; removing the line keeps the last ceiling and logs that it did | no ceiling; per-ticket spend still recorded when the runtime meters it |
-
-## Reading the board
-
-| State | Means |
+| Section | What it holds |
 |---|---|
-| `shipped` | Commits with this ID are on the default branch, or its pull request merged into it |
-| `integrated` | Pull request merged into the epic branch (release delivery) — awaiting the release pull request |
-| `in review` | Pull request open |
-| `done, unpushed` | Status log says DONE but nothing shipped — the loop stalled |
-| `in progress` | Local branch with commits, no pull request |
-| `blocked` | Status log records BLOCKED or ABANDONED |
-| `waiting` | Not started, and its `**Blocked by:**` line names a ticket that is not `integrated` or `shipped` yet — or the line cannot be read, which `doctor` names. Left out of `next`; ends by itself when the blocker lands |
-| `todo` | Not started, and free to start |
+| `## Outcome` | What will visibly change, for whom, how anyone will know it worked, and what would make us undo it |
+| `## Sources` | Where the request came from |
+| `## Settings` | One `Key: value` per line: `Delivery: release` or `incremental` (default `release`), `Parallel: 1` to `3` (default `1`), `Branch: epic/<name>`, `Design sources: <paths>`, `Consequence paths: <globs>` |
+| `## Walkthrough` | In plain language, what a person will be able to do, scene by scene. No ticket numbers, no file names |
+| `## Ground rules` | What every ticket must respect |
+| `## Tickets` | A task list, `- [ ] #12 — title`, in build order |
 
-**Order is document order; `**Blocked by:** <ID>[, <ID>]` says what may not
-overtake what.** The line is optional, sits in a ticket's own section, and is
-strict — bare IDs of the same epic, commas, nothing else — because the
-tolerant dependency parser this plugin once had stalled tickets silently on
-prose. The label opens the line, bold, at the margin — a sentence that merely
-begins "blocked by the vendor…" is prose, as is anything in a fenced block
-(one that closes: a line lost behind a fence that never closes is reported);
-`**Blocked by:** nothing` and the template's unedited placeholder read as no
-line (an empty label is an interrupted edit, and a problem); a dependency
-stated off the margin — on a bullet, indented, quoted, or bold with
-underscores — changes no state and is never silent: `doctor` says the line is
-unread, and that under `Parallel:` its ticket may start beside the work it
-names; and the removed `Depends on:` spelling is inert, so old documents read
-as they did. A line that almost parses, an unknown ID, a self-reference or a cycle
-leaves the ticket `waiting` with the reason on the board and in `doctor`, and
-`tickets.mjs next <epic>` exits nonzero when tickets are waiting and none can start
-(asked about the whole board, `next` names a stuck epic on stderr and still
-lists what other epics can start — it fails only when nothing anywhere can):
-to the run driver an empty list means "the epic is built — open the release",
-and that must never be said of an epic with work unbuilt.
-
-Before starting a ticket, the board script's `brief [ID]` subcommand prints
-everything in one place: the ticket's full section from its epic's
-`tickets.md` — Scope, Not in scope, Acceptance criteria — plus the **epic
-preamble**: everything above the first ticket heading, which is the
-declaration lines, the walkthrough, the ground rules and the order (it used to
-stop at the first `## ` heading of any kind, so every section planning writes
-beneath the declarations reached no worker at all), the status log's **owed items
-not yet marked resolved** (every non-Nothing obligation an `**Owed:**` block
-records, attributed to its entry — an entry that owed one thing is addressed
-by its own ID, one that owed several numbers its bullets `<ID>.1`, `<ID>.2` …
-in document order — until a later `**Resolves owed:** <ID>` line closes it.
-A bare entry ID is read against what the entry owed **when that line was
-written** — the items recorded above it, since an append-only log makes
-position time — so an old marker keeps closing what it closed even after the
-entry records again. Facing more than one open item it retires **nothing**
-and the brief says what to write instead: a marker naming one item once
-closed four, including a production-database hazard, and an item wrongly
-retired is gone from an append-only log with nothing left to report it.
-Naming any item the itemised way clears that note, and a reference matching
-no item is reported too — that one cleared in turn by a correct reference
-written **below** it, since every note here is cleared by the repair it names.
-Recorded state, so an
-item may already be discharged unmarked; the brief says so in its heading),
-the **deviations no human has closed** (with a note beside them for anything a
-`**Deviations closed:**` line could not close), and the derived facts the board knows (state,
-branch, epic, modes, pull request). This is a worker's whole required reading — O(epic), not
-O(history): the status log grows without bound, and the brief is what keeps
-each new ticket from paying to reread all of it. With no ID it briefs the
-first startable ticket, naming the epic it came from; `--json` returns the
-`find` payload with `preamble`, `owed`, `notes` (what a `**Resolves owed:**`
-line could not retire), `deviations`, `deviationNotes` and the section text as
-a `body` field.
-The script ships inside the plugin, so it runs the same way every
-skill runs it: `node "${CLAUDE_PLUGIN_ROOT}/scripts/tickets.mjs" brief [ID]`
-— there is no `/flow:brief` slash command.
-
-**The two deviation lines.** A status entry's optional `**Deviation:**` line —
-one per departure — records what the ticket's documents or design showed that
-was not built, or was built differently. It is not owed work and not a
-judgment call the documents left open (that stays in `**Decisions:**`): an
-owed item is work someone will do, a deviation is a decision someone must
-see, and it has its own line because the Decisions prose it used to live in is
-read by no command. An ID that recorded one departure is addressed by its own
-ID; one that recorded several numbers them `<ID>.1`, `<ID>.2` … in document
-order across every entry it heads. A dated `**Deviations closed:** <ID>[,
-<ID>.<n>] — <each deviation named as accepted or as fixed in <sha>; who; when>`
-line closes what its **leading** reference list names, and only departures
-recorded **above it in the file** — and it records **a human's decision, made
-by no agent**, because a closure the reviewed party could have decided clears
-nothing. The human need not type it: in an attended session an explicit answer
-to the departure shown ("accept", "fix it") is the decision, and the session
-records the line quoting it. A missed estimate (a line count, a size) and a
-change made in answer to a review finding are not deviations. **A bare closing line** closes an entry's one departure, and facing
-more than one open it closes **nothing** and says so: accepted and fixed are
-decisions per departure, and while a deviation wrongly left open costs a human
-one reread, one wrongly closed is a decision nobody made, gone from every brief
-and every attended door — the same asymmetry, and the same incident, behind the
-owed ledger's item numbering. A reference naming no departure, and an ID a
-reference ends inside (`<ID>oops`), close nothing and are reported too. Every
-note either ledger emits is **cleared by the repair it names**, because an
-append-only log cannot take a wrong line back and a warning nobody can clear is
-one its readers learn to skip: a bare line's note ends once any of the entry's
-departures is named the itemised way, wherever that line sits, while a faulty
-reference's ends once a line **below** it names one of them correctly — the
-bare ID, for an entry that recorded a single departure. Below, because position
-is time in an append-only log: a correct reference written earlier is not a
-correction of a later mistake. The script's
-`deviations <ID>` subcommand reads every one a ticket's own entries recorded,
-closed or not, each with its closing line, and `notes` for what a closing line
-could not close; `--log-from <ref>` reads the status
-log from a git ref — a pushed ticket branch, where the worker wrote its entry
-— instead of the checkout, and a log it cannot read is a nonzero exit naming
-the reason, never an empty list.
-
-**Where a deviation is read.** Every later brief in the epic carries the ones
-no human has closed. In an attended lane the ticket's own summary names
-**every** one it recorded — a closed one with its closing line, because no
-command can say who wrote that line — and **a deviation is named in the pull
-request body**, under its own heading, in both lanes that open one
-(`/flow:ticket`'s incremental pull request, `/flow:quick`'s). And a release
-epic's integration merge **refuses a ticket with an unclosed deviation**: the
-gate reads the departures off the pushed branch it is about to merge, stops
-before the merge, and resumes only once a human has decided — accepted, or
-fixed on the branch and then accepted as fixed — in the `**Deviations
-closed:**` line that no agent may decide: an explicit answer in the session
-is the decision, and the session records it. That merge is the last point at which
-one ticket's departure is still one decision rather than a paragraph inside a
-whole epic's diff. **An unattended run halts on any departure at all** — it
-counts every `**Deviation:**` line the pushed entry carries and honours no
-closing line, because the only parties who could have written one in such a
-run are the worker and the disposition agent, both under review. So a
-departure an agent already fixed halts too, recorded as fixed in its addendum;
-the human then accepts it or has it fixed, and the ticket is finished by hand
-through `/flow:ticket <ID>` before the run is started again.
-
-A criterion can also be **machine-runnable**: an indented `CHECK: <command>`
-line under the criterion bullet, with an optional `EXPECT: <text the output
-must contain>` — exit 0 alone decides when EXPECT is absent. The script's
-`check <ID>` subcommand runs them from the repository root and reports a
-ledger whose evidence is the deciding output line, with three verdicts: `✓`
-passed, `✗` failed, and `↓` **skipped** — the command exited 0 but the
-deciding line is a test runner's skip (a suite that skips itself without
-`DATABASE_URL` exits 0, and a verbose reporter still prints the titles an
-EXPECT matches). **A skipped check is not a passed one**: it proves nothing,
-so it never greens the gate, and it is not called failed either, because the
-repair is the missing prerequisite rather than the code. A malformed
-CHECK **fails** the gate rather than silently never running, and `doctor`
-flags the near-miss shapes — including two that parse and run yet can never
-pass: `\\|` inside a quoted `node -e` / `sh -c` string (the quoting layer
-consumes one backslash, so grep matches a literal `|`) and `grep` given both
-`-r` and `-c` (recursive counting prints `path:count` per file, never a bare
-number). Every CHECK is also proven **red before the ticket exists**: the
-planner runs it at planning time, records the ledger in the draft, and the
-plan reviewer re-runs the runnable ones — a criterion already green proves
-nothing, and a whole-suite run is a standing check rather than a criterion.
-`--from <ref>` reads the criteria from a git ref
-instead of the working tree — the unattended driver passes
-`--from origin/epic/<name>` so the merge gate judges against the signed-off
-document, which no ticket branch can edit. `tickets.mjs find <ID> --from
-<ref>` is the same move for the epic's declarations — it is how the driver
-reads the `Ticket budget:` line — for the same reason: the party under review
-must not be able to edit the terms it is judged by. Prose and *demonstrate:* criteria
-remain first-class; CHECK is for the criteria a command can decide outright.
-
-**A fidelity criterion is the one the code never runs.** `COMPARE: <design
-source path> @ <width>[, <width>]`, indented under its criterion bullet like
-`CHECK:`, with an optional `LANDMARKS: <name>[, <name>]` beneath it (absent =
-every landmark in the map = the whole page). Comparing an artboard with a
-rendered page needs a browser and the plugin owns none, so `check <ID>` lists
-comparisons in their own `compares` list, marked manual, **in neither `total`
-nor `passed`** — and what the code gates instead is the **presence** of the
-`**Compared:**` table in the ticket's status entry, counted by
-`tickets.mjs compared <ID> [--log-from <ref>]`. A ticket whose signed-off
-section carries a `COMPARE` and whose pushed entry records none halts an
-unattended run on the acceptance-check condition and holds an attended
-release merge; the recovery is to run the differ and append the table in a
-dated addendum, or — where nothing can render the design — a human's written
-`**Compared:** owed — <who accepted it, when, and why>`, which a gate reads
-as present and a reader reads as not done. What the table *says* is the
-reviewer's to check, who can re-run the differ; what a merge can hold is
-whether it exists. A malformed `COMPARE` — no width, a path the epic's
-`Design sources:` line does not list, a `LANDMARKS:` with no `COMPARE:` above
-it — fails the gate like a malformed CHECK, and `doctor` flags the
-near-misses.
-
-**Spend is derived too.** `tickets.mjs spend [epic]` compiles the recorded
-token ledger — per ticket, per role (worker, reviewer, re-review,
-disposition, shell proxies) and per epic — from the three places the epic's
-logs carry a figure: a ticket entry's `**Tokens:**` line in `status.md`, its
-review addendum's `Worker tokens (implementation leg): <n>; Reviewer tokens:
-<n>` phrases, and a run record's per-ticket `<ID> worker=<n> reviewer=<n> …`
-groups in `runs.md` — or in `status.md`, for the logs written before the run
-records were split out. Where both logs carry a figure for the same ticket and
-role, the one in `runs.md` wins — so a correction to a run record's figures is
-appended there — and an `unknown` never overwrites a known figure in either
-direction, because `unknown` is the absence of an observation, not a
-correction. Recorded figures only, exactly as the log says:
-`unknown` stays
-unknown, a ticket with nothing recorded is reported as such, and nothing is
-estimated or read from a transcript. `--json` returns the same ledger for
-the retro, which reads this instead of summing the log by hand. A run
-record's heading may carry a qualifier in parentheses after its date (how
-same-day runs are told apart); `doctor` flags a run heading that will not
-parse and a run record whose Tokens line carries figures but no groups —
-the ledger silently reads nothing from either, and the repair is a dated
-addendum beneath the record, never an edit. It also flags a run record
-appended to `status.md` once that epic has a `runs.md`, dated after the first
-record in it: the ledger still reads the figures, but the two writers are
-back on one file tail. Records dated on or before the split day are never
-flagged — moving them is what append-only forbids — nor is one whose heading
-already appears in `runs.md`, which is what the repair looks like.
-
-**Time is in the same ledger.** A run record carries a `**Time:**` line beside
-its Tokens line — `<ID> worker=<n>s reviewer=<n>s … wall=<n>s` per ticket —
-and `spend` reads it under the same rules: labelled rounds sum, a restated
-group corrects, `unknown` erases nothing. Two things differ, both to keep a
-duration out of the token ledger: every figure carries its `s`, because a
-bare `worker=1430` anywhere in a record is a token figure, and time is read
-only inside a paragraph that starts `**Time:**` (to the next blank line or
-bold label) — where every time group is lifted out whatever prose stands
-beside it, and anything else in the paragraph is left for the token ledger. `wall` is the ticket's first
-agent start to its last agent end, not the roles' sum — the gap is the time
-between agents. Nobody writes either line by hand:
-`node plugins/flow/scripts/meter.mjs <workflow-run-dir>` reads the run's
-`journal.jsonl` and per-agent transcripts and prints both, ready to paste —
-tokens from each message's `usage`, time from each line's `timestamp`,
-because the driver has no clock and no agent can time itself. Where a ticket
-has no recorded wall, `spend` shows its **commit span** instead, labelled
-`(git)`: first to last commit naming the ticket, by author date, a commit
-reached on several refs counted once — and nothing at all for a ticket with
-one commit, or several at one instant, because a point is not a span. The
-scan reads the last 4000 commits across all refs and says so when that cap
-is reached (`commitSpansCapped` in `--json`), since an older ticket's span
-would otherwise start late with nothing to show for it. That is observed but is not
-the ticket's wall-clock — the work before the first commit is not in it — so
-it is reported under its own name (`commitSpan` in `--json`) and never as
-`wall`. `doctor` flags a Time line with figures in a run record where no Time
-group parses, and a time figure nothing read — `worker=1,430s`, or one quoted
-outside a Time paragraph — on a line naming a ticket that has no time
-anywhere in the ledger (per ticket, because one ticket's group parsing must
-not hide another's being lost). The repair for both is a dated addendum with
-the groups under a `**Time:**` line of its own, and it clears the warn.
-
-**Cache reads and models are two more lines of the same grammar.** The meter
-prints them beside the other two, and a run record pastes them as printed:
-`**Cache reads:** <ID> worker=<n>r reviewer=<n>r … ; total=<n>r` and
-`**Models:** <ID> worker=<name> reviewer=<name> …`. Cache reads are counted
-like tokens — rounds sum, a restated group corrects, `unknown` erases nothing
-— and stay **out** of the `worker=<n>` figure on the Tokens line, which is
-what keeps every record in the ledger comparable with every earlier one; they
-carry `r` on every figure and no commas, because a bare `worker=4812330`
-anywhere in a record is a token figure. Models are names, not counts: an
-agent that fell back to a second model prints both joined by `+`, a role's
-value is every model its agents used in first-use order, and a Codex worker
-reads `codex:<model>` — that agent is the runner's shell proxy, and the model
-that wrote the ticket is the one in the JSON the runner printed. Each line is
-read only inside its own paragraph, for the reason time is: `worker=unknown`
-and `worker=claude-opus-5` both open exactly like a token group. A record
-written before either line existed has neither, and `spend` reports nothing
-recorded — never zero, and never backfilled. `doctor` flags either line
-carrying values where no group parses, cleared the same way: a dated addendum
-with the groups under a label of their own.
-
-**Peak context is the fifth metered line, and the only one that is a max.**
-`**Peak context:** <ID> worker=<n>c reviewer=<n>c …` — the largest window a
-role's agents ever held, per message: input + cache reads + cache creation,
-what the model was given to read, with output left out because it was not in
-what was sent. A role's figure is the largest of its agents', never their sum,
-and rounds take the larger reading where every other counting ledger takes the
-sum; the line carries **no total**, because a peak summed across tickets names
-a window nobody ever held — `spend` prints the epic's max under the groups,
-computed from them. Every figure carries `c`, which is deliberately neither
-the time ledger's `s` nor the cache ledger's `r`: a peak that landed in the
-wrong paragraph is then read by no ledger rather than wrongly by one. It
-answers one question — did anything come near the limit? — and gates nothing.
-
-**Findings and halts are the two lines no transcript can carry.** A run record
-also writes `**Findings:** <ID> important=<n> nits=<n> unfixed=<n>` and, on a
-halted record only, `**Halt:** <kind> <ID>`. The findings counts come from the
-driver's own result in code — a derived `findingCounts` object per ticket,
-beside the reviewer's own `findings` list and never over it, never from prose
-and never from arithmetic in a prompt — and they count the
-re-review on both halves: its Important findings are the ticket's, and they
-are unresolved by construction, since there is no second fix round after a
-re-review. In the supervisor lane the ticket skill's review addendum writes
-the same line for the same reason. The three keys are the ledger's own, so no unit is needed:
-nothing else can read `important=3`. A halt's `<kind>` is the driver's own
-`STOP` key, written verbatim rather than translated back from the sentence
-(the sentences are reworded when they read wrongly to a human); an
-epic-level halt like the release check names no ticket and is the kind alone,
-which is why the kind comes first — a kind is lower-case-initial and a ticket
-ID is upper-case-initial, so nothing needs to stand in ID position. Both
-paragraphs carry groups and nothing else, and `doctor` says so when one does
-not.
-
-**`tickets.mjs metrics [epic]` is what those ledgers are for.** Five derived
-readings per epic, and a total across epics when no epic is named: **pace by
-worker model** (tickets, the worker's tokens, cache reads and peak, and the
-ticket's `wall`, grouped by the model that wrote it); **rework** (`(review
-fix)` commits per ticket, off the subjects); **review effectiveness** (the
-Findings groups, with how many tickets recorded any); **halts by kind**; and
-**escaped defects** — `(fixes <ID>)` on a later commit naming an
-already-shipped ticket, the one class of miss nothing else in the repository
-records, since the repair is somebody else's ticket with its own green
-ledger. Neither suffix disturbs shipped detection, which reads `^<ID>[:\s]`
-at the start of a subject. Every figure carries how many of its tickets it
-was read from (`3/7`), because how much of an epic went unmeasured is itself
-a finding; duration is the run record's observed `wall` and never a commit
-span, since commits begin when the work is nearly over; and there is no cost
-in money anywhere, for the reason `spend` gives. `doctor` warns when a
-`(fixes <ID>)` names a ticket this repository has planned and not yet
-shipped — a warn that ends by itself when it ships; one naming an ID nothing
-planned is listed by `metrics --json` under `unmatchedFixes` instead, because
-a commit subject on the default branch cannot be rewritten and a warn about
-one could never be cleared.
-
-Two blind spots worth knowing: the board reads *this checkout's* view of the
-remote, so fetch first when the answer matters; and `shipped` means some commit
-carrying that ID landed, which a partial merge or a docs-only commit also
-satisfies. When the board's other limits bite, it says so itself — a duplicate
-ticket ID across epics, or shipped-detection hitting its commit-scan cap.
-
-See `METHODOLOGY.md` for why each constraint exists and what it cost to learn.
-
-## Developing
-
-The board script has a test suite that builds a throwaway git repository and
-asserts the derived states:
+**A ticket** is a sub-issue of its epic, labelled `flow:ticket`. Its body:
 
 ```
-node --test plugins/flow/scripts/tickets.test.mjs
+Epic: #11
+Blocked by: #12, #13
+
+## Scope
+## Not in scope
+## Acceptance criteria
+## Notes
 ```
+
+- `Blocked by:` is optional and strict: issue numbers and commas, nothing
+  else. Without it the ticket is independent. A line that mentions blocking
+  but cannot be read is reported as a problem by `board`, `next` and
+  `doctor`, and the ticket waits: Flow never guesses what a sentence meant.
+- `## Acceptance criteria` holds one fenced block marked `criteria`, whose
+  lines are the commands that decide the ticket:
+
+  ````
+  ```criteria
+  - the export prints its count
+    CHECK: npm test -- export.test.ts
+    EXPECT: 3 passed
+  - the page matches the design
+    COMPARE: designs/trip.html @ 1440, 393
+    LANDMARKS: header, export-button
+  ```
+  ````
+
+  A `CHECK` passes when the command exits 0 and its output contains the
+  `EXPECT` text, and the output does not show that the tests were skipped. A
+  `COMPARE` needs a browser, so `flow check` lists it as manual and counts it
+  in neither the total nor the passes.
+
+**Labels** carry the state. One state label per ticket:
+
+| Label | Meaning |
+|---|---|
+| `flow:planned` | Written; the epic is not approved yet |
+| `flow:ready` | Approved, free to start once its blockers are done |
+| `flow:in-progress` | Being built |
+| `flow:in-review` | Built, being reviewed |
+| `flow:done` | Merged into the epic branch |
+| `flow:needs-human` | Stopped; a person has to decide something |
+
+"Waiting" is never a label: it is a ready ticket with an unfinished blocker,
+worked out each time. `flow:approved` on the epic is the sign-off.
+`tier:easy` tickets are built by Sonnet, `tier:hard` (or no tier label) by
+Opus.
+
+**One comment per step.** Each step of a ticket posts one comment: started
+(model and branch), the review result, the acceptance check results, the
+merged commit, and what it cost. When a ticket stops, it gets
+`flow:needs-human` and a comment that mentions whoever is assigned, or the
+epic's author.
+
+**Commits** start with the ticket number: `#12: add the export endpoint`.
+Review fixes end `(review fix)`; a fix for a bug an earlier ticket shipped
+ends `(fixes #9)`. Under `Delivery: release` every ticket is merged into
+`epic/<name>` and the epic gets one pull request at the end; under
+`Delivery: incremental` each ticket opens its own pull request. **A person
+always merges into the default branch, and nothing runs after that merge.**
+
+## `/flow:epic`
+
+`/flow:epic [name] [sources...]` turns a request into an epic. Sources can
+be files, globs, web pages, `claude.ai` artifact links or a Jira issue; the
+conversation is always one of them.
+
+1. Reads every source, and stops if one cannot be read.
+2. Reads the project's instruction files and the code. When the request
+   names a solution or spans more than one area, a separate **researcher**
+   reads the code first, without being told what anybody wants built, and
+   reports facts with a `file:line` for each.
+3. **Stops in chat** to agree the shape: the outcome, the walkthrough, the
+   ticket list with tiers and what waits for what, what can run side by side,
+   and a list of questions, each with a recommended answer.
+4. Writes the epic and ticket bodies as drafts outside the repository, and
+   runs every `CHECK` to prove it fails today: a check that already passes
+   proves nothing.
+5. A separate **plan reviewer** reads the drafts, re-runs the checks, and
+   reports what will fail.
+6. **Stops for your approval.** Nothing is created on GitHub before you say
+   yes. Then it creates the epic and its tickets, pushes `epic/<name>` from
+   the default branch, marks the epic approved and the tickets ready, and
+   prints the epic's URL.
+
+## The `flow` command
+
+`node <plugin root>/scripts/flow.mjs <command>`. It stores nothing locally:
+every answer is read from GitHub (through `gh`) and git.
+
+| Command | What it does |
+|---|---|
+| `init` | Creates the eleven labels. Safe to run again |
+| `doctor` | Checks `gh`, sign-in, that issues are on, the labels, the default branch, and every open epic's `Blocked by` lines (unreadable, outside the epic, cycles). Prints `ok` or one sentence per problem |
+| `board [<epic>] [--json]` | Open epics with approval, progress and branch; or one epic's tickets with tier, state and blockers |
+| `next <epic>` | JSON: `ready`, `waiting`, `inProgress`, `done`, `needsHuman`, `planned`, `problems`. Exits 1 when the epic is stuck (unfinished tickets, none ready, none in progress) or has no tickets |
+| `ticket <n>` | One ticket parsed, as JSON, including who edited its body and when |
+| `check <n> [--cwd <dir>]` | Runs the ticket's criteria from the repository root (or `--cwd`). JSON results on stdout, a readable table on stderr; exits 1 unless every check passed |
+| `check --file <md> [--epic-file <md>]` | The same for a draft that is not on GitHub yet |
+| `post <n> --file <md>` or `--text "<md>"` | Adds a comment |
+| `label <n> +<label> -<label> …` | Adds and removes labels; refuses to leave two state labels on one issue |
+| `create-epic --file <md> --title "<t>"` | Creates the epic issue; prints its number |
+| `create-ticket <epic> --file <md> --title "<t>" [--tier easy\|hard] [--blocked-by <n>,<n>]` | Creates the ticket, writes its `Epic:` and `Blocked by:` lines, links it as a sub-issue and adds it to the epic's task list; prints its number |
+| `needs-human <n> --text "<why>"` | Marks the ticket `flow:needs-human` and asks a person, by mention |
+
+## What is not rewritten yet
+
+These still read the 2.x `epics/<name>/tickets.md` files, which 3.0 no longer
+writes, so they do not work with an epic planned by 3.0:
+
+| | Stage |
+|---|---|
+| `/flow:ticket`, `/flow:review` — build and review one ticket | stage 2, not yet rewritten |
+| `/flow:run` — the unattended run | stage 3, not yet rewritten |
+| A GitHub Action that runs the same steps in the target project | stage 3, not yet written |
+| `/flow:retro`, `/flow:quick` | stage 4, not yet rewritten |
+
+## Agents
+
+- **researcher** — reads the code for the planner and reports facts with
+  citations. It is never told the request or the wanted solution, and never
+  proposes one.
+- **plan-reviewer** — reads the draft plan with no stake in it and reports
+  what will fail. It never edits the plan.
+- **ticket-reviewer** — reviews one ticket's change (stage 2).
+
+All three run on the strongest model available: what a reviewer or
+researcher left out cannot be checked afterwards.
+
+## Further reading
+
+- [`METHODOLOGY.md`](METHODOLOGY.md) — the lessons behind the rules.
+- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release.
