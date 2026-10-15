@@ -207,7 +207,8 @@ before a person is asked.
 ### The pull request loop
 
 `flow pr-review-request` asks Copilot to review (a project with
-`.coderabbit.yaml` is reviewed by CodeRabbit instead); `flow pr-wait` waits
+`.coderabbit.yaml` is reviewed by CodeRabbit instead, and a repository
+without Copilot code review answers `none`); `flow pr-wait` waits
 for that review; `flow pr-threads` lists the unresolved threads, and each is
 fixed or answered, then closed with `flow pr-resolve` and a reply;
 `flow pr-checks --wait` waits for CI, and a failure is fixed; a pull request

@@ -314,7 +314,9 @@ For a ticket's pull request (and, later, an epic's release pull request).
 
 1. `FLOW pr-review-request <pr>` asks Copilot to review and prints `copilot`;
    it prints `coderabbit` when the project has a `.coderabbit.yaml` (that bot
-   reviews by itself) and `none` when no bot is available.
+   reviews by itself) and `none` when no bot is available, including when
+   GitHub accepts the request and adds nobody, which is how a repository
+   without Copilot code review answers.
 2. `FLOW pr-wait <pr> --bot <what it printed>` waits for that bot's review
    of the current head (default up to 30 minutes). A timeout is not a
    failure: say so in the round's comment and go on.

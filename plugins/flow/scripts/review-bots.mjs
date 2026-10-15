@@ -17,7 +17,7 @@ export function copilotUnavailable(error) {
   return error.httpStatus === 422 || error.httpStatus === 404 || /copilot/i.test(error.stderr || '')
 }
 
-function sameLogin(a, b) {
+export function sameLogin(a, b) {
   const plain = (login) => String(login || '').toLowerCase().replace(/\[bot\]$/, '')
   return plain(a) === plain(b)
 }

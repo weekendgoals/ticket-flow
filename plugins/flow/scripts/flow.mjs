@@ -54,7 +54,7 @@ import {
 } from './ticket-steps.mjs'
 import { loadSources, workflowSources, meterTranscripts, meterComment, readMeterComment } from './meter.mjs'
 import { ticketStats, readEpicComments, summarize, overallStats, formatStats, combineMeters } from './stats.mjs'
-import { COPILOT_REVIEWER_LOGIN, BOTS, configuredBot, copilotUnavailable, botReview, summarizeChecks, sleepSeconds } from './review-bots.mjs'
+import { COPILOT_REVIEWER_LOGIN, BOTS, configuredBot, copilotUnavailable, botReview, sameLogin, summarizeChecks, sleepSeconds } from './review-bots.mjs'
 import {
   LABELS,
   EPIC_LABEL,
@@ -1240,11 +1240,17 @@ function commandPrReviewRequest(positional, flags) {
     console.log('coderabbit')
     return 0
   }
+  let requested
   try {
-    github.requestReviewers(pr, [COPILOT_REVIEWER_LOGIN])
+    requested = github.requestReviewers(pr, [COPILOT_REVIEWER_LOGIN])
   } catch (error) {
     if (!(error instanceof TrackerError) || !copilotUnavailable(error)) throw error
     process.stderr.write(`Copilot cannot review here (${error.message}); no review bot was asked\n`)
+    console.log('none')
+    return 0
+  }
+  if (!requested.some((login) => sameLogin(login, COPILOT_REVIEWER_LOGIN))) {
+    process.stderr.write('GitHub accepted the request but added no Copilot reviewer: Copilot code review is not enabled for this repository, so no review bot was asked\n')
     console.log('none')
     return 0
   }

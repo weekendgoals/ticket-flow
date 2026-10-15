@@ -50,7 +50,7 @@ as of 2026-10-15; the pass count grows, the fail line stays `# fail 0`.
   ticket steps in throwaway repositories with a bare remote; needs `git`, `sh`.
 - `node --test plugins/flow/scripts/epic-run.test.mjs` — `# pass 28`. The
   whole-epic commands, the same way.
-- `pull-request.test.mjs` `# pass 19`, `issue-body.test.mjs` `# pass 25`,
+- `pull-request.test.mjs` `# pass 20`, `issue-body.test.mjs` `# pass 25`,
   `checks.test.mjs` `# pass 26` (real shell commands in a temp dir),
   `tracker/github.test.mjs` `# pass 20`, `fidelity.test.mjs` `# pass 54`,
   `stats.test.mjs` `# pass 12` (needs `git`), under `plugins/flow/scripts/`.

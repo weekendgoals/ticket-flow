@@ -243,7 +243,8 @@ export function createPullRequest({ title, head, base, body }) {
 }
 
 export function requestReviewers(number, reviewers) {
-  apiWrite('POST', `${REPO}/pulls/${number}/requested_reviewers`, { reviewers })
+  const pull = apiWrite('POST', `${REPO}/pulls/${number}/requested_reviewers`, { reviewers })
+  return ((pull && pull.requested_reviewers) || []).map((reviewer) => reviewer.login)
 }
 
 export function listPullRequestReviews(number) {

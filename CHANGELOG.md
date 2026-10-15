@@ -108,7 +108,8 @@ at a finished epic.
   issue, linked by commit so the links survive the branch.
 - **The pull-request loop:** `pr-review-request` (asks Copilot, as
   `copilot-pull-request-reviewer[bot]`; prints `coderabbit` where
-  `.coderabbit.yaml` exists and `none` where Copilot is not available),
+  `.coderabbit.yaml` exists and `none` where Copilot is not available,
+  which GitHub signals by accepting the request and adding no reviewer),
   `pr-wait` (the bot's review of the current head, or `timeout`),
   `pr-threads` (unresolved review threads, every page), `pr-resolve` (reply,
   then resolve; a reply is required) and `pr-checks` (`gh pr checks` as

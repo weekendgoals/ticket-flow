@@ -30,13 +30,21 @@ const pull = { number: 40, html_url: 'https://github.com/o/r/pull/40', state: 'o
 const review = (login, commit, state = 'COMMENTED') => ({ id: 1, user: { login }, state, commit_id: commit, submitted_at: '2026-10-14T12:00:00Z' })
 
 test('pr-review-request asks Copilot by its reviewer login and prints copilot', () => {
-  fake.setFixtures({ [`POST ${R}/pulls/40/requested_reviewers`]: {} })
+  fake.setFixtures({ [`POST ${R}/pulls/40/requested_reviewers`]: { ...pull, requested_reviewers: [{ login: 'copilot-pull-request-reviewer[bot]' }] } })
   const result = flow(plain, 'pr-review-request', '40')
   assert.equal(result.status, 0, result.stderr)
   assert.equal(result.stdout.trim(), 'copilot')
   const [call] = fake.calls()
   assert.deepEqual(JSON.parse(call.stdin), { reviewers: ['copilot-pull-request-reviewer[bot]'] })
   assert.equal(COPILOT_REVIEWER_LOGIN, 'copilot-pull-request-reviewer[bot]')
+})
+
+test('pr-review-request prints none when GitHub accepts the request but adds no Copilot reviewer', () => {
+  fake.setFixtures({ [`POST ${R}/pulls/40/requested_reviewers`]: { ...pull, requested_reviewers: [] } })
+  const result = flow(plain, 'pr-review-request', '40')
+  assert.equal(result.status, 0)
+  assert.equal(result.stdout.trim(), 'none')
+  assert.match(result.stderr, /added no Copilot reviewer/)
 })
 
 test('pr-review-request prints none and exits 0 when the repository has no Copilot', () => {
