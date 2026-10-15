@@ -611,6 +611,10 @@ function commandStart(positional, flags) {
   const delivery = deliveryFor(epic)
   let reason = startRefusal({ ticket: number, state, parsed, epic })
   if (!reason && delivery === 'release') reason = epicBranchRefusal(epic)
+  if (reason && ACCEPTABLE_STATES.has(state)) {
+    process.stderr.write(`${reason}\n`)
+    return 1
+  }
   if (reason) return refuse(number, state, reason)
   const changes = trackedChanges(root)
   if (changes.length) {

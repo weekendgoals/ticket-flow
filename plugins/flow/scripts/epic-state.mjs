@@ -57,7 +57,7 @@ function orderTickets(listed, subIssues) {
   })
 }
 
-export function findCycles(graph) {
+function findCycles(graph) {
   const cycles = []
   const seen = new Set()
   const visiting = []

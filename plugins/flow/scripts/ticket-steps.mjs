@@ -2,13 +2,13 @@ export const STARTED_MARKER = '<!-- flow:started -->'
 export const ACCEPTANCE_MARKER = /^<!-- flow:acceptance sha=([0-9a-f]{7,40}) passed=(true|false)(?: seconds=(\d+))? -->/
 export const METER_MARKER = '<!-- flow:meter -->'
 export const RESET_MARKER = '<!-- flow:reset -->'
-export const START_WITHDRAWN_MARKER = '<!-- flow:start-withdrawn -->'
+const START_WITHDRAWN_MARKER = '<!-- flow:start-withdrawn -->'
 export const LOCAL_RUN_MARKER = '<!-- flow:local-run -->'
 export const LOCAL_RUN_END_MARKER = '<!-- flow:local-run-end -->'
 export const MERGED_MARKER = /^<!-- flow:merged sha=([0-9a-f]{7,40}) accepted=([0-9a-f]{7,40}) -->/
 export const REVIEW_MARKER = /^<!-- flow:review round=(\d+) important=(\d+)(?: head=([0-9a-f]{7,40}))? -->/
 export const COMPARED_HEADING = '**Compared:**'
-export const MAX_REVIEW_ROUNDS = 2
+const MAX_REVIEW_ROUNDS = 2
 export const RELEASE_CHECK_MARKER = '<!-- flow:release-check -->'
 export const RELEASE_PR_MARKER = /^<!-- flow:release-pr number=(\d+) -->/
 export const NEEDS_HUMAN_MARKER = '<!-- flow:needs-human -->'
@@ -141,7 +141,7 @@ export function reviewMarker({ round, important, head }) {
   return `<!-- flow:review round=${round} important=${important} head=${head} -->`
 }
 
-export function sameCommit(a, b) {
+function sameCommit(a, b) {
   return Boolean(a && b) && a.length >= 7 && b.length >= 7 && (a.startsWith(b) || b.startsWith(a))
 }
 
@@ -153,9 +153,12 @@ export function reviewedHeadRefusal(rounds, head) {
 }
 
 const IMPORTANT_SECTION = /\*\*Important\.\*\*([\s\S]*?)\*\*Nits\.\*\*/
+const IMPORTANT_HEADING = /\*\*Important\.\*\*/g
 const NONE = /^none\.?$/i
 
 export function importantCountMismatch(report, important) {
+  const headings = (report.match(IMPORTANT_HEADING) || []).length
+  if (headings > 1) return `the report has ${headings} "**Important.**" sections, and a second one could hold findings the count leaves out; post one report with one`
   const section = report.match(IMPORTANT_SECTION)
   if (!section) return 'the report has no "**Important.**" section followed by "**Nits.**", so nothing shows how many Important findings it leaves open'
   const saysNone = NONE.test(section[1].trim())

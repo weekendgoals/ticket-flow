@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 
-export const PUSH_RETRIES = 2
+const PUSH_RETRIES = 2
 
 export class GitError extends Error {
   constructor(message, { stderr = '' } = {}) {
@@ -44,7 +44,7 @@ export function resolveCommit(cwd, ref) {
   return found.ok ? found.stdout : null
 }
 
-export function isAncestor(cwd, ancestor, descendant) {
+function isAncestor(cwd, ancestor, descendant) {
   return git(cwd, ['merge-base', '--is-ancestor', ancestor, descendant], { allowFailure: true }).ok
 }
 

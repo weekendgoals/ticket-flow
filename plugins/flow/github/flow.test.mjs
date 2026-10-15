@@ -161,7 +161,7 @@ test('the epic comes from the event before any job runs, so one epic has one sch
 
 test('a ticket job that failed before its own recovery step has its start request withdrawn by the scheduler, and only then', () => {
   const recover = step('ticket', (entry) => entry.id === 'recover')
-  assert.match(recover.run, /^\[ -f \.flow-plugin\/plugins\/flow\/scripts\/flow\.mjs \] \|\| exit 0\n\$FLOW reset "\$TICKET" --once \|\| true\necho "ran=true" >> "\$GITHUB_OUTPUT"$/)
+  assert.match(recover.run, /^\[ -f \.flow-plugin\/plugins\/flow\/scripts\/flow\.mjs \] \|\| exit 0\nif \$FLOW reset "\$TICKET" --once; then echo "ran=true" >> "\$GITHUB_OUTPUT"; fi$/, 'a reset that failed (GitHub down) leaves the withdraw to the scheduler')
   assert.equal(workflow.jobs.ticket.outputs.recovered, '${{ steps.recover.outputs.ran }}')
   const withdraw = step('epic', (entry) => /withdraw/.test(entry.name || ''))
   assert.equal(withdraw.if, "github.event.label.name == 'flow:start' && (needs.ticket.result == 'failure' || needs.ticket.result == 'cancelled') && needs.ticket.outputs.recovered != 'true'")

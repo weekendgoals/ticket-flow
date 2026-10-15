@@ -348,7 +348,13 @@ for (;;) {
     continue
   }
   if (!board.ready.length) {
-    if (board.inProgress.length) stopReason = `${board.inProgress.map((ticket) => `#${ticket}`).join(', ')} is in progress outside this run; nothing else is ready`
+    const unreached = board.inProgress.filter((ticket) => startedHere.has(ticket))
+    const outside = board.inProgress.filter((ticket) => !startedHere.has(ticket))
+    const reasons = [
+      ...(unreached.length ? [`${unreached.map((ticket) => `#${ticket}`).join(', ')} stopped in this run and could not be handed to a person (asking failed twice)`] : []),
+      ...(outside.length ? [`${outside.map((ticket) => `#${ticket}`).join(', ')} is in progress outside this run`] : []),
+    ]
+    if (reasons.length) stopReason = `${reasons.join('; ')}; nothing else is ready`
     break
   }
   const width = board.parallel >= 1 && board.parallel <= 3 ? board.parallel : 1

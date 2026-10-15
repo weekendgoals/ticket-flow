@@ -2,7 +2,7 @@ import { readFileSync, readdirSync, statSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { METER_MARKER } from './ticket-steps.mjs'
 
-export const ROLES = ['worker', 'reviewer', 'fixes']
+const ROLES = ['worker', 'reviewer', 'fixes']
 export const METER_FORMAT_VERSION = 1
 const SYNTHETIC_MODEL = '<synthetic>'
 const MODEL_NAME = /^[A-Za-z](?:[A-Za-z0-9._:\/-]*[A-Za-z0-9])?$/

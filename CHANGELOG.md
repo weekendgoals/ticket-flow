@@ -301,6 +301,17 @@ at a finished epic.
   one-host mark counts whoever posted it, so a person's local run and the
   Action under `FLOW_TOKEN` see each other, and anyone can clear it.
 
+- **Nits from the final review.** `post --review` refuses a report with
+  two `**Important.**` sections, since the second could hold findings the
+  count leaves out. Unattended, a second `start` of a ticket already in
+  progress or in review is refused and leaves the ticket alone, instead of
+  handing it to a person and blocking its merge. The Action's recovery step
+  reports success only when `reset` succeeded, so the scheduler withdraws
+  the start request after a GitHub outage too. A run that could not hand
+  its own ticket to a person says so, instead of calling it work outside
+  the run. The retro judges a plugin proposal's CHECK in a clone of the
+  plugin's repository.
+
 ### Stage 4: looking back
 
 - **New: `flow stats [<epic>] [--since <date>] [--json]`.** Reads every

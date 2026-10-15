@@ -199,7 +199,10 @@ retried or noted in a comment.
 left in progress back to planned, with a comment, and keeps its branch;
 the next `flow start` checks that branch out and carries on from its last
 commit instead of starting over. Both hosts below do this by themselves,
-once per ticket; a second death goes to a person.
+once per ticket; a second death goes to a person. A local run also builds
+once more a ticket whose builder died before `flow start` (there is nothing
+to reset), so a death before the start and one after it make two rebuilds
+before a person is asked.
 
 ### The pull request loop
 

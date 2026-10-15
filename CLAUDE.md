@@ -46,7 +46,7 @@ as of 2026-10-15; the pass count grows, the fail line stays `# fail 0`.
 
 - `node --test plugins/flow/scripts/flow.test.mjs` — `# pass 48`. The CLI
   end to end against the fake `gh`; one case needs `git` on PATH.
-- `node --test plugins/flow/scripts/lifecycle.test.mjs` — `# pass 38`. The
+- `node --test plugins/flow/scripts/lifecycle.test.mjs` — `# pass 39`. The
   ticket steps in throwaway repositories with a bare remote; needs `git`, `sh`.
 - `node --test plugins/flow/scripts/epic-run.test.mjs` — `# pass 28`. The
   whole-epic commands, the same way.
@@ -112,7 +112,8 @@ CI (`.github/workflows/tests.yml`) runs every suite and check above.
   `accept` takes only the HEAD the latest review read; only the commit it
   accepted is merged. Markers count only from the running account
   (`FLOW_ACCOUNT`, else GitHub's answer, else refuse), at a comment's start:
-  anyone can post or quote one. `stats` decides nothing and reads all.
+  anyone can post or quote one. `stats` gates nothing in the plugin, so it reads all;
+  the retro reads it to know the PR merged, which GitHub answers.
 - **A ticket stops only when no agent may decide**: a gate failing after two
   rounds of fixes (acceptance, review, pull request; `accept` counts review
   rounds), plan and work disagreeing, or a merge conflict; an epic also for
@@ -120,7 +121,8 @@ CI (`.github/workflows/tests.yml`) runs every suite and check above.
 - **The run driver re-reads GitHub and trusts no agent's report.** Each
   round starts from `flow next`; an agent's answer only routes the next step,
   never names a commit to merge, and every gate is a command that reads the
-  issue. A dead builder is reset once, then goes to a person.
+  issue. A dead builder is reset once, then goes to a person (one dead
+  before `start` is rebuilt once too: two rebuilds in all).
 - **A parallel failure falls back to serial and never halts**, with a
   comment on the epic. Merges into an epic branch are one at a time, in the
   epic's order whichever ticket finished first, then `check-epic`.
@@ -137,9 +139,8 @@ CI (`.github/workflows/tests.yml`) runs every suite and check above.
 - **A gate lives in the command its actor runs**, and the recovery it
   advertises must work from the refused state.
 - **Skills are self-sufficient**; each rule carries its reason in a clause.
-- **Plain language**, for a person who does not know Flow. The 2.x words
-  (deviation, owed, addendum, ledger, preamble, lane, supervisor,
-  consequence tier, disposition) are retired.
+- **Plain language** for a person who does not know Flow; the 2.x words
+  (deviation, owed, ledger, lane, supervisor, disposition…) are retired.
 - **A CHANGELOG.md entry for every behaviour change**, in the same commit:
   installed projects update live, so an unrecorded change is a silent one.
   Entries collect under the newest unreleased heading; the pull request that

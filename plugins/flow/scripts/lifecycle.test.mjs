@@ -52,7 +52,7 @@ function repository() {
 }
 
 function flow(cwd, args, environment = {}) {
-  const result = spawnSync(process.execPath, [FLOW, ...args], { cwd, encoding: 'utf8', env: { ...process.env, ...GIT_IDENTITY, ...fake.env, FLOW_UNATTENDED: '', ...environment } })
+  const result = spawnSync(process.execPath, [FLOW, ...args], { cwd, encoding: 'utf8', env: { ...process.env, ...GIT_IDENTITY, ...fake.env, FLOW_UNATTENDED: '', FLOW_ACCOUNT: '', ...environment } })
   return { status: result.status, stdout: result.stdout, stderr: result.stderr }
 }
 
@@ -587,6 +587,8 @@ test('post --review refuses a count the report contradicts, and posts nothing', 
   const claimsNone = flow(work, ['post', '2', '--review', '--important', '0', '--head', 'abc1234', '--file', report])
   assert.equal(claimsNone.status, 2)
   assert.match(claimsNone.stderr, /--important 0, but the report's Important section lists findings/)
+  writeFileSync(report, '**Important.** None.\n\n**Nits.** None.\n\n**Important.**\n\n- `src/export.ts:40` drops the last row.\n')
+  assert.match(flow(work, ['post', '2', '--review', '--important', '0', '--head', 'abc1234', '--file', report]).stderr, /the report has 2 "\*\*Important\.\*\*" sections/)
   writeFileSync(report, 'Looks fine to me.')
   assert.match(flow(work, ['post', '2', '--review', '--important', '0', '--head', 'abc1234', '--file', report]).stderr, /no "\*\*Important\.\*\*" section followed by "\*\*Nits\.\*\*"/)
   assert.deepEqual(posted(2), [])
@@ -607,6 +609,16 @@ test('FLOW_ACCOUNT names the account when GitHub will not say (an App installati
   assert.ok(!fake.calls().some((call) => call.key === 'graphql'), 'the named account is used as it is, without asking GitHub')
   const someoneElse = flow(work, ['accept', '2'], { FLOW_ACCOUNT: 'github-actions[bot]' })
   assert.match(someoneElse.stderr, /no "Started" comment from github-actions\[bot\]/)
+})
+
+test('unattended, a second start of a ticket already in review is refused and leaves the ticket alone', () => {
+  const { work } = startedTicket()
+  world({ ticket2: { labels: IN_REVIEW }, comments: [STARTED] })
+  const result = flow(work, ['start', '2'], { FLOW_UNATTENDED: '1' })
+  assert.equal(result.status, 1)
+  assert.match(result.stderr, /#2 is already built and in review/)
+  assert.deepEqual(posted(2), [])
+  assert.deepEqual(labelCalls(), [])
 })
 
 test('accept refuses a head the latest review did not read: a commit after the review needs its own review', () => {

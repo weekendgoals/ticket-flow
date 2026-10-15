@@ -45,7 +45,8 @@ reads nothing itself: spawn `flow:retro-miner` with the Agent tool,
 leaves out cannot be checked afterwards). Give it only:
 
 - the epic number and the repository's absolute path;
-- the default branch (`FLOW board` prints it first);
+- the default branch (`FLOW board`, with no epic number, prints it on its
+  first line);
 - `FLOW` written out as the full command, and `${CLAUDE_PLUGIN_ROOT}`;
 - the release pull request's number, or "none";
 
@@ -78,9 +79,13 @@ act on. A one-word answer per line is enough; you record it.
   installs the plugin from; ask if the user keeps their own fork):
 
   ```bash
-  FLOW check --file <draft>      # its CHECK must fail today
+  FLOW check --file <draft> --cwd <a clone of the plugin's repository>   # its CHECK must fail today
   FLOW create-ticket --no-epic --repo weekendgoals/ticket-flow --file <draft> --title "<title>"
   ```
+
+  The CHECK is about the plugin, so it is judged in a clone of the plugin's
+  repository, never in this project. With no clone at hand, say in the
+  ticket's notes that its CHECK was not run.
 
   Never change the plugin from here: this repository is the user's project,
   and a fix belongs where the plugin is built and reviewed.

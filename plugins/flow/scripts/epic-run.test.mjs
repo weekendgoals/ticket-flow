@@ -57,7 +57,7 @@ function ticketBranch({ work }, number, files) {
 }
 
 function flow(cwd, args, environment = {}) {
-  const result = spawnSync(process.execPath, [FLOW, ...args], { cwd, encoding: 'utf8', env: { ...process.env, ...GIT_IDENTITY, ...fake.env, FLOW_UNATTENDED: '', ...environment } })
+  const result = spawnSync(process.execPath, [FLOW, ...args], { cwd, encoding: 'utf8', env: { ...process.env, ...GIT_IDENTITY, ...fake.env, FLOW_UNATTENDED: '', FLOW_ACCOUNT: '', ...environment } })
   return { status: result.status, stdout: result.stdout, stderr: result.stderr }
 }
 

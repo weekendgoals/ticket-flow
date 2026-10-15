@@ -325,7 +325,7 @@ export function pullRequestChecks(number) {
 }
 
 const VIEWER_QUERY = 'query{viewer{login}}'
-export const ACCOUNT_VARIABLE = 'FLOW_ACCOUNT'
+const ACCOUNT_VARIABLE = 'FLOW_ACCOUNT'
 const ACCOUNT_HINT = `set ${ACCOUNT_VARIABLE} to the login Flow posts as: github-actions[bot] for the Actions token, <app-slug>[bot] for a GitHub App token, the owner's login for a personal access token`
 let viewerLoginOnce = null
 

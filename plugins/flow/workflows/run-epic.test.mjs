@@ -377,7 +377,7 @@ test('a hand-off to a person that fails counts as a round that changed nothing, 
   assert.equal(run.labels.filter((label) => label === 'needs-human:#2').length, 2)
   assert.ok(reads <= 5, `${reads} board reads`)
   assert.equal(run.out.outcome, 'stopped')
-  assert.match(run.out.stopReason, /#2 is in progress outside this run/)
+  assert.match(run.out.stopReason, /^#2 stopped in this run and could not be handed to a person \(asking failed twice\); nothing else is ready$/)
 })
 
 test('a builder that died before its ticket started has nothing to undo: it is built once more, and a second death goes to a person', async () => {

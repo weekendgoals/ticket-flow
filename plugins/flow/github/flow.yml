@@ -103,8 +103,7 @@ jobs:
         if: always()
         run: |
           [ -f .flow-plugin/plugins/flow/scripts/flow.mjs ] || exit 0
-          $FLOW reset "$TICKET" --once || true
-          echo "ran=true" >> "$GITHUB_OUTPUT"
+          if $FLOW reset "$TICKET" --once; then echo "ran=true" >> "$GITHUB_OUTPUT"; fi
 
   route:
     if: github.event_name == 'issues' && (github.event.label.name == 'flow:approved' || github.event.label.name == 'flow:start')

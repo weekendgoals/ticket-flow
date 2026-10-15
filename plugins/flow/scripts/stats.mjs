@@ -13,8 +13,8 @@ import {
 } from './ticket-steps.mjs'
 import { readMeterComment } from './meter.mjs'
 
-export const TOKEN_FIGURES = ['input', 'output', 'cacheCreation', 'cacheReads']
-export const STEPS = ['worker', 'review', 'fixes', 'acceptance', 'delivery', 'whole']
+const TOKEN_FIGURES = ['input', 'output', 'cacheCreation', 'cacheReads']
+const STEPS = ['worker', 'review', 'fixes', 'acceptance', 'delivery', 'whole']
 const ROLE_OF_STEP = { worker: 'worker', review: 'reviewer', fixes: 'fixes' }
 const REVIEW_FIX = /\(review fix\)\s*$/
 const FIXES = /\(fixes #(\d+)\)\s*$/
@@ -89,7 +89,7 @@ function isStop(body) {
   return body.startsWith(NEEDS_HUMAN_MARKER) || body.startsWith(NEEDS_HUMAN_LEAD)
 }
 
-export function readTicketComments(comments) {
+function readTicketComments(comments) {
   const starts = []
   const acceptances = []
   const merges = []
@@ -142,7 +142,7 @@ function stepTimes(record, meter, delivery) {
   return steps
 }
 
-export function commitCounts(subjects, ticketNumber) {
+function commitCounts(subjects, ticketNumber) {
   if (!subjects) return { rework: null, reworkCommits: [] }
   const rework = subjects.filter((commit) => {
     const prefix = commit.subject.match(TICKET_PREFIX)
@@ -151,7 +151,7 @@ export function commitCounts(subjects, ticketNumber) {
   return { rework: rework.length, reworkCommits: rework.map((commit) => ({ sha: commit.sha, subject: commit.subject })) }
 }
 
-export function escapeCounts(defaultSubjects, ticketNumber) {
+function escapeCounts(defaultSubjects, ticketNumber) {
   if (!defaultSubjects) return { escapes: null, escapeCommits: [] }
   const escapes = defaultSubjects.filter((commit) => {
     const fixes = commit.subject.match(FIXES)
