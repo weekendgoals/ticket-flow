@@ -5,7 +5,7 @@ a behaviour change in every project that installs it. Entries land in the same
 commit as the change; the pull request that brings them to the default branch
 stamps the version and date and bumps `plugin.json` in the same commit.
 
-## 3.0.0 (unreleased)
+## 3.0.0 — 2026-10-15
 
 Flow moves its board from markdown files in the repository to GitHub Issues.
 An epic is an issue labelled `flow:epic` whose body is the plan; each ticket is
