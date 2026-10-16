@@ -1,16 +1,361 @@
 # Changelog
 
 The plugin is the methodology's distribution mechanism: a change to a skill is
-a behaviour change in every project that installs it. This file is what makes
-those changes deliberate and visible. Entries land in the same commit as the
-change, under `## Unreleased` between releases; a release stamps the batch
-with one version and date. **The pull request that brings work to the default
-branch is what stamps it** — a release epic's release pull request, or a
-direct feature's own — so `Unreleased` is empty on the default branch between
-pull requests, and `plugin.json`'s version always names the newest stamped
-heading here. `check-invariants.mjs` holds both.
+a behaviour change in every project that installs it. Entries land in the same
+commit as the change; the pull request that brings them to the default branch
+stamps the version and date and bumps `plugin.json` in the same commit.
 
-## Unreleased
+## 3.0.0 — 2026-10-15
+
+Flow moves its board from markdown files in the repository to GitHub Issues.
+An epic is an issue labelled `flow:epic` whose body is the plan; each ticket is
+a sub-issue with its scope, what is out of scope and its acceptance criteria;
+state is labels; progress is one comment per step. Major: every heading
+format, the ticket ID shape (`#12` instead of `PAY-3`) and every command
+contract change. All four stages of the rewrite are done: planning, the
+`flow` command, building one ticket from ready to merged, building a whole
+epic with nobody watching (locally or as a GitHub Action), and looking back
+at a finished epic.
+
+- **New: `scripts/flow.mjs`**, one command-line tool both the local run and a
+  GitHub Action will call: `init` (creates the ten labels), `doctor`,
+  `board` (names the default branch first), `next` (JSON of what can start;
+  exits 1 when the epic is not approved, is stuck or has no tickets),
+  `ticket` (the parsed ticket, with who edited its body and when), `check`
+  (runs a ticket's criteria from the issue, returning the body's edit
+  history too, or from a draft file with `--file`), `post`, `label` (refuses
+  two state labels on one issue), `create-epic`, `create-ticket` (writes the
+  `Epic:` and `Blocked by:` lines, links the sub-issue, adds it to the epic's
+  task list, and refuses unreadable epic settings, a ticket with no criteria
+  block, an unreadable blocker line, a blocker outside the epic or a
+  malformed criterion before creating anything), `link` (finishes a ticket
+  that was created but not linked; safe to repeat) and `needs-human` (the
+  one way a ticket stops: a label and a comment that mentions a person).
+- **Ready is worked out, not a label.** A ticket keeps `flow:planned` until
+  it starts, and is ready once its epic has `flow:approved` and every blocker
+  is `flow:done`, so approving an epic on GitHub is one label and no ticket
+  can start without it.
+- **A ticket with no criteria fails its check.** In 2.x no criteria at all
+  passed; now that anyone with write access can edit the issue, deleting the
+  ```` ```criteria ```` block would turn a red ticket green, so a missing or
+  empty block is a problem. A block holding only a design comparison still
+  passes `check`: the comparison is gated by its posted table.
+- **Unchanged in behaviour: the criteria grammar.** `CHECK:`, `EXPECT:`,
+  `COMPARE:` and `LANDMARKS:` parse and run exactly as in 2.x, including
+  skip detection, the near-miss and never-passes shapes, the ten-minute
+  timeout and the 64 MB output limit. They now live in one ```` ```criteria
+  ```` block under `## Acceptance criteria`; a criteria line outside it is a
+  problem, not a line that silently never runs.
+- **`Blocked by:` takes issue numbers**: `Blocked by: #12, #14`, strict as
+  before. `waiting` is worked out, never a label.
+- **`/flow:epic` rewritten.** It reads sources from files, web pages,
+  `claude.ai` artifacts and Jira; stops once to agree the shape (with every
+  question carrying a recommended answer) and once for approval; drafts the
+  plan outside the repository; proves every CHECK red with
+  `flow check --file`; and creates nothing on GitHub until the user says yes.
+  Each ticket gets a tier (`tier:easy` is built by Sonnet, `tier:hard` by
+  Opus). UI epics get the testing rule: component tests with
+  react-testing-library by default, a browser end-to-end test only for a user
+  journey the outcome depends on (Page Object Model for those), screenshots
+  posted. A project with translation catalogs ends with a Translations
+  ticket.
+- **`researcher` and `plan-reviewer`** no longer refer to the 2.x files; the
+  plan reviewer reads the plan as it will be posted and re-runs every CHECK
+  with `flow check --file`.
+- **Removed:** `tickets.mjs` and its board, `board.mjs`, `plan-page.mjs`,
+  `release-page.mjs`, `merge-append.mjs` (no shared file is left to merge),
+  `check-invariants.mjs`, the Codex runners and shadow reviews, the session
+  guard hook, and the `board`, `tickets`, `spend` and `doctor` skills
+  (`flow board` and `flow doctor` replace the last two). The repository's
+  own 2.x `epics/` records stay on the default branch's history.
+- **Not yet rewritten, and not working with a 3.0 epic:** `/flow:run`,
+  `/flow:retro`, `workflows/run-epic.mjs` and `worktree-setup.mjs` (all but
+  the retro were rewritten in stage 3, the retro in stage 4).
+- **`METHODOLOGY.md`** is now a short list of the lessons that still decide
+  the design.
+
+- **Follow-ups from the stage 1 review.** A planned ticket whose criteria
+  cannot decide it (block deleted, empty or malformed) now waits with that
+  reason on `board`, `next` and `doctor` instead of being listed ready.
+  `check <n>` runs the criteria before reading the body's edit history, and
+  when that history cannot be read it reports `edits: null` with a named
+  problem and fails, rather than failing with no results. `link` refuses a
+  target that is an epic or has no `flow:ticket` label. A `## Tickets ##`
+  heading is found when a ticket is added to the list, instead of a second
+  `## Tickets` section being appended. The epic skill checks the branch name
+  with the full `refs/heads/epic/<name>`.
+
+### Stage 2: one ticket, start to merged
+
+- **New `flow` commands that carry a ticket through its steps, each refusing
+  at the door rather than trusting the caller.** `start <n>` refuses a
+  ticket that is not ready or a working tree with uncommitted changes, cuts
+  `ticket/<n>` from the epic branch on origin (release) or the default
+  branch (incremental, or no epic), labels it `flow:in-progress` and posts
+  who builds it, attended or unattended (`FLOW_UNATTENDED=1`), on which
+  model. `accept <n>` runs the criteria on the branch's committed head,
+  refuses when the issue body was edited after the start comment (naming who
+  edited it), and posts the results with the commit they judged. `deliver
+  <n>` takes only that accepted commit: under release delivery it merges it
+  into the epic branch with `--no-ff` from a temporary worktree, retries
+  twice when the branch moved, asks a person on a conflict or a third lost
+  race, labels the ticket `flow:done` and ticks it off the epic; under
+  incremental delivery it pushes the commit and opens a pull request that
+  closes the ticket. Unattended, a refusal from `start` or `deliver` asks a
+  person on the issue itself.
+- **`flow screenshots <n>`** runs the `screenshots` command from
+  `.flow.json`, commits the PNGs on the ticket branch and posts them on the
+  issue, linked by commit so the links survive the branch.
+- **The pull-request loop:** `pr-review-request` (asks Copilot, as
+  `copilot-pull-request-reviewer[bot]`; prints `coderabbit` where
+  `.coderabbit.yaml` exists and `none` where Copilot is not available,
+  which GitHub signals by accepting the request and adding no reviewer),
+  `pr-wait` (the bot's review of the current head, or `timeout`),
+  `pr-threads` (unresolved review threads, every page), `pr-resolve` (reply,
+  then resolve; a reply is required) and `pr-checks` (`gh pr checks` as
+  JSON, `--wait` to poll; exit 1 failing, 3 still running).
+- **`flow meter <n> --transcripts [role=]<path> ...`** replaces the 2.x run
+  meter. It reads Claude Code transcripts (a file, a directory, or a headless
+  run's `stream-json` output, split into worker, reviewer and fixes by which
+  agent launched what) and posts input, output, cache writes, cache reads,
+  largest context, compactions and time, per step and per model, with the
+  same figures as JSON. A figure no transcript records is `unknown`, never
+  estimated; a message written as several lines is counted once; text a
+  tool printed is never read as a model or a compaction.
+- **`flow create-ticket --no-epic`** creates a ticket that belongs to no
+  epic, for `/flow:quick`; such a ticket counts as approved.
+- **`/flow:ticket #<n>` rewritten** for GitHub Issues: start, read, build on
+  the ticket's model (Sonnet for `tier:easy`, Opus otherwise), check,
+  screenshots, a fresh-context review that never sees the builder's
+  reasoning, at most two review rounds, accept, cost, deliver, and the pull
+  request loop; one comment per step. It stops for a person in three cases
+  only: acceptance still failing after two rounds of fixes, a contradiction
+  between the ticket and the code, a conflict it cannot resolve.
+- **`ticket-reviewer`** runs on the strongest model and adds four things to
+  look for: code comments, UI logic without a component test or an
+  end-to-end test added for a feature rather than a journey, translations
+  outside the Translations ticket, and a design comparison with no posted
+  table. **`/flow:review`** runs the same rules by hand and only reports.
+- **`/flow:quick`** writes one ticket with no epic and runs `/flow:ticket`
+  on it; sign-in, payments, data migrations, deletion and shared
+  infrastructure still go through `/flow:epic`.
+- **`/flow:epic`** now hands over to `/flow:ticket #<n>` for the first
+  ready ticket.
+- **Removed:** the 2.x supervisor and interactive modes, the status log
+  entries and addenda, the revert check written into a log, and the run
+  meter's run-record lines.
+
+- **Fixes from the stage 2 review.**
+  - Flow's own comments (start, review round, acceptance, merge) count only
+    when posted by the account running the command, and only with the
+    marker at the start of the comment. Before, anyone could post a later
+    start comment to move the line the edit check draws, or quote an
+    acceptance to have its commit merged.
+  - `accept` refuses untracked files (the checks would see what the commit
+    does not hold), a missing review, a review round with an Important
+    finding open (and, after two rounds, stops the ticket), and a `COMPARE:`
+    criterion with no `**Compared:**` comment; `deliver` and `merge` refuse
+    the last as well.
+  - `flow post --review --important <k>` posts a reviewer's report as the
+    next numbered round, which is what `accept` counts.
+  - `screenshots` commits only the images, never something else already
+    staged.
+  - `pr-checks` never reads "no checks" as passing: it exits 4, and under
+    `--wait` gives the checks 90 seconds (`--grace`) to appear first.
+  - A release epic with no `Branch:` setting lists nothing ready, with the
+    reason, so `next` and `start` agree. An unattended `start` on a dirty
+    working tree exits nonzero without marking the ticket: the host is at
+    fault, not the ticket.
+  - `pr-threads` flags a thread with more comments than one page holds; the
+    Done comment says when the merge was made again on a moved epic branch.
+
+### Stage 3: an epic built with nobody watching, on two hosts
+
+- **`/flow:run #<epic>` rewritten, and `workflows/run-epic.mjs` with it**
+  (3,453 lines to 341). The skill checks (`flow doctor`, `flow next`,
+  a clean tree, no ticket in progress that someone may still be working on,
+  `.flow.json` for side-by-side builds) and starts the workflow. Each round
+  the workflow reads what is ready from GitHub, builds up to `Parallel:`
+  tickets with `/flow:ticket` on the ticket's model, starts the ticket
+  reviewer itself, has the builder fix what it found (two rounds), and, side
+  by side, merges the accepted commits into the epic branch one at a time in
+  the epic's order and checks them again at the new head. A wave whose
+  working copies cannot be set up runs one ticket at a time, with a comment
+  on the epic, and never stops the run. A builder that dies is reset and
+  built again once from its branch; a second death goes to a person. The run
+  ends at the release pull request, answers its review and CI for two
+  rounds, and posts its result on the epic. Gone with the 2.x driver: the
+  shell proxies that re-ran every command, fifteen halt kinds, the review
+  tiers, the fix-bounds gate, the per-ticket budget, the run log and its
+  ledger lines.
+- **New: the GitHub Action template, `plugins/flow/github/flow.yml`.** A
+  project copies it into `.github/workflows/`. `epic` (on approval and after
+  every ticket) adds `flow:start` to up to `Parallel:` ready tickets and,
+  once everything is built, checks the epic and opens the release pull
+  request; it never runs Claude. `ticket` (on `flow:start`, or by hand) runs
+  `/flow:ticket #<n> --unattended --no-merge` on the tier's model through
+  `anthropics/claude-code-action@v1` with this marketplace's plugin, posts
+  the cost, keeps the screenshots and resets a run that died. `merge`, one
+  at a time per epic, merges every accepted ticket in order and checks them
+  at the new head. `pr` answers reviews and failed checks on ticket and epic
+  pull requests, one round per event, leaving a ticket's pull request to its
+  `ticket` job until the ticket is done. Labels are added with a `FLOW_TOKEN` secret, because labels
+  added with the default token start no other workflow.
+- **New `flow` commands for running an epic:** `merge <n> [--sha]` and
+  `merge --epic <epic>` (the accepted commit only, refusing any other),
+  `check-epic <epic> [--tickets] [--mark]` (the done tickets' checks at the
+  epic head in a clean copy, posted on the epic; `--mark` hands a failing
+  ticket to a person and it stays merged), `worktree <n> [--remove]`,
+  `dispatch <epic>`, `release-pr <epic>` (refuses until every ticket is
+  done; the body has the outcome, the walkthrough, each ticket's merge
+  commit and the cost, and closes the epic and its tickets when a person
+  merges it), `design-map <epic>` and `reset <n> [--once]`.
+- **A ticket can be resumed.** `flow reset <n>` puts a ticket left in
+  progress or in review back to planned, keeps its branch and says so; it
+  refuses a ticket that passed acceptance, which is waiting to be merged.
+  `flow start` on a ticket whose branch exists now checks that branch out
+  and carries on from it ("Resumed") instead of refusing; it refuses only
+  when the branch moved both locally and on origin. Acceptance still draws
+  its line at the latest start comment.
+- **`/flow:ticket` takes arguments a host passes**: `--unattended` (for a
+  host that cannot set `FLOW_UNATTENDED`), `--until-review` and
+  `--after-review <round>` (the host starts the reviewer, because an agent
+  it started cannot start another), `--no-merge` (the host merges a wave's
+  tickets one at a time) and `--pr-loop <pr> [--wait]` (one round of the pull
+  request loop; `--wait` for a host that gets no review or check events). A
+  person never needs them.
+- **The design map moves into the epic body**, as a fenced `design-map`
+  block under `## Design map` (the 2.x `design-map.json` shape).
+  `flow create-epic` refuses a map the comparison cannot read, and the
+  ticket skill's comparison reads it with `flow design-map`. The plan
+  reviewer checks the map against the design files.
+- **`.flow.json` gains `copy` and `setup`**, replacing 2.x's
+  `epics/worktree.json`: what a fresh working copy needs, read from the
+  branch as committed. A file git does not ignore is still never copied,
+  nothing is read or written through a symbolic link, and the setup still
+  has eight minutes.
+- **The meter reads the real headless shape**, checked against one real
+  `claude -p --output-format stream-json --verbose` run: messages deduplicated
+  by `request_id` as well, the result line's `modelUsage` shown as the run's
+  own totals, and the run timed by its `duration_ms` when that is longer than
+  its first to last message. It also reads the JSON array the GitHub Action
+  writes, and one ticket's agents out of a workflow run
+  (`flow meter <n> --workflow <run dir>`).
+- **Follow-ups from the stage 3 review.** `Branch:` must name a branch under
+  `epic/`: anything else (`main`, `feature/x`) is a problem `create-epic`,
+  `next` and `board` report, and every command that pushes or judges the
+  epic branch (`start`, `merge`, `deliver`, `check-epic`, `worktree`,
+  `release-pr`, `dispatch`) refuses it, as it refuses the default branch; a
+  merge into anything outside `epic/` is refused at the git step too. The
+  local run never passes a commit an agent reported: `flow merge <n>` takes
+  the one the acceptance comment names, a builder that died after
+  acceptance gets its ticket merged rather than reset, and a reset that
+  refuses for any other reason hands the ticket to a person instead of
+  looping. `reset` answers refusals in JSON and, on a planned ticket whose
+  `flow:start` request never started, takes the label off (a second time,
+  asks a person). One at a time, each ticket is checked at the epic head
+  after it merges itself. The run stops after three rounds that changed
+  nothing rather than after forty rounds in all, and a ticket it started
+  twice with no reset between goes to a person. Its comments mark the epic
+  as being built locally, and `dispatch` refuses while they do; `next`
+  shows each ticket's start request and the run skill refuses an epic being
+  built on GitHub. The Action finds the epic from the ticket body when the
+  ticket job died before reading it, and opens the release pull request only
+  after a passing check, written with `&&`. `worktree-setup.mjs` keeps only
+  `--validate` on the command line.
+- **`/flow:epic`** now names all three ways to build a signed-off epic, and
+  warns that a project with the Action is already building it on GitHub.
+- **`flow next`** adds `delivery`, `parallel`, `branch` and each ticket's
+  tier, model and state to its JSON; **`flow post --file -`** reads standard
+  input; **`flow:start`** is the eleventh label, taken off when the ticket
+  starts or goes to a person.
+
+- **Follow-ups from the stage 2 confirming review.** `FLOW_ACCOUNT` names
+  the account Flow trusts its own comments from, because GitHub will not
+  tell an App installation token or the Actions token who it is; without
+  either, every command that reads those comments refuses with a sentence
+  naming the variable. The Action template sets it to `github-actions[bot]`
+  when there is no `FLOW_TOKEN`, and to a `FLOW_ACCOUNT` repository variable
+  otherwise. A review round now names the commit it read
+  (`flow post <n> --review --important <k> --head <sha>`), and `accept`
+  refuses while HEAD is another commit, so a fix after the review is
+  reviewed too. `post --review` refuses a count the report's Important
+  section contradicts ("None" with a nonzero count, or findings with 0).
+  `merge --epic` lists a ticket accepted under another account in
+  `notMerged` instead of skipping it. A `**Compared:**` table counts only
+  when posted after the latest start. The ticket skill says review rounds
+  count from the latest start (a reset ticket gets two more), and every
+  document now gives the same list of reasons a ticket stops.
+
+- **Follow-ups from the stage 3 confirming review.** The Action's `epic`
+  job withdraws a start request whose `ticket` job failed before its own
+  recovery step (a failed checkout left `flow:start` on, and `dispatch`
+  counted the ticket busy for ever). A new `route` job reads the epic's
+  number from the event, so every scheduler run of one epic shares one
+  concurrency group. A failed `check-epic` or `release-pr` now fails the
+  step. In `/flow:run`, a hand-off to a person that fails counts as a round
+  that changed nothing and is tried twice at most (it looped for ever on a
+  GitHub outage), and a builder that died before its ticket started is built
+  once more instead of going straight to a person; `reset`'s refusal names
+  the ticket's state. `merge --epic` under an unusable `Branch:` posts once
+  on the epic instead of handing every accepted ticket to a person. The
+  one-host mark counts whoever posted it, so a person's local run and the
+  Action under `FLOW_TOKEN` see each other, and anyone can clear it.
+
+- **Nits from the final review.** `post --review` refuses a report with
+  two `**Important.**` sections, since the second could hold findings the
+  count leaves out. Unattended, a second `start` of a ticket already in
+  progress or in review is refused and leaves the ticket alone, instead of
+  handing it to a person and blocking its merge. The Action's recovery step
+  reports success only when `reset` succeeded, so the scheduler withdraws
+  the start request after a GitHub outage too. A run that could not hand
+  its own ticket to a person says so, instead of calling it work outside
+  the run. The retro judges a plugin proposal's CHECK in a clone of the
+  plugin's repository.
+
+### Stage 4: looking back
+
+- **New: `flow stats [<epic>] [--since <date>] [--json]`.** Reads every
+  ticket's comments and git, and prints per ticket and summed per epic: time
+  per step (worker, review and fixes from the cost comment; acceptance from
+  the time its checks ran; delivery from the passing acceptance to the merge,
+  or to the last pull request comment under incremental delivery; whole from
+  the first start), tokens in, out and cache per model, the largest context,
+  compactions, review rounds and Important findings, `(review fix)` commits,
+  `(fixes #n)` commits on the default branch, every stop for a person with
+  its reason and link, every stopped run, and the tickets of a wave that was
+  planned side by side and built one at a time. Without an epic it covers
+  every epic (`--since` leaves out those created earlier) and adds a pace
+  line: done tickets per day and the median ticket. A figure no comment or
+  commit carries is `unknown`; a sum over some tickets says how many
+  (`1,800 (1/2)`). Nothing is estimated. It changes nothing on GitHub.
+- **`/flow:retro #<epic>` rewritten.** It refuses until the release pull
+  request is merged (under incremental delivery, until every ticket is
+  done), hands the reading to a new `retro-miner` agent on the strongest
+  model, which answers seven fixed questions with a link per answer (stops,
+  real defects against taste and what the pull request bot caught, where the
+  time went, waves built one at a time, criteria that passed wrongly or
+  failed wrongly, broken or missing project rules, what to change), posts
+  the answers on the epic, and files a plugin proposal
+  (`flow create-ticket --no-epic --repo <plugin repository>`) or sends an
+  instruction-file change through `/flow:quick` only when the user says yes.
+- **Comments carry what `stats` reads.** The acceptance marker records how
+  long the checks ran (`seconds=`); a stop for a person starts with
+  `<!-- flow:needs-human -->`; a wave that falls back to one ticket at a time
+  names its wave and tickets in `<!-- flow:serial wave=… tickets=… -->`.
+  Comments written before still read: a missing figure is `unknown`.
+- **`flow pr-threads <pr> --all`** lists resolved threads too, for a merged
+  pull request; **`create-ticket --no-epic --repo <owner>/<name>`** files the
+  ticket in another repository. Issues, comments and pull requests now carry
+  their dates, comment links and whether a pull request was merged.
+- **The release pull request's cost adds every run of a ticket**, as `stats`
+  does, instead of taking the last cost comment: a ticket reset and built
+  again on the Action posts one comment per run, and a comment posted twice
+  is counted once.
+- **The compaction hint names its focus.** At each boundary (a ticket
+  delivered, a plan created, a run ended, a retro filed) the attended
+  session says it is a good point to run `/compact` with a focus sentence it
+  supplies, or to start a fresh session.
 
 ## 2.6.0 — 2026-09-22
 

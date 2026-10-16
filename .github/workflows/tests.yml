@@ -1,8 +1,7 @@
-# Every suite, the invariant checker, doctor, and the syntax/parse checks —
-# the same commands CLAUDE.md names, so what a session runs locally and what
-# gates a pull request cannot drift apart. Node 20 for the built-in test
-# runner; fetch-depth 0 because doctor and shipped detection read
-# origin/<default-branch>.
+# Every suite and every syntax check CLAUDE.md names, so a local run and the
+# pull-request gate cannot drift apart. `flow doctor` is not run here: it
+# reads the repository through an authenticated `gh`, and this job has no
+# GitHub login to give it.
 name: tests
 on:
   push:
@@ -14,50 +13,39 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-      - name: point origin/HEAD at the default branch (doctor reads it)
-        run: git remote set-head origin -a
       - name: syntax checks
         run: |
-          node --check plugins/flow/scripts/tickets.mjs
-          node --check plugins/flow/scripts/runners/codex.mjs
-          node --check plugins/flow/scripts/runners/codex-review.mjs
-          node --check plugins/flow/scripts/board.mjs
-          node --check plugins/flow/scripts/plan-page.mjs
-          node --check plugins/flow/scripts/check-invariants.mjs
+          node --check plugins/flow/scripts/flow.mjs
+          node --check plugins/flow/scripts/issue-body.mjs
+          node --check plugins/flow/scripts/checks.mjs
+          node --check plugins/flow/scripts/epic-state.mjs
+          node --check plugins/flow/scripts/delivery.mjs
+          node --check plugins/flow/scripts/ticket-steps.mjs
+          node --check plugins/flow/scripts/review-bots.mjs
+          node --check plugins/flow/scripts/tracker/github.mjs
+          node --check plugins/flow/scripts/tracker/fake-gh.mjs
           node --check plugins/flow/scripts/fidelity.mjs
           node --check plugins/flow/scripts/meter.mjs
-          node --check plugins/flow/scripts/merge-append.mjs
+          node --check plugins/flow/scripts/stats.mjs
           node --check plugins/flow/scripts/worktree-setup.mjs
-          node --check plugins/flow/scripts/release-page.mjs
-          node --check plugins/flow/hooks/ticket-session-guard.mjs
       - name: parse run-epic.mjs the way the workflow runtime does
         run: |
           node -e 'const s=require("fs").readFileSync("plugins/flow/workflows/run-epic.mjs","utf8").replace(/^export const meta/m,"const meta");new (Object.getPrototypeOf(async function(){}).constructor)("agent","parallel","pipeline","log","phase","args","budget",s)'
       - name: test suites
         run: |
-          node --test plugins/flow/scripts/tickets.test.mjs
-          node --test plugins/flow/scripts/board.test.mjs
-          node --test plugins/flow/scripts/plan-page.test.mjs
-          node --test plugins/flow/hooks/ticket-session-guard.test.mjs
-          node --test plugins/flow/scripts/check-invariants.test.mjs
+          node --test plugins/flow/scripts/flow.test.mjs
+          node --test plugins/flow/scripts/issue-body.test.mjs
+          node --test plugins/flow/scripts/checks.test.mjs
+          node --test plugins/flow/scripts/tracker/github.test.mjs
+          node --test plugins/flow/scripts/lifecycle.test.mjs
+          node --test plugins/flow/scripts/epic-run.test.mjs
+          node --test plugins/flow/scripts/pull-request.test.mjs
           node --test plugins/flow/scripts/fidelity.test.mjs
+          node --test plugins/flow/scripts/stats.test.mjs
           node --test plugins/flow/scripts/meter.test.mjs
-          node --test plugins/flow/scripts/merge-append.test.mjs
           node --test plugins/flow/scripts/worktree-setup.test.mjs
-          node --test plugins/flow/scripts/release-page.test.mjs
           node --test plugins/flow/workflows/run-epic.test.mjs
-          node --test plugins/flow/scripts/runners/codex.test.mjs
-          node --test plugins/flow/scripts/runners/codex-review.test.mjs
-      - name: doctrine invariants
-        run: node plugins/flow/scripts/check-invariants.mjs
-      - name: doctor
-        # gh is unauthenticated here, which doctor reports as a warning and
-        # degrades to git-only facts — exactly the honest-degradation path
-        # the board promises. Only a hard failure (no origin, duplicate IDs)
-        # exits nonzero.
-        run: node plugins/flow/scripts/tickets.mjs doctor
+          node --test plugins/flow/github/flow.test.mjs

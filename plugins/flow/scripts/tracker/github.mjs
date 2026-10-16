@@ -1,0 +1,348 @@
+import { spawnSync } from 'node:child_process'
+
+const REPO = 'repos/{owner}/{repo}'
+const MAX_OUTPUT_BYTES = 64 * 1024 * 1024
+
+export class TrackerError extends Error {
+  constructor(message, { missing = false, httpStatus = null, stderr = '' } = {}) {
+    super(message)
+    this.name = 'TrackerError'
+    this.missing = missing
+    this.httpStatus = httpStatus
+    this.stderr = stderr
+  }
+}
+
+function runGh(args, { input = null, acceptedExitCodes = [] } = {}) {
+  const result = spawnSync('gh', args, {
+    encoding: 'utf8',
+    input: input ?? undefined,
+    maxBuffer: MAX_OUTPUT_BYTES,
+    env: { ...process.env, GH_PROMPT_DISABLED: '1', NO_COLOR: '1' },
+  })
+  if (result.error && result.error.code === 'ENOENT')
+    throw new TrackerError('the GitHub CLI `gh` is not installed or not on PATH', { missing: true })
+  if (result.error) throw new TrackerError(`gh could not run: ${result.error.message}`)
+  const accepted = acceptedExitCodes.includes(result.status) && (result.stdout || '').trim() !== ''
+  if (result.status !== 0 && !accepted) {
+    const stderr = (result.stderr || '').trim()
+    const status = stderr.match(/\(HTTP (\d{3})\)/)
+    throw new TrackerError(`gh ${args.slice(0, 3).join(' ')} failed: ${stderr || `exit ${result.status}`}`, {
+      httpStatus: status ? Number(status[1]) : null,
+      stderr,
+    })
+  }
+  return result.stdout
+}
+
+function parseJson(text, what) {
+  try {
+    return JSON.parse(text)
+  } catch {
+    throw new TrackerError(`gh returned something that is not JSON for ${what}`)
+  }
+}
+
+function apiGet(path) {
+  return parseJson(runGh(['api', path]), path)
+}
+
+function apiList(path) {
+  const pages = parseJson(runGh(['api', '--paginate', '--slurp', path]), path)
+  return pages.flat()
+}
+
+function apiWrite(method, path, payload) {
+  const output = runGh(['api', '-X', method, path, '--input', '-'], { input: JSON.stringify(payload) })
+  return output.trim() ? parseJson(output, path) : null
+}
+
+function normalizeIssue(raw) {
+  return {
+    number: raw.number,
+    id: raw.id,
+    title: raw.title,
+    body: raw.body || '',
+    state: raw.state,
+    labels: (raw.labels || []).map((label) => (typeof label === 'string' ? label : label.name)),
+    assignees: (raw.assignees || []).map((user) => user.login),
+    author: raw.user ? raw.user.login : null,
+    url: raw.html_url || null,
+    createdAt: raw.created_at || null,
+    closedAt: raw.closed_at || null,
+  }
+}
+
+export function ghVersion() {
+  return runGh(['--version']).split('\n')[0].trim()
+}
+
+export function authStatus() {
+  try {
+    runGh(['auth', 'status'])
+    return { ok: true, message: '' }
+  } catch (error) {
+    if (error.missing) throw error
+    return { ok: false, message: error.stderr || error.message }
+  }
+}
+
+export function repoInfo() {
+  const raw = apiGet(REPO)
+  return { slug: raw.full_name, defaultBranch: raw.default_branch || null, hasIssues: raw.has_issues !== false }
+}
+
+export function repoSlug() {
+  return repoInfo().slug
+}
+
+export function defaultBranch() {
+  return repoInfo().defaultBranch
+}
+
+export function getIssue(number) {
+  return normalizeIssue(apiGet(`${REPO}/issues/${number}`))
+}
+
+export function listIssues({ label, state = 'open' }) {
+  const query = `labels=${encodeURIComponent(label)}&state=${state}&per_page=100`
+  return apiList(`${REPO}/issues?${query}`)
+    .filter((raw) => !raw.pull_request)
+    .map(normalizeIssue)
+}
+
+export function listSubIssues(number) {
+  return apiList(`${REPO}/issues/${number}/sub_issues?per_page=100`).map(normalizeIssue)
+}
+
+export function createIssue({ title, body, labels = [] }) {
+  return normalizeIssue(apiWrite('POST', `${REPO}/issues`, { title, body, labels }))
+}
+
+export function updateIssueBody(number, body) {
+  return normalizeIssue(apiWrite('PATCH', `${REPO}/issues/${number}`, { body }))
+}
+
+export function addSubIssue(parentNumber, childId) {
+  apiWrite('POST', `${REPO}/issues/${parentNumber}/sub_issues`, { sub_issue_id: childId })
+}
+
+export function setLabels(number, labels) {
+  apiWrite('PUT', `${REPO}/issues/${number}/labels`, { labels })
+}
+
+export function addLabels(number, labels) {
+  if (labels.length) apiWrite('POST', `${REPO}/issues/${number}/labels`, { labels })
+}
+
+export function removeLabels(number, labels) {
+  for (const label of labels) {
+    try {
+      runGh(['api', '-X', 'DELETE', `${REPO}/issues/${number}/labels/${encodeURIComponent(label)}`])
+    } catch (error) {
+      if (error.httpStatus !== 404) throw error
+    }
+  }
+}
+
+export function comment(number, body) {
+  const raw = apiWrite('POST', `${REPO}/issues/${number}/comments`, { body })
+  return { id: raw.id, url: raw.html_url || null }
+}
+
+export function listComments(number) {
+  return apiList(`${REPO}/issues/${number}/comments?per_page=100`).map((raw) => ({
+    id: raw.id,
+    author: raw.user ? raw.user.login : null,
+    body: raw.body || '',
+    createdAt: raw.created_at,
+    url: raw.html_url || null,
+  }))
+}
+
+export function listLabels() {
+  return apiList(`${REPO}/labels?per_page=100`).map((raw) => ({ name: raw.name, color: raw.color, description: raw.description || '' }))
+}
+
+export function ensureLabels(wanted) {
+  const existing = new Set(listLabels().map((label) => label.name))
+  const created = []
+  for (const label of wanted) {
+    if (existing.has(label.name)) continue
+    apiWrite('POST', `${REPO}/labels`, label)
+    created.push(label.name)
+  }
+  return { created, existing: wanted.map((label) => label.name).filter((name) => existing.has(name)) }
+}
+
+const EDIT_HISTORY_QUERY =
+  'query($owner:String!,$name:String!,$number:Int!,$endCursor:String){repository(owner:$owner,name:$name){issue(number:$number){userContentEdits(first:100,after:$endCursor){pageInfo{hasNextPage endCursor}nodes{editedAt editor{login}}}}}}'
+
+export function bodyEditHistory(number) {
+  const output = runGh([
+    'api',
+    'graphql',
+    '--paginate',
+    '--slurp',
+    '-f',
+    `query=${EDIT_HISTORY_QUERY}`,
+    '-F',
+    'owner={owner}',
+    '-F',
+    'name={repo}',
+    '-F',
+    `number=${number}`,
+  ])
+  const pages = parseJson(output, 'graphql edit history')
+  return pages
+    .flatMap((page) => {
+      const issue = page && page.data && page.data.repository && page.data.repository.issue
+      if (!issue) throw new TrackerError(`issue #${number} has no edit history to read`)
+      return issue.userContentEdits.nodes
+    })
+    .map((node) => ({ editedAt: node.editedAt, editor: node.editor ? node.editor.login : null }))
+    .sort((a, b) => a.editedAt.localeCompare(b.editedAt))
+}
+
+function graphql(query, variables, { inRepository = true } = {}) {
+  const args = ['api', 'graphql', '-f', `query=${query}`, ...(inRepository ? ['-F', 'owner={owner}', '-F', 'name={repo}'] : [])]
+  for (const [name, value] of Object.entries(variables)) {
+    if (value === null || value === undefined) continue
+    args.push(typeof value === 'number' ? '-F' : '-f', `${name}=${value}`)
+  }
+  const response = parseJson(runGh(args), 'graphql')
+  if (response.errors && response.errors.length) throw new TrackerError(`GitHub GraphQL refused the request: ${response.errors.map((error) => error.message).join('; ')}`)
+  return response.data
+}
+
+function normalizePullRequest(raw) {
+  return {
+    number: raw.number,
+    url: raw.html_url || null,
+    state: raw.state,
+    head: raw.head ? raw.head.ref : null,
+    headSha: raw.head ? raw.head.sha : null,
+    base: raw.base ? raw.base.ref : null,
+    merged: Boolean(raw.merged_at),
+    mergedAt: raw.merged_at || null,
+  }
+}
+
+export function getPullRequest(number) {
+  return normalizePullRequest(apiGet(`${REPO}/pulls/${number}`))
+}
+
+export function findOpenPullRequest(head) {
+  const owner = repoSlug().split('/')[0]
+  const found = apiList(`${REPO}/pulls?head=${encodeURIComponent(`${owner}:${head}`)}&state=open&per_page=100`)
+  return found.length ? normalizePullRequest(found[0]) : null
+}
+
+export function createPullRequest({ title, head, base, body }) {
+  return normalizePullRequest(apiWrite('POST', `${REPO}/pulls`, { title, head, base, body }))
+}
+
+export function requestReviewers(number, reviewers) {
+  const pull = apiWrite('POST', `${REPO}/pulls/${number}/requested_reviewers`, { reviewers })
+  return ((pull && pull.requested_reviewers) || []).map((reviewer) => reviewer.login)
+}
+
+export function listPullRequestReviews(number) {
+  return apiList(`${REPO}/pulls/${number}/reviews?per_page=100`).map((raw) => ({
+    id: raw.id,
+    author: raw.user ? raw.user.login : null,
+    state: raw.state,
+    commit: raw.commit_id || null,
+    submittedAt: raw.submitted_at || null,
+  }))
+}
+
+const REVIEW_THREADS_QUERY =
+  'query($owner:String!,$name:String!,$pr:Int!,$cursor:String){repository(owner:$owner,name:$name){pullRequest(number:$pr){reviewThreads(first:100,after:$cursor){pageInfo{hasNextPage endCursor}nodes{id isResolved isOutdated path line comments(first:100){totalCount nodes{body url author{login}}}}}}}}'
+
+export function listReviewThreads(number) {
+  const threads = []
+  let cursor = null
+  for (;;) {
+    const data = graphql(REVIEW_THREADS_QUERY, { pr: number, cursor })
+    const pullRequest = data && data.repository && data.repository.pullRequest
+    if (!pullRequest) throw new TrackerError(`pull request #${number} was not found`)
+    const page = pullRequest.reviewThreads
+    for (const node of page.nodes) {
+      const comments = node.comments.nodes.map((comment) => ({ author: comment.author ? comment.author.login : null, body: comment.body, url: comment.url }))
+      threads.push({
+        id: node.id,
+        resolved: node.isResolved,
+        outdated: node.isOutdated,
+        path: node.path,
+        line: node.line,
+        author: comments.length ? comments[0].author : null,
+        body: comments.length ? comments[0].body : '',
+        comments,
+        moreComments: (node.comments.totalCount ?? comments.length) > comments.length,
+      })
+    }
+    if (!page.pageInfo.hasNextPage) return threads
+    if (!page.pageInfo.endCursor || page.pageInfo.endCursor === cursor) throw new TrackerError(`GitHub returned a review thread page with no way to the next one for pull request #${number}`)
+    cursor = page.pageInfo.endCursor
+  }
+}
+
+const REPLY_TO_THREAD_MUTATION =
+  'mutation($thread:ID!,$body:String!){addPullRequestReviewThreadReply(input:{pullRequestReviewThreadId:$thread,body:$body}){comment{url}}}'
+const RESOLVE_THREAD_MUTATION = 'mutation($thread:ID!){resolveReviewThread(input:{threadId:$thread}){thread{id isResolved}}}'
+
+export function replyToReviewThread(threadId, body) {
+  const data = graphql(REPLY_TO_THREAD_MUTATION, { thread: threadId, body }, { inRepository: false })
+  return { url: data.addPullRequestReviewThreadReply.comment.url }
+}
+
+export function resolveReviewThread(threadId) {
+  const data = graphql(RESOLVE_THREAD_MUTATION, { thread: threadId }, { inRepository: false })
+  return { resolved: data.resolveReviewThread.thread.isResolved }
+}
+
+const CHECK_FIELDS = 'bucket,link,name,state,workflow'
+const PR_CHECKS_FAILING_EXIT = 1
+const PR_CHECKS_PENDING_EXIT = 8
+const NO_CHECKS_REPORTED = /no checks reported/i
+
+export function pullRequestChecks(number) {
+  let output
+  try {
+    output = runGh(['pr', 'checks', String(number), '--json', CHECK_FIELDS], { acceptedExitCodes: [PR_CHECKS_FAILING_EXIT, PR_CHECKS_PENDING_EXIT] })
+  } catch (error) {
+    if (NO_CHECKS_REPORTED.test(error.stderr || '')) return []
+    throw error
+  }
+  if (!output.trim()) return []
+  return parseJson(output, `pr checks ${number}`).map((check) => ({
+    name: check.name,
+    workflow: check.workflow || '',
+    state: check.state,
+    bucket: check.bucket,
+    link: check.link || null,
+  }))
+}
+
+const VIEWER_QUERY = 'query{viewer{login}}'
+const ACCOUNT_VARIABLE = 'FLOW_ACCOUNT'
+const ACCOUNT_HINT = `set ${ACCOUNT_VARIABLE} to the login Flow posts as: github-actions[bot] for the Actions token, <app-slug>[bot] for a GitHub App token, the owner's login for a personal access token`
+let viewerLoginOnce = null
+
+export function viewerLogin(environment = process.env) {
+  const named = String(environment[ACCOUNT_VARIABLE] || '').trim()
+  if (named) return named
+  if (viewerLoginOnce) return viewerLoginOnce
+  let data
+  try {
+    data = graphql(VIEWER_QUERY, {}, { inRepository: false })
+  } catch (error) {
+    if (!(error instanceof TrackerError) || error.missing) throw error
+    throw new TrackerError(`GitHub would not say which account \`gh\` is signed in as (${error.message}), and Flow trusts its own comments only from that account; ${ACCOUNT_HINT}`)
+  }
+  const login = data && data.viewer && data.viewer.login
+  if (!login) throw new TrackerError(`GitHub did not say which account \`gh\` is signed in as; ${ACCOUNT_HINT}`)
+  viewerLoginOnce = login
+  return login
+}

@@ -1,10 +1,17 @@
 {
   "name": "flow",
   "displayName": "Ticket Flow",
-  "version": "2.6.0",
-  "description": "Turn a request into an epic, run its tickets one at a time to reviewed pull requests, and derive the board from git instead of maintaining it.",
+  "version": "3.0.0",
+  "description": "Plan work as epics and tickets kept in GitHub Issues: an epic issue holds the plan, sub-issues hold the tickets with their acceptance checks, labels hold the state. Each ticket is built, reviewed by a separate agent, checked and merged, with every step posted on its issue.",
   "author": {
     "name": "Vadim Tarasov"
   },
-  "keywords": ["epic", "ticket", "workflow", "code-review", "pull-request"]
+  "keywords": [
+    "epic",
+    "ticket",
+    "workflow",
+    "github-issues",
+    "code-review",
+    "pull-request"
+  ]
 }
