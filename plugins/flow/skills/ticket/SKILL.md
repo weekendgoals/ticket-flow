@@ -119,6 +119,9 @@ The worker's rules, each with its reason:
 
 - **Stay inside the scope.** "Not in scope" usually names another ticket's
   work.
+- **Never run `FLOW handoff` on another ticket**, only on `<n>`: the
+  reviewer of a later ticket reads a handoff as that ticket's decision, so
+  one written from here would put this work's claims in its mouth.
 - **No code comments.** Names carry the meaning; a comment is a second copy
   of the code that nobody tests and that goes stale.
 - **Follow the project's instruction files**, and update them in the same
@@ -207,9 +210,9 @@ cannot be checked afterwards). Note its `agentId`. Give it:
   comments it needs (a `**Compared:**` table) and nothing else;
 - the commit range `<baseSha>..HEAD` and the repository path;
 - the ticket body;
-- the handoffs `FLOW ticket <n>` printed, which are earlier tickets'
-  decisions, not this worker's reasoning: they say what was decided, never
-  why this code is right;
+- the handoffs `FLOW ticket <n>` printed, which are claims about earlier
+  tickets, not this worker's reasoning: the reviewer checks them against
+  those tickets' merged code;
 - the epic's ground rules and design sources, when there is an epic;
 - the paths of the project's instruction files;
 - whether the ticket has a `COMPARE:` criterion.
@@ -316,8 +319,11 @@ FLOW deliver <n>
 
 `handoff` refuses a ticket that is not in review or done (there is nothing
 to hand off before the work exists) and a text over 1,200 characters,
-because the detail is in the commits. Running it again replaces the
-handoff in what later tickets see: they read only the latest.
+because the detail is in the commits. While the ticket is in review,
+running it again replaces the handoff in what later tickets see (they read
+only the latest); once the ticket is done its handoff is never replaced,
+and a done ticket with none (a host that merged it after `--no-merge`) may
+get its first one only.
 
 - **Release delivery** (the epic's default): it merges the accepted commit,
   never the branch tip, into the epic branch with `--no-ff` and the subject

@@ -11,23 +11,31 @@ stamps the version and date and bumps `plugin.json` in the same commit.
   `--file <md>`) posts a comment on the ticket starting
   `<!-- flow:handoff -->` and `**Handoff.**`: what a later ticket needs from
   this one, in three to five lines. It refuses, posting nothing, a ticket
-  that is not in review or done and a text over 1,200 characters. Only
-  handoffs from the account running Flow count, and the latest one replaces
-  the earlier ones (the command says so when it does).
+  that is not in review or done, a done ticket that already has a handoff
+  (a done ticket's handoff is never replaced, so a later ticket's worker
+  cannot rewrite what its reviewer reads as an earlier decision; a done
+  ticket with none may get its first), and a text over 1,200 characters.
+  Only handoffs from the account running Flow count; while the ticket is
+  in review the latest one replaces the earlier ones (the command says so
+  when it does).
 - **`flow ticket` carries the handoffs.** Its JSON adds `handoffs`, the
   latest handoff of every done ticket in the same epic (number, title,
   whether it is one of this ticket's blockers, text, link, time), blockers
-  first and then in the epic's order, at most twenty, and
-  `handoffsLeftOut`, how many more there were; it prints the same on
-  stderr under `handoffs:` (`handoffs: none` when there are none, as for a
-  ticket with no epic). Standard output stays the JSON alone, so a script
-  piping it to `jq` is unchanged.
+  first and then in the epic's order, reading the comments of at most
+  twenty done tickets, and `handoffsLeftOut`, how many done tickets it did
+  not read; it prints the same on stderr under `handoffs:` (`handoffs:
+  none` when there are none, as for a ticket with no epic). When the
+  account running it cannot be known, it still prints the ticket and exits
+  0, with no handoffs and one stderr line saying why. Standard output stays
+  the JSON alone, so a script piping it to `jq` is unchanged.
 - **The ticket skill writes and reads handoffs.** Step 2 reads the handoffs
   before the code (and other tickets' comments still not at all); step 9
   writes the handoff before `deliver` (and `--no-merge` stops after it);
   the reviewer's packet carries the handoffs, and the `ticket-reviewer`
-  agent treats them as earlier tickets' decisions, never as reasoning about
-  the code under review. `/flow:run`'s reviewer prompt names them too.
+  agent treats each as a claim about an earlier ticket, checked against
+  that ticket's merged code, and a handoff that argues the code under
+  review is right as a finding. The worker never runs `flow handoff` on
+  another ticket. `/flow:run`'s reviewer prompt names them too.
 - **`flow stats`** adds `handoff: true|false` per ticket and `handoffs` (how
   many tickets left one) per epic, printed as one line; the retro miner
   reads the handoffs first when it compares the plan with what was built.
@@ -45,9 +53,9 @@ stamps the version and date and bumps `plugin.json` in the same commit.
   bytes and how many `CLAUDE.md` and `AGENTS.md` files the tree holds, read
   from git at the commit the epic's first ticket started from (named in its
   start comment) and at the release pull request's merge commit, as
-  `instructionFiles: { before, after }` (`null` where no comment names the
-  commit, the pull request is not merged, or the clone lacks the commit),
-  printed as one line. The tracker's pull request now carries
+  `instructionFiles: { before, after }`, printed as one line. Where no
+  comment names the commit, the pull request is not merged, or the clone
+  lacks the commit, the line says `unknown` and the JSON holds `null`. The tracker's pull request now carries
   `mergeCommitSha` once merged.
 - **New: `flow create-finding --repo <owner>/<name>`** files the finding in
   another repository, such as the plugin's: `--epic` names an epic there
@@ -58,8 +66,9 @@ stamps the version and date and bumps `plugin.json` in the same commit.
   --fingerprint` now also searches findings closed as not planned (what
   `flow reject` does), and refuses a match with exit 3, printing its number
   and "#n was rejected on <date>: reopen it to reconsider". A finding
-  closed as completed is not a match. Issues from the tracker carry
-  `stateReason`.
+  closed as completed is not a match. It reads the 500 most recently
+  updated closed findings (five pages, newest first) and says so on stderr
+  when there were more. Issues from the tracker carry `stateReason`.
 - **New: `flow retro-fingerprint <epic> --text "<line>"`** prints
   `retro <owner>/<name>#<epic>: <the line in lower case, letters and digits
   only, at most 100 characters>`, the fingerprint a retro files each

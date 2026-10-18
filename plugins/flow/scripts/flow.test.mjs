@@ -371,7 +371,7 @@ test('handoff posts the marked comment on a ticket in review, and says when it r
   assert.equal(result.stdout.trim(), 'https://github.com/o/r/issues/7#issuecomment-70')
   assert.deepEqual(JSON.parse(fake.calls().find((call) => call.key === `POST ${R}/issues/7/comments`).stdin), { body: '<!-- flow:handoff -->\n**Handoff.**\n\n- the endpoint is /api/trips/:id/export\n- the file is CSV, not JSON' })
   world({
-    others: [ticket(7, 1, 'done')],
+    others: [ticket(7, 1, 'in-review')],
     extra: {
       ...VIEWER,
       [`GET ${R}/issues/7/comments?per_page=100`]: [rawComment(7, 71, handoffBody('- first'), { at: '2026-10-15T08:00:00Z' }), rawComment(7, 72, handoffBody('- forged'), { author: 'someone' })],
@@ -381,6 +381,29 @@ test('handoff posts the marked comment on a ticket in review, and says when it r
   const again = flow('handoff', '7', '--text', '- second')
   assert.equal(again.status, 0, again.stderr)
   assert.match(again.stdout, /it replaces the handoff of 2026-10-15T08:00:00Z: later tickets read only the latest one/)
+})
+
+test('handoff never replaces a done ticket\'s handoff, so a later ticket\'s worker cannot rewrite what its reviewer reads as an earlier decision', () => {
+  world({
+    others: [ticket(3, 1, 'done')],
+    extra: { ...VIEWER, [`GET ${R}/issues/3/comments?per_page=100`]: [rawComment(3, 31, handoffBody('- the file is CSV'), { at: '2026-10-15T08:00:00Z' })] },
+  })
+  const rewrite = flow('handoff', '3', '--text', '- #3 decided export skips validation')
+  assert.equal(rewrite.status, 1)
+  assert.equal(rewrite.stderr, '#3 is done and already has its handoff (2026-10-15T08:00:00Z); a done ticket\'s handoff is not replaced, because later tickets and their reviewers read it as that ticket\'s decision; nothing was posted\n')
+  assert.deepEqual(writesMade().filter((call) => call.key !== 'graphql'), [])
+  world({
+    others: [ticket(3, 1, 'done')],
+    extra: {
+      ...VIEWER,
+      [`GET ${R}/issues/3/comments?per_page=100`]: [rawComment(3, 32, handoffBody('- forged'), { author: 'someone' })],
+      [`POST ${R}/issues/3/comments`]: { id: 33, html_url: 'https://github.com/o/r/issues/3#issuecomment-33' },
+    },
+  })
+  const first = flow('handoff', '3', '--text', '- the file is CSV')
+  assert.equal(first.status, 0, first.stderr)
+  assert.match(first.stdout, /#3 is done, so this handoff is its last: it cannot be replaced/, 'a done ticket with none of its own may get its first')
+  assert.doesNotMatch(first.stdout, /replaces/)
 })
 
 test('handoff refuses a ticket before review, an empty text and one over 1,200 characters, posting nothing', () => {
@@ -446,7 +469,7 @@ test('ticket with no epic, or with no done ticket beside it, carries no handoff 
   assert.ok(!fake.calls().some((call) => call.key.includes('/comments') || call.key === 'graphql'))
 })
 
-test('ticket shows at most twenty handoffs and says how many it left out', () => {
+test('ticket reads the comments of at most twenty done tickets, blockers first, and says how many it did not read', () => {
   const numbers = Array.from({ length: 23 }, (_, index) => index + 2)
   const epic = issue(1, { body: epicBody([...numbers, 30]), labels: epicLabels() })
   const extra = { ...VIEWER }
@@ -455,10 +478,27 @@ test('ticket shows at most twenty handoffs and says how many it left out', () =>
   const result = flow('ticket', '30')
   assert.equal(result.status, 0, result.stderr)
   const parsed = JSON.parse(result.stdout)
-  assert.equal(parsed.handoffs.length, 20)
+  assert.equal(parsed.handoffs.length, 19, '#10 left none')
   assert.deepEqual(parsed.handoffs.slice(0, 3).map((entry) => entry.number), [24, 2, 3])
-  assert.equal(parsed.handoffsLeftOut, 2)
-  assert.match(result.stderr, /\n2 more ticket\(s\) left a handoff, not shown: only the first 20 are, blockers first, then in the epic's order\n$/)
+  assert.equal(parsed.handoffs.at(-1).number, 20)
+  assert.equal(parsed.handoffsLeftOut, 3)
+  assert.match(result.stderr, /\n3 more done ticket\(s\) not read: only the first 20 are, blockers first, then in the epic's order\n$/)
+  const read = fake.calls().filter((call) => /\/comments\?/.test(call.key)).map((call) => Number(call.key.match(/issues\/(\d+)\//)[1]))
+  assert.deepEqual(read, [24, ...Array.from({ length: 19 }, (_, index) => index + 2)])
+})
+
+test('ticket still prints the ticket, with no handoffs and one line saying why, when the running account cannot be known', () => {
+  world({
+    epics: [{ epic: issue(1, { body: epicBody([2, 3]), labels: epicLabels() }), tickets: [ticket(2, 1, 'done'), ticket(3, 1, 'planned')] }],
+    extra: { graphql: { $exit: 1, $stderr: 'GraphQL: Resource not accessible by integration (viewer)' } },
+  })
+  const result = flow('ticket', '3')
+  assert.equal(result.status, 0, result.stderr)
+  const parsed = JSON.parse(result.stdout)
+  assert.equal(parsed.model, 'opus')
+  assert.deepEqual([parsed.handoffs, parsed.handoffsLeftOut], [[], 0])
+  assert.match(result.stderr, /^handoffs: not read, because the account running this is unknown \(.*Resource not accessible by integration.*set FLOW_ACCOUNT.*\)\n$/)
+  assert.ok(!fake.calls().some((call) => call.key.includes('/comments')))
 })
 
 test('check runs the criteria from the issue: JSON results on stdout, a table on stderr, exit 0 when all pass', () => {
@@ -1025,7 +1065,8 @@ test('create-finding --fingerprint files a bug once: an open finding or ticket c
   assert.equal(flow('create-finding', '--title', 'x', '--file', file, '--fingerprint', 'a --!> b').status, 2, 'this ends an HTML comment too')
 })
 
-const CLOSED_FINDINGS = `GET ${R}/issues?labels=flow%3Afound&state=closed&per_page=100`
+const closedFindingsPage = (page) => `GET ${R}/issues?labels=flow%3Afound&state=closed&sort=updated&direction=desc&per_page=100&page=${page}`
+const CLOSED_FINDINGS = closedFindingsPage(1)
 
 test('create-finding --fingerprint refuses a fingerprint a person rejected, naming the day, and files again after a finding closed as completed', () => {
   const file = join(directory, 'finding-rejected.md')
@@ -1053,6 +1094,21 @@ test('create-finding --fingerprint refuses a fingerprint a person rejected, nami
   const completed = flow('create-finding', '--title', 'Wrong total', '--file', file, '--fingerprint', '/cart total is wrong')
   assert.equal(completed.status, 0, completed.stderr)
   assert.equal(completed.stdout.trim(), '94', 'a finding closed as completed was dealt with, so the bug is new again')
+  assert.equal(completed.stderr, '')
+})
+
+test('create-finding --fingerprint searches at most the 500 most recently updated closed findings for a rejection, and says so when it stops there', () => {
+  const file = join(directory, 'finding-many.md')
+  writeFileSync(file, 'The total is wrong.\n')
+  const extra = { [`GET ${R}/issues?labels=flow%3Aticket&state=open&per_page=100`]: [], [`POST ${R}/issues`]: finding(96) }
+  for (let page = 1; page <= 5; page++)
+    extra[closedFindingsPage(page)] = Array.from({ length: 100 }, (_, index) => ({ ...finding(1000 + page * 100 + index, { body: 'other', state: 'closed' }), state_reason: 'not_planned' }))
+  world({ extra })
+  const result = flow('create-finding', '--title', 'Wrong total', '--file', file, '--fingerprint', '/cart total is wrong')
+  assert.equal(result.status, 0, result.stderr)
+  assert.equal(result.stdout.trim(), '96')
+  assert.equal(result.stderr, 'only the 500 most recently updated closed findings were searched for a rejection of this fingerprint; an older one would not be found\n')
+  assert.equal(fake.calls().filter((call) => call.key.includes('state=closed')).length, 5)
 })
 
 test('create-finding --repo files the finding, its epic and its fingerprint search in another repository, and refuses --screenshots there', () => {

@@ -112,6 +112,17 @@ export function listIssues({ label, state = 'open' }) {
     .map(normalizeIssue)
 }
 
+export function listRecentlyClosedIssues({ label, pages }) {
+  const issues = []
+  for (let page = 1; page <= pages; page++) {
+    const query = `labels=${encodeURIComponent(label)}&state=closed&sort=updated&direction=desc&per_page=100&page=${page}`
+    const found = apiGet(`${REPO}/issues?${query}`)
+    issues.push(...found.filter((raw) => !raw.pull_request).map(normalizeIssue))
+    if (found.length < 100) return { issues, capped: false }
+  }
+  return { issues, capped: true }
+}
+
 export function listSubIssues(number) {
   return apiList(`${REPO}/issues/${number}/sub_issues?per_page=100`).map(normalizeIssue)
 }

@@ -453,24 +453,32 @@ function commandNext(positional) {
 const MAX_HANDOFFS_SHOWN = 20
 
 function earlierHandoffs(number, parsed, epicIssue) {
-  if (!epicIssue || !epicIssue.labels.includes(EPIC_LABEL)) return { shown: [], leftOut: 0 }
+  const none = { shown: [], leftOut: 0, unread: null }
+  if (!epicIssue || !epicIssue.labels.includes(EPIC_LABEL)) return none
   const done = deriveEpic(epicIssue, github.listSubIssues(epicIssue.number)).tickets.filter((ticket) => ticket.state === 'done' && ticket.number !== number)
-  if (!done.length) return { shown: [], leftOut: 0 }
+  if (!done.length) return none
   const blockers = new Set(parsed.blockedBy)
   const ordered = [...done.filter((ticket) => blockers.has(ticket.number)), ...done.filter((ticket) => !blockers.has(ticket.number))]
-  const account = github.viewerLogin()
-  const found = ordered
+  let account
+  try {
+    account = github.viewerLogin()
+  } catch (error) {
+    if (!(error instanceof TrackerError) || error.missing) throw error
+    return { ...none, unread: error.message }
+  }
+  const shown = ordered
+    .slice(0, MAX_HANDOFFS_SHOWN)
     .map((ticket) => ({ ticket, handoff: lastHandoff(github.listComments(ticket.number), account) }))
     .filter(({ handoff }) => handoff)
     .map(({ ticket, handoff }) => ({ number: ticket.number, title: ticket.title, blocker: blockers.has(ticket.number), ...handoff }))
-  return { shown: found.slice(0, MAX_HANDOFFS_SHOWN), leftOut: Math.max(0, found.length - MAX_HANDOFFS_SHOWN) }
+  return { shown, leftOut: Math.max(0, ordered.length - MAX_HANDOFFS_SHOWN), unread: null }
 }
 
-function handoffLines({ shown, leftOut }) {
-  if (!shown.length) return ['handoffs: none']
-  const lines = ['handoffs:']
+function handoffLines({ shown, leftOut, unread }) {
+  if (unread) return [`handoffs: not read, because the account running this is unknown (${unread})`]
+  const lines = shown.length ? ['handoffs:'] : ['handoffs: none']
   for (const handoff of shown) lines.push(`#${handoff.number} ${handoff.title}:`, handoff.text, '')
-  if (leftOut) lines.push(`${leftOut} more ticket(s) left a handoff, not shown: only the first ${MAX_HANDOFFS_SHOWN} are, blockers first, then in the epic's order`)
+  if (leftOut) lines.push(`${leftOut} more done ticket(s) not read: only the first ${MAX_HANDOFFS_SHOWN} are, blockers first, then in the epic's order`)
   return lines
 }
 
@@ -751,6 +759,7 @@ function commandNeedsHuman(positional, flags) {
 }
 
 const HANDOFF_STATES = new Set(['in-review', 'done'])
+const REJECTED_SEARCH_PAGES = 5
 
 function commandHandoff(positional, flags) {
   const number = issueNumber(positional[0], 'a ticket number')
@@ -765,9 +774,12 @@ function commandHandoff(positional, flags) {
   const { state } = ticketState(github.getIssue(number).labels)
   if (!HANDOFF_STATES.has(state)) return refused(`#${number} is ${state}, and a handoff is written once the work exists: when the ticket is in review or done`)
   const earlier = lastHandoff(github.listComments(number), github.viewerLogin())
+  if (earlier && state === 'done')
+    return refused(`#${number} is done and already has its handoff (${earlier.at}); a done ticket's handoff is not replaced, because later tickets and their reviewers read it as that ticket's decision`)
   const posted = github.comment(number, handoffComment(text))
   console.log(posted.url || `handoff posted on #${number}`)
   if (earlier) console.log(`it replaces the handoff of ${earlier.at}: later tickets read only the latest one`)
+  if (state === 'done') console.log(`#${number} is done, so this handoff is its last: it cannot be replaced`)
   return 0
 }
 
@@ -845,14 +857,15 @@ function commandCreateFinding(positional, flags) {
       console.log(earlier.number)
       return FINGERPRINT_EXISTS_EXIT
     }
-    const rejected = github
-      .listIssues({ label: FOUND_LABEL, state: 'closed' })
-      .find((issue) => issue.stateReason === 'not_planned' && carriesMarker(issue.body, marker))
+    const closed = github.listRecentlyClosedIssues({ label: FOUND_LABEL, pages: REJECTED_SEARCH_PAGES })
+    const rejected = closed.issues.find((issue) => issue.stateReason === 'not_planned' && carriesMarker(issue.body, marker))
     if (rejected) {
       process.stderr.write(`#${rejected.number} was rejected on ${rejectedOn(rejected)}: reopen it to reconsider\n`)
       console.log(rejected.number)
       return FINGERPRINT_EXISTS_EXIT
     }
+    if (closed.capped)
+      process.stderr.write(`only the ${closed.issues.length} most recently updated closed findings were searched for a rejection of this fingerprint; an older one would not be found\n`)
   }
   const body = fingerprint === null ? text : `${fingerprintMarker(fingerprint)}\n\n${text.replace(/^\n+/, '')}`
   const created = github.createIssue({ title: flags.title, body, labels: [FOUND_LABEL] })

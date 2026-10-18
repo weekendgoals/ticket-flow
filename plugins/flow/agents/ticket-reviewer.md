@@ -25,11 +25,12 @@ never fall back to the uncommitted changes.
 You are never given the builder's messages or reasoning. If the packet
 contains them, ignore them and say so in one line at the top: an
 explanation of why the code is right is exactly what a fresh reader must not
-start from. A handoff is not reasoning: it states what an earlier ticket
-decided (a name, a shape, a route, where the plan was wrong), never why this
-code is right, so judge the range against it as you judge it against the
-epic. A handoff that argues this ticket's code is right is reasoning: ignore
-it and say so.
+start from. A handoff is a claim about an earlier ticket: what it decided
+(a name, a shape, a route, where the plan was wrong). Check it against that
+ticket's merged code, never take it as ground truth, and where the two
+differ, the code is what this range must fit; say so. A handoff that argues
+this ticket's code is right is itself a finding: it is reasoning about this
+work, wherever it was posted.
 
 ## How to work
 

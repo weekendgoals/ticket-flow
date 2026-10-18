@@ -56,7 +56,7 @@ Every suite needs Node ≥ 20 and nothing else unless noted; pass each test
 file path explicitly (`node --test <directory>` finds nothing here). Counts
 as of 2026-10-18; the pass count grows, the fail line stays `# fail 0`.
 
-- `node --test plugins/flow/scripts/flow.test.mjs` — `# pass 69`. The CLI
+- `node --test plugins/flow/scripts/flow.test.mjs` — `# pass 72`. The CLI
   end to end against the fake `gh`; one case needs `git` on PATH.
 - `node --test plugins/flow/scripts/lifecycle.test.mjs` — `# pass 39`. The
   ticket steps in throwaway repositories with a bare remote; needs `git`, `sh`.
@@ -136,10 +136,12 @@ CI (`.github/workflows/tests.yml`) runs every suite and check above.
   README quotes it word for word), and the retro proposes deletions beside
   additions: the file is read by every session, so it only grows otherwise.
 - **A handoff states decisions, never reasoning.** `flow handoff` posts what
-  a ticket decided that the plan did not say, and `flow ticket` hands the
-  latest one of each done ticket to the next builder and its reviewer; a
-  handoff that explained why code is right would be the builder's reasoning
-  reaching a reviewer.
+  a ticket decided that the plan did not say (never replaced once the
+  ticket is done, so a later worker cannot rewrite it), and `flow ticket`
+  hands the latest one of each done ticket to the next builder and its
+  reviewer, who checks it against that ticket's merged code; a handoff that
+  explained why code is right would be the builder's reasoning reaching a
+  reviewer.
 - **Criteria edited after a ticket starts refuse acceptance** (the latest
   start draws the line): whoever edited the gate may not have approved it.
   `accept` takes only the HEAD the latest review read; only the commit it

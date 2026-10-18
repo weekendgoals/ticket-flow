@@ -299,17 +299,21 @@ reader gets from the diff. It is a comment starting `<!-- flow:handoff -->`
 and `**Handoff.**`, so the epic's body stays as it was approved. It is
 refused before the ticket is in review or done, since there is nothing to
 hand off before the work exists, and over 1,200 characters, since the detail
-is in the commits. A second handoff replaces the first in what later tickets
-see, and only handoffs posted by the account running Flow count, like every
-other step comment.
+is in the commits. While the ticket is in review, a second handoff replaces
+the first in what later tickets see; once it is done its handoff is never
+replaced (a done ticket with none may get its first), so a later ticket's
+worker cannot rewrite what an earlier ticket decided. Only handoffs posted
+by the account running Flow count, like every other step comment.
 
-`flow ticket <m>` carries, after the ticket, the latest handoff of every
-done ticket in the same epic: the ticket's own blockers first, then the rest
-in the epic's order, at most twenty, saying how many it left out. The next
-builder reads them before the code, and its reviewer gets them too. A
-handoff states decisions, never why the code is right: the reviewer of a
-later ticket reads it, and an explanation of why code is right makes a
-reviewer agree.
+`flow ticket <m>` carries, after the ticket, the latest handoff of the done
+tickets in the same epic: the ticket's own blockers first, then the rest in
+the epic's order. It reads at most twenty of them, saying how many it did
+not read, and when the account running it cannot be known it prints the
+ticket with no handoffs and one line saying why. The next builder reads
+them before the code, and its reviewer gets them too, as claims to check
+against the earlier tickets' merged code. A handoff states decisions, never
+why the code is right: the reviewer of a later ticket reads it, and an
+explanation of why code is right makes a reviewer agree.
 
 ### The pull request loop
 
@@ -537,7 +541,9 @@ once. The search covers open findings, open tickets, and findings closed
 as not planned (what `flow reject` does, or "Close as not planned" on
 GitHub): a rejected fingerprint exits 3 too, saying "#n was rejected on
 <date>: reopen it to reconsider", so a nightly run does not file again what
-a person turned down. A finding closed as completed does not count: what it
+a person turned down. It reads the 500 most recently updated closed
+findings, and says so when there were more, since an older rejection would
+not be found. A finding closed as completed does not count: what it
 reported was dealt with, so the same fingerprint is a new bug.
 `--repo <owner>/<name>` files the finding in another repository, such as the
 plugin's: `--epic` and the fingerprint search are looked up there, and
@@ -596,7 +602,7 @@ every answer is read from GitHub (through `gh`) and git.
 | `doctor` | Checks `gh`, sign-in, that issues are on, the labels, the default branch, and every open epic's `Blocked by` lines (unreadable, outside the epic, cycles). Prints one sentence per problem, then one line naming the project board (see [The project board](#the-project-board)), then `ok` when there was no problem |
 | `board [<epic>] [--json]` | The default branch, then open epics with approval, progress and branch; or one epic's tickets with tier, state and blockers. Either way, how many findings wait or are approved |
 | `next <epic>` | JSON: `approved`, `ready`, `waiting`, `inProgress`, `done`, `needsHuman`, `planned`, `problems`. Exits 1 when the epic is not approved, has no tickets, or is stuck (unfinished tickets, none ready, none in progress) |
-| `ticket <n>` | One ticket parsed, as JSON, including who edited its body and when, and the latest handoff of each done ticket of its epic (`handoffs`, blockers first, at most twenty; `handoffsLeftOut` counts the rest), which it also prints on stderr under `handoffs:` |
+| `ticket <n>` | One ticket parsed, as JSON, including who edited its body and when, and the latest handoff of each done ticket of its epic (`handoffs`, blockers first, read from at most twenty done tickets; `handoffsLeftOut` counts the ones not read), which it also prints on stderr under `handoffs:` |
 | `check <n> [--cwd <dir>]` | Runs the ticket's criteria from the repository root (or `--cwd`). JSON results on stdout, with every edit of the issue body (who, when); a readable table on stderr. Exits 1 unless every check passed, and when the ticket has no criteria |
 | `check --file <md> [--epic-file <md>]` | The same for a draft that is not on GitHub yet |
 | `post <n> --file <md>` or `--text "<md>"` | Adds a comment |
@@ -607,7 +613,7 @@ every answer is read from GitHub (through `gh`) and git.
 | `link <epic> <n>` | Finishes a `create-ticket` that created the issue but could not link it. Safe to repeat |
 | `create-ticket --no-epic --file <md> --title "<t>" [--tier easy\|hard] [--repo <owner>/<name>]` | Creates a ticket that belongs to no epic (counts as approved); `--repo` files it in another repository, such as the plugin's |
 | `needs-human <n> --text "<why>"` | Marks the ticket `flow:needs-human` and asks a person, by mention |
-| `handoff <n> --text "<lines>"` or `--file <md>` | Posts the ticket's handoff for the tickets after it; refuses one that is not in review or done, and a text over 1,200 characters. The latest one counts |
+| `handoff <n> --text "<lines>"` or `--file <md>` | Posts the ticket's handoff for the tickets after it; refuses one that is not in review or done, a done one that already has a handoff, and a text over 1,200 characters. The latest one counts |
 | `create-finding --title "<t>" --file <md> [--epic <e>] [--screenshots <dir>] [--fingerprint "<text>"] [--repo <owner>/<name>]` | Files a finding (`flow:found`), its images on the `flow-findings` branch; prints its number, or exits 3 with the existing one when the fingerprint was filed before or rejected. `--repo` files it in another repository (no `--screenshots` there) |
 | `retro-fingerprint <epic> --text "<line>"` | Prints the fingerprint a retro files a proposal with: this repository, the epic, and the line in lower case with only letters and digits |
 | `found [<epic>] [--json]` | The open findings: epic, who filed them and when, approved or waiting, image count (with `--json`, the body and every image link too). Always exits 0 |
@@ -659,8 +665,9 @@ else. Per ticket, and summed per epic:
 - the **instruction files'** size (`CLAUDE.md` and `AGENTS.md` anywhere in
   the tree, lines and bytes), read from git at the commit the epic's first
   ticket started from and at the release pull request's merge commit, as
-  `instructionFiles: { before, after }` and one printed line; `unknown`
-  where no comment names the commit or this clone lacks it.
+  `instructionFiles: { before, after }` and one printed line. Where no
+  comment names the commit, the pull request is not merged, or this clone
+  lacks the commit, the line says `unknown` and the JSON holds `null`.
 
 Without an epic it covers every epic (`--since 2026-10-01` leaves out those
 created earlier) and ends with the pace: done tickets per day and the median
