@@ -240,8 +240,14 @@ function commandInit(positional, flags) {
   for (const name of created) console.log(`created ${name}`)
   console.log(created.length ? `${created.length} label(s) created, ${existing.length} already there` : `all ${existing.length} labels already there`)
   if (!flags.board) return 0
-  for (const line of ensureProjectBoard(positional.length ? positional[0] : DEFAULT_BOARD_TITLE)) console.log(line)
-  return 0
+  const outcome = ensureProjectBoard(positional.length ? positional[0] : DEFAULT_BOARD_TITLE)
+  if (outcome.refused) {
+    process.stderr.write(`flow: ${outcome.refused}\n`)
+    return 2
+  }
+  for (const line of outcome.lines) console.log(line)
+  for (const problem of outcome.problems) process.stderr.write(`${problem}\n`)
+  return outcome.problems.length ? 1 : 0
 }
 
 function boardSyncEntries(epicNumber) {

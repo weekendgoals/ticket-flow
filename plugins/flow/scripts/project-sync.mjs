@@ -54,12 +54,12 @@ function lookUp() {
     const optionIds = new Map(
       PROJECT_STATUSES.map((status) => [status.state, board.statusField.options.find((option) => sameName(option.name, status.option)).id]),
     )
-    return { board: { id: board.id, title: board.title, fieldId: board.statusField.id, optionIds }, kind: 'found', reason: null, repository }
+    return { board: { id: board.id, title: board.title, fieldId: board.statusField.id, optionIds }, kind: 'found', reason: null, repository, projects }
   }
-  if (!projects.length) return { board: null, kind: 'none', reason: 'no GitHub Project is linked to this repository', repository }
+  if (!projects.length) return { board: null, kind: 'none', reason: 'no GitHub Project is linked to this repository', repository, projects }
   const closest = projects.find((project) => project.statusField) || projects[0]
   const missing = missingOptions(closest)
-  return { board: null, kind: 'mismatch', title: closest.title, project: closest, missing, reason: `${closest.title} has no Status options ${missing.join(', ')}`, repository }
+  return { board: null, kind: 'mismatch', title: closest.title, missing, reason: `${closest.title} has no Status options ${missing.join(', ')}`, repository, projects }
 }
 
 export function findProjectBoard() {
@@ -121,14 +121,35 @@ function notSetUp(step) {
   }
 }
 
+function itemName(item) {
+  return item.number ? `#${item.number}` : `item ${item.id}`
+}
+
 function completeOptions(project, missing) {
-  notSetUp(() =>
+  const items = notSetUp(() => github.projectItems(project.id)).filter((item) => item.status && item.status.name)
+  const replaced = notSetUp(() =>
     github.setSingleSelectOptions(project.statusField.id, [
       ...project.statusField.options,
       ...PROJECT_STATUSES.filter((status) => missing.includes(status.option)).map(newOption),
     ]),
   )
-  return [`project board: ${project.title}, added options ${missing.join(', ')}`]
+  const problems = []
+  let restored = 0
+  for (const item of items) {
+    const option = replaced.options.find((entry) => sameName(entry.name, item.status.name))
+    if (!option) {
+      problems.push(`${itemName(item)} was "${item.status.name}", which the new Status options no longer have; set it by hand`)
+      continue
+    }
+    try {
+      github.setProjectSingleSelect(project.id, item.id, replaced.fieldId, option.id)
+      restored++
+    } catch (error) {
+      if (!(error instanceof TrackerError) || error.missing) throw error
+      problems.push(`${itemName(item)} was "${item.status.name}" and could not be set back, because ${oneLine(explain(error))}; set it by hand`)
+    }
+  }
+  return { lines: [`project board: ${project.title}, added options ${missing.join(', ')}, restored ${restored} item statuses`], problems }
 }
 
 function createBoard(repository, title) {
@@ -144,17 +165,28 @@ function createBoard(repository, title) {
       `${project.title} was created but is not ready, because ${oneLine(explain(error))}; link it to the repository by hand (the repository's Projects tab → Link a project) and run \`flow init --board\` again, which adds the Status options it lacks instead of creating a second project`,
     )
   }
-  return [`project board: created ${project.title} and linked it`, ...BOARD_STEPS_BY_HAND]
+  return { lines: [`project board: created ${project.title} and linked it`, ...BOARD_STEPS_BY_HAND], problems: [] }
+}
+
+function adopt(project) {
+  if (!project.statusField)
+    throw new TrackerError(`the project board was not set up: ${project.title} is linked to this repository but has no Status field; add a single-select field named Status to it, or run \`flow init --board <title>\` with a new title to create a board`)
+  const missing = missingOptions(project)
+  if (!missing.length) return { lines: [`project board: ${project.title}`], problems: [] }
+  return completeOptions(project, missing)
 }
 
 export function ensureProjectBoard(title = DEFAULT_BOARD_TITLE) {
   const found = findProjectBoard()
-  if (found.kind === 'found') return [`project board: ${found.board.title}`]
   if (found.kind === 'unreadable') throw new TrackerError(`the project board was not set up: ${oneLine(found.reason)}`)
-  if (found.kind === 'none') return createBoard(found.repository, title)
-  if (!found.project.statusField)
-    throw new TrackerError(
-      `the project board was not set up: ${found.project.title} is linked to this repository but has no Status field; add a single-select field named Status to it, or unlink it so \`flow init --board\` creates a board`,
-    )
-  return completeOptions(found.project, found.missing)
+  const named = found.projects.find((project) => sameName(project.title, title))
+  if (named) return adopt(named)
+  if (found.kind === 'found') return { lines: [`project board: ${found.board.title}`], problems: [] }
+  const withStatus = found.projects.filter((project) => project.statusField)
+  if (withStatus.length === 1) return adopt(withStatus[0])
+  if (withStatus.length > 1)
+    return {
+      refused: `several projects linked to this repository have a Status field (${withStatus.map((project) => project.title).join(', ')}), and none is titled ${title}; run \`flow init --board "<title>"\` with the title of the one Flow should use`,
+    }
+  return createBoard(found.repository, title)
 }

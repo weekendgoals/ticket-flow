@@ -31,9 +31,17 @@ stamps the version and date and bumps `plugin.json` in the same commit.
   the six Flow ones, links it to the repository, and prints the two steps
   the GitHub API cannot do (the Board layout with Swimlanes by "Parent
   issue", and the auto-add filter `is:issue label:flow:ticket,flow:epic`).
-  With a linked project whose `Status` lacks some of the six, it adds the
-  missing ones and keeps every existing option with its colour and
-  description. With a matching board it only names it. Unlike the
+  It works on the linked project of that title, else on the only linked
+  project with a `Status` field, and refuses with exit 2, listing them, when
+  several have one and none has the title. On a project whose `Status`
+  lacks some of the six, it adds the missing ones and keeps every existing
+  option with its colour and description, and every item's status: GitHub
+  gives every option a new id when the list is replaced, so it reads each
+  item's `Status` first and sets it back by name afterwards
+  (`restored <n> item statuses`; an item it cannot set back is named and
+  the command exits 1). With all six there it only names the project. The
+  automatic sync and `board-sync` still write to the first linked project
+  whose `Status` carries all six names. Unlike the
   automatic sync, a refusal here exits 1 with the
   `gh auth refresh -s project` hint; a project created but not set up says
   to link it by hand and run the command again, rather than making a second

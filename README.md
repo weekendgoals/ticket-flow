@@ -133,14 +133,19 @@ is optional, and it is only a view: the labels stay the only record of a
 ticket's state, and Flow never takes a state from the project.
 
 1. Run `flow init --board [<title>]` (locally, after
-   `gh auth refresh -s project`). With no project linked to the repository,
-   it creates one (titled `Flow` unless you give a title), sets its
-   `Status` options to `Planned`, `In progress`, `In review`, `Done`,
-   `Needs human` and `Epic`, and links it. With a linked project whose
-   `Status` lacks some of them (the first one with a `Status` field, the
-   one `flow doctor` names), it adds the missing ones and keeps every option
-   already there, since issues may carry them (case does not matter). With one that has them all,
-   it only names it.
+   `gh auth refresh -s project`). It works on the linked project with that
+   title (`Flow` unless you give one; case does not matter), else on the
+   only linked project with a `Status` field; with several such projects
+   and none of that title it refuses (exit 2), lists them, and asks for the
+   title of the one to use. With no project linked, it creates one with the
+   title, sets its `Status` options to `Planned`, `In progress`,
+   `In review`, `Done`, `Needs human` and `Epic`, and links it. On an
+   existing project whose `Status` lacks some of them, it adds the missing
+   ones and **keeps every option and every item's status**: GitHub gives
+   every option a new id when the list changes, so the command first reads
+   each item's `Status`, then sets it back by name, and says how many it
+   restored (an item it could not set back is named, and the command exits
+   1). With all six already there, it only names the project.
 2. Two steps the GitHub API cannot do, which `init --board` reminds you of
    when it creates the project: use the Board layout and set Swimlanes to
    "Parent issue", so every epic becomes one swimlane with its tickets in
@@ -159,7 +164,9 @@ to the matching `Status`, right after the label has changed: `label`,
 `needs-human`, and every step that hands a ticket to a person. `create-epic`
 and `create-ticket` add the new issue to the project (as `Epic` or
 `Planned`). Flow uses the first linked project whose `Status` has all six
-options; `flow doctor` names it.
+options; `flow doctor` names it. With several boards linked, the one that
+carries all six option names is the one Flow writes to, whatever title was
+given to `init --board`.
 
 Locally, `gh` needs the `project` scope: `gh auth refresh -s project`. On
 GitHub, `FLOW_TOKEN` needs the Projects permission (read and write). When no
@@ -530,7 +537,7 @@ every answer is read from GitHub (through `gh`) and git.
 
 | Command | What it does |
 |---|---|
-| `init [--board [<title>]]` | Creates the twelve labels. Safe to run again. `--board` also makes sure a matching project board is linked: creates and links one (titled `Flow` by default), or adds the `Status` options a linked one lacks; exits 1, with the `gh auth refresh -s project` hint, when GitHub refuses. See [The project board](#the-project-board) |
+| `init [--board [<title>]]` | Creates the twelve labels. Safe to run again. `--board` also makes sure a matching project board is linked: creates and links one (titled `Flow` by default), or adds the `Status` options a linked one lacks, keeping every option and every item's status; exits 2 when several linked projects could be meant, 1, with the `gh auth refresh -s project` hint, when GitHub refuses. See [The project board](#the-project-board) |
 | `board-sync [<epic>] [--json]` | Sets the project board's `Status` of every open epic (`Epic`) and ticket from its labels, adding missing ones; findings and tickets with no readable state are skipped. One line per change, then `<n> set, <m> already right, <k> skipped`. Exits 1 when no matching board is linked, or when any issue could not be set (the rest are still set) |
 | `doctor` | Checks `gh`, sign-in, that issues are on, the labels, the default branch, and every open epic's `Blocked by` lines (unreadable, outside the epic, cycles). Prints one sentence per problem, then one line naming the project board (see [The project board](#the-project-board)), then `ok` when there was no problem |
 | `board [<epic>] [--json]` | The default branch, then open epics with approval, progress and branch; or one epic's tickets with tier, state and blockers. Either way, how many findings wait or are approved |

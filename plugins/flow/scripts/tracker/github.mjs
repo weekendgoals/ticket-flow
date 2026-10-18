@@ -444,7 +444,29 @@ export function setSingleSelectOptions(fieldId, options) {
   })
   const field = data && data.updateProjectV2Field && data.updateProjectV2Field.projectV2Field
   if (!field) throw new TrackerError('GitHub did not return the changed field')
-  return (field.options || []).map((option) => ({ id: option.id, name: option.name }))
+  return { fieldId: field.id || fieldId, options: (field.options || []).map((option) => ({ id: option.id, name: option.name })) }
+}
+
+const PROJECT_ITEMS_QUERY =
+  'query($project:ID!,$cursor:String){node(id:$project){... on ProjectV2{items(first:100,after:$cursor){pageInfo{hasNextPage endCursor}nodes{id content{... on Issue{number} ... on PullRequest{number}} fieldValueByName(name:"Status"){... on ProjectV2ItemFieldSingleSelectValue{optionId name}}}}}}}'
+
+export function projectItems(projectId) {
+  const items = []
+  let cursor = null
+  for (;;) {
+    const data = graphql(PROJECT_ITEMS_QUERY, { project: projectId, cursor }, { inRepository: false })
+    const page = data && data.node && data.node.items
+    if (!page) throw new TrackerError(`GitHub did not return the items of project ${projectId}`)
+    for (const node of page.nodes.filter(Boolean))
+      items.push({
+        id: node.id,
+        number: node.content && node.content.number ? node.content.number : null,
+        status: node.fieldValueByName && node.fieldValueByName.optionId ? { optionId: node.fieldValueByName.optionId, name: node.fieldValueByName.name || null } : null,
+      })
+    if (!page.pageInfo.hasNextPage) return items
+    if (!page.pageInfo.endCursor || page.pageInfo.endCursor === cursor) throw new TrackerError(`GitHub returned a page of project items with no way to the next one`)
+    cursor = page.pageInfo.endCursor
+  }
 }
 
 export function linkProjectToRepository(projectId, repositoryId) {

@@ -277,20 +277,41 @@ test('init --board with a linked board whose Status already matches names it and
   assert.deepEqual(graphqlKeys(), [PROJECT_LOOKUP])
 })
 
-test('init --board adds the missing Status options to a linked project, sending every existing option with its colour and description', () => {
-  const field = {
-    id: 'F_status',
-    options: [
-      { id: 'O_todo', name: 'Todo', color: 'GREEN', description: 'not yet' },
-      { id: 'O_ip', name: 'In Progress', color: 'YELLOW', description: '' },
-      { id: 'O_done', name: 'Done', color: 'PURPLE', description: 'shipped' },
-    ],
-  }
-  world({ [PROJECT_LOOKUP]: projects(project('PVT_road', 'Roadmap', field)), 'graphql field=F_status': fieldUpdated })
+const roadmapField = {
+  id: 'F_status',
+  options: [
+    { id: 'O_todo', name: 'Todo', color: 'GREEN', description: 'not yet' },
+    { id: 'O_ip', name: 'In Progress', color: 'YELLOW', description: '' },
+    { id: 'O_done', name: 'Done', color: 'PURPLE', description: 'shipped' },
+  ],
+}
+const boardItems = (nodes) => ({ data: { node: { items: { pageInfo: { hasNextPage: false, endCursor: null }, nodes } } } })
+const itemWith = (id, number, name) => ({ id, content: number ? { number } : {}, fieldValueByName: name ? { optionId: `OLD_${name}`, name } : null })
+const replacedOptions = (names) => ({
+  data: { updateProjectV2Field: { projectV2Field: { id: 'F_status', options: names.map((name) => ({ id: `NEW_${name.replace(/\s+/g, '_')}`, name })) } } },
+})
+const ROADMAP_NAMES = ['Todo', 'In Progress', 'Done', 'Planned', 'In review', 'Needs human', 'Epic']
+
+test('init --board adds the missing Status options to a linked project, keeping every existing option and setting each item back to its Status under the new ids', () => {
+  world({
+    [PROJECT_LOOKUP]: projects(project('PVT_road', 'Roadmap', roadmapField)),
+    'graphql project=PVT_road': boardItems([itemWith('PVTI_a', 7, 'Todo'), itemWith('PVTI_b', 8, 'In Progress'), itemWith('PVTI_draft', null, null), itemWith('PVTI_c', null, 'Done')]),
+    'graphql field=F_status': replacedOptions(ROADMAP_NAMES),
+    [setStatus('PVTI_a', 'NEW_Todo', 'PVT_road')]: SET_RESPONSE,
+    [setStatus('PVTI_b', 'NEW_In_Progress', 'PVT_road')]: SET_RESPONSE,
+    [setStatus('PVTI_c', 'NEW_Done', 'PVT_road')]: SET_RESPONSE,
+  })
   const result = flow('init', '--board')
   assert.equal(result.status, 0, result.stderr)
-  assert.deepEqual(result.stdout.trim().split('\n'), ['all 12 labels already there', 'project board: Roadmap, added options Planned, In review, Needs human, Epic'])
-  assert.deepEqual(graphqlKeys(), [PROJECT_LOOKUP, 'graphql field=F_status'])
+  assert.deepEqual(result.stdout.trim().split('\n'), ['all 12 labels already there', 'project board: Roadmap, added options Planned, In review, Needs human, Epic, restored 3 item statuses'])
+  assert.deepEqual(graphqlKeys(), [
+    PROJECT_LOOKUP,
+    'graphql project=PVT_road',
+    'graphql field=F_status',
+    setStatus('PVTI_a', 'NEW_Todo', 'PVT_road'),
+    setStatus('PVTI_b', 'NEW_In_Progress', 'PVT_road'),
+    setStatus('PVTI_c', 'NEW_Done', 'PVT_road'),
+  ])
   assert.deepEqual(sentOptions('graphql field=F_status'), [
     { name: 'Todo', color: 'GREEN', description: 'not yet' },
     { name: 'In Progress', color: 'YELLOW', description: '' },
@@ -300,6 +321,43 @@ test('init --board adds the missing Status options to a linked project, sending 
     { name: 'Needs human', color: 'RED', description: '' },
     { name: 'Epic', color: 'PURPLE', description: '' },
   ])
+})
+
+test('init --board names an item whose old Status it cannot set back, goes on with the rest, and exits 1', () => {
+  world({
+    [PROJECT_LOOKUP]: projects(project('PVT_road', 'Roadmap', roadmapField)),
+    'graphql project=PVT_road': boardItems([itemWith('PVTI_a', 7, 'Todo'), itemWith('PVTI_b', 8, 'In Progress')]),
+    'graphql field=F_status': replacedOptions(ROADMAP_NAMES.filter((name) => name !== 'Todo')),
+    [setStatus('PVTI_b', 'NEW_In_Progress', 'PVT_road')]: SET_RESPONSE,
+  })
+  const result = flow('init', '--board')
+  assert.equal(result.status, 1)
+  assert.match(result.stdout, /restored 1 item statuses/)
+  assert.match(result.stderr, /^#7 was "Todo", which the new Status options no longer have; set it by hand$/m)
+  assert.ok(graphqlKeys().includes(setStatus('PVTI_b', 'NEW_In_Progress', 'PVT_road')))
+})
+
+test('init --board picks the linked project with the title given, adopts the only one with a Status field, and refuses to guess among several', () => {
+  const linkedTwo = projects(project('PVT_road', 'Roadmap', roadmapField), project('PVT_ops', 'Ops', statusField(['Todo'])), project('PVT_plain', 'Notes', null))
+  world({ [PROJECT_LOOKUP]: linkedTwo })
+  const guess = flow('init', '--board')
+  assert.equal(guess.status, 2)
+  assert.match(guess.stderr, /^flow: several projects linked to this repository have a Status field \(Roadmap, Ops\), and none is titled Flow; run `flow init --board "<title>"`/)
+  assert.deepEqual(graphqlKeys(), [PROJECT_LOOKUP])
+  world({
+    [PROJECT_LOOKUP]: linkedTwo,
+    'graphql project=PVT_road': boardItems([]),
+    'graphql field=F_status': replacedOptions(ROADMAP_NAMES),
+  })
+  const named = flow('init', '--board', 'roadmap')
+  assert.equal(named.status, 0, named.stderr)
+  assert.match(named.stdout, /project board: Roadmap, added options Planned, In review, Needs human, Epic, restored 0 item statuses/)
+  fake.clearCalls()
+  world({ [PROJECT_LOOKUP]: projects(project('PVT_plain', 'Notes', null), project('PVT_flow', 'Flow board', statusField(FLOW_OPTIONS)), project('PVT_ops', 'Ops', statusField(['Todo']))) })
+  const matching = flow('init', '--board')
+  assert.equal(matching.status, 0, matching.stderr)
+  assert.match(matching.stdout, /project board: Flow board$/m)
+  assert.deepEqual(graphqlKeys(), [PROJECT_LOOKUP])
 })
 
 test('init --board with no project linked creates one with the title given, gives it the six options, links it, and names the two steps left by hand', () => {

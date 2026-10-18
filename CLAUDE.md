@@ -63,9 +63,9 @@ as of 2026-10-18; the pass count grows, the fail line stays `# fail 0`.
   whole-epic commands, the same way.
 - `pull-request.test.mjs` `# pass 20`, `issue-body.test.mjs` `# pass 28`,
   `checks.test.mjs` `# pass 26` (real shell commands in a temp dir),
-  `tracker/github.test.mjs` `# pass 32`, `fidelity.test.mjs` `# pass 54`,
+  `tracker/github.test.mjs` `# pass 33`, `fidelity.test.mjs` `# pass 54`,
   `stats.test.mjs` `# pass 12` (needs `git`), `project-sync.test.mjs`
-  `# pass 20`, under `plugins/flow/scripts/`.
+  `# pass 22`, under `plugins/flow/scripts/`.
 - `node --test plugins/flow/scripts/meter.test.mjs` — `# pass 16`. Builds
   its transcripts; no test reads a real one (they belong to whoever ran them).
 - `node --test plugins/flow/scripts/worktree-setup.test.mjs` — `# pass 18`;

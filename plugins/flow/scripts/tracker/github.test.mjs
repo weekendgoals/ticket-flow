@@ -364,7 +364,7 @@ test('setSingleSelectOptions sends the whole option list as JSON, each with its 
     { id: 'O_t', name: 'Todo', color: 'GREEN', description: 'kept' },
     { name: 'Epic', color: 'PURPLE', description: '' },
   ])
-  assert.deepEqual(options, [{ id: 'O_a', name: 'Todo' }, { id: 'O_b', name: 'Epic' }])
+  assert.deepEqual(options, { fieldId: 'F_9', options: [{ id: 'O_a', name: 'Todo' }, { id: 'O_b', name: 'Epic' }] })
   const call = fake.calls()[0]
   assert.deepEqual(call.args, ['api', 'graphql', '--input', '-'])
   const sent = JSON.parse(call.stdin)
@@ -388,4 +388,18 @@ test('linkProjectToRepository links the project to the repository by their node 
   github.linkProjectToRepository('PVT_9', 'R_1')
   assert.equal(fake.calls().length, 1)
   assert.match(fake.calls()[0].args.find((arg) => arg.startsWith('query=')), /linkProjectV2ToRepository\(input:\{projectId:\$project,repositoryId:\$repository\}\)/)
+})
+
+test('projectItems pages through every item of a project with its issue number and Status', () => {
+  const page = (nodes, hasNextPage, endCursor = null) => ({ data: { node: { items: { pageInfo: { hasNextPage, endCursor }, nodes } } } })
+  fake.setFixtures({
+    'graphql project=PVT_1': page([{ id: 'PVTI_1', content: { number: 3 }, fieldValueByName: { optionId: 'O_1', name: 'Todo' } }], true, 'c1'),
+    'graphql cursor=c1 project=PVT_1': page([{ id: 'PVTI_2', content: {}, fieldValueByName: null }], false),
+  })
+  assert.deepEqual(github.projectItems('PVT_1'), [
+    { id: 'PVTI_1', number: 3, status: { optionId: 'O_1', name: 'Todo' } },
+    { id: 'PVTI_2', number: null, status: null },
+  ])
+  assert.deepEqual(fake.calls().map((call) => call.key), ['graphql project=PVT_1', 'graphql cursor=c1 project=PVT_1'])
+  assert.match(fake.calls()[0].args.find((arg) => arg.startsWith('query=')), /items\(first:100,after:\$cursor\).*fieldValueByName\(name:"Status"\)/)
 })
