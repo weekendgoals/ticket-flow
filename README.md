@@ -714,6 +714,7 @@ every answer is read from GitHub (through `gh`) and git.
 | `release-pr <epic>` | Opens the epic's pull request once every ticket is done, and posts it on the epic |
 | `design-map <epic> [--out <file>]` | Writes the epic's design map for the design comparison |
 | `stats [<epic>] [--since <date>] [--json] [--cwd <dir>]` | How the work went, per ticket, per epic and across epics; see [Looking back](#looking-back) |
+| `report --out <dir> [--since <date>] [--cwd <dir>]` | Writes `<dir>/index.html`, the figures of every epic as one page for GitHub Pages; see [The report page](#the-report-page) |
 | `qa-config [--widths <w>,<w>] [--cwd <dir>]` | The `qa` section of `.flow.json`, checked, with the defaults filled in, as JSON; exits 2 naming every unknown key or wrong type. Touches no GitHub |
 | `qa-routes <url> [--routes <file> \| --sitemap <file> … \| --links <file>] [--cap 60]` | The pages `/flow:qa` visits, as JSON: the start page, then same-site pages from a list, a sitemap (an index lists the sitemaps to read next) or a saved page's links (else `.flow.json`'s `routes`), each once, without `deny` matches or files that are not pages, capped; `skipped` says how many were left out and why. Exits 2 when there is nothing to build from |
 | `qa-fingerprint <url> "<first line>"` | The fingerprint a QA finding is filed with: the page's path and the normalised line |
@@ -753,6 +754,31 @@ ticket from start to end. A figure no comment or commit carries reads
 `unknown`; a sum that only some tickets carry says how many (`1,800 (1/2)`).
 Nothing is estimated. Run it inside a clone (or with `--cwd`), fetched: rework
 and escapes come from its `origin/` branches.
+
+### The report page
+
+`flow report --out <dir> [--since <date>]` writes `<dir>/index.html`: the
+same figures as `flow stats --json` over every epic, open and closed, as
+one page with no build step, no library and nothing fetched. It has the
+repository, when it was made and the plugin's version; the totals across
+epics (tickets, time, tokens, review rounds, stops, the pace); then one
+section per epic, newest first, with its state (`running`, `stopped`,
+`built`, or `shipped` once the epic is closed), its `Release` word, its
+release pull request, the instruction files' size, and a table of its
+tickets (each linked to its issue: tier, state, time per step, tokens in
+and out, cache, review rounds, Important findings, acceptance runs, resets,
+escapes, handoff, stops). A click on a column header sorts that table. A
+figure nothing carries reads `unknown`, never blank or 0. Tables scroll
+sideways at phone width; nothing else does. A repository with no epics gets
+a page that says so. The page is made fresh each time and nothing reads it
+back: the issues stay the record.
+
+To publish it, copy [`plugins/flow/github/report.yml`](plugins/flow/github/report.yml)
+to `.github/workflows/flow-report.yml` and set Settings, Pages, Source:
+GitHub Actions. It runs daily, by hand, and when an epic closes (a release
+shipped), with full history (stats reads git), and publishes with GitHub's
+own Pages actions. It reads issues and pull requests and writes only the
+Pages site; `FLOW_TOKEN` is used when set, as in `flow.yml`.
 
 ### `/flow:retro #<epic>`
 

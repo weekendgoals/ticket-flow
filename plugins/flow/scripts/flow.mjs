@@ -1,7 +1,8 @@
 #!/usr/bin/env node
-import { readFileSync, writeFileSync, existsSync, readdirSync, statSync } from 'node:fs'
+import { readFileSync, writeFileSync, existsSync, readdirSync, statSync, mkdirSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
-import { join, resolve, relative, isAbsolute, extname } from 'node:path'
+import { join, resolve, relative, isAbsolute, extname, dirname } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import * as github from './tracker/github.mjs'
 import { TrackerError } from './tracker/github.mjs'
 import { parseEpicBody, parseTicketBody, parseDesignMap, withEpicLine, withBlockedBy, withTicketListed, withTicketChecked, normalizeNewlines, splitSections, withReport, originalReport, fingerprintMarker, retroFingerprint, findingImages, REPORT_MARKER } from './issue-body.mjs'
@@ -82,6 +83,7 @@ import {
   DEFAULT_BOARD_TITLE,
   RELEASE_FIELD,
 } from './project-sync.mjs'
+import { renderReport } from './report.mjs'
 import { siteAddress, readQaConfig, parseWidthsOption, readSitemap, readLinks, buildRoutes, sameSiteSitemaps, qaFingerprint, QaInputError, DEFAULT_ROUTE_CAP } from './qa.mjs'
 import {
   LABELS,
@@ -172,6 +174,8 @@ const USAGE = `usage: flow <command>
   stats [<epic>] [--since <date>] [--json] [--cwd <dir>]
                                          how the work went: time per step, tokens per model, review rounds,
                                          rework, escaped defects, stops; read from the issues' comments and git
+  report --out <dir> [--since <date>] [--cwd <dir>]
+                                         write <dir>/index.html: every epic's figures as one page, for GitHub Pages
 
   /flow:qa reads its plan from the commands below; none of them touches GitHub:
   qa-config [--widths <w>,<w>] [--cwd <dir>]
@@ -1966,9 +1970,30 @@ function epicStats(epicIssue, { root, defaultBranch, defaultSubjects }) {
   }
 }
 
-function commandStats(positional, flags) {
+function sinceFlag(flags) {
   const since = flags.since ?? null
   if (since !== null && Number.isNaN(Date.parse(since))) throw new UsageError(`--since takes a date such as 2026-10-01, got "${since}"`)
+  return since
+}
+
+function everyEpicSince(since) {
+  return github
+    .listIssues({ label: EPIC_LABEL, state: 'all' })
+    .filter((issue) => since === null || !issue.createdAt || Date.parse(issue.createdAt) >= Date.parse(since))
+    .sort((a, b) => a.number - b.number)
+}
+
+function statsOf(epicIssues, { root, since }) {
+  const defaultBranch = github.defaultBranch()
+  const defaultSubjects = defaultBranch ? subjectsOn(root, [`origin/${defaultBranch}`]) : null
+  return overallStats(
+    epicIssues.map((issue) => epicStats(issue, { root, defaultBranch, defaultSubjects })),
+    since,
+  )
+}
+
+function commandStats(positional, flags) {
+  const since = sinceFlag(flags)
   if (since !== null && positional.length) throw new UsageError('give an epic number or --since, not both')
   const root = repositoryRoot(resolve(flags.cwd || process.cwd()))
   let epicIssues
@@ -1977,19 +2002,35 @@ function commandStats(positional, flags) {
     const issue = github.getIssue(number)
     if (!issue.labels.includes(EPIC_LABEL)) throw new UsageError(`#${number} is not an epic (it has no ${EPIC_LABEL} label)`)
     epicIssues = [issue]
-  } else
-    epicIssues = github
-      .listIssues({ label: EPIC_LABEL, state: 'all' })
-      .filter((issue) => since === null || !issue.createdAt || Date.parse(issue.createdAt) >= Date.parse(since))
-      .sort((a, b) => a.number - b.number)
-  const defaultBranch = github.defaultBranch()
-  const defaultSubjects = defaultBranch ? subjectsOn(root, [`origin/${defaultBranch}`]) : null
-  const result = overallStats(
-    epicIssues.map((issue) => epicStats(issue, { root, defaultBranch, defaultSubjects })),
-    since,
-  )
+  } else epicIssues = everyEpicSince(since)
+  const result = statsOf(epicIssues, { root, since })
   if (flags.json) printJson(result)
   else console.log(formatStats(result))
+  return 0
+}
+
+const PLUGIN_MANIFEST = join(dirname(fileURLToPath(import.meta.url)), '..', '.claude-plugin', 'plugin.json')
+
+function pluginVersion() {
+  try {
+    return JSON.parse(readFileSync(PLUGIN_MANIFEST, 'utf8')).version || 'unknown'
+  } catch {
+    return 'unknown'
+  }
+}
+
+function commandReport(positional, flags) {
+  if (positional.length) throw new UsageError('report covers every epic and takes no epic number; `flow stats <epic>` reads one')
+  if (!flags.out) throw new UsageError('report needs --out <dir>, the directory index.html is written to')
+  const since = sinceFlag(flags)
+  const root = repositoryRoot(resolve(flags.cwd || process.cwd()))
+  const stats = statsOf(everyEpicSince(since), { root, since })
+  const html = renderReport({ repository: github.repoSlug(), generatedAt: new Date().toISOString(), version: pluginVersion(), stats })
+  const directory = resolve(flags.out)
+  mkdirSync(directory, { recursive: true })
+  const file = join(directory, 'index.html')
+  writeFileSync(file, html)
+  console.log(`${file}: ${stats.epics.length} epic(s), ${stats.totals.tickets} ticket(s)`)
   return 0
 }
 
@@ -2152,6 +2193,8 @@ function main(argv) {
       return commandDispatch(positional)
     case 'stats':
       return commandStats(positional, flags)
+    case 'report':
+      return commandReport(positional, flags)
     case 'qa-config':
       return commandQaConfig(positional, flags)
     case 'qa-routes':

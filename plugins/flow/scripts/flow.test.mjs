@@ -1394,3 +1394,39 @@ test('create-ticket refuses a finding as a blocker: a ticket waiting on one woul
   assert.equal(result.stderr.trim(), '#7 is a finding, not a ticket: a ticket can wait only for tickets')
   assert.deepEqual(writesMade(), [])
 })
+
+const ALL_EPICS = `GET ${R}/issues?labels=flow%3Aepic&state=all&per_page=100`
+
+test('report writes one page of every epic, open and closed, from the same figures as stats, and a repository with none gets a page saying so', () => {
+  const shipped = { ...issue(1, { title: 'Trip export', body: epicBody([2]), labels: epicLabels() }), state: 'closed', created_at: '2026-10-01T09:00:00Z' }
+  const open = { ...issue(7, { title: 'Bugs', body: epicBody([8]), labels: epicLabels() }), created_at: '2026-10-12T09:00:00Z' }
+  world({
+    epics: [
+      { epic: shipped, tickets: [closed(ticket(2, 1, 'done'))] },
+      { epic: open, tickets: [ticket(8, 7, 'in-progress')] },
+    ],
+    extra: {
+      [ALL_EPICS]: [open, shipped],
+      ...Object.fromEntries([1, 2, 7, 8].map((number) => [`GET ${R}/issues/${number}/comments?per_page=100`, []])),
+    },
+  })
+  const out = join(directory, 'site')
+  const result = flow('report', '--out', out)
+  assert.equal(result.status, 0, result.stderr)
+  assert.equal(result.stdout.trim(), `${join(out, 'index.html')}: 2 epic(s), 2 ticket(s)`)
+  const html = readFileSync(join(out, 'index.html'), 'utf8')
+  assert.match(html, /<h1>Flow report: o\/r<\/h1>/)
+  assert.match(html, /by Flow \d+\.\d+\.\d+/)
+  assert.deepEqual([...html.matchAll(/id="epic-(\d+)"/g)].map((match) => Number(match[1])), [7, 1])
+  assert.match(html, /id="epic-1">[\s\S]*?<span class="pill">shipped<\/span>/)
+  assert.deepEqual(writesMade(), [], 'the report reads and writes nothing on GitHub')
+  const since = flow('report', '--out', out, '--since', '2026-10-10')
+  assert.equal(since.status, 0, since.stderr)
+  assert.match(since.stdout, /: 1 epic\(s\), 1 ticket\(s\)$/m)
+  world({ extra: { [ALL_EPICS]: [] } })
+  const empty = flow('report', '--out', out)
+  assert.equal(empty.status, 0, empty.stderr)
+  assert.match(readFileSync(join(out, 'index.html'), 'utf8'), /no Flow epics yet/)
+  assert.equal(flow('report').status, 2)
+  assert.equal(flow('report', '1', '--out', out).status, 2)
+})

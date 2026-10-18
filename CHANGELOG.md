@@ -58,6 +58,20 @@ stamps the version and date and bumps `plugin.json` in the same commit.
   alone, and the command exits 1. `flow doctor`'s board line ends
   `figures: 7 fields`, or names the missing and wrongly typed ones.
 - `tracker/github.mjs`: `setProjectNumber`.
+- **New: `flow report --out <dir> [--since <date>]`** writes
+  `<dir>/index.html` from the same figures as `flow stats --json` over every
+  epic: one standalone page (styles and a small sort script inline, the
+  data embedded once as JSON, nothing fetched) with the totals across
+  epics and, per epic, newest first, its state, its `Release` word, its
+  release pull request, the instruction-file sizes and a sortable table of
+  its tickets. `unknown` prints as `unknown`; a repository with no epics
+  gets a page that says so. Rendering is `scripts/report.mjs`, pure.
+- **New: `github/report.yml`**, a template to copy to
+  `.github/workflows/flow-report.yml`: daily, by hand, and when a
+  `flow:epic` issue closes, it runs `flow report --out site` with full
+  history and publishes it with `actions/configure-pages`,
+  `actions/upload-pages-artifact` and `actions/deploy-pages`. One manual
+  step: Settings, Pages, Source: GitHub Actions.
 
 ## 3.2.0 — 2026-10-18
 
