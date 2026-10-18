@@ -354,6 +354,9 @@ working tree. They are used when tickets are built side by side and when
 `flow check-epic` checks the epic branch, which happens after every merge:
 an epic built one ticket at a time pays `setup` once per ticket.
 
+A `qa` section says what `/flow:qa` may visit and touch; see
+[`/flow:qa`](#flowqa-url-a-browser-walks-the-site).
+
 ### The cost comment
 
 `flow meter <n> --transcripts worker=<file> reviewer=<file> ...` reads
@@ -639,6 +642,9 @@ every answer is read from GitHub (through `gh`) and git.
 | `release-pr <epic>` | Opens the epic's pull request once every ticket is done, and posts it on the epic |
 | `design-map <epic> [--out <file>]` | Writes the epic's design map for the design comparison |
 | `stats [<epic>] [--since <date>] [--json] [--cwd <dir>]` | How the work went, per ticket, per epic and across epics; see [Looking back](#looking-back) |
+| `qa-config [--widths <w>,<w>] [--cwd <dir>]` | The `qa` section of `.flow.json`, checked, with the defaults filled in, as JSON; exits 2 naming every unknown key or wrong type. Touches no GitHub |
+| `qa-routes <url> [--routes <file> \| --sitemap <file> … \| --links <file>] [--cap 60]` | The pages `/flow:qa` visits, as JSON: the start page, then same-site pages from a list, a sitemap (an index lists the sitemaps to read next) or a saved page's links (else `.flow.json`'s `routes`), each once, without `deny` matches or files that are not pages, capped; `skipped` says how many were left out and why. Exits 2 when there is nothing to build from |
+| `qa-fingerprint <url> "<first line>"` | The fingerprint a QA finding is filed with: the page's path and the normalised line |
 
 ## Looking back
 
@@ -735,6 +741,90 @@ or closes it, and `/flow:triage` turns approved findings into tickets. The
 token it needs, its options and the exact issue it writes are in
 [`tools/reporter/README.md`](tools/reporter/README.md).
 
+## `/flow:qa <url>`: a browser walks the site
+
+`/flow:qa <url> [--epic <e>] [--routes <file>] [--widths 1440,393]` walks a
+live site the way a visitor would and files every problem it sees as a
+[finding](#findings-bugs-and-ideas-before-they-are-tickets), once. It
+approves nothing: a person approves or closes each finding, and
+`/flow:triage` turns the approved ones into tickets.
+
+**It needs a browser tool in the session** and installs none. Playwright
+MCP is the one to add (`claude mcp add playwright npx @playwright/mcp@latest`,
+then a new session); Chrome DevTools MCP works too. Without either it stops
+before anything else and says so.
+
+What it does:
+
+1. Reads `.flow.json`'s `qa` section (`flow qa-config`) and the project's
+   instruction files.
+2. Picks the epic to file under: `--epic <e>`, or the open epic titled
+   `Bugs` (`/flow:epic --standing "Bugs"` makes one). With none it stops
+   before the walk, because a walk with nowhere to file it is wasted.
+3. Builds the page list with `flow qa-routes`: from `--routes`, else
+   `.flow.json`'s `routes`, else the site's sitemap, else the start page's
+   links. Same site only, each page once, files that are not pages left
+   out, every `deny` match left out, at most 60.
+4. Hires one `qa-explorer` agent per batch of up to ten pages, one at a
+   time (they share the session's one browser). Each is handed only the
+   site notes the session copied from your instruction files, never the
+   files: they often list known bugs. At each page and width it
+   records console errors and failed requests, checks the page's own links
+   for 404s with HEAD requests only (never a link a `deny` pattern or the
+   rules below name, and never a GET when HEAD is refused), looks for a page wider than the window and text cut off by its
+   box, compares the document language with the text, reports the
+   accessibility problems the browser shows and, with `--epic` on an epic
+   with design sources, runs the design comparison. A screenshot only where
+   something is wrong.
+5. Files each finding with
+   `flow create-finding --epic <e> --screenshots <dir> --fingerprint "$(flow qa-fingerprint <url> "<title>")"`:
+   one finding per problem (the same broken header on every page is one),
+   and none for a problem an open finding or ticket already carries.
+6. Ends with one table: pages visited, findings filed, duplicates skipped,
+   pages it could not load.
+
+**The explorer's rules**, each because the site is live: it never submits
+a form or sends a message, and never clicks a control that pays, orders,
+signs up, deletes, cancels or unsubscribes (a contact form reaches a
+person; an order charges a card). It never clicks, submits or visits what
+a `deny` pattern matches, never signs in, and never leaves the site's
+origin. With a `testMarker` it may fill a form's text fields with exactly
+that text and submit it, because your gateway drops what carries it; a
+field that will not take the marker leaves the form unsent.
+
+```json
+{
+  "qa": {
+    "routes": ["/", "/pricing", "/contact"],
+    "deny": ["checkout", "/account/*"],
+    "widths": [1440, 393],
+    "testMarker": "[flow-qa-test]"
+  }
+}
+```
+
+`routes` are paths or addresses on the site; `deny` patterns match anywhere
+in a control's text or label or a page's path, ignoring case, with `*` for
+any run of characters; `widths` are window widths in pixels (1440 and 393
+when not set); `testMarker` is one line. Every key is optional, and an
+unknown key or a wrong type makes `flow qa-config` and `flow qa-routes`
+exit 2 naming it:
+a `deny` list read half-way would be a walk with no brakes.
+
+**The fingerprint** is the page's path and the finding's title, lowercased,
+numbers written `#` and punctuation dropped (`qa /pricing pricing table
+wider than the window`), so the same problem found again next night is
+recognised and skipped. The explorer's judgement cannot be tested here;
+`/flow:retro` counts how many of its findings a person rejected instead.
+
+**Nightly**: copy [`plugins/flow/github/qa.yml`](plugins/flow/github/qa.yml)
+to `.github/workflows/flow-qa.yml`, set the repository variable `QA_URL`,
+and give it the `ANTHROPIC_API_KEY` and `FLOW_TOKEN` secrets `flow.yml`
+uses. It runs `/flow:qa <url> --unattended` on a schedule (or by hand with
+another address) under claude-code-action, with the Playwright MCP server
+configured in the file, driving the Chrome the runner already has, and
+keeps the screenshots as an artifact. Your project installs nothing for it.
+
 ## Agents
 
 - **researcher** — reads the code for the planner and reports facts with
@@ -747,9 +837,13 @@ token it needs, its options and the exact issue it writes are in
   fixes.
 - **retro-miner** — reads a finished epic's record for `/flow:retro` and
   answers its questions with evidence. It proposes changes and files none.
+- **qa-explorer** — walks a batch of a live site's pages in the session's
+  browser for `/flow:qa` and reports what is broken, with evidence. It is
+  never told what anyone thinks is broken, clicks nothing that pays, signs
+  up, deletes or sends, and files nothing.
 
-All four run on the strongest model available: what a reviewer or
-researcher left out cannot be checked afterwards.
+All five run on the strongest model available: what a reviewer, researcher
+or explorer left out cannot be checked afterwards.
 
 ## Further reading
 

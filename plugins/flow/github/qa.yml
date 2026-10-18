@@ -1,0 +1,73 @@
+# Flow QA: walks your live site every night with a browser and files what is broken as findings (flow:found), once each. It approves nothing.
+# Copy this file to .github/workflows/flow-qa.yml in your project, and set the repository variable QA_URL to the address the walk starts from.
+# Secrets: ANTHROPIC_API_KEY (or switch the commented line to CLAUDE_CODE_OAUTH_TOKEN), and FLOW_TOKEN as in flow.yml (contents and issues: read and write), which files the findings and pushes their screenshots to the flow-findings branch.
+# Your project installs nothing for the browser: the Playwright MCP server configured below runs with npx and drives the Google Chrome that GitHub's ubuntu-latest runners carry. The run needs one open, approved epic titled Bugs to file under (/flow:epic --standing "Bugs"), and a "qa" section in .flow.json when some pages or controls must never be touched or a form may be tested.
+name: flow-qa
+
+on:
+  schedule:
+    - cron: '17 3 * * *'
+  workflow_dispatch:
+    inputs:
+      url:
+        description: Address to start from (the QA_URL variable when empty)
+        required: false
+
+permissions:
+  contents: write
+  issues: write
+  id-token: write
+
+env:
+  FLOW_UNATTENDED: '1'
+  # The account Flow's own comments are trusted from, as in flow.yml.
+  FLOW_ACCOUNT: ${{ vars.FLOW_ACCOUNT || (secrets.FLOW_TOKEN == '' && 'github-actions[bot]' || '') }}
+
+jobs:
+  qa:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    concurrency:
+      group: flow-qa
+      cancel-in-progress: false
+    env:
+      QA_URL: ${{ inputs.url || vars.QA_URL }}
+      GH_TOKEN: ${{ secrets.FLOW_TOKEN || github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.FLOW_TOKEN || github.token }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: git identity
+        run: |
+          git config user.name "flow[bot]"
+          git config user.email "flow[bot]@users.noreply.github.com"
+      - name: refuse without an address
+        run: |
+          [ -n "$QA_URL" ] || { echo "Set the repository variable QA_URL, or give an address when running this by hand."; exit 1; }
+      - name: walk the site and file the findings
+        uses: anthropics/claude-code-action@v1
+        env:
+          GH_TOKEN: ${{ secrets.FLOW_TOKEN || github.token }}
+          FLOW_UNATTENDED: '1'
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          # claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          github_token: ${{ secrets.FLOW_TOKEN || github.token }}
+          plugin_marketplaces: https://github.com/weekendgoals/ticket-flow.git
+          plugins: flow@ticket-flow
+          prompt: /flow:qa ${{ env.QA_URL }} --unattended
+          claude_args: |
+            --model opus
+            --mcp-config '{"mcpServers":{"playwright":{"command":"npx","args":["--yes","@playwright/mcp@0.0.83","--headless","--isolated","--output-dir","/tmp/flow-qa"]}}}'
+            --allowedTools "Bash,Read,Write,Glob,Grep,Agent,Task,Skill,mcp__playwright"
+      - name: keep the screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: flow-qa-screenshots
+          path: /tmp/flow-qa/
+          if-no-files-found: ignore
