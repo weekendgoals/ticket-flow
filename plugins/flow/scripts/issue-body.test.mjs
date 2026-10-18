@@ -19,6 +19,7 @@ import {
   originalReport,
   findingImages,
   fingerprintMarker,
+  retroFingerprint,
 } from './issue-body.mjs'
 
 const EPIC_BODY = `## Outcome
@@ -366,4 +367,12 @@ test('findingImages collects every markdown and HTML image link outside code, wi
   ])
   assert.deepEqual(findingImages('no pictures'), [])
   assert.equal(fingerprintMarker('https://x.test/cart total'), '<!-- flow:finding fingerprint=https://x.test/cart total -->')
+})
+
+test('a retro fingerprint keeps letters and digits of the first line, lower case, one space apart, at most a hundred characters, and never ends an HTML comment', () => {
+  assert.equal(retroFingerprint({ repository: 'o/r', epic: 12, line: 'P1 — Ask the `Retro` epic first!' }), 'retro o/r#12: p1 ask the retro epic first')
+  assert.equal(retroFingerprint({ repository: 'o/r', epic: 12, line: 'Prüfe   die Übersetzung' }), 'retro o/r#12: prüfe die übersetzung')
+  const long = retroFingerprint({ repository: 'o/r', epic: 3, line: `${'word '.repeat(40)}-->` })
+  assert.equal(long, `retro o/r#3: ${'word '.repeat(20).trim()}`)
+  assert.ok(!/--!?>/.test(retroFingerprint({ repository: 'o/r', epic: 3, line: 'a --> b --!> c' })))
 })

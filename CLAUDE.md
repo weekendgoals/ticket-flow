@@ -27,7 +27,8 @@ epic). "Direct" or "without Flow" always overrides it.
   `accept`, `handoff`, `deliver`, `screenshots`, `meter`, `reset`), the pull-request
   loop (`pr-*`) and a whole epic (`dispatch`, `worktree`, `merge`,
   `check-epic`, `release-pr`, `design-map`), findings before they are
-  tickets (`create-finding`, `found`, `promote`, `reject`), the project
+  tickets (`create-finding`, `found`, `promote`, `reject`,
+  `retro-fingerprint`), the project
   board (`board-sync`), and looking back (`stats`).
 - `scripts/tracker/github.mjs` — every `gh` call, as plain functions (a Jira
   tracker can sit behind them); `tracker/fake-gh.mjs` is the tests' `gh`.
@@ -55,13 +56,13 @@ Every suite needs Node ≥ 20 and nothing else unless noted; pass each test
 file path explicitly (`node --test <directory>` finds nothing here). Counts
 as of 2026-10-18; the pass count grows, the fail line stays `# fail 0`.
 
-- `node --test plugins/flow/scripts/flow.test.mjs` — `# pass 66`. The CLI
+- `node --test plugins/flow/scripts/flow.test.mjs` — `# pass 69`. The CLI
   end to end against the fake `gh`; one case needs `git` on PATH.
 - `node --test plugins/flow/scripts/lifecycle.test.mjs` — `# pass 39`. The
   ticket steps in throwaway repositories with a bare remote; needs `git`, `sh`.
 - `node --test plugins/flow/scripts/epic-run.test.mjs` — `# pass 32`. The
   whole-epic commands, the same way.
-- `pull-request.test.mjs` `# pass 20`, `issue-body.test.mjs` `# pass 28`,
+- `pull-request.test.mjs` `# pass 20`, `issue-body.test.mjs` `# pass 29`,
   `checks.test.mjs` `# pass 26` (real shell commands in a temp dir),
   `tracker/github.test.mjs` `# pass 33`, `fidelity.test.mjs` `# pass 54`,
   `stats.test.mjs` `# pass 13` (needs `git`), `project-sync.test.mjs`

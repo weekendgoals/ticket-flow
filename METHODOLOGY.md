@@ -6,6 +6,10 @@ keeps only those lessons, each with the scar it came from. It holds no
 rules: the skills and `CLAUDE.md` do. If this file and a skill disagree, the
 skill wins.
 
+Lessons learned since 3.0 are added at the end, usually from a retro, each
+as a section with a dated first paragraph saying what happened, with the
+link, and a second saying what it teaches.
+
 ## There is no shared file to merge any more
 
 2.x kept every ticket's record in one append-only markdown file per epic.
@@ -107,3 +111,20 @@ reviewed, never by a branch name that could move. The step into the
 default branch is always a person's, through the epic's one pull request,
 and no step follows it: anything that ran after the merge would be work
 nobody reviewed, landing where everyone builds from.
+
+## Replacing a field's options gives every option a new id
+
+2026-10-18, Flow 3.1. `flow init --board` added the `Status` options a
+linked project lacked by sending GitHub the field's whole option list, old
+names and new ones, because GitHub's API cannot add one option to a
+single-select field, only replace the list. The replacement gave every
+option a new id, the unchanged ones included, and an item's status points
+at an option by id, so every item on the board would have lost its status.
+Review caught it before the release, and the fix
+([803cc721](https://github.com/weekendgoals/ticket-flow/commit/803cc721))
+reads each item's status by name first and sets it back afterwards.
+
+A name that looks unchanged is not proof that what points at it still
+holds: an API that replaces a list may rebuild every entry in it. Before
+writing to a shared record, ask what refers to the thing being replaced,
+and test the references, not the names.

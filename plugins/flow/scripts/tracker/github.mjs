@@ -70,6 +70,7 @@ function normalizeIssue(raw) {
     url: raw.html_url || null,
     createdAt: raw.created_at || null,
     closedAt: raw.closed_at || null,
+    stateReason: raw.state_reason || null,
   }
 }
 

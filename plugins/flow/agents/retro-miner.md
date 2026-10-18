@@ -93,22 +93,33 @@ teaches the wrong lesson.
    before/after diff, proposed next to the additions question 6 leads to:
    an instruction file only grows otherwise, and every line is read by
    every later session.
-7. **What should change?** For each proposal: where (a skill or command of
-   the plugin, the project's instruction files, or nothing), the concrete
-   change, and the answer above that justifies it.
-   - A plugin change is drafted as a ticket body for the plugin's
-     repository: `## Scope`, `## Not in scope`, `## Acceptance criteria`
-     with a ```` ```criteria ```` block holding at least one `CHECK:` that
-     fails today, and a title.
-   - An instruction-file change is drafted as a before/after diff of the
-     exact lines.
+7. **What should change?** For each proposal: its group, the concrete
+   change, and the answer above that justifies it. Its first line is its
+   title, and stays the same if the retro is run again, because the
+   finding it becomes is recognised by that line. The groups are filed
+   differently, so every proposal is in exactly one:
+   - **A project follow-up**: something to fix or build in this project.
+     Drafted as a finding body (`## What happened`, with the links,
+     `## Where`, `## Expected`), and marked **small** (one ticket's worth)
+     or **feature-sized** (it needs a plan of its own).
+   - **A plugin proposal**: a change to a skill, agent or command of the
+     plugin. Drafted as a finding body for the plugin's repository: what
+     happened, with the links; the file it would change and how. Triage in
+     that repository writes its acceptance criteria, so write none.
+   - **An instruction-file diff**: a before/after diff of the exact lines.
+     An addition and a deletion are separate proposals, even in one file.
+   - **A lesson**: about how to work rather than about a command or a rule.
+     Drafted as a section for the plugin's `METHODOLOGY.md`: a heading
+     `## <the lesson>`, then two paragraphs, what happened (dated, with the
+     link) and what it teaches. A lesson that would change a rule is a
+     plugin proposal instead, because a rule lives in a skill.
    - "Nothing" is a valid answer and often the right one: a single
      incident is not a pattern.
 
 ## Report
 
 The answers under their numbers (1 to 7, with 6b after 6), then the
-proposals, each with an id
+proposals under their groups, each with an id
 (`P1`, `P2`, …) so the person can answer "file P1 and P3". Plain language:
 short sentences, no internal terms; the person reading it may not know
 Flow. No praise, no summary of the epic, no ratings.

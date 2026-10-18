@@ -49,6 +49,38 @@ stamps the version and date and bumps `plugin.json` in the same commit.
   commit, the pull request is not merged, or the clone lacks the commit),
   printed as one line. The tracker's pull request now carries
   `mergeCommitSha` once merged.
+- **New: `flow create-finding --repo <owner>/<name>`** files the finding in
+  another repository, such as the plugin's: `--epic` names an epic there
+  and the fingerprint search runs there. `--screenshots` is refused with
+  it (exit 2), because the images are committed to this repository's
+  `flow-findings` branch.
+- **A rejected fingerprint is not filed again.** `create-finding
+  --fingerprint` now also searches findings closed as not planned (what
+  `flow reject` does), and refuses a match with exit 3, printing its number
+  and "#n was rejected on <date>: reopen it to reconsider". A finding
+  closed as completed is not a match. Issues from the tracker carry
+  `stateReason`.
+- **New: `flow retro-fingerprint <epic> --text "<line>"`** prints
+  `retro <owner>/<name>#<epic>: <the line in lower case, letters and digits
+  only, at most 100 characters>`, the fingerprint a retro files each
+  proposal with.
+- **The retro files findings.** `/flow:retro` no longer files plugin
+  changes with `create-ticket --no-epic --repo`. Its comment lists every
+  proposal in groups (project follow-ups, plugin proposals,
+  instruction-file diffs, lessons); one table in chat takes a yes per row,
+  and nothing is filed before it. A small project follow-up becomes a
+  finding under the project's open `Bugs` epic, a feature-sized one a
+  finding marked for `/flow:epic`, and a plugin proposal a finding in
+  `weekendgoals/ticket-flow` under its open `Retro` epic (with none, the row
+  is not filed and the skill prints `/flow:epic --standing "Retro"`). Each
+  finding links the retro comment and carries the retro fingerprint, so a
+  re-run files nothing twice; a last comment records every row's outcome,
+  with the reason for each rejected one. A lesson about how to work is
+  offered as a dated section for `METHODOLOGY.md`. The retro miner drafts
+  proposals in those groups, plugin ones as finding bodies without
+  criteria.
+- **`METHODOLOGY.md` takes dated lessons**, the first being that replacing
+  a single-select field's options gives every option a new id.
 
 ## 3.1.0 — 2026-10-18
 

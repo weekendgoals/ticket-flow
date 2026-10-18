@@ -1015,7 +1015,7 @@ test('create-finding --fingerprint files a bug once: an open finding or ticket c
   assert.equal(promoted.stdout.trim(), '61')
   world({
     findings: [finding(62, { body: '<!-- flow:finding fingerprint=https://example.com/cart total -->\n' })],
-    extra: { [`GET ${R}/issues?labels=flow%3Aticket&state=open&per_page=100`]: [], [`POST ${R}/issues`]: finding(93) },
+    extra: { [`GET ${R}/issues?labels=flow%3Aticket&state=open&per_page=100`]: [], [CLOSED_FINDINGS]: [], [`POST ${R}/issues`]: finding(93) },
   })
   const fresh = flow('create-finding', '--title', 'Wrong total', '--file', file, '--fingerprint', 'https://example.com/cart total is wrong')
   assert.equal(fresh.status, 0, fresh.stderr)
@@ -1023,6 +1023,76 @@ test('create-finding --fingerprint files a bug once: an open finding or ticket c
   assert.equal(JSON.parse(writesMade()[0].stdin).body, `${marker}\n\nThe total is wrong.\n`)
   assert.equal(flow('create-finding', '--title', 'x', '--file', file, '--fingerprint', 'a --> b').status, 2)
   assert.equal(flow('create-finding', '--title', 'x', '--file', file, '--fingerprint', 'a --!> b').status, 2, 'this ends an HTML comment too')
+})
+
+const CLOSED_FINDINGS = `GET ${R}/issues?labels=flow%3Afound&state=closed&per_page=100`
+
+test('create-finding --fingerprint refuses a fingerprint a person rejected, naming the day, and files again after a finding closed as completed', () => {
+  const file = join(directory, 'finding-rejected.md')
+  writeFileSync(file, 'The total is wrong.\n')
+  const marker = '<!-- flow:finding fingerprint=/cart total is wrong -->'
+  const closed = (number, reason, body = `${marker}\n\nThe total is wrong.`) => ({ ...finding(number, { body, state: 'closed' }), state_reason: reason, closed_at: '2026-10-16T18:00:00Z' })
+  world({
+    extra: {
+      [`GET ${R}/issues?labels=flow%3Aticket&state=open&per_page=100`]: [],
+      [CLOSED_FINDINGS]: [closed(63, 'completed'), closed(64, 'not_planned', 'another bug'), closed(65, 'not_planned')],
+    },
+  })
+  const rejected = flow('create-finding', '--title', 'Wrong total', '--file', file, '--fingerprint', '/cart total is wrong')
+  assert.equal(rejected.status, 3)
+  assert.equal(rejected.stdout.trim(), '65')
+  assert.equal(rejected.stderr, '#65 was rejected on 2026-10-16: reopen it to reconsider\n')
+  assert.deepEqual(writesMade(), [])
+  world({
+    extra: {
+      [`GET ${R}/issues?labels=flow%3Aticket&state=open&per_page=100`]: [],
+      [CLOSED_FINDINGS]: [closed(63, 'completed')],
+      [`POST ${R}/issues`]: finding(94),
+    },
+  })
+  const completed = flow('create-finding', '--title', 'Wrong total', '--file', file, '--fingerprint', '/cart total is wrong')
+  assert.equal(completed.status, 0, completed.stderr)
+  assert.equal(completed.stdout.trim(), '94', 'a finding closed as completed was dealt with, so the bug is new again')
+})
+
+test('create-finding --repo files the finding, its epic and its fingerprint search in another repository, and refuses --screenshots there', () => {
+  const file = join(directory, 'plugin-finding.md')
+  writeFileSync(file, '## What happened\n\nThe retro asked a question a command answers.\n')
+  world({
+    epics: [{ epic: issue(4, { title: 'Retro', body: epicBody([], 'Delivery: incremental'), labels: epicLabels() }), tickets: [] }],
+    extra: {
+      [`GET ${R}/issues?labels=flow%3Aticket&state=open&per_page=100`]: [],
+      [CLOSED_FINDINGS]: [],
+      [`POST ${R}/issues`]: finding(95),
+      [`POST ${R}/issues/4/sub_issues`]: {},
+    },
+  })
+  const result = flow('create-finding', '--repo', 'weekendgoals/ticket-flow', '--epic', '4', '--title', 'Answer it', '--file', file, '--fingerprint', 'retro o/r#1: answer it')
+  assert.equal(result.status, 0, result.stderr)
+  assert.equal(result.stdout.trim(), '95')
+  assert.ok(fake.calls().length > 0 && fake.calls().every((call) => call.repo === 'weekendgoals/ticket-flow'), 'every call goes to the named repository')
+  assert.deepEqual(writesMade().map((call) => call.key), [`POST ${R}/issues`, `POST ${R}/issues/4/sub_issues`])
+  fake.clearCalls()
+  const plain = flow('create-finding', '--repo', 'weekendgoals/ticket-flow', '--title', 'Answer it', '--file', file)
+  assert.equal(plain.status, 0, plain.stderr)
+  assert.deepEqual(fake.calls().map((call) => call.key), [`POST ${R}/issues`])
+  fake.clearCalls()
+  mkdirSync(join(directory, 'shots-repo'), { recursive: true })
+  writeFileSync(join(directory, 'shots-repo', 'a.png'), 'png')
+  const shots = flow('create-finding', '--repo', 'weekendgoals/ticket-flow', '--screenshots', join(directory, 'shots-repo'), '--title', 'x', '--file', file)
+  assert.equal(shots.status, 2)
+  assert.match(shots.stderr, /--screenshots goes without --repo: the images are committed to the flow-findings branch of this repository/)
+  assert.equal(flow('create-finding', '--repo', 'not a slug', '--title', 'x', '--file', file).status, 2)
+  assert.deepEqual(fake.calls(), [])
+})
+
+test('retro-fingerprint builds one line from the repository, the epic and the proposal\'s first line, the same however it is spelled', () => {
+  world({})
+  const first = flow('retro-fingerprint', '12', '--text', 'P1: Name the `Retro` epic -- in the skill!')
+  assert.equal(first.status, 0, first.stderr)
+  assert.equal(first.stdout, 'retro o/r#12: p1 name the retro epic in the skill\n')
+  assert.equal(flow('retro-fingerprint', '#12', '--text', '  p1   name the Retro epic in the skill ').stdout, first.stdout)
+  assert.equal(flow('retro-fingerprint', '12').status, 2)
 })
 
 test('found lists open findings with their epic, who filed them, approval and image count, and exits 0 with none', () => {

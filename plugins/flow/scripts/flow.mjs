@@ -4,7 +4,7 @@ import { spawnSync } from 'node:child_process'
 import { join, resolve, relative, isAbsolute, extname } from 'node:path'
 import * as github from './tracker/github.mjs'
 import { TrackerError } from './tracker/github.mjs'
-import { parseEpicBody, parseTicketBody, parseDesignMap, withEpicLine, withBlockedBy, withTicketListed, withTicketChecked, normalizeNewlines, splitSections, withReport, originalReport, fingerprintMarker, findingImages, REPORT_MARKER } from './issue-body.mjs'
+import { parseEpicBody, parseTicketBody, parseDesignMap, withEpicLine, withBlockedBy, withTicketListed, withTicketChecked, normalizeNewlines, splitSections, withReport, originalReport, fingerprintMarker, retroFingerprint, findingImages, REPORT_MARKER } from './issue-body.mjs'
 import { CONFIG, ConfigError, apply as applyWorktreeSetup, createWorktree, removeWorktree, worktreePath } from './worktree-setup.mjs'
 import { runCriteria, formatCheckReport, CHECK_TIMEOUT_MS, CHECK_MAX_BUFFER } from './checks.mjs'
 import {
@@ -110,9 +110,12 @@ const USAGE = `usage: flow <command>
   needs-human <n> --text "<why>"         stop a ticket and ask a person
   handoff <n> --text "<lines>" | --file <md>
                                          what later tickets need from this one, once it is in review or done (the latest wins)
-  create-finding --title "<t>" --file <md> [--epic <e>] [--screenshots <dir>] [--fingerprint "<text>"]
+  create-finding --title "<t>" --file <md> [--epic <e>] [--screenshots <dir>] [--fingerprint "<text>"] [--repo <owner>/<name>]
                                          file a bug or idea as a finding (flow:found): evidence, no criteria, nothing starts from it
-                                         (--fingerprint: exit 3 with the existing number when it was filed before)
+                                         (--fingerprint: exit 3 with the existing number when it was filed before or rejected;
+                                         --repo: file it in another repository, such as the plugin's, where --epic is looked up)
+  retro-fingerprint <epic> --text "<first line>"
+                                         the fingerprint a retro files a proposal with, so a second retro of the epic does not file it again
   found [<epic>] [--json]                open findings: their epic, who filed them and when, approved or waiting, images
   promote <n> --file <md> --tier easy|hard --epic <e> [--blocked-by <n>,<n>]
                                          turn an approved finding into a planned ticket of the epic, keeping its report
@@ -804,10 +807,26 @@ function withScreenshots(body, links) {
   return `${normalizeNewlines(body).replace(/\n+$/, '')}\n\n## Screenshots\n\n${list.join('\n')}\n`
 }
 
+function commandRetroFingerprint(positional, flags) {
+  const epic = issueNumber(positional[0], 'an epic number')
+  if (flags.text === undefined || !flags.text.trim()) throw new UsageError('retro-fingerprint needs --text "<the proposal\'s first line>"')
+  console.log(retroFingerprint({ repository: github.repoSlug(), epic, line: flags.text }))
+  return 0
+}
+
+function rejectedOn(issue) {
+  return (issue.closedAt || '').slice(0, 10) || 'an unknown date'
+}
+
 function commandCreateFinding(positional, flags) {
   if (positional.length) throw new UsageError('create-finding takes no issue number; give the epic with --epic')
   if (!flags.title) throw new UsageError('create-finding needs --title')
   if (flags.file === undefined) throw new UsageError('create-finding needs --file')
+  if (flags.repo !== undefined) {
+    if (flags.screenshots !== undefined)
+      throw new UsageError('--screenshots goes without --repo: the images are committed to the flow-findings branch of this repository, and a finding in another one could not link them')
+    useRepository(flags.repo)
+  }
   const fingerprint = readFingerprint(flags)
   const epicNumber = flags.epic === undefined ? null : issueNumber(flags.epic, 'an epic number')
   const shots = flags.screenshots === undefined ? [] : screenshotFiles(resolve(flags.screenshots))
@@ -824,6 +843,14 @@ function commandCreateFinding(positional, flags) {
     if (earlier) {
       process.stderr.write(`#${earlier.number} already carries this fingerprint, so nothing was filed\n`)
       console.log(earlier.number)
+      return FINGERPRINT_EXISTS_EXIT
+    }
+    const rejected = github
+      .listIssues({ label: FOUND_LABEL, state: 'closed' })
+      .find((issue) => issue.stateReason === 'not_planned' && carriesMarker(issue.body, marker))
+    if (rejected) {
+      process.stderr.write(`#${rejected.number} was rejected on ${rejectedOn(rejected)}: reopen it to reconsider\n`)
+      console.log(rejected.number)
       return FINGERPRINT_EXISTS_EXIT
     }
   }
@@ -1872,6 +1899,8 @@ function main(argv) {
       return commandCreateFinding(positional, flags)
     case 'found':
       return commandFound(positional, flags)
+    case 'retro-fingerprint':
+      return commandRetroFingerprint(positional, flags)
     case 'promote':
       return commandPromote(positional, flags)
     case 'reject':

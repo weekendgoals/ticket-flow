@@ -55,6 +55,7 @@ test('getIssue reads one issue and returns it in the tracker shape', () => {
     url: 'https://github.com/o/r/issues/5',
     createdAt: '2026-10-01T09:00:00Z',
     closedAt: null,
+    stateReason: null,
   })
   assert.deepEqual(fake.calls()[0].args, ['api', `${R}/issues/5`])
 })

@@ -533,9 +533,16 @@ the same `<!-- flow:finding fingerprint=<text> -->` line, nothing is filed
 and the command exits 3 printing that issue's number; otherwise the line is
 written at the top of the new body. An agent walking a site builds it from
 the page's address and a short description, so a nightly run files each bug
-once. Only open findings and open tickets are searched, so a finding that was
-rejected (closed) can be filed again by a later run; a person closes it
-again, or files a ticket that fixes what keeps being found.
+once. The search covers open findings, open tickets, and findings closed
+as not planned (what `flow reject` does, or "Close as not planned" on
+GitHub): a rejected fingerprint exits 3 too, saying "#n was rejected on
+<date>: reopen it to reconsider", so a nightly run does not file again what
+a person turned down. A finding closed as completed does not count: what it
+reported was dealt with, so the same fingerprint is a new bug.
+`--repo <owner>/<name>` files the finding in another repository, such as the
+plugin's: `--epic` and the fingerprint search are looked up there, and
+`--screenshots` is refused, because the images go to this repository's
+`flow-findings` branch.
 
 **A person approves a finding** by adding `flow:approved` to it, and rejects
 it by closing it. `flow found [<epic>] [--json]` lists the open ones: epic or
@@ -601,7 +608,8 @@ every answer is read from GitHub (through `gh`) and git.
 | `create-ticket --no-epic --file <md> --title "<t>" [--tier easy\|hard] [--repo <owner>/<name>]` | Creates a ticket that belongs to no epic (counts as approved); `--repo` files it in another repository, such as the plugin's |
 | `needs-human <n> --text "<why>"` | Marks the ticket `flow:needs-human` and asks a person, by mention |
 | `handoff <n> --text "<lines>"` or `--file <md>` | Posts the ticket's handoff for the tickets after it; refuses one that is not in review or done, and a text over 1,200 characters. The latest one counts |
-| `create-finding --title "<t>" --file <md> [--epic <e>] [--screenshots <dir>] [--fingerprint "<text>"]` | Files a finding (`flow:found`), its images on the `flow-findings` branch; prints its number, or exits 3 with the existing one when the fingerprint was filed before |
+| `create-finding --title "<t>" --file <md> [--epic <e>] [--screenshots <dir>] [--fingerprint "<text>"] [--repo <owner>/<name>]` | Files a finding (`flow:found`), its images on the `flow-findings` branch; prints its number, or exits 3 with the existing one when the fingerprint was filed before or rejected. `--repo` files it in another repository (no `--screenshots` there) |
+| `retro-fingerprint <epic> --text "<line>"` | Prints the fingerprint a retro files a proposal with: this repository, the epic, and the line in lower case with only letters and digits |
 | `found [<epic>] [--json]` | The open findings: epic, who filed them and when, approved or waiting, image count (with `--json`, the body and every image link too). Always exits 0 |
 | `promote <n> --file <md> --tier easy\|hard --epic <e> [--blocked-by <n>,<n>]` | Turns an approved finding into a planned ticket of the epic, keeping its text under `## Report`; refuses with exit 2 otherwise |
 | `reject <n> --text "<why>"` | Says why a finding is not a ticket and closes it as not planned |
@@ -684,11 +692,27 @@ answers, each with links to the comments and commits behind it:
 7. what should change: in the plugin, in the project's instruction files,
    or nothing.
 
-The answers are posted on the epic, and you are asked about each proposal.
-Only a yes files anything: a plugin change becomes an issue in the plugin's
-repository (`flow create-ticket --no-epic --repo <owner>/<name>`), and an
-instruction-file change goes through `/flow:quick` to a pull request you
-merge.
+The answers are posted on the epic, with every proposal in one of four
+groups, and you answer one table, a row per proposal. Only a yes files
+anything:
+
+- a **project follow-up** becomes a finding: a small one under the project's
+  open `Bugs` epic, a feature-sized one with no epic, marked for
+  `/flow:epic`;
+- a **plugin proposal** becomes a finding in the plugin's repository under
+  its open `Retro` epic (`flow create-finding --repo weekendgoals/ticket-flow
+  --epic <Retro>`); with no such epic the row is not filed, and the retro
+  prints `/flow:epic --standing "Retro"` to run in a clone of the plugin;
+- an **instruction-file diff** (additions and deletions are separate rows)
+  goes through `/flow:quick` to a pull request you merge;
+- a **lesson** about how to work is offered as a dated section for the
+  plugin's `METHODOLOGY.md`, which you add by hand or file as a plugin
+  proposal.
+
+Each filed finding links the retro comment and carries a fingerprint from
+the epic and the proposal's first line (`flow retro-fingerprint <epic>
+--text "<line>"`), so running the retro again files nothing twice. A last
+comment on the epic says what was filed and why each rejected row was not.
 
 ## The reporter extension
 
