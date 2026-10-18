@@ -302,9 +302,11 @@ becomes `flow:needs-human`). Each step posts one comment on the issue:
    tree with uncommitted changes; cuts `ticket/<n>` from the epic branch
    (release) or the default branch (incremental, or no epic); labels it
    `flow:in-progress`; says who builds it, on which model.
-2. **Build** on the ticket's model, `tier:easy` on Sonnet, otherwise Opus,
-   with commits `#<n>: <what>`, no code comments, component tests for UI and
-   an end-to-end test only for a journey the epic names.
+2. **Build** on the ticket's model, `tier:easy` on Sonnet, otherwise Opus:
+   the `ticket-worker` agent builds it by the rules in
+   [`agents/ticket-worker.md`](plugins/flow/agents/ticket-worker.md) (scope,
+   commits, comments, tests, when to stop), and unattended the session reads
+   that file and builds by it itself.
 3. **Check** (`flow check`), then **screenshots** (`flow screenshots`) when
    the project says how to take them.
 4. **Review** (`flow:in-review`): a separate reviewer on the strongest model
@@ -954,8 +956,13 @@ keeps the screenshots as an artifact. Your project installs nothing for it.
   never told what anyone thinks is broken, clicks nothing that pays, signs
   up, deletes or sends, and files nothing.
 
-All five run on the strongest model available: what a reviewer, researcher
-or explorer left out cannot be checked afterwards.
+These five run on the strongest model available: what a reviewer,
+researcher or explorer left out cannot be checked afterwards.
+
+- **ticket-worker** — builds one ticket on its branch for `/flow:ticket`,
+  by the worker's rules its file holds, on the model the ticket's tier
+  decides (Sonnet for `tier:easy`, otherwise Opus). It is handed the
+  ticket's facts only, never the planning conversation.
 
 ## Further reading
 

@@ -82,6 +82,15 @@ stamps the version and date and bumps `plugin.json` in the same commit.
   `actions/upload-pages-artifact` and `actions/deploy-pages`. One manual
   step: Settings, Pages, Source: GitHub Actions.
 
+- **New: the `ticket-worker` agent** (`agents/ticket-worker.md`). The
+  worker's rules move there from the ticket skill's step 3, word for word,
+  so they reach the worker from a file instead of being retyped by the
+  session that runs the ticket. Attended, step 3 spawns
+  `flow:ticket-worker` on the model `start` printed, with a prompt holding
+  only the ticket's facts; unattended (and so under `/flow:run` and the
+  GitHub Action), the session reads the file and follows it itself. It has
+  no `model:` line, since the tier decides, and every tool.
+
 ## 3.2.0 — 2026-10-18
 
 - **New: handoffs between tickets.** `flow handoff <n> --text "<lines>"` (or

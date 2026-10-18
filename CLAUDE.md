@@ -47,6 +47,10 @@ epic). "Direct" or "without Flow" always overrides it.
   `board-sync` catches it up, closing the done tickets of release epics,
   since `merge` closes a ticket it marks done so the board's progress bar
   counts it).
+- `agents/ticket-worker.md` — the worker's rules, the one place they are
+  stated: `/flow:ticket` step 3 spawns it on the tier's model, and
+  unattended the session reads it and builds by it. The other five agents
+  are reviewers, the researcher, the retro miner and the QA explorer.
 - `skills/triage/SKILL.md` — `/flow:triage`: approved findings become
   tickets (or are rejected, or sent to `/flow:epic`) after one table.
 - `skills/qa/SKILL.md` — `/flow:qa`: `agents/qa-explorer.md` walks a live
