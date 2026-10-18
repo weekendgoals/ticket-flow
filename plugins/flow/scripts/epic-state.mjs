@@ -5,6 +5,7 @@ export const TICKET_LABEL = 'flow:ticket'
 export const APPROVED_LABEL = 'flow:approved'
 export const NEEDS_HUMAN_LABEL = 'flow:needs-human'
 export const START_LABEL = 'flow:start'
+export const FOUND_LABEL = 'flow:found'
 
 export const STATE_BY_LABEL = {
   'flow:planned': 'planned',
@@ -27,9 +28,34 @@ export const LABELS = [
   { name: 'flow:done', color: '0e8a16', description: 'Merged into the epic branch' },
   { name: NEEDS_HUMAN_LABEL, color: 'd93f0b', description: 'Stopped: a person has to decide something' },
   { name: START_LABEL, color: 'bfdadc', description: 'Asks a host to start building this ticket now; removed when it starts' },
+  { name: FOUND_LABEL, color: 'f9d0c4', description: 'A bug or idea with evidence and no criteria yet; a person approves it, then triage turns it into a ticket' },
   { name: TIER_LABELS.easy, color: 'ededed', description: 'Straightforward ticket, built by the faster model' },
   { name: TIER_LABELS.hard, color: '555555', description: 'Demanding ticket, built by the strongest model' },
 ]
+
+export function isFinding(issue) {
+  return issue.labels.includes(FOUND_LABEL)
+}
+
+export function findingSummary(issue) {
+  return {
+    number: issue.number,
+    title: issue.title,
+    approved: issue.labels.includes(APPROVED_LABEL),
+    author: issue.author,
+    createdAt: issue.createdAt,
+  }
+}
+
+export function countFindings(findings) {
+  const approved = findings.filter((finding) => finding.approved).length
+  return { waiting: findings.length - approved, approved }
+}
+
+export function findingsLine(findings) {
+  const { waiting, approved } = countFindings(findings)
+  return `${waiting} waiting, ${approved} approved`
+}
 
 export function epicBranchProblem(epic) {
   if ((epic.settings.delivery || 'release') !== 'release' || epic.settings.branch) return null
@@ -89,7 +115,9 @@ function shownState(ticket, approved, epicProblem) {
   return blocked ? 'waiting' : 'ready'
 }
 
-export function deriveEpic(epicIssue, subIssues) {
+export function deriveEpic(epicIssue, allSubIssues) {
+  const subIssues = allSubIssues.filter((issue) => !isFinding(issue))
+  const findings = allSubIssues.filter((issue) => isFinding(issue) && issue.state !== 'closed').map(findingSummary)
   const plan = parseEpicBody(epicIssue.body)
   const designSources = plan.settings.designSources
   const problems = plan.problems.map((problem) => `epic #${epicIssue.number}: ${problem}`)
@@ -150,6 +178,7 @@ export function deriveEpic(epicIssue, subIssues) {
     approved,
     settings: plan.settings,
     tickets,
+    findings,
     cycles,
     problems,
   }

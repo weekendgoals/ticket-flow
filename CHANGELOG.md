@@ -5,6 +5,155 @@ a behaviour change in every project that installs it. Entries land in the same
 commit as the change; the pull request that brings them to the default branch
 stamps the version and date and bumps `plugin.json` in the same commit.
 
+## 3.1.0 — 2026-10-18
+
+- **New: the project board.** When the repository is linked to a GitHub
+  Project whose `Status` field has the options `Planned`, `In progress`,
+  `In review`, `Done`, `Needs human` and `Epic`, every command that changes a
+  state label (`label`, `start`, `merge`, `merge --epic`, `deliver`, `reset`,
+  `reset --once`, `needs-human`, and every refusal that hands a ticket to a
+  person) also sets the issue's `Status` there, right after the label
+  change; `create-epic` and `create-ticket` add the new issue to the project
+  as `Epic` or `Planned`. It is best effort and never a gate, and the
+  command always exits exactly as before. With no project linked, or a
+  token that cannot read projects (no `project` scope locally, or in the
+  Action a `FLOW_TOKEN` without the Projects permission), it stays silent;
+  when a linked project's `Status` lacks options, or a found board refuses
+  the add or the move, it prints one line starting
+  `project board not updated:`. Labels stay the only record of state; Flow
+  never takes a state from the project. `doctor` adds one line naming the project
+  it found, `none linked`, or the `Status` options it lacks, without
+  changing its exit code. The code is `scripts/project-sync.mjs`, with its
+  GraphQL calls in `tracker/github.mjs`.
+- **New: `flow init --board [<title>]`** sets the project board up after
+  the labels. It works on the linked project of that title (`Flow` by
+  default), else on the only linked project with a `Status` field, and
+  refuses with exit 2, changing nothing, when several have one and none has
+  the title, or when another linked project already carries all six
+  options (Flow would write to that one instead; the refusal names it).
+  With no project linked, it creates one under the repository's owner,
+  replaces the new project's `Status` options with the six Flow ones, links
+  it to the repository, and prints the two steps the GitHub API cannot do
+  (the Board layout with Swimlanes by "Parent issue", and the auto-add
+  filter `is:issue label:flow:ticket,flow:epic`). On an existing project
+  whose `Status` lacks some of the six, it adds the missing ones beside
+  every existing option, kept with its colour and description, and keeps
+  every item's status: GitHub gives every option a new id when options are
+  added, so it reads each item's `Status` first and sets it back by name
+  afterwards (`restored <n> item statuses`; an item GitHub refuses is
+  named, with `flow board-sync` as the way to restore Flow's issues, and
+  the command exits 1). With all six there it only names the project.
+  After a change it reads the projects again and prints
+  `Flow writes to: <title>`, or exits 1 when the board the state changes
+  use is not the one it set up. Unlike the automatic sync, a refusal here
+  exits 1 with the `gh auth refresh -s project` hint; a project created but
+  not set up says to link it by hand and run the command again (with the
+  title given), rather than making a second one. `flow init` without
+  `--board` is unchanged. The repository lookup now also reads the
+  repository's and owner's ids and each option's colour and description,
+  still in its one query.
+- **New: `flow board-sync [<epic>] [--json]`** sets the board's `Status` of
+  every open epic (or the one named) as `Epic` and of each of its tickets,
+  plus every ticket with no epic, from the labels, adding any issue missing
+  from the board. It reads each item's current `Status` only to leave a
+  right one unwritten. Findings, and tickets with no single state label,
+  are skipped. It prints one line per change (`#12 → In review`), then
+  `<n> set, <m> already right, <k> skipped` (or the same as an object with
+  `--json`); with no matching board linked it exits 1 naming
+  `flow init --board`; an issue GitHub refuses is printed, the rest are
+  still set, and it exits 1 at the end. The automatic sync now also skips
+  the write when the item already shows the right `Status`.
+- **New: findings, bugs and ideas before they are tickets.** A finding is an
+  issue labelled `flow:found` (the twelfth label; `flow init` creates it and
+  `doctor` names it when missing): evidence, a person's words, no criteria.
+  `next`, `board`'s ticket table, `dispatch`, `check-epic`, `merge --epic`
+  and `release-pr` read past a finding under an epic, so it changes no
+  answer, no built state and no release; `start` refuses one without asking
+  a person. `board` adds `findings: <n> waiting, <m> approved` per epic and
+  for findings with no epic (and `findings` / `findingsWithoutEpic` in
+  `--json`). `github/finding.md` is an issue template a project copies to
+  `.github/ISSUE_TEMPLATE/`: the label and the recommended shape (What
+  happened, Where, Steps, Expected, Screenshots).
+- **New: `flow create-finding --title <t> --file <body> [--epic <e>]
+  [--screenshots <dir>] [--fingerprint <text>]`** files one, as a sub-issue
+  of `--epic` when given. `--screenshots` (PNG, JPEG or WebP only; anything
+  else in the directory refuses before anything is filed) commits the
+  images to the orphan branch `flow-findings` under
+  `findings/<issue number>/` without touching the checkout, pushes it, and
+  appends a `## Screenshots` list linking each by commit; the branch is
+  created holding only a `README.md` when missing. `--fingerprint` exits 3
+  printing the existing number when an open finding, or a ticket promoted
+  from one, already carries `<!-- flow:finding fingerprint=<text> -->`, and
+  otherwise writes that line at the top of the new body. Findings are not
+  added to the project board.
+- **New: `flow found [<epic>] [--json]`** lists the open findings (epic or
+  none, who filed them and when, approved or waiting, image count; the JSON
+  adds the body and each image link with its branch and path). It always
+  exits 0.
+- **New: `flow promote <n> --file <ticket body> --tier easy|hard --epic <e>
+  [--blocked-by <n>,<n>]`**, the only way a finding becomes a ticket. It
+  refuses with exit 2 and one sentence a finding that is closed, not a
+  finding or not approved (`flow:approved`, added by a person), a body whose
+  criteria cannot decide it, an epic that is not one or whose settings
+  cannot be read, a `Blocked by` that cannot be read or points outside the
+  epic, and a body with its own `## Report`. Then it moves the issue under
+  the epic (out of any other parent), writes the ticket body with `Epic:` and
+  `Blocked by:` and the finding's original text byte for byte under a last
+  `## Report` section, sets the labels to `flow:ticket`, `flow:planned` and
+  the tier (dropping `flow:found` and `flow:approved` in one call), lists it
+  under the epic's tickets and sets the project board to `Planned`. It is
+  safe to repeat until the labels change.
+- **Nothing under a ticket's `## Report` heading is read as the ticket.**
+  `parseTicketBody` stops at the `## Report` section `promote` writes, so a
+  reporter's text can carry no criteria, blocker or `Epic:` line into the
+  ticket.
+- **New: `flow reject <n> --text <why>`** posts why a finding is not a ticket
+  and closes it as not planned; it refuses anything that is not an open
+  finding.
+- **New: `/flow:triage [<epic>]`** (`skills/triage/SKILL.md`): reads every
+  approved finding and its screenshots, decides ticket (criteria with a
+  CHECK proven red), not a ticket, or too big for one, shows one table, and
+  only after the user's go runs `promote`, `reject` or a comment naming
+  `/flow:epic`.
+- **The Action ignores findings.** Its `route` job runs on `flow:approved`
+  only for an issue labelled `flow:epic`, so approving a finding schedules
+  nothing, and its `ticket` job does not run for a `flow:start` on a
+  finding. Copy `github/flow.yml` again to pick this up.
+- **Findings are kept whole and never waited on.** `promote` treats a
+  `## Report` boundary as its own only when the text above it is a ticket it
+  wrote (an `Epic:` first line and criteria that decide it), so a finding
+  whose own text holds that sequence is kept in full. `create-ticket` and
+  `promote` refuse a finding as a blocker ("#7 is a finding, not a ticket: a
+  ticket can wait only for tickets"), because a ticket waiting on one would
+  wait for ever once it is rejected. `create-finding --epic` and `promote`
+  refuse a closed epic, and `--fingerprint` refuses `--!>` as well as `-->`.
+  The fingerprint search covers open findings and tickets only, so a rejected
+  finding can be filed again by a later run.
+- **New: a standing epic.** `/flow:epic --standing "<title>"` (usually
+  `Bugs`) writes an epic with `Delivery: incremental`, no `Branch:`, ground
+  rules from the project's testing rules, and an empty `## Tickets`, which
+  `create-epic` accepts; the person approves it like any epic, and triage
+  fills it over time. Its promoted tickets start from the default branch and
+  each opens its own pull request. `/flow:triage` puts a finding with no
+  epic under the open epic titled `Bugs` when there is exactly one.
+- **`dispatch` says `empty` for an approved epic with no tickets**, where it
+  said `stopped`. The Action's scheduler posts its "Run stopped" comment
+  only on `stopped`, so approving a standing epic before its first ticket no
+  longer posts that nothing is ready because tickets need a person.
+- **New: the reporter extension, `tools/reporter/`.** The Chrome extension
+  that weekendgoals kept under `tools/report-extension/` now lives here and
+  files Flow findings: an issue labelled `flow:found` (the new default
+  label), its first line the `<!-- flow:finding fingerprint=... -->` marker,
+  its body in the finding shape (What happened, Where, Steps, Expected,
+  Selected text, Screenshots), with new Steps and Expected fields in the
+  popup. Screenshots go to `findings/<id>/screenshot-<n>.<ext>` on the
+  `flow-findings` branch (the new default, started as an orphan branch with
+  a README when absent) and are linked by the commit that added each one.
+  A new Epic option makes the finding a sub-issue of that epic; when that
+  fails, the result line says why and the finding stays filed. It is now
+  called Flow Reporter and no longer defaults to one project's repository.
+  Its suite is `tools/reporter/reporter.test.mjs`, run in CI.
+
 ## 3.0.0 — 2026-10-15
 
 Flow moves its board from markdown files in the repository to GitHub Issues.

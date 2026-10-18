@@ -1,6 +1,6 @@
 # Flow: builds the tickets of an approved epic on GitHub, with nobody watching.
 # Copy this file to .github/workflows/flow.yml in your project.
-# Events made with the default GITHUB_TOKEN start no other workflow, so the scheduler labels tickets with FLOW_TOKEN: a fine-grained personal access token or a GitHub App token (contents, issues and pull requests: read and write).
+# Events made with the default GITHUB_TOKEN start no other workflow, so the scheduler labels tickets with FLOW_TOKEN: a fine-grained personal access token or a GitHub App token (contents, issues and pull requests: read and write; add projects: read and write to keep a linked project board's Status in step).
 name: flow
 
 on:
@@ -37,7 +37,7 @@ env:
 
 jobs:
   ticket:
-    if: (github.event_name == 'issues' && github.event.label.name == 'flow:start') || github.event_name == 'workflow_dispatch'
+    if: (github.event_name == 'issues' && github.event.label.name == 'flow:start' && !contains(github.event.issue.labels.*.name, 'flow:found')) || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 240
     concurrency:
@@ -106,7 +106,7 @@ jobs:
           if $FLOW reset "$TICKET" --once; then echo "ran=true" >> "$GITHUB_OUTPUT"; fi
 
   route:
-    if: github.event_name == 'issues' && (github.event.label.name == 'flow:approved' || github.event.label.name == 'flow:start')
+    if: github.event_name == 'issues' && ((github.event.label.name == 'flow:approved' && contains(github.event.issue.labels.*.name, 'flow:epic')) || github.event.label.name == 'flow:start')
     runs-on: ubuntu-latest
     outputs:
       epic: ${{ steps.find.outputs.epic }}

@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url'
 const FLAGS_WITH_VALUES = new Set(['-X', '--method', '--input', '-f', '-F', '--field', '--raw-field', '-H', '--header', '--jq', '-q', '--template', '-t', '--hostname', '--cache'])
 const FIELD_FLAGS = new Set(['-f', '-F', '--field', '--raw-field'])
 
-export function fixtureKey(args) {
+export function fixtureKey(args, stdin = null) {
   if (args[0] !== 'api') return args.join(' ')
   let method = null
   let path = null
@@ -19,6 +19,11 @@ export function fixtureKey(args) {
       if (arg === '--input') hasInput = true
       if (FIELD_FLAGS.has(arg)) fields.push(value)
     } else if (!arg.startsWith('-') && path === null) path = arg
+  }
+  if (path === 'graphql' && hasInput && stdin !== null) {
+    const sent = JSON.parse(stdin).variables || {}
+    const scalars = Object.entries(sent).filter(([, value]) => value !== null && typeof value !== 'object')
+    return ['graphql', ...scalars.map(([name, value]) => `${name}=${value}`).sort()].join(' ')
   }
   if (path === 'graphql') {
     const variables = fields.filter((field) => !field.startsWith('query=')).sort()
@@ -70,7 +75,7 @@ function sequenceStep(response, key) {
 function serve(args) {
   const usesStdin = args.includes('--input') && args[args.indexOf('--input') + 1] === '-'
   const stdin = usesStdin ? readFileSync(0, 'utf8') : null
-  const key = fixtureKey(args)
+  const key = fixtureKey(args, stdin)
   appendFileSync(process.env.FAKE_GH_LOG, `${JSON.stringify({ key, args, stdin, repo: process.env.GH_REPO || null })}\n`)
   const fixtures = JSON.parse(readFileSync(process.env.FAKE_GH_FIXTURES, 'utf8'))
   if (!(key in fixtures)) {

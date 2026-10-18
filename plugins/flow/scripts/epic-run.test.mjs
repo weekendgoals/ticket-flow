@@ -117,7 +117,7 @@ const DEFAULT_TICKETS = {
   4: { title: 'Export name', labels: ['flow:ticket', 'flow:planned'], criteria: '- the name\n  CHECK: test -f name.txt', blockedBy: 'Blocked by: #2' },
 }
 
-function world({ epicLabels = ['flow:epic', 'flow:approved'], epic = {}, tickets = {}, comments = {}, extra = {} } = {}) {
+function world({ epicLabels = ['flow:epic', 'flow:approved'], epic = {}, tickets = {}, comments = {}, findings = [], extra = {} } = {}) {
   const epicIssue = issue(1, { title: 'Trip export', body: epicBody(epic), labels: epicLabels })
   const merged = Object.fromEntries(Object.entries(DEFAULT_TICKETS).map(([number, base]) => [number, { ...base, ...(tickets[number] || {}) }]))
   const issues = Object.entries(merged).map(([number, ticket]) => issue(Number(number), { title: ticket.title, body: ticketBody(ticket.criteria, ticket.blockedBy || ''), labels: ticket.labels, assignees: ticket.assignees || [] }))
@@ -125,12 +125,14 @@ function world({ epicLabels = ['flow:epic', 'flow:approved'], epic = {}, tickets
     [`GET ${R}`]: { full_name: 'o/r', default_branch: 'main', has_issues: true },
     graphql: { data: { viewer: { login: 'flow-bot' } } },
     [`GET ${R}/issues/1`]: epicIssue,
-    [`GET ${R}/issues/1/sub_issues?per_page=100`]: issues,
+    [`GET ${R}/issues/1/sub_issues?per_page=100`]: [...issues, ...findings],
     [`GET ${R}/issues/1/comments?per_page=100`]: comments[1] || [],
     [`POST ${R}/issues/1/comments`]: { id: 1, html_url: 'https://github.com/o/r/issues/1#issuecomment-1' },
     [`PATCH ${R}/issues/1`]: epicIssue,
+    'graphql name={repo} owner={owner}': { data: { repository: { projectsV2: { nodes: [] } } } },
     ...extra,
   }
+  for (const found of findings) fixtures[`GET ${R}/issues/${found.number}`] = found
   for (const ticket of issues) {
     const number = ticket.number
     fixtures[`GET ${R}/issues/${number}`] = ticket
@@ -540,4 +542,189 @@ test('the git step itself refuses to merge into a branch outside epic/, whatever
   const result = mergeIntoEpic(repo.work, { sha, epicBranch: 'main', subject: 'Merge #2' })
   assert.deepEqual([result.ok, result.kind], [false, 'not-an-epic-branch'])
   assert.equal(git(repo.remote, 'rev-parse', 'main'), before)
+})
+
+const finding = (number, { approved = false, body = '## What happened\n\nThe button does nothing.\n' } = {}) =>
+  issue(number, { title: `finding ${number}`, body, labels: ['flow:found', ...(approved ? ['flow:approved'] : [])], author: 'reporter' })
+
+test('create-finding --screenshots commits the images to the orphan flow-findings branch, pushes it and links each by commit, leaving the checkout alone', () => {
+  const repo = repository()
+  const shots = join(repo.root, 'shots')
+  mkdirSync(shots)
+  writeFileSync(join(shots, 'cart page.png'), 'png bytes')
+  writeFileSync(join(shots, 'menu.webp'), 'webp bytes')
+  writeFileSync(join(shots, '.DS_Store'), 'ignored')
+  const body = join(repo.root, 'finding.md')
+  writeFileSync(body, '## What happened\n\nThe cart is empty.\n')
+  const head = git(repo.work, 'rev-parse', 'HEAD')
+  const fixtures = (number) => ({
+    [`GET ${R}`]: { full_name: 'o/r', default_branch: 'main', has_issues: true },
+    [`POST ${R}/issues`]: finding(number),
+    [`PATCH ${R}/issues/${number}`]: finding(number),
+  })
+  fake.setFixtures(fixtures(95))
+  const first = flow(repo.work, ['create-finding', '--title', 'Empty cart', '--file', body, '--screenshots', shots])
+  assert.equal(first.status, 0, first.stderr)
+  assert.equal(first.stdout.trim(), '95')
+  const tip = git(repo.remote, 'rev-parse', 'flow-findings')
+  assert.equal(git(repo.remote, 'rev-list', '--count', 'flow-findings'), '1', 'an orphan branch: nothing of the code rides along')
+  assert.deepEqual(git(repo.remote, 'ls-tree', '-r', '--name-only', 'flow-findings').split('\n'), ['README.md', 'findings/95/cart page.png', 'findings/95/menu.webp'])
+  assert.match(git(repo.remote, 'show', 'flow-findings:README.md'), /holds only the screenshots of Flow findings/)
+  assert.equal(git(repo.remote, 'show', 'flow-findings:findings/95/cart page.png'), 'png bytes')
+  const patched = JSON.parse(fake.calls().find((call) => call.key === `PATCH ${R}/issues/95`).stdin).body
+  assert.equal(
+    patched,
+    `## What happened\n\nThe cart is empty.\n\n## Screenshots\n\n1. ![cart page.png](https://github.com/o/r/blob/${tip}/findings/95/cart%20page.png?raw=true)\n2. ![menu.webp](https://github.com/o/r/blob/${tip}/findings/95/menu.webp?raw=true)\n`,
+  )
+  assert.deepEqual([git(repo.work, 'rev-parse', 'HEAD'), git(repo.work, 'symbolic-ref', '--short', 'HEAD'), git(repo.work, 'status', '--porcelain')], [head, 'main', ''])
+  fake.clearCalls()
+  fake.setFixtures(fixtures(96))
+  const second = flow(repo.work, ['create-finding', '--title', 'Menu', '--file', body, '--screenshots', shots])
+  assert.equal(second.status, 0, second.stderr)
+  assert.equal(git(repo.remote, 'rev-parse', 'flow-findings^'), tip, 'the next finding adds a commit on top')
+  assert.ok(git(repo.remote, 'ls-tree', '-r', '--name-only', 'flow-findings').split('\n').includes('findings/95/menu.webp'), 'earlier findings keep their images')
+  writeFileSync(join(shots, 'notes.txt'), 'not an image')
+  fake.clearCalls()
+  const refused = flow(repo.work, ['create-finding', '--title', 'x', '--file', body, '--screenshots', shots])
+  assert.equal(refused.status, 2)
+  assert.match(refused.stderr, /holds notes\.txt, which is not a PNG, JPEG or WebP image/)
+  assert.deepEqual(fake.calls(), [], 'nothing is filed before the images are known to be images')
+})
+
+test('start refuses a finding without asking a person, even unattended: it is not a ticket yet', () => {
+  const repo = repository()
+  world({ findings: [finding(7, { approved: true })] })
+  const result = flow(repo.work, ['start', '7'], { FLOW_UNATTENDED: '1' })
+  assert.equal(result.status, 1)
+  assert.match(result.stderr, /#7 is a finding \(flow:found\), not a ticket, so nothing starts from it/)
+  assert.deepEqual([added(7), posted(7)], [[], []])
+})
+
+test('findings under an epic leave the run alone: dispatch still says built, and the release pull request opens without them', () => {
+  const done = { 2: { labels: ['flow:ticket', 'flow:done'] }, 3: { labels: ['flow:ticket', 'flow:done'] }, 4: { labels: ['flow:ticket', 'flow:done'] } }
+  world({
+    tickets: done,
+    findings: [finding(7, { approved: true }), finding(8)],
+    extra: {
+      [`GET ${R}/pulls?head=o%3Aepic%2Ftrip-export&state=open&per_page=100`]: [],
+      [`POST ${R}/pulls`]: { number: 41, html_url: 'https://github.com/o/r/pull/41', head: { ref: 'epic/trip-export', sha: 'c'.repeat(40) }, base: { ref: 'main' } },
+    },
+  })
+  const dispatched = flow(directory, ['dispatch', '1'])
+  assert.equal(dispatched.status, 0, dispatched.stderr)
+  assert.deepEqual([JSON.parse(dispatched.stdout).state, JSON.parse(dispatched.stdout).started], ['built', []])
+  assert.deepEqual([added(7), added(8)], [[], []])
+  const released = flow(directory, ['release-pr', '1'])
+  assert.equal(released.status, 0, released.stderr)
+  const request = JSON.parse(fake.calls().find((call) => call.key === `POST ${R}/pulls`).stdin)
+  assert.match(request.body, /Closes #2\nCloses #3\nCloses #4\nCloses #1\n/)
+  assert.doesNotMatch(request.body, /#7|#8/, 'a finding is neither shipped nor closed by the release')
+  const merged = flow(repository().work, ['merge', '--epic', '1'])
+  assert.deepEqual(JSON.parse(merged.stdout), { epic: 1, merged: [], notMerged: [] })
+  fake.clearCalls()
+  world({ tickets: { ...done, 3: { labels: ['flow:ticket', 'flow:in-progress'] } }, findings: [finding(7)] })
+  const refused = flow(directory, ['release-pr', '1'])
+  assert.equal(refused.status, 1)
+  assert.match(refused.stderr, /not every ticket of epic #1 is done \(#3 in-progress\);/)
+})
+
+const STANDING_EPIC = `## Outcome
+
+The site stays correct: what people report gets fixed, one small pull request at a time.
+
+## Settings
+
+Delivery: incremental
+Parallel: 1
+
+## Ground rules
+
+- Component tests by default; a browser test only for a whole journey.
+- Translations last.
+- Every ticket is its own pull request into the default branch.
+
+## Tickets
+`
+
+test('a standing epic with no Branch and no tickets is created, waits with "no tickets", and a ticket promoted into it starts from the default branch and opens its own pull request', () => {
+  const repo = repository()
+  const epicFile = join(repo.root, 'standing.md')
+  writeFileSync(epicFile, STANDING_EPIC)
+  const bugs = issue(1, { title: 'Bugs', body: STANDING_EPIC, labels: ['flow:epic', 'flow:approved'] })
+  const reported = finding(7, { approved: true, body: '## What happened\n\nThe export button does nothing.\n\n## Where\n\nhttps://example.com/trips at 390 wide\n' })
+  const base = {
+    [`GET ${R}`]: { full_name: 'o/r', default_branch: 'main', has_issues: true },
+    graphql: { data: { viewer: { login: 'flow-bot' } } },
+    'graphql name={repo} owner={owner}': { data: { repository: { projectsV2: { nodes: [] } } } },
+    [`GET ${R}/issues/1`]: bugs,
+    [`GET ${R}/issues/1/comments?per_page=100`]: [],
+  }
+  fake.setFixtures({ ...base, [`POST ${R}/issues`]: issue(1, { title: 'Bugs', body: STANDING_EPIC, labels: ['flow:epic'] }) })
+  const created = flow(repo.work, ['create-epic', '--file', epicFile, '--title', 'Bugs'])
+  assert.equal(created.status, 0, created.stderr)
+  assert.equal(created.stdout.trim(), '1')
+
+  fake.setFixtures({ ...base, [`GET ${R}/issues/1/sub_issues?per_page=100`]: [reported], [`GET ${R}/issues/7`]: reported })
+  const empty = flow(repo.work, ['next', '1'])
+  assert.equal(empty.status, 1)
+  assert.match(empty.stderr, /epic #1 has no tickets/)
+  const idle = flow(repo.work, ['dispatch', '1'])
+  assert.equal(idle.status, 0, idle.stderr)
+  assert.equal(JSON.parse(idle.stdout).state, 'empty', 'an approved epic waiting for its first ticket is not a stopped run')
+
+  const draft = join(repo.root, 'ticket.md')
+  writeFileSync(draft, '## Scope\n\n- make the export button export\n\n## Not in scope\n\n- the format\n\n## Acceptance criteria\n\n```criteria\n- the export exists\n  CHECK: test -f export.txt\n```\n')
+  fake.clearCalls()
+  fake.setFixtures({
+    ...base,
+    [`GET ${R}/issues/1/sub_issues?per_page=100`]: [reported],
+    [`GET ${R}/issues/7`]: reported,
+    [`GET ${R}/issues/7/parent`]: bugs,
+    [`PATCH ${R}/issues/7`]: reported,
+    [`PUT ${R}/issues/7/labels`]: [],
+    [`PATCH ${R}/issues/1`]: bugs,
+  })
+  const promoted = flow(repo.work, ['promote', '7', '--file', draft, '--tier', 'easy', '--epic', '1'])
+  assert.equal(promoted.status, 0, promoted.stderr)
+  const body = JSON.parse(fake.calls().find((call) => call.key === `PATCH ${R}/issues/7`).stdin).body
+  const labels = JSON.parse(fake.calls().find((call) => call.key === `PUT ${R}/issues/7/labels`).stdin).labels
+  assert.deepEqual(labels, ['flow:ticket', 'flow:planned', 'tier:easy'])
+  assert.match(JSON.parse(fake.calls().find((call) => call.key === `PATCH ${R}/issues/1`).stdin).body, /## Tickets\n\n- \[ \] #7 — finding 7/)
+
+  const ticketIssue = issue(7, { title: 'finding 7', body, labels })
+  const listed = issue(1, { title: 'Bugs', body: `${STANDING_EPIC}\n- [ ] #7 — finding 7\n`, labels: ['flow:epic', 'flow:approved'] })
+  const asTicket = (extra) => ({
+    ...base,
+    [`GET ${R}/issues/1`]: listed,
+    [`GET ${R}/issues/1/sub_issues?per_page=100`]: [ticketIssue],
+    [`GET ${R}/issues/7`]: ticketIssue,
+    [`POST ${R}/issues/7/labels`]: [],
+    [`DELETE ${R}/issues/7/labels/flow%3Aplanned`]: null,
+    [`POST ${R}/issues/7/comments`]: { id: 7, html_url: null },
+    ...extra,
+  })
+  fake.clearCalls()
+  fake.setFixtures(asTicket({}))
+  const started = flow(repo.work, ['start', '7'])
+  assert.equal(started.status, 0, started.stderr)
+  const start = JSON.parse(started.stdout)
+  assert.deepEqual([start.delivery, start.base, start.branch, start.baseSha], ['incremental', 'main', 'ticket/7', git(repo.remote, 'rev-parse', 'main')])
+
+  const sha = commitFile(repo.work, 'export.txt', 'trip\n', '#7: the export button exports')
+  fake.clearCalls()
+  fake.setFixtures(
+    asTicket({
+      [`GET ${R}/issues/7`]: { ...ticketIssue, labels: ['flow:ticket', 'flow:in-review', 'tier:easy'].map((name) => ({ name })) },
+      [`GET ${R}/issues/7/comments?per_page=100`]: [STARTED, accepted(sha)],
+      [`GET ${R}/pulls?head=o%3Aticket%2F7&state=open&per_page=100`]: [],
+      [`POST ${R}/pulls`]: { number: 50, html_url: 'https://github.com/o/r/pull/50', state: 'open', head: { ref: 'ticket/7', sha }, base: { ref: 'main' } },
+    }),
+  )
+  const delivered = flow(repo.work, ['deliver', '7'])
+  assert.equal(delivered.status, 0, delivered.stderr)
+  assert.equal(git(repo.remote, 'rev-parse', 'ticket/7'), sha)
+  const request = JSON.parse(fake.calls().find((call) => call.key === `POST ${R}/pulls`).stdin)
+  assert.deepEqual([request.head, request.base], ['ticket/7', 'main'])
+  assert.match(request.body, /^Closes #7\./)
+  assert.ok(!fake.calls().some((call) => call.key.includes('epic%2F')), 'no epic branch is involved')
 })

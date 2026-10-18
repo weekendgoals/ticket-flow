@@ -127,6 +127,23 @@ export function addSubIssue(parentNumber, childId) {
   apiWrite('POST', `${REPO}/issues/${parentNumber}/sub_issues`, { sub_issue_id: childId })
 }
 
+export function closeIssue(number, reason = 'not_planned') {
+  return normalizeIssue(apiWrite('PATCH', `${REPO}/issues/${number}`, { state: 'closed', state_reason: reason }))
+}
+
+export function removeSubIssue(parentNumber, childId) {
+  apiWrite('DELETE', `${REPO}/issues/${parentNumber}/sub_issue`, { sub_issue_id: childId })
+}
+
+export function parentIssue(number) {
+  try {
+    return normalizeIssue(apiGet(`${REPO}/issues/${number}/parent`))
+  } catch (error) {
+    if (error instanceof TrackerError && error.httpStatus === 404) return null
+    throw error
+  }
+}
+
 export function setLabels(number, labels) {
   apiWrite('PUT', `${REPO}/issues/${number}/labels`, { labels })
 }
@@ -204,15 +221,22 @@ export function bodyEditHistory(number) {
     .sort((a, b) => a.editedAt.localeCompare(b.editedAt))
 }
 
+function graphqlData(response) {
+  if (response.errors && response.errors.length) throw new TrackerError(`GitHub GraphQL refused the request: ${response.errors.map((error) => error.message).join('; ')}`)
+  return response.data
+}
+
 function graphql(query, variables, { inRepository = true } = {}) {
   const args = ['api', 'graphql', '-f', `query=${query}`, ...(inRepository ? ['-F', 'owner={owner}', '-F', 'name={repo}'] : [])]
   for (const [name, value] of Object.entries(variables)) {
     if (value === null || value === undefined) continue
     args.push(typeof value === 'number' ? '-F' : '-f', `${name}=${value}`)
   }
-  const response = parseJson(runGh(args), 'graphql')
-  if (response.errors && response.errors.length) throw new TrackerError(`GitHub GraphQL refused the request: ${response.errors.map((error) => error.message).join('; ')}`)
-  return response.data
+  return graphqlData(parseJson(runGh(args), 'graphql'))
+}
+
+function graphqlWithInput(query, variables) {
+  return graphqlData(parseJson(runGh(['api', 'graphql', '--input', '-'], { input: JSON.stringify({ query, variables }) }), 'graphql'))
 }
 
 function normalizePullRequest(raw) {
@@ -345,4 +369,108 @@ export function viewerLogin(environment = process.env) {
   if (!login) throw new TrackerError(`GitHub did not say which account \`gh\` is signed in as; ${ACCOUNT_HINT}`)
   viewerLoginOnce = login
   return login
+}
+
+const STATUS_FIELD_SELECTION = 'field(name:"Status"){... on ProjectV2SingleSelectField{id options{id name color description}}}'
+const LINKED_PROJECTS_QUERY = `query($owner:String!,$name:String!){repository(owner:$owner,name:$name){id owner{id} projectsV2(first:20){nodes{id title ${STATUS_FIELD_SELECTION}}}}}`
+
+function normalizeProject(node) {
+  return {
+    id: node.id,
+    title: node.title,
+    statusField:
+      node.field && node.field.id
+        ? { id: node.field.id, options: (node.field.options || []).map((option) => ({ id: option.id, name: option.name, color: option.color || null, description: option.description || '' })) }
+        : null,
+  }
+}
+
+export function linkedProjects() {
+  const data = graphql(LINKED_PROJECTS_QUERY, {})
+  const repository = data && data.repository
+  if (!repository) throw new TrackerError('GitHub did not return this repository')
+  const nodes = (repository.projectsV2 && repository.projectsV2.nodes) || []
+  return { repositoryId: repository.id || null, ownerId: (repository.owner && repository.owner.id) || null, projects: nodes.filter(Boolean).map(normalizeProject) }
+}
+
+const ISSUE_PROJECT_ITEMS_QUERY =
+  'query($owner:String!,$name:String!,$issue:Int!){repository(owner:$owner,name:$name){issue(number:$issue){id projectItems(first:20){nodes{id project{id} fieldValueByName(name:"Status"){... on ProjectV2ItemFieldSingleSelectValue{optionId name}}}}}}}'
+
+export function issueProjectItems(number) {
+  const data = graphql(ISSUE_PROJECT_ITEMS_QUERY, { issue: number })
+  const issue = data && data.repository && data.repository.issue
+  if (!issue) throw new TrackerError(`issue #${number} was not found`)
+  const nodes = (issue.projectItems && issue.projectItems.nodes) || []
+  return {
+    id: issue.id,
+    items: nodes.filter(Boolean).map((node) => ({
+      id: node.id,
+      projectId: node.project ? node.project.id : null,
+      status: node.fieldValueByName && node.fieldValueByName.optionId ? { optionId: node.fieldValueByName.optionId, name: node.fieldValueByName.name || null } : null,
+    })),
+  }
+}
+
+const ADD_PROJECT_ITEM_MUTATION = 'mutation($project:ID!,$content:ID!){addProjectV2ItemById(input:{projectId:$project,contentId:$content}){item{id}}}'
+const SET_SINGLE_SELECT_MUTATION =
+  'mutation($project:ID!,$item:ID!,$field:ID!,$option:String!){updateProjectV2ItemFieldValue(input:{projectId:$project,itemId:$item,fieldId:$field,value:{singleSelectOptionId:$option}}){projectV2Item{id}}}'
+const CREATE_PROJECT_MUTATION = `mutation($ownerId:ID!,$title:String!){createProjectV2(input:{ownerId:$ownerId,title:$title}){projectV2{id title ${STATUS_FIELD_SELECTION}}}}`
+const SET_FIELD_OPTIONS_MUTATION =
+  'mutation($field:ID!,$options:[ProjectV2SingleSelectFieldOptionInput!]!){updateProjectV2Field(input:{fieldId:$field,singleSelectOptions:$options}){projectV2Field{... on ProjectV2SingleSelectField{id options{id name}}}}}'
+const LINK_PROJECT_MUTATION = 'mutation($project:ID!,$repository:ID!){linkProjectV2ToRepository(input:{projectId:$project,repositoryId:$repository}){repository{id}}}'
+
+export function addProjectItem(projectId, contentId) {
+  const data = graphql(ADD_PROJECT_ITEM_MUTATION, { project: projectId, content: contentId }, { inRepository: false })
+  const item = data && data.addProjectV2ItemById && data.addProjectV2ItemById.item
+  if (!item) throw new TrackerError('GitHub did not return the new project item')
+  return item.id
+}
+
+export function setProjectSingleSelect(projectId, itemId, fieldId, optionId) {
+  graphql(SET_SINGLE_SELECT_MUTATION, { project: projectId, item: itemId, field: fieldId, option: optionId }, { inRepository: false })
+}
+
+export function createProject(ownerId, title) {
+  const data = graphql(CREATE_PROJECT_MUTATION, { ownerId, title }, { inRepository: false })
+  const project = data && data.createProjectV2 && data.createProjectV2.projectV2
+  if (!project) throw new TrackerError('GitHub did not return the new project')
+  return normalizeProject(project)
+}
+
+export function setSingleSelectOptions(fieldId, options) {
+  const data = graphqlWithInput(SET_FIELD_OPTIONS_MUTATION, {
+    field: fieldId,
+    options: options.map((option) => ({ name: option.name, color: option.color || 'GRAY', description: option.description || '' })),
+  })
+  const field = data && data.updateProjectV2Field && data.updateProjectV2Field.projectV2Field
+  if (!field) throw new TrackerError('GitHub did not return the changed field')
+  return { fieldId: field.id || fieldId, options: (field.options || []).map((option) => ({ id: option.id, name: option.name })) }
+}
+
+const PROJECT_ITEMS_QUERY =
+  'query($project:ID!,$cursor:String){node(id:$project){... on ProjectV2{items(first:100,after:$cursor){pageInfo{hasNextPage endCursor}nodes{id content{__typename ... on Issue{number repository{id}} ... on PullRequest{number repository{id}}} fieldValueByName(name:"Status"){... on ProjectV2ItemFieldSingleSelectValue{optionId name}}}}}}}'
+
+export function projectItems(projectId) {
+  const items = []
+  let cursor = null
+  for (;;) {
+    const data = graphql(PROJECT_ITEMS_QUERY, { project: projectId, cursor }, { inRepository: false })
+    const page = data && data.node && data.node.items
+    if (!page) throw new TrackerError(`GitHub did not return the items of project ${projectId}`)
+    for (const node of page.nodes.filter(Boolean))
+      items.push({
+        id: node.id,
+        kind: node.content && node.content.__typename ? node.content.__typename : null,
+        number: node.content && node.content.number ? node.content.number : null,
+        repositoryId: node.content && node.content.repository ? node.content.repository.id : null,
+        status: node.fieldValueByName && node.fieldValueByName.optionId ? { optionId: node.fieldValueByName.optionId, name: node.fieldValueByName.name || null } : null,
+      })
+    if (!page.pageInfo.hasNextPage) return items
+    if (!page.pageInfo.endCursor || page.pageInfo.endCursor === cursor) throw new TrackerError(`GitHub returned a page of project items with no way to the next one`)
+    cursor = page.pageInfo.endCursor
+  }
+}
+
+export function linkProjectToRepository(projectId, repositoryId) {
+  graphql(LINK_PROJECT_MUTATION, { project: projectId, repository: repositoryId }, { inRepository: false })
 }

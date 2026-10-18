@@ -175,3 +175,90 @@ test('every job runs as one named account: github-actions[bot] without FLOW_TOKE
   assert.equal(workflow.env.FLOW_ACCOUNT, "${{ vars.FLOW_ACCOUNT || (secrets.FLOW_TOKEN == '' && 'github-actions[bot]' || '') }}")
   assert.ok(Object.values(workflow.jobs).every((job) => !job.env || !('FLOW_ACCOUNT' in job.env)), 'no job overrides it')
 })
+
+test('the finding template files an issue labelled flow:found, in the shape the README recommends', () => {
+  const template = readFileSync(join(dirname(templatePath), 'finding.md'), 'utf8')
+  assert.match(template, /^---\nname: Finding\n[\s\S]*?^labels: flow:found$[\s\S]*?^---$/m)
+  assert.deepEqual(template.match(/^## .+$/gm), ['## What happened', '## Where', '## Steps', '## Expected', '## Screenshots'])
+})
+
+function evaluateCondition(expression, context) {
+  const tokens = expression.match(/\(|\)|&&|\|\||==|!=|!|,|'[^']*'|[\w.*-]+/g)
+  let at = 0
+  const peek = () => tokens[at]
+  const take = (expected) => {
+    const token = tokens[at++]
+    if (expected !== undefined && token !== expected) throw new Error(`expected ${expected}, got ${token} in ${expression}`)
+    return token
+  }
+  const lookup = (path) => {
+    const spread = path.split('.*.')
+    const base = spread[0].split('.').reduce((value, key) => (value == null ? undefined : value[key]), context)
+    if (spread.length === 1) return base
+    return (base || []).map((item) => spread[1].split('.').reduce((value, key) => (value == null ? undefined : value[key]), item))
+  }
+  const primary = () => {
+    const token = take()
+    if (token === '(') {
+      const value = either()
+      take(')')
+      return value
+    }
+    if (token === '!') return !primary()
+    if (token.startsWith("'")) return token.slice(1, -1)
+    if (token === 'contains') {
+      take('(')
+      const haystack = either()
+      take(',')
+      const needle = either()
+      take(')')
+      return Array.isArray(haystack) ? haystack.includes(needle) : String(haystack ?? '').includes(needle)
+    }
+    return lookup(token)
+  }
+  const comparison = () => {
+    const left = primary()
+    if (peek() === '==' || peek() === '!=') {
+      const operator = take()
+      const right = primary()
+      return operator === '==' ? left === right : left !== right
+    }
+    return left
+  }
+  const both = () => {
+    let value = comparison()
+    while (peek() === '&&') {
+      take()
+      const right = comparison()
+      value = value && right
+    }
+    return value
+  }
+  const either = () => {
+    let value = both()
+    while (peek() === '||') {
+      take()
+      const right = both()
+      value = value || right
+    }
+    return value
+  }
+  const value = either()
+  if (at !== tokens.length) throw new Error(`could not read ${expression} past ${tokens[at]}`)
+  return Boolean(value)
+}
+
+const labelEvent = (label, labels) => ({ github: { event_name: 'issues', event: { label: { name: label }, issue: { number: 7, labels: labels.map((name) => ({ name })) } } } })
+
+test('approving a finding starts nothing: the route job runs on flow:approved only for an epic, and a finding asked to start builds nothing', () => {
+  const route = workflow.jobs.route.if
+  const ticket = workflow.jobs.ticket.if
+  assert.equal(evaluateCondition(route, labelEvent('flow:approved', ['flow:epic', 'flow:approved'])), true, 'an approved epic is scheduled')
+  assert.equal(evaluateCondition(route, labelEvent('flow:approved', ['flow:found', 'flow:approved'])), false, 'an approved finding waits for triage')
+  assert.equal(evaluateCondition(route, labelEvent('flow:approved', ['bug', 'flow:approved'])), false, 'any other issue too')
+  assert.equal(evaluateCondition(route, labelEvent('flow:start', ['flow:ticket', 'flow:planned', 'flow:start'])), true)
+  assert.equal(evaluateCondition(ticket, labelEvent('flow:start', ['flow:ticket', 'flow:planned', 'flow:start'])), true)
+  assert.equal(evaluateCondition(ticket, labelEvent('flow:start', ['flow:found', 'flow:start'])), false, 'a finding is not a ticket, so no build is paid for')
+  assert.equal(evaluateCondition(ticket, { github: { event_name: 'workflow_dispatch', event: {} } }), true)
+  assert.equal(workflow.jobs.epic.if, "always() && needs.route.outputs.epic != ''", 'with route skipped the scheduler has no epic and does not run')
+})

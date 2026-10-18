@@ -6,8 +6,9 @@ them in **GitHub Issues**. GitHub is the board; git is the proof.
 This is **Flow 3.0**: planning (`/flow:epic`), building one ticket
 (`/flow:ticket`, `/flow:quick`, `/flow:review`), building a whole epic with
 nobody watching (`/flow:run` here, or the GitHub Action in your project),
-looking back at a finished epic (`flow stats`, `/flow:retro`) and the `flow`
-command-line tool.
+looking back at a finished epic (`flow stats`, `/flow:retro`), bugs and ideas
+that arrive before they are tickets (findings and `/flow:triage`), and the
+`flow` command-line tool.
 
 ## Install
 
@@ -20,7 +21,7 @@ You also need the GitHub CLI, signed in: `gh auth login`. Then, once per
 repository:
 
 ```bash
-node <plugin root>/scripts/flow.mjs init      # creates the labels
+node <plugin root>/scripts/flow.mjs init      # creates the labels (--board: and a project board, see below)
 node <plugin root>/scripts/flow.mjs doctor    # prints "ok" when everything is in place
 ```
 
@@ -100,7 +101,9 @@ Blocked by: #12, #13
 | `flow:needs-human` | Stopped; a person has to decide something |
 
 One more label is not a state: `flow:start` asks the GitHub Action to start
-building a ticket now, and `flow start` takes it off.
+building a ticket now, and `flow start` takes it off. And `flow:found` marks
+an issue that is not a ticket at all but a finding (see
+[Findings](#findings-bugs-and-ideas-before-they-are-tickets)).
 
 "Ready" and "waiting" are never labels; they are worked out each time. A
 planned ticket is **ready** when its epic has `flow:approved` (the sign-off),
@@ -122,6 +125,68 @@ ends `(fixes #9)`. Under `Delivery: release` every ticket is merged into
 `epic/<name>` and the epic gets one pull request at the end; under
 `Delivery: incremental` each ticket opens its own pull request. **A person
 always merges into the default branch, and nothing runs after that merge.**
+
+## The project board
+
+A GitHub Project can show the same work as columns, one swimlane per epic. It
+is optional, and it is only a view: the labels stay the only record of a
+ticket's state, and Flow never takes a state from the project.
+
+1. Run `flow init --board [<title>]` (locally, after
+   `gh auth refresh -s project`). It works on the linked project with that
+   title (`Flow` unless you give one; case does not matter), else on the
+   only linked project with a `Status` field; with several such projects
+   and none of that title it refuses (exit 2), lists them, and asks for the
+   title of the one to use. It also refuses, changing nothing, when another
+   linked project already carries all six options, since Flow would go on
+   writing to that one. With no project linked, it creates one with the
+   title, sets its `Status` options to `Planned`, `In progress`,
+   `In review`, `Done`, `Needs human` and `Epic`, and links it. On an
+   existing project whose `Status` lacks some of them, it adds the missing
+   ones and **keeps every option and every item's status**: GitHub gives
+   every option a new id when the list changes, so the command first reads
+   each item's `Status`, then sets it back by name, and says how many it
+   restored (an item GitHub refuses is named and the command exits 1;
+   `flow board-sync` then restores every Flow issue from its labels, and a
+   draft or pull request is set by hand). With all six already there, it
+   only names the project. After a change it prints
+   `Flow writes to: <title>`, the board every state change will use.
+2. Two steps the GitHub API cannot do, which `init --board` reminds you of
+   when it creates the project: use the Board layout and set Swimlanes to
+   "Parent issue", so every epic becomes one swimlane with its tickets in
+   it; and optionally turn on the project's auto-add workflow with the
+   filter `is:issue label:flow:ticket,flow:epic`, so issues made by hand
+   show up too.
+3. On a fresh board, or one that fell behind (it was linked late, or a token
+   could not write to it for a while), run `flow board-sync [<epic>]`: it
+   sets every open epic and its tickets, and every ticket with no epic, to
+   the `Status` its labels say, adding any that are missing. It reads each
+   item's current `Status` only to leave a right one alone.
+
+From then on every command that changes a state label also moves the issue
+to the matching `Status`, right after the label has changed: `label`,
+`start`, `merge` and `deliver` when they mark a ticket done, `reset`,
+`needs-human`, and every step that hands a ticket to a person. `create-epic`
+and `create-ticket` add the new issue to the project (as `Epic` or
+`Planned`). Flow uses the first linked project whose `Status` has all six
+options; `flow doctor` names it. With several boards linked, the one that
+carries all six option names is the one Flow writes to, whatever title was
+given to `init --board`.
+
+Locally, `gh` needs the `project` scope: `gh auth refresh -s project`. On
+GitHub, `FLOW_TOKEN` needs the Projects permission (read and write). When no
+project is linked, or the token cannot read the repository's projects, the
+commands say nothing: nobody asked for a board, and `flow doctor` is where
+you see why none was found. When a linked project's `Status` lacks some of
+the six options, or a board was found but the issue could not be added or
+moved, the command prints one line starting `project board not updated:`.
+Either way it carries on and exits exactly as it would have. `init --board`
+and `board-sync` are the exception: they were asked to touch the board, so
+a refusal there exits 1 with that hint.
+
+A finding is not on the board: `flow create-finding` adds nothing to the
+project, and the issue joins it, as `Planned`, only when `flow promote` turns
+it into a ticket.
 
 ## `/flow:epic`
 
@@ -326,7 +391,9 @@ your project's `.github/workflows/`, then add these repository secrets:
 - `FLOW_TOKEN`: a fine-grained personal access token or a GitHub App token
   with read and write access to contents, issues and pull requests. Labels
   added with the default `GITHUB_TOKEN` start no other workflow, and the
-  scheduler starts tickets by adding a label.
+  scheduler starts tickets by adding a label. To keep a
+  [project board](#the-project-board) in step, give it the Projects
+  permission (read and write) too.
 
 Flow trusts its own comments only from the account it runs as, and asks
 GitHub which that is. A GitHub App's installation token, and the default
@@ -353,9 +420,9 @@ The jobs:
 
 | Job | Runs when | What it does |
 |---|---|---|
-| `route` | the epic gets `flow:approved`, or a ticket `flow:start` | Reads the epic's number from the event alone, so every scheduler run of one epic waits for the last |
+| `route` | the epic gets `flow:approved` (an issue that is not an epic, such as a finding, starts nothing), or a ticket `flow:start` | Reads the epic's number from the event alone, so every scheduler run of one epic waits for the last |
 | `epic` | after `route`, and after every ticket | Withdraws a start request whose `ticket` job failed before it could, then `flow dispatch`: adds `flow:start` to up to `Parallel:` ready tickets. When everything is built: `flow check-epic`, then `flow release-pr` (which reuses an open one), and asks the review bot. Never runs Claude |
-| `ticket` | a ticket gets `flow:start`, or by hand with a ticket number | Runs `/flow:ticket #<n> --unattended --no-merge` on the tier's model, posts the cost from the run's output, keeps the screenshots as an artifact, and resets a run that died |
+| `ticket` | a ticket gets `flow:start` (a finding does not run it), or by hand with a ticket number | Runs `/flow:ticket #<n> --unattended --no-merge` on the tier's model, posts the cost from the run's output, keeps the screenshots as an artifact, and resets a run that died |
 | `merge` | after `ticket` | One at a time per epic: merges every accepted ticket into the epic branch in the epic's order (`flow merge --epic`), then checks them at the new head |
 | `pr` | a review is submitted, or checks fail, on a `ticket/` or `epic/` pull request | Runs one round of the pull request loop (`/flow:ticket --pr-loop <pr>`). A ticket's pull request is left to its `ticket` job, which runs its own loop, until the ticket is done |
 
@@ -372,6 +439,102 @@ payments, data migrations, deletion or shared infrastructure goes through
 The ticket reviewer's rules, run by hand on a range of commits. It reports
 and fixes nothing.
 
+## Findings: bugs and ideas before they are tickets
+
+A ticket exists only when someone who read the code wrote its scope and its
+criteria. Bugs and ideas arrive before that, with evidence and no criteria:
+from a person on the site with the reporter browser extension (its label
+option is `flow:found`), from anyone typing an issue on GitHub, or from an
+agent with `flow create-finding`. Those are **findings**, and nothing can
+start from one.
+
+**A finding is an issue labelled `flow:found`.** It never carries
+`flow:ticket`, and `next`, `board`'s ticket list, `dispatch`, `check-epic`,
+`merge --epic` and `release-pr` read past it: it is not planned, not ready,
+not built and not stuck, and a release pull request neither ships nor closes
+it. It may be a sub-issue of an epic or have no parent. `flow board`
+prints, per epic and for findings with no epic,
+`findings: <n> waiting, <m> approved`.
+
+**Its body is a person's words**, never refused for its shape, because the
+reporter is not Flow's user. The recommended shape:
+
+```
+## What happened
+## Where
+<the URL, and the window width>
+## Steps
+## Expected
+## Screenshots
+1. ![what it shows](<image link>) <an optional caption>
+```
+
+Nothing reads a finding's body except to collect its image links. To give
+people on GitHub that shape and the label, copy `github/finding.md` from the
+plugin to `.github/ISSUE_TEMPLATE/finding.md` in your project.
+
+**Filing one from a terminal or an agent**:
+
+```bash
+flow create-finding --title "<t>" --file <body> [--epic <e>] \
+  [--screenshots <dir>] [--fingerprint "<text>"]
+```
+
+`--epic` makes it a sub-issue of that epic, which must be open.
+`--screenshots` takes a directory of PNG, JPEG or WebP images: once the issue exists, they are committed to the
+branch `flow-findings` under `findings/<issue number>/` (the branch is
+created with only a `README.md` when it is missing, holds no code and is
+never merged), pushed, and listed under `## Screenshots` in the issue, each
+linked by its commit so the link never moves. `--fingerprint` files a bug
+once: when an open finding, or a ticket promoted from one, already carries
+the same `<!-- flow:finding fingerprint=<text> -->` line, nothing is filed
+and the command exits 3 printing that issue's number; otherwise the line is
+written at the top of the new body. An agent walking a site builds it from
+the page's address and a short description, so a nightly run files each bug
+once. Only open findings and open tickets are searched, so a finding that was
+rejected (closed) can be filed again by a later run; a person closes it
+again, or files a ticket that fixes what keeps being found.
+
+**A person approves a finding** by adding `flow:approved` to it, and rejects
+it by closing it. `flow found [<epic>] [--json]` lists the open ones: epic or
+none, who filed it and when, approved or waiting, how many images. On
+GitHub, the Action's scheduler ignores `flow:approved` on anything that is
+not an epic, so approving a finding starts nothing.
+
+**`/flow:triage [<epic>]`** turns the approved ones into tickets. It reads
+each finding and every screenshot, and the code it points at, and decides: a
+ticket (scope, what is out of scope, criteria with at least one CHECK it saw
+fail, and a tier), not a ticket (one sentence: it does not happen, it is
+already fixed, it duplicates another, or it is a question for the reporter),
+or too big for one ticket (it needs `/flow:epic`). It shows one table and
+waits for you to edit it or say go. Then it runs, per ticket,
+
+```bash
+flow promote <n> --file <ticket body> --tier easy|hard --epic <e> \
+  [--blocked-by <n>,<n>]
+```
+
+the only way a finding becomes a ticket: it refuses (exit 2, one sentence) a
+finding nobody approved, criteria that cannot decide it, an epic that is not
+one or a `Blocked by` it cannot read; then it writes the ticket body with the
+finding's original text kept word for word under a last section
+`## Report` (nothing under it is read as the ticket, so a reporter cannot
+write criteria into it), relabels it `flow:ticket`, `flow:planned` and the
+tier, moves it under the epic, lists it there and puts it on the project
+board as `Planned`. From then on it is ready exactly when any ticket is.
+"Not a ticket" ends with `flow reject <n> --text "<why>"`, which says why and
+closes the finding as not planned; "too big" leaves it open and approved, with
+a comment naming `/flow:epic`.
+
+**A standing epic** collects the tickets that findings become: `/flow:epic
+--standing "Bugs"` writes one with `Delivery: incremental`, no `Branch:` and
+an empty `## Tickets`, so each promoted ticket starts from the default branch
+and opens its own pull request into it. You approve it like any epic, and
+findings and triage fill it over time; until the first ticket arrives,
+`flow next` exits 1 saying it has no tickets and the Action's scheduler does
+nothing. Triage files a finding with no epic of its own under the open epic
+titled `Bugs` when there is exactly one.
+
 ## The `flow` command
 
 `node <plugin root>/scripts/flow.mjs <command>`. It stores nothing locally:
@@ -379,9 +542,10 @@ every answer is read from GitHub (through `gh`) and git.
 
 | Command | What it does |
 |---|---|
-| `init` | Creates the eleven labels. Safe to run again |
-| `doctor` | Checks `gh`, sign-in, that issues are on, the labels, the default branch, and every open epic's `Blocked by` lines (unreadable, outside the epic, cycles). Prints `ok` or one sentence per problem |
-| `board [<epic>] [--json]` | The default branch, then open epics with approval, progress and branch; or one epic's tickets with tier, state and blockers |
+| `init [--board [<title>]]` | Creates the twelve labels. Safe to run again. `--board` also makes sure a matching project board is linked: creates and links one (titled `Flow` by default), or adds the `Status` options a linked one lacks, keeping every option and every item's status; exits 2 when several linked projects could be meant, 1, with the `gh auth refresh -s project` hint, when GitHub refuses. See [The project board](#the-project-board) |
+| `board-sync [<epic>] [--json]` | Sets the project board's `Status` of every open epic (`Epic`) and ticket from its labels, adding missing ones; findings and tickets with no readable state are skipped. One line per change, then `<n> set, <m> already right, <k> skipped`. Exits 1 when no matching board is linked, or when any issue could not be set (the rest are still set) |
+| `doctor` | Checks `gh`, sign-in, that issues are on, the labels, the default branch, and every open epic's `Blocked by` lines (unreadable, outside the epic, cycles). Prints one sentence per problem, then one line naming the project board (see [The project board](#the-project-board)), then `ok` when there was no problem |
+| `board [<epic>] [--json]` | The default branch, then open epics with approval, progress and branch; or one epic's tickets with tier, state and blockers. Either way, how many findings wait or are approved |
 | `next <epic>` | JSON: `approved`, `ready`, `waiting`, `inProgress`, `done`, `needsHuman`, `planned`, `problems`. Exits 1 when the epic is not approved, has no tickets, or is stuck (unfinished tickets, none ready, none in progress) |
 | `ticket <n>` | One ticket parsed, as JSON, including who edited its body and when |
 | `check <n> [--cwd <dir>]` | Runs the ticket's criteria from the repository root (or `--cwd`). JSON results on stdout, with every edit of the issue body (who, when); a readable table on stderr. Exits 1 unless every check passed, and when the ticket has no criteria |
@@ -394,6 +558,10 @@ every answer is read from GitHub (through `gh`) and git.
 | `link <epic> <n>` | Finishes a `create-ticket` that created the issue but could not link it. Safe to repeat |
 | `create-ticket --no-epic --file <md> --title "<t>" [--tier easy\|hard] [--repo <owner>/<name>]` | Creates a ticket that belongs to no epic (counts as approved); `--repo` files it in another repository, such as the plugin's |
 | `needs-human <n> --text "<why>"` | Marks the ticket `flow:needs-human` and asks a person, by mention |
+| `create-finding --title "<t>" --file <md> [--epic <e>] [--screenshots <dir>] [--fingerprint "<text>"]` | Files a finding (`flow:found`), its images on the `flow-findings` branch; prints its number, or exits 3 with the existing one when the fingerprint was filed before |
+| `found [<epic>] [--json]` | The open findings: epic, who filed them and when, approved or waiting, image count (with `--json`, the body and every image link too). Always exits 0 |
+| `promote <n> --file <md> --tier easy\|hard --epic <e> [--blocked-by <n>,<n>]` | Turns an approved finding into a planned ticket of the epic, keeping its text under `## Report`; refuses with exit 2 otherwise |
+| `reject <n> --text "<why>"` | Says why a finding is not a ticket and closes it as not planned |
 | `start <n>` | Starts a ready ticket: branch, label, first comment. JSON out; refuses otherwise (unattended: and asks a person) |
 | `accept <n>` | Runs the criteria on `ticket/<n>`'s committed head and posts the results with the commit; refuses an issue body edited after the start |
 | `deliver <n>` | Merges the accepted commit into the epic branch (release) or opens its pull request (incremental) |
@@ -410,7 +578,7 @@ every answer is read from GitHub (through `gh`) and git.
 | `merge --epic <epic>` | Merges every accepted ticket of the epic, in the epic's order |
 | `check-epic <epic> [--tickets <n>,<n>] [--mark]` | Runs the done tickets' checks (or the listed ones') at the epic branch's head, in a clean copy set up from `.flow.json`, and posts the result on the epic. `--mark` hands each failing ticket to a person; it stays merged |
 | `worktree <n> [--remove]` | A separate working copy for one ticket, at `../.flow-worktrees/<repository>/ticket-<n>`, set up from `.flow.json` |
-| `dispatch <epic>` | Adds `flow:start` to up to `Parallel:` ready tickets; says whether the epic is `running`, `built` or `stopped`. Refuses while a `/flow:run` is building the epic |
+| `dispatch <epic>` | Adds `flow:start` to up to `Parallel:` ready tickets; says whether the epic is `running`, `built`, `stopped`, or `empty` (approved with no tickets yet, such as a standing epic before triage fills it). Refuses while a `/flow:run` is building the epic |
 | `release-pr <epic>` | Opens the epic's pull request once every ticket is done, and posts it on the epic |
 | `design-map <epic> [--out <file>]` | Writes the epic's design map for the design comparison |
 | `stats [<epic>] [--since <date>] [--json] [--cwd <dir>]` | How the work went, per ticket, per epic and across epics; see [Looking back](#looking-back) |
@@ -468,6 +636,20 @@ Only a yes files anything: a plugin change becomes an issue in the plugin's
 repository (`flow create-ticket --no-epic --repo <owner>/<name>`), and an
 instruction-file change goes through `/flow:quick` to a pull request you
 merge.
+
+## The reporter extension
+
+`tools/reporter/` is a Chrome extension for filing findings from the page
+you are looking at: you capture or paste screenshots, say what happened,
+the steps and what should have happened, and it files a GitHub issue
+labelled `flow:found` under the epic you set in its options (usually the
+open Bugs epic), with the screenshots committed to the `flow-findings`
+branch and linked by commit. It has no build step: open
+`chrome://extensions`, turn on Developer mode, choose Load unpacked and
+select the folder. A person then approves the finding with `flow:approved`
+or closes it, and `/flow:triage` turns approved findings into tickets. The
+token it needs, its options and the exact issue it writes are in
+[`tools/reporter/README.md`](tools/reporter/README.md).
 
 ## Agents
 

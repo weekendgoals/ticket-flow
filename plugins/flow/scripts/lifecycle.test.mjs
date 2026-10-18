@@ -117,6 +117,7 @@ function world({ epicLabels = ['flow:epic', 'flow:approved'], settings, ticket2 
     [`GET ${R}/issues/1/sub_issues?per_page=100`]: [two, three],
     [`GET ${R}/issues/2/comments?per_page=100`]: comments,
     'graphql name={repo} number=2 owner={owner}': history,
+    'graphql name={repo} owner={owner}': { data: { repository: { projectsV2: { nodes: [] } } } },
     [`POST ${R}/issues/2/labels`]: [],
     [`DELETE ${R}/issues/2/labels/flow%3Aplanned`]: null,
     [`DELETE ${R}/issues/2/labels/flow%3Ain-progress`]: null,
@@ -251,6 +252,7 @@ test('start takes a ticket with no epic as approved and cuts it from the default
   fake.setFixtures({
     [`GET ${R}`]: { full_name: 'o/r', default_branch: 'main', has_issues: true },
     [`GET ${R}/issues/7`]: lone,
+    'graphql name={repo} owner={owner}': { data: { repository: { projectsV2: { nodes: [] } } } },
     [`POST ${R}/issues/7/labels`]: [],
     [`DELETE ${R}/issues/7/labels/flow%3Aplanned`]: null,
     [`POST ${R}/issues/7/comments`]: { id: 1 },

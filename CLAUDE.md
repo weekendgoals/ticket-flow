@@ -21,12 +21,14 @@ epic). "Direct" or "without Flow" always overrides it.
 
 ## Layout
 
-- `scripts/flow.mjs` — the CLI: planning (`init`, `doctor`, `board`, `next`,
-  `ticket`, `check`, `post`, `label`, `create-epic`, `create-ticket`, `link`,
-  `needs-human`), one ticket's steps (`start`, `accept`, `deliver`,
-  `screenshots`, `meter`, `reset`), the pull-request loop (`pr-*`) and a
-  whole epic (`dispatch`, `worktree`, `merge`, `check-epic`, `release-pr`,
-  `design-map`), and looking back (`stats`).
+- `scripts/flow.mjs` — the CLI: planning (`init [--board]`, `doctor`,
+  `board`, `next`, `ticket`, `check`, `post`, `label`, `create-epic`,
+  `create-ticket`, `link`, `needs-human`), one ticket's steps (`start`,
+  `accept`, `deliver`, `screenshots`, `meter`, `reset`), the pull-request
+  loop (`pr-*`) and a whole epic (`dispatch`, `worktree`, `merge`,
+  `check-epic`, `release-pr`, `design-map`), findings before they are
+  tickets (`create-finding`, `found`, `promote`, `reject`), the project
+  board (`board-sync`), and looking back (`stats`).
 - `scripts/tracker/github.mjs` — every `gh` call, as plain functions (a Jira
   tracker can sit behind them); `tracker/fake-gh.mjs` is the tests' `gh`.
 - `issue-body.mjs` (epic and ticket bodies, the design map), `checks.mjs`
@@ -34,32 +36,46 @@ epic). "Direct" or "without Flow" always overrides it.
   state, cycles, stuck), `ticket-steps.mjs` (the comments steps post and read
   back), `delivery.mjs` (every git call), `review-bots.mjs`, `meter.mjs`,
   `stats.mjs` (the figures `flow stats` reads back out of those comments),
-  `worktree-setup.mjs` (`.flow.json` `copy`/`setup` in a fresh copy).
+  `worktree-setup.mjs` (`.flow.json` `copy`/`setup` in a fresh copy),
+  `project-sync.mjs` (a linked GitHub Project's `Status` follows the state
+  labels, best effort, never a source of state; `init --board` sets the
+  board up and `board-sync` catches it up).
+- `skills/triage/SKILL.md` — `/flow:triage`: approved findings become
+  tickets (or are rejected, or sent to `/flow:epic`) after one table.
 - `workflows/run-epic.mjs` — the `/flow:run` loop as a workflow script.
   `github/flow.yml` — the Action a project copies; it calls the same CLI.
+- `tools/reporter/` — the reporter Chrome extension: plain browser modules,
+  no build step; it files findings labelled `flow:found` with screenshots on
+  `flow-findings`. `report-body.js` holds its pure parts (paths, the body,
+  the fingerprint), `github.js` its REST calls.
 
 ## Commands
 
 Every suite needs Node ≥ 20 and nothing else unless noted; pass each test
 file path explicitly (`node --test <directory>` finds nothing here). Counts
-as of 2026-10-15; the pass count grows, the fail line stays `# fail 0`.
+as of 2026-10-18; the pass count grows, the fail line stays `# fail 0`.
 
-- `node --test plugins/flow/scripts/flow.test.mjs` — `# pass 48`. The CLI
+- `node --test plugins/flow/scripts/flow.test.mjs` — `# pass 61`. The CLI
   end to end against the fake `gh`; one case needs `git` on PATH.
 - `node --test plugins/flow/scripts/lifecycle.test.mjs` — `# pass 39`. The
   ticket steps in throwaway repositories with a bare remote; needs `git`, `sh`.
-- `node --test plugins/flow/scripts/epic-run.test.mjs` — `# pass 28`. The
+- `node --test plugins/flow/scripts/epic-run.test.mjs` — `# pass 32`. The
   whole-epic commands, the same way.
-- `pull-request.test.mjs` `# pass 20`, `issue-body.test.mjs` `# pass 25`,
+- `pull-request.test.mjs` `# pass 20`, `issue-body.test.mjs` `# pass 28`,
   `checks.test.mjs` `# pass 26` (real shell commands in a temp dir),
-  `tracker/github.test.mjs` `# pass 20`, `fidelity.test.mjs` `# pass 54`,
-  `stats.test.mjs` `# pass 12` (needs `git`), under `plugins/flow/scripts/`.
+  `tracker/github.test.mjs` `# pass 33`, `fidelity.test.mjs` `# pass 54`,
+  `stats.test.mjs` `# pass 12` (needs `git`), `project-sync.test.mjs`
+  `# pass 24`, under `plugins/flow/scripts/`.
 - `node --test plugins/flow/scripts/meter.test.mjs` — `# pass 16`. Builds
   its transcripts; no test reads a real one (they belong to whoever ran them).
 - `node --test plugins/flow/scripts/worktree-setup.test.mjs` — `# pass 18`;
   needs `git`, POSIX `sh` and `sleep`.
 - `node --test plugins/flow/workflows/run-epic.test.mjs` — `# pass 23`
-  (stubbed `agent`, no git), `plugins/flow/github/flow.test.mjs` `# pass 11`.
+  (stubbed `agent`, no git), `plugins/flow/github/flow.test.mjs` `# pass 13`.
+- `node --test tools/reporter/reporter.test.mjs` — `# pass 18`. The
+  extension's modules under a stubbed `fetch`. It is also their syntax
+  check: plain `node --check` reads a `.js` file with no package.json as
+  CommonJS, so the suite copies all seven modules to `.mjs` and checks each.
 - **Syntax:** `node --check` on every `.mjs` under `plugins/flow/scripts/`.
   It does not work on `workflows/run-epic.mjs` (a module body with a
   top-level `return`); parse that one the way the workflow runtime does:
@@ -86,6 +102,12 @@ CI (`.github/workflows/tests.yml`) runs every suite and check above.
   parse is a named problem the board, `next` and `doctor` print, and the
   ticket waits. Never make the parse tolerant: a tolerant parse once stalled
   tickets on prose with nothing saying why.
+- **A finding is not a ticket**: nothing reads `flow:found` as work;
+  `promote` is the only way in and needs a person's `flow:approved` and
+  parseable criteria, because evidence without a gate is not a ticket.
+  The finding's own text rides along under `## Report`, and nothing below
+  that heading is read as the ticket: a reporter must not be able to write
+  criteria or blockers.
 - **Ready is derived, never a label**: planned, epic `flow:approved`, every
   blocker `flow:done`, no problem. Approval is enforced there, in the one
   command a driver runs, so nothing can start without it.
