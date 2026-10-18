@@ -59,6 +59,7 @@ import { loadSources, workflowSources, meterTranscripts, meterComment, readMeter
 import { ticketStats, readEpicComments, summarize, overallStats, formatStats, combineMeters } from './stats.mjs'
 import { COPILOT_REVIEWER_LOGIN, BOTS, configuredBot, copilotUnavailable, botReview, sameLogin, summarizeChecks, sleepSeconds } from './review-bots.mjs'
 import { syncProjectStatus, projectBoardLine, ensureProjectBoard, findProjectBoard, placeOnBoard, statusOptionName, explain as explainProjectError, oneLine, DEFAULT_BOARD_TITLE } from './project-sync.mjs'
+import { siteAddress, readQaConfig, parseWidthsOption, readSitemap, readLinks, buildRoutes, qaFingerprint, DEFAULT_ROUTE_CAP } from './qa.mjs'
 import {
   LABELS,
   EPIC_LABEL,
@@ -137,10 +138,17 @@ const USAGE = `usage: flow <command>
 
   stats [<epic>] [--since <date>] [--json] [--cwd <dir>]
                                          how the work went: time per step, tokens per model, review rounds,
-                                         rework, escaped defects, stops; read from the issues' comments and git`
+                                         rework, escaped defects, stops; read from the issues' comments and git
 
-const VALUE_FLAGS = new Set(['--file', '--epic-file', '--text', '--title', '--tier', '--cwd', '--blocked-by', '--bot', '--timeout', '--interval', '--sha', '--epic', '--tickets', '--out', '--workflow', '--important', '--grace', '--since', '--repo', '--head', '--screenshots', '--fingerprint'])
-const REPEATABLE_FLAGS = new Set(['--transcripts'])
+  /flow:qa reads its plan from the commands below; none of them touches GitHub:
+  qa-config [--widths <w>,<w>] [--cwd <dir>]
+                                         the "qa" section of .flow.json, checked, as JSON (exit 2 on a problem)
+  qa-routes <url> [--routes <file> | --sitemap <file> ... | --links <file>] [--cap 60] [--cwd <dir>]
+                                         the pages to visit: same site only, deduplicated, no "deny" match, capped, as JSON
+  qa-fingerprint <url> "<first line>"    the fingerprint a QA finding is filed with: the page's path and the normalised line`
+
+const VALUE_FLAGS = new Set(['--file', '--epic-file', '--text', '--title', '--tier', '--cwd', '--blocked-by', '--bot', '--timeout', '--interval', '--sha', '--epic', '--tickets', '--out', '--workflow', '--important', '--grace', '--since', '--repo', '--head', '--screenshots', '--fingerprint', '--routes', '--links', '--cap', '--widths'])
+const REPEATABLE_FLAGS = new Set(['--transcripts', '--sitemap'])
 const BOOLEAN_FLAGS = new Set(['--board', '--json', '--no-epic', '--print', '--wait', '--once', '--mark', '--remove', '--review', '--all'])
 const DEFAULT_WAIT_SECONDS = 1800
 const DEFAULT_POLL_SECONDS = 30
@@ -1768,6 +1776,62 @@ function commandStats(positional, flags) {
   return 0
 }
 
+function qaConfigRoot(flags) {
+  const directory = resolve(flags.cwd || process.cwd())
+  return repositoryRoot(directory) || directory
+}
+
+function printProblems(problems) {
+  for (const problem of problems) process.stderr.write(`flow: ${problem}\n`)
+  return 2
+}
+
+function commandQaConfig(positional, flags) {
+  if (positional.length) throw new UsageError('qa-config takes no argument; it reads .flow.json at the repository root')
+  const { config, problems, file } = readQaConfig(qaConfigRoot(flags))
+  const widths = flags.widths === undefined ? { widths: config.widths, problem: null } : parseWidthsOption(flags.widths)
+  if (widths.problem) problems.push(widths.problem)
+  if (problems.length) return printProblems(problems)
+  printJson({ file, ...config, widths: widths.widths })
+  return 0
+}
+
+function routeCandidates(flags, config) {
+  const given = ['routes', 'sitemap', 'links'].filter((name) => flags[name] !== undefined)
+  if (given.length > 1) throw new UsageError(`give one of --routes, --sitemap and --links, not ${given.map((name) => `--${name}`).join(' and ')}`)
+  if (flags.sitemap) {
+    const read = flags.sitemap.map((file) => readSitemap(readFileSync(file, 'utf8')))
+    return { source: 'sitemap', candidates: read.flatMap((entry) => entry.pages), sitemaps: read.flatMap((entry) => entry.sitemaps) }
+  }
+  if (flags.links !== undefined) return { source: 'links', candidates: readLinks(readFileSync(flags.links, 'utf8')), sitemaps: [] }
+  if (flags.routes !== undefined) return { source: 'routes', candidates: readLinks(readFileSync(flags.routes, 'utf8')), sitemaps: [] }
+  if (config.routes.length) return { source: '.flow.json', candidates: config.routes, sitemaps: [] }
+  return null
+}
+
+function commandQaRoutes(positional, flags) {
+  if (positional.length !== 1) throw new UsageError("qa-routes needs the site's address: qa-routes <url>")
+  const start = siteAddress(positional[0])
+  if (start.problem) return printProblems([start.problem])
+  const cap = flags.cap === undefined ? DEFAULT_ROUTE_CAP : /^\d+$/.test(flags.cap) ? Number(flags.cap) : 0
+  if (cap < 1) return printProblems([`--cap takes a whole number of pages above 0, and "${flags.cap}" is not one`])
+  const { config, problems } = readQaConfig(qaConfigRoot(flags))
+  if (problems.length) return printProblems(problems)
+  const found = routeCandidates(flags, config)
+  if (!found) return printProblems(['nothing to build the route list from: give --routes, --sitemap or --links, or list the pages under "qa" "routes" in .flow.json'])
+  const built = buildRoutes({ start: start.url, candidates: found.candidates, deny: config.deny, cap })
+  printJson({ source: found.source, ...built, sitemaps: found.sitemaps })
+  return 0
+}
+
+function commandQaFingerprint(positional) {
+  if (positional.length !== 2) throw new UsageError('qa-fingerprint needs the page\'s address and the finding\'s first line: qa-fingerprint <url> "<first line>"')
+  const { fingerprint, problem } = qaFingerprint(positional[0], positional[1])
+  if (problem) return printProblems([problem])
+  console.log(fingerprint)
+  return 0
+}
+
 function main(argv) {
   const [command, ...rest] = argv
   if (!command || command === 'help' || command === '--help') {
@@ -1845,6 +1909,12 @@ function main(argv) {
       return commandDispatch(positional)
     case 'stats':
       return commandStats(positional, flags)
+    case 'qa-config':
+      return commandQaConfig(positional, flags)
+    case 'qa-routes':
+      return commandQaRoutes(positional, flags)
+    case 'qa-fingerprint':
+      return commandQaFingerprint(positional)
     default:
       throw new UsageError(`unknown command "${command}"`)
   }

@@ -5,6 +5,54 @@ a behaviour change in every project that installs it. Entries land in the same
 commit as the change; the pull request that brings them to the default branch
 stamps the version and date and bumps `plugin.json` in the same commit.
 
+## 3.2.0 (unreleased)
+
+- **New: `/flow:qa <url> [--epic <e>] [--routes <file>] [--widths 1440,393]`**,
+  a browser agent that walks a live site and files what is broken as
+  findings (`flow:found`), attended or unattended. It uses the browser tool
+  the session has (Playwright MCP, or Chrome DevTools MCP) and refuses to
+  start without one, naming the command that adds Playwright MCP; the
+  plugin installs nothing. It reads `.flow.json`'s new `qa` section, picks
+  the epic to file under (`--epic`, or the one open epic titled `Bugs`;
+  none stops it before the walk), builds the page list (given, else the
+  sitemap, else the start page's links; same site, deduplicated, `deny`
+  matches out, at most 60), and hires one `qa-explorer` agent per batch of
+  up to ten pages, one at a time. Each finding is filed with
+  `flow create-finding --epic <e> --screenshots <dir> --fingerprint <f>`,
+  one per problem across batches, and skipped when an open finding or
+  ticket already carries its fingerprint. It ends with one table (pages
+  visited, findings filed, duplicates skipped, pages it could not load) and
+  approves nothing.
+- **New agent: `qa-explorer`**, on the strongest model, with read-only
+  tools plus the browser. At each page and width it records console errors
+  and failed requests, checks the page's own links for 404s, looks for
+  horizontal overflow and clipped text, compares the document language with
+  the text, reports the browser's accessibility problems and, on an epic
+  with design sources, runs the design comparison; a screenshot only where
+  something is wrong. It never submits a form or sends a message (except
+  with the project's `testMarker`), never clicks a payment, sign-up or
+  delete control or a `deny` match, never signs in, never leaves the site,
+  and is never told what anyone thinks is broken.
+- **New: `flow qa-config`, `flow qa-routes` and `flow qa-fingerprint`**
+  (`scripts/qa.mjs`), the parts of the walk that need no browser and no
+  GitHub. `qa-config [--widths]` prints the checked `qa` section
+  (`routes`, `deny`, `widths`, `testMarker`); an unknown key or a wrong type
+  is named and exits 2, in `qa-routes` too. `qa-routes <url>` builds the
+  page list from `--routes`, `--sitemap` (an index lists the sitemaps to
+  read next), `--links` or `.flow.json`, with `--cap` (60). `qa-fingerprint
+  <url> "<first line>"` prints `qa <path> <the line, lowercased, numbers as
+  #, punctuation dropped>`.
+- **`.flow.json` accepts a `qa` key.** `flow worktree`, `flow check-epic`
+  and `worktree-setup.mjs --validate` refused it as unknown before.
+- **New template: `github/qa.yml`**, the nightly walk a project copies: on
+  `schedule` and `workflow_dispatch`, `/flow:qa <url> --unattended` under
+  claude-code-action with the Playwright MCP server configured in the file,
+  `FLOW_TOKEN` as in `flow.yml`, the start address from the `QA_URL`
+  variable, and the screenshots kept as an artifact.
+- **The retro miner counts the QA explorer's findings** in its first
+  question: how many became tickets, were rejected, or still wait, as the
+  rejection rate, the only check on the explorer's judgement.
+
 ## 3.1.0 — 2026-10-18
 
 - **New: the project board.** When the repository is linked to a GitHub

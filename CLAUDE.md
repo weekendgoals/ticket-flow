@@ -42,6 +42,12 @@ epic). "Direct" or "without Flow" always overrides it.
   board up and `board-sync` catches it up).
 - `skills/triage/SKILL.md` — `/flow:triage`: approved findings become
   tickets (or are rejected, or sent to `/flow:epic`) after one table.
+- `skills/qa/SKILL.md` — `/flow:qa`: `agents/qa-explorer.md` walks a live
+  site in the session's browser (the plugin owns none) and the skill files
+  each problem as a finding, once, by fingerprint; it approves nothing.
+  `scripts/qa.mjs` holds its pure parts (the `.flow.json` `qa` section, the
+  route list, the `deny` match, the fingerprint) behind `flow qa-config`,
+  `qa-routes` and `qa-fingerprint`; `github/qa.yml` is the nightly template.
 - `workflows/run-epic.mjs` — the `/flow:run` loop as a workflow script.
   `github/flow.yml` — the Action a project copies; it calls the same CLI.
 - `tools/reporter/` — the reporter Chrome extension: plain browser modules,
@@ -76,6 +82,11 @@ as of 2026-10-18; the pass count grows, the fail line stays `# fail 0`.
   extension's modules under a stubbed `fetch`. It is also their syntax
   check: plain `node --check` reads a `.js` file with no package.json as
   CommonJS, so the suite copies all seven modules to `.mjs` and checks each.
+- `node --test plugins/flow/scripts/qa.test.mjs` — `# pass 17`. The QA
+  parts without a browser, and `flow qa-*` against the fake `gh` (it
+  asserts no call reached it); needs `git`.
+  `node --test plugins/flow/github/qa.test.mjs` — `# pass 5`, the nightly
+  QA template, read with `github/workflow-yaml.mjs` like `flow.yml`.
 - **Syntax:** `node --check` on every `.mjs` under `plugins/flow/scripts/`.
   It does not work on `workflows/run-epic.mjs` (a module body with a
   top-level `return`); parse that one the way the workflow runtime does:
@@ -156,8 +167,16 @@ CI (`.github/workflows/tests.yml`) runs every suite and check above.
   proposes.** Never give `plan-reviewer` or `ticket-reviewer` write
   instructions, and never hand `researcher` the request, the wanted solution
   or the ticket list: told the answer, it confirms it.
-- **Reviewers, the researcher and the retro miner run on the strongest
-  model.** Never a cheaper one: what they miss cannot be checked afterwards.
+- **Reviewers, the researcher, the retro miner and the QA explorer run on
+  the strongest model.** Never a cheaper one: what they miss cannot be
+  checked afterwards.
+- **The QA explorer touches nothing a visitor's click could not undo, and
+  `/flow:qa` approves nothing.** It never submits a form (except under the
+  project's `testMarker`), pays, signs up, deletes, sends or follows a
+  `deny` match, because the site is live; it is never told what anyone
+  thinks is broken, because told where the bugs are it looks only there; a
+  person approves every finding it files, because its judgement has no
+  other test.
 - **A gate lives in the command its actor runs**, and the recovery it
   advertises must work from the refused state.
 - **Skills are self-sufficient**; each rule carries its reason in a clause.

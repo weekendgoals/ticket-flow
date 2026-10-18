@@ -6,7 +6,7 @@ import { pathToFileURL } from 'node:url'
 
 export const CONFIG = '.flow.json'
 export const SETUP_KEYS = ['copy', 'setup']
-export const OTHER_KEYS = ['screenshots', 'screenshotsDir']
+export const OTHER_KEYS = ['screenshots', 'screenshotsDir', 'qa']
 export const BUDGET_MS = 8 * 60 * 1000
 export const WORKTREES_FOLDER = '.flow-worktrees'
 

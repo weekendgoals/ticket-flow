@@ -58,7 +58,13 @@ teaches the wrong lesson.
    comments that follow), and whether a command, a rule in a skill or a
    line in the plan would have answered it. A stop on infrastructure (a
    session limit, a network failure, a tool that died) is a defect in the
-   plugin, not a question.
+   plugin, not a question. Then count the QA explorer's findings among the
+   epic's sub-issues, open and closed (a body with a line starting
+   `<!-- flow:finding fingerprint=qa `, kept under `## Report` once it is
+   a ticket): how many became tickets, how many
+   a person rejected (closed as not planned), and how many still wait, as
+   the rejection rate. Nothing else checks the explorer's judgement: a
+   person reading its findings is the only test it has.
 2. **Which review findings were real defects, and which were taste?** Check
    each Important finding against the merged code. Then compare the local
    reviewer with the pull request bot: did the bot find something the
