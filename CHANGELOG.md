@@ -141,6 +141,13 @@ stamps the version and date and bumps `plugin.json` in the same commit.
 - **The retro miner counts the QA explorer's findings** in its first
   question: how many became tickets, were rejected, or still wait, as the
   rejection rate, the only check on the explorer's judgement.
+- **The reporter files to named targets.** Its options page holds a list
+  of targets, each a name, a repository, an optional epic and a screenshots
+  branch (`flow-findings` by default), under one token and one label; the
+  popup's File to list, above the title, picks one, remembering the last
+  choice per site and otherwise taking the first, and the draft keeps it.
+  The result line names the repository the finding went to. Settings saved
+  with one repository become one target named after it on first load.
 
 ## 3.1.0 — 2026-10-18
 

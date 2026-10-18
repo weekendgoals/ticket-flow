@@ -8,7 +8,7 @@
 </head>
 <body>
   <section id="unconfigured" hidden>
-    <p>No GitHub token or repository is configured yet. Set both on the options page before filing a finding.</p>
+    <p>No GitHub token or target is configured yet. Set the token and at least one target on the options page before filing a finding.</p>
     <p><button type="button" id="open-options-main">Open options</button></p>
   </section>
 
@@ -31,6 +31,10 @@
       <span id="page-title"></span><br>
       <a id="page-url" class="muted" target="_blank" rel="noopener"></a>
     </p>
+
+    <label>File to
+      <select id="target"></select>
+    </label>
 
     <label>Title
       <input type="text" id="title" required autocomplete="off">

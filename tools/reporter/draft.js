@@ -9,8 +9,8 @@ export function emptyFields() {
   return { title: '', type: 'bug', priority: 'normal', description: '', steps: '', expected: '', selection: '' };
 }
 
-export function createDraft(page, now = Date.now()) {
-  return { startedAt: now, page, fields: emptyFields(), screenshots: [] };
+export function createDraft(page, targetId = '', now = Date.now()) {
+  return { startedAt: now, page, targetId, fields: emptyFields(), screenshots: [] };
 }
 
 function normalizeScreenshot(stored) {
@@ -41,6 +41,7 @@ export function normalizeDraft(stored) {
       userAgent: typeof page.userAgent === 'string' ? page.userAgent : '',
       tabId: Number.isInteger(page.tabId) ? page.tabId : null
     },
+    targetId: typeof stored.targetId === 'string' ? stored.targetId : '',
     fields,
     screenshots: stored.screenshots.map(normalizeScreenshot).filter(Boolean)
   };

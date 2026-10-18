@@ -1,4 +1,4 @@
-import { loadSettings } from './settings.js';
+import { loadSettings, loadChosenTargets, rememberTarget, chooseTarget, originOf } from './settings.js';
 import { fileFinding } from './github.js';
 import { SCREENSHOT_MIMES } from './report-body.js';
 import {
@@ -31,6 +31,7 @@ const elements = {
   fileInput: document.getElementById('file-input'),
   pageTitle: document.getElementById('page-title'),
   pageUrl: document.getElementById('page-url'),
+  target: document.getElementById('target'),
   title: document.getElementById('title'),
   type: document.getElementById('type'),
   priority: document.getElementById('priority'),
@@ -42,7 +43,15 @@ const elements = {
   status: document.getElementById('status')
 };
 
-const state = { draft: null, submitted: false, busy: false, pendingTabId: undefined, saveTimer: null };
+const state = {
+  draft: null,
+  submitted: false,
+  busy: false,
+  pendingTabId: undefined,
+  saveTimer: null,
+  targets: [],
+  chosen: {}
+};
 
 function openOptions(event) {
   event.preventDefault();
@@ -144,6 +153,37 @@ function fillFields(fields) {
   for (const name of FIELD_NAMES) elements[name].value = fields[name];
 }
 
+function fillTargets(targets) {
+  elements.target.replaceChildren(
+    ...targets.map((target) => {
+      const option = document.createElement('option');
+      option.value = target.id;
+      option.textContent = target.name;
+      option.title = target.repo;
+      return option;
+    })
+  );
+}
+
+function showTarget(draft, origin) {
+  const target = chooseTarget(state.targets, state.chosen, origin, draft.targetId);
+  draft.targetId = target ? target.id : '';
+  elements.target.value = draft.targetId;
+}
+
+async function chooseTargetFromSelect() {
+  if (!state.draft || state.submitted) return;
+  state.draft.targetId = elements.target.value;
+  const origin = originOf(state.draft.page.url);
+  if (origin) state.chosen = { ...state.chosen, [origin]: state.draft.targetId };
+  await persistDraft();
+  try {
+    await rememberTarget(origin, state.draft.targetId);
+  } catch (error) {
+    setStatus(`Could not remember the target: ${error.message}`, true);
+  }
+}
+
 function fillPage(page) {
   elements.pageTitle.textContent = page.title;
   elements.pageUrl.textContent = page.url;
@@ -181,6 +221,7 @@ function refreshControls() {
   const full = count >= MAX_SCREENSHOTS;
   elements.capture.disabled = locked || full;
   elements.addFiles.disabled = locked || full;
+  elements.target.disabled = locked;
   elements.shotsCount.textContent = `${count} of ${MAX_SCREENSHOTS}`;
   elements.shotsState.hidden = count > 0;
   elements.shotsState.textContent = state.busy
@@ -365,6 +406,7 @@ async function beginDraft(pending) {
     tabId: tab.id === undefined ? null : tab.id
   });
   state.draft = draft;
+  showTarget(draft, originOf(draft.page.url));
   fillFields(draft.fields);
   fillPage(draft.page);
   renderScreenshots();
@@ -381,6 +423,7 @@ async function beginDraft(pending) {
 
 async function restoreDraft(draft, pending) {
   state.draft = draft;
+  showTarget(draft, originOf(draft.page.url));
   fillFields(draft.fields);
   fillPage(draft.page);
   showDraftBar(draft);
@@ -396,9 +439,16 @@ async function restoreDraft(draft, pending) {
 
 async function start() {
   const settings = await loadSettings();
-  if (!settings.token || !settings.repo) {
+  if (!settings.token || settings.targets.length === 0) {
     elements.unconfigured.hidden = false;
     return;
+  }
+  state.targets = settings.targets;
+  fillTargets(settings.targets);
+  try {
+    state.chosen = await loadChosenTargets();
+  } catch {
+    state.chosen = {};
   }
   elements.form.hidden = false;
   refreshControls();
@@ -441,6 +491,7 @@ for (const name of FIELD_NAMES) {
   elements[name].addEventListener('change', scheduleSave);
 }
 
+elements.target.addEventListener('change', chooseTargetFromSelect);
 elements.discard.addEventListener('click', discardDraft);
 elements.capture.addEventListener('click', () => captureAndAdd());
 elements.addFiles.addEventListener('click', () => elements.fileInput.click());
@@ -475,7 +526,9 @@ elements.form.addEventListener('submit', async (event) => {
   setStatus('Filing finding…');
   try {
     const settings = await loadSettings();
-    const issue = await fileFinding(settings, {
+    const target = settings.targets.find((candidate) => candidate.id === draft.targetId);
+    if (!target) throw new Error('The chosen target is no longer on the options page. Choose another.');
+    const issue = await fileFinding(settings, target, {
       title: draft.fields.title.trim(),
       type: draft.fields.type,
       priority: draft.fields.priority,
@@ -493,6 +546,7 @@ elements.form.addEventListener('submit', async (event) => {
     clearTimeout(state.saveTimer);
     state.saveTimer = null;
     await dropStoredDraft();
+    await rememberTarget(originOf(draft.page.url), target.id).catch(() => {});
     elements.draftBar.hidden = true;
     const link = document.createElement('a');
     link.href = issue.html_url;
@@ -500,7 +554,7 @@ elements.form.addEventListener('submit', async (event) => {
     link.rel = 'noopener';
     link.textContent = `Filed finding #${issue.number}`;
     elements.status.classList.toggle('error', Boolean(issue.epicProblem));
-    elements.status.replaceChildren(link, document.createTextNode(epicNote(issue)));
+    elements.status.replaceChildren(link, document.createTextNode(` in ${issue.repo}${epicNote(issue)}`));
   } catch (error) {
     setStatus(error.message, true);
     elements.submit.disabled = false;

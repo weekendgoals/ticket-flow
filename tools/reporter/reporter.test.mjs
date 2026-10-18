@@ -18,8 +18,9 @@ for (const name of readdirSync(here).filter((file) => file.endsWith('.js'))) {
 const load = (name) => import(pathToFileURL(join(copies, `${name}.mjs`)).href)
 const body = await load('report-body')
 const { fileFinding } = await load('github')
-const { DEFAULT_SETTINGS, normalizeSettings } = await load('settings')
-const { emptyFields, normalizeDraft } = await load('draft')
+const settingsModule = await load('settings')
+const { DEFAULT_SETTINGS, normalizeSettings, checkTargets, chooseTarget, originOf } = settingsModule
+const { emptyFields, createDraft, normalizeDraft } = await load('draft')
 
 const MODULES = ['background', 'draft', 'github', 'options', 'popup', 'report-body', 'settings']
 
@@ -32,7 +33,9 @@ test('every module of the extension parses as an ES module', () => {
 })
 
 const TOKEN = 'github_pat_reporter_test_token'
-const SETTINGS = { token: TOKEN, repo: 'acme/site', branch: 'flow-findings', label: 'flow:found', epic: '' }
+const SETTINGS = { token: TOKEN, label: 'flow:found' }
+const TARGET = { id: 't1', name: 'Site', repo: 'acme/site', branch: 'flow-findings', epic: '' }
+const DOCS = { id: 't2', name: 'Docs', repo: 'acme/docs', branch: 'docs-shots', epic: '9' }
 
 const REPORT = {
   title: 'Score overlaps the crest',
@@ -121,7 +124,7 @@ test('screenshot links point at the commit that added them', () => {
 
 test('the issue body has the finding shape, fingerprint first', () => {
   assert.equal(
-    body.buildIssueBody(SETTINGS, REPORT, '20261018-101500-abcd', UPLOADS),
+    body.buildIssueBody(TARGET, REPORT, '20261018-101500-abcd', UPLOADS),
     [
       '<!-- flow:finding fingerprint=/matches/42|the score overlaps the crest on narrow screens -->',
       '',
@@ -155,7 +158,7 @@ test('the issue body has the finding shape, fingerprint first', () => {
 })
 
 test('empty Steps and Expected say none, and no selection leaves its section out', () => {
-  const text = body.buildIssueBody(SETTINGS, { ...REPORT, steps: ' ', expected: '', selection: '' }, 'id', UPLOADS)
+  const text = body.buildIssueBody(TARGET, { ...REPORT, steps: ' ', expected: '', selection: '' }, 'id', UPLOADS)
   assert.match(text, /## Steps\n\n_none_\n\n## Expected\n\n_none_\n\n## Screenshots\n/)
   assert.doesNotMatch(text, /## Selected text/)
 })
@@ -169,15 +172,90 @@ test('the epic option takes an issue number, with or without #, or nothing', () 
   assert.throws(() => body.parseEpic('0'), /Epic must be an issue number/)
 })
 
-test('settings default to the flow:found label, the flow-findings branch and no epic', () => {
-  assert.deepEqual(DEFAULT_SETTINGS, { token: '', repo: '', branch: 'flow-findings', label: 'flow:found', epic: '' })
-  assert.deepEqual(normalizeSettings({ repo: ' acme/site ', epic: ' 7 ', label: '' }), {
+test('settings default to the flow:found label and no targets, and a target to the flow-findings branch', () => {
+  assert.deepEqual(DEFAULT_SETTINGS, { token: '', label: 'flow:found', targets: [] })
+  assert.deepEqual(normalizeSettings(undefined), DEFAULT_SETTINGS)
+  assert.deepEqual(normalizeSettings({ label: '', targets: [{ id: 'a', repo: ' acme/site ', epic: ' 7 ' }, { name: 'empty' }] }), {
     token: '',
-    repo: 'acme/site',
-    branch: 'flow-findings',
     label: 'flow:found',
-    epic: '7'
+    targets: [{ id: 'a', name: 'acme/site', repo: 'acme/site', epic: '7', branch: 'flow-findings' }]
   })
+})
+
+test('old settings with one repository become one target named after it', () => {
+  const old = { token: ' tok ', repo: ' acme/site ', branch: 'shots', label: 'found', epic: '#7' }
+  assert.deepEqual(normalizeSettings(old), {
+    token: 'tok',
+    label: 'found',
+    targets: [{ id: 'target-1', name: 'acme/site', repo: 'acme/site', epic: '#7', branch: 'shots' }]
+  })
+  assert.deepEqual(normalizeSettings({ token: 'tok', repo: '', branch: '', label: '', epic: '' }).targets, [])
+  assert.deepEqual(normalizeSettings(normalizeSettings(old)), normalizeSettings(old))
+})
+
+function fakeStorage(initial) {
+  const store = { ...initial }
+  globalThis.chrome = {
+    storage: {
+      local: {
+        get: async (key) => (key in store ? { [key]: structuredClone(store[key]) } : {}),
+        set: async (items) => Object.assign(store, structuredClone(items))
+      }
+    }
+  }
+  return store
+}
+
+test('loading old settings stores them migrated, once', async () => {
+  const store = fakeStorage({ settings: { token: 'tok', repo: 'acme/site', branch: '', label: '', epic: '7' } })
+  const loaded = await settingsModule.loadSettings()
+  assert.deepEqual(store.settings, loaded)
+  assert.deepEqual(loaded.targets, [{ id: 'target-1', name: 'acme/site', repo: 'acme/site', epic: '7', branch: 'flow-findings' }])
+  assert.equal('repo' in store.settings, false)
+})
+
+test('the chosen target is remembered per origin', async () => {
+  const store = fakeStorage({})
+  await settingsModule.rememberTarget('https://acme.example', 't1')
+  await settingsModule.rememberTarget('https://docs.acme.example', 't2')
+  await settingsModule.rememberTarget('', 't2')
+  await settingsModule.rememberTarget('https://acme.example', 't2')
+  assert.deepEqual(store.chosenTargets, { 'https://acme.example': 't2', 'https://docs.acme.example': 't2' })
+  assert.deepEqual(await settingsModule.loadChosenTargets(), store.chosenTargets)
+})
+
+test('a target with a bad repository or epic is refused by name', () => {
+  assert.doesNotThrow(() => checkTargets([TARGET, DOCS]))
+  assert.throws(() => checkTargets([TARGET, { ...DOCS, repo: 'docs' }]), /^Error: Docs: Repository must look like owner\/name/)
+  assert.throws(() => checkTargets([{ ...TARGET, name: '', epic: 'Bugs' }]), /^Error: Target 1: Epic must be an issue number/)
+})
+
+test('the popup picks the draft target, else the one remembered for the origin, else the first', () => {
+  const targets = [TARGET, DOCS]
+  const chosen = { 'https://docs.acme.example': 't2', 'https://gone.example': 'removed' }
+  assert.equal(originOf('https://docs.acme.example/guide?x=1#y'), 'https://docs.acme.example')
+  assert.equal(originOf('not a url'), '')
+  assert.equal(chooseTarget(targets, chosen, 'https://docs.acme.example'), DOCS)
+  assert.equal(chooseTarget(targets, chosen, 'https://acme.example'), TARGET)
+  assert.equal(chooseTarget(targets, chosen, 'https://gone.example'), TARGET)
+  assert.equal(chooseTarget(targets, chosen, ''), TARGET)
+  assert.equal(chooseTarget(targets, chosen, 'https://acme.example', 't2'), DOCS)
+  assert.equal(chooseTarget(targets, chosen, 'https://docs.acme.example', 'removed'), DOCS)
+  assert.equal(chooseTarget([], chosen, 'https://docs.acme.example'), null)
+})
+
+test('a draft keeps its target, and an older draft has none', () => {
+  const draft = createDraft({ url: 'https://acme.example/' }, 't2', 5)
+  assert.equal(draft.targetId, 't2')
+  assert.equal(normalizeDraft(JSON.parse(JSON.stringify(draft))).targetId, 't2')
+  assert.equal(normalizeDraft({ screenshots: [] }).targetId, '')
+})
+
+test('the body and paths are the same for any target with the same repository', () => {
+  const renamed = { ...TARGET, id: 'other', name: 'Renamed', epic: '3', branch: 'elsewhere' }
+  assert.equal(body.buildIssueBody(renamed, REPORT, 'id', UPLOADS), body.buildIssueBody(TARGET, REPORT, 'id', UPLOADS))
+  assert.match(body.buildIssueBody(DOCS, REPORT, 'id', UPLOADS), /https:\/\/github\.com\/acme\/docs\/blob\/c1\//)
+  assert.doesNotMatch(body.buildIssueBody(DOCS, REPORT, 'id', UPLOADS), /acme\/site\/blob/)
 })
 
 test('a draft keeps Steps and Expected, and an older draft gets them empty', () => {
@@ -223,7 +301,7 @@ const NOW = new Date(Date.UTC(2026, 9, 18, 10, 15, 0))
 
 test('filing a finding starts the orphan branch, uploads, files the issue and puts it under the epic by id', async () => {
   const calls = fakeGitHub(branchAndUploads({ status: 201, json: {} }))
-  const result = await fileFinding({ ...SETTINGS, epic: '#5' }, REPORT, NOW, () => 0)
+  const result = await fileFinding(SETTINGS, { ...TARGET, epic: '#5' }, REPORT, NOW, () => 0)
   assert.deepEqual(calls.map((call) => `${call.method} ${call.path}`), [
     'GET /repos/acme/site/git/ref/heads/flow-findings',
     'POST /repos/acme/site/git/blobs',
@@ -253,7 +331,7 @@ test('filing a finding starts the orphan branch, uploads, files the issue and pu
 
 test('a failed sub-issue call is reported and leaves the issue filed', async () => {
   const calls = fakeGitHub(branchAndUploads({ status: 422, json: { message: 'Validation Failed' } }))
-  const result = await fileFinding({ ...SETTINGS, epic: '5' }, REPORT, NOW, () => 0)
+  const result = await fileFinding(SETTINGS, { ...TARGET, epic: '5' }, REPORT, NOW, () => 0)
   assert.equal(result.number, 31)
   assert.match(result.epicProblem, /sub_issues failed with 422: Validation Failed/)
   assert.equal(calls.at(-1).path, '/repos/acme/site/issues/5/sub_issues')
@@ -264,7 +342,7 @@ test('with no epic set, no sub-issue call is made', async () => {
   const answers = branchAndUploads({ status: 500, json: {} })
   answers[0] = { method: 'GET', path: /\/git\/ref\/heads\/flow-findings$/, reply: { json: { object: { sha: 'x' } } } }
   const calls = fakeGitHub(answers)
-  const result = await fileFinding(SETTINGS, REPORT, NOW, () => 0)
+  const result = await fileFinding(SETTINGS, TARGET, REPORT, NOW, () => 0)
   assert.equal(result.epic, null)
   assert.equal(calls.some((call) => call.path.endsWith('/sub_issues')), false)
   assert.equal(calls.some((call) => call.path.endsWith('/git/blobs')), false)
@@ -272,6 +350,31 @@ test('with no epic set, no sub-issue call is made', async () => {
 
 test('an epic that is not a number is refused before anything is uploaded', async () => {
   const calls = fakeGitHub([])
-  await assert.rejects(fileFinding({ ...SETTINGS, epic: 'Bugs' }, REPORT, NOW), /Epic must be an issue number/)
+  await assert.rejects(fileFinding(SETTINGS, { ...TARGET, epic: 'Bugs' }, REPORT, NOW), /Epic must be an issue number/)
+  assert.equal(calls.length, 0)
+})
+
+test('a finding goes to the chosen target\'s repository, branch and epic', async () => {
+  let upload = 0
+  const calls = fakeGitHub([
+    { method: 'GET', path: /^\/repos\/acme\/docs\/git\/ref\/heads\/docs-shots$/, reply: { json: { object: { sha: 'x' } } } },
+    { method: 'PUT', path: /^\/repos\/acme\/docs\/contents\//, reply: () => ({ json: { commit: { sha: `sha${(upload += 1)}` } } }) },
+    { method: 'POST', path: /^\/repos\/acme\/docs\/issues$/, reply: { status: 201, json: { id: 55, number: 4, html_url: 'https://github.com/acme/docs/issues/4' } } },
+    { method: 'POST', path: /^\/repos\/acme\/docs\/issues\/9\/sub_issues$/, reply: { status: 201, json: {} } }
+  ])
+  const result = await fileFinding(SETTINGS, DOCS, REPORT, NOW, () => 0)
+  assert.equal(calls.length, 5)
+  assert.equal(calls.every((call) => call.path.startsWith('/repos/acme/docs/')), true)
+  assert.equal(calls[1].body.branch, 'docs-shots')
+  assert.match(calls[3].body.body, /github\.com\/acme\/docs\/blob\/sha1\//)
+  assert.equal(result.repo, 'acme/docs')
+  assert.equal(result.epic, 9)
+  assert.equal(result.epicProblem, null)
+})
+
+test('no target or a target with a bad repository is refused before any request', async () => {
+  const calls = fakeGitHub([])
+  await assert.rejects(fileFinding(SETTINGS, null, REPORT, NOW), /No target chosen/)
+  await assert.rejects(fileFinding(SETTINGS, { ...TARGET, repo: 'site' }, REPORT, NOW), /owner\/name/)
   assert.equal(calls.length, 0)
 })

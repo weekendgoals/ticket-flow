@@ -739,7 +739,10 @@ branch and linked by commit. It has no build step: open
 select the folder. A person then approves the finding with `flow:approved`
 or closes it, and `/flow:triage` turns approved findings into tickets. The
 token it needs, its options and the exact issue it writes are in
-[`tools/reporter/README.md`](tools/reporter/README.md).
+[`tools/reporter/README.md`](tools/reporter/README.md). Its options hold
+named targets (a repository, an epic and a screenshots branch each) under one
+token, and the popup's File to list picks one, remembering the last choice per
+site.
 
 ## `/flow:qa <url>`: a browser walks the site
 
