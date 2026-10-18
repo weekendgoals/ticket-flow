@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 import { readFileSync, writeFileSync, existsSync, readdirSync, statSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
-import { join, resolve, relative, isAbsolute } from 'node:path'
+import { join, resolve, relative, isAbsolute, extname } from 'node:path'
 import * as github from './tracker/github.mjs'
 import { TrackerError } from './tracker/github.mjs'
-import { parseEpicBody, parseTicketBody, parseDesignMap, withEpicLine, withBlockedBy, withTicketListed, withTicketChecked, normalizeNewlines } from './issue-body.mjs'
+import { parseEpicBody, parseTicketBody, parseDesignMap, withEpicLine, withBlockedBy, withTicketListed, withTicketChecked, normalizeNewlines, splitSections, withReport, originalReport, fingerprintMarker, findingImages, REPORT_MARKER } from './issue-body.mjs'
 import { CONFIG, ConfigError, apply as applyWorktreeSetup, createWorktree, removeWorktree, worktreePath } from './worktree-setup.mjs'
 import { runCriteria, formatCheckReport, CHECK_TIMEOUT_MS, CHECK_MAX_BUFFER } from './checks.mjs'
 import {
@@ -21,6 +21,9 @@ import {
   pushTicketBranch,
   mergeIntoEpic,
   commitSubjects,
+  commitToSideBranch,
+  FINDINGS_BRANCH,
+  FINDINGS_BRANCH_README,
 } from './delivery.mjs'
 import {
   isUnattended,
@@ -62,6 +65,8 @@ import {
   TICKET_LABEL,
   NEEDS_HUMAN_LABEL,
   START_LABEL,
+  FOUND_LABEL,
+  APPROVED_LABEL,
   STATE_LABELS,
   STATE_BY_LABEL,
   TIER_LABELS,
@@ -71,6 +76,10 @@ import {
   deriveEpic,
   nextSteps,
   epicBranchProblem,
+  isFinding,
+  findingSummary,
+  countFindings,
+  findingsLine,
 } from './epic-state.mjs'
 
 const USAGE = `usage: flow <command>
@@ -92,6 +101,13 @@ const USAGE = `usage: flow <command>
   create-ticket --no-epic --file <md> --title "<t>" [--tier easy|hard] [--repo <owner>/<name>]
                                          (--repo: file it in another repository, such as the plugin's own)
   needs-human <n> --text "<why>"         stop a ticket and ask a person
+  create-finding --title "<t>" --file <md> [--epic <e>] [--screenshots <dir>] [--fingerprint "<text>"]
+                                         file a bug or idea as a finding (flow:found): evidence, no criteria, nothing starts from it
+                                         (--fingerprint: exit 3 with the existing number when it was filed before)
+  found [<epic>] [--json]                open findings: their epic, who filed them and when, approved or waiting, images
+  promote <n> --file <md> --tier easy|hard --epic <e> [--blocked-by <n>,<n>]
+                                         turn an approved finding into a planned ticket of the epic, keeping its report
+  reject <n> --text "<why>"              say why a finding is not a ticket, and close it as not planned
   reset <n> [--once]                     put a ticket whose run died back to planned; its branch keeps its commits
                                          (--once: if it was reset before, ask a person instead)
 
@@ -121,7 +137,7 @@ const USAGE = `usage: flow <command>
                                          how the work went: time per step, tokens per model, review rounds,
                                          rework, escaped defects, stops; read from the issues' comments and git`
 
-const VALUE_FLAGS = new Set(['--file', '--epic-file', '--text', '--title', '--tier', '--cwd', '--blocked-by', '--bot', '--timeout', '--interval', '--sha', '--epic', '--tickets', '--out', '--workflow', '--important', '--grace', '--since', '--repo', '--head'])
+const VALUE_FLAGS = new Set(['--file', '--epic-file', '--text', '--title', '--tier', '--cwd', '--blocked-by', '--bot', '--timeout', '--interval', '--sha', '--epic', '--tickets', '--out', '--workflow', '--important', '--grace', '--since', '--repo', '--head', '--screenshots', '--fingerprint'])
 const REPEATABLE_FLAGS = new Set(['--transcripts'])
 const BOOLEAN_FLAGS = new Set(['--json', '--no-epic', '--print', '--wait', '--once', '--mark', '--remove', '--review', '--all'])
 const DEFAULT_WAIT_SECONDS = 1800
@@ -286,6 +302,8 @@ function commandBoard(positional, flags) {
           ]),
         ),
       )
+    console.log('')
+    console.log(`findings: ${findingsLine(epic.findings)}`)
     if (epic.problems.length) {
       console.log('')
       for (const problem of epic.problems) console.log(`! ${problem}`)
@@ -294,6 +312,11 @@ function commandBoard(positional, flags) {
   }
   const defaultBranch = github.defaultBranch()
   const epics = github.listIssues({ label: EPIC_LABEL }).map((issue) => deriveEpic(issue, github.listSubIssues(issue.number)))
+  const underEpics = new Set(epics.flatMap((epic) => epic.findings.map((finding) => finding.number)))
+  const withoutEpic = github
+    .listIssues({ label: FOUND_LABEL })
+    .filter((issue) => !underEpics.has(issue.number))
+    .map(findingSummary)
   const rows = epics.map((epic) => ({
     number: epic.number,
     title: epic.title,
@@ -302,23 +325,28 @@ function commandBoard(positional, flags) {
     total: epic.tickets.length,
     branch: epic.settings.branch,
     problems: epic.problems.length,
+    findings: countFindings(epic.findings),
   }))
-  if (flags.json) return printJson({ defaultBranch, epics: rows })
+  if (flags.json) return printJson({ defaultBranch, epics: rows, findingsWithoutEpic: countFindings(withoutEpic) })
   console.log(`default branch: ${defaultBranch || '(unknown)'}`)
-  if (!rows.length) return console.log('no open epics')
   console.log('')
-  console.log(
-    formatTable(
-      ['#', 'title', 'approved', 'done', 'branch'],
-      rows.map((row) => [
-        `#${row.number}`,
-        row.title,
-        row.approved ? 'yes' : 'no',
-        `${row.done}/${row.total}`,
-        `${row.branch || '(none set)'}${row.problems ? `  (${row.problems} problem(s): flow board ${row.number})` : ''}`,
-      ]),
-    ),
-  )
+  if (!rows.length) console.log('no open epics')
+  else
+    console.log(
+      formatTable(
+        ['#', 'title', 'approved', 'done', 'branch'],
+        rows.map((row) => [
+          `#${row.number}`,
+          row.title,
+          row.approved ? 'yes' : 'no',
+          `${row.done}/${row.total}`,
+          `${row.branch || '(none set)'}${row.problems ? `  (${row.problems} problem(s): flow board ${row.number})` : ''}`,
+        ]),
+      ),
+    )
+  console.log('')
+  for (const epic of epics) if (epic.findings.length) console.log(`#${epic.number} findings: ${findingsLine(epic.findings)}`)
+  console.log(`findings with no epic: ${findingsLine(withoutEpic)}`)
 }
 
 function commandNext(positional) {
@@ -594,7 +622,238 @@ function commandNeedsHuman(positional, flags) {
   console.log(posted.url || `#${number} marked ${NEEDS_HUMAN_LABEL}`)
 }
 
-const STATES_A_REFUSAL_STOPS = new Set(['planned', 'in-progress', 'in-review', 'unlabelled'])
+const IMAGE_TYPES = new Set(['.png', '.jpg', '.jpeg', '.webp'])
+const FINGERPRINT_EXISTS_EXIT = 3
+
+function readFingerprint(flags) {
+  if (flags.fingerprint === undefined) return null
+  const text = flags.fingerprint.trim()
+  if (!text || /[\r\n]|-->/.test(text)) throw new UsageError('--fingerprint takes one line of text without "-->"')
+  return text
+}
+
+function screenshotFiles(directory) {
+  if (!existsSync(directory) || !statSync(directory).isDirectory()) throw new UsageError(`--screenshots takes a directory, and ${directory} is not one`)
+  const names = readdirSync(directory)
+    .filter((name) => !name.startsWith('.') && statSync(join(directory, name)).isFile())
+    .sort()
+  const others = names.filter((name) => !IMAGE_TYPES.has(extname(name).toLowerCase()))
+  if (others.length) throw new UsageError(`${directory} holds ${others.join(', ')}, which is not a PNG, JPEG or WebP image; a finding carries images only, so move it out first`)
+  if (!names.length) throw new UsageError(`${directory} holds no image to attach`)
+  return names.map((name) => ({ name, source: join(directory, name) }))
+}
+
+function carriesMarker(body, marker) {
+  return normalizeNewlines(body)
+    .split('\n')
+    .some((line) => line.trim() === marker)
+}
+
+function blobLink(slug, sha, path) {
+  return `https://github.com/${slug}/blob/${sha}/${path.split('/').map(encodeURIComponent).join('/')}?raw=true`
+}
+
+function withScreenshots(body, links) {
+  const list = links.map((link, index) => `${index + 1}. ![${link.name}](${link.url})`)
+  return `${normalizeNewlines(body).replace(/\n+$/, '')}\n\n## Screenshots\n\n${list.join('\n')}\n`
+}
+
+function commandCreateFinding(positional, flags) {
+  if (positional.length) throw new UsageError('create-finding takes no issue number; give the epic with --epic')
+  if (!flags.title) throw new UsageError('create-finding needs --title')
+  if (flags.file === undefined) throw new UsageError('create-finding needs --file')
+  const fingerprint = readFingerprint(flags)
+  const epicNumber = flags.epic === undefined ? null : issueNumber(flags.epic, 'an epic number')
+  const shots = flags.screenshots === undefined ? [] : screenshotFiles(resolve(flags.screenshots))
+  const root = shots.length ? requireRepository(flags) : null
+  const text = normalizeNewlines(readFileSync(flags.file === '-' ? 0 : flags.file, 'utf8'))
+  if (epicNumber !== null) {
+    const epic = github.getIssue(epicNumber)
+    if (!epic.labels.includes(EPIC_LABEL)) throw new UsageError(`#${epicNumber} is not an epic (it has no ${EPIC_LABEL} label)`)
+  }
+  if (fingerprint !== null) {
+    const marker = fingerprintMarker(fingerprint)
+    const earlier = [...github.listIssues({ label: FOUND_LABEL }), ...github.listIssues({ label: TICKET_LABEL })].find((issue) => carriesMarker(issue.body, marker))
+    if (earlier) {
+      process.stderr.write(`#${earlier.number} already carries this fingerprint, so nothing was filed\n`)
+      console.log(earlier.number)
+      return FINGERPRINT_EXISTS_EXIT
+    }
+  }
+  const body = fingerprint === null ? text : `${fingerprintMarker(fingerprint)}\n\n${text.replace(/^\n+/, '')}`
+  const created = github.createIssue({ title: flags.title, body, labels: [FOUND_LABEL] })
+  const problems = []
+  if (epicNumber !== null)
+    try {
+      github.addSubIssue(epicNumber, created.id)
+    } catch (error) {
+      if (!(error instanceof TrackerError)) throw error
+      problems.push(`filed #${created.number}, but could not make it a sub-issue of epic #${epicNumber}: ${error.message}; add it under the epic's sub-issues on GitHub, or leave it: \`flow promote\` puts it under its epic`)
+    }
+  if (shots.length) {
+    let committed
+    try {
+      committed = commitToSideBranch(root, {
+        branch: FINDINGS_BRANCH,
+        files: shots.map((shot) => ({ source: shot.source, path: `findings/${created.number}/${shot.name}` })),
+        readme: FINDINGS_BRANCH_README,
+        message: `#${created.number}: screenshots of the finding`,
+      })
+    } catch (error) {
+      if (!(error instanceof GitError)) throw error
+      committed = { ok: false, reason: error.message }
+    }
+    if (!committed.ok) problems.push(`filed #${created.number}, but its screenshots were not attached: ${committed.reason}; attach them to the issue by hand`)
+    else {
+      const slug = github.repoSlug()
+      const links = shots.map((shot) => ({ name: shot.name, url: blobLink(slug, committed.sha, `findings/${created.number}/${shot.name}`) }))
+      try {
+        github.updateIssueBody(created.number, withScreenshots(body, links))
+      } catch (error) {
+        if (!(error instanceof TrackerError)) throw error
+        problems.push(`filed #${created.number} and committed its screenshots to ${FINDINGS_BRANCH} at ${committed.sha.slice(0, 12)}, but could not link them in the issue: ${error.message}`)
+      }
+    }
+  }
+  for (const problem of problems) process.stderr.write(`${problem}; running create-finding again would file it twice\n`)
+  console.log(created.number)
+  return problems.length ? 1 : 0
+}
+
+function openFindings(epicNumber) {
+  if (epicNumber !== null) {
+    const epic = github.getIssue(epicNumber)
+    if (!epic.labels.includes(EPIC_LABEL)) throw new UsageError(`#${epicNumber} is not an epic (it has no ${EPIC_LABEL} label)`)
+    return github
+      .listSubIssues(epicNumber)
+      .filter((issue) => isFinding(issue) && issue.state !== 'closed')
+      .map((issue) => ({ issue, epic: epicNumber }))
+  }
+  const parentOf = new Map()
+  for (const epic of github.listIssues({ label: EPIC_LABEL }))
+    for (const sub of github.listSubIssues(epic.number)) if (isFinding(sub)) parentOf.set(sub.number, epic.number)
+  return github.listIssues({ label: FOUND_LABEL }).map((issue) => ({ issue, epic: parentOf.get(issue.number) ?? null }))
+}
+
+function commandFound(positional, flags) {
+  const epicNumber = positional.length ? issueNumber(positional[0], 'an epic number') : null
+  const findings = openFindings(epicNumber)
+    .sort((a, b) => a.issue.number - b.issue.number)
+    .map(({ issue, epic }) => {
+      const images = findingImages(issue.body)
+      return {
+        ...findingSummary(issue),
+        url: issue.url,
+        epic,
+        status: issue.labels.includes(APPROVED_LABEL) ? 'approved' : 'waiting',
+        imageCount: images.length,
+        images,
+        body: issue.body,
+      }
+    })
+  if (flags.json) return printJson(findings)
+  if (!findings.length) return console.log(epicNumber === null ? 'no open findings' : `no open findings under epic #${epicNumber}`)
+  console.log(
+    formatTable(
+      ['#', 'title', 'epic', 'filed by', 'filed', 'status', 'images'],
+      findings.map((finding) => [
+        `#${finding.number}`,
+        finding.title,
+        finding.epic === null ? 'none' : `#${finding.epic}`,
+        finding.author || 'unknown',
+        finding.createdAt ? finding.createdAt.slice(0, 10) : 'unknown',
+        finding.status,
+        finding.imageCount,
+      ]),
+    ),
+  )
+}
+
+function commandReject(positional, flags) {
+  const number = issueNumber(positional[0], 'a finding number')
+  if (!flags.text) throw new UsageError('reject needs --text "<why>": one sentence the reporter can read')
+  const finding = github.getIssue(number)
+  if (finding.state === 'closed' || !isFinding(finding)) {
+    process.stderr.write(`#${number} is not an open finding (an open issue labelled ${FOUND_LABEL}); reject closes findings only\n`)
+    return 1
+  }
+  github.comment(number, `**Not a ticket.** ${flags.text}`)
+  github.closeIssue(number, 'not_planned')
+  console.log(`#${number} closed as not planned`)
+  return 0
+}
+
+const PROMOTE_REFUSED_EXIT = 2
+
+function refusePromote(text) {
+  process.stderr.write(`${text}\n`)
+  return PROMOTE_REFUSED_EXIT
+}
+
+function commandPromote(positional, flags) {
+  const number = issueNumber(positional[0], 'a finding number')
+  if (flags.file === undefined) throw new UsageError('promote needs --file <ticket body>')
+  if (!TIER_LABELS[flags.tier]) throw new UsageError(`promote needs --tier easy or --tier hard${flags.tier === undefined ? '' : `, got "${flags.tier}"`}`)
+  if (flags.epic === undefined) throw new UsageError('promote needs --epic <epic>: a ticket belongs to an epic')
+  const epicNumber = issueNumber(flags.epic, 'an epic number')
+  let blockers
+  try {
+    blockers = parseBlockerList(flags['blocked-by'])
+  } catch (error) {
+    if (!(error instanceof UsageError)) throw error
+    return refusePromote(`--blocked-by takes issue numbers and commas, such as 12,14, not "${flags['blocked-by']}"`)
+  }
+  const finding = github.getIssue(number)
+  if (finding.state === 'closed' || !isFinding(finding)) return refusePromote(`#${number} is not an open finding (an open issue labelled ${FOUND_LABEL}), so there is nothing to promote`)
+  if (!finding.labels.includes(APPROVED_LABEL)) return refusePromote(`nobody approved #${number}: a person adds ${APPROVED_LABEL}, or closes it`)
+  const draft = readFileSync(flags.file, 'utf8')
+  if (draft.includes(REPORT_MARKER) || splitSections(draft).names.includes('report'))
+    return refusePromote('the ticket body has its own "## Report" section; promote writes that section from the finding, so leave it out')
+  const epic = github.getIssue(epicNumber)
+  if (!epic.labels.includes(EPIC_LABEL)) return refusePromote(`#${epicNumber} is not an epic (it has no ${EPIC_LABEL} label)`)
+  const epicPlan = parseEpicBody(epic.body)
+  if (epicPlan.problems.length) return refusePromote(`epic #${epicNumber} has settings that cannot be read: ${epicPlan.problems.join('; ')}`)
+  let ticketBody
+  try {
+    ticketBody = withBlockedBy(withEpicLine(draft, epicNumber), blockers)
+  } catch (error) {
+    return refusePromote(error.message)
+  }
+  const parsed = parseTicketBody(ticketBody, epicPlan.settings.designSources)
+  if (parsed.blockedByProblem) return refusePromote(`the ticket body ${parsed.blockedByProblem}`)
+  if (parsed.criteria.problems.length)
+    return refusePromote(`the ticket body's criteria cannot decide it: ${parsed.criteria.problems.map((problem) => `${problem.why}${problem.line === null ? '' : ` (line ${problem.line})`}`).join('; ')}`)
+  const members = new Set(github.listSubIssues(epicNumber).filter((issue) => !isFinding(issue)).map((issue) => issue.number))
+  const outside = parsed.blockedBy.filter((blocker) => !members.has(blocker))
+  if (outside.length) return refusePromote(`blocked by ${outside.map((blocker) => `#${blocker}`).join(', ')}, which is not a ticket of epic #${epicNumber}`)
+  const parent = github.parentIssue(number)
+  const movedFrom = parent && parent.number !== epicNumber ? parent.number : null
+  if (!parent || movedFrom !== null) {
+    if (movedFrom !== null) github.removeSubIssue(movedFrom, finding.id)
+    github.addSubIssue(epicNumber, finding.id)
+  }
+  const promoted = withReport(ticketBody, originalReport(finding.body))
+  if (promoted !== finding.body) github.updateIssueBody(number, promoted)
+  const kept = finding.labels.filter(
+    (label) => label !== FOUND_LABEL && label !== APPROVED_LABEL && label !== START_LABEL && !STATE_LABELS.includes(label) && !Object.values(TIER_LABELS).includes(label),
+  )
+  github.setLabels(number, [...kept, TICKET_LABEL, 'flow:planned', TIER_LABELS[flags.tier]])
+  const result = { ticket: number, epic: epicNumber, tier: flags.tier, blockedBy: parsed.blockedBy, movedFrom }
+  try {
+    const listed = withTicketListed(epic.body, number, finding.title)
+    if (listed !== normalizeNewlines(epic.body)) github.updateIssueBody(epicNumber, listed)
+  } catch (error) {
+    if (!(error instanceof TrackerError)) throw error
+    process.stderr.write(`#${number} is a ticket of epic #${epicNumber} now, but it could not be listed under the epic's tickets: ${error.message}\nFinish with \`flow link ${epicNumber} ${number}\`.\n`)
+    printJson(result)
+    return 1
+  }
+  syncProjectStatus(number, 'planned')
+  printJson(result)
+  return 0
+}
+
+const STATES_A_REFUSAL_STOPS =new Set(['planned', 'in-progress', 'in-review', 'unlabelled'])
 
 function refuse(number, state, reason) {
   process.stderr.write(`${reason}\n`)
@@ -626,6 +885,10 @@ function commandStart(positional, flags) {
   const number = issueNumber(positional[0], 'a ticket number')
   const root = requireRepository(flags)
   const { issue, parsed } = loadTicket(number)
+  if (isFinding(issue)) {
+    process.stderr.write(`#${number} is a finding (${FOUND_LABEL}), not a ticket, so nothing starts from it; triage turns an approved finding into a ticket with \`flow promote\`\n`)
+    return 1
+  }
   const { state } = ticketState(issue.labels)
   const { epic, notAnEpic } = loadOptionalEpic(parsed.epic)
   if (notAnEpic) return refuse(number, state, `#${number} says "Epic: #${parsed.epic}", but #${parsed.epic} is not an epic`)
@@ -1447,6 +1710,14 @@ function main(argv) {
       return commandLink(positional)
     case 'needs-human':
       return commandNeedsHuman(positional, flags)
+    case 'create-finding':
+      return commandCreateFinding(positional, flags)
+    case 'found':
+      return commandFound(positional, flags)
+    case 'promote':
+      return commandPromote(positional, flags)
+    case 'reject':
+      return commandReject(positional, flags)
     case 'start':
       return commandStart(positional, flags)
     case 'accept':

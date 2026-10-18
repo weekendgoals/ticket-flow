@@ -250,8 +250,67 @@ export const MISSING_CRITERIA_BLOCK =
   'no ```criteria block under "## Acceptance criteria", so nothing decides this ticket; anyone who can edit the issue could otherwise turn a red ticket green by deleting the block'
 export const EMPTY_CRITERIA_BLOCK = 'the ```criteria block has no CHECK or COMPARE line, so nothing decides this ticket'
 
-export function parseTicketBody(body, designSources = null) {
+export const REPORT_MARKER = '<!-- flow:report -->'
+const REPORT_BOUNDARY = `\n## Report\n\n${REPORT_MARKER}\n`
+
+export function splitReport(body) {
   const normalized = normalizeNewlines(body)
+  const at = normalized.indexOf(REPORT_BOUNDARY)
+  if (at === -1) return { ticket: normalized, report: null }
+  return { ticket: normalized.slice(0, at), report: normalized.slice(at + REPORT_BOUNDARY.length) }
+}
+
+export function originalReport(body) {
+  const raw = body || ''
+  const at = raw.indexOf(REPORT_BOUNDARY)
+  if (at !== -1) return raw.slice(at + REPORT_BOUNDARY.length)
+  const { report } = splitReport(raw)
+  return report === null ? raw : report
+}
+
+export function withReport(ticketBody, original) {
+  return `${normalizeNewlines(ticketBody).replace(/\n+$/, '')}\n${REPORT_BOUNDARY}${original}`
+}
+
+export function fingerprintMarker(fingerprint) {
+  return `<!-- flow:finding fingerprint=${fingerprint} -->`
+}
+
+const MARKDOWN_IMAGE = /!\[([^\]]*)\]\(\s*<?([^)\s>]+)>?(?:\s+"[^"]*")?\s*\)/g
+const HTML_IMAGE = /<img\b[^>]*?\bsrc\s*=\s*["']([^"']+)["'][^>]*>/gi
+const REPOSITORY_IMAGE = [
+  /^https:\/\/github\.com\/([\w.-]+\/[\w.-]+)\/(?:blob|raw)\/([^/?#]+)\/([^?#]+)/,
+  /^https:\/\/raw\.githubusercontent\.com\/([\w.-]+\/[\w.-]+)\/([^/?#]+)\/([^?#]+)/,
+]
+
+function decodedPath(path) {
+  try {
+    return path.split('/').map(decodeURIComponent).join('/')
+  } catch {
+    return path
+  }
+}
+
+function imageLocation(url) {
+  for (const pattern of REPOSITORY_IMAGE) {
+    const match = url.match(pattern)
+    if (match) return { repository: match[1], ref: match[2], path: decodedPath(match[3]) }
+  }
+  return { repository: null, ref: null, path: null }
+}
+
+export function findingImages(body) {
+  const images = []
+  for (const entry of scanLines(body)) {
+    if (entry.fence !== null) continue
+    for (const match of entry.line.matchAll(MARKDOWN_IMAGE)) images.push({ alt: match[1], url: match[2], ...imageLocation(match[2]) })
+    for (const match of entry.line.matchAll(HTML_IMAGE)) images.push({ alt: '', url: match[1], ...imageLocation(match[1]) })
+  }
+  return images
+}
+
+export function parseTicketBody(body, designSources = null) {
+  const normalized = splitReport(body).ticket
   const { section } = splitSections(normalized)
   const text = (name) => (section(name) ? section(name).text : null)
   const { blockedBy, problem } = parseBlockedBy(normalized)

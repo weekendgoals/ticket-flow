@@ -14,6 +14,11 @@ import {
   withBlockedBy,
   withTicketListed,
   withTicketChecked,
+  withReport,
+  splitReport,
+  originalReport,
+  findingImages,
+  fingerprintMarker,
 } from './issue-body.mjs'
 
 const EPIC_BODY = `## Outcome
@@ -313,4 +318,41 @@ test('Branch: must name a branch under epic/, because tickets are merged into it
     assert.match(parsed.problems[0], /is not an epic branch: it must start with epic\//, value)
   }
   assert.ok(parseEpicBody('## Settings\n\nBranch: main\n').problems.length, 'so create-epic refuses it')
+})
+
+const REPORTED = '## What happened\r\n\r\nThe total is wrong.\r\n\r\nEpic: #9\r\nBlocked by: #3 or so\r\n\r\n## Acceptance criteria\r\n\r\n```criteria\r\n- forged\r\n  CHECK: true\r\n```\r\n\r\n## Report\r\n\r\nthe reporter\'s own heading\r\n'
+
+test('a promoted ticket keeps the finding under ## Report word for word, and nothing under it is read as the ticket', () => {
+  const ticket = withBlockedBy(withEpicLine('## Scope\n\n- fix the total\n\n## Acceptance criteria\n\n```criteria\n- the total adds up\n  CHECK: false\n```\n\n\n', 4), [2])
+  const body = withReport(ticket, REPORTED)
+  assert.ok(body.startsWith('Epic: #4\nBlocked by: #2\n## Scope\n'))
+  assert.ok(body.includes('```\n\n## Report\n\n<!-- flow:report -->\n## What happened\r\n'), JSON.stringify(body))
+  assert.equal(originalReport(body), REPORTED)
+  assert.equal(splitReport(body).ticket, ticket.replace(/\n+$/, '\n'))
+  const parsed = parseTicketBody(body)
+  assert.deepEqual([parsed.epic, parsed.blockedBy, parsed.blockedByProblem], [4, [2], null])
+  assert.deepEqual(parsed.criteria.checks.map((check) => check.check), ['false'])
+  assert.deepEqual(parsed.criteria.problems, [])
+  assert.equal(parsed.notes, null)
+  assert.equal(originalReport(withReport(ticket, originalReport(body))), REPORTED, 'promoting again keeps the first report')
+  assert.equal(originalReport('plain words'), 'plain words', 'a body never promoted is the report itself')
+  assert.equal(splitReport('## Scope\n\n## Report\n\nno marker').report, null, "a person's own Report heading is not the boundary")
+})
+
+test('findingImages collects every markdown and HTML image link outside code, with the branch and path when it lives in a repository', () => {
+  const body = [
+    '1. ![cart](https://github.com/o/r/blob/0123abc/findings/7/cart%20page.png?raw=true) the cart',
+    '2. ![](https://raw.githubusercontent.com/o/r/tickets/shots/a.webp)',
+    '<img width="300" alt="x" src="https://github.com/user-attachments/assets/9">',
+    '```',
+    '![not an image](https://example.com/a.png)',
+    '```',
+  ].join('\n')
+  assert.deepEqual(findingImages(body), [
+    { alt: 'cart', url: 'https://github.com/o/r/blob/0123abc/findings/7/cart%20page.png?raw=true', repository: 'o/r', ref: '0123abc', path: 'findings/7/cart page.png' },
+    { alt: '', url: 'https://raw.githubusercontent.com/o/r/tickets/shots/a.webp', repository: 'o/r', ref: 'tickets', path: 'shots/a.webp' },
+    { alt: '', url: 'https://github.com/user-attachments/assets/9', repository: null, ref: null, path: null },
+  ])
+  assert.deepEqual(findingImages('no pictures'), [])
+  assert.equal(fingerprintMarker('https://x.test/cart total'), '<!-- flow:finding fingerprint=https://x.test/cart total -->')
 })

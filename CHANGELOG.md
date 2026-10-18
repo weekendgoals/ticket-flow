@@ -25,6 +25,62 @@ stamps the version and date and bumps `plugin.json` in the same commit.
   it found, `none linked`, or the `Status` options it lacks, without
   changing its exit code. The code is `scripts/project-sync.mjs`, with its
   GraphQL calls in `tracker/github.mjs`.
+- **New: findings, bugs and ideas before they are tickets.** A finding is an
+  issue labelled `flow:found` (the twelfth label; `flow init` creates it and
+  `doctor` names it when missing): evidence, a person's words, no criteria.
+  `next`, `board`'s ticket table, `dispatch`, `check-epic`, `merge --epic`
+  and `release-pr` read past a finding under an epic, so it changes no
+  answer, no built state and no release; `start` refuses one without asking
+  a person. `board` adds `findings: <n> waiting, <m> approved` per epic and
+  for findings with no epic (and `findings` / `findingsWithoutEpic` in
+  `--json`). `github/finding.md` is an issue template a project copies to
+  `.github/ISSUE_TEMPLATE/`: the label and the recommended shape (What
+  happened, Where, Steps, Expected, Screenshots).
+- **New: `flow create-finding --title <t> --file <body> [--epic <e>]
+  [--screenshots <dir>] [--fingerprint <text>]`** files one, as a sub-issue
+  of `--epic` when given. `--screenshots` (PNG, JPEG or WebP only; anything
+  else in the directory refuses before anything is filed) commits the
+  images to the orphan branch `flow-findings` under
+  `findings/<issue number>/` without touching the checkout, pushes it, and
+  appends a `## Screenshots` list linking each by commit; the branch is
+  created holding only a `README.md` when missing. `--fingerprint` exits 3
+  printing the existing number when an open finding, or a ticket promoted
+  from one, already carries `<!-- flow:finding fingerprint=<text> -->`, and
+  otherwise writes that line at the top of the new body. Findings are not
+  added to the project board.
+- **New: `flow found [<epic>] [--json]`** lists the open findings (epic or
+  none, who filed them and when, approved or waiting, image count; the JSON
+  adds the body and each image link with its branch and path). It always
+  exits 0.
+- **New: `flow promote <n> --file <ticket body> --tier easy|hard --epic <e>
+  [--blocked-by <n>,<n>]`**, the only way a finding becomes a ticket. It
+  refuses with exit 2 and one sentence a finding that is closed, not a
+  finding or not approved (`flow:approved`, added by a person), a body whose
+  criteria cannot decide it, an epic that is not one or whose settings
+  cannot be read, a `Blocked by` that cannot be read or points outside the
+  epic, and a body with its own `## Report`. Then it moves the issue under
+  the epic (out of any other parent), writes the ticket body with `Epic:` and
+  `Blocked by:` and the finding's original text byte for byte under a last
+  `## Report` section, sets the labels to `flow:ticket`, `flow:planned` and
+  the tier (dropping `flow:found` and `flow:approved` in one call), lists it
+  under the epic's tickets and sets the project board to `Planned`. It is
+  safe to repeat until the labels change.
+- **Nothing under a ticket's `## Report` heading is read as the ticket.**
+  `parseTicketBody` stops at the `## Report` section `promote` writes, so a
+  reporter's text can carry no criteria, blocker or `Epic:` line into the
+  ticket.
+- **New: `flow reject <n> --text <why>`** posts why a finding is not a ticket
+  and closes it as not planned; it refuses anything that is not an open
+  finding.
+- **New: `/flow:triage [<epic>]`** (`skills/triage/SKILL.md`): reads every
+  approved finding and its screenshots, decides ticket (criteria with a
+  CHECK proven red), not a ticket, or too big for one, shows one table, and
+  only after the user's go runs `promote`, `reject` or a comment naming
+  `/flow:epic`.
+- **The Action ignores findings.** Its `route` job runs on `flow:approved`
+  only for an issue labelled `flow:epic`, so approving a finding schedules
+  nothing, and its `ticket` job does not run for a `flow:start` on a
+  finding. Copy `github/flow.yml` again to pick this up.
 
 ## 3.0.0 — 2026-10-15
 

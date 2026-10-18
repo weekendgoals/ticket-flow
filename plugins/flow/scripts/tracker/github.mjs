@@ -127,6 +127,23 @@ export function addSubIssue(parentNumber, childId) {
   apiWrite('POST', `${REPO}/issues/${parentNumber}/sub_issues`, { sub_issue_id: childId })
 }
 
+export function closeIssue(number, reason = 'not_planned') {
+  return normalizeIssue(apiWrite('PATCH', `${REPO}/issues/${number}`, { state: 'closed', state_reason: reason }))
+}
+
+export function removeSubIssue(parentNumber, childId) {
+  apiWrite('DELETE', `${REPO}/issues/${parentNumber}/sub_issue`, { sub_issue_id: childId })
+}
+
+export function parentIssue(number) {
+  try {
+    return normalizeIssue(apiGet(`${REPO}/issues/${number}/parent`))
+  } catch (error) {
+    if (error instanceof TrackerError && error.httpStatus === 404) return null
+    throw error
+  }
+}
+
 export function setLabels(number, labels) {
   apiWrite('PUT', `${REPO}/issues/${number}/labels`, { labels })
 }

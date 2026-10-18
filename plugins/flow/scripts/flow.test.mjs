@@ -7,6 +7,7 @@ import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
 import { installFakeGh } from './tracker/fake-gh.mjs'
 import { LABELS } from './epic-state.mjs'
+import { originalReport, splitReport } from './issue-body.mjs'
 
 const FLOW = join(dirname(fileURLToPath(import.meta.url)), 'flow.mjs')
 const R = 'repos/{owner}/{repo}'
@@ -83,13 +84,14 @@ const ticket = (number, epic, state, extra = {}) =>
     assignees: extra.assignees || [],
   })
 
-function world({ epics = [], others = [], labels = LABELS.map((label) => label.name), repo = {}, extra = {} }) {
+function world({ epics = [], others = [], findings = [], labels = LABELS.map((label) => label.name), repo = {}, extra = {} }) {
   const fixtures = {
     '--version': 'gh version 2.96.0 (2026-07-02)\n',
     'auth status': '',
     [`GET ${R}`]: { full_name: 'o/r', default_branch: 'main', has_issues: true, ...repo },
     [`GET ${R}/labels?per_page=100`]: labels.map((name) => ({ name, color: 'ededed', description: '' })),
     [`GET ${R}/issues?labels=flow%3Aepic&state=open&per_page=100`]: epics.map(({ epic }) => epic),
+    [`GET ${R}/issues?labels=flow%3Afound&state=open&per_page=100`]: findings,
     [PROJECT_LOOKUP]: { data: { repository: { projectsV2: { nodes: [] } } } },
   }
   const noEdits = { data: { repository: { issue: { userContentEdits: { pageInfo: { hasNextPage: false, endCursor: null }, nodes: [] } } } } }
@@ -103,6 +105,7 @@ function world({ epics = [], others = [], labels = LABELS.map((label) => label.n
     tickets.forEach(add)
   }
   others.forEach(add)
+  findings.forEach(add)
   fake.setFixtures({ ...fixtures, ...extra })
 }
 
@@ -129,21 +132,21 @@ const brokenEpic = () => ({
   ],
 })
 
-test('init creates the eleven labels, and a second run creates none', () => {
+test('init creates the twelve labels, and a second run creates none', () => {
   world({ labels: ['flow:epic', 'bug'], extra: { [`POST ${R}/labels`]: {} } })
   const first = flow('init')
   assert.equal(first.status, 0, first.stderr)
   const posted = fake.calls().filter((call) => call.key === `POST ${R}/labels`).map((call) => JSON.parse(call.stdin))
-  assert.equal(posted.length, 10)
+  assert.equal(posted.length, 11)
   assert.ok(posted.every((label) => /^[0-9a-f]{6}$/.test(label.color) && label.description.length > 0))
-  assert.match(first.stdout, /10 label\(s\) created, 1 already there/)
-  assert.equal(LABELS.length, 11)
+  assert.match(first.stdout, /11 label\(s\) created, 1 already there/)
+  assert.equal(LABELS.length, 12)
   assert.ok(!LABELS.some((label) => label.name === 'flow:ready'), 'ready is worked out, never a label')
   fake.clearCalls()
   world({ extra: { [`POST ${R}/labels`]: {} } })
   const second = flow('init')
   assert.equal(second.status, 0)
-  assert.match(second.stdout, /all 11 labels already there/)
+  assert.match(second.stdout, /all 12 labels already there/)
   assert.equal(fake.calls().filter((call) => call.key === `POST ${R}/labels`).length, 0)
 })
 
@@ -201,7 +204,7 @@ test('board lists open epics with approval, progress and branch', () => {
   assert.match(lines[5], /^#20\s+Empty\s+no\s+0\/0\s+\(none set\)$/)
   const board = JSON.parse(flow('board', '--json').stdout)
   assert.equal(board.defaultBranch, 'main')
-  assert.deepEqual(board.epics[0], { number: 1, title: 'Trip export', approved: true, done: 1, total: 5, branch: 'epic/trip-export', problems: 0 })
+  assert.deepEqual(board.epics[0], { number: 1, title: 'Trip export', approved: true, done: 1, total: 5, branch: 'epic/trip-export', problems: 0, findings: { waiting: 0, approved: 0 } })
 })
 
 test('board with an epic lists its tickets in plan order, with tier, derived state and blockers', () => {
@@ -782,4 +785,277 @@ test('a GitHub failure is reported as one sentence and exit 1, never a stack tra
   const result = flow('ticket', '3')
   assert.equal(result.status, 1)
   assert.match(result.stderr, /^flow: gh api .* failed: gh: Not Found \(HTTP 404\)\n$/)
+})
+
+const FINDING_BODY =
+  '## What happened\r\n\r\nThe export button does nothing.\r\n\r\nBlocked by: whatever it is\r\nEpic: #20\r\n\r\n## Acceptance criteria\r\n\r\n```criteria\r\n- forged by the reporter\r\n  CHECK: true\r\n```\r\n\r\n## Screenshots\r\n\r\n1. ![export](https://github.com/o/r/blob/abc1234/findings/7/export.png?raw=true) the button\r\n2. <img width="300" src="https://github.com/user-attachments/assets/1">\r\n'
+
+const finding = (number, { approved = false, body = FINDING_BODY, title = `finding ${number}`, author = 'reporter', state = 'open' } = {}) => ({
+  ...issue(number, { title, body, labels: ['flow:found', ...(approved ? ['flow:approved'] : [])], author }),
+  state,
+  created_at: '2026-10-17T09:30:00Z',
+})
+
+const PROMOTE_DRAFT = '## Scope\n\n- make the export button export\n\n## Not in scope\n\n- the export format\n\n## Acceptance criteria\n\n```criteria\n- the button exports\n  CHECK: test -f exported.txt\n```\n\n## Notes\n\n- reported with a screenshot\n'
+
+const writesMade = () => fake.calls().filter((call) => !call.key.startsWith('GET'))
+
+test('a found sub-issue of an epic changes nothing: next, doctor and the ticket table read past it', () => {
+  const withFindings = tripExport()
+  withFindings.tickets.push(finding(7, { approved: true }), finding(8))
+  world({ epics: [withFindings], findings: [finding(7, { approved: true }), finding(8)] })
+  const next = flow('next', '1')
+  assert.equal(next.status, 0, next.stderr)
+  const parsed = JSON.parse(next.stdout)
+  assert.deepEqual(parsed.ready, [3, 6])
+  assert.deepEqual(parsed.problems, [])
+  assert.ok(!parsed.tickets.some((ticket) => ticket.n === 7 || ticket.n === 8))
+  assert.deepEqual(flow('doctor').stdout.trim().split('\n'), ['project board: none linked', 'ok'])
+  const board = flow('board', '1')
+  assert.ok(!/^#[78] /m.test(board.stdout), board.stdout)
+  assert.match(board.stdout, /^findings: 1 waiting, 1 approved$/m)
+  const built = { epic: issue(40, { body: epicBody([41]), labels: epicLabels() }), tickets: [ticket(41, 40, 'done'), finding(42)] }
+  world({ epics: [built] })
+  const done = flow('next', '40')
+  assert.equal(done.status, 0, 'a waiting finding does not make a built epic unfinished')
+  assert.deepEqual(JSON.parse(done.stdout).done, [41])
+  const empty = { epic: issue(50, { body: epicBody([], 'Delivery: incremental'), labels: epicLabels() }), tickets: [finding(51, { approved: true })] }
+  world({ epics: [empty] })
+  const none = flow('next', '50')
+  assert.equal(none.status, 1)
+  assert.match(none.stderr, /has no tickets/, 'a finding is not a ticket, even an approved one')
+})
+
+test('board counts findings per epic and those with no epic, in text and JSON', () => {
+  const withFindings = tripExport()
+  withFindings.tickets.push(finding(7, { approved: true }), finding(8), finding(9, { state: 'closed' }))
+  world({ epics: [withFindings], findings: [finding(7, { approved: true }), finding(8), finding(12), finding(13, { approved: true }), finding(14)] })
+  const result = flow('board')
+  assert.equal(result.status, 0, result.stderr)
+  assert.match(result.stdout, /^#1 findings: 1 waiting, 1 approved$/m)
+  assert.match(result.stdout, /^findings with no epic: 2 waiting, 1 approved$/m)
+  const json = JSON.parse(flow('board', '--json').stdout)
+  assert.deepEqual(json.epics[0].findings, { waiting: 1, approved: 1 })
+  assert.deepEqual(json.findingsWithoutEpic, { waiting: 2, approved: 1 })
+  world({})
+  assert.match(flow('board').stdout, /no open epics\n\nfindings with no epic: 0 waiting, 0 approved/)
+})
+
+test('create-finding files an issue labelled flow:found and nothing else: no criteria asked, no project board, no epic', () => {
+  const file = join(directory, 'finding.md')
+  writeFileSync(file, 'The map is blank on a phone.\n')
+  world({ extra: { [`POST ${R}/issues`]: finding(90) } })
+  const result = flow('create-finding', '--title', 'Blank map', '--file', file)
+  assert.equal(result.status, 0, result.stderr)
+  assert.equal(result.stdout.trim(), '90')
+  assert.deepEqual(fake.calls().map((call) => call.key), [`POST ${R}/issues`], 'findings are not on the project board until promoted')
+  assert.deepEqual(JSON.parse(fake.calls()[0].stdin), { title: 'Blank map', body: 'The map is blank on a phone.\n', labels: ['flow:found'] })
+})
+
+test('create-finding --epic makes it a sub-issue of the epic, refuses a parent that is not one, and names a failed link', () => {
+  const file = join(directory, 'finding-epic.md')
+  writeFileSync(file, '## What happened\n\nNothing loads.\n')
+  world({ epics: [tripExport()], others: [issue(30, { labels: ['bug'] })], extra: { [`POST ${R}/issues`]: finding(91), [`POST ${R}/issues/1/sub_issues`]: {} } })
+  const result = flow('create-finding', '--title', 'Nothing loads', '--file', file, '--epic', '1')
+  assert.equal(result.status, 0, result.stderr)
+  assert.deepEqual(writesMade().map((call) => call.key), [`POST ${R}/issues`, `POST ${R}/issues/1/sub_issues`])
+  assert.deepEqual(JSON.parse(writesMade()[1].stdin), { sub_issue_id: 5091 })
+  fake.clearCalls()
+  const notEpic = flow('create-finding', '--title', 'x', '--file', file, '--epic', '30')
+  assert.equal(notEpic.status, 2)
+  assert.match(notEpic.stderr, /#30 is not an epic/)
+  assert.deepEqual(writesMade(), [])
+  world({ epics: [tripExport()], extra: { [`POST ${R}/issues`]: finding(92), [`POST ${R}/issues/1/sub_issues`]: { $exit: 1, $stderr: 'gh: Validation Failed (HTTP 422)' } } })
+  const unlinked = flow('create-finding', '--title', 'x', '--file', file, '--epic', '1')
+  assert.equal(unlinked.status, 1)
+  assert.equal(unlinked.stdout.trim(), '92')
+  assert.match(unlinked.stderr, /filed #92, but could not make it a sub-issue of epic #1: .*HTTP 422.*running create-finding again would file it twice/)
+})
+
+test('create-finding --fingerprint files a bug once: an open finding or ticket carrying the marker refuses with exit 3 and its number', () => {
+  const file = join(directory, 'finding-print.md')
+  writeFileSync(file, 'The total is wrong.\n')
+  const marker = '<!-- flow:finding fingerprint=https://example.com/cart total is wrong -->'
+  world({ findings: [finding(60, { body: `${marker}\r\n\r\nThe total is wrong.` })], extra: { [`GET ${R}/issues?labels=flow%3Aticket&state=open&per_page=100`]: [] } })
+  const again = flow('create-finding', '--title', 'Wrong total', '--file', file, '--fingerprint', 'https://example.com/cart total is wrong')
+  assert.equal(again.status, 3)
+  assert.equal(again.stdout.trim(), '60')
+  assert.match(again.stderr, /#60 already carries this fingerprint, so nothing was filed/)
+  assert.deepEqual(writesMade(), [])
+  world({
+    findings: [],
+    extra: { [`GET ${R}/issues?labels=flow%3Aticket&state=open&per_page=100`]: [issue(61, { body: `Epic: #1\n\n## Report\n\n<!-- flow:report -->\n${marker}\n`, labels: ['flow:ticket', 'flow:planned'] })] },
+  })
+  const promoted = flow('create-finding', '--title', 'Wrong total', '--file', file, '--fingerprint', 'https://example.com/cart total is wrong')
+  assert.equal(promoted.status, 3, 'a finding already promoted to a ticket is the same bug')
+  assert.equal(promoted.stdout.trim(), '61')
+  world({
+    findings: [finding(62, { body: '<!-- flow:finding fingerprint=https://example.com/cart total -->\n' })],
+    extra: { [`GET ${R}/issues?labels=flow%3Aticket&state=open&per_page=100`]: [], [`POST ${R}/issues`]: finding(93) },
+  })
+  const fresh = flow('create-finding', '--title', 'Wrong total', '--file', file, '--fingerprint', 'https://example.com/cart total is wrong')
+  assert.equal(fresh.status, 0, fresh.stderr)
+  assert.equal(fresh.stdout.trim(), '93')
+  assert.equal(JSON.parse(writesMade()[0].stdin).body, `${marker}\n\nThe total is wrong.\n`)
+  assert.equal(flow('create-finding', '--title', 'x', '--file', file, '--fingerprint', 'a --> b').status, 2)
+})
+
+test('found lists open findings with their epic, who filed them, approval and image count, and exits 0 with none', () => {
+  const underEpic = tripExport()
+  underEpic.tickets.push(finding(7, { approved: true }))
+  world({ epics: [underEpic], findings: [finding(7, { approved: true }), finding(12, { body: 'no pictures', author: 'qa-bot' })] })
+  const result = flow('found')
+  assert.equal(result.status, 0, result.stderr)
+  const lines = result.stdout.trim().split('\n')
+  assert.match(lines[0], /^#\s+title\s+epic\s+filed by\s+filed\s+status\s+images$/)
+  assert.match(lines[2], /^#7\s+finding 7\s+#1\s+reporter\s+2026-10-17\s+approved\s+2$/)
+  assert.match(lines[3], /^#12\s+finding 12\s+none\s+qa-bot\s+2026-10-17\s+waiting\s+0$/)
+  const json = JSON.parse(flow('found', '--json').stdout)
+  assert.deepEqual(json.map((entry) => [entry.number, entry.epic, entry.status, entry.imageCount]), [[7, 1, 'approved', 2], [12, null, 'waiting', 0]])
+  assert.deepEqual(json[0].images[0], { alt: 'export', url: 'https://github.com/o/r/blob/abc1234/findings/7/export.png?raw=true', repository: 'o/r', ref: 'abc1234', path: 'findings/7/export.png' })
+  assert.equal(json[0].body, FINDING_BODY)
+  const one = JSON.parse(flow('found', '1', '--json').stdout)
+  assert.deepEqual(one.map((entry) => entry.number), [7])
+  world({})
+  const none = flow('found')
+  assert.equal(none.status, 0)
+  assert.equal(none.stdout.trim(), 'no open findings')
+  assert.ok(!fake.calls().some((call) => !call.key.startsWith('GET')), 'found writes nothing')
+})
+
+test('promote refuses, with exit 2 and one sentence, everything that is not an approved finding with decidable criteria under an epic', () => {
+  const draft = (name, text) => {
+    const file = join(directory, `promote-${name}.md`)
+    writeFileSync(file, text)
+    return file
+  }
+  const good = draft('good', PROMOTE_DRAFT)
+  world({
+    epics: [tripExport(), { epic: issue(25, { body: epicBody([], 'Delivery: sometimes'), labels: epicLabels() }), tickets: [] }],
+    others: [finding(7, { approved: true }), finding(8), finding(9, { approved: true, state: 'closed' }), issue(30, { labels: ['bug'] })],
+  })
+  const cases = [
+    [['3', '--file', good, '--tier', 'easy', '--epic', '1'], /^#3 is not an open finding \(an open issue labelled flow:found\), so there is nothing to promote$/],
+    [['9', '--file', good, '--tier', 'easy', '--epic', '1'], /^#9 is not an open finding/],
+    [['8', '--file', good, '--tier', 'easy', '--epic', '1'], /^nobody approved #8: a person adds flow:approved, or closes it$/],
+    [['7', '--file', good, '--tier', 'easy', '--epic', '30'], /^#30 is not an epic \(it has no flow:epic label\)$/],
+    [['7', '--file', good, '--tier', 'easy', '--epic', '25'], /^epic #25 has settings that cannot be read: "Delivery: sometimes"/],
+    [['7', '--file', draft('none', '## Scope\n\n- x\n'), '--tier', 'easy', '--epic', '1'], /criteria cannot decide it: no ```criteria block/],
+    [['7', '--file', draft('empty', '## Acceptance criteria\n\n```criteria\n- prose only\n```\n'), '--tier', 'easy', '--epic', '1'], /no CHECK or COMPARE line/],
+    [['7', '--file', draft('prose', `Blocked by: #2 once it lands\n\n${PROMOTE_DRAFT}`), '--tier', 'easy', '--epic', '1'], /^the ticket body has a "Blocked by" line that cannot be read/],
+    [['7', '--file', good, '--tier', 'easy', '--epic', '1', '--blocked-by', 'two'], /^--blocked-by takes issue numbers and commas/],
+    [['7', '--file', good, '--tier', 'easy', '--epic', '1', '--blocked-by', '2,99'], /^blocked by #99, which is not a ticket of epic #1$/],
+    [['7', '--file', draft('report', `${PROMOTE_DRAFT}\n## Report\n\nmine\n`), '--tier', 'easy', '--epic', '1'], /has its own "## Report" section/],
+    [['7', '--file', draft('other-epic', `Epic: #25\n\n${PROMOTE_DRAFT}`), '--tier', 'easy', '--epic', '1'], /already says "Epic: #25", not #1/],
+  ]
+  for (const [args, reason] of cases) {
+    fake.clearCalls()
+    const result = flow('promote', ...args)
+    assert.equal(result.status, 2, `${args.join(' ')}: ${result.stderr}`)
+    assert.match(result.stderr.trim(), reason)
+    assert.equal(result.stderr.trim().split('\n').length, 1, result.stderr)
+    assert.deepEqual(writesMade(), [], args.join(' '))
+  }
+  assert.match(flow('promote', '7', '--file', good, '--epic', '1').stderr, /promote needs --tier easy or --tier hard/)
+  assert.match(flow('promote', '7', '--file', good, '--tier', 'easy').stderr, /promote needs --epic/)
+})
+
+test('promote rewrites the finding into a planned ticket of the epic, keeps the report byte for byte, re-parents it, and it is ready like any ticket', () => {
+  const file = join(directory, 'promote-happy.md')
+  writeFileSync(file, PROMOTE_DRAFT)
+  const epic = tripExport()
+  const original = { ...finding(7, { approved: true }), labels: [{ name: 'flow:found' }, { name: 'flow:approved' }, { name: 'bug' }, { name: 'tier:hard' }] }
+  world({
+    epics: [epic],
+    others: [original],
+    extra: {
+      [`GET ${R}/issues/7/parent`]: issue(20, { labels: ['flow:epic'] }),
+      [`DELETE ${R}/issues/20/sub_issue`]: {},
+      [`POST ${R}/issues/1/sub_issues`]: {},
+      [`PATCH ${R}/issues/7`]: original,
+      [`PUT ${R}/issues/7/labels`]: [],
+      [`PATCH ${R}/issues/1`]: epic.epic,
+    },
+  })
+  const result = flow('promote', '7', '--file', file, '--tier', 'easy', '--epic', '1', '--blocked-by', '2')
+  assert.equal(result.status, 0, result.stderr)
+  assert.deepEqual(JSON.parse(result.stdout), { ticket: 7, epic: 1, tier: 'easy', blockedBy: [2], movedFrom: 20 })
+  const writes = writesMade()
+  assert.deepEqual(writes.map((call) => call.key), [
+    `DELETE ${R}/issues/20/sub_issue`,
+    `POST ${R}/issues/1/sub_issues`,
+    `PATCH ${R}/issues/7`,
+    `PUT ${R}/issues/7/labels`,
+    `PATCH ${R}/issues/1`,
+    PROJECT_LOOKUP,
+  ])
+  assert.deepEqual(JSON.parse(writes[0].stdin), { sub_issue_id: 5007 })
+  assert.deepEqual(JSON.parse(writes[1].stdin), { sub_issue_id: 5007 })
+  const body = JSON.parse(writes[2].stdin).body
+  assert.match(body, /^Epic: #1\nBlocked by: #2\n## Scope\n\n- make the export button export\n/)
+  assert.match(splitReport(body).ticket, /## Notes\n\n- reported with a screenshot\n$/)
+  assert.equal(originalReport(body), FINDING_BODY, 'the report is the finding as it was filed, byte for byte')
+  assert.deepEqual(JSON.parse(writes[3].stdin), { labels: ['bug', 'flow:ticket', 'flow:planned', 'tier:easy'] })
+  assert.match(JSON.parse(writes[4].stdin).body, /- \[ \] #6 — ticket 6\n- \[ \] #7 — finding 7/)
+  const promoted = issue(7, { title: 'finding 7', body, labels: ['bug', 'flow:ticket', 'flow:planned', 'tier:easy'] })
+  epic.tickets.push(promoted)
+  world({ epics: [epic] })
+  const next = flow('next', '1')
+  assert.equal(next.status, 0, next.stderr)
+  const parsed = JSON.parse(next.stdout)
+  assert.deepEqual(parsed.ready, [3, 6, 7], 'the forged criteria and Blocked by line in the report are never read')
+  assert.deepEqual(parsed.problems, [])
+  const shown = JSON.parse(flow('ticket', '7').stdout)
+  assert.deepEqual([shown.epic, shown.blockedBy, shown.criteria.checks.map((check) => check.check)], [1, [2], ['test -f exported.txt']])
+})
+
+test('reject says why a finding is not a ticket and closes it as not planned, and touches nothing else', () => {
+  world({ epics: [tripExport()], others: [finding(7, { approved: true })], extra: { [`POST ${R}/issues/7/comments`]: { id: 9, html_url: null }, [`PATCH ${R}/issues/7`]: finding(7, { state: 'closed' }) } })
+  const result = flow('reject', '7', '--text', 'Already fixed by #5.')
+  assert.equal(result.status, 0, result.stderr)
+  assert.deepEqual(writesMade().map((call) => [call.key, JSON.parse(call.stdin)]), [
+    [`POST ${R}/issues/7/comments`, { body: '**Not a ticket.** Already fixed by #5.' }],
+    [`PATCH ${R}/issues/7`, { state: 'closed', state_reason: 'not_planned' }],
+  ])
+  fake.clearCalls()
+  const ticketRefused = flow('reject', '3', '--text', 'x')
+  assert.equal(ticketRefused.status, 1)
+  assert.match(ticketRefused.stderr, /#3 is not an open finding/)
+  assert.deepEqual(writesMade(), [])
+  assert.equal(flow('reject', '7').status, 2)
+})
+
+test('promote of a finding with no parent adds it to the epic without removing anything, and is safe to run again before its labels change', () => {
+  const file = join(directory, 'promote-loose.md')
+  writeFileSync(file, PROMOTE_DRAFT)
+  const epic = tripExport()
+  world({
+    epics: [epic],
+    others: [finding(12, { approved: true, body: 'Loose words.' })],
+    extra: {
+      [`GET ${R}/issues/12/parent`]: { $exit: 1, $stderr: 'gh: Not Found (HTTP 404)' },
+      [`POST ${R}/issues/1/sub_issues`]: {},
+      [`PATCH ${R}/issues/12`]: { $exit: 1, $stderr: 'gh: Server Error (HTTP 502)' },
+    },
+  })
+  const failed = flow('promote', '12', '--file', file, '--tier', 'hard', '--epic', '1')
+  assert.equal(failed.status, 1)
+  assert.deepEqual(writesMade().map((call) => call.key), [`POST ${R}/issues/1/sub_issues`, `PATCH ${R}/issues/12`])
+  const halfway = finding(12, { approved: true, body: `Epic: #1\n## Scope\n\n- x\n\n## Report\n\n<!-- flow:report -->\nLoose words.` })
+  fake.clearCalls()
+  world({
+    epics: [epic],
+    others: [halfway],
+    extra: {
+      [`GET ${R}/issues/12/parent`]: issue(1, { labels: ['flow:epic'] }),
+      [`PATCH ${R}/issues/12`]: halfway,
+      [`PUT ${R}/issues/12/labels`]: [],
+      [`PATCH ${R}/issues/1`]: epic.epic,
+    },
+  })
+  const again = flow('promote', '12', '--file', file, '--tier', 'hard', '--epic', '1')
+  assert.equal(again.status, 0, again.stderr)
+  assert.equal(JSON.parse(again.stdout).movedFrom, null)
+  assert.ok(!writesMade().some((call) => call.key.includes('sub_issue')), 'already under the epic: nothing to move')
+  assert.equal(originalReport(JSON.parse(writesMade()[0].stdin).body), 'Loose words.', 'a second run keeps the first report, not the half-promoted body')
 })

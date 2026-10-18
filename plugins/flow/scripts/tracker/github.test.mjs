@@ -69,6 +69,32 @@ test('listSubIssues reads the sub-issues endpoint', () => {
   assert.deepEqual(github.listSubIssues(1).map((issue) => issue.number), [3, 4])
 })
 
+test('parentIssue reads the parent of a sub-issue, and an issue with none is null rather than a failure', () => {
+  fake.setFixtures({
+    [`GET ${R}/issues/7/parent`]: rawIssue(1, { labels: [{ name: 'flow:epic' }] }),
+    [`GET ${R}/issues/8/parent`]: { $exit: 1, $stderr: 'gh: Not Found (HTTP 404)' },
+    [`GET ${R}/issues/9/parent`]: { $exit: 1, $stderr: 'gh: Server Error (HTTP 500)' },
+  })
+  assert.equal(github.parentIssue(7).number, 1)
+  assert.equal(github.parentIssue(8), null)
+  assert.throws(() => github.parentIssue(9), (error) => error instanceof github.TrackerError && error.httpStatus === 500)
+})
+
+test('closeIssue closes an issue as not planned unless told another reason', () => {
+  fake.setFixtures({ [`PATCH ${R}/issues/7`]: rawIssue(7, { state: 'closed' }) })
+  assert.equal(github.closeIssue(7).state, 'closed')
+  github.closeIssue(7, 'completed')
+  assert.deepEqual(fake.calls().map((call) => JSON.parse(call.stdin)), [{ state: 'closed', state_reason: 'not_planned' }, { state: 'closed', state_reason: 'completed' }])
+})
+
+test('removeSubIssue sends the child id to the parent\'s sub_issue endpoint', () => {
+  fake.setFixtures({ [`DELETE ${R}/issues/1/sub_issue`]: rawIssue(7) })
+  github.removeSubIssue(1, 9007)
+  const [call] = fake.calls()
+  assert.equal(call.key, `DELETE ${R}/issues/1/sub_issue`)
+  assert.deepEqual(JSON.parse(call.stdin), { sub_issue_id: 9007 })
+})
+
 test('writes send their JSON on stdin, so numbers stay numbers and text is never shell-quoted', () => {
   fake.setFixtures({
     [`POST ${R}/issues`]: rawIssue(7),
