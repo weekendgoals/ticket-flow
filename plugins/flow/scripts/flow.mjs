@@ -4,7 +4,7 @@ import { spawnSync } from 'node:child_process'
 import { join, resolve, relative, isAbsolute, extname } from 'node:path'
 import * as github from './tracker/github.mjs'
 import { TrackerError } from './tracker/github.mjs'
-import { parseEpicBody, parseTicketBody, parseDesignMap, withEpicLine, withBlockedBy, withTicketListed, withTicketChecked, normalizeNewlines, splitSections, withReport, originalReport, fingerprintMarker, findingImages, REPORT_MARKER } from './issue-body.mjs'
+import { parseEpicBody, parseTicketBody, parseDesignMap, withEpicLine, withBlockedBy, withTicketListed, withTicketChecked, normalizeNewlines, splitSections, withReport, originalReport, fingerprintMarker, retroFingerprint, findingImages, REPORT_MARKER } from './issue-body.mjs'
 import { CONFIG, ConfigError, apply as applyWorktreeSetup, createWorktree, removeWorktree, worktreePath } from './worktree-setup.mjs'
 import { runCriteria, formatCheckReport, CHECK_TIMEOUT_MS, CHECK_MAX_BUFFER } from './checks.mjs'
 import {
@@ -22,6 +22,7 @@ import {
   mergeIntoEpic,
   commitSubjects,
   commitToSideBranch,
+  instructionFileSizes,
   FINDINGS_BRANCH,
   FINDINGS_BRANCH_README,
 } from './delivery.mjs'
@@ -54,11 +55,15 @@ import {
   importantCountMismatch,
   passingAcceptancesByOthers,
   RELEASE_CHECK_MARKER,
+  handoffComment,
+  lastHandoff,
+  MAX_HANDOFF_LENGTH,
 } from './ticket-steps.mjs'
 import { loadSources, workflowSources, meterTranscripts, meterComment, readMeterComment } from './meter.mjs'
-import { ticketStats, readEpicComments, summarize, overallStats, formatStats, combineMeters } from './stats.mjs'
+import { ticketStats, readEpicComments, summarize, overallStats, formatStats, combineMeters, firstStartBase } from './stats.mjs'
 import { COPILOT_REVIEWER_LOGIN, BOTS, configuredBot, copilotUnavailable, botReview, sameLogin, summarizeChecks, sleepSeconds } from './review-bots.mjs'
 import { syncProjectStatus, projectBoardLine, ensureProjectBoard, findProjectBoard, placeOnBoard, statusOptionName, explain as explainProjectError, oneLine, DEFAULT_BOARD_TITLE } from './project-sync.mjs'
+import { siteAddress, readQaConfig, parseWidthsOption, readSitemap, readLinks, buildRoutes, sameSiteSitemaps, qaFingerprint, QaInputError, DEFAULT_ROUTE_CAP } from './qa.mjs'
 import {
   LABELS,
   EPIC_LABEL,
@@ -90,7 +95,8 @@ const USAGE = `usage: flow <command>
   doctor                                 check gh, the repository, the labels and every open epic
   board [<epic>] [--json]                list open epics, or one epic's tickets
   next <epic>                            what can start now, as JSON (exit 1 when the epic is not approved, empty or stuck)
-  ticket <n>                             one ticket, parsed, as JSON
+  ticket <n>                             one ticket, parsed, as JSON, with the handoffs of its epic's done tickets
+                                         (they are printed on stderr too)
   check <n> [--cwd <dir>]                run a ticket's CHECK criteria (exit 1 unless all pass)
   check --file <md> [--epic-file <md>]   the same, for a draft ticket body not yet on GitHub
   link <epic> <n>                        finish linking a ticket to its epic (safe to repeat)
@@ -103,9 +109,14 @@ const USAGE = `usage: flow <command>
   create-ticket --no-epic --file <md> --title "<t>" [--tier easy|hard] [--repo <owner>/<name>]
                                          (--repo: file it in another repository, such as the plugin's own)
   needs-human <n> --text "<why>"         stop a ticket and ask a person
-  create-finding --title "<t>" --file <md> [--epic <e>] [--screenshots <dir>] [--fingerprint "<text>"]
+  handoff <n> --text "<lines>" | --file <md>
+                                         what later tickets need from this one, once it is in review or done (the latest wins)
+  create-finding --title "<t>" --file <md> [--epic <e>] [--screenshots <dir>] [--fingerprint "<text>"] [--repo <owner>/<name>]
                                          file a bug or idea as a finding (flow:found): evidence, no criteria, nothing starts from it
-                                         (--fingerprint: exit 3 with the existing number when it was filed before)
+                                         (--fingerprint: exit 3 with the existing number when it was filed before or rejected;
+                                         --repo: file it in another repository, such as the plugin's, where --epic is looked up)
+  retro-fingerprint <epic> --text "<first line>"
+                                         the fingerprint a retro files a proposal with, so a second retro of the epic does not file it again
   found [<epic>] [--json]                open findings: their epic, who filed them and when, approved or waiting, images
   promote <n> --file <md> --tier easy|hard --epic <e> [--blocked-by <n>,<n>]
                                          turn an approved finding into a planned ticket of the epic, keeping its report
@@ -137,10 +148,17 @@ const USAGE = `usage: flow <command>
 
   stats [<epic>] [--since <date>] [--json] [--cwd <dir>]
                                          how the work went: time per step, tokens per model, review rounds,
-                                         rework, escaped defects, stops; read from the issues' comments and git`
+                                         rework, escaped defects, stops; read from the issues' comments and git
 
-const VALUE_FLAGS = new Set(['--file', '--epic-file', '--text', '--title', '--tier', '--cwd', '--blocked-by', '--bot', '--timeout', '--interval', '--sha', '--epic', '--tickets', '--out', '--workflow', '--important', '--grace', '--since', '--repo', '--head', '--screenshots', '--fingerprint'])
-const REPEATABLE_FLAGS = new Set(['--transcripts'])
+  /flow:qa reads its plan from the commands below; none of them touches GitHub:
+  qa-config [--widths <w>,<w>] [--cwd <dir>]
+                                         the "qa" section of .flow.json, checked, as JSON (exit 2 on a problem)
+  qa-routes <url> [--routes <file> | --sitemap <file> ... | --links <file>] [--cap 60] [--cwd <dir>]
+                                         the pages to visit: same site only, deduplicated, no "deny" match, capped, as JSON
+  qa-fingerprint <url> "<first line>"    the fingerprint a QA finding is filed with: the page's path and the normalised line`
+
+const VALUE_FLAGS = new Set(['--file', '--epic-file', '--text', '--title', '--tier', '--cwd', '--blocked-by', '--bot', '--timeout', '--interval', '--sha', '--epic', '--tickets', '--out', '--workflow', '--important', '--grace', '--since', '--repo', '--head', '--screenshots', '--fingerprint', '--routes', '--links', '--cap', '--widths'])
+const REPEATABLE_FLAGS = new Set(['--transcripts', '--sitemap'])
 const BOOLEAN_FLAGS = new Set(['--board', '--json', '--no-epic', '--print', '--wait', '--once', '--mark', '--remove', '--review', '--all'])
 const DEFAULT_WAIT_SECONDS = 1800
 const DEFAULT_POLL_SECONDS = 30
@@ -214,12 +232,14 @@ function loadTicket(number) {
   const firstPass = parseTicketBody(issue.body)
   let designSources = null
   let epicAuthor = null
+  let epicIssue = null
   if (firstPass.epic !== null) {
     const epic = github.getIssue(firstPass.epic)
     designSources = parseEpicBody(epic.body).settings.designSources
     epicAuthor = epic.author
+    epicIssue = epic
   }
-  return { issue, parsed: parseTicketBody(issue.body, designSources), epicAuthor }
+  return { issue, parsed: parseTicketBody(issue.body, designSources), epicAuthor, epicIssue }
 }
 
 function changeState(number, { add = [], remove = [], state = null }) {
@@ -438,11 +458,45 @@ function commandNext(positional) {
   return 0
 }
 
+const MAX_HANDOFFS_SHOWN = 20
+
+function earlierHandoffs(number, parsed, epicIssue) {
+  const none = { shown: [], leftOut: 0, unread: null }
+  if (!epicIssue || !epicIssue.labels.includes(EPIC_LABEL)) return none
+  const done = deriveEpic(epicIssue, github.listSubIssues(epicIssue.number)).tickets.filter((ticket) => ticket.state === 'done' && ticket.number !== number)
+  if (!done.length) return none
+  const blockers = new Set(parsed.blockedBy)
+  const ordered = [...done.filter((ticket) => blockers.has(ticket.number)), ...done.filter((ticket) => !blockers.has(ticket.number))]
+  let account
+  try {
+    account = github.viewerLogin()
+  } catch (error) {
+    if (!(error instanceof TrackerError) || error.missing) throw error
+    return { ...none, unread: error.message }
+  }
+  const shown = ordered
+    .slice(0, MAX_HANDOFFS_SHOWN)
+    .map((ticket) => ({ ticket, handoff: lastHandoff(github.listComments(ticket.number), account) }))
+    .filter(({ handoff }) => handoff)
+    .map(({ ticket, handoff }) => ({ number: ticket.number, title: ticket.title, blocker: blockers.has(ticket.number), ...handoff }))
+  return { shown, leftOut: Math.max(0, ordered.length - MAX_HANDOFFS_SHOWN), unread: null }
+}
+
+function handoffLines({ shown, leftOut, unread }) {
+  if (unread) return [`handoffs: not read, because the account running this is unknown (${unread})`]
+  const lines = shown.length ? ['handoffs:'] : ['handoffs: none']
+  for (const handoff of shown) lines.push(`#${handoff.number} ${handoff.title}:`, handoff.text, '')
+  if (leftOut) lines.push(`${leftOut} more done ticket(s) not read: only the first ${MAX_HANDOFFS_SHOWN} are, blockers first, then in the epic's order`)
+  return lines
+}
+
 function commandTicket(positional) {
   const number = issueNumber(positional[0], 'a ticket number')
-  const { issue, parsed } = loadTicket(number)
+  const { issue, parsed, epicIssue } = loadTicket(number)
   const { state } = ticketState(issue.labels)
   const tier = ticketTier(issue.labels)
+  const handoffs = earlierHandoffs(number, parsed, epicIssue)
+  process.stderr.write(`${handoffLines(handoffs).join('\n').trimEnd()}\n`)
   printJson({
     number: issue.number,
     title: issue.title,
@@ -461,6 +515,8 @@ function commandTicket(positional) {
     notes: parsed.notes,
     criteria: parsed.criteria,
     edits: github.bodyEditHistory(number),
+    handoffs: handoffs.shown,
+    handoffsLeftOut: handoffs.leftOut,
   })
 }
 
@@ -710,6 +766,31 @@ function commandNeedsHuman(positional, flags) {
   console.log(posted.url || `#${number} marked ${NEEDS_HUMAN_LABEL}`)
 }
 
+const HANDOFF_STATES = new Set(['in-review', 'done'])
+const REJECTED_SEARCH_PAGES = 5
+
+function commandHandoff(positional, flags) {
+  const number = issueNumber(positional[0], 'a ticket number')
+  const text = normalizeNewlines(readText(flags)).trim()
+  const refused = (reason) => {
+    process.stderr.write(`${reason}; nothing was posted\n`)
+    return 1
+  }
+  if (!text) return refused('the handoff is empty: write the three to five lines a later ticket needs')
+  if (text.length > MAX_HANDOFF_LENGTH)
+    return refused(`the handoff is ${text.length} characters, and one holds at most ${MAX_HANDOFF_LENGTH}: three to five lines a later ticket needs, because the detail is in the commits`)
+  const { state } = ticketState(github.getIssue(number).labels)
+  if (!HANDOFF_STATES.has(state)) return refused(`#${number} is ${state}, and a handoff is written once the work exists: when the ticket is in review or done`)
+  const earlier = lastHandoff(github.listComments(number), github.viewerLogin())
+  if (earlier && state === 'done')
+    return refused(`#${number} is done and already has its handoff (${earlier.at}); a done ticket's handoff is not replaced, because later tickets and their reviewers read it as that ticket's decision`)
+  const posted = github.comment(number, handoffComment(text))
+  console.log(posted.url || `handoff posted on #${number}`)
+  if (earlier) console.log(`it replaces the handoff of ${earlier.at}: later tickets read only the latest one`)
+  if (state === 'done') console.log(`#${number} is done, so this handoff is its last: it cannot be replaced`)
+  return 0
+}
+
 const IMAGE_TYPES = new Set(['.png', '.jpg', '.jpeg', '.webp'])
 const FINGERPRINT_EXISTS_EXIT = 3
 
@@ -746,10 +827,26 @@ function withScreenshots(body, links) {
   return `${normalizeNewlines(body).replace(/\n+$/, '')}\n\n## Screenshots\n\n${list.join('\n')}\n`
 }
 
+function commandRetroFingerprint(positional, flags) {
+  const epic = issueNumber(positional[0], 'an epic number')
+  if (flags.text === undefined || !flags.text.trim()) throw new UsageError('retro-fingerprint needs --text "<the proposal\'s first line>"')
+  console.log(retroFingerprint({ repository: github.repoSlug(), epic, line: flags.text }))
+  return 0
+}
+
+function rejectedOn(issue) {
+  return (issue.closedAt || '').slice(0, 10) || 'an unknown date'
+}
+
 function commandCreateFinding(positional, flags) {
   if (positional.length) throw new UsageError('create-finding takes no issue number; give the epic with --epic')
   if (!flags.title) throw new UsageError('create-finding needs --title')
   if (flags.file === undefined) throw new UsageError('create-finding needs --file')
+  if (flags.repo !== undefined) {
+    if (flags.screenshots !== undefined)
+      throw new UsageError('--screenshots goes without --repo: the images are committed to the flow-findings branch of this repository, and a finding in another one could not link them')
+    useRepository(flags.repo)
+  }
   const fingerprint = readFingerprint(flags)
   const epicNumber = flags.epic === undefined ? null : issueNumber(flags.epic, 'an epic number')
   const shots = flags.screenshots === undefined ? [] : screenshotFiles(resolve(flags.screenshots))
@@ -768,6 +865,15 @@ function commandCreateFinding(positional, flags) {
       console.log(earlier.number)
       return FINGERPRINT_EXISTS_EXIT
     }
+    const closed = github.listRecentlyClosedIssues({ label: FOUND_LABEL, pages: REJECTED_SEARCH_PAGES })
+    const rejected = closed.issues.find((issue) => issue.stateReason === 'not_planned' && carriesMarker(issue.body, marker))
+    if (rejected) {
+      process.stderr.write(`#${rejected.number} was rejected on ${rejectedOn(rejected)}: reopen it to reconsider\n`)
+      console.log(rejected.number)
+      return FINGERPRINT_EXISTS_EXIT
+    }
+    if (closed.capped)
+      process.stderr.write(`only the ${closed.issues.length} most recently updated closed findings were searched for a rejection of this fingerprint; an older one would not be found\n`)
   }
   const body = fingerprint === null ? text : `${fingerprintMarker(fingerprint)}\n\n${text.replace(/^\n+/, '')}`
   const created = github.createIssue({ title: flags.title, body, labels: [FOUND_LABEL] })
@@ -1694,14 +1800,18 @@ function subjectsOn(root, refs) {
 }
 
 function releasePullRequestOf(number) {
-  if (!number) return null
+  if (!number) return { shown: null, mergeCommit: null }
   try {
     const pullRequest = github.getPullRequest(number)
-    return { number, url: pullRequest.url, merged: pullRequest.merged, mergedAt: pullRequest.mergedAt }
+    return { shown: { number, url: pullRequest.url, merged: pullRequest.merged, mergedAt: pullRequest.mergedAt }, mergeCommit: pullRequest.mergeCommitSha }
   } catch (error) {
     if (!(error instanceof TrackerError)) throw error
-    return { number, url: null, merged: null, mergedAt: null }
+    return { shown: { number, url: null, merged: null, mergedAt: null }, mergeCommit: null }
   }
+}
+
+function instructionFilesAt(root, sha) {
+  return root && sha ? instructionFileSizes(root, sha) : null
 }
 
 function epicStats(epicIssue, { root, defaultBranch, defaultSubjects }) {
@@ -1719,9 +1829,11 @@ function epicStats(epicIssue, { root, defaultBranch, defaultSubjects }) {
     : subjects === null
       ? `none of ${refs.slice(0, 2).join(', ')} is in this clone; run \`git fetch origin\` first`
       : null
-  const tickets = epic.tickets.map((ticket) =>
-    ticketStats({ ticket, comments: github.listComments(ticket.number), subjects, defaultSubjects, delivery, serialWaves: epicRecord.serialWaves }),
+  const commentLists = epic.tickets.map((ticket) => github.listComments(ticket.number))
+  const tickets = epic.tickets.map((ticket, index) =>
+    ticketStats({ ticket, comments: commentLists[index], subjects, defaultSubjects, delivery, serialWaves: epicRecord.serialWaves }),
   )
+  const release = releasePullRequestOf(epicRecord.releasePullRequest)
   return {
     number: epic.number,
     title: epic.title,
@@ -1732,7 +1844,8 @@ function epicStats(epicIssue, { root, defaultBranch, defaultSubjects }) {
     delivery,
     parallel: epic.settings.parallel ?? null,
     branch: epic.settings.branch || null,
-    releasePullRequest: releasePullRequestOf(epicRecord.releasePullRequest),
+    releasePullRequest: release.shown,
+    instructionFiles: { before: instructionFilesAt(root, firstStartBase(commentLists)), after: instructionFilesAt(root, release.mergeCommit) },
     serialWaves: epicRecord.serialWaves,
     runStops: epicRecord.runStops,
     gitProblem,
@@ -1765,6 +1878,84 @@ function commandStats(positional, flags) {
   )
   if (flags.json) printJson(result)
   else console.log(formatStats(result))
+  return 0
+}
+
+function qaConfigRoot(flags) {
+  const directory = resolve(flags.cwd || process.cwd())
+  return repositoryRoot(directory) || directory
+}
+
+function printProblems(problems) {
+  for (const problem of problems) process.stderr.write(`flow: ${problem}\n`)
+  return 2
+}
+
+function commandQaConfig(positional, flags) {
+  if (positional.length) throw new UsageError('qa-config takes no argument; it reads .flow.json at the repository root')
+  const { config, problems, file } = readQaConfig(qaConfigRoot(flags))
+  const widths = flags.widths === undefined ? { widths: config.widths, problem: null } : parseWidthsOption(flags.widths)
+  if (widths.problem) problems.push(widths.problem)
+  if (problems.length) return printProblems(problems)
+  printJson({ file, ...config, widths: widths.widths })
+  return 0
+}
+
+function readQaInput(option, file, parse) {
+  let text
+  try {
+    text = readFileSync(file, 'utf8')
+  } catch (error) {
+    throw new QaInputError(`${option} ${file} cannot be read (${error.code || error.message})`)
+  }
+  try {
+    return parse(text)
+  } catch (error) {
+    if (!(error instanceof QaInputError)) throw error
+    throw new QaInputError(`${option} ${file}: ${error.message}`)
+  }
+}
+
+function routeCandidates(flags, config) {
+  const given = ['routes', 'sitemap', 'links'].filter((name) => flags[name] !== undefined)
+  if (given.length > 1) throw new UsageError(`give one of --routes, --sitemap and --links, not ${given.map((name) => `--${name}`).join(' and ')}`)
+  if (flags.sitemap) {
+    const read = flags.sitemap.map((file) => readQaInput('--sitemap', file, readSitemap))
+    return { source: 'sitemap', candidates: read.flatMap((entry) => entry.pages), sitemaps: read.flatMap((entry) => entry.sitemaps) }
+  }
+  if (flags.links !== undefined) return { source: 'links', candidates: readQaInput('--links', flags.links, readLinks), sitemaps: [] }
+  if (flags.routes !== undefined) return { source: 'routes', candidates: readQaInput('--routes', flags.routes, readLinks), sitemaps: [] }
+  if (config.routes.length) return { source: '.flow.json', candidates: config.routes, sitemaps: [] }
+  return null
+}
+
+function commandQaRoutes(positional, flags) {
+  if (positional.length !== 1) throw new UsageError("qa-routes needs the site's address: qa-routes <url>")
+  const start = siteAddress(positional[0])
+  if (start.problem) return printProblems([start.problem])
+  const cap = flags.cap === undefined ? DEFAULT_ROUTE_CAP : /^\d+$/.test(flags.cap) ? Number(flags.cap) : 0
+  if (cap < 1) return printProblems([`--cap takes a whole number of pages above 0, and "${flags.cap}" is not one`])
+  const { config, problems } = readQaConfig(qaConfigRoot(flags))
+  if (problems.length) return printProblems(problems)
+  let found
+  try {
+    found = routeCandidates(flags, config)
+  } catch (error) {
+    if (!(error instanceof QaInputError)) throw error
+    return printProblems([error.message])
+  }
+  if (!found) return printProblems(['nothing to build the route list from: give --routes, --sitemap or --links, or list the pages under "qa" "routes" in .flow.json'])
+  const built = buildRoutes({ start: start.url, candidates: found.candidates, deny: config.deny, cap })
+  const sitemaps = sameSiteSitemaps(start.url, found.sitemaps)
+  printJson({ source: found.source, ...built, skipped: { ...built.skipped, otherSiteSitemaps: found.sitemaps.length - sitemaps.length }, sitemaps })
+  return 0
+}
+
+function commandQaFingerprint(positional) {
+  if (positional.length !== 2) throw new UsageError('qa-fingerprint needs the page\'s address and the finding\'s first line: qa-fingerprint <url> "<first line>"')
+  const { fingerprint, problem } = qaFingerprint(positional[0], positional[1])
+  if (problem) return printProblems([problem])
+  console.log(fingerprint)
   return 0
 }
 
@@ -1801,10 +1992,14 @@ function main(argv) {
       return commandLink(positional)
     case 'needs-human':
       return commandNeedsHuman(positional, flags)
+    case 'handoff':
+      return commandHandoff(positional, flags)
     case 'create-finding':
       return commandCreateFinding(positional, flags)
     case 'found':
       return commandFound(positional, flags)
+    case 'retro-fingerprint':
+      return commandRetroFingerprint(positional, flags)
     case 'promote':
       return commandPromote(positional, flags)
     case 'reject':
@@ -1845,6 +2040,12 @@ function main(argv) {
       return commandDispatch(positional)
     case 'stats':
       return commandStats(positional, flags)
+    case 'qa-config':
+      return commandQaConfig(positional, flags)
+    case 'qa-routes':
+      return commandQaRoutes(positional, flags)
+    case 'qa-fingerprint':
+      return commandQaFingerprint(positional)
     default:
       throw new UsageError(`unknown command "${command}"`)
   }

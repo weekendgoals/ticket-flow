@@ -24,10 +24,11 @@ epic). "Direct" or "without Flow" always overrides it.
 - `scripts/flow.mjs` — the CLI: planning (`init [--board]`, `doctor`,
   `board`, `next`, `ticket`, `check`, `post`, `label`, `create-epic`,
   `create-ticket`, `link`, `needs-human`), one ticket's steps (`start`,
-  `accept`, `deliver`, `screenshots`, `meter`, `reset`), the pull-request
+  `accept`, `handoff`, `deliver`, `screenshots`, `meter`, `reset`), the pull-request
   loop (`pr-*`) and a whole epic (`dispatch`, `worktree`, `merge`,
   `check-epic`, `release-pr`, `design-map`), findings before they are
-  tickets (`create-finding`, `found`, `promote`, `reject`), the project
+  tickets (`create-finding`, `found`, `promote`, `reject`,
+  `retro-fingerprint`), the project
   board (`board-sync`), and looking back (`stats`).
 - `scripts/tracker/github.mjs` — every `gh` call, as plain functions (a Jira
   tracker can sit behind them); `tracker/fake-gh.mjs` is the tests' `gh`.
@@ -42,6 +43,12 @@ epic). "Direct" or "without Flow" always overrides it.
   board up and `board-sync` catches it up).
 - `skills/triage/SKILL.md` — `/flow:triage`: approved findings become
   tickets (or are rejected, or sent to `/flow:epic`) after one table.
+- `skills/qa/SKILL.md` — `/flow:qa`: `agents/qa-explorer.md` walks a live
+  site in the session's browser (the plugin owns none) and the skill files
+  each problem as a finding, once, by fingerprint; it approves nothing.
+  `scripts/qa.mjs` holds its pure parts (the `.flow.json` `qa` section, the
+  route list, the `deny` match, the fingerprint) behind `flow qa-config`,
+  `qa-routes` and `qa-fingerprint`; `github/qa.yml` is the nightly template.
 - `workflows/run-epic.mjs` — the `/flow:run` loop as a workflow script.
   `github/flow.yml` — the Action a project copies; it calls the same CLI.
 - `tools/reporter/` — the reporter Chrome extension: plain browser modules,
@@ -55,16 +62,16 @@ Every suite needs Node ≥ 20 and nothing else unless noted; pass each test
 file path explicitly (`node --test <directory>` finds nothing here). Counts
 as of 2026-10-18; the pass count grows, the fail line stays `# fail 0`.
 
-- `node --test plugins/flow/scripts/flow.test.mjs` — `# pass 61`. The CLI
+- `node --test plugins/flow/scripts/flow.test.mjs` — `# pass 72`. The CLI
   end to end against the fake `gh`; one case needs `git` on PATH.
 - `node --test plugins/flow/scripts/lifecycle.test.mjs` — `# pass 39`. The
   ticket steps in throwaway repositories with a bare remote; needs `git`, `sh`.
 - `node --test plugins/flow/scripts/epic-run.test.mjs` — `# pass 32`. The
   whole-epic commands, the same way.
-- `pull-request.test.mjs` `# pass 20`, `issue-body.test.mjs` `# pass 28`,
+- `pull-request.test.mjs` `# pass 20`, `issue-body.test.mjs` `# pass 29`,
   `checks.test.mjs` `# pass 26` (real shell commands in a temp dir),
   `tracker/github.test.mjs` `# pass 33`, `fidelity.test.mjs` `# pass 54`,
-  `stats.test.mjs` `# pass 12` (needs `git`), `project-sync.test.mjs`
+  `stats.test.mjs` `# pass 13` (needs `git`), `project-sync.test.mjs`
   `# pass 24`, under `plugins/flow/scripts/`.
 - `node --test plugins/flow/scripts/meter.test.mjs` — `# pass 16`. Builds
   its transcripts; no test reads a real one (they belong to whoever ran them).
@@ -72,11 +79,17 @@ as of 2026-10-18; the pass count grows, the fail line stays `# fail 0`.
   needs `git`, POSIX `sh` and `sleep`.
 - `node --test plugins/flow/workflows/run-epic.test.mjs` — `# pass 23`
   (stubbed `agent`, no git), `plugins/flow/github/flow.test.mjs` `# pass 13`.
-- `node --test tools/reporter/reporter.test.mjs` — `# pass 18`. The
+- `node --test tools/reporter/reporter.test.mjs` — `# pass 31`. The
   extension's modules under a stubbed `fetch`. It is also their syntax
   check: plain `node --check` reads a `.js` file with no package.json as
   CommonJS, so the suite copies all seven modules to `.mjs` and checks each.
-- **Syntax:** `node --check` on every `.mjs` under `plugins/flow/scripts/`.
+- `node --test plugins/flow/scripts/qa.test.mjs` — `# pass 18`. The QA
+  parts without a browser, and `flow qa-*` against the fake `gh` (it
+  asserts no call reached it); needs `git`.
+  `node --test plugins/flow/github/qa.test.mjs` — `# pass 5`, the nightly
+  QA template, read with `github/workflow-yaml.mjs` like `flow.yml`.
+- **Syntax:** `node --check` on every `.mjs` under `plugins/flow/scripts/`,
+  and on `plugins/flow/github/workflow-yaml.mjs`.
   It does not work on `workflows/run-epic.mjs` (a module body with a
   top-level `return`); parse that one the way the workflow runtime does:
   `node -e 'const s=require("fs").readFileSync("plugins/flow/workflows/run-epic.mjs","utf8").replace(/^export const meta/m,"const meta");new (Object.getPrototypeOf(async function(){}).constructor)("agent","parallel","pipeline","log","phase","args","budget",s)'`
@@ -129,6 +142,18 @@ CI (`.github/workflows/tests.yml`) runs every suite and check above.
   commit, never by a name that could move.
 - **The reviewer never sees the builder's transcript or reasoning**, not even
   a summary: an explanation of why code is right makes a reviewer agree.
+- **An instruction file holds only what cannot be derived.** A line that
+  restates the code, a test or a command's own help, or narrates history,
+  is a reviewer's finding (`agents/ticket-reviewer.md` states the rule;
+  README quotes it word for word), and the retro proposes deletions beside
+  additions: the file is read by every session, so it only grows otherwise.
+- **A handoff states decisions, never reasoning.** `flow handoff` posts what
+  a ticket decided that the plan did not say (never replaced once the
+  ticket is done, so a later worker cannot rewrite it), and `flow ticket`
+  hands the latest one of each done ticket to the next builder and its
+  reviewer, who checks it against that ticket's merged code; a handoff that
+  explained why code is right would be the builder's reasoning reaching a
+  reviewer.
 - **Criteria edited after a ticket starts refuse acceptance** (the latest
   start draws the line): whoever edited the gate may not have approved it.
   `accept` takes only the HEAD the latest review read; only the commit it
@@ -156,8 +181,16 @@ CI (`.github/workflows/tests.yml`) runs every suite and check above.
   proposes.** Never give `plan-reviewer` or `ticket-reviewer` write
   instructions, and never hand `researcher` the request, the wanted solution
   or the ticket list: told the answer, it confirms it.
-- **Reviewers, the researcher and the retro miner run on the strongest
-  model.** Never a cheaper one: what they miss cannot be checked afterwards.
+- **Reviewers, the researcher, the retro miner and the QA explorer run on
+  the strongest model.** Never a cheaper one: what they miss cannot be
+  checked afterwards.
+- **The QA explorer touches nothing a visitor's click could not undo, and
+  `/flow:qa` approves nothing.** It never submits a form (except under the
+  project's `testMarker`), pays, signs up, deletes, sends or follows a
+  `deny` match, because the site is live; it is never told what anyone
+  thinks is broken, because told where the bugs are it looks only there; a
+  person approves every finding it files, because its judgement has no
+  other test.
 - **A gate lives in the command its actor runs**, and the recovery it
   advertises must work from the refused state.
 - **Skills are self-sufficient**; each rule carries its reason in a clause.

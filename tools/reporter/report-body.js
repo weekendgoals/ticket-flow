@@ -117,10 +117,10 @@ function section(heading, body) {
   return [`## ${heading}`, '', body, ''];
 }
 
-export function buildIssueBody(settings, report, findingId, uploads) {
+export function buildIssueBody(target, report, findingId, uploads) {
   const lines = uploads.map((upload, position) => {
     const caption = (report.screenshots[position].caption || '').trim();
-    const link = screenshotLink(settings.repo, upload.commitSha, upload.path);
+    const link = screenshotLink(target.repo, upload.commitSha, upload.path);
     return `${position + 1}. [${upload.path}](${link})${caption ? ` — ${caption}` : ''}`;
   });
   const selection = quoteLines(report.selection);

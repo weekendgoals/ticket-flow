@@ -55,6 +55,7 @@ test('getIssue reads one issue and returns it in the tracker shape', () => {
     url: 'https://github.com/o/r/issues/5',
     createdAt: '2026-10-01T09:00:00Z',
     closedAt: null,
+    stateReason: null,
   })
   assert.deepEqual(fake.calls()[0].args, ['api', `${R}/issues/5`])
 })
@@ -243,11 +244,11 @@ test('a missing gh is a TrackerError that says so', () => {
 test('pull requests and their reviews come back in the tracker shape', () => {
   fake.setFixtures({
     [`GET ${R}/pulls/40`]: { number: 40, html_url: 'https://github.com/o/r/pull/40', state: 'open', head: { ref: 'ticket/2', sha: 'abc' }, base: { ref: 'main' } },
-    [`GET ${R}/pulls/41`]: { number: 41, html_url: 'https://github.com/o/r/pull/41', state: 'closed', head: { ref: 'epic/x', sha: 'def' }, base: { ref: 'main' }, merged_at: '2026-10-15T08:00:00Z' },
+    [`GET ${R}/pulls/41`]: { number: 41, html_url: 'https://github.com/o/r/pull/41', state: 'closed', head: { ref: 'epic/x', sha: 'def' }, base: { ref: 'main' }, merged_at: '2026-10-15T08:00:00Z', merge_commit_sha: 'fed' },
     [`GET ${R}/pulls/40/reviews?per_page=100`]: [{ id: 3, user: { login: 'copilot-pull-request-reviewer[bot]' }, state: 'COMMENTED', commit_id: 'abc', submitted_at: '2026-10-14T12:00:00Z' }],
   })
-  assert.deepEqual(github.getPullRequest(40), { number: 40, url: 'https://github.com/o/r/pull/40', state: 'open', head: 'ticket/2', headSha: 'abc', base: 'main', merged: false, mergedAt: null })
-  assert.deepEqual(github.getPullRequest(41), { number: 41, url: 'https://github.com/o/r/pull/41', state: 'closed', head: 'epic/x', headSha: 'def', base: 'main', merged: true, mergedAt: '2026-10-15T08:00:00Z' })
+  assert.deepEqual(github.getPullRequest(40), { number: 40, url: 'https://github.com/o/r/pull/40', state: 'open', head: 'ticket/2', headSha: 'abc', base: 'main', merged: false, mergedAt: null, mergeCommitSha: null })
+  assert.deepEqual(github.getPullRequest(41), { number: 41, url: 'https://github.com/o/r/pull/41', state: 'closed', head: 'epic/x', headSha: 'def', base: 'main', merged: true, mergedAt: '2026-10-15T08:00:00Z', mergeCommitSha: 'fed' })
   assert.deepEqual(github.listPullRequestReviews(40), [{ id: 3, author: 'copilot-pull-request-reviewer[bot]', state: 'COMMENTED', commit: 'abc', submittedAt: '2026-10-14T12:00:00Z' }])
 })
 

@@ -34,7 +34,10 @@ of these is missing, say so at the top and work with what you have.
    "unknown" and never fill it in from a guess.
 2. Every ticket's comments: `gh issue view <n> --comments`, and the epic's
    own (`gh issue view <epic> --comments`). The review rounds, acceptance
-   results and stops are there in full.
+   results and stops are there in full, and so is each ticket's handoff (a
+   comment starting `<!-- flow:handoff -->`; the latest one counts):
+   what the ticket decided that the plan did not say, and where the plan was
+   wrong. `stats` says which tickets left one (`handoff`).
 3. The release pull request: `gh pr view <pr> --comments`,
    `FLOW pr-threads <pr> --all` (every review thread, resolved ones too) and
    `FLOW pr-checks <pr>`. For an epic without one, each ticket's own pull
@@ -58,7 +61,13 @@ teaches the wrong lesson.
    comments that follow), and whether a command, a rule in a skill or a
    line in the plan would have answered it. A stop on infrastructure (a
    session limit, a network failure, a tool that died) is a defect in the
-   plugin, not a question.
+   plugin, not a question. Then count the QA explorer's findings among the
+   epic's sub-issues, open and closed (a body with a line starting
+   `<!-- flow:finding fingerprint=qa `, kept under `## Report` once it is
+   a ticket): how many became tickets, how many
+   a person rejected (closed as not planned), and how many still wait, as
+   the rejection rate. Nothing else checks the explorer's judgement: a
+   person reading its findings is the only test it has.
 2. **Which review findings were real defects, and which were taste?** Check
    each Important finding against the merged code. Then compare the local
    reviewer with the pull request bot: did the bot find something the
@@ -69,28 +78,54 @@ teaches the wrong lesson.
    why?** From the waves `stats` lists, with the reason the epic's comment
    gives. "None" for an epic planned one at a time.
 5. **Did an acceptance criterion pass while the outcome was not met, or
-   fail while the code was right?** Compare each ticket's criteria with what
-   its review and the release review found afterwards, and every
-   `(fixes #n)` commit with the criteria of the ticket it repairs.
+   fail while the code was right?** Read the handoffs first: where one says
+   the plan was wrong, the plan and what was built part there. Then compare
+   each ticket's criteria with what its review and the release review found
+   afterwards, and every `(fixes #n)` commit with the criteria of the ticket
+   it repairs.
 6. **Which rule in the project's instruction files was broken, or is
    missing?** Judged from the findings: a defect class found twice is a
    missing rule; a finding that contradicts a written rule is a broken one.
    Quote the rule, or say where the missing one belongs.
-7. **What should change?** For each proposal: where (a skill or command of
-   the plugin, the project's instruction files, or nothing), the concrete
-   change, and the answer above that justifies it.
-   - A plugin change is drafted as a ticket body for the plugin's
-     repository: `## Scope`, `## Not in scope`, `## Acceptance criteria`
-     with a ```` ```criteria ```` block holding at least one `CHECK:` that
-     fails today, and a title.
-   - An instruction-file change is drafted as a before/after diff of the
-     exact lines.
+
+   6b. **Which rules in the instruction files did this epic's work never
+   exercise, and which are now derivable from the code or tests?** A rule
+   is derivable when the code, a test or a command's own help already says
+   it (quote that); one is unexercised when nothing in this epic's diff or
+   comments came near it. Propose deleting a derivable rule, and a rule
+   that narrates history; list an unexercised one, and propose deleting it
+   only when it names a file, command or path that no longer exists, since
+   one epic leaving a rule alone does not make it dead. Each deletion is a
+   before/after diff, proposed next to the additions question 6 leads to:
+   an instruction file only grows otherwise, and every line is read by
+   every later session.
+7. **What should change?** For each proposal: its group, the concrete
+   change, and the answer above that justifies it. Its first line is its
+   title, and stays the same if the retro is run again, because the
+   finding it becomes is recognised by that line. The groups are filed
+   differently, so every proposal is in exactly one:
+   - **A project follow-up**: something to fix or build in this project.
+     Drafted as a finding body (`## What happened`, with the links,
+     `## Where`, `## Expected`), and marked **small** (one ticket's worth)
+     or **feature-sized** (it needs a plan of its own).
+   - **A plugin proposal**: a change to a skill, agent or command of the
+     plugin. Drafted as a finding body for the plugin's repository: what
+     happened, with the links; the file it would change and how. Triage in
+     that repository writes its acceptance criteria, so write none.
+   - **An instruction-file diff**: a before/after diff of the exact lines.
+     An addition and a deletion are separate proposals, even in one file.
+   - **A lesson**: about how to work rather than about a command or a rule.
+     Drafted as a section for the plugin's `METHODOLOGY.md`: a heading
+     `## <the lesson>`, then two paragraphs, what happened (dated, with the
+     link) and what it teaches. A lesson that would change a rule is a
+     plugin proposal instead, because a rule lives in a skill.
    - "Nothing" is a valid answer and often the right one: a single
      incident is not a pattern.
 
 ## Report
 
-The seven answers under their numbers, then the proposals, each with an id
+The answers under their numbers (1 to 7, with 6b after 6), then the
+proposals under their groups, each with an id
 (`P1`, `P2`, …) so the person can answer "file P1 and P3". Plain language:
 short sentences, no internal terms; the person reading it may not know
 Flow. No praise, no summary of the epic, no ratings.

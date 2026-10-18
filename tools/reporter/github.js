@@ -11,8 +11,8 @@ import {
 const API_ORIGIN = 'https://api.github.com';
 const API_VERSION = '2022-11-28';
 
-function repoPath(settings) {
-  const { owner, name } = splitRepo(settings.repo);
+function repoPath(target) {
+  const { owner, name } = splitRepo(target.repo);
   return `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}`;
 }
 
@@ -47,14 +47,14 @@ async function request(settings, method, path, body) {
   return payload;
 }
 
-export function getRepository(settings) {
-  return request(settings, 'GET', repoPath(settings));
+export function getRepository(settings, target) {
+  return request(settings, 'GET', repoPath(target));
 }
 
-export async function ensureFindingsBranch(settings) {
-  const base = repoPath(settings);
+export async function ensureFindingsBranch(settings, target) {
+  const base = repoPath(target);
   try {
-    await request(settings, 'GET', `${base}/git/ref/heads/${branchPath(settings.branch)}`);
+    await request(settings, 'GET', `${base}/git/ref/heads/${branchPath(target.branch)}`);
     return false;
   } catch (error) {
     if (error.status !== 404) throw error;
@@ -72,21 +72,21 @@ export async function ensureFindingsBranch(settings) {
     parents: []
   });
   await request(settings, 'POST', `${base}/git/refs`, {
-    ref: `refs/heads/${settings.branch}`,
+    ref: `refs/heads/${target.branch}`,
     sha: commit.sha
   });
   return true;
 }
 
-export async function uploadScreenshots(settings, findingId, screenshots) {
+export async function uploadScreenshots(settings, target, findingId, screenshots) {
   const paths = screenshotPaths(findingId, screenshots);
   const contents = screenshots.map((screenshot) => stripDataUrlPrefix(screenshot.dataUrl));
   const uploads = [];
   for (const [position, path] of paths.entries()) {
-    const response = await request(settings, 'PUT', `${repoPath(settings)}/contents/${path}`, {
+    const response = await request(settings, 'PUT', `${repoPath(target)}/contents/${path}`, {
       message: `Finding ${findingId}: screenshot ${position + 1} of ${paths.length}`,
       content: contents[position],
-      branch: settings.branch
+      branch: target.branch
     });
     if (!response || !response.commit || !response.commit.sha) {
       throw new Error(`GitHub gave no commit for ${path}`);
@@ -96,18 +96,18 @@ export async function uploadScreenshots(settings, findingId, screenshots) {
   return uploads;
 }
 
-export async function createIssue(settings, report, findingId, uploads) {
-  const issue = await request(settings, 'POST', `${repoPath(settings)}/issues`, {
+export async function createIssue(settings, target, report, findingId, uploads) {
+  const issue = await request(settings, 'POST', `${repoPath(target)}/issues`, {
     title: report.title,
     labels: [settings.label],
-    body: buildIssueBody(settings, report, findingId, uploads)
+    body: buildIssueBody(target, report, findingId, uploads)
   });
   return { id: issue.id, number: issue.number, html_url: issue.html_url };
 }
 
-export async function fileUnderEpic(settings, epic, issueId) {
+export async function fileUnderEpic(settings, target, epic, issueId) {
   try {
-    await request(settings, 'POST', `${repoPath(settings)}/issues/${epic}/sub_issues`, {
+    await request(settings, 'POST', `${repoPath(target)}/issues/${epic}/sub_issues`, {
       sub_issue_id: issueId
     });
     return null;
@@ -116,12 +116,21 @@ export async function fileUnderEpic(settings, epic, issueId) {
   }
 }
 
-export async function fileFinding(settings, report, now = new Date(), random = Math.random) {
-  const epic = parseEpic(settings.epic);
+export async function fileFinding(settings, target, report, now = new Date(), random = Math.random) {
+  if (!target) throw new Error('No target chosen');
+  splitRepo(target.repo);
+  const epic = parseEpic(target.epic);
   const findingId = generateFindingId(now, random);
-  await ensureFindingsBranch(settings);
-  const uploads = await uploadScreenshots(settings, findingId, report.screenshots);
-  const issue = await createIssue(settings, report, findingId, uploads);
-  const epicProblem = epic === null ? null : await fileUnderEpic(settings, epic, issue.id);
-  return { ...issue, findingId, epic, epicProblem, paths: uploads.map((upload) => upload.path) };
+  await ensureFindingsBranch(settings, target);
+  const uploads = await uploadScreenshots(settings, target, findingId, report.screenshots);
+  const issue = await createIssue(settings, target, report, findingId, uploads);
+  const epicProblem = epic === null ? null : await fileUnderEpic(settings, target, epic, issue.id);
+  return {
+    ...issue,
+    repo: target.repo,
+    findingId,
+    epic,
+    epicProblem,
+    paths: uploads.map((upload) => upload.path)
+  };
 }

@@ -17,14 +17,20 @@ leave the working tree as you found it.
 ## What you are given
 
 The commit range, the ticket body (scope, what is not in scope, acceptance
-criteria), the epic's ground rules and design sources when there is an epic,
-and the paths of the project's instruction files. If you were not given a
-range, say so and stop: never fall back to the uncommitted changes.
+criteria), the handoffs earlier tickets of the epic left, the epic's ground
+rules and design sources when there is an epic, and the paths of the
+project's instruction files. If you were not given a range, say so and stop:
+never fall back to the uncommitted changes.
 
 You are never given the builder's messages or reasoning. If the packet
 contains them, ignore them and say so in one line at the top: an
 explanation of why the code is right is exactly what a fresh reader must not
-start from.
+start from. A handoff is a claim about an earlier ticket: what it decided
+(a name, a shape, a route, where the plan was wrong). Check it against that
+ticket's merged code, never take it as ground truth, and where the two
+differ, the code is what this range must fit; say so. A handoff that argues
+this ticket's code is right is itself a finding: it is reasoning about this
+work, wherever it was posted.
 
 ## How to work
 
@@ -58,6 +64,12 @@ necessary; then judge the explanation.
   not now (a missing or duplicated control, a broken layout, a removed way to
   do something). The scope limits what the builder builds, not what you
   report.
+- **Instruction files** (`CLAUDE.md`, `AGENTS.md`). An instruction-file
+  line added by the ticket that restates what the code, a test or a
+  command's own help already says, or that narrates history ("we used
+  to…", "in ticket #n we…"), is a finding: the file holds only what cannot
+  be derived, and each rule carries its reason in a clause. A rule the
+  ticket broke that the file states is Important.
 - **Code comments.** The project's rule is that names carry the meaning. A
   comment in the change is a nit; one that explains away a workaround the
   code should not need is Important when the workaround is wrong.

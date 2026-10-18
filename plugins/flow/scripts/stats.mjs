@@ -10,6 +10,7 @@ import {
   SERIAL_WAVE_MARKER,
   PULL_REQUEST_COMMENT,
   LOCAL_RUN_END_MARKER,
+  HANDOFF_MARKER,
 } from './ticket-steps.mjs'
 import { readMeterComment } from './meter.mjs'
 
@@ -21,6 +22,7 @@ const FIXES = /\(fixes #(\d+)\)\s*$/
 const TICKET_PREFIX = /^#(\d+):/
 const RUN_STOPPED_LEAD = '**Run stopped.**'
 const SECONDS_PER_DAY = 86400
+const START_BASE = /\bat `([0-9a-f]{7,40})`/
 
 const isNumber = (value) => typeof value === 'number' && Number.isFinite(value)
 
@@ -98,8 +100,10 @@ function readTicketComments(comments) {
   const meters = []
   const stops = []
   let resets = 0
+  let handoff = false
   for (const comment of comments) {
     const body = comment.body || ''
+    if (body.startsWith(HANDOFF_MARKER)) handoff = true
     if (body.startsWith(STARTED_MARKER)) starts.push(comment)
     if (body.startsWith(RESET_MARKER)) resets++
     if (isStop(body)) stops.push({ ...evidence(comment), reason: stopReason(body) })
@@ -113,7 +117,7 @@ function readTicketComments(comments) {
     const meter = readMeterSafely(body)
     if (meter) meters.push(meter)
   }
-  return { starts, acceptances, merges, reviews, pullRequestComments, meters, stops, resets }
+  return { starts, acceptances, merges, reviews, pullRequestComments, meters, stops, resets, handoff }
 }
 
 function readMeterSafely(body) {
@@ -184,6 +188,7 @@ export function ticketStats({ ticket, comments, subjects = null, defaultSubjects
     acceptanceRuns: record.acceptances.length,
     failedAcceptances: record.acceptances.filter((acceptance) => !acceptance.passed).length,
     resets: record.resets,
+    handoff: record.handoff,
     ...commitCounts(subjects, ticket.number),
     ...escapeCounts(defaultSubjects, ticket.number),
     stops: record.stops,
@@ -191,6 +196,16 @@ export function ticketStats({ ticket, comments, subjects = null, defaultSubjects
     startedAt: record.starts.length ? record.starts[0].createdAt : null,
     endedAt: deliveryEnd(record, delivery)?.createdAt ?? null,
   }
+}
+
+export function firstStartBase(commentLists) {
+  const starts = commentLists
+    .flat()
+    .filter((comment) => (comment.body || '').startsWith(STARTED_MARKER) && at(comment) !== null)
+    .sort((a, b) => at(a) - at(b))
+  if (!starts.length) return null
+  const named = starts[0].body.match(START_BASE)
+  return named ? named[1] : null
 }
 
 export function readEpicComments(comments) {
@@ -237,6 +252,7 @@ export function summarize(tickets) {
     rework: partial(tickets.map((ticket) => ticket.rework)),
     escapes: partial(tickets.map((ticket) => ticket.escapes)),
     stops: tickets.reduce((sum, ticket) => sum + ticket.stops.length, 0),
+    handoffs: tickets.filter((ticket) => ticket.handoff).length,
     ranSerially: tickets.filter((ticket) => ticket.ranSerially.length).map((ticket) => ticket.number),
   }
 }
@@ -350,6 +366,7 @@ function epicLines(epic) {
   lines.push(`#${epic.number} ${epic.title} · ${epic.delivery} delivery · parallel ${epic.parallel ?? 'unknown'} · ${releaseText}`, '')
   lines.push(table(TICKET_HEADERS, [...epic.tickets.map(ticketRow), totalRow('total', epic.totals)]))
   lines.push('', ...modelLines(epic.totals.models))
+  lines.push('', `Handoffs: ${epic.totals.handoffs} of ${epic.totals.tickets} ticket(s) left one for the tickets after them.`)
   const stops = epic.tickets.flatMap((ticket) => ticket.stops.map((stop) => ({ ticket: ticket.number, ...stop })))
   if (stops.length) {
     lines.push('', 'Stopped for a person:')
@@ -363,8 +380,18 @@ function epicLines(epic) {
     lines.push('', 'Planned side by side, built one at a time:')
     for (const wave of epic.serialWaves) lines.push(`- wave ${wave.wave}: ${wave.tickets.map((number) => `#${number}`).join(', ')}: ${wave.reason}`)
   }
+  if (epic.instructionFiles) lines.push('', instructionFilesLine(epic.instructionFiles))
   if (epic.gitProblem) lines.push('', `Rework and escaped defects are unknown: ${epic.gitProblem}.`)
   return lines
+}
+
+function instructionFilesAt(size, where) {
+  if (!size) return `unknown ${where}`
+  return `${count(size.lines)} lines, ${count(size.bytes)} bytes in ${size.files} file(s) ${where} (${size.sha.slice(0, 12)})`
+}
+
+function instructionFilesLine({ before, after }) {
+  return `Instruction files (CLAUDE.md, AGENTS.md): ${instructionFilesAt(before, 'at the first start')}; ${instructionFilesAt(after, 'at the release merge')}.`
 }
 
 export function formatStats(result) {

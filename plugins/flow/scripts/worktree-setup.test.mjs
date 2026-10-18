@@ -254,7 +254,7 @@ test('a config it cannot read as the documented shape is exit 2, by entry', () =
   for (const [config, re] of [
     ['{ not json', /not valid JSON/],
     [[], /must be a JSON object/],
-    [{ comands: ['npm ci'] }, /unknown key "comands" — the keys are "copy", "setup", "screenshots", "screenshotsDir"/],
+    [{ comands: ['npm ci'] }, /unknown key "comands" — the keys are "copy", "setup", "screenshots", "screenshotsDir", "qa"/],
     [{ copy: '.env' }, /"copy" must be an array/],
     [{ copy: ['../outside/.env'] }, /copy\[0\] \("\.\.\/outside\/\.env"\) must be a path inside the repository/],
     [{ copy: ['/etc/passwd'] }, /must be a path inside the repository/],
@@ -290,8 +290,8 @@ test('--validate reads a file or stdin, and copies and runs nothing', () => {
   assert.ok(!existsSync(join(p.worktree, '.env')), 'it copies nothing')
 })
 
-test('the screenshot keys of .flow.json sit beside the setup keys, and a file with neither copy nor setup sets nothing up', () => {
-  const p = project('screenshots-only', { config: { screenshots: 'npm run shots', screenshotsDir: '.flow/shots/{n}' } })
+test('the screenshot and QA keys of .flow.json sit beside the setup keys, and a file with neither copy nor setup sets nothing up', () => {
+  const p = project('screenshots-only', { config: { screenshots: 'npm run shots', screenshotsDir: '.flow/shots/{n}', qa: { widths: [1440] } } })
   const r = setUp(...p.args)
   assert.equal(r.code, 0, r.err)
   assert.equal(r.result.configured, false)

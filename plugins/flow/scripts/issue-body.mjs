@@ -277,6 +277,18 @@ export function withReport(ticketBody, original) {
   return `${normalizeNewlines(ticketBody).replace(/\n+$/, '')}\n${REPORT_BOUNDARY}${original}`
 }
 
+const RETRO_LINE_LENGTH = 100
+
+export function retroFingerprint({ repository, epic, line }) {
+  const words = String(line || '')
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, ' ')
+    .trim()
+    .slice(0, RETRO_LINE_LENGTH)
+    .trim()
+  return `retro ${repository}#${epic}: ${words}`
+}
+
 export function fingerprintMarker(fingerprint) {
   return `<!-- flow:finding fingerprint=${fingerprint} -->`
 }

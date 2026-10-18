@@ -5,6 +5,154 @@ a behaviour change in every project that installs it. Entries land in the same
 commit as the change; the pull request that brings them to the default branch
 stamps the version and date and bumps `plugin.json` in the same commit.
 
+## 3.2.0 — 2026-10-18
+
+- **New: handoffs between tickets.** `flow handoff <n> --text "<lines>"` (or
+  `--file <md>`) posts a comment on the ticket starting
+  `<!-- flow:handoff -->` and `**Handoff.**`: what a later ticket needs from
+  this one, in three to five lines. It refuses, posting nothing, a ticket
+  that is not in review or done, a done ticket that already has a handoff
+  (a done ticket's handoff is never replaced, so a later ticket's worker
+  cannot rewrite what its reviewer reads as an earlier decision; a done
+  ticket with none may get its first), and a text over 1,200 characters.
+  Only handoffs from the account running Flow count; while the ticket is
+  in review the latest one replaces the earlier ones (the command says so
+  when it does).
+- **`flow ticket` carries the handoffs.** Its JSON adds `handoffs`, the
+  latest handoff of every done ticket in the same epic (number, title,
+  whether it is one of this ticket's blockers, text, link, time), blockers
+  first and then in the epic's order, reading the comments of at most
+  twenty done tickets, and `handoffsLeftOut`, how many done tickets it did
+  not read; it prints the same on stderr under `handoffs:` (`handoffs:
+  none` when there are none, as for a ticket with no epic). When the
+  account running it cannot be known, it still prints the ticket and exits
+  0, with no handoffs and one stderr line saying why. Standard output stays
+  the JSON alone, so a script piping it to `jq` is unchanged.
+- **The ticket skill writes and reads handoffs.** Step 2 reads the handoffs
+  before the code (and other tickets' comments still not at all); step 9
+  writes the handoff before `deliver` (and `--no-merge` stops after it);
+  the reviewer's packet carries the handoffs, and the `ticket-reviewer`
+  agent treats each as a claim about an earlier ticket, checked against
+  that ticket's merged code, and a handoff that argues the code under
+  review is right as a finding. The worker never runs `flow handoff` on
+  another ticket. `/flow:run`'s reviewer prompt names them too.
+- **`flow stats`** adds `handoff: true|false` per ticket and `handoffs` (how
+  many tickets left one) per epic, printed as one line; the retro miner
+  reads the handoffs first when it compares the plan with what was built.
+- **The ticket reviewer pushes instruction files toward lean.** A line a
+  ticket adds to `CLAUDE.md` or `AGENTS.md` that restates what the code, a
+  test or a command's own help already says, or that narrates history, is a
+  finding; a rule the ticket broke that the file states is Important. The
+  ticket skill's worker rule says the same, and README quotes the rule.
+- **The retro miner asks question 6b**: which rules in the instruction
+  files this epic never exercised, and which are now derivable from the
+  code or tests, proposing deletions as before/after diffs beside the
+  additions. The retro skill shows additions and deletions as separate
+  rows.
+- **`flow stats` reports the instruction files' size** per epic: lines,
+  bytes and how many `CLAUDE.md` and `AGENTS.md` files the tree holds, read
+  from git at the commit the epic's first ticket started from (named in its
+  start comment) and at the release pull request's merge commit, as
+  `instructionFiles: { before, after }`, printed as one line. Where no
+  comment names the commit, the pull request is not merged, or the clone
+  lacks the commit, the line says `unknown` and the JSON holds `null`. The tracker's pull request now carries
+  `mergeCommitSha` once merged.
+- **New: `flow create-finding --repo <owner>/<name>`** files the finding in
+  another repository, such as the plugin's: `--epic` names an epic there
+  and the fingerprint search runs there. `--screenshots` is refused with
+  it (exit 2), because the images are committed to this repository's
+  `flow-findings` branch.
+- **A rejected fingerprint is not filed again.** `create-finding
+  --fingerprint` now also searches findings closed as not planned (what
+  `flow reject` does), and refuses a match with exit 3, printing its number
+  and "#n was rejected on <date>: reopen it to reconsider". A finding
+  closed as completed is not a match. It reads the 500 most recently
+  updated closed findings (five pages, newest first) and says so on stderr
+  when there were more. Issues from the tracker carry `stateReason`.
+- **New: `flow retro-fingerprint <epic> --text "<line>"`** prints
+  `retro <owner>/<name>#<epic>: <the line in lower case, letters and digits
+  only, at most 100 characters>`, the fingerprint a retro files each
+  proposal with.
+- **The retro files findings.** `/flow:retro` no longer files plugin
+  changes with `create-ticket --no-epic --repo`. Its comment lists every
+  proposal in groups (project follow-ups, plugin proposals,
+  instruction-file diffs, lessons); one table in chat takes a yes per row,
+  and nothing is filed before it. A small project follow-up becomes a
+  finding under the project's open `Bugs` epic, a feature-sized one a
+  finding marked for `/flow:epic`, and a plugin proposal a finding in
+  `weekendgoals/ticket-flow` under its open `Retro` epic (with none, the row
+  is not filed and the skill prints `/flow:epic --standing "Retro"`). Each
+  finding links the retro comment and carries the retro fingerprint, so a
+  re-run files nothing twice; a last comment records every row's outcome,
+  with the reason for each rejected one. A lesson about how to work is
+  offered as a dated section for `METHODOLOGY.md`. The retro miner drafts
+  proposals in those groups, plugin ones as finding bodies without
+  criteria.
+- **`METHODOLOGY.md` takes dated lessons**, the first being that replacing
+  a single-select field's options gives every option a new id.
+- **New: `/flow:qa <url> [--epic <e>] [--routes <file>] [--widths 1440,393]`**,
+  a browser agent that walks a live site and files what is broken as
+  findings (`flow:found`), attended or unattended. It uses the browser tool
+  the session has (Playwright MCP, or Chrome DevTools MCP) and refuses to
+  start without one, naming the command that adds Playwright MCP; the
+  plugin installs nothing. It reads `.flow.json`'s new `qa` section, picks
+  the epic to file under (`--epic`, or the one open epic titled `Bugs`;
+  none stops it before the walk), builds the page list (`--routes`, else
+  `.flow.json`'s `routes`, else the sitemap, else the start page's links;
+  same site, deduplicated, `deny` matches out, at most 60), and hires one `qa-explorer` agent per batch of
+  up to ten pages, one at a time. Each finding is filed with
+  `flow create-finding --epic <e> --screenshots <dir> --fingerprint <f>`,
+  one per problem across batches, and skipped when an open finding or
+  ticket already carries its fingerprint. It ends with one table (pages
+  visited, findings filed, duplicates skipped, pages it could not load) and
+  approves nothing.
+- **New agent: `qa-explorer`**, on the strongest model, with read-only
+  tools plus the browser. At each page and width it records console errors
+  and failed requests, checks the page's own links for 404s with HEAD
+  requests only (never a link a `deny` pattern or a pay, sign-up, delete or
+  send word names, and never a GET when HEAD is refused), looks for
+  horizontal overflow and clipped text, compares the document language with
+  the text, reports the browser's accessibility problems and, on an epic
+  with design sources (served from a copy holding only them), runs the
+  design comparison; a screenshot only where something is wrong. It never
+  submits a form or sends a message (except with the project's
+  `testMarker`), never clicks a payment, sign-up or delete control or a
+  `deny` match, never signs in, never leaves the site, and is never told
+  what anyone thinks is broken: it gets the site notes the session copied
+  from the instruction files, never the files.
+- **New: `flow qa-config`, `flow qa-routes` and `flow qa-fingerprint`**
+  (`scripts/qa.mjs`), the parts of the walk that need no browser and no
+  GitHub. `qa-config [--widths]` prints the checked `qa` section
+  (`routes`, `deny`, `widths`, `testMarker`); an unknown key or a wrong type
+  is named and exits 2, in `qa-routes` too. `qa-routes <url>` builds the
+  page list from `--routes`, `--sitemap` (an index lists the sitemaps to
+  read next, the site's own only), `--links` or `.flow.json`, with `--cap`
+  (60); a file it cannot read, or an entity that is not a character, is
+  named and exits 2. `qa-fingerprint
+  <url> "<first line>"` prints `qa <path> <the line, lowercased, numbers as
+  #, punctuation dropped>`.
+- **`.flow.json` accepts a `qa` key.** `flow worktree`, `flow check-epic`
+  and `worktree-setup.mjs --validate` refused it as unknown before.
+- **New template: `github/qa.yml`**, the nightly walk a project copies: on
+  `schedule` and `workflow_dispatch`, `/flow:qa <url> --unattended` under
+  claude-code-action with the Playwright MCP server configured in the file,
+  `FLOW_TOKEN` as in `flow.yml`, the start address from the `QA_URL`
+  variable, and the screenshots kept as an artifact.
+- **The retro miner counts the QA explorer's findings** in its first
+  question: how many became tickets, were rejected, or still wait, as the
+  rejection rate, the only check on the explorer's judgement.
+- **The reporter files to named targets.** Its options page holds a list
+  of targets, each a name, a repository, an optional epic and a screenshots
+  branch (`flow-findings` by default), under one token and one label; the
+  popup's File to list, above the title, picks one, remembering the target
+  last filed to on each site (a choice that filed nothing is not
+  remembered) and otherwise taking the first, and the draft keeps it. A
+  restored draft whose target was removed says so and selects another. The
+  result line names the repository the finding went to. Two targets may not
+  share a name. Settings saved with one repository become one target named
+  after it on first load, written back once; a target whose repository is
+  not `owner/name` is refused by name until it is fixed.
+
 ## 3.1.0 — 2026-10-18
 
 - **New: the project board.** When the repository is linked to a GitHub

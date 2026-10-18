@@ -70,6 +70,7 @@ function normalizeIssue(raw) {
     url: raw.html_url || null,
     createdAt: raw.created_at || null,
     closedAt: raw.closed_at || null,
+    stateReason: raw.state_reason || null,
   }
 }
 
@@ -109,6 +110,17 @@ export function listIssues({ label, state = 'open' }) {
   return apiList(`${REPO}/issues?${query}`)
     .filter((raw) => !raw.pull_request)
     .map(normalizeIssue)
+}
+
+export function listRecentlyClosedIssues({ label, pages }) {
+  const issues = []
+  for (let page = 1; page <= pages; page++) {
+    const query = `labels=${encodeURIComponent(label)}&state=closed&sort=updated&direction=desc&per_page=100&page=${page}`
+    const found = apiGet(`${REPO}/issues?${query}`)
+    issues.push(...found.filter((raw) => !raw.pull_request).map(normalizeIssue))
+    if (found.length < 100) return { issues, capped: false }
+  }
+  return { issues, capped: true }
 }
 
 export function listSubIssues(number) {
@@ -249,6 +261,7 @@ function normalizePullRequest(raw) {
     base: raw.base ? raw.base.ref : null,
     merged: Boolean(raw.merged_at),
     mergedAt: raw.merged_at || null,
+    mergeCommitSha: raw.merged_at ? raw.merge_commit_sha || null : null,
   }
 }
 

@@ -247,7 +247,9 @@ becomes `flow:needs-human`). Each step posts one comment on the issue:
    one GitHub account: a ticket accepted under another account is not
    merged (`merge --epic` says so), and `reset` on it proceeds.
 6. **Cost** (`flow meter`): what each step cost, posted as a table.
-7. **Deliver** (`flow deliver`): only the accepted commit. Release: merged
+7. **Hand off** (`flow handoff`): three to five lines for the tickets after
+   this one; see [Handoffs between tickets](#handoffs-between-tickets).
+8. **Deliver** (`flow deliver`): only the accepted commit. Release: merged
    into the epic branch with `--no-ff` and labelled `flow:done`; if the
    branch moved it tries again twice, and a conflict goes to a person.
    Incremental: a pull request into the default branch, then the pull
@@ -268,6 +270,50 @@ once per ticket; a second death goes to a person. A local run also builds
 once more a ticket whose builder died before `flow start` (there is nothing
 to reset), so a death before the start and one after it make two rebuilds
 before a person is asked.
+
+### What belongs in an instruction file
+
+A project's `CLAUDE.md` and `AGENTS.md` are read by every session, so a line
+in them costs every later ticket. Workers update them in the same commit as
+the change they describe, and the ticket reviewer pushes the other way with
+this rule, quoted from its instructions:
+
+> An instruction-file line added by the ticket that restates what the code,
+> a test or a command's own help already says, or that narrates history
+> ("we used to…", "in ticket #n we…"), is a finding: the file holds only
+> what cannot be derived, and each rule carries its reason in a clause. A
+> rule the ticket broke that the file states is Important.
+
+The retro asks the same question of the whole file (which rules nothing
+needed, which are derivable), and `flow stats` shows whether the files grew.
+
+### Handoffs between tickets
+
+What one ticket learned that a later one needs would otherwise sit in
+commits and review threads that nobody after it is told to read. So before
+it is delivered, each ticket posts a **handoff** (`flow handoff <n> --text
+"<lines>"` or `--file <md>`): three to five lines on what changed that the
+plan did not say, the decisions that bind later tickets (a name, a shape, a
+route), and where the plan was wrong and what was done instead; nothing a
+reader gets from the diff. It is a comment starting `<!-- flow:handoff -->`
+and `**Handoff.**`, so the epic's body stays as it was approved. It is
+refused before the ticket is in review or done, since there is nothing to
+hand off before the work exists, and over 1,200 characters, since the detail
+is in the commits. While the ticket is in review, a second handoff replaces
+the first in what later tickets see; once it is done its handoff is never
+replaced (a done ticket with none may get its first), so a later ticket's
+worker cannot rewrite what an earlier ticket decided. Only handoffs posted
+by the account running Flow count, like every other step comment.
+
+`flow ticket <m>` carries, after the ticket, the latest handoff of the done
+tickets in the same epic: the ticket's own blockers first, then the rest in
+the epic's order. It reads at most twenty of them, saying how many it did
+not read, and when the account running it cannot be known it prints the
+ticket with no handoffs and one line saying why. The next builder reads
+them before the code, and its reviewer gets them too, as claims to check
+against the earlier tickets' merged code. A handoff states decisions, never
+why the code is right: the reviewer of a later ticket reads it, and an
+explanation of why code is right makes a reviewer agree.
 
 ### The pull request loop
 
@@ -307,6 +353,9 @@ minutes in all. They are read from the branch as committed, never from your
 working tree. They are used when tickets are built side by side and when
 `flow check-epic` checks the epic branch, which happens after every merge:
 an epic built one ticket at a time pays `setup` once per ticket.
+
+A `qa` section says what `/flow:qa` may visit and touch; see
+[`/flow:qa`](#flowqa-url-a-browser-walks-the-site).
 
 ### The cost comment
 
@@ -491,9 +540,18 @@ the same `<!-- flow:finding fingerprint=<text> -->` line, nothing is filed
 and the command exits 3 printing that issue's number; otherwise the line is
 written at the top of the new body. An agent walking a site builds it from
 the page's address and a short description, so a nightly run files each bug
-once. Only open findings and open tickets are searched, so a finding that was
-rejected (closed) can be filed again by a later run; a person closes it
-again, or files a ticket that fixes what keeps being found.
+once. The search covers open findings, open tickets, and findings closed
+as not planned (what `flow reject` does, or "Close as not planned" on
+GitHub): a rejected fingerprint exits 3 too, saying "#n was rejected on
+<date>: reopen it to reconsider", so a nightly run does not file again what
+a person turned down. It reads the 500 most recently updated closed
+findings, and says so when there were more, since an older rejection would
+not be found. A finding closed as completed does not count: what it
+reported was dealt with, so the same fingerprint is a new bug.
+`--repo <owner>/<name>` files the finding in another repository, such as the
+plugin's: `--epic` and the fingerprint search are looked up there, and
+`--screenshots` is refused, because the images go to this repository's
+`flow-findings` branch.
 
 **A person approves a finding** by adding `flow:approved` to it, and rejects
 it by closing it. `flow found [<epic>] [--json]` lists the open ones: epic or
@@ -547,7 +605,7 @@ every answer is read from GitHub (through `gh`) and git.
 | `doctor` | Checks `gh`, sign-in, that issues are on, the labels, the default branch, and every open epic's `Blocked by` lines (unreadable, outside the epic, cycles). Prints one sentence per problem, then one line naming the project board (see [The project board](#the-project-board)), then `ok` when there was no problem |
 | `board [<epic>] [--json]` | The default branch, then open epics with approval, progress and branch; or one epic's tickets with tier, state and blockers. Either way, how many findings wait or are approved |
 | `next <epic>` | JSON: `approved`, `ready`, `waiting`, `inProgress`, `done`, `needsHuman`, `planned`, `problems`. Exits 1 when the epic is not approved, has no tickets, or is stuck (unfinished tickets, none ready, none in progress) |
-| `ticket <n>` | One ticket parsed, as JSON, including who edited its body and when |
+| `ticket <n>` | One ticket parsed, as JSON, including who edited its body and when, and the latest handoff of each done ticket of its epic (`handoffs`, blockers first, read from at most twenty done tickets; `handoffsLeftOut` counts the ones not read), which it also prints on stderr under `handoffs:` |
 | `check <n> [--cwd <dir>]` | Runs the ticket's criteria from the repository root (or `--cwd`). JSON results on stdout, with every edit of the issue body (who, when); a readable table on stderr. Exits 1 unless every check passed, and when the ticket has no criteria |
 | `check --file <md> [--epic-file <md>]` | The same for a draft that is not on GitHub yet |
 | `post <n> --file <md>` or `--text "<md>"` | Adds a comment |
@@ -558,7 +616,9 @@ every answer is read from GitHub (through `gh`) and git.
 | `link <epic> <n>` | Finishes a `create-ticket` that created the issue but could not link it. Safe to repeat |
 | `create-ticket --no-epic --file <md> --title "<t>" [--tier easy\|hard] [--repo <owner>/<name>]` | Creates a ticket that belongs to no epic (counts as approved); `--repo` files it in another repository, such as the plugin's |
 | `needs-human <n> --text "<why>"` | Marks the ticket `flow:needs-human` and asks a person, by mention |
-| `create-finding --title "<t>" --file <md> [--epic <e>] [--screenshots <dir>] [--fingerprint "<text>"]` | Files a finding (`flow:found`), its images on the `flow-findings` branch; prints its number, or exits 3 with the existing one when the fingerprint was filed before |
+| `handoff <n> --text "<lines>"` or `--file <md>` | Posts the ticket's handoff for the tickets after it; refuses one that is not in review or done, a done one that already has a handoff, and a text over 1,200 characters. The latest one counts |
+| `create-finding --title "<t>" --file <md> [--epic <e>] [--screenshots <dir>] [--fingerprint "<text>"] [--repo <owner>/<name>]` | Files a finding (`flow:found`), its images on the `flow-findings` branch; prints its number, or exits 3 with the existing one when the fingerprint was filed before or rejected. `--repo` files it in another repository (no `--screenshots` there) |
+| `retro-fingerprint <epic> --text "<line>"` | Prints the fingerprint a retro files a proposal with: this repository, the epic, and the line in lower case with only letters and digits |
 | `found [<epic>] [--json]` | The open findings: epic, who filed them and when, approved or waiting, image count (with `--json`, the body and every image link too). Always exits 0 |
 | `promote <n> --file <md> --tier easy\|hard --epic <e> [--blocked-by <n>,<n>]` | Turns an approved finding into a planned ticket of the epic, keeping its text under `## Report`; refuses with exit 2 otherwise |
 | `reject <n> --text "<why>"` | Says why a finding is not a ticket and closes it as not planned |
@@ -582,6 +642,9 @@ every answer is read from GitHub (through `gh`) and git.
 | `release-pr <epic>` | Opens the epic's pull request once every ticket is done, and posts it on the epic |
 | `design-map <epic> [--out <file>]` | Writes the epic's design map for the design comparison |
 | `stats [<epic>] [--since <date>] [--json] [--cwd <dir>]` | How the work went, per ticket, per epic and across epics; see [Looking back](#looking-back) |
+| `qa-config [--widths <w>,<w>] [--cwd <dir>]` | The `qa` section of `.flow.json`, checked, with the defaults filled in, as JSON; exits 2 naming every unknown key or wrong type. Touches no GitHub |
+| `qa-routes <url> [--routes <file> \| --sitemap <file> … \| --links <file>] [--cap 60]` | The pages `/flow:qa` visits, as JSON: the start page, then same-site pages from a list, a sitemap (an index lists the sitemaps to read next) or a saved page's links (else `.flow.json`'s `routes`), each once, without `deny` matches or files that are not pages, capped; `skipped` says how many were left out and why. Exits 2 when there is nothing to build from |
+| `qa-fingerprint <url> "<first line>"` | The fingerprint a QA finding is filed with: the page's path and the normalised line |
 
 ## Looking back
 
@@ -602,7 +665,15 @@ else. Per ticket, and summed per epic:
   the default branch ending `(fixes #n)`, counted against ticket `#n`;
 - **stops for a person**, each with its reason and a link, runs that
   stopped, and tickets that were planned side by side but built one at a
-  time, with the reason.
+  time, with the reason;
+- whether each ticket left a **handoff** (`handoff: true` or `false`), and
+  how many did;
+- the **instruction files'** size (`CLAUDE.md` and `AGENTS.md` anywhere in
+  the tree, lines and bytes), read from git at the commit the epic's first
+  ticket started from and at the release pull request's merge commit, as
+  `instructionFiles: { before, after }` and one printed line. Where no
+  comment names the commit, the pull request is not merged, or this clone
+  lacks the commit, the line says `unknown` and the JSON holds `null`.
 
 Without an epic it covers every epic (`--since 2026-10-01` leaves out those
 created earlier) and ends with the pace: done tickets per day and the median
@@ -615,7 +686,7 @@ and escapes come from its `origin/` branches.
 
 After the release pull request is merged (or, when each ticket had its own
 pull request, after every ticket is done), it hands the record to a separate
-**retro miner**, which never saw the work being done, and gets back seven
+**retro miner**, which never saw the work being done, and gets back these
 answers, each with links to the comments and commits behind it:
 
 1. which stops needed a person, and whether the plugin could have answered
@@ -628,14 +699,33 @@ answers, each with links to the comments and commits behind it:
 5. whether an acceptance check passed while the outcome was not met, or
    failed while the code was right;
 6. which rule in the project's instruction files was broken or missing;
+   and (6b) which rules this epic never exercised, and which the code or
+   tests now say by themselves, with deletions proposed beside the
+   additions;
 7. what should change: in the plugin, in the project's instruction files,
    or nothing.
 
-The answers are posted on the epic, and you are asked about each proposal.
-Only a yes files anything: a plugin change becomes an issue in the plugin's
-repository (`flow create-ticket --no-epic --repo <owner>/<name>`), and an
-instruction-file change goes through `/flow:quick` to a pull request you
-merge.
+The answers are posted on the epic, with every proposal in one of four
+groups, and you answer one table, a row per proposal. Only a yes files
+anything:
+
+- a **project follow-up** becomes a finding: a small one under the project's
+  open `Bugs` epic, a feature-sized one with no epic, marked for
+  `/flow:epic`;
+- a **plugin proposal** becomes a finding in the plugin's repository under
+  its open `Retro` epic (`flow create-finding --repo weekendgoals/ticket-flow
+  --epic <Retro>`); with no such epic the row is not filed, and the retro
+  prints `/flow:epic --standing "Retro"` to run in a clone of the plugin;
+- an **instruction-file diff** (additions and deletions are separate rows)
+  goes through `/flow:quick` to a pull request you merge;
+- a **lesson** about how to work is offered as a dated section for the
+  plugin's `METHODOLOGY.md`, which you add by hand or file as a plugin
+  proposal.
+
+Each filed finding links the retro comment and carries a fingerprint from
+the epic and the proposal's first line (`flow retro-fingerprint <epic>
+--text "<line>"`), so running the retro again files nothing twice. A last
+comment on the epic says what was filed and why each rejected row was not.
 
 ## The reporter extension
 
@@ -649,7 +739,94 @@ branch and linked by commit. It has no build step: open
 select the folder. A person then approves the finding with `flow:approved`
 or closes it, and `/flow:triage` turns approved findings into tickets. The
 token it needs, its options and the exact issue it writes are in
-[`tools/reporter/README.md`](tools/reporter/README.md).
+[`tools/reporter/README.md`](tools/reporter/README.md). Its options hold
+named targets (a repository, an epic and a screenshots branch each) under one
+token, and the popup's File to list picks one, remembering the target you last filed
+to on each site.
+
+## `/flow:qa <url>`: a browser walks the site
+
+`/flow:qa <url> [--epic <e>] [--routes <file>] [--widths 1440,393]` walks a
+live site the way a visitor would and files every problem it sees as a
+[finding](#findings-bugs-and-ideas-before-they-are-tickets), once. It
+approves nothing: a person approves or closes each finding, and
+`/flow:triage` turns the approved ones into tickets.
+
+**It needs a browser tool in the session** and installs none. Playwright
+MCP is the one to add (`claude mcp add playwright npx @playwright/mcp@latest`,
+then a new session); Chrome DevTools MCP works too. Without either it stops
+before anything else and says so.
+
+What it does:
+
+1. Reads `.flow.json`'s `qa` section (`flow qa-config`) and the project's
+   instruction files.
+2. Picks the epic to file under: `--epic <e>`, or the open epic titled
+   `Bugs` (`/flow:epic --standing "Bugs"` makes one). With none it stops
+   before the walk, because a walk with nowhere to file it is wasted.
+3. Builds the page list with `flow qa-routes`: from `--routes`, else
+   `.flow.json`'s `routes`, else the site's sitemap, else the start page's
+   links. Same site only, each page once, files that are not pages left
+   out, every `deny` match left out, at most 60.
+4. Hires one `qa-explorer` agent per batch of up to ten pages, one at a
+   time (they share the session's one browser). Each is handed only the
+   site notes the session copied from your instruction files, never the
+   files: they often list known bugs. At each page and width it
+   records console errors and failed requests, checks the page's own links
+   for 404s with HEAD requests only (never a link a `deny` pattern or the
+   rules below name, and never a GET when HEAD is refused), looks for a page wider than the window and text cut off by its
+   box, compares the document language with the text, reports the
+   accessibility problems the browser shows and, with `--epic` on an epic
+   with design sources, runs the design comparison. A screenshot only where
+   something is wrong.
+5. Files each finding with
+   `flow create-finding --epic <e> --screenshots <dir> --fingerprint "$(flow qa-fingerprint <url> "<title>")"`:
+   one finding per problem (the same broken header on every page is one),
+   and none for a problem an open finding or ticket already carries.
+6. Ends with one table: pages visited, findings filed, duplicates skipped,
+   pages it could not load.
+
+**The explorer's rules**, each because the site is live: it never submits
+a form or sends a message, and never clicks a control that pays, orders,
+signs up, deletes, cancels or unsubscribes (a contact form reaches a
+person; an order charges a card). It never clicks, submits or visits what
+a `deny` pattern matches, never signs in, and never leaves the site's
+origin. With a `testMarker` it may fill a form's text fields with exactly
+that text and submit it, because your gateway drops what carries it; a
+field that will not take the marker leaves the form unsent.
+
+```json
+{
+  "qa": {
+    "routes": ["/", "/pricing", "/contact"],
+    "deny": ["checkout", "/account/*"],
+    "widths": [1440, 393],
+    "testMarker": "[flow-qa-test]"
+  }
+}
+```
+
+`routes` are paths or addresses on the site; `deny` patterns match anywhere
+in a control's text or label or a page's path, ignoring case, with `*` for
+any run of characters; `widths` are window widths in pixels (1440 and 393
+when not set); `testMarker` is one line. Every key is optional, and an
+unknown key or a wrong type makes `flow qa-config` and `flow qa-routes`
+exit 2 naming it:
+a `deny` list read half-way would be a walk with no brakes.
+
+**The fingerprint** is the page's path and the finding's title, lowercased,
+numbers written `#` and punctuation dropped (`qa /pricing pricing table
+wider than the window`), so the same problem found again next night is
+recognised and skipped. The explorer's judgement cannot be tested here;
+`/flow:retro` counts how many of its findings a person rejected instead.
+
+**Nightly**: copy [`plugins/flow/github/qa.yml`](plugins/flow/github/qa.yml)
+to `.github/workflows/flow-qa.yml`, set the repository variable `QA_URL`,
+and give it the `ANTHROPIC_API_KEY` and `FLOW_TOKEN` secrets `flow.yml`
+uses. It runs `/flow:qa <url> --unattended` on a schedule (or by hand with
+another address) under claude-code-action, with the Playwright MCP server
+configured in the file, driving the Chrome the runner already has, and
+keeps the screenshots as an artifact. Your project installs nothing for it.
 
 ## Agents
 
@@ -663,9 +840,13 @@ token it needs, its options and the exact issue it writes are in
   fixes.
 - **retro-miner** — reads a finished epic's record for `/flow:retro` and
   answers its questions with evidence. It proposes changes and files none.
+- **qa-explorer** — walks a batch of a live site's pages in the session's
+  browser for `/flow:qa` and reports what is broken, with evidence. It is
+  never told what anyone thinks is broken, clicks nothing that pays, signs
+  up, deletes or sends, and files nothing.
 
-All four run on the strongest model available: what a reviewer or
-researcher left out cannot be checked afterwards.
+All five run on the strongest model available: what a reviewer, researcher
+or explorer left out cannot be checked afterwards.
 
 ## Further reading
 

@@ -16,6 +16,9 @@ export const NEEDS_HUMAN_LEAD = '**This ticket needs a person.**'
 export const SERIAL_WAVE_MARKER = /^<!-- flow:serial wave=([\w:-]+) tickets=(\d+(?:,\d+)*) -->$/m
 export const PULL_REQUEST_COMMENT = /^\*\*Pull request (opened|already open|round \d+):?\*\*/
 export const UNATTENDED_VARIABLE = 'FLOW_UNATTENDED'
+export const HANDOFF_MARKER = '<!-- flow:handoff -->'
+const HANDOFF_LEAD = '**Handoff.**'
+export const MAX_HANDOFF_LENGTH = 1200
 
 export function isUnattended(environment = process.env) {
   return environment[UNATTENDED_VARIABLE] === '1'
@@ -117,6 +120,24 @@ function lastMatch(comments, author, marker) {
 export function lastMerge(comments, author) {
   const found = lastMatch(comments, author, MERGED_MARKER)
   return found ? { mergeSha: found.match[1], accepted: found.match[2] } : null
+}
+
+export function handoffComment(text) {
+  return `${HANDOFF_MARKER}\n${HANDOFF_LEAD}\n\n${text.trim()}`
+}
+
+export function handoffText(body) {
+  const text = String(body || '').replace(/\r\n?/g, '\n')
+  if (!text.startsWith(HANDOFF_MARKER)) return null
+  const rest = text.slice(HANDOFF_MARKER.length).trimStart()
+  return (rest.startsWith(HANDOFF_LEAD) ? rest.slice(HANDOFF_LEAD.length) : rest).trim()
+}
+
+export function lastHandoff(comments, author) {
+  const found = byAuthor(comments, author).filter((comment) => comment.body.startsWith(HANDOFF_MARKER))
+  if (!found.length) return null
+  const latest = found[found.length - 1]
+  return { text: handoffText(latest.body), url: latest.url || null, at: latest.createdAt || null }
 }
 
 export function lastStart(comments, author) {
