@@ -39,8 +39,8 @@ epic). "Direct" or "without Flow" always overrides it.
   `stats.mjs` (the figures `flow stats` reads back out of those comments),
   `worktree-setup.mjs` (`.flow.json` `copy`/`setup` in a fresh copy),
   `project-sync.mjs` (a linked GitHub Project's `Status` follows the state
-  labels, and a release epic's `Release` field its release, best effort,
-  never a source of state; `init --board` sets the board up and
+  labels, a release epic's `Release` field its release, and seven number
+  fields a ticket's cost comment, best effort, never a source of state; `init --board` sets the board up and
   `board-sync` catches it up, closing the done tickets of release epics,
   since `merge` closes a ticket it marks done so the board's progress bar
   counts it).
@@ -73,9 +73,9 @@ as of 2026-10-18; the pass count grows, the fail line stays `# fail 0`.
   whole-epic commands, the same way.
 - `pull-request.test.mjs` `# pass 20`, `issue-body.test.mjs` `# pass 29`,
   `checks.test.mjs` `# pass 26` (real shell commands in a temp dir),
-  `tracker/github.test.mjs` `# pass 35`, `fidelity.test.mjs` `# pass 54`,
+  `tracker/github.test.mjs` `# pass 36`, `fidelity.test.mjs` `# pass 54`,
   `stats.test.mjs` `# pass 13` (needs `git`), `project-sync.test.mjs`
-  `# pass 29`, under `plugins/flow/scripts/`.
+  `# pass 33`, under `plugins/flow/scripts/`.
 - `node --test plugins/flow/scripts/meter.test.mjs` — `# pass 16`. Builds
   its transcripts; no test reads a real one (they belong to whoever ran them).
 - `node --test plugins/flow/scripts/worktree-setup.test.mjs` — `# pass 18`;

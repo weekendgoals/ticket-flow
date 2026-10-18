@@ -67,7 +67,10 @@ import {
   syncProjectRelease,
   projectBoardLine,
   ensureProjectBoard,
-  ensureReleaseField,
+  ensureBoardFields,
+  syncProjectFigures,
+  placeFigures,
+  figureFieldsOf,
   findProjectBoard,
   placeOnBoard,
   placeRelease,
@@ -111,7 +114,7 @@ const USAGE = `usage: flow <command>
   init [--board [<title>]]               create the Flow labels in this repository
                                          (--board: also create, link or complete the project board; title Flow by default)
   board-sync [<epic>] [--json]           set every epic's and ticket's Status on the project board from its labels, each release
-                                         epic's Release, and close the done tickets of release epics left open
+                                         epic's Release, each metered ticket's figures, and close the done tickets of release epics left open
   doctor                                 check gh, the repository, the labels and every open epic
   board [<epic>] [--json]                list open epics, or one epic's tickets
   next <epic>                            what can start now, as JSON (exit 1 when the epic is not approved, empty or stuck)
@@ -151,7 +154,7 @@ const USAGE = `usage: flow <command>
   merge <n> [--sha <sha>] | merge --epic <epic>
                                          merge the accepted commit into the epic branch (--epic: every accepted ticket, in order)
   meter <n> (--transcripts [<role>=]<path> ... | --workflow <run dir>) [--print]
-                                         post what the ticket cost, read from session transcripts
+                                         post what the ticket cost, read from session transcripts, and copy its figures to the project board
   pr-review-request <pr>                 ask Copilot to review (prints copilot, coderabbit or none)
   pr-wait <pr> [--bot copilot|coderabbit|none] [--timeout <s>] [--interval <s>]
   pr-threads <pr> [--all]                unresolved review threads, as JSON (--all: resolved ones too)
@@ -304,7 +307,7 @@ function commandInit(positional, flags) {
     process.stderr.write(`flow: ${outcome.refused}\n`)
     return 2
   }
-  const fields = ensureReleaseField()
+  const fields = ensureBoardFields()
   const lines = [...outcome.lines, ...fields.lines]
   const problems = [...outcome.problems, ...fields.problems]
   for (const line of lines) console.log(line)
@@ -315,21 +318,21 @@ function commandInit(positional, flags) {
 function boardSyncEntries(epicNumber) {
   const entries = []
   const seen = new Set()
-  const add = (issue, { state, problem }, { inReleaseEpic = false, releaseOf = null } = {}) => {
+  const add = (issue, { state, problem }, { inReleaseEpic = false, releaseOf = null, delivery = null } = {}) => {
     if (seen.has(issue.number)) return
     seen.add(issue.number)
     if (isFinding(issue)) {
       if (issue.state !== 'closed') entries.push({ number: issue.number, state: null, problem: null, finding: true })
       return
     }
-    entries.push({ number: issue.number, state, problem, finding: false, open: issue.state !== 'closed', inReleaseEpic, releaseOf })
+    entries.push({ number: issue.number, state, problem, finding: false, open: issue.state !== 'closed', inReleaseEpic, releaseOf, delivery })
   }
   const epics = epicNumber === null ? github.listIssues({ label: EPIC_LABEL }) : [github.getIssue(epicNumber)]
   if (epicNumber !== null && !epics[0].labels.includes(EPIC_LABEL)) throw new UsageError(`#${epicNumber} is not an epic (it has no ${EPIC_LABEL} label)`)
   for (const epic of epics) {
     const settings = parseEpicBody(epic.body).settings
     add(epic, { state: 'epic', problem: null }, { releaseOf: isReleaseEpic(settings) ? { issue: epic, settings } : null })
-    for (const sub of github.listSubIssues(epic.number)) add(sub, ticketState(sub.labels), { inReleaseEpic: isReleaseEpic(settings) })
+    for (const sub of github.listSubIssues(epic.number)) add(sub, ticketState(sub.labels), { inReleaseEpic: isReleaseEpic(settings), delivery: deliveryFor({ settings }) })
   }
   if (epicNumber === null) for (const ticket of github.listIssues({ label: TICKET_LABEL })) add(ticket, ticketState(ticket.labels))
   return entries
@@ -352,7 +355,9 @@ function commandBoardSync(positional, flags) {
   const failures = []
   const closed = []
   const releases = []
+  const figures = []
   const release = releaseFieldOf(found.board)
+  const figureFields = figureFieldsOf(found.board)
   const attempt = (number, kept, step) => {
     try {
       step()
@@ -385,6 +390,14 @@ function commandBoardSync(positional, flags) {
         closed.push(entry.number)
         say(`#${entry.number} closed as completed: it is done`)
       })
+    if (entry.state !== 'epic' && figureFields.ids.size)
+      attempt(entry.number, 'kept its old figures', () => {
+        const written = placeFigures(found.board, entry.number, { delivery: entry.delivery })
+        if (!written.length) return
+        figures.push(entry.number)
+        say(`#${entry.number} figures: ${written.join(', ')}`)
+      })
+    if (entry.state !== 'epic' && figureFields.problem) reportOnce(figureFields.problem)
     if (entry.releaseOf && release.problem) reportOnce(release.problem)
     else if (entry.releaseOf)
       attempt(entry.number, `kept its old ${RELEASE_FIELD}`, () => {
@@ -400,6 +413,7 @@ function commandBoardSync(positional, flags) {
     `${skipped.length} skipped`,
     ...(closed.length ? [`${closed.length} closed`] : []),
     ...(releases.length ? [`${releases.length} ${RELEASE_FIELD} set`] : []),
+    ...(figures.length ? [`${figures.length} with figures`] : []),
     ...(failures.length ? [`${failures.length} failed`] : []),
   ]
   say(counted.join(', '))
@@ -415,6 +429,7 @@ function commandBoardSync(positional, flags) {
       skippedIssues: skipped,
       closed,
       releases,
+      figures,
       failures,
     })
   return failures.length ? 1 : 0
@@ -1791,6 +1806,7 @@ function commandMeter(positional, flags) {
   }
   const posted = github.comment(number, body)
   console.log(posted.url || `commented on #${number}`)
+  syncProjectFigures(number)
   return 0
 }
 

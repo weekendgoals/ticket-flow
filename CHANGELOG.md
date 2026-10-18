@@ -43,6 +43,21 @@ stamps the version and date and bumps `plugin.json` in the same commit.
 - `tracker/github.mjs`: `reopenIssue`, `createProjectField`; the project
   query reads every field's name and type, and item queries read the
   `Release` value beside `Status`.
+- **New: the cost on the board.** Seven number fields, `Input tokens`,
+  `Output tokens`, `Cache tokens` (cache writes plus reads), `Build
+  minutes`, `Review minutes` (review plus fixes), `Total minutes` and
+  `Review rounds`, are copied from the figures `flow stats` reads for one
+  ticket, so the board's Insights can chart them. A figure that is unknown
+  is not written and its cell stays empty, never 0. `flow meter` writes
+  them right after posting the cost comment; `flow board-sync` for every
+  ticket with a cost comment (counted, and `figures` in `--json`). No board
+  linked: silent; a field missing: one `project board not updated:` line;
+  a refused write: one line; the command's exit code never changes.
+- **`flow init --board`** creates the number fields the board lacks and
+  names them; a field of one of those names of another kind is named, left
+  alone, and the command exits 1. `flow doctor`'s board line ends
+  `figures: 7 fields`, or names the missing and wrongly typed ones.
+- `tracker/github.mjs`: `setProjectNumber`.
 
 ## 3.2.0 — 2026-10-18
 

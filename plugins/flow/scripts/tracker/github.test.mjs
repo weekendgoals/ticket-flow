@@ -445,3 +445,11 @@ test('createProjectField creates a field of the data type asked, with options fo
   assert.deepEqual(select.variables.options, [{ name: 'Building', color: 'YELLOW', description: 'being built' }])
   assert.ok(!('options' in number.variables), 'a number field is sent without options')
 })
+
+test('setProjectNumber sends the number as a number, for a Float field value', () => {
+  fake.setFixtures({ 'graphql field=F_1 item=PVTI_9 project=PVT_1 value=1540': { data: { updateProjectV2ItemFieldValue: { projectV2Item: { id: 'PVTI_9' } } } } })
+  github.setProjectNumber('PVT_1', 'PVTI_9', 'F_1', 1540)
+  const [call] = fake.calls()
+  assert.deepEqual(call.args.slice(-2), ['-F', 'value=1540'])
+  assert.match(call.args.find((arg) => arg.startsWith('query=')), /\$value:Float!.*value:\{number:\$value\}/)
+})

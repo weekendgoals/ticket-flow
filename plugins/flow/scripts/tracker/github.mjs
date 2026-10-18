@@ -446,6 +446,8 @@ const SET_SINGLE_SELECT_MUTATION =
 const CREATE_PROJECT_MUTATION = `mutation($ownerId:ID!,$title:String!){createProjectV2(input:{ownerId:$ownerId,title:$title}){projectV2{id title ${STATUS_FIELD_SELECTION}}}}`
 const SET_FIELD_OPTIONS_MUTATION =
   'mutation($field:ID!,$options:[ProjectV2SingleSelectFieldOptionInput!]!){updateProjectV2Field(input:{fieldId:$field,singleSelectOptions:$options}){projectV2Field{... on ProjectV2SingleSelectField{id options{id name}}}}}'
+const SET_NUMBER_MUTATION =
+  'mutation($project:ID!,$item:ID!,$field:ID!,$value:Float!){updateProjectV2ItemFieldValue(input:{projectId:$project,itemId:$item,fieldId:$field,value:{number:$value}}){projectV2Item{id}}}'
 const CREATE_FIELD_MUTATION = `mutation($project:ID!,$name:String!,$dataType:ProjectV2CustomFieldType!,$options:[ProjectV2SingleSelectFieldOptionInput!]){createProjectV2Field(input:{projectId:$project,name:$name,dataType:$dataType,singleSelectOptions:$options}){projectV2Field{${FIELD_SELECTION}}}}`
 const LINK_PROJECT_MUTATION = 'mutation($project:ID!,$repository:ID!){linkProjectV2ToRepository(input:{projectId:$project,repositoryId:$repository}){repository{id}}}'
 
@@ -458,6 +460,10 @@ export function addProjectItem(projectId, contentId) {
 
 export function setProjectSingleSelect(projectId, itemId, fieldId, optionId) {
   graphql(SET_SINGLE_SELECT_MUTATION, { project: projectId, item: itemId, field: fieldId, option: optionId }, { inRepository: false })
+}
+
+export function setProjectNumber(projectId, itemId, fieldId, value) {
+  graphql(SET_NUMBER_MUTATION, { project: projectId, item: itemId, field: fieldId, value }, { inRepository: false })
 }
 
 export function createProject(ownerId, title) {

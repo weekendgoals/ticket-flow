@@ -203,7 +203,10 @@ test('flow meter prints with --print and posts the comment otherwise', () => {
   assert.equal(printed.status, 0, printed.stderr)
   assert.match(printed.stdout, /^<!-- flow:meter -->/)
   assert.deepEqual(fake.calls(), [])
-  fake.setFixtures({ 'POST repos/{owner}/{repo}/issues/12/comments': { id: 3, html_url: 'https://github.com/o/r/issues/12#issuecomment-3' } })
+  fake.setFixtures({
+    'POST repos/{owner}/{repo}/issues/12/comments': { id: 3, html_url: 'https://github.com/o/r/issues/12#issuecomment-3' },
+    'graphql name={repo} owner={owner}': { data: { repository: { projectsV2: { nodes: [] } } } },
+  })
   const posted = run('12', '--transcripts', `worker=${stream}`, `reviewer=${stream}`)
   assert.equal(posted.status, 0, posted.stderr)
   assert.match(JSON.parse(fake.calls()[0].stdin).body, /2 transcript file\(s\)/)

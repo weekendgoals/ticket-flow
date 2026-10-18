@@ -143,11 +143,7 @@ ticket's state, and Flow never takes a state from the project.
    linked project already carries all six options, since Flow would go on
    writing to that one. With no project linked, it creates one with the
    title, sets its `Status` options to `Planned`, `In progress`,
-   `In review`, `Done`, `Needs human` and `Epic`, and links it. Either way
-   it then adds the `Release` field (below) when the board lacks it, or the
-   options it lacks, keeping each epic's value the same way; a field named
-   `Release` that is not single select is left alone, named, and the
-   command exits 1. On an
+   `In review`, `Done`, `Needs human` and `Epic`, and links it. On an
    existing project whose `Status` lacks some of them, it adds the missing
    ones and **keeps every option and every item's status**: GitHub gives
    every option a new id when the list changes, so the command first reads
@@ -157,6 +153,12 @@ ticket's state, and Flow never takes a state from the project.
    draft or pull request is set by hand). With all six already there, it
    only names the project. After a change it prints
    `Flow writes to: <title>`, the board every state change will use.
+   Either way it then adds the `Release` field (below) when the board lacks
+   it, or the options it lacks, keeping each epic's value the same way, and
+   the seven number fields of [the cost on the board](#the-cost-on-the-board)
+   that it lacks, naming what it created. A field of one of those names
+   that is of another kind is left alone, named, and the command exits 1:
+   renaming your field is not Flow's call.
 2. Two steps the GitHub API cannot do, which `init --board` reminds you of
    when it creates the project: use the Board layout and set Swimlanes to
    "Parent issue", so every epic becomes one swimlane with its tickets in
@@ -167,7 +169,8 @@ ticket's state, and Flow never takes a state from the project.
    could not write to it for a while), run `flow board-sync [<epic>]`: it
    sets every open epic and its tickets, and every ticket with no epic, to
    the `Status` its labels say, adding any that are missing; gives each
-   release epic its `Release` value; and closes, as completed, every open
+   release epic its `Release` value; copies the figures of every ticket
+   with a cost comment; and closes, as completed, every open
    `flow:done` ticket of a release epic (one with a `Branch:`), which is how
    tickets done before Flow 3.3 get counted. It reads each item's current
    value only to leave a right one alone. `flow board-sync <epic>` works on
@@ -225,6 +228,29 @@ runs `flow board-sync <epic>`, which reads the release pull request named in
 the epic's comments, as `flow stats` does, sees it merged and sets
 `Released`. Without the Action, run `flow board-sync <epic>` yourself after
 the merge. `flow doctor` names the field or its absence on the board line.
+
+**The cost on the board.** The board's Insights charts can only draw fields,
+so each ticket's cost comment is copied into seven number fields:
+
+| Field | Holds |
+|---|---|
+| `Input tokens` | input tokens, all steps |
+| `Output tokens` | output tokens, all steps |
+| `Cache tokens` | cache writes plus cache reads |
+| `Build minutes` | the builder's time, in whole minutes |
+| `Review minutes` | review plus fixes |
+| `Total minutes` | from the first start to the merge (or the last pull request comment) |
+| `Review rounds` | how many review rounds were posted |
+
+`flow meter` writes them right after it posts the cost comment, and
+`flow board-sync` for every ticket that has one; nothing else does, since a
+ticket's figures change only when a cost comment lands. A figure the
+comments do not carry is not written, and its cell stays empty: an empty
+cell means unknown, never 0, which would read as free. In Insights, make a
+chart with Sum of a field (say `Input tokens`), grouped by any single-select
+field (`Status`, or a size or area field of your own). The comment stays
+the record; the fields are the board's copy, and `flow doctor`'s board line
+says `figures: 7 fields` or names the missing ones.
 
 A finding is not on the board: `flow create-finding` adds nothing to the
 project, and the issue joins it, as `Planned`, only when `flow promote` turns
@@ -419,6 +445,9 @@ the run by them, since the messages alone miss the time before the first
 answer. `--workflow <run dir>` reads one ticket's agents out of a
 `/flow:run` workflow run, by their labels (`worker:#12`, `reviewer:#12`,
 `fixes:#12`).
+
+The comment is the record; on a linked project board, `meter` also copies
+its figures into the [cost fields](#the-cost-on-the-board), the board's copy.
 
 ## Building a whole epic: two hosts
 
@@ -643,9 +672,9 @@ every answer is read from GitHub (through `gh`) and git.
 
 | Command | What it does |
 |---|---|
-| `init [--board [<title>]]` | Creates the twelve labels. Safe to run again. `--board` also makes sure a matching project board is linked: creates and links one (titled `Flow` by default), or adds the `Status` options a linked one lacks, keeping every option and every item's status, and adds the `Release` field or its missing options; exits 1 on a `Release` field of another kind, 2 when several linked projects could be meant, 1, with the `gh auth refresh -s project` hint, when GitHub refuses. See [The project board](#the-project-board) |
-| `board-sync [<epic>] [--json]` | Sets the project board's `Status` of every open epic (`Epic`) and ticket from its labels, adding missing ones; findings and tickets with no readable state are skipped. Sets each release epic's `Release`, and closes the open `flow:done` tickets of release epics. One line per change, then `<n> set, <m> already right, <k> skipped` (and how many were closed and how many `Release` values set; `--json` lists them as `closed` and `releases`). Exits 1 when no matching board is linked, or when any issue could not be set (the rest are still set) |
-| `doctor` | Checks `gh`, sign-in, that issues are on, the labels, the default branch, and every open epic's `Blocked by` lines (unreadable, outside the epic, cycles). Prints one sentence per problem, then one line naming the project board (see [The project board](#the-project-board)), then `ok` when there was no problem |
+| `init [--board [<title>]]` | Creates the twelve labels. Safe to run again. `--board` also makes sure a matching project board is linked: creates and links one (titled `Flow` by default), or adds the `Status` options a linked one lacks, keeping every option and every item's status, and adds the `Release` field or its missing options and the seven number fields it lacks; exits 1 on a field of one of those names of another kind, 2 when several linked projects could be meant, 1, with the `gh auth refresh -s project` hint, when GitHub refuses. See [The project board](#the-project-board) |
+| `board-sync [<epic>] [--json]` | Sets the project board's `Status` of every open epic (`Epic`) and ticket from its labels, adding missing ones; findings and tickets with no readable state are skipped. Sets each release epic's `Release`, copies each metered ticket's figures, and closes the open `flow:done` tickets of release epics. One line per change, then `<n> set, <m> already right, <k> skipped` (and how many were closed, how many `Release` values set and how many tickets got figures; `--json` lists them as `closed`, `releases` and `figures`). Exits 1 when no matching board is linked, or when any issue could not be set (the rest are still set) |
+| `doctor` | Checks `gh`, sign-in, that issues are on, the labels, the default branch, and every open epic's `Blocked by` lines (unreadable, outside the epic, cycles). Prints one sentence per problem, then one line naming the project board, its `Release` field and its cost fields (see [The project board](#the-project-board)), then `ok` when there was no problem |
 | `board [<epic>] [--json]` | The default branch, then open epics with approval, progress and branch; or one epic's tickets with tier, state and blockers. Either way, how many findings wait or are approved |
 | `next <epic>` | JSON: `approved`, `ready`, `waiting`, `inProgress`, `done`, `needsHuman`, `planned`, `problems`. Exits 1 when the epic is not approved, has no tickets, or is stuck (unfinished tickets, none ready, none in progress) |
 | `ticket <n>` | One ticket parsed, as JSON, including who edited its body and when, and the latest handoff of each done ticket of its epic (`handoffs`, blockers first, read from at most twenty done tickets; `handoffsLeftOut` counts the ones not read), which it also prints on stderr under `handoffs:` |
@@ -669,7 +698,7 @@ every answer is read from GitHub (through `gh`) and git.
 | `accept <n>` | Runs the criteria on `ticket/<n>`'s committed head and posts the results with the commit; refuses an issue body edited after the start |
 | `deliver <n>` | Merges the accepted commit into the epic branch (release) or opens its pull request (incremental) |
 | `screenshots <n>` | Runs `.flow.json`'s `screenshots` command, commits and posts the images |
-| `meter <n> --transcripts [<role>=]<path> ... [--print]` | Posts what the ticket cost, read from transcripts, a headless run's output or the GitHub Action's |
+| `meter <n> --transcripts [<role>=]<path> ... [--print]` | Posts what the ticket cost, read from transcripts, a headless run's output or the GitHub Action's, then copies the figures to the project board's cost fields |
 | `meter <n> --workflow <run dir> [--print]` | The same, for one ticket of a `/flow:run` workflow run |
 | `pr-review-request <pr>` | Asks Copilot to review; prints `copilot`, `coderabbit` or `none` |
 | `pr-wait <pr> [--bot …] [--timeout <s>] [--interval <s>]` | Waits for the bot's review of the current head |
