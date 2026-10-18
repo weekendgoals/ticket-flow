@@ -26,28 +26,32 @@ stamps the version and date and bumps `plugin.json` in the same commit.
   changing its exit code. The code is `scripts/project-sync.mjs`, with its
   GraphQL calls in `tracker/github.mjs`.
 - **New: `flow init --board [<title>]`** sets the project board up after
-  the labels. With no project linked, it creates one (titled `Flow` by
-  default) under the repository's owner, replaces its `Status` options with
-  the six Flow ones, links it to the repository, and prints the two steps
-  the GitHub API cannot do (the Board layout with Swimlanes by "Parent
-  issue", and the auto-add filter `is:issue label:flow:ticket,flow:epic`).
-  It works on the linked project of that title, else on the only linked
-  project with a `Status` field, and refuses with exit 2, listing them, when
-  several have one and none has the title. On a project whose `Status`
-  lacks some of the six, it adds the missing ones and keeps every existing
-  option with its colour and description, and every item's status: GitHub
-  gives every option a new id when the list is replaced, so it reads each
-  item's `Status` first and sets it back by name afterwards
-  (`restored <n> item statuses`; an item it cannot set back is named and
-  the command exits 1). With all six there it only names the project. The
-  automatic sync and `board-sync` still write to the first linked project
-  whose `Status` carries all six names. Unlike the
-  automatic sync, a refusal here exits 1 with the
-  `gh auth refresh -s project` hint; a project created but not set up says
-  to link it by hand and run the command again, rather than making a second
-  one. `flow init` without `--board` is unchanged. The repository lookup
-  now also reads the repository's and owner's ids and each option's colour
-  and description, still in its one query.
+  the labels. It works on the linked project of that title (`Flow` by
+  default), else on the only linked project with a `Status` field, and
+  refuses with exit 2, changing nothing, when several have one and none has
+  the title, or when another linked project already carries all six
+  options (Flow would write to that one instead; the refusal names it).
+  With no project linked, it creates one under the repository's owner,
+  replaces the new project's `Status` options with the six Flow ones, links
+  it to the repository, and prints the two steps the GitHub API cannot do
+  (the Board layout with Swimlanes by "Parent issue", and the auto-add
+  filter `is:issue label:flow:ticket,flow:epic`). On an existing project
+  whose `Status` lacks some of the six, it adds the missing ones beside
+  every existing option, kept with its colour and description, and keeps
+  every item's status: GitHub gives every option a new id when options are
+  added, so it reads each item's `Status` first and sets it back by name
+  afterwards (`restored <n> item statuses`; an item GitHub refuses is
+  named, with `flow board-sync` as the way to restore Flow's issues, and
+  the command exits 1). With all six there it only names the project.
+  After a change it reads the projects again and prints
+  `Flow writes to: <title>`, or exits 1 when the board the state changes
+  use is not the one it set up. Unlike the automatic sync, a refusal here
+  exits 1 with the `gh auth refresh -s project` hint; a project created but
+  not set up says to link it by hand and run the command again (with the
+  title given), rather than making a second one. `flow init` without
+  `--board` is unchanged. The repository lookup now also reads the
+  repository's and owner's ids and each option's colour and description,
+  still in its one query.
 - **New: `flow board-sync [<epic>] [--json]`** sets the board's `Status` of
   every open epic (or the one named) as `Epic` and of each of its tickets,
   plus every ticket with no epic, from the labels, adding any issue missing

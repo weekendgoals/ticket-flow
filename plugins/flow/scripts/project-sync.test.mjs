@@ -186,6 +186,17 @@ test('a refused Status change prints one line and leaves the labels changed and 
   assert.match(lines[0], /^project board not updated: #3 kept its old Status in Flow board, because .*Resource not accessible by integration/)
 })
 
+test('a state change on an issue whose board item already shows that Status writes nothing to the board', () => {
+  world({
+    [PROJECT_LOOKUP]: projects(project('PVT_flow', 'Flow board', statusField(FLOW_OPTIONS))),
+    ...itemsOf(3, [onBoard('PVTI_3', 'OPT_in_review')]),
+  })
+  const result = flow('label', '3', '+flow:in-review', '-flow:in-progress')
+  assert.equal(result.status, 0, result.stderr)
+  assert.equal(result.stderr, '')
+  assert.deepEqual(fake.calls().map((call) => call.key).filter((key) => key.startsWith('graphql')), [PROJECT_LOOKUP, 'graphql issue=3 name={repo} owner={owner}'])
+})
+
 test('a label change that moves no state touches no project', () => {
   world({ [`POST ${R}/issues/3/labels`]: [] })
   const result = flow('label', '3', '+tier:easy')
@@ -286,15 +297,22 @@ const roadmapField = {
   ],
 }
 const boardItems = (nodes) => ({ data: { node: { items: { pageInfo: { hasNextPage: false, endCursor: null }, nodes } } } })
-const itemWith = (id, number, name) => ({ id, content: number ? { number } : {}, fieldValueByName: name ? { optionId: `OLD_${name}`, name } : null })
+const itemWith = (id, number, name, { kind = 'Issue', repository = 'R_repo' } = {}) => ({
+  id,
+  content: number ? { __typename: kind, number, repository: { id: repository } } : { __typename: 'DraftIssue' },
+  fieldValueByName: name ? { optionId: `OLD_${name}`, name } : null,
+})
 const replacedOptions = (names) => ({
   data: { updateProjectV2Field: { projectV2Field: { id: 'F_status', options: names.map((name) => ({ id: `NEW_${name.replace(/\s+/g, '_')}`, name })) } } },
 })
 const ROADMAP_NAMES = ['Todo', 'In Progress', 'Done', 'Planned', 'In review', 'Needs human', 'Epic']
+const lookupThen = (before, after) => ({ $sequence: [before, after] })
+const roadmapBefore = projects(project('PVT_road', 'Roadmap', roadmapField))
+const roadmapAfter = projects(project('PVT_road', 'Roadmap', statusField(ROADMAP_NAMES)))
 
 test('init --board adds the missing Status options to a linked project, keeping every existing option and setting each item back to its Status under the new ids', () => {
   world({
-    [PROJECT_LOOKUP]: projects(project('PVT_road', 'Roadmap', roadmapField)),
+    [PROJECT_LOOKUP]: lookupThen(roadmapBefore, roadmapAfter),
     'graphql project=PVT_road': boardItems([itemWith('PVTI_a', 7, 'Todo'), itemWith('PVTI_b', 8, 'In Progress'), itemWith('PVTI_draft', null, null), itemWith('PVTI_c', null, 'Done')]),
     'graphql field=F_status': replacedOptions(ROADMAP_NAMES),
     [setStatus('PVTI_a', 'NEW_Todo', 'PVT_road')]: SET_RESPONSE,
@@ -303,7 +321,11 @@ test('init --board adds the missing Status options to a linked project, keeping 
   })
   const result = flow('init', '--board')
   assert.equal(result.status, 0, result.stderr)
-  assert.deepEqual(result.stdout.trim().split('\n'), ['all 12 labels already there', 'project board: Roadmap, added options Planned, In review, Needs human, Epic, restored 3 item statuses'])
+  assert.deepEqual(result.stdout.trim().split('\n'), [
+    'all 12 labels already there',
+    'project board: Roadmap, added options Planned, In review, Needs human, Epic, restored 3 item statuses',
+    'Flow writes to: Roadmap',
+  ])
   assert.deepEqual(graphqlKeys(), [
     PROJECT_LOOKUP,
     'graphql project=PVT_road',
@@ -311,6 +333,7 @@ test('init --board adds the missing Status options to a linked project, keeping 
     setStatus('PVTI_a', 'NEW_Todo', 'PVT_road'),
     setStatus('PVTI_b', 'NEW_In_Progress', 'PVT_road'),
     setStatus('PVTI_c', 'NEW_Done', 'PVT_road'),
+    PROJECT_LOOKUP,
   ])
   assert.deepEqual(sentOptions('graphql field=F_status'), [
     { name: 'Todo', color: 'GREEN', description: 'not yet' },
@@ -323,18 +346,35 @@ test('init --board adds the missing Status options to a linked project, keeping 
   ])
 })
 
-test('init --board names an item whose old Status it cannot set back, goes on with the rest, and exits 1', () => {
+test('init --board names an item GitHub refuses to set back, restores the others, and exits 1', () => {
   world({
-    [PROJECT_LOOKUP]: projects(project('PVT_road', 'Roadmap', roadmapField)),
-    'graphql project=PVT_road': boardItems([itemWith('PVTI_a', 7, 'Todo'), itemWith('PVTI_b', 8, 'In Progress')]),
-    'graphql field=F_status': replacedOptions(ROADMAP_NAMES.filter((name) => name !== 'Todo')),
-    [setStatus('PVTI_b', 'NEW_In_Progress', 'PVT_road')]: SET_RESPONSE,
+    [PROJECT_LOOKUP]: lookupThen(roadmapBefore, roadmapAfter),
+    'graphql project=PVT_road': boardItems([
+      itemWith('PVTI_a', 7, 'Todo'),
+      itemWith('PVTI_b', 8, 'In Progress', { kind: 'PullRequest' }),
+      itemWith('PVTI_c', 9, 'Done', { repository: 'R_elsewhere' }),
+      itemWith('PVTI_d', 10, 'Todo'),
+    ]),
+    'graphql field=F_status': replacedOptions(ROADMAP_NAMES),
+    [setStatus('PVTI_a', 'NEW_Todo', 'PVT_road')]: SET_RESPONSE,
+    [setStatus('PVTI_b', 'NEW_In_Progress', 'PVT_road')]: { data: null, errors: [{ message: 'Resource not accessible by integration' }] },
+    [setStatus('PVTI_c', 'NEW_Done', 'PVT_road')]: { data: null, errors: [{ message: 'Something went wrong' }] },
+    [setStatus('PVTI_d', 'NEW_Todo', 'PVT_road')]: SET_RESPONSE,
   })
   const result = flow('init', '--board')
   assert.equal(result.status, 1)
-  assert.match(result.stdout, /restored 1 item statuses/)
-  assert.match(result.stderr, /^#7 was "Todo", which the new Status options no longer have; set it by hand$/m)
-  assert.ok(graphqlKeys().includes(setStatus('PVTI_b', 'NEW_In_Progress', 'PVT_road')))
+  assert.match(result.stdout, /restored 2 item statuses\nFlow writes to: Roadmap/)
+  const lines = result.stderr.trim().split('\n')
+  assert.equal(lines.length, 2, result.stderr)
+  assert.match(
+    lines[0],
+    /^PR #8 was "In Progress" and could not be set back, because the GitHub token may not .*Resource not accessible by integration; `flow board-sync` restores every Flow issue from its labels, and a draft or pull request is set by hand$/,
+  )
+  assert.match(lines[1], /^item PVTI_c was "Done" and could not be set back, because /)
+  assert.deepEqual(
+    graphqlKeys().filter((key) => key.includes('item=')),
+    [setStatus('PVTI_a', 'NEW_Todo', 'PVT_road'), setStatus('PVTI_b', 'NEW_In_Progress', 'PVT_road'), setStatus('PVTI_c', 'NEW_Done', 'PVT_road'), setStatus('PVTI_d', 'NEW_Todo', 'PVT_road')],
+  )
 })
 
 test('init --board picks the linked project with the title given, adopts the only one with a Status field, and refuses to guess among several', () => {
@@ -344,14 +384,15 @@ test('init --board picks the linked project with the title given, adopts the onl
   assert.equal(guess.status, 2)
   assert.match(guess.stderr, /^flow: several projects linked to this repository have a Status field \(Roadmap, Ops\), and none is titled Flow; run `flow init --board "<title>"`/)
   assert.deepEqual(graphqlKeys(), [PROJECT_LOOKUP])
+  fake.clearCalls()
   world({
-    [PROJECT_LOOKUP]: linkedTwo,
+    [PROJECT_LOOKUP]: lookupThen(linkedTwo, projects(project('PVT_road', 'Roadmap', statusField(ROADMAP_NAMES)), project('PVT_ops', 'Ops', statusField(['Todo'])))),
     'graphql project=PVT_road': boardItems([]),
     'graphql field=F_status': replacedOptions(ROADMAP_NAMES),
   })
   const named = flow('init', '--board', 'roadmap')
   assert.equal(named.status, 0, named.stderr)
-  assert.match(named.stdout, /project board: Roadmap, added options Planned, In review, Needs human, Epic, restored 0 item statuses/)
+  assert.match(named.stdout, /project board: Roadmap, added options Planned, In review, Needs human, Epic, restored 0 item statuses\nFlow writes to: Roadmap$/m)
   fake.clearCalls()
   world({ [PROJECT_LOOKUP]: projects(project('PVT_plain', 'Notes', null), project('PVT_flow', 'Flow board', statusField(FLOW_OPTIONS)), project('PVT_ops', 'Ops', statusField(['Todo']))) })
   const matching = flow('init', '--board')
@@ -360,9 +401,20 @@ test('init --board picks the linked project with the title given, adopts the onl
   assert.deepEqual(graphqlKeys(), [PROJECT_LOOKUP])
 })
 
+test('init --board changes nothing and exits 2 when the board of the title asked for is not the one Flow writes to', () => {
+  world({ [PROJECT_LOOKUP]: projects(project('PVT_road', 'Roadmap', statusField(FLOW_OPTIONS)), project('PVT_flow', 'Flow', statusField(['Todo']))) })
+  const result = flow('init', '--board')
+  assert.equal(result.status, 2)
+  assert.match(
+    result.stderr,
+    /^flow: Roadmap is linked to this repository and already carries all six Status options, so Flow writes to it, not to Flow; to use Flow, unlink Roadmap from the repository first, or run `flow init --board "Roadmap"` to keep Roadmap$/m,
+  )
+  assert.deepEqual(graphqlKeys(), [PROJECT_LOOKUP])
+})
+
 test('init --board with no project linked creates one with the title given, gives it the six options, links it, and names the two steps left by hand', () => {
   world({
-    [PROJECT_LOOKUP]: projects(),
+    [PROJECT_LOOKUP]: lookupThen(projects(), projects(project('PVT_new', 'Trip board', statusField(FLOW_OPTIONS)))),
     'graphql ownerId=U_owner title=Trip board': createdProject('Trip board'),
     'graphql field=F_new': fieldUpdated,
     'graphql project=PVT_new repository=R_repo': linked,
@@ -371,14 +423,25 @@ test('init --board with no project linked creates one with the title given, give
   assert.equal(result.status, 0, result.stderr)
   const lines = result.stdout.trim().split('\n')
   assert.deepEqual(lines.slice(0, 2), ['all 12 labels already there', 'project board: created Trip board and linked it'])
-  assert.equal(lines.length, 4)
+  assert.equal(lines.length, 5)
   assert.match(lines[2], /Board layout and set Swimlanes to "Parent issue"/)
   assert.match(lines[3], /auto-add workflow .* is:issue label:flow:ticket,flow:epic$/)
-  assert.deepEqual(graphqlKeys(), [PROJECT_LOOKUP, 'graphql ownerId=U_owner title=Trip board', 'graphql field=F_new', 'graphql project=PVT_new repository=R_repo'])
+  assert.equal(lines[4], 'Flow writes to: Trip board')
+  assert.deepEqual(graphqlKeys(), [PROJECT_LOOKUP, 'graphql ownerId=U_owner title=Trip board', 'graphql field=F_new', 'graphql project=PVT_new repository=R_repo', PROJECT_LOOKUP])
   assert.deepEqual(
     sentOptions('graphql field=F_new'),
     PROJECT_STATUSES.map((status) => ({ name: status.option, color: status.color, description: '' })),
   )
+  fake.clearCalls()
+  world({
+    [PROJECT_LOOKUP]: projects(),
+    'graphql ownerId=U_owner title=Trip board': createdProject('Trip board'),
+    'graphql field=F_new': fieldUpdated,
+    'graphql project=PVT_new repository=R_repo': linked,
+  })
+  const unseen = flow('init', '--board', 'Trip board')
+  assert.equal(unseen.status, 1)
+  assert.match(unseen.stderr, /^Trip board was set up, but Flow writes to no board, because no GitHub Project is linked to this repository; `flow doctor` names the board Flow uses$/m)
 })
 
 test('init --board stops with exit 1 and the scope hint when the token may not touch projects, and a half-made board says how to finish it', () => {
@@ -393,13 +456,13 @@ test('init --board stops with exit 1 and the scope hint when the token may not t
   assert.match(refused.stderr, /^flow: the project board was not set up, because the GitHub token may not read or write projects \(locally run `gh auth refresh -s project`/)
   world({
     [PROJECT_LOOKUP]: projects(),
-    'graphql ownerId=U_owner title=Flow': createdProject('Flow'),
+    'graphql ownerId=U_owner title=Trip board': createdProject('Trip board'),
     'graphql field=F_new': fieldUpdated,
     'graphql project=PVT_new repository=R_repo': { data: null, errors: [{ message: 'Resource not accessible by integration' }] },
   })
-  const halfway = flow('init', '--board')
+  const halfway = flow('init', '--board', 'Trip board')
   assert.equal(halfway.status, 1)
-  assert.match(halfway.stderr, /^flow: Flow was created but is not ready, because .*Resource not accessible by integration; link it to the repository by hand .* run `flow init --board` again/)
+  assert.match(halfway.stderr, /^flow: Trip board was created but is not ready, because .*Resource not accessible by integration; link it to the repository by hand .* run `flow init --board "Trip board"` again/)
 })
 
 test('init without --board touches no project, and a title without --board is refused', () => {

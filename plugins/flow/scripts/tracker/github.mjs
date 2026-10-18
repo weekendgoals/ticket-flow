@@ -448,7 +448,7 @@ export function setSingleSelectOptions(fieldId, options) {
 }
 
 const PROJECT_ITEMS_QUERY =
-  'query($project:ID!,$cursor:String){node(id:$project){... on ProjectV2{items(first:100,after:$cursor){pageInfo{hasNextPage endCursor}nodes{id content{... on Issue{number} ... on PullRequest{number}} fieldValueByName(name:"Status"){... on ProjectV2ItemFieldSingleSelectValue{optionId name}}}}}}}'
+  'query($project:ID!,$cursor:String){node(id:$project){... on ProjectV2{items(first:100,after:$cursor){pageInfo{hasNextPage endCursor}nodes{id content{__typename ... on Issue{number repository{id}} ... on PullRequest{number repository{id}}} fieldValueByName(name:"Status"){... on ProjectV2ItemFieldSingleSelectValue{optionId name}}}}}}}'
 
 export function projectItems(projectId) {
   const items = []
@@ -460,7 +460,9 @@ export function projectItems(projectId) {
     for (const node of page.nodes.filter(Boolean))
       items.push({
         id: node.id,
+        kind: node.content && node.content.__typename ? node.content.__typename : null,
         number: node.content && node.content.number ? node.content.number : null,
+        repositoryId: node.content && node.content.repository ? node.content.repository.id : null,
         status: node.fieldValueByName && node.fieldValueByName.optionId ? { optionId: node.fieldValueByName.optionId, name: node.fieldValueByName.name || null } : null,
       })
     if (!page.pageInfo.hasNextPage) return items

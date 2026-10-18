@@ -137,15 +137,20 @@ ticket's state, and Flow never takes a state from the project.
    title (`Flow` unless you give one; case does not matter), else on the
    only linked project with a `Status` field; with several such projects
    and none of that title it refuses (exit 2), lists them, and asks for the
-   title of the one to use. With no project linked, it creates one with the
+   title of the one to use. It also refuses, changing nothing, when another
+   linked project already carries all six options, since Flow would go on
+   writing to that one. With no project linked, it creates one with the
    title, sets its `Status` options to `Planned`, `In progress`,
    `In review`, `Done`, `Needs human` and `Epic`, and links it. On an
    existing project whose `Status` lacks some of them, it adds the missing
    ones and **keeps every option and every item's status**: GitHub gives
    every option a new id when the list changes, so the command first reads
    each item's `Status`, then sets it back by name, and says how many it
-   restored (an item it could not set back is named, and the command exits
-   1). With all six already there, it only names the project.
+   restored (an item GitHub refuses is named and the command exits 1;
+   `flow board-sync` then restores every Flow issue from its labels, and a
+   draft or pull request is set by hand). With all six already there, it
+   only names the project. After a change it prints
+   `Flow writes to: <title>`, the board every state change will use.
 2. Two steps the GitHub API cannot do, which `init --board` reminds you of
    when it creates the project: use the Board layout and set Swimlanes to
    "Parent issue", so every epic becomes one swimlane with its tickets in

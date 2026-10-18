@@ -121,11 +121,12 @@ function notSetUp(step) {
   }
 }
 
-function itemName(item) {
-  return item.number ? `#${item.number}` : `item ${item.id}`
+function itemName(item, repositoryId) {
+  if (!item.number || item.repositoryId !== repositoryId) return `item ${item.id}`
+  return item.kind === 'PullRequest' ? `PR #${item.number}` : `#${item.number}`
 }
 
-function completeOptions(project, missing) {
+function completeOptions(project, missing, repositoryId) {
   const items = notSetUp(() => github.projectItems(project.id)).filter((item) => item.status && item.status.name)
   const replaced = notSetUp(() =>
     github.setSingleSelectOptions(project.statusField.id, [
@@ -137,19 +138,17 @@ function completeOptions(project, missing) {
   let restored = 0
   for (const item of items) {
     const option = replaced.options.find((entry) => sameName(entry.name, item.status.name))
-    if (!option) {
-      problems.push(`${itemName(item)} was "${item.status.name}", which the new Status options no longer have; set it by hand`)
-      continue
-    }
     try {
-      github.setProjectSingleSelect(project.id, item.id, replaced.fieldId, option.id)
+      github.setProjectSingleSelect(project.id, item.id, replaced.fieldId, option ? option.id : null)
       restored++
     } catch (error) {
       if (!(error instanceof TrackerError) || error.missing) throw error
-      problems.push(`${itemName(item)} was "${item.status.name}" and could not be set back, because ${oneLine(explain(error))}; set it by hand`)
+      problems.push(
+        `${itemName(item, repositoryId)} was "${item.status.name}" and could not be set back, because ${oneLine(explain(error))}; \`flow board-sync\` restores every Flow issue from its labels, and a draft or pull request is set by hand`,
+      )
     }
   }
-  return { lines: [`project board: ${project.title}, added options ${missing.join(', ')}, restored ${restored} item statuses`], problems }
+  return { lines: [`project board: ${project.title}, added options ${missing.join(', ')}, restored ${restored} item statuses`], problems, changed: project }
 }
 
 function createBoard(repository, title) {
@@ -162,31 +161,50 @@ function createBoard(repository, title) {
   } catch (error) {
     if (!(error instanceof TrackerError) || error.missing) throw error
     throw new TrackerError(
-      `${project.title} was created but is not ready, because ${oneLine(explain(error))}; link it to the repository by hand (the repository's Projects tab → Link a project) and run \`flow init --board\` again, which adds the Status options it lacks instead of creating a second project`,
+      `${project.title} was created but is not ready, because ${oneLine(explain(error))}; link it to the repository by hand (the repository's Projects tab → Link a project) and run \`${initCommand(title)}\` again, which adds the Status options it lacks instead of creating a second project`,
     )
   }
-  return { lines: [`project board: created ${project.title} and linked it`, ...BOARD_STEPS_BY_HAND], problems: [] }
+  return { lines: [`project board: created ${project.title} and linked it`, ...BOARD_STEPS_BY_HAND], problems: [], changed: project }
 }
 
-function adopt(project) {
+const initCommand = (title) => (sameName(title, DEFAULT_BOARD_TITLE) ? 'flow init --board' : `flow init --board "${title}"`)
+
+function adopt(project, repositoryId) {
   if (!project.statusField)
     throw new TrackerError(`the project board was not set up: ${project.title} is linked to this repository but has no Status field; add a single-select field named Status to it, or run \`flow init --board <title>\` with a new title to create a board`)
   const missing = missingOptions(project)
   if (!missing.length) return { lines: [`project board: ${project.title}`], problems: [] }
-  return completeOptions(project, missing)
+  return completeOptions(project, missing, repositoryId)
 }
 
-export function ensureProjectBoard(title = DEFAULT_BOARD_TITLE) {
-  const found = findProjectBoard()
-  if (found.kind === 'unreadable') throw new TrackerError(`the project board was not set up: ${oneLine(found.reason)}`)
+function chooseAndSetUp(found, title) {
   const named = found.projects.find((project) => sameName(project.title, title))
-  if (named) return adopt(named)
+  if (named) {
+    if (found.kind === 'found' && found.board.id !== named.id)
+      return {
+        refused: `${found.board.title} is linked to this repository and already carries all six Status options, so Flow writes to it, not to ${named.title}; to use ${named.title}, unlink ${found.board.title} from the repository first, or run \`${initCommand(found.board.title)}\` to keep ${found.board.title}`,
+      }
+    return adopt(named, found.repository.id)
+  }
   if (found.kind === 'found') return { lines: [`project board: ${found.board.title}`], problems: [] }
   const withStatus = found.projects.filter((project) => project.statusField)
-  if (withStatus.length === 1) return adopt(withStatus[0])
+  if (withStatus.length === 1) return adopt(withStatus[0], found.repository.id)
   if (withStatus.length > 1)
     return {
       refused: `several projects linked to this repository have a Status field (${withStatus.map((project) => project.title).join(', ')}), and none is titled ${title}; run \`flow init --board "<title>"\` with the title of the one Flow should use`,
     }
   return createBoard(found.repository, title)
+}
+
+export function ensureProjectBoard(title = DEFAULT_BOARD_TITLE) {
+  const found = findProjectBoard()
+  if (found.kind === 'unreadable') throw new TrackerError(`the project board was not set up: ${oneLine(found.reason)}`)
+  const outcome = chooseAndSetUp(found, title)
+  if (outcome.refused || !outcome.changed) return outcome
+  lookupOnce = null
+  lookupReported = false
+  const after = findProjectBoard()
+  if (after.board && after.board.id === outcome.changed.id) return { ...outcome, lines: [...outcome.lines, `Flow writes to: ${after.board.title}`] }
+  const writesTo = after.board ? `Flow writes to ${after.board.title} instead` : `Flow writes to no board, because ${oneLine(after.reason)}`
+  return { ...outcome, problems: [...outcome.problems, `${outcome.changed.title} was set up, but ${writesTo}; \`flow doctor\` names the board Flow uses`] }
 }
