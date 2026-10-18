@@ -489,6 +489,15 @@ board as `Planned`. From then on it is ready exactly when any ticket is.
 closes the finding as not planned; "too big" leaves it open and approved, with
 a comment naming `/flow:epic`.
 
+**A standing epic** collects the tickets that findings become: `/flow:epic
+--standing "Bugs"` writes one with `Delivery: incremental`, no `Branch:` and
+an empty `## Tickets`, so each promoted ticket starts from the default branch
+and opens its own pull request into it. You approve it like any epic, and
+findings and triage fill it over time; until the first ticket arrives,
+`flow next` exits 1 saying it has no tickets and the Action's scheduler does
+nothing. Triage files a finding with no epic of its own under the open epic
+titled `Bugs` when there is exactly one.
+
 ## The `flow` command
 
 `node <plugin root>/scripts/flow.mjs <command>`. It stores nothing locally:
@@ -531,7 +540,7 @@ every answer is read from GitHub (through `gh`) and git.
 | `merge --epic <epic>` | Merges every accepted ticket of the epic, in the epic's order |
 | `check-epic <epic> [--tickets <n>,<n>] [--mark]` | Runs the done tickets' checks (or the listed ones') at the epic branch's head, in a clean copy set up from `.flow.json`, and posts the result on the epic. `--mark` hands each failing ticket to a person; it stays merged |
 | `worktree <n> [--remove]` | A separate working copy for one ticket, at `../.flow-worktrees/<repository>/ticket-<n>`, set up from `.flow.json` |
-| `dispatch <epic>` | Adds `flow:start` to up to `Parallel:` ready tickets; says whether the epic is `running`, `built` or `stopped`. Refuses while a `/flow:run` is building the epic |
+| `dispatch <epic>` | Adds `flow:start` to up to `Parallel:` ready tickets; says whether the epic is `running`, `built`, `stopped`, or `empty` (approved with no tickets yet, such as a standing epic before triage fills it). Refuses while a `/flow:run` is building the epic |
 | `release-pr <epic>` | Opens the epic's pull request once every ticket is done, and posts it on the epic |
 | `design-map <epic> [--out <file>]` | Writes the epic's design map for the design comparison |
 | `stats [<epic>] [--since <date>] [--json] [--cwd <dir>]` | How the work went, per ticket, per epic and across epics; see [Looking back](#looking-back) |

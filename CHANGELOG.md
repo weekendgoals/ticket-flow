@@ -81,6 +81,17 @@ stamps the version and date and bumps `plugin.json` in the same commit.
   only for an issue labelled `flow:epic`, so approving a finding schedules
   nothing, and its `ticket` job does not run for a `flow:start` on a
   finding. Copy `github/flow.yml` again to pick this up.
+- **New: a standing epic.** `/flow:epic --standing "<title>"` (usually
+  `Bugs`) writes an epic with `Delivery: incremental`, no `Branch:`, ground
+  rules from the project's testing rules, and an empty `## Tickets`, which
+  `create-epic` accepts; the person approves it like any epic, and triage
+  fills it over time. Its promoted tickets start from the default branch and
+  each opens its own pull request. `/flow:triage` puts a finding with no
+  epic under the open epic titled `Bugs` when there is exactly one.
+- **`dispatch` says `empty` for an approved epic with no tickets**, where it
+  said `stopped`. The Action's scheduler posts its "Run stopped" comment
+  only on `stopped`, so approving a standing epic before its first ticket no
+  longer posts that nothing is ready because tickets need a person.
 
 ## 3.0.0 — 2026-10-15
 

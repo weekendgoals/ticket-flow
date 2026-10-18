@@ -1,7 +1,7 @@
 import { test, after, beforeEach } from 'node:test'
 import assert from 'node:assert/strict'
 import { spawnSync, execFileSync } from 'node:child_process'
-import { mkdtempSync, rmSync, writeFileSync, realpathSync, mkdirSync } from 'node:fs'
+import { mkdtempSync, rmSync, writeFileSync, readFileSync, realpathSync, mkdirSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
@@ -526,6 +526,21 @@ test('create-epic creates an issue labelled flow:epic and prints its number', ()
   const sent = JSON.parse(fake.calls()[0].stdin)
   assert.equal(sent.title, 'Trip export')
   assert.deepEqual(sent.labels, ['flow:epic'])
+})
+
+test('create-epic accepts a standing epic: incremental, no Branch, and an empty Tickets section', () => {
+  const file = join(directory, 'standing-epic.md')
+  writeFileSync(file, '## Outcome\n\nThe site stays correct.\n\n## Settings\n\nDelivery: incremental\nParallel: 1\n\n## Ground rules\n\n- Every ticket is its own pull request.\n\n## Tickets\n')
+  world({ extra: { [`POST ${R}/issues`]: issue(74) } })
+  const result = flow('create-epic', '--file', file, '--title', 'Bugs')
+  assert.equal(result.status, 0, result.stderr)
+  assert.equal(result.stdout.trim(), '74')
+  assert.deepEqual(JSON.parse(fake.calls()[0].stdin).labels, ['flow:epic'])
+  world({ epics: [{ epic: issue(74, { title: 'Bugs', body: readFileSync(file, 'utf8'), labels: epicLabels() }), tickets: [] }] })
+  const next = flow('next', '74')
+  assert.equal(next.status, 1)
+  assert.match(next.stderr, /epic #74 has no tickets/)
+  assert.deepEqual(JSON.parse(next.stdout).problems, [], 'no Branch is no problem for an incremental epic')
 })
 
 test('create-epic refuses settings it cannot read, before anything is created', () => {

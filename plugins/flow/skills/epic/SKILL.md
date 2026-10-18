@@ -1,6 +1,6 @@
 ---
 name: epic
-description: Turn a request (a conversation, files, a design, a web page, a claude.ai artifact or a Jira issue) into an epic on GitHub Issues — a plan issue plus one sub-issue per ticket, each with acceptance criteria. Stops twice for the user, and creates nothing on GitHub until the user says yes. Use only when the user runs /flow:epic or asks to plan work with Flow; an ordinary implementation request runs directly, with no epic.
+description: Turn a request (a conversation, files, a design, a web page, a claude.ai artifact or a Jira issue) into an epic on GitHub Issues — a plan issue plus one sub-issue per ticket, each with acceptance criteria. Stops twice for the user, and creates nothing on GitHub until the user says yes. With --standing "<title>" it makes an empty standing epic (such as Bugs) that triaged findings fill over time. Use only when the user runs /flow:epic or asks to plan work with Flow; an ordinary implementation request runs directly, with no epic.
 ---
 
 # Plan an epic: $ARGUMENTS
@@ -15,6 +15,10 @@ the repository root. It needs `gh` signed in; run `FLOW doctor` once at the
 start and stop if it reports that `gh` is missing or signed out, because the
 plan cannot be created without it. Missing labels are fine for now: step 6
 creates them.
+
+If `$ARGUMENTS` starts with `--standing`, skip steps 1 to 7 and follow
+[A standing epic for findings](#a-standing-epic-for-findings) at the end:
+that epic has no tickets to plan yet.
 
 **Write for a person, not for Flow.** Everything you show the user and
 everything you post is plain language: short sentences, no internal terms, no
@@ -403,3 +407,53 @@ planning. Then the three ways to build it:
 and when the project has Flow's GitHub Action (`.github/workflows/flow.yml`),
 the approval has already started it on GitHub, so it must not also run here:
 two hosts would build the same tickets. Then stop.
+
+## A standing epic for findings
+
+`/flow:epic --standing "<title>"` (usually `"Bugs"`) makes an epic that
+holds no plan of its own: findings (issues labelled `flow:found`) are filed
+under it, and `/flow:triage` turns the approved ones into its tickets over
+time. There is nothing to research, split or review, so there is one stop.
+
+1. Read the project's instruction files (`CLAUDE.md`, `AGENTS.md`) for its
+   testing rules and whether it has translation catalogs.
+2. Write `epic.md` in a draft directory outside the repository:
+
+   ```markdown
+   ## Outcome
+
+   The site stays correct: what people report gets fixed, one small pull
+   request at a time, and a fix that breaks something else is reported the
+   same way.
+
+   ## Settings
+
+   Delivery: incremental
+   Parallel: 1
+
+   ## Ground rules
+
+   - <the project's testing rules, from its instruction files>
+   - Translations last: a ticket that changes text updates every catalog in
+     the same pull request, after the change itself works.
+   - Every ticket is its own pull request into the default branch.
+
+   ## Tickets
+   ```
+
+   `Delivery: incremental` and **no `Branch:` line**: each ticket is built
+   from the default branch and opens its own pull request, because bug fixes
+   arrive one at a time and must not wait for each other in one release.
+   `## Tickets` stays empty; `promote` lists each ticket there.
+3. Show the body and ask **"Create this on GitHub?"**, then wait. On yes,
+   `FLOW doctor` (and `FLOW init` if it reports missing labels), then
+   `FLOW create-epic --file <draft-dir>/epic.md --title "<title>"`. It prints
+   the epic number `E`.
+4. Approve it like any epic: `FLOW label E +flow:approved`, or leave that to
+   a teammate on GitHub. Until triage promotes a finding into it,
+   `FLOW next E` exits 1 saying it has no tickets, and that is correct:
+   nothing is built and nothing can start.
+5. Say that findings go under it (`FLOW create-finding --epic E`, the
+   reporter extension, or an issue on GitHub labelled `flow:found` and added
+   to its sub-issues), that a person approves each with `flow:approved`, and
+   that `/flow:triage #E` turns the approved ones into tickets. Then stop.

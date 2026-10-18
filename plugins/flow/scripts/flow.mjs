@@ -1402,7 +1402,7 @@ function commandDispatch(positional) {
   const started = result.ready.filter((number) => !flagged.includes(number)).slice(0, slots)
   for (const number of started) github.addLabels(number, [START_LABEL])
   const busy = result.inProgress.length + flagged.length + started.length
-  const state = busy ? 'running' : epic.tickets.length && epic.tickets.every((ticket) => ticket.state === 'done') ? 'built' : 'stopped'
+  const state = busy ? 'running' : !epic.tickets.length ? 'empty' : epic.tickets.every((ticket) => ticket.state === 'done') ? 'built' : 'stopped'
   printJson({ epic: epic.number, parallel: width, started, alreadyAsked: flagged, inProgress: result.inProgress, needsHuman: result.needsHuman, state })
   return 0
 }
