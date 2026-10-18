@@ -249,6 +249,7 @@ function normalizePullRequest(raw) {
     base: raw.base ? raw.base.ref : null,
     merged: Boolean(raw.merged_at),
     mergedAt: raw.merged_at || null,
+    mergeCommitSha: raw.merged_at ? raw.merge_commit_sha || null : null,
   }
 }
 

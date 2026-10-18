@@ -64,7 +64,7 @@ as of 2026-10-18; the pass count grows, the fail line stays `# fail 0`.
 - `pull-request.test.mjs` `# pass 20`, `issue-body.test.mjs` `# pass 28`,
   `checks.test.mjs` `# pass 26` (real shell commands in a temp dir),
   `tracker/github.test.mjs` `# pass 33`, `fidelity.test.mjs` `# pass 54`,
-  `stats.test.mjs` `# pass 12` (needs `git`), `project-sync.test.mjs`
+  `stats.test.mjs` `# pass 13` (needs `git`), `project-sync.test.mjs`
   `# pass 24`, under `plugins/flow/scripts/`.
 - `node --test plugins/flow/scripts/meter.test.mjs` — `# pass 16`. Builds
   its transcripts; no test reads a real one (they belong to whoever ran them).
@@ -129,6 +129,11 @@ CI (`.github/workflows/tests.yml`) runs every suite and check above.
   commit, never by a name that could move.
 - **The reviewer never sees the builder's transcript or reasoning**, not even
   a summary: an explanation of why code is right makes a reviewer agree.
+- **An instruction file holds only what cannot be derived.** A line that
+  restates the code, a test or a command's own help, or narrates history,
+  is a reviewer's finding (`agents/ticket-reviewer.md` states the rule;
+  README quotes it word for word), and the retro proposes deletions beside
+  additions: the file is read by every session, so it only grows otherwise.
 - **A handoff states decisions, never reasoning.** `flow handoff` posts what
   a ticket decided that the plan did not say, and `flow ticket` hands the
   latest one of each done ticket to the next builder and its reviewer; a

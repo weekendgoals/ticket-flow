@@ -53,8 +53,9 @@ leaves out cannot be checked afterwards). Give it only:
 and never your own view of how the epic went, the conversation, or what
 you think should change: told the answer, it confirms it.
 
-It returns seven answers, each with links to the comments and commits that
-show it, and numbered proposals (`P1`, `P2`, …).
+It returns its answers (questions 1 to 7, with 6b on what the instruction
+files hold that nothing needs), each with links to the comments and commits
+that show it, and numbered proposals (`P1`, `P2`, …).
 
 ## 3. Post it and ask
 
@@ -70,7 +71,10 @@ Start the comment with `**Retro.**`. It must read plainly to someone who
 has never used Flow: no internal terms, short sentences.
 
 Then ask, in chat, one line per proposal with your recommendation, which to
-act on. A one-word answer per line is enough; you record it.
+act on. A one-word answer per line is enough; you record it. An
+instruction-file change that adds lines and one that deletes lines are
+separate rows, even for the same file: a yes to an addition is not a yes to
+a deletion, and the person weighs them differently.
 
 ## 4. Act only on a yes
 

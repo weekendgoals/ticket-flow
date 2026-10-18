@@ -122,7 +122,10 @@ The worker's rules, each with its reason:
 - **No code comments.** Names carry the meaning; a comment is a second copy
   of the code that nobody tests and that goes stale.
 - **Follow the project's instruction files**, and update them in the same
-  commit as any change they describe.
+  commit as any change they describe. Add only what cannot be derived from
+  the code, a test or a command's own help, and no history ("we used to…"):
+  the reviewer reports a line that restates or narrates, because every
+  line is read by every later session.
 - **UI work gets component tests** (react-testing-library) for logic,
   rendering, state and edge cases inside a component. **An end-to-end browser
   test only for a user journey the epic names** (routing, APIs, sign-in and

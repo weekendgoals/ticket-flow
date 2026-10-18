@@ -271,6 +271,22 @@ once more a ticket whose builder died before `flow start` (there is nothing
 to reset), so a death before the start and one after it make two rebuilds
 before a person is asked.
 
+### What belongs in an instruction file
+
+A project's `CLAUDE.md` and `AGENTS.md` are read by every session, so a line
+in them costs every later ticket. Workers update them in the same commit as
+the change they describe, and the ticket reviewer pushes the other way with
+this rule, quoted from its instructions:
+
+> An instruction-file line added by the ticket that restates what the code,
+> a test or a command's own help already says, or that narrates history
+> ("we used to…", "in ticket #n we…"), is a finding: the file holds only
+> what cannot be derived, and each rule carries its reason in a clause. A
+> rule the ticket broke that the file states is Important.
+
+The retro asks the same question of the whole file (which rules nothing
+needed, which are derivable), and `flow stats` shows whether the files grew.
+
 ### Handoffs between tickets
 
 What one ticket learned that a later one needs would otherwise sit in
@@ -631,7 +647,12 @@ else. Per ticket, and summed per epic:
   stopped, and tickets that were planned side by side but built one at a
   time, with the reason;
 - whether each ticket left a **handoff** (`handoff: true` or `false`), and
-  how many did.
+  how many did;
+- the **instruction files'** size (`CLAUDE.md` and `AGENTS.md` anywhere in
+  the tree, lines and bytes), read from git at the commit the epic's first
+  ticket started from and at the release pull request's merge commit, as
+  `instructionFiles: { before, after }` and one printed line; `unknown`
+  where no comment names the commit or this clone lacks it.
 
 Without an epic it covers every epic (`--since 2026-10-01` leaves out those
 created earlier) and ends with the pace: done tickets per day and the median
@@ -644,7 +665,7 @@ and escapes come from its `origin/` branches.
 
 After the release pull request is merged (or, when each ticket had its own
 pull request, after every ticket is done), it hands the record to a separate
-**retro miner**, which never saw the work being done, and gets back seven
+**retro miner**, which never saw the work being done, and gets back these
 answers, each with links to the comments and commits behind it:
 
 1. which stops needed a person, and whether the plugin could have answered
@@ -657,6 +678,9 @@ answers, each with links to the comments and commits behind it:
 5. whether an acceptance check passed while the outcome was not met, or
    failed while the code was right;
 6. which rule in the project's instruction files was broken or missing;
+   and (6b) which rules this epic never exercised, and which the code or
+   tests now say by themselves, with deletions proposed beside the
+   additions;
 7. what should change: in the plugin, in the project's instruction files,
    or nothing.
 

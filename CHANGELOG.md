@@ -31,6 +31,24 @@ stamps the version and date and bumps `plugin.json` in the same commit.
 - **`flow stats`** adds `handoff: true|false` per ticket and `handoffs` (how
   many tickets left one) per epic, printed as one line; the retro miner
   reads the handoffs first when it compares the plan with what was built.
+- **The ticket reviewer pushes instruction files toward lean.** A line a
+  ticket adds to `CLAUDE.md` or `AGENTS.md` that restates what the code, a
+  test or a command's own help already says, or that narrates history, is a
+  finding; a rule the ticket broke that the file states is Important. The
+  ticket skill's worker rule says the same, and README quotes the rule.
+- **The retro miner asks question 6b**: which rules in the instruction
+  files this epic never exercised, and which are now derivable from the
+  code or tests, proposing deletions as before/after diffs beside the
+  additions. The retro skill shows additions and deletions as separate
+  rows.
+- **`flow stats` reports the instruction files' size** per epic: lines,
+  bytes and how many `CLAUDE.md` and `AGENTS.md` files the tree holds, read
+  from git at the commit the epic's first ticket started from (named in its
+  start comment) and at the release pull request's merge commit, as
+  `instructionFiles: { before, after }` (`null` where no comment names the
+  commit, the pull request is not merged, or the clone lacks the commit),
+  printed as one line. The tracker's pull request now carries
+  `mergeCommitSha` once merged.
 
 ## 3.1.0 — 2026-10-18
 

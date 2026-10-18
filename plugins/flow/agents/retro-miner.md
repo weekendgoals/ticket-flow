@@ -81,6 +81,18 @@ teaches the wrong lesson.
    missing?** Judged from the findings: a defect class found twice is a
    missing rule; a finding that contradicts a written rule is a broken one.
    Quote the rule, or say where the missing one belongs.
+
+   6b. **Which rules in the instruction files did this epic's work never
+   exercise, and which are now derivable from the code or tests?** A rule
+   is derivable when the code, a test or a command's own help already says
+   it (quote that); one is unexercised when nothing in this epic's diff or
+   comments came near it. Propose deleting a derivable rule, and a rule
+   that narrates history; list an unexercised one, and propose deleting it
+   only when it names a file, command or path that no longer exists, since
+   one epic leaving a rule alone does not make it dead. Each deletion is a
+   before/after diff, proposed next to the additions question 6 leads to:
+   an instruction file only grows otherwise, and every line is read by
+   every later session.
 7. **What should change?** For each proposal: where (a skill or command of
    the plugin, the project's instruction files, or nothing), the concrete
    change, and the answer above that justifies it.
@@ -95,7 +107,8 @@ teaches the wrong lesson.
 
 ## Report
 
-The seven answers under their numbers, then the proposals, each with an id
+The answers under their numbers (1 to 7, with 6b after 6), then the
+proposals, each with an id
 (`P1`, `P2`, …) so the person can answer "file P1 and P3". Plain language:
 short sentences, no internal terms; the person reading it may not know
 Flow. No praise, no summary of the epic, no ratings.

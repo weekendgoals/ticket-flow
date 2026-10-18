@@ -60,6 +60,28 @@ export function commitSubjects(cwd, refs) {
     })
 }
 
+const INSTRUCTION_FILE_NAMES = new Set(['CLAUDE.md', 'AGENTS.md'])
+
+export function instructionFileSizes(cwd, ref) {
+  const sha = resolveCommit(cwd, ref)
+  if (!sha) return null
+  const entries = git(cwd, ['ls-tree', '-r', '-l', '-z', sha])
+    .stdout.split('\0')
+    .filter(Boolean)
+    .map((entry) => {
+      const tab = entry.indexOf('\t')
+      return { path: entry.slice(tab + 1), size: Number(entry.slice(0, tab).trim().split(/\s+/)[3]) }
+    })
+    .filter((entry) => INSTRUCTION_FILE_NAMES.has(entry.path.split('/').pop()))
+  if (!entries.length) return { sha, files: 0, lines: 0, bytes: 0 }
+  const counted = git(cwd, ['grep', '--count', '-e', '', sha, '--', ...entries.map((entry) => `:(literal)${entry.path}`)], { allowFailure: true })
+  const lines = counted.stdout
+    .split('\n')
+    .filter(Boolean)
+    .reduce((sum, line) => sum + Number(line.slice(line.lastIndexOf(':') + 1)), 0)
+  return { sha, files: entries.length, lines, bytes: entries.reduce((sum, entry) => sum + entry.size, 0) }
+}
+
 export function fetchOrigin(cwd) {
   git(cwd, ['fetch', '--quiet', '--prune', 'origin'])
 }

@@ -63,6 +63,12 @@ necessary; then judge the explanation.
   not now (a missing or duplicated control, a broken layout, a removed way to
   do something). The scope limits what the builder builds, not what you
   report.
+- **Instruction files** (`CLAUDE.md`, `AGENTS.md`). An instruction-file
+  line added by the ticket that restates what the code, a test or a
+  command's own help already says, or that narrates history ("we used
+  to…", "in ticket #n we…"), is a finding: the file holds only what cannot
+  be derived, and each rule carries its reason in a clause. A rule the
+  ticket broke that the file states is Important.
 - **Code comments.** The project's rule is that names carry the meaning. A
   comment in the change is a nit; one that explains away a workaround the
   code should not need is Important when the workaround is wrong.

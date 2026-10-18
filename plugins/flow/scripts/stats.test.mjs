@@ -220,7 +220,7 @@ Branch: epic/trip-export
 
 const ticketBody = '## Scope\n\n- x\n\n## Acceptance criteria\n\n```criteria\n- x\n  CHECK: true\n```\n'
 
-function world({ epics = null } = {}) {
+function world({ epics = null, extra = {} } = {}) {
   const epic = issue(1, { title: 'Trip export', body: epicBody, labels: ['flow:epic', 'flow:approved'], state: 'closed' })
   const two = issue(2, { title: 'Export button', body: `Epic: #1\n${ticketBody}`, labels: ['flow:ticket', 'flow:done', 'tier:hard'], state: 'closed' })
   const three = issue(3, { title: 'Export file', body: `Epic: #1\n${ticketBody}`, labels: ['flow:ticket', 'flow:done', 'tier:easy'], state: 'closed' })
@@ -253,6 +253,7 @@ function world({ epics = null } = {}) {
       rawComment(acceptance(true, 10), '2026-10-14T12:10:00Z', { id: 34, number: 3 }),
       rawComment(merged, '2026-10-14T12:20:00Z', { id: 35, number: 3 }),
     ],
+    ...extra,
   })
 }
 
@@ -301,6 +302,38 @@ test('stats prints a readable table with unknown where no comment carries a figu
   assert.match(result.stdout, /- wave 1: #2, #3: Wave 1 runs one ticket at a time/)
   assert.match(result.stdout, /^Handoffs: 1 of 2 ticket\(s\) left one for the tickets after them\.$/m)
   assert.match(result.stdout, /^Pace: /m)
+})
+
+test('stats reads the instruction files\' size from git at the epic\'s first start and at the release merge, and unknown where no commit says', () => {
+  const work = repository()
+  writeFileSync(join(work, 'CLAUDE.md'), '# Project\n\n- run the tests\n- no comments\n')
+  mkdirSync(join(work, 'web'))
+  writeFileSync(join(work, 'web', 'AGENTS.md'), '- web rules\n')
+  writeFileSync(join(work, 'NOT-CLAUDE.md'), 'ignored\n')
+  git(work, 'add', '.')
+  git(work, 'commit', '-q', '-m', 'instruction files')
+  const base = git(work, 'rev-parse', 'HEAD')
+  writeFileSync(join(work, 'CLAUDE.md'), '# Project\n\n- run the tests\n')
+  git(work, 'commit', '-q', '-am', 'leaner')
+  const mergeCommit = git(work, 'rev-parse', 'HEAD')
+  const start = (sha, createdAt, id) => rawComment(`${started}\n · branch \`ticket/2\` from \`epic/trip-export\` at \`${sha.slice(0, 12)}\``, createdAt, { id })
+  world({
+    extra: {
+      [`GET ${R}/issues/2/comments?per_page=100`]: [start(mergeCommit, '2026-10-14T12:00:00Z', 41), start(base, '2026-10-14T10:00:00Z', 42)],
+      [`GET ${R}/pulls/12`]: { number: 12, html_url: 'https://github.com/o/r/pull/12', state: 'closed', head: { ref: 'epic/trip-export', sha: 'c' }, base: { ref: 'main' }, merged_at: '2026-10-15T08:00:00Z', merge_commit_sha: mergeCommit },
+    },
+  })
+  const result = flow(work, 'stats', '1', '--json')
+  assert.equal(result.status, 0, result.stderr)
+  assert.deepEqual(JSON.parse(result.stdout).epics[0].instructionFiles, {
+    before: { sha: base, files: 2, lines: 5, bytes: 53 },
+    after: { sha: mergeCommit, files: 2, lines: 4, bytes: 39 },
+  })
+  assert.match(flow(work, 'stats', '1').stdout, new RegExp(`^Instruction files \\(CLAUDE.md, AGENTS.md\\): 5 lines, 53 bytes in 2 file\\(s\\) at the first start \\(${base.slice(0, 12)}\\); 4 lines, 39 bytes in 2 file\\(s\\) at the release merge \\(${mergeCommit.slice(0, 12)}\\)\\.$`, 'm'))
+  world({ extra: { [`GET ${R}/issues/2/comments?per_page=100`]: [start('f'.repeat(40), '2026-10-14T10:00:00Z', 43)] } })
+  const unknown = flow(work, 'stats', '1', '--json')
+  assert.deepEqual(JSON.parse(unknown.stdout).epics[0].instructionFiles, { before: null, after: null }, 'a commit this clone lacks, and a release merge GitHub names no commit for')
+  assert.match(flow(work, 'stats', '1').stdout, /^Instruction files \(CLAUDE.md, AGENTS.md\): unknown at the first start; unknown at the release merge\.$/m)
 })
 
 test('stats across epics lists each epic and the pace; --since leaves out epics created before it', () => {

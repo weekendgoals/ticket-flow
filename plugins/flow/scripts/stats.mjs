@@ -22,6 +22,7 @@ const FIXES = /\(fixes #(\d+)\)\s*$/
 const TICKET_PREFIX = /^#(\d+):/
 const RUN_STOPPED_LEAD = '**Run stopped.**'
 const SECONDS_PER_DAY = 86400
+const START_BASE = /\bat `([0-9a-f]{7,40})`/
 
 const isNumber = (value) => typeof value === 'number' && Number.isFinite(value)
 
@@ -197,6 +198,16 @@ export function ticketStats({ ticket, comments, subjects = null, defaultSubjects
   }
 }
 
+export function firstStartBase(commentLists) {
+  const starts = commentLists
+    .flat()
+    .filter((comment) => (comment.body || '').startsWith(STARTED_MARKER) && at(comment) !== null)
+    .sort((a, b) => at(a) - at(b))
+  if (!starts.length) return null
+  const named = starts[0].body.match(START_BASE)
+  return named ? named[1] : null
+}
+
 export function readEpicComments(comments) {
   const serialWaves = []
   const runStops = []
@@ -369,8 +380,18 @@ function epicLines(epic) {
     lines.push('', 'Planned side by side, built one at a time:')
     for (const wave of epic.serialWaves) lines.push(`- wave ${wave.wave}: ${wave.tickets.map((number) => `#${number}`).join(', ')}: ${wave.reason}`)
   }
+  if (epic.instructionFiles) lines.push('', instructionFilesLine(epic.instructionFiles))
   if (epic.gitProblem) lines.push('', `Rework and escaped defects are unknown: ${epic.gitProblem}.`)
   return lines
+}
+
+function instructionFilesAt(size, where) {
+  if (!size) return `unknown ${where}`
+  return `${count(size.lines)} lines, ${count(size.bytes)} bytes in ${size.files} file(s) ${where} (${size.sha.slice(0, 12)})`
+}
+
+function instructionFilesLine({ before, after }) {
+  return `Instruction files (CLAUDE.md, AGENTS.md): ${instructionFilesAt(before, 'at the first start')}; ${instructionFilesAt(after, 'at the release merge')}.`
 }
 
 export function formatStats(result) {

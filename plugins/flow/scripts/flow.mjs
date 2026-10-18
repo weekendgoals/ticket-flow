@@ -22,6 +22,7 @@ import {
   mergeIntoEpic,
   commitSubjects,
   commitToSideBranch,
+  instructionFileSizes,
   FINDINGS_BRANCH,
   FINDINGS_BRANCH_README,
 } from './delivery.mjs'
@@ -59,7 +60,7 @@ import {
   MAX_HANDOFF_LENGTH,
 } from './ticket-steps.mjs'
 import { loadSources, workflowSources, meterTranscripts, meterComment, readMeterComment } from './meter.mjs'
-import { ticketStats, readEpicComments, summarize, overallStats, formatStats, combineMeters } from './stats.mjs'
+import { ticketStats, readEpicComments, summarize, overallStats, formatStats, combineMeters, firstStartBase } from './stats.mjs'
 import { COPILOT_REVIEWER_LOGIN, BOTS, configuredBot, copilotUnavailable, botReview, sameLogin, summarizeChecks, sleepSeconds } from './review-bots.mjs'
 import { syncProjectStatus, projectBoardLine, ensureProjectBoard, findProjectBoard, placeOnBoard, statusOptionName, explain as explainProjectError, oneLine, DEFAULT_BOARD_TITLE } from './project-sync.mjs'
 import {
@@ -1751,14 +1752,18 @@ function subjectsOn(root, refs) {
 }
 
 function releasePullRequestOf(number) {
-  if (!number) return null
+  if (!number) return { shown: null, mergeCommit: null }
   try {
     const pullRequest = github.getPullRequest(number)
-    return { number, url: pullRequest.url, merged: pullRequest.merged, mergedAt: pullRequest.mergedAt }
+    return { shown: { number, url: pullRequest.url, merged: pullRequest.merged, mergedAt: pullRequest.mergedAt }, mergeCommit: pullRequest.mergeCommitSha }
   } catch (error) {
     if (!(error instanceof TrackerError)) throw error
-    return { number, url: null, merged: null, mergedAt: null }
+    return { shown: { number, url: null, merged: null, mergedAt: null }, mergeCommit: null }
   }
+}
+
+function instructionFilesAt(root, sha) {
+  return root && sha ? instructionFileSizes(root, sha) : null
 }
 
 function epicStats(epicIssue, { root, defaultBranch, defaultSubjects }) {
@@ -1776,9 +1781,11 @@ function epicStats(epicIssue, { root, defaultBranch, defaultSubjects }) {
     : subjects === null
       ? `none of ${refs.slice(0, 2).join(', ')} is in this clone; run \`git fetch origin\` first`
       : null
-  const tickets = epic.tickets.map((ticket) =>
-    ticketStats({ ticket, comments: github.listComments(ticket.number), subjects, defaultSubjects, delivery, serialWaves: epicRecord.serialWaves }),
+  const commentLists = epic.tickets.map((ticket) => github.listComments(ticket.number))
+  const tickets = epic.tickets.map((ticket, index) =>
+    ticketStats({ ticket, comments: commentLists[index], subjects, defaultSubjects, delivery, serialWaves: epicRecord.serialWaves }),
   )
+  const release = releasePullRequestOf(epicRecord.releasePullRequest)
   return {
     number: epic.number,
     title: epic.title,
@@ -1789,7 +1796,8 @@ function epicStats(epicIssue, { root, defaultBranch, defaultSubjects }) {
     delivery,
     parallel: epic.settings.parallel ?? null,
     branch: epic.settings.branch || null,
-    releasePullRequest: releasePullRequestOf(epicRecord.releasePullRequest),
+    releasePullRequest: release.shown,
+    instructionFiles: { before: instructionFilesAt(root, firstStartBase(commentLists)), after: instructionFilesAt(root, release.mergeCommit) },
     serialWaves: epicRecord.serialWaves,
     runStops: epicRecord.runStops,
     gitProblem,
