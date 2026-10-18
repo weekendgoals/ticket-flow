@@ -2,6 +2,7 @@ import { test, after } from 'node:test'
 import assert from 'node:assert/strict'
 import { mkdtempSync, readdirSync, readFileSync, writeFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
+import { spawnSync } from 'node:child_process'
 import { join, dirname } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
@@ -20,7 +21,18 @@ const { fileFinding } = await load('github')
 const { DEFAULT_SETTINGS, normalizeSettings } = await load('settings')
 const { emptyFields, normalizeDraft } = await load('draft')
 
-const SETTINGS = { token: 't', repo: 'acme/site', branch: 'flow-findings', label: 'flow:found', epic: '' }
+const MODULES = ['background', 'draft', 'github', 'options', 'popup', 'report-body', 'settings']
+
+test('every module of the extension parses as an ES module', () => {
+  assert.deepEqual(readdirSync(copies).sort(), MODULES.map((name) => `${name}.mjs`))
+  for (const name of MODULES) {
+    const run = spawnSync(process.execPath, ['--check', join(copies, `${name}.mjs`)], { encoding: 'utf8' })
+    assert.equal(run.status, 0, `${name}.js does not parse:\n${run.stderr}`)
+  }
+})
+
+const TOKEN = 'github_pat_reporter_test_token'
+const SETTINGS = { token: TOKEN, repo: 'acme/site', branch: 'flow-findings', label: 'flow:found', epic: '' }
 
 const REPORT = {
   title: 'Score overlaps the crest',
@@ -178,6 +190,10 @@ test('a draft keeps Steps and Expected, and an older draft gets them empty', () 
 function fakeGitHub(answers) {
   const calls = []
   globalThis.fetch = async (url, options) => {
+    assert.ok(url.startsWith('https://api.github.com/'), `request left api.github.com: ${url}`)
+    assert.equal(options.headers.Authorization, `Bearer ${TOKEN}`)
+    const elsewhere = { url, body: options.body, headers: { ...options.headers, Authorization: undefined } }
+    assert.equal(JSON.stringify(elsewhere).includes(TOKEN), false, 'the token travelled outside the Authorization header')
     const path = url.replace('https://api.github.com', '')
     const call = { method: options.method, path, body: options.body ? JSON.parse(options.body) : undefined }
     calls.push(call)

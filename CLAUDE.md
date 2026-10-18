@@ -67,10 +67,10 @@ as of 2026-10-15; the pass count grows, the fail line stays `# fail 0`.
   needs `git`, POSIX `sh` and `sleep`.
 - `node --test plugins/flow/workflows/run-epic.test.mjs` — `# pass 23`
   (stubbed `agent`, no git), `plugins/flow/github/flow.test.mjs` `# pass 11`.
-- `node --test tools/reporter/reporter.test.mjs` — `# pass 17`. The
-  extension's modules under a stubbed `fetch`; importing them is their
-  syntax check, since `node --check` cannot run browser code that uses
-  `chrome`.
+- `node --test tools/reporter/reporter.test.mjs` — `# pass 18`. The
+  extension's modules under a stubbed `fetch`. It is also their syntax
+  check: plain `node --check` reads a `.js` file with no package.json as
+  CommonJS, so the suite copies all seven modules to `.mjs` and checks each.
 - **Syntax:** `node --check` on every `.mjs` under `plugins/flow/scripts/`.
   It does not work on `workflows/run-epic.mjs` (a module body with a
   top-level `return`); parse that one the way the workflow runtime does:
