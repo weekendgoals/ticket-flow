@@ -64,7 +64,8 @@ const optionId = (name) => `OPT_${name.replace(/\s+/g, '_').toLowerCase()}`
 const statusField = (names) => ({ id: 'F_status', options: names.map((name) => ({ id: optionId(name), name })) })
 const FLOW_OPTIONS = PROJECT_STATUSES.map((status) => status.option)
 const project = (id, title, field) => ({ id, title, field })
-const projects = (...nodes) => ({ data: { repository: { projectsV2: { nodes } } } })
+const projects = (...nodes) => ({ data: { repository: { id: 'R_repo', owner: { id: 'U_owner' }, projectsV2: { nodes } } } })
+const onBoard = (id, option = null, project = 'PVT_flow') => ({ id, project: { id: project }, fieldValueByName: option ? { optionId: option, name: option } : null })
 const itemsOf = (number, items) => ({ [`graphql issue=${number} name={repo} owner={owner}`]: { data: { repository: { issue: { id: `I_${number}`, projectItems: { nodes: items } } } } } })
 const setStatus = (item, option, project = 'PVT_flow') => `graphql field=F_status item=${item} option=${option} project=${project}`
 const SET_RESPONSE = { data: { updateProjectV2ItemFieldValue: { projectV2Item: { id: 'x' } } } }
@@ -242,4 +243,200 @@ test('doctor names the project board it found, none linked, or the Status option
   const unreadable = flow('doctor')
   assert.equal(unreadable.status, 0, unreadable.stdout)
   assert.match(unreadable.stdout, /^project board: not checked: could not read the repository's projects, because .*gh auth refresh -s project/)
+})
+
+const graphqlKeys = () => fake.calls().map((call) => call.key).filter((key) => key.startsWith('graphql'))
+const SCOPE_ERROR = "gh: Your token has not been granted the required scopes to execute this query. The 'createProjectV2' field requires one of the following scopes: ['project']"
+const createdProject = (title) => ({
+  data: {
+    createProjectV2: {
+      projectV2: {
+        id: 'PVT_new',
+        title,
+        field: {
+          id: 'F_new',
+          options: [
+            { id: 'O_todo', name: 'Todo', color: 'GREEN', description: '' },
+            { id: 'O_ip', name: 'In Progress', color: 'YELLOW', description: '' },
+            { id: 'O_done', name: 'Done', color: 'PURPLE', description: '' },
+          ],
+        },
+      },
+    },
+  },
+})
+const fieldUpdated = { data: { updateProjectV2Field: { projectV2Field: { id: 'F', options: [] } } } }
+const linked = { data: { linkProjectV2ToRepository: { repository: { id: 'R_repo' } } } }
+const sentOptions = (key) => JSON.parse(fake.calls().find((call) => call.key === key).stdin).variables.options
+
+test('init --board with a linked board whose Status already matches names it and changes nothing', () => {
+  world({ [PROJECT_LOOKUP]: projects(project('PVT_flow', 'Flow board', statusField(FLOW_OPTIONS))) })
+  const result = flow('init', '--board')
+  assert.equal(result.status, 0, result.stderr)
+  assert.deepEqual(result.stdout.trim().split('\n'), ['all 12 labels already there', 'project board: Flow board'])
+  assert.deepEqual(graphqlKeys(), [PROJECT_LOOKUP])
+})
+
+test('init --board adds the missing Status options to a linked project, sending every existing option with its colour and description', () => {
+  const field = {
+    id: 'F_status',
+    options: [
+      { id: 'O_todo', name: 'Todo', color: 'GREEN', description: 'not yet' },
+      { id: 'O_ip', name: 'In Progress', color: 'YELLOW', description: '' },
+      { id: 'O_done', name: 'Done', color: 'PURPLE', description: 'shipped' },
+    ],
+  }
+  world({ [PROJECT_LOOKUP]: projects(project('PVT_road', 'Roadmap', field)), 'graphql field=F_status': fieldUpdated })
+  const result = flow('init', '--board')
+  assert.equal(result.status, 0, result.stderr)
+  assert.deepEqual(result.stdout.trim().split('\n'), ['all 12 labels already there', 'project board: Roadmap, added options Planned, In review, Needs human, Epic'])
+  assert.deepEqual(graphqlKeys(), [PROJECT_LOOKUP, 'graphql field=F_status'])
+  assert.deepEqual(sentOptions('graphql field=F_status'), [
+    { name: 'Todo', color: 'GREEN', description: 'not yet' },
+    { name: 'In Progress', color: 'YELLOW', description: '' },
+    { name: 'Done', color: 'PURPLE', description: 'shipped' },
+    { name: 'Planned', color: 'GRAY', description: '' },
+    { name: 'In review', color: 'BLUE', description: '' },
+    { name: 'Needs human', color: 'RED', description: '' },
+    { name: 'Epic', color: 'PURPLE', description: '' },
+  ])
+})
+
+test('init --board with no project linked creates one with the title given, gives it the six options, links it, and names the two steps left by hand', () => {
+  world({
+    [PROJECT_LOOKUP]: projects(),
+    'graphql ownerId=U_owner title=Trip board': createdProject('Trip board'),
+    'graphql field=F_new': fieldUpdated,
+    'graphql project=PVT_new repository=R_repo': linked,
+  })
+  const result = flow('init', '--board', 'Trip board')
+  assert.equal(result.status, 0, result.stderr)
+  const lines = result.stdout.trim().split('\n')
+  assert.deepEqual(lines.slice(0, 2), ['all 12 labels already there', 'project board: created Trip board and linked it'])
+  assert.equal(lines.length, 4)
+  assert.match(lines[2], /Board layout and set Swimlanes to "Parent issue"/)
+  assert.match(lines[3], /auto-add workflow .* is:issue label:flow:ticket,flow:epic$/)
+  assert.deepEqual(graphqlKeys(), [PROJECT_LOOKUP, 'graphql ownerId=U_owner title=Trip board', 'graphql field=F_new', 'graphql project=PVT_new repository=R_repo'])
+  assert.deepEqual(
+    sentOptions('graphql field=F_new'),
+    PROJECT_STATUSES.map((status) => ({ name: status.option, color: status.color, description: '' })),
+  )
+})
+
+test('init --board stops with exit 1 and the scope hint when the token may not touch projects, and a half-made board says how to finish it', () => {
+  world({ [PROJECT_LOOKUP]: { $exit: 1, $stderr: "gh: The 'projectsV2' field requires one of the following scopes: ['read:project']" } })
+  const unreadable = flow('init', '--board')
+  assert.equal(unreadable.status, 1)
+  assert.match(unreadable.stderr, /^flow: the project board was not set up: could not read the repository's projects, because .*gh auth refresh -s project/)
+  world({ [PROJECT_LOOKUP]: projects(), 'graphql ownerId=U_owner title=Flow': { $exit: 1, $stderr: SCOPE_ERROR } })
+  const refused = flow('init', '--board')
+  assert.equal(refused.status, 1)
+  assert.match(refused.stdout, /all 12 labels already there/)
+  assert.match(refused.stderr, /^flow: the project board was not set up, because the GitHub token may not read or write projects \(locally run `gh auth refresh -s project`/)
+  world({
+    [PROJECT_LOOKUP]: projects(),
+    'graphql ownerId=U_owner title=Flow': createdProject('Flow'),
+    'graphql field=F_new': fieldUpdated,
+    'graphql project=PVT_new repository=R_repo': { data: null, errors: [{ message: 'Resource not accessible by integration' }] },
+  })
+  const halfway = flow('init', '--board')
+  assert.equal(halfway.status, 1)
+  assert.match(halfway.stderr, /^flow: Flow was created but is not ready, because .*Resource not accessible by integration; link it to the repository by hand .* run `flow init --board` again/)
+})
+
+test('init without --board touches no project, and a title without --board is refused', () => {
+  world({})
+  const plain = flow('init')
+  assert.equal(plain.status, 0, plain.stderr)
+  assert.deepEqual(graphqlKeys(), [])
+  const stray = flow('init', 'Trip board')
+  assert.equal(stray.status, 2)
+  assert.match(stray.stderr, /a title goes with --board/)
+})
+
+function boardWorld(extra = {}) {
+  const epic = issue(40, { title: 'Trip export', body: epicBody([41, 42, 43, 44, 45]), labels: ['flow:epic', 'flow:approved'] })
+  const subs = [
+    issue(41, { labels: ['flow:ticket', 'flow:in-review'] }),
+    issue(42, { labels: ['flow:ticket', 'flow:done'] }),
+    issue(43, { labels: ['flow:ticket', 'flow:planned'] }),
+    issue(44, { labels: ['flow:found'] }),
+    issue(45, { labels: ['flow:ticket'] }),
+  ]
+  world({
+    [PROJECT_LOOKUP]: projects(project('PVT_flow', 'Flow board', statusField(FLOW_OPTIONS))),
+    [`GET ${R}/issues?labels=flow%3Aepic&state=open&per_page=100`]: [epic],
+    [`GET ${R}/issues/40`]: epic,
+    [`GET ${R}/issues/40/sub_issues?per_page=100`]: subs,
+    [`GET ${R}/issues?labels=flow%3Aticket&state=open&per_page=100`]: [subs[0], subs[1], issue(50, { labels: ['flow:ticket', 'flow:in-progress'] })],
+    ...itemsOf(40, [onBoard('PVTI_40', 'OPT_epic')]),
+    ...itemsOf(41, [onBoard('PVTI_41x', 'OPT_planned', 'PVT_other'), onBoard('PVTI_41', 'OPT_in_review')]),
+    ...itemsOf(42, [onBoard('PVTI_42', 'OPT_planned')]),
+    ...itemsOf(43, []),
+    ...itemsOf(50, [onBoard('PVTI_50')]),
+    'graphql content=I_43 project=PVT_flow': { data: { addProjectV2ItemById: { item: { id: 'PVTI_43' } } } },
+    [setStatus('PVTI_42', 'OPT_done')]: SET_RESPONSE,
+    [setStatus('PVTI_43', 'OPT_planned')]: SET_RESPONSE,
+    [setStatus('PVTI_50', 'OPT_in_progress')]: SET_RESPONSE,
+    ...extra,
+  })
+}
+
+const writes = () => graphqlKeys().filter((key) => key.startsWith('graphql field=') || key.startsWith('graphql content='))
+
+test('board-sync sets every epic and ticket whose Status is wrong or missing, leaves the right ones alone, and skips findings and unreadable states', () => {
+  boardWorld()
+  const result = flow('board-sync')
+  assert.equal(result.status, 0, result.stderr)
+  assert.deepEqual(result.stdout.trim().split('\n'), [
+    '#42 → Done',
+    '#43 → Planned (added to the board)',
+    '#45 skipped: it has no state label (flow:planned, flow:in-progress, …)',
+    '#50 → In progress',
+    '3 set, 2 already right, 2 skipped',
+  ])
+  assert.deepEqual(writes(), [setStatus('PVTI_42', 'OPT_done'), 'graphql content=I_43 project=PVT_flow', setStatus('PVTI_43', 'OPT_planned'), setStatus('PVTI_50', 'OPT_in_progress')])
+  assert.ok(!graphqlKeys().includes('graphql issue=44 name={repo} owner={owner}'), 'a finding is not looked up on the board')
+  assert.equal(lookups(), 1)
+})
+
+test('board-sync of one epic reads only that epic, and --json gives the counts and each change', () => {
+  boardWorld()
+  const result = flow('board-sync', '40', '--json')
+  assert.equal(result.status, 0, result.stderr)
+  const report = JSON.parse(result.stdout)
+  assert.equal(report.board, 'Flow board')
+  assert.deepEqual([report.set, report.alreadyRight, report.skipped, report.failed], [2, 2, 2, 0])
+  assert.deepEqual(report.changes, [
+    { number: 42, status: 'Done', added: false },
+    { number: 43, status: 'Planned', added: true },
+  ])
+  assert.deepEqual(report.alreadyRightIssues, [40, 41])
+  assert.deepEqual(report.skippedIssues.map((entry) => entry.number), [44, 45])
+  assert.ok(!fake.calls().some((call) => call.key.includes('flow%3Aticket')), 'tickets with no epic are read only when no epic is named')
+})
+
+test('board-sync with no matching board linked exits 1 with one sentence naming init --board, and writes nothing', () => {
+  boardWorld({ [PROJECT_LOOKUP]: projects() })
+  const none = flow('board-sync')
+  assert.equal(none.status, 1)
+  assert.equal(none.stdout, '')
+  assert.match(none.stderr, /^flow: there is no project board to sync, because no GitHub Project is linked to this repository; `flow init --board` creates one/)
+  assert.deepEqual(graphqlKeys(), [PROJECT_LOOKUP])
+  boardWorld({ [PROJECT_LOOKUP]: projects(project('PVT_road', 'Roadmap', statusField(['Todo', 'Done']))) })
+  const lacking = flow('board-sync')
+  assert.equal(lacking.status, 1)
+  assert.match(lacking.stderr, /Roadmap has no Status options Planned, In progress, In review, Needs human, Epic; `flow init --board`/)
+})
+
+test('board-sync prints a refused issue, goes on with the rest, and exits 1 at the end', () => {
+  boardWorld({ [setStatus('PVTI_42', 'OPT_done')]: { data: null, errors: [{ message: 'Resource not accessible by integration' }] } })
+  const result = flow('board-sync')
+  assert.equal(result.status, 1)
+  assert.match(result.stderr, /^#42 kept its old Status, because the GitHub token may not read or write projects .*Resource not accessible by integration$/m)
+  assert.deepEqual(
+    result.stdout.trim().split('\n').filter((line) => !line.includes('skipped:')),
+    ['#43 → Planned (added to the board)', '#50 → In progress', '2 set, 2 already right, 2 skipped, 1 failed'],
+  )
+  assert.ok(writes().includes(setStatus('PVTI_50', 'OPT_in_progress')))
 })

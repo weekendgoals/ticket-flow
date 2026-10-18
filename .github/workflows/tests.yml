@@ -31,6 +31,7 @@ jobs:
           node --check plugins/flow/scripts/meter.mjs
           node --check plugins/flow/scripts/stats.mjs
           node --check plugins/flow/scripts/worktree-setup.mjs
+          node --check plugins/flow/scripts/project-sync.mjs
       - name: parse run-epic.mjs the way the workflow runtime does
         run: |
           node -e 'const s=require("fs").readFileSync("plugins/flow/workflows/run-epic.mjs","utf8").replace(/^export const meta/m,"const meta");new (Object.getPrototypeOf(async function(){}).constructor)("agent","parallel","pipeline","log","phase","args","budget",s)'

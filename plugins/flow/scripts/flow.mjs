@@ -58,7 +58,7 @@ import {
 import { loadSources, workflowSources, meterTranscripts, meterComment, readMeterComment } from './meter.mjs'
 import { ticketStats, readEpicComments, summarize, overallStats, formatStats, combineMeters } from './stats.mjs'
 import { COPILOT_REVIEWER_LOGIN, BOTS, configuredBot, copilotUnavailable, botReview, sameLogin, summarizeChecks, sleepSeconds } from './review-bots.mjs'
-import { syncProjectStatus, projectBoardLine } from './project-sync.mjs'
+import { syncProjectStatus, projectBoardLine, ensureProjectBoard, findProjectBoard, placeOnBoard, statusOptionName, explain as explainProjectError, oneLine, DEFAULT_BOARD_TITLE } from './project-sync.mjs'
 import {
   LABELS,
   EPIC_LABEL,
@@ -84,7 +84,9 @@ import {
 
 const USAGE = `usage: flow <command>
 
-  init                                   create the Flow labels in this repository
+  init [--board [<title>]]               create the Flow labels in this repository
+                                         (--board: also create, link or complete the project board; title Flow by default)
+  board-sync [<epic>] [--json]           set every epic's and ticket's Status on the project board from its labels
   doctor                                 check gh, the repository, the labels and every open epic
   board [<epic>] [--json]                list open epics, or one epic's tickets
   next <epic>                            what can start now, as JSON (exit 1 when the epic is not approved, empty or stuck)
@@ -139,7 +141,7 @@ const USAGE = `usage: flow <command>
 
 const VALUE_FLAGS = new Set(['--file', '--epic-file', '--text', '--title', '--tier', '--cwd', '--blocked-by', '--bot', '--timeout', '--interval', '--sha', '--epic', '--tickets', '--out', '--workflow', '--important', '--grace', '--since', '--repo', '--head', '--screenshots', '--fingerprint'])
 const REPEATABLE_FLAGS = new Set(['--transcripts'])
-const BOOLEAN_FLAGS = new Set(['--json', '--no-epic', '--print', '--wait', '--once', '--mark', '--remove', '--review', '--all'])
+const BOOLEAN_FLAGS = new Set(['--board', '--json', '--no-epic', '--print', '--wait', '--once', '--mark', '--remove', '--review', '--all'])
 const DEFAULT_WAIT_SECONDS = 1800
 const DEFAULT_POLL_SECONDS = 30
 const DEFAULT_SCREENSHOTS_DIR = '.flow/screenshots/{n}'
@@ -231,10 +233,80 @@ function gitTopLevel() {
   return result.status === 0 ? result.stdout.trim() : process.cwd()
 }
 
-function commandInit() {
+function commandInit(positional, flags) {
+  if (positional.length > 1) throw new UsageError('init takes at most one title, for --board')
+  if (positional.length && !flags.board) throw new UsageError(`"${positional[0]}" is a board title, and a title goes with --board`)
   const { created, existing } = github.ensureLabels(LABELS)
   for (const name of created) console.log(`created ${name}`)
   console.log(created.length ? `${created.length} label(s) created, ${existing.length} already there` : `all ${existing.length} labels already there`)
+  if (!flags.board) return 0
+  for (const line of ensureProjectBoard(positional.length ? positional[0] : DEFAULT_BOARD_TITLE)) console.log(line)
+  return 0
+}
+
+function boardSyncEntries(epicNumber) {
+  const entries = []
+  const seen = new Set()
+  const add = (issue, { state, problem }) => {
+    if (seen.has(issue.number)) return
+    seen.add(issue.number)
+    if (isFinding(issue)) {
+      if (issue.state !== 'closed') entries.push({ number: issue.number, state: null, problem: null, finding: true })
+      return
+    }
+    entries.push({ number: issue.number, state, problem, finding: false })
+  }
+  const epics = epicNumber === null ? github.listIssues({ label: EPIC_LABEL }) : [github.getIssue(epicNumber)]
+  if (epicNumber !== null && !epics[0].labels.includes(EPIC_LABEL)) throw new UsageError(`#${epicNumber} is not an epic (it has no ${EPIC_LABEL} label)`)
+  for (const epic of epics) {
+    add(epic, { state: 'epic', problem: null })
+    for (const sub of github.listSubIssues(epic.number)) add(sub, ticketState(sub.labels))
+  }
+  if (epicNumber === null) for (const ticket of github.listIssues({ label: TICKET_LABEL })) add(ticket, ticketState(ticket.labels))
+  return entries
+}
+
+function commandBoardSync(positional, flags) {
+  const epicNumber = positional.length ? issueNumber(positional[0], 'an epic number') : null
+  const found = findProjectBoard()
+  if (!found.board) {
+    const remedy = found.kind === 'unreadable' ? '' : '; `flow init --board` creates one, or adds the Status options a linked project lacks'
+    process.stderr.write(`flow: there is no project board to sync, because ${oneLine(found.reason)}${remedy}\n`)
+    return 1
+  }
+  const say = (line) => {
+    if (!flags.json) console.log(line)
+  }
+  const changes = []
+  const alreadyRight = []
+  const skipped = []
+  const failures = []
+  for (const entry of boardSyncEntries(epicNumber)) {
+    if (entry.finding || entry.problem) {
+      skipped.push({ number: entry.number, reason: entry.finding ? 'a finding, which is not on the board' : entry.problem })
+      if (entry.problem) say(`#${entry.number} skipped: it ${entry.problem}`)
+      continue
+    }
+    try {
+      const outcome = placeOnBoard(found.board, entry.number, entry.state)
+      if (outcome === 'already right') {
+        alreadyRight.push(entry.number)
+        continue
+      }
+      const change = { number: entry.number, status: statusOptionName(entry.state), added: outcome === 'added' }
+      changes.push(change)
+      say(`#${change.number} → ${change.status}${change.added ? ' (added to the board)' : ''}`)
+    } catch (error) {
+      if (!(error instanceof TrackerError) || error.missing) throw error
+      const reason = oneLine(explainProjectError(error))
+      failures.push({ number: entry.number, reason })
+      process.stderr.write(`#${entry.number} kept its old Status, because ${reason}\n`)
+    }
+  }
+  say(`${changes.length} set, ${alreadyRight.length} already right, ${skipped.length} skipped${failures.length ? `, ${failures.length} failed` : ''}`)
+  if (flags.json)
+    printJson({ board: found.board.title, set: changes.length, alreadyRight: alreadyRight.length, skipped: skipped.length, failed: failures.length, changes, alreadyRightIssues: alreadyRight, skippedIssues: skipped, failures })
+  return failures.length ? 1 : 0
 }
 
 function commandDoctor() {
@@ -1700,7 +1772,9 @@ function main(argv) {
   const { positional, flags } = parseArguments(rest)
   switch (command) {
     case 'init':
-      return commandInit()
+      return commandInit(positional, flags)
+    case 'board-sync':
+      return commandBoardSync(positional, flags)
     case 'doctor':
       return commandDoctor()
     case 'board':

@@ -21,13 +21,14 @@ epic). "Direct" or "without Flow" always overrides it.
 
 ## Layout
 
-- `scripts/flow.mjs` — the CLI: planning (`init`, `doctor`, `board`, `next`,
-  `ticket`, `check`, `post`, `label`, `create-epic`, `create-ticket`, `link`,
-  `needs-human`), one ticket's steps (`start`, `accept`, `deliver`,
-  `screenshots`, `meter`, `reset`), the pull-request loop (`pr-*`) and a
-  whole epic (`dispatch`, `worktree`, `merge`, `check-epic`, `release-pr`,
-  `design-map`), findings before they are tickets (`create-finding`,
-  `found`, `promote`, `reject`), and looking back (`stats`).
+- `scripts/flow.mjs` — the CLI: planning (`init [--board]`, `doctor`,
+  `board`, `next`, `ticket`, `check`, `post`, `label`, `create-epic`,
+  `create-ticket`, `link`, `needs-human`), one ticket's steps (`start`,
+  `accept`, `deliver`, `screenshots`, `meter`, `reset`), the pull-request
+  loop (`pr-*`) and a whole epic (`dispatch`, `worktree`, `merge`,
+  `check-epic`, `release-pr`, `design-map`), findings before they are
+  tickets (`create-finding`, `found`, `promote`, `reject`), the project
+  board (`board-sync`), and looking back (`stats`).
 - `scripts/tracker/github.mjs` — every `gh` call, as plain functions (a Jira
   tracker can sit behind them); `tracker/fake-gh.mjs` is the tests' `gh`.
 - `issue-body.mjs` (epic and ticket bodies, the design map), `checks.mjs`
@@ -37,7 +38,8 @@ epic). "Direct" or "without Flow" always overrides it.
   `stats.mjs` (the figures `flow stats` reads back out of those comments),
   `worktree-setup.mjs` (`.flow.json` `copy`/`setup` in a fresh copy),
   `project-sync.mjs` (a linked GitHub Project's `Status` follows the state
-  labels, best effort, never read back).
+  labels, best effort, never a source of state; `init --board` sets the
+  board up and `board-sync` catches it up).
 - `skills/triage/SKILL.md` — `/flow:triage`: approved findings become
   tickets (or are rejected, or sent to `/flow:epic`) after one table.
 - `workflows/run-epic.mjs` — the `/flow:run` loop as a workflow script.
@@ -61,9 +63,9 @@ as of 2026-10-18; the pass count grows, the fail line stays `# fail 0`.
   whole-epic commands, the same way.
 - `pull-request.test.mjs` `# pass 20`, `issue-body.test.mjs` `# pass 28`,
   `checks.test.mjs` `# pass 26` (real shell commands in a temp dir),
-  `tracker/github.test.mjs` `# pass 28`, `fidelity.test.mjs` `# pass 54`,
+  `tracker/github.test.mjs` `# pass 32`, `fidelity.test.mjs` `# pass 54`,
   `stats.test.mjs` `# pass 12` (needs `git`), `project-sync.test.mjs`
-  `# pass 11`, under `plugins/flow/scripts/`.
+  `# pass 20`, under `plugins/flow/scripts/`.
 - `node --test plugins/flow/scripts/meter.test.mjs` — `# pass 16`. Builds
   its transcripts; no test reads a real one (they belong to whoever ran them).
 - `node --test plugins/flow/scripts/worktree-setup.test.mjs` — `# pass 18`;

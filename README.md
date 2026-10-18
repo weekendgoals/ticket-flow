@@ -21,7 +21,7 @@ You also need the GitHub CLI, signed in: `gh auth login`. Then, once per
 repository:
 
 ```bash
-node <plugin root>/scripts/flow.mjs init      # creates the labels
+node <plugin root>/scripts/flow.mjs init      # creates the labels (--board: and a project board, see below)
 node <plugin root>/scripts/flow.mjs doctor    # prints "ok" when everything is in place
 ```
 
@@ -130,18 +130,28 @@ always merges into the default branch, and nothing runs after that merge.**
 
 A GitHub Project can show the same work as columns, one swimlane per epic. It
 is optional, and it is only a view: the labels stay the only record of a
-ticket's state, and Flow never reads the project back.
+ticket's state, and Flow never takes a state from the project.
 
-1. Create a project (your profile or organization → Projects → New
-   project), and link it to the repository (the repository's Projects tab →
-   Link a project).
-2. In its `Status` field, name the options exactly `Planned`,
-   `In progress`, `In review`, `Done`, `Needs human` and `Epic` (case does
-   not matter; other options may stay).
-3. Use the Board layout and set Swimlanes to "Parent issue": every epic
-   becomes one swimlane with its tickets in it.
-4. Optionally turn on the project's auto-add workflow with the filter
-   `is:issue label:flow:ticket,flow:epic`, so issues made by hand show up too.
+1. Run `flow init --board [<title>]` (locally, after
+   `gh auth refresh -s project`). With no project linked to the repository,
+   it creates one (titled `Flow` unless you give a title), sets its
+   `Status` options to `Planned`, `In progress`, `In review`, `Done`,
+   `Needs human` and `Epic`, and links it. With a linked project whose
+   `Status` lacks some of them (the first one with a `Status` field, the
+   one `flow doctor` names), it adds the missing ones and keeps every option
+   already there, since issues may carry them (case does not matter). With one that has them all,
+   it only names it.
+2. Two steps the GitHub API cannot do, which `init --board` reminds you of
+   when it creates the project: use the Board layout and set Swimlanes to
+   "Parent issue", so every epic becomes one swimlane with its tickets in
+   it; and optionally turn on the project's auto-add workflow with the
+   filter `is:issue label:flow:ticket,flow:epic`, so issues made by hand
+   show up too.
+3. On a fresh board, or one that fell behind (it was linked late, or a token
+   could not write to it for a while), run `flow board-sync [<epic>]`: it
+   sets every open epic and its tickets, and every ticket with no epic, to
+   the `Status` its labels say, adding any that are missing. It reads each
+   item's current `Status` only to leave a right one alone.
 
 From then on every command that changes a state label also moves the issue
 to the matching `Status`, right after the label has changed: `label`,
@@ -158,7 +168,9 @@ commands say nothing: nobody asked for a board, and `flow doctor` is where
 you see why none was found. When a linked project's `Status` lacks some of
 the six options, or a board was found but the issue could not be added or
 moved, the command prints one line starting `project board not updated:`.
-Either way it carries on and exits exactly as it would have.
+Either way it carries on and exits exactly as it would have. `init --board`
+and `board-sync` are the exception: they were asked to touch the board, so
+a refusal there exits 1 with that hint.
 
 A finding is not on the board: `flow create-finding` adds nothing to the
 project, and the issue joins it, as `Planned`, only when `flow promote` turns
@@ -518,7 +530,8 @@ every answer is read from GitHub (through `gh`) and git.
 
 | Command | What it does |
 |---|---|
-| `init` | Creates the twelve labels. Safe to run again |
+| `init [--board [<title>]]` | Creates the twelve labels. Safe to run again. `--board` also makes sure a matching project board is linked: creates and links one (titled `Flow` by default), or adds the `Status` options a linked one lacks; exits 1, with the `gh auth refresh -s project` hint, when GitHub refuses. See [The project board](#the-project-board) |
+| `board-sync [<epic>] [--json]` | Sets the project board's `Status` of every open epic (`Epic`) and ticket from its labels, adding missing ones; findings and tickets with no readable state are skipped. One line per change, then `<n> set, <m> already right, <k> skipped`. Exits 1 when no matching board is linked, or when any issue could not be set (the rest are still set) |
 | `doctor` | Checks `gh`, sign-in, that issues are on, the labels, the default branch, and every open epic's `Blocked by` lines (unreadable, outside the epic, cycles). Prints one sentence per problem, then one line naming the project board (see [The project board](#the-project-board)), then `ok` when there was no problem |
 | `board [<epic>] [--json]` | The default branch, then open epics with approval, progress and branch; or one epic's tickets with tier, state and blockers. Either way, how many findings wait or are approved |
 | `next <epic>` | JSON: `approved`, `ready`, `waiting`, `inProgress`, `done`, `needsHuman`, `planned`, `problems`. Exits 1 when the epic is not approved, has no tickets, or is stuck (unfinished tickets, none ready, none in progress) |

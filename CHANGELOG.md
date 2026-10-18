@@ -21,10 +21,36 @@ stamps the version and date and bumps `plugin.json` in the same commit.
   when a linked project's `Status` lacks options, or a found board refuses
   the add or the move, it prints one line starting
   `project board not updated:`. Labels stay the only record of state; Flow
-  never reads the project back. `doctor` adds one line naming the project
+  never takes a state from the project. `doctor` adds one line naming the project
   it found, `none linked`, or the `Status` options it lacks, without
   changing its exit code. The code is `scripts/project-sync.mjs`, with its
   GraphQL calls in `tracker/github.mjs`.
+- **New: `flow init --board [<title>]`** sets the project board up after
+  the labels. With no project linked, it creates one (titled `Flow` by
+  default) under the repository's owner, replaces its `Status` options with
+  the six Flow ones, links it to the repository, and prints the two steps
+  the GitHub API cannot do (the Board layout with Swimlanes by "Parent
+  issue", and the auto-add filter `is:issue label:flow:ticket,flow:epic`).
+  With a linked project whose `Status` lacks some of the six, it adds the
+  missing ones and keeps every existing option with its colour and
+  description. With a matching board it only names it. Unlike the
+  automatic sync, a refusal here exits 1 with the
+  `gh auth refresh -s project` hint; a project created but not set up says
+  to link it by hand and run the command again, rather than making a second
+  one. `flow init` without `--board` is unchanged. The repository lookup
+  now also reads the repository's and owner's ids and each option's colour
+  and description, still in its one query.
+- **New: `flow board-sync [<epic>] [--json]`** sets the board's `Status` of
+  every open epic (or the one named) as `Epic` and of each of its tickets,
+  plus every ticket with no epic, from the labels, adding any issue missing
+  from the board. It reads each item's current `Status` only to leave a
+  right one unwritten. Findings, and tickets with no single state label,
+  are skipped. It prints one line per change (`#12 → In review`), then
+  `<n> set, <m> already right, <k> skipped` (or the same as an object with
+  `--json`); with no matching board linked it exits 1 naming
+  `flow init --board`; an issue GitHub refuses is printed, the rest are
+  still set, and it exits 1 at the end. The automatic sync now also skips
+  the write when the item already shows the right `Status`.
 - **New: findings, bugs and ideas before they are tickets.** A finding is an
   issue labelled `flow:found` (the twelfth label; `flow init` creates it and
   `doctor` names it when missing): evidence, a person's words, no criteria.
