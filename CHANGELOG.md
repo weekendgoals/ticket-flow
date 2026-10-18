@@ -5,7 +5,7 @@ a behaviour change in every project that installs it. Entries land in the same
 commit as the change; the pull request that brings them to the default branch
 stamps the version and date and bumps `plugin.json` in the same commit.
 
-## 3.1.0 (unreleased)
+## 3.1.0 — 2026-10-18
 
 - **New: the project board.** When the repository is linked to a GitHub
   Project whose `Status` field has the options `Planned`, `In progress`,
