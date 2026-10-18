@@ -79,7 +79,7 @@ as of 2026-10-18; the pass count grows, the fail line stays `# fail 0`.
   needs `git`, POSIX `sh` and `sleep`.
 - `node --test plugins/flow/workflows/run-epic.test.mjs` — `# pass 23`
   (stubbed `agent`, no git), `plugins/flow/github/flow.test.mjs` `# pass 13`.
-- `node --test tools/reporter/reporter.test.mjs` — `# pass 18`. The
+- `node --test tools/reporter/reporter.test.mjs` — `# pass 31`. The
   extension's modules under a stubbed `fetch`. It is also their syntax
   check: plain `node --check` reads a `.js` file with no package.json as
   CommonJS, so the suite copies all seven modules to `.mjs` and checks each.
