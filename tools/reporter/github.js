@@ -1,23 +1,15 @@
+import {
+  FINDINGS_README,
+  splitRepo,
+  parseEpic,
+  generateFindingId,
+  screenshotPaths,
+  stripDataUrlPrefix,
+  buildIssueBody
+} from './report-body.js';
+
 const API_ORIGIN = 'https://api.github.com';
 const API_VERSION = '2022-11-28';
-const TICKETS_README = 'Screenshots filed by the report extension.\n';
-const NONE = '_none_';
-const EXTENSIONS = {
-  'image/png': 'png',
-  'image/jpeg': 'jpg',
-  'image/webp': 'webp',
-  'image/gif': 'gif'
-};
-
-export const SCREENSHOT_MIMES = Object.keys(EXTENSIONS);
-
-export function splitRepo(repo) {
-  const parts = String(repo || '').trim().split('/');
-  if (parts.length !== 2 || !parts[0] || !parts[1]) {
-    throw new Error('Repository must look like owner/name');
-  }
-  return { owner: parts[0], name: parts[1] };
-}
 
 function repoPath(settings) {
   const { owner, name } = splitRepo(settings.repo);
@@ -59,19 +51,7 @@ export function getRepository(settings) {
   return request(settings, 'GET', repoPath(settings));
 }
 
-export function generateTicketId(now = new Date(), random = Math.random) {
-  const pad = (value) => String(value).padStart(2, '0');
-  const date = `${now.getUTCFullYear()}${pad(now.getUTCMonth() + 1)}${pad(now.getUTCDate())}`;
-  const time = `${pad(now.getUTCHours())}${pad(now.getUTCMinutes())}${pad(now.getUTCSeconds())}`;
-  const alphabet = 'abcdefghijklmnopqrstuvwxyz0123456789';
-  let suffix = '';
-  for (let index = 0; index < 4; index += 1) {
-    suffix += alphabet[Math.floor(random() * alphabet.length)];
-  }
-  return `${date}-${time}-${suffix}`;
-}
-
-export async function ensureTicketsBranch(settings) {
+export async function ensureFindingsBranch(settings) {
   const base = repoPath(settings);
   try {
     await request(settings, 'GET', `${base}/git/ref/heads/${branchPath(settings.branch)}`);
@@ -80,14 +60,14 @@ export async function ensureTicketsBranch(settings) {
     if (error.status !== 404) throw error;
   }
   const blob = await request(settings, 'POST', `${base}/git/blobs`, {
-    content: TICKETS_README,
+    content: FINDINGS_README,
     encoding: 'utf-8'
   });
   const tree = await request(settings, 'POST', `${base}/git/trees`, {
     tree: [{ path: 'README.md', mode: '100644', type: 'blob', sha: blob.sha }]
   });
   const commit = await request(settings, 'POST', `${base}/git/commits`, {
-    message: 'Start tickets branch',
+    message: 'Start findings branch',
     tree: tree.sha,
     parents: []
   });
@@ -98,108 +78,50 @@ export async function ensureTicketsBranch(settings) {
   return true;
 }
 
-export function screenshotPath(ticketId, index, ext) {
-  return `tickets/${ticketId}/screenshot-${index}.${ext}`;
-}
-
-export function extensionForMime(mime) {
-  const ext = EXTENSIONS[mime];
-  if (!ext) throw new Error(`Unsupported screenshot type: ${mime || 'unknown'}`);
-  return ext;
-}
-
-export function screenshotPaths(ticketId, screenshots) {
-  if (!Array.isArray(screenshots) || screenshots.length === 0) {
-    throw new Error('Attach at least one screenshot');
-  }
-  return screenshots.map((screenshot, position) =>
-    screenshotPath(ticketId, position + 1, extensionForMime(screenshot.mime))
-  );
-}
-
-export function stripDataUrlPrefix(dataUrl) {
-  const marker = ';base64,';
-  const index = dataUrl.indexOf(marker);
-  if (!dataUrl.startsWith('data:') || index === -1) {
-    throw new Error('Screenshot is not a base64 data URL');
-  }
-  return dataUrl.slice(index + marker.length);
-}
-
-export async function uploadScreenshots(settings, ticketId, screenshots) {
-  const paths = screenshotPaths(ticketId, screenshots);
+export async function uploadScreenshots(settings, findingId, screenshots) {
+  const paths = screenshotPaths(findingId, screenshots);
   const contents = screenshots.map((screenshot) => stripDataUrlPrefix(screenshot.dataUrl));
+  const uploads = [];
   for (const [position, path] of paths.entries()) {
-    await request(settings, 'PUT', `${repoPath(settings)}/contents/${path}`, {
-      message: `Ticket ${ticketId}: screenshot ${position + 1} of ${paths.length}`,
+    const response = await request(settings, 'PUT', `${repoPath(settings)}/contents/${path}`, {
+      message: `Finding ${findingId}: screenshot ${position + 1} of ${paths.length}`,
       content: contents[position],
       branch: settings.branch
     });
+    if (!response || !response.commit || !response.commit.sha) {
+      throw new Error(`GitHub gave no commit for ${path}`);
+    }
+    uploads.push({ path, commitSha: response.commit.sha });
   }
-  return paths;
+  return uploads;
 }
 
-export function formatViewport(viewport) {
-  if (!viewport || !viewport.w || !viewport.h) return null;
-  const ratio = viewport.dpr || 1;
-  return `${viewport.w}×${viewport.h} @${ratio}x`;
-}
-
-export function quoteLines(text) {
-  const trimmed = (text || '').trim();
-  if (!trimmed) return NONE;
-  return trimmed.split(/\r?\n/).map((line) => `> ${line}`).join('\n');
-}
-
-export function buildIssueBody(settings, report, ticketId) {
-  const { owner, name } = splitRepo(settings.repo);
-  const paths = screenshotPaths(ticketId, report.screenshots);
-  const viewport = formatViewport(report.viewport);
-  const header = [
-    `**Page:** ${report.url}`,
-    `**Title:** ${report.pageTitle}`,
-    `**Type:** ${report.type}`,
-    `**Priority:** ${report.priority}`,
-    ...(viewport ? [`**Viewport:** ${viewport}`] : []),
-    `**User agent:** ${report.userAgent}`,
-    `**Ticket:** ${ticketId}`
-  ];
-  const description = (report.description || '').trim() || NONE;
-  const screenshotLines = paths.map((path, position) => {
-    const link = `https://github.com/${owner}/${name}/blob/${settings.branch}/${path}?raw=true`;
-    const caption = (report.screenshots[position].caption || '').trim();
-    return `${position + 1}. [${path}](${link})${caption ? ` — ${caption}` : ''}`;
-  });
-  return [
-    header.join('\n'),
-    '',
-    '## Description',
-    '',
-    description,
-    '',
-    '## Selected text',
-    '',
-    quoteLines(report.selection),
-    '',
-    '## Screenshots',
-    '',
-    ...screenshotLines
-  ].join('\n');
-}
-
-export async function createIssue(settings, report, ticketId) {
+export async function createIssue(settings, report, findingId, uploads) {
   const issue = await request(settings, 'POST', `${repoPath(settings)}/issues`, {
     title: report.title,
     labels: [settings.label],
-    body: buildIssueBody(settings, report, ticketId)
+    body: buildIssueBody(settings, report, findingId, uploads)
   });
-  return { number: issue.number, html_url: issue.html_url };
+  return { id: issue.id, number: issue.number, html_url: issue.html_url };
 }
 
-export async function fileTicket(settings, report, now = new Date(), random = Math.random) {
-  const ticketId = generateTicketId(now, random);
-  await ensureTicketsBranch(settings);
-  const paths = await uploadScreenshots(settings, ticketId, report.screenshots);
-  const issue = await createIssue(settings, report, ticketId);
-  return { ...issue, ticketId, paths };
+export async function fileUnderEpic(settings, epic, issueId) {
+  try {
+    await request(settings, 'POST', `${repoPath(settings)}/issues/${epic}/sub_issues`, {
+      sub_issue_id: issueId
+    });
+    return null;
+  } catch (error) {
+    return error.message;
+  }
+}
+
+export async function fileFinding(settings, report, now = new Date(), random = Math.random) {
+  const epic = parseEpic(settings.epic);
+  const findingId = generateFindingId(now, random);
+  await ensureFindingsBranch(settings);
+  const uploads = await uploadScreenshots(settings, findingId, report.screenshots);
+  const issue = await createIssue(settings, report, findingId, uploads);
+  const epicProblem = epic === null ? null : await fileUnderEpic(settings, epic, issue.id);
+  return { ...issue, findingId, epic, epicProblem, paths: uploads.map((upload) => upload.path) };
 }

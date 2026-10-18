@@ -2,9 +2,10 @@ export const SETTINGS_KEY = 'settings';
 
 export const DEFAULT_SETTINGS = {
   token: '',
-  repo: 'weekendgoals/weekendgoals',
-  branch: 'tickets',
-  label: 'agent-ticket'
+  repo: '',
+  branch: 'flow-findings',
+  label: 'flow:found',
+  epic: ''
 };
 
 export function normalizeSettings(stored) {

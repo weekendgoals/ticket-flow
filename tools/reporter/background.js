@@ -5,7 +5,7 @@ chrome.runtime.onInstalled.addListener(async () => {
   await chrome.contextMenus.removeAll();
   chrome.contextMenus.create({
     id: MENU_ID,
-    title: 'Report to Weekend Goals',
+    title: 'Report a finding',
     contexts: ['selection']
   });
 });

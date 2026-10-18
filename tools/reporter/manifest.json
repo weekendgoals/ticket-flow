@@ -1,12 +1,12 @@
 {
   "manifest_version": 3,
-  "name": "Weekend Goals Reporter",
-  "version": "0.2.0",
-  "description": "Files a GitHub issue with screenshots for the page you are looking at.",
+  "name": "Flow Reporter",
+  "version": "0.3.0",
+  "description": "Files a Flow finding, a GitHub issue with screenshots, for the page you are looking at.",
   "permissions": ["activeTab", "scripting", "contextMenus", "storage", "tabs", "unlimitedStorage"],
   "host_permissions": ["https://api.github.com/*"],
   "action": {
-    "default_title": "Report to Weekend Goals",
+    "default_title": "Report a finding",
     "default_popup": "popup.html",
     "default_icon": {
       "16": "icons/icon16.png",

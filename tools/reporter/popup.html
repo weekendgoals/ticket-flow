@@ -3,12 +3,12 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Report to Weekend Goals</title>
+  <title>Report a finding</title>
   <link rel="stylesheet" href="popup.css">
 </head>
 <body>
   <section id="unconfigured" hidden>
-    <p>No GitHub token is configured yet. Configure the token on the options page before filing a report.</p>
+    <p>No GitHub token or repository is configured yet. Set both on the options page before filing a finding.</p>
     <p><button type="button" id="open-options-main">Open options</button></p>
   </section>
 
@@ -52,15 +52,23 @@
       </label>
     </div>
 
-    <label>Description
+    <label>What happened
       <textarea id="description" rows="4"></textarea>
+    </label>
+
+    <label>Steps
+      <textarea id="steps" rows="3" placeholder="1. Open the page&#10;2. Click…"></textarea>
+    </label>
+
+    <label>What should have happened
+      <textarea id="expected" rows="2" placeholder="Optional"></textarea>
     </label>
 
     <label>Selected text
       <textarea id="selection" rows="3"></textarea>
     </label>
 
-    <button type="submit" id="submit">File report</button>
+    <button type="submit" id="submit">File finding</button>
     <p id="status" class="status" role="status"></p>
   </form>
 

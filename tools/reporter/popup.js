@@ -1,5 +1,6 @@
 import { loadSettings } from './settings.js';
-import { fileTicket, SCREENSHOT_MIMES } from './github.js';
+import { fileFinding } from './github.js';
+import { SCREENSHOT_MIMES } from './report-body.js';
 import {
   MAX_SCREENSHOTS,
   MAX_FILE_BYTES,
@@ -14,7 +15,7 @@ import {
 
 const PENDING_KEY = 'pendingSelection';
 const CAP_MESSAGE = `Limit of ${MAX_SCREENSHOTS} screenshots reached. Remove one to add another.`;
-const FIELD_NAMES = ['title', 'type', 'priority', 'description', 'selection'];
+const FIELD_NAMES = ['title', 'type', 'priority', 'description', 'steps', 'expected', 'selection'];
 
 const elements = {
   unconfigured: document.getElementById('unconfigured'),
@@ -34,6 +35,8 @@ const elements = {
   type: document.getElementById('type'),
   priority: document.getElementById('priority'),
   description: document.getElementById('description'),
+  steps: document.getElementById('steps'),
+  expected: document.getElementById('expected'),
   selection: document.getElementById('selection'),
   submit: document.getElementById('submit'),
   status: document.getElementById('status')
@@ -48,6 +51,12 @@ function openOptions(event) {
 
 document.getElementById('open-options').addEventListener('click', openOptions);
 document.getElementById('open-options-main').addEventListener('click', openOptions);
+
+function epicNote(issue) {
+  if (issue.epic === null) return ', with no epic.';
+  if (issue.epicProblem) return `, but not under epic #${issue.epic}: ${issue.epicProblem}`;
+  return ` under epic #${issue.epic}.`;
+}
 
 function setStatus(message, isError = false) {
   elements.status.textContent = message;
@@ -387,7 +396,7 @@ async function restoreDraft(draft, pending) {
 
 async function start() {
   const settings = await loadSettings();
-  if (!settings.token) {
+  if (!settings.token || !settings.repo) {
     elements.unconfigured.hidden = false;
     return;
   }
@@ -463,14 +472,16 @@ elements.form.addEventListener('submit', async (event) => {
   state.busy = true;
   refreshControls();
   elements.submit.disabled = true;
-  setStatus('Filing report…');
+  setStatus('Filing finding…');
   try {
     const settings = await loadSettings();
-    const issue = await fileTicket(settings, {
+    const issue = await fileFinding(settings, {
       title: draft.fields.title.trim(),
       type: draft.fields.type,
       priority: draft.fields.priority,
       description: draft.fields.description,
+      steps: draft.fields.steps,
+      expected: draft.fields.expected,
       selection: draft.fields.selection,
       url: draft.page.url,
       pageTitle: draft.page.title,
@@ -487,9 +498,9 @@ elements.form.addEventListener('submit', async (event) => {
     link.href = issue.html_url;
     link.target = '_blank';
     link.rel = 'noopener';
-    link.textContent = `Created #${issue.number}`;
-    elements.status.classList.remove('error');
-    elements.status.replaceChildren(link);
+    link.textContent = `Filed finding #${issue.number}`;
+    elements.status.classList.toggle('error', Boolean(issue.epicProblem));
+    elements.status.replaceChildren(link, document.createTextNode(epicNote(issue)));
   } catch (error) {
     setStatus(error.message, true);
     elements.submit.disabled = false;

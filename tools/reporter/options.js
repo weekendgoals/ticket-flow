@@ -1,11 +1,13 @@
 import { DEFAULT_SETTINGS, loadSettings, saveSettings, normalizeSettings } from './settings.js';
 import { getRepository } from './github.js';
+import { parseEpic } from './report-body.js';
 
 const fields = {
   token: document.getElementById('token'),
   repo: document.getElementById('repo'),
   branch: document.getElementById('branch'),
-  label: document.getElementById('label')
+  label: document.getElementById('label'),
+  epic: document.getElementById('epic')
 };
 const status = document.getElementById('status');
 
@@ -24,14 +26,16 @@ async function fill() {
   const settings = await loadSettings();
   for (const key of Object.keys(fields)) {
     fields[key].value = settings[key];
-    if (key !== 'token') fields[key].placeholder = DEFAULT_SETTINGS[key];
+    if (key !== 'token' && DEFAULT_SETTINGS[key]) fields[key].placeholder = DEFAULT_SETTINGS[key];
   }
 }
 
 document.getElementById('options').addEventListener('submit', async (event) => {
   event.preventDefault();
   try {
-    await saveSettings(readForm());
+    const settings = readForm();
+    parseEpic(settings.epic);
+    await saveSettings(settings);
     setStatus('Saved');
   } catch (error) {
     setStatus(error.message, true);
