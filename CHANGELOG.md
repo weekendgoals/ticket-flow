@@ -102,6 +102,19 @@ stamps the version and date and bumps `plugin.json` in the same commit.
   said `stopped`. The Action's scheduler posts its "Run stopped" comment
   only on `stopped`, so approving a standing epic before its first ticket no
   longer posts that nothing is ready because tickets need a person.
+- **New: the reporter extension, `tools/reporter/`.** The Chrome extension
+  that weekendgoals kept under `tools/report-extension/` now lives here and
+  files Flow findings: an issue labelled `flow:found` (the new default
+  label), its first line the `<!-- flow:finding fingerprint=... -->` marker,
+  its body in the finding shape (What happened, Where, Steps, Expected,
+  Selected text, Screenshots), with new Steps and Expected fields in the
+  popup. Screenshots go to `findings/<id>/screenshot-<n>.<ext>` on the
+  `flow-findings` branch (the new default, started as an orphan branch with
+  a README when absent) and are linked by the commit that added each one.
+  A new Epic option makes the finding a sub-issue of that epic; when that
+  fails, the result line says why and the finding stays filed. It is now
+  called Flow Reporter and no longer defaults to one project's repository.
+  Its suite is `tools/reporter/reporter.test.mjs`, run in CI.
 
 ## 3.0.0 — 2026-10-15
 

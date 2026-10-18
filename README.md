@@ -612,6 +612,20 @@ repository (`flow create-ticket --no-epic --repo <owner>/<name>`), and an
 instruction-file change goes through `/flow:quick` to a pull request you
 merge.
 
+## The reporter extension
+
+`tools/reporter/` is a Chrome extension for filing findings from the page
+you are looking at: you capture or paste screenshots, say what happened,
+the steps and what should have happened, and it files a GitHub issue
+labelled `flow:found` under the epic you set in its options (usually the
+open Bugs epic), with the screenshots committed to the `flow-findings`
+branch and linked by commit. It has no build step: open
+`chrome://extensions`, turn on Developer mode, choose Load unpacked and
+select the folder. A person then approves the finding with `flow:approved`
+or closes it, and `/flow:triage` turns approved findings into tickets. The
+token it needs, its options and the exact issue it writes are in
+[`tools/reporter/README.md`](tools/reporter/README.md).
+
 ## Agents
 
 - **researcher** — reads the code for the planner and reports facts with

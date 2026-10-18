@@ -42,6 +42,10 @@ epic). "Direct" or "without Flow" always overrides it.
   tickets (or are rejected, or sent to `/flow:epic`) after one table.
 - `workflows/run-epic.mjs` — the `/flow:run` loop as a workflow script.
   `github/flow.yml` — the Action a project copies; it calls the same CLI.
+- `tools/reporter/` — the reporter Chrome extension: plain browser modules,
+  no build step; it files findings labelled `flow:found` with screenshots on
+  `flow-findings`. `report-body.js` holds its pure parts (paths, the body,
+  the fingerprint), `github.js` its REST calls.
 
 ## Commands
 
@@ -66,6 +70,10 @@ as of 2026-10-18; the pass count grows, the fail line stays `# fail 0`.
   needs `git`, POSIX `sh` and `sleep`.
 - `node --test plugins/flow/workflows/run-epic.test.mjs` — `# pass 23`
   (stubbed `agent`, no git), `plugins/flow/github/flow.test.mjs` `# pass 13`.
+- `node --test tools/reporter/reporter.test.mjs` — `# pass 18`. The
+  extension's modules under a stubbed `fetch`. It is also their syntax
+  check: plain `node --check` reads a `.js` file with no package.json as
+  CommonJS, so the suite copies all seven modules to `.mjs` and checks each.
 - **Syntax:** `node --check` on every `.mjs` under `plugins/flow/scripts/`.
   It does not work on `workflows/run-epic.mjs` (a module body with a
   top-level `return`); parse that one the way the workflow runtime does:
