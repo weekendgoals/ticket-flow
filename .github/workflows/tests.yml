@@ -50,3 +50,4 @@ jobs:
           node --test plugins/flow/scripts/worktree-setup.test.mjs
           node --test plugins/flow/workflows/run-epic.test.mjs
           node --test plugins/flow/github/flow.test.mjs
+          node --test tools/reporter/reporter.test.mjs
