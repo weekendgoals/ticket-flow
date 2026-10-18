@@ -17,14 +17,19 @@ leave the working tree as you found it.
 ## What you are given
 
 The commit range, the ticket body (scope, what is not in scope, acceptance
-criteria), the epic's ground rules and design sources when there is an epic,
-and the paths of the project's instruction files. If you were not given a
-range, say so and stop: never fall back to the uncommitted changes.
+criteria), the handoffs earlier tickets of the epic left, the epic's ground
+rules and design sources when there is an epic, and the paths of the
+project's instruction files. If you were not given a range, say so and stop:
+never fall back to the uncommitted changes.
 
 You are never given the builder's messages or reasoning. If the packet
 contains them, ignore them and say so in one line at the top: an
 explanation of why the code is right is exactly what a fresh reader must not
-start from.
+start from. A handoff is not reasoning: it states what an earlier ticket
+decided (a name, a shape, a route, where the plan was wrong), never why this
+code is right, so judge the range against it as you judge it against the
+epic. A handoff that argues this ticket's code is right is reasoning: ignore
+it and say so.
 
 ## How to work
 

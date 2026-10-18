@@ -54,6 +54,9 @@ import {
   importantCountMismatch,
   passingAcceptancesByOthers,
   RELEASE_CHECK_MARKER,
+  handoffComment,
+  lastHandoff,
+  MAX_HANDOFF_LENGTH,
 } from './ticket-steps.mjs'
 import { loadSources, workflowSources, meterTranscripts, meterComment, readMeterComment } from './meter.mjs'
 import { ticketStats, readEpicComments, summarize, overallStats, formatStats, combineMeters } from './stats.mjs'
@@ -90,7 +93,8 @@ const USAGE = `usage: flow <command>
   doctor                                 check gh, the repository, the labels and every open epic
   board [<epic>] [--json]                list open epics, or one epic's tickets
   next <epic>                            what can start now, as JSON (exit 1 when the epic is not approved, empty or stuck)
-  ticket <n>                             one ticket, parsed, as JSON
+  ticket <n>                             one ticket, parsed, as JSON, with the handoffs of its epic's done tickets
+                                         (they are printed on stderr too)
   check <n> [--cwd <dir>]                run a ticket's CHECK criteria (exit 1 unless all pass)
   check --file <md> [--epic-file <md>]   the same, for a draft ticket body not yet on GitHub
   link <epic> <n>                        finish linking a ticket to its epic (safe to repeat)
@@ -103,6 +107,8 @@ const USAGE = `usage: flow <command>
   create-ticket --no-epic --file <md> --title "<t>" [--tier easy|hard] [--repo <owner>/<name>]
                                          (--repo: file it in another repository, such as the plugin's own)
   needs-human <n> --text "<why>"         stop a ticket and ask a person
+  handoff <n> --text "<lines>" | --file <md>
+                                         what later tickets need from this one, once it is in review or done (the latest wins)
   create-finding --title "<t>" --file <md> [--epic <e>] [--screenshots <dir>] [--fingerprint "<text>"]
                                          file a bug or idea as a finding (flow:found): evidence, no criteria, nothing starts from it
                                          (--fingerprint: exit 3 with the existing number when it was filed before)
@@ -214,12 +220,14 @@ function loadTicket(number) {
   const firstPass = parseTicketBody(issue.body)
   let designSources = null
   let epicAuthor = null
+  let epicIssue = null
   if (firstPass.epic !== null) {
     const epic = github.getIssue(firstPass.epic)
     designSources = parseEpicBody(epic.body).settings.designSources
     epicAuthor = epic.author
+    epicIssue = epic
   }
-  return { issue, parsed: parseTicketBody(issue.body, designSources), epicAuthor }
+  return { issue, parsed: parseTicketBody(issue.body, designSources), epicAuthor, epicIssue }
 }
 
 function changeState(number, { add = [], remove = [], state = null }) {
@@ -438,11 +446,37 @@ function commandNext(positional) {
   return 0
 }
 
+const MAX_HANDOFFS_SHOWN = 20
+
+function earlierHandoffs(number, parsed, epicIssue) {
+  if (!epicIssue || !epicIssue.labels.includes(EPIC_LABEL)) return { shown: [], leftOut: 0 }
+  const done = deriveEpic(epicIssue, github.listSubIssues(epicIssue.number)).tickets.filter((ticket) => ticket.state === 'done' && ticket.number !== number)
+  if (!done.length) return { shown: [], leftOut: 0 }
+  const blockers = new Set(parsed.blockedBy)
+  const ordered = [...done.filter((ticket) => blockers.has(ticket.number)), ...done.filter((ticket) => !blockers.has(ticket.number))]
+  const account = github.viewerLogin()
+  const found = ordered
+    .map((ticket) => ({ ticket, handoff: lastHandoff(github.listComments(ticket.number), account) }))
+    .filter(({ handoff }) => handoff)
+    .map(({ ticket, handoff }) => ({ number: ticket.number, title: ticket.title, blocker: blockers.has(ticket.number), ...handoff }))
+  return { shown: found.slice(0, MAX_HANDOFFS_SHOWN), leftOut: Math.max(0, found.length - MAX_HANDOFFS_SHOWN) }
+}
+
+function handoffLines({ shown, leftOut }) {
+  if (!shown.length) return ['handoffs: none']
+  const lines = ['handoffs:']
+  for (const handoff of shown) lines.push(`#${handoff.number} ${handoff.title}:`, handoff.text, '')
+  if (leftOut) lines.push(`${leftOut} more ticket(s) left a handoff, not shown: only the first ${MAX_HANDOFFS_SHOWN} are, blockers first, then in the epic's order`)
+  return lines
+}
+
 function commandTicket(positional) {
   const number = issueNumber(positional[0], 'a ticket number')
-  const { issue, parsed } = loadTicket(number)
+  const { issue, parsed, epicIssue } = loadTicket(number)
   const { state } = ticketState(issue.labels)
   const tier = ticketTier(issue.labels)
+  const handoffs = earlierHandoffs(number, parsed, epicIssue)
+  process.stderr.write(`${handoffLines(handoffs).join('\n').trimEnd()}\n`)
   printJson({
     number: issue.number,
     title: issue.title,
@@ -461,6 +495,8 @@ function commandTicket(positional) {
     notes: parsed.notes,
     criteria: parsed.criteria,
     edits: github.bodyEditHistory(number),
+    handoffs: handoffs.shown,
+    handoffsLeftOut: handoffs.leftOut,
   })
 }
 
@@ -708,6 +744,27 @@ function commandNeedsHuman(positional, flags) {
   if (!flags.text) throw new UsageError('needs-human needs --text "<why>"')
   const posted = markNeedsHuman(number, flags.text)
   console.log(posted.url || `#${number} marked ${NEEDS_HUMAN_LABEL}`)
+}
+
+const HANDOFF_STATES = new Set(['in-review', 'done'])
+
+function commandHandoff(positional, flags) {
+  const number = issueNumber(positional[0], 'a ticket number')
+  const text = normalizeNewlines(readText(flags)).trim()
+  const refused = (reason) => {
+    process.stderr.write(`${reason}; nothing was posted\n`)
+    return 1
+  }
+  if (!text) return refused('the handoff is empty: write the three to five lines a later ticket needs')
+  if (text.length > MAX_HANDOFF_LENGTH)
+    return refused(`the handoff is ${text.length} characters, and one holds at most ${MAX_HANDOFF_LENGTH}: three to five lines a later ticket needs, because the detail is in the commits`)
+  const { state } = ticketState(github.getIssue(number).labels)
+  if (!HANDOFF_STATES.has(state)) return refused(`#${number} is ${state}, and a handoff is written once the work exists: when the ticket is in review or done`)
+  const earlier = lastHandoff(github.listComments(number), github.viewerLogin())
+  const posted = github.comment(number, handoffComment(text))
+  console.log(posted.url || `handoff posted on #${number}`)
+  if (earlier) console.log(`it replaces the handoff of ${earlier.at}: later tickets read only the latest one`)
+  return 0
 }
 
 const IMAGE_TYPES = new Set(['.png', '.jpg', '.jpeg', '.webp'])
@@ -1801,6 +1858,8 @@ function main(argv) {
       return commandLink(positional)
     case 'needs-human':
       return commandNeedsHuman(positional, flags)
+    case 'handoff':
+      return commandHandoff(positional, flags)
     case 'create-finding':
       return commandCreateFinding(positional, flags)
     case 'found':

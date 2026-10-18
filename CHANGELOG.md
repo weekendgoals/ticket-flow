@@ -5,6 +5,33 @@ a behaviour change in every project that installs it. Entries land in the same
 commit as the change; the pull request that brings them to the default branch
 stamps the version and date and bumps `plugin.json` in the same commit.
 
+## 3.2.0 (unreleased)
+
+- **New: handoffs between tickets.** `flow handoff <n> --text "<lines>"` (or
+  `--file <md>`) posts a comment on the ticket starting
+  `<!-- flow:handoff -->` and `**Handoff.**`: what a later ticket needs from
+  this one, in three to five lines. It refuses, posting nothing, a ticket
+  that is not in review or done and a text over 1,200 characters. Only
+  handoffs from the account running Flow count, and the latest one replaces
+  the earlier ones (the command says so when it does).
+- **`flow ticket` carries the handoffs.** Its JSON adds `handoffs`, the
+  latest handoff of every done ticket in the same epic (number, title,
+  whether it is one of this ticket's blockers, text, link, time), blockers
+  first and then in the epic's order, at most twenty, and
+  `handoffsLeftOut`, how many more there were; it prints the same on
+  stderr under `handoffs:` (`handoffs: none` when there are none, as for a
+  ticket with no epic). Standard output stays the JSON alone, so a script
+  piping it to `jq` is unchanged.
+- **The ticket skill writes and reads handoffs.** Step 2 reads the handoffs
+  before the code (and other tickets' comments still not at all); step 9
+  writes the handoff before `deliver` (and `--no-merge` stops after it);
+  the reviewer's packet carries the handoffs, and the `ticket-reviewer`
+  agent treats them as earlier tickets' decisions, never as reasoning about
+  the code under review. `/flow:run`'s reviewer prompt names them too.
+- **`flow stats`** adds `handoff: true|false` per ticket and `handoffs` (how
+  many tickets left one) per epic, printed as one line; the retro miner
+  reads the handoffs first when it compares the plan with what was built.
+
 ## 3.1.0 — 2026-10-18
 
 - **New: the project board.** When the repository is linked to a GitHub

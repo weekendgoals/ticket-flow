@@ -247,7 +247,9 @@ becomes `flow:needs-human`). Each step posts one comment on the issue:
    one GitHub account: a ticket accepted under another account is not
    merged (`merge --epic` says so), and `reset` on it proceeds.
 6. **Cost** (`flow meter`): what each step cost, posted as a table.
-7. **Deliver** (`flow deliver`): only the accepted commit. Release: merged
+7. **Hand off** (`flow handoff`): three to five lines for the tickets after
+   this one; see [Handoffs between tickets](#handoffs-between-tickets).
+8. **Deliver** (`flow deliver`): only the accepted commit. Release: merged
    into the epic branch with `--no-ff` and labelled `flow:done`; if the
    branch moved it tries again twice, and a conflict goes to a person.
    Incremental: a pull request into the default branch, then the pull
@@ -268,6 +270,30 @@ once per ticket; a second death goes to a person. A local run also builds
 once more a ticket whose builder died before `flow start` (there is nothing
 to reset), so a death before the start and one after it make two rebuilds
 before a person is asked.
+
+### Handoffs between tickets
+
+What one ticket learned that a later one needs would otherwise sit in
+commits and review threads that nobody after it is told to read. So before
+it is delivered, each ticket posts a **handoff** (`flow handoff <n> --text
+"<lines>"` or `--file <md>`): three to five lines on what changed that the
+plan did not say, the decisions that bind later tickets (a name, a shape, a
+route), and where the plan was wrong and what was done instead; nothing a
+reader gets from the diff. It is a comment starting `<!-- flow:handoff -->`
+and `**Handoff.**`, so the epic's body stays as it was approved. It is
+refused before the ticket is in review or done, since there is nothing to
+hand off before the work exists, and over 1,200 characters, since the detail
+is in the commits. A second handoff replaces the first in what later tickets
+see, and only handoffs posted by the account running Flow count, like every
+other step comment.
+
+`flow ticket <m>` carries, after the ticket, the latest handoff of every
+done ticket in the same epic: the ticket's own blockers first, then the rest
+in the epic's order, at most twenty, saying how many it left out. The next
+builder reads them before the code, and its reviewer gets them too. A
+handoff states decisions, never why the code is right: the reviewer of a
+later ticket reads it, and an explanation of why code is right makes a
+reviewer agree.
 
 ### The pull request loop
 
@@ -547,7 +573,7 @@ every answer is read from GitHub (through `gh`) and git.
 | `doctor` | Checks `gh`, sign-in, that issues are on, the labels, the default branch, and every open epic's `Blocked by` lines (unreadable, outside the epic, cycles). Prints one sentence per problem, then one line naming the project board (see [The project board](#the-project-board)), then `ok` when there was no problem |
 | `board [<epic>] [--json]` | The default branch, then open epics with approval, progress and branch; or one epic's tickets with tier, state and blockers. Either way, how many findings wait or are approved |
 | `next <epic>` | JSON: `approved`, `ready`, `waiting`, `inProgress`, `done`, `needsHuman`, `planned`, `problems`. Exits 1 when the epic is not approved, has no tickets, or is stuck (unfinished tickets, none ready, none in progress) |
-| `ticket <n>` | One ticket parsed, as JSON, including who edited its body and when |
+| `ticket <n>` | One ticket parsed, as JSON, including who edited its body and when, and the latest handoff of each done ticket of its epic (`handoffs`, blockers first, at most twenty; `handoffsLeftOut` counts the rest), which it also prints on stderr under `handoffs:` |
 | `check <n> [--cwd <dir>]` | Runs the ticket's criteria from the repository root (or `--cwd`). JSON results on stdout, with every edit of the issue body (who, when); a readable table on stderr. Exits 1 unless every check passed, and when the ticket has no criteria |
 | `check --file <md> [--epic-file <md>]` | The same for a draft that is not on GitHub yet |
 | `post <n> --file <md>` or `--text "<md>"` | Adds a comment |
@@ -558,6 +584,7 @@ every answer is read from GitHub (through `gh`) and git.
 | `link <epic> <n>` | Finishes a `create-ticket` that created the issue but could not link it. Safe to repeat |
 | `create-ticket --no-epic --file <md> --title "<t>" [--tier easy\|hard] [--repo <owner>/<name>]` | Creates a ticket that belongs to no epic (counts as approved); `--repo` files it in another repository, such as the plugin's |
 | `needs-human <n> --text "<why>"` | Marks the ticket `flow:needs-human` and asks a person, by mention |
+| `handoff <n> --text "<lines>"` or `--file <md>` | Posts the ticket's handoff for the tickets after it; refuses one that is not in review or done, and a text over 1,200 characters. The latest one counts |
 | `create-finding --title "<t>" --file <md> [--epic <e>] [--screenshots <dir>] [--fingerprint "<text>"]` | Files a finding (`flow:found`), its images on the `flow-findings` branch; prints its number, or exits 3 with the existing one when the fingerprint was filed before |
 | `found [<epic>] [--json]` | The open findings: epic, who filed them and when, approved or waiting, image count (with `--json`, the body and every image link too). Always exits 0 |
 | `promote <n> --file <md> --tier easy\|hard --epic <e> [--blocked-by <n>,<n>]` | Turns an approved finding into a planned ticket of the epic, keeping its text under `## Report`; refuses with exit 2 otherwise |
@@ -602,7 +629,9 @@ else. Per ticket, and summed per epic:
   the default branch ending `(fixes #n)`, counted against ticket `#n`;
 - **stops for a person**, each with its reason and a link, runs that
   stopped, and tickets that were planned side by side but built one at a
-  time, with the reason.
+  time, with the reason;
+- whether each ticket left a **handoff** (`handoff: true` or `false`), and
+  how many did.
 
 Without an epic it covers every epic (`--since 2026-10-01` leaves out those
 created earlier) and ends with the pace: done tickets per day and the median

@@ -34,7 +34,10 @@ of these is missing, say so at the top and work with what you have.
    "unknown" and never fill it in from a guess.
 2. Every ticket's comments: `gh issue view <n> --comments`, and the epic's
    own (`gh issue view <epic> --comments`). The review rounds, acceptance
-   results and stops are there in full.
+   results and stops are there in full, and so is each ticket's handoff (a
+   comment starting `<!-- flow:handoff -->`; the latest one counts):
+   what the ticket decided that the plan did not say, and where the plan was
+   wrong. `stats` says which tickets left one (`handoff`).
 3. The release pull request: `gh pr view <pr> --comments`,
    `FLOW pr-threads <pr> --all` (every review thread, resolved ones too) and
    `FLOW pr-checks <pr>`. For an epic without one, each ticket's own pull
@@ -69,9 +72,11 @@ teaches the wrong lesson.
    why?** From the waves `stats` lists, with the reason the epic's comment
    gives. "None" for an epic planned one at a time.
 5. **Did an acceptance criterion pass while the outcome was not met, or
-   fail while the code was right?** Compare each ticket's criteria with what
-   its review and the release review found afterwards, and every
-   `(fixes #n)` commit with the criteria of the ticket it repairs.
+   fail while the code was right?** Read the handoffs first: where one says
+   the plan was wrong, the plan and what was built part there. Then compare
+   each ticket's criteria with what its review and the release review found
+   afterwards, and every `(fixes #n)` commit with the criteria of the ticket
+   it repairs.
 6. **Which rule in the project's instruction files was broken, or is
    missing?** Judged from the findings: a defect class found twice is a
    missing rule; a finding that contradicts a written rule is a broken one.

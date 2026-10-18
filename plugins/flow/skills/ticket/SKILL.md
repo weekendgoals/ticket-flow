@@ -55,7 +55,7 @@ ignore stops.
 ## 1. Start
 
 ```bash
-FLOW ticket <n>        # the ticket, parsed: scope, criteria, tier, epic
+FLOW ticket <n>        # the ticket, parsed: scope, criteria, tier, epic, and the handoffs
 FLOW start <n>
 ```
 
@@ -92,20 +92,26 @@ Read, in this order, and nothing else unless something sends you there:
 2. The epic, when there is one: `gh issue view <epic> --json body` — its
    outcome, ground rules, settings and design sources.
 3. The ticket body (from `FLOW ticket <n>`).
-4. The code the scope names.
+4. The handoffs `FLOW ticket <n>` prints under `handoffs:` (and carries as
+   `handoffs` in its JSON): the latest one of every done ticket of the
+   epic, blockers first. They are what earlier tickets decided that the
+   plan did not say (a name, a shape, a route, where the plan was wrong),
+   so read them before the code, which they explain.
+5. The code the scope names.
 
-Never read other tickets' comments or history: what this ticket needs from
-earlier work is in the code and in the epic.
+Never read other tickets' comments or history beyond those handoffs: what
+this ticket needs from earlier work is in the code, the epic and the
+handoffs.
 
 ## 3. Build
 
 **Attended:** spawn a worker with the Agent tool, `model:` set to the
 `model` that `start` printed (`sonnet` for `tier:easy`, `opus` otherwise),
 and a prompt that holds the ticket number, the branch, the ticket body, the
-epic's ground rules and design sources, the instruction files to read, and
-the rules below. Note the `agentId` the Agent tool returns: step 8 needs it.
-Do not build anything yourself: you read the plan and the conversation, and
-code written from that context drifts from the issue.
+handoffs, the epic's ground rules and design sources, the instruction files
+to read, and the rules below. Note the `agentId` the Agent tool returns:
+step 8 needs it. Do not build anything yourself: you read the plan and the
+conversation, and code written from that context drifts from the issue.
 
 **Unattended:** you are the worker; follow the rules below yourself.
 
@@ -198,6 +204,9 @@ cannot be checked afterwards). Note its `agentId`. Give it:
   comments it needs (a `**Compared:**` table) and nothing else;
 - the commit range `<baseSha>..HEAD` and the repository path;
 - the ticket body;
+- the handoffs `FLOW ticket <n>` printed, which are earlier tickets'
+  decisions, not this worker's reasoning: they say what was decided, never
+  why this code is right;
 - the epic's ground rules and design sources, when there is an epic;
 - the paths of the project's instruction files;
 - whether the ticket has a `COMPARE:` criterion.
@@ -284,11 +293,28 @@ because a session cannot read the end of its own run: the GitHub Action runs
 `FLOW meter <n> --transcripts <its output file>`, and a local run of an epic
 runs `FLOW meter <n> --workflow <its run directory>`.
 
-## 9. Deliver
+## 9. Hand off, then deliver
+
+First write the **handoff**: three to five lines for the tickets after this
+one, which read it through `FLOW ticket` before their code:
+
+- what changed that the plan did not say;
+- decisions that bind later tickets: a name, a shape, a route;
+- where the plan was wrong, and what was done instead.
+
+Nothing a reader gets from the diff, and never why the code is right: a
+handoff states decisions, and later reviewers read it too. When the plan
+said it all, say so in one line, so a later reader knows nothing is missing.
 
 ```bash
+FLOW handoff <n> --file <handoff file>
 FLOW deliver <n>
 ```
+
+`handoff` refuses a ticket that is not in review or done (there is nothing
+to hand off before the work exists) and a text over 1,200 characters,
+because the detail is in the commits. Running it again replaces the
+handoff in what later tickets see: they read only the latest.
 
 - **Release delivery** (the epic's default): it merges the accepted commit,
   never the branch tip, into the epic branch with `--no-ff` and the subject
@@ -366,8 +392,8 @@ changes where the skill stops or starts; every step still posts its comment.
   the host has the fixes reviewed once more and calls you with
   `--after-review 2`. When round 2 still has an Important finding open,
   stop and ask a person, quoting it. Otherwise go on to step 7.
-- `--no-merge`: under release delivery, stop after step 8 instead of
-  delivering, and end your reply with `ACCEPTED <sha>` (the commit
+- `--no-merge`: under release delivery, stop after step 9's handoff instead
+  of delivering, and end your reply with `ACCEPTED <sha>` (the commit
   `FLOW accept` judged). The host merges the tickets of a wave one at a time
   (`FLOW merge`), because two tickets merging into one branch at once race.
   Incremental delivery ignores it: each ticket's pull request is its own.

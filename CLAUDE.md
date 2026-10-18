@@ -24,7 +24,7 @@ epic). "Direct" or "without Flow" always overrides it.
 - `scripts/flow.mjs` — the CLI: planning (`init [--board]`, `doctor`,
   `board`, `next`, `ticket`, `check`, `post`, `label`, `create-epic`,
   `create-ticket`, `link`, `needs-human`), one ticket's steps (`start`,
-  `accept`, `deliver`, `screenshots`, `meter`, `reset`), the pull-request
+  `accept`, `handoff`, `deliver`, `screenshots`, `meter`, `reset`), the pull-request
   loop (`pr-*`) and a whole epic (`dispatch`, `worktree`, `merge`,
   `check-epic`, `release-pr`, `design-map`), findings before they are
   tickets (`create-finding`, `found`, `promote`, `reject`), the project
@@ -55,7 +55,7 @@ Every suite needs Node ≥ 20 and nothing else unless noted; pass each test
 file path explicitly (`node --test <directory>` finds nothing here). Counts
 as of 2026-10-18; the pass count grows, the fail line stays `# fail 0`.
 
-- `node --test plugins/flow/scripts/flow.test.mjs` — `# pass 61`. The CLI
+- `node --test plugins/flow/scripts/flow.test.mjs` — `# pass 66`. The CLI
   end to end against the fake `gh`; one case needs `git` on PATH.
 - `node --test plugins/flow/scripts/lifecycle.test.mjs` — `# pass 39`. The
   ticket steps in throwaway repositories with a bare remote; needs `git`, `sh`.
@@ -129,6 +129,11 @@ CI (`.github/workflows/tests.yml`) runs every suite and check above.
   commit, never by a name that could move.
 - **The reviewer never sees the builder's transcript or reasoning**, not even
   a summary: an explanation of why code is right makes a reviewer agree.
+- **A handoff states decisions, never reasoning.** `flow handoff` posts what
+  a ticket decided that the plan did not say, and `flow ticket` hands the
+  latest one of each done ticket to the next builder and its reviewer; a
+  handoff that explained why code is right would be the builder's reasoning
+  reaching a reviewer.
 - **Criteria edited after a ticket starts refuse acceptance** (the latest
   start draws the line): whoever edited the gate may not have approved it.
   `accept` takes only the HEAD the latest review read; only the commit it

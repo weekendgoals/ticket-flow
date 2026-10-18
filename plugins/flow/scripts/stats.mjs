@@ -10,6 +10,7 @@ import {
   SERIAL_WAVE_MARKER,
   PULL_REQUEST_COMMENT,
   LOCAL_RUN_END_MARKER,
+  HANDOFF_MARKER,
 } from './ticket-steps.mjs'
 import { readMeterComment } from './meter.mjs'
 
@@ -98,8 +99,10 @@ function readTicketComments(comments) {
   const meters = []
   const stops = []
   let resets = 0
+  let handoff = false
   for (const comment of comments) {
     const body = comment.body || ''
+    if (body.startsWith(HANDOFF_MARKER)) handoff = true
     if (body.startsWith(STARTED_MARKER)) starts.push(comment)
     if (body.startsWith(RESET_MARKER)) resets++
     if (isStop(body)) stops.push({ ...evidence(comment), reason: stopReason(body) })
@@ -113,7 +116,7 @@ function readTicketComments(comments) {
     const meter = readMeterSafely(body)
     if (meter) meters.push(meter)
   }
-  return { starts, acceptances, merges, reviews, pullRequestComments, meters, stops, resets }
+  return { starts, acceptances, merges, reviews, pullRequestComments, meters, stops, resets, handoff }
 }
 
 function readMeterSafely(body) {
@@ -184,6 +187,7 @@ export function ticketStats({ ticket, comments, subjects = null, defaultSubjects
     acceptanceRuns: record.acceptances.length,
     failedAcceptances: record.acceptances.filter((acceptance) => !acceptance.passed).length,
     resets: record.resets,
+    handoff: record.handoff,
     ...commitCounts(subjects, ticket.number),
     ...escapeCounts(defaultSubjects, ticket.number),
     stops: record.stops,
@@ -237,6 +241,7 @@ export function summarize(tickets) {
     rework: partial(tickets.map((ticket) => ticket.rework)),
     escapes: partial(tickets.map((ticket) => ticket.escapes)),
     stops: tickets.reduce((sum, ticket) => sum + ticket.stops.length, 0),
+    handoffs: tickets.filter((ticket) => ticket.handoff).length,
     ranSerially: tickets.filter((ticket) => ticket.ranSerially.length).map((ticket) => ticket.number),
   }
 }
@@ -350,6 +355,7 @@ function epicLines(epic) {
   lines.push(`#${epic.number} ${epic.title} · ${epic.delivery} delivery · parallel ${epic.parallel ?? 'unknown'} · ${releaseText}`, '')
   lines.push(table(TICKET_HEADERS, [...epic.tickets.map(ticketRow), totalRow('total', epic.totals)]))
   lines.push('', ...modelLines(epic.totals.models))
+  lines.push('', `Handoffs: ${epic.totals.handoffs} of ${epic.totals.tickets} ticket(s) left one for the tickets after them.`)
   const stops = epic.tickets.flatMap((ticket) => ticket.stops.map((stop) => ({ ticket: ticket.number, ...stop })))
   if (stops.length) {
     lines.push('', 'Stopped for a person:')

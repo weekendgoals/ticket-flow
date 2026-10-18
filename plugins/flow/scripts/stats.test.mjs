@@ -243,6 +243,7 @@ function world({ epics = null } = {}) {
       rawComment(review(2, 0), '2026-10-14T10:50:00Z', { id: 23 }),
       rawComment(acceptance(true, 20), '2026-10-14T11:00:00Z', { id: 24 }),
       rawComment(merged, '2026-10-14T11:10:00Z', { id: 25 }),
+      rawComment('<!-- flow:handoff -->\n**Handoff.**\n\n- the button is named Export trip', '2026-10-14T11:05:00Z', { id: 27 }),
       rawComment(meterComment({ ticket: 2, sourceCount: 2, meter: meterOf({ fixesSeconds: 180 }) }), '2026-10-14T11:20:00Z', { id: 26 }),
     ],
     [`GET ${R}/issues/3/comments?per_page=100`]: [
@@ -284,6 +285,7 @@ test('stats <epic> --json reads the comments and git: steps, tokens, rounds, rew
   assert.deepEqual(epic.totals.ranSerially, [2, 3])
   assert.deepEqual(epic.totals.tokens.input, { value: two.tokens.input, known: 1, of: 2 })
   assert.deepEqual(epic.totals.rework, { value: 2, known: 2, of: 2 })
+  assert.deepEqual([two.handoff, three.handoff, epic.totals.handoffs], [true, false, 1])
   assert.ok(fake.calls().every((call) => call.args[0] === 'api' && !call.args.includes('-X')), 'stats only reads')
 })
 
@@ -297,6 +299,7 @@ test('stats prints a readable table with unknown where no comment carries a figu
   assert.match(result.stdout, /^total\s+2\/2 done\s+10m \(1\/2\)/m)
   assert.match(result.stdout, /- #3 2026-10-14T11:20:00Z: The ticket says CSV/)
   assert.match(result.stdout, /- wave 1: #2, #3: Wave 1 runs one ticket at a time/)
+  assert.match(result.stdout, /^Handoffs: 1 of 2 ticket\(s\) left one for the tickets after them\.$/m)
   assert.match(result.stdout, /^Pace: /m)
 })
 
