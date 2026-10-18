@@ -1,4 +1,4 @@
-import { DEFAULT_SETTINGS, DEFAULT_BRANCH, loadSettings, saveSettings, normalizeSettings, checkTargets } from './settings.js';
+import { DEFAULT_SETTINGS, DEFAULT_BRANCH, loadStoredSettings, saveSettings, normalizeSettings, checkTargets } from './settings.js';
 import { getRepository } from './github.js';
 
 const token = document.getElementById('token');
@@ -79,12 +79,17 @@ function readForm() {
 }
 
 async function fill() {
-  const settings = await loadSettings();
+  const settings = await loadStoredSettings();
   token.value = settings.token;
   label.value = settings.label;
   label.placeholder = DEFAULT_SETTINGS.label;
   for (const target of settings.targets) addTarget(target);
   if (settings.targets.length === 0) addTarget({});
+  try {
+    checkTargets(settings.targets);
+  } catch (error) {
+    setStatus(`${error.message}. Fix it and save.`, true);
+  }
 }
 
 document.getElementById('add-target').addEventListener('click', () => addTarget({}));

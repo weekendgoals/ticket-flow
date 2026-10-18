@@ -44,7 +44,12 @@ export function normalizeSettings(stored) {
 }
 
 export function checkTargets(targets) {
+  const names = new Set();
   for (const [position, target] of targets.entries()) {
+    if (target.name && names.has(target.name)) {
+      throw new Error(`Two targets are named ${target.name}; give each its own name`);
+    }
+    names.add(target.name);
     try {
       splitRepo(target.repo);
       parseEpic(target.epic);
@@ -69,11 +74,17 @@ export function chooseTarget(targets, chosen, origin, draftTargetId = '') {
   return byId(draftTargetId) || byId(remembered) || targets[0] || null;
 }
 
-export async function loadSettings() {
+export async function loadStoredSettings() {
   const stored = await chrome.storage.local.get(SETTINGS_KEY);
   const raw = stored[SETTINGS_KEY];
   const settings = normalizeSettings(raw);
   if (raw && !Array.isArray(raw.targets)) await saveSettings(settings);
+  return settings;
+}
+
+export async function loadSettings() {
+  const settings = await loadStoredSettings();
+  checkTargets(settings.targets);
   return settings;
 }
 

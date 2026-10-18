@@ -144,10 +144,14 @@ stamps the version and date and bumps `plugin.json` in the same commit.
 - **The reporter files to named targets.** Its options page holds a list
   of targets, each a name, a repository, an optional epic and a screenshots
   branch (`flow-findings` by default), under one token and one label; the
-  popup's File to list, above the title, picks one, remembering the last
-  choice per site and otherwise taking the first, and the draft keeps it.
-  The result line names the repository the finding went to. Settings saved
-  with one repository become one target named after it on first load.
+  popup's File to list, above the title, picks one, remembering the target
+  last filed to on each site (a choice that filed nothing is not
+  remembered) and otherwise taking the first, and the draft keeps it. A
+  restored draft whose target was removed says so and selects another. The
+  result line names the repository the finding went to. Two targets may not
+  share a name. Settings saved with one repository become one target named
+  after it on first load, written back once; a target whose repository is
+  not `owner/name` is refused by name until it is fixed.
 
 ## 3.1.0 — 2026-10-18
 

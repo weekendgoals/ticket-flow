@@ -165,23 +165,24 @@ function fillTargets(targets) {
   );
 }
 
-function showTarget(draft, origin) {
-  const target = chooseTarget(state.targets, state.chosen, origin, draft.targetId);
-  draft.targetId = target ? target.id : '';
-  elements.target.value = draft.targetId;
+function showTarget(draft) {
+  const target = chooseTarget(state.targets, state.chosen, originOf(draft.page.url), draft.targetId);
+  elements.target.value = target ? target.id : '';
+  return target;
+}
+
+function lostTargetNote(draft, target) {
+  if (!draft.targetId || !target || target.id === draft.targetId) return '';
+  return `This draft's target ${draft.targetName || draft.targetId} was removed; ${target.name} is selected.`;
 }
 
 async function chooseTargetFromSelect() {
   if (!state.draft || state.submitted) return;
-  state.draft.targetId = elements.target.value;
-  const origin = originOf(state.draft.page.url);
-  if (origin) state.chosen = { ...state.chosen, [origin]: state.draft.targetId };
+  const target = state.targets.find((candidate) => candidate.id === elements.target.value);
+  state.draft.targetId = target ? target.id : '';
+  state.draft.targetName = target ? target.name : '';
+  setStatus('');
   await persistDraft();
-  try {
-    await rememberTarget(origin, state.draft.targetId);
-  } catch (error) {
-    setStatus(`Could not remember the target: ${error.message}`, true);
-  }
 }
 
 function fillPage(page) {
@@ -398,37 +399,40 @@ async function beginDraft(pending) {
     refreshControls();
     return;
   }
-  const draft = createDraft({
+  const page = {
     url: tab.url || '',
     title: tab.title || '',
     viewport: null,
     userAgent: navigator.userAgent,
     tabId: tab.id === undefined ? null : tab.id
-  });
+  };
+  const draft = createDraft(page, chooseTarget(state.targets, state.chosen, originOf(page.url)));
   state.draft = draft;
-  showTarget(draft, originOf(draft.page.url));
+  showTarget(draft);
   fillFields(draft.fields);
   fillPage(draft.page);
   renderScreenshots();
 
   const capturing = captureAndAdd(tab.windowId);
-  const page = await inspectPage(tab.id);
+  const inspected = await inspectPage(tab.id);
   if (state.draft !== draft) return;
-  draft.page.viewport = page.viewport;
+  draft.page.viewport = inspected.viewport;
   const pendingText = pending && pending.tabId === tab.id && pending.text ? pending.text : '';
-  elements.selection.value = pendingText || page.selection;
+  elements.selection.value = pendingText || inspected.selection;
   await capturing;
   await persistDraft();
 }
 
 async function restoreDraft(draft, pending) {
   state.draft = draft;
-  showTarget(draft, originOf(draft.page.url));
+  const target = showTarget(draft);
   fillFields(draft.fields);
   fillPage(draft.page);
   showDraftBar(draft);
   renderScreenshots();
   reportListStatus([]);
+  const note = lostTargetNote(draft, target);
+  if (note) setStatus(note);
   if (pending && pending.text) {
     elements.selection.value = elements.selection.value
       ? `${elements.selection.value}\n${pending.text}`
@@ -526,8 +530,13 @@ elements.form.addEventListener('submit', async (event) => {
   setStatus('Filing finding…');
   try {
     const settings = await loadSettings();
-    const target = settings.targets.find((candidate) => candidate.id === draft.targetId);
-    if (!target) throw new Error('The chosen target is no longer on the options page. Choose another.');
+    const target = settings.targets.find((candidate) => candidate.id === elements.target.value);
+    if (!target) {
+      state.targets = settings.targets;
+      fillTargets(settings.targets);
+      showTarget(draft);
+      throw new Error('The chosen target is no longer on the options page. Choose another.');
+    }
     const issue = await fileFinding(settings, target, {
       title: draft.fields.title.trim(),
       type: draft.fields.type,

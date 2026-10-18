@@ -29,7 +29,7 @@ Open it from the link at the bottom of the popup, or from the extension's card, 
 | GitHub token | none | The fine-grained token above, one for every target. Stored in `chrome.storage.local`, on this browser only. |
 | Issue label | `flow:found` | Label put on every finding, whichever target it goes to. `flow init` creates it; until the project runs Flow 3.1, create it by hand. |
 
-Then one or more **targets**, each a place a finding can go. Add target adds one, Remove target removes it; you need at least one to file.
+Then one or more **targets**, each a place a finding can go. Add target adds one, Remove target removes it; you need at least one to file, and no two may share a name.
 
 | Field | Default | Meaning |
 | --- | --- | --- |
@@ -44,9 +44,9 @@ Settings saved before targets existed (one repository, epic and branch) become o
 
 ## Use it
 
-Click the toolbar button on any page, or select text and choose Report a finding from the right-click menu. The first time, the popup captures the tab as screenshot 1. Choose where the finding goes in File to, above the title: the popup remembers the last target you chose on each site (by origin, such as `https://staging.example.com`) and picks it next time, or the first target on a site where you have chosen none. Fill in the title, type, priority, what happened, the steps, what should have happened (optional) and the selected text (prefilled, editable), then submit. The result line links the new finding, names the repository it went to and says whether it was filed under the epic.
+Click the toolbar button on any page, or select text and choose Report a finding from the right-click menu. The first time, the popup captures the tab as screenshot 1. Choose where the finding goes in File to, above the title: the popup remembers the target you last filed to on each site (by origin, such as `https://staging.example.com`) and picks it next time, or the first target on a site where you have filed nothing; choosing a target without filing remembers nothing. Fill in the title, type, priority, what happened, the steps, what should have happened (optional) and the selected text (prefilled, editable), then submit. The result line links the new finding, names the repository it went to and says whether it was filed under the epic.
 
-The finding in progress is a draft kept in `chrome.storage.local`, so it survives the popup closing when you click the page, its target included. Scroll, open the popup again and press Capture to add another screenshot; nothing is captured automatically when a draft is restored. The line above the form says when the draft started, and Discard throws it away and starts a new one from the current tab. Submitting clears the draft.
+The finding in progress is a draft kept in `chrome.storage.local`, so it survives the popup closing when you click the page, its target included. If that target has since been removed from the options, the popup says so and selects another; the draft keeps its old target until you file or choose one. Scroll, open the popup again and press Capture to add another screenshot; nothing is captured automatically when a draft is restored. The line above the form says when the draft started, and Discard throws it away and starts a new one from the current tab. Submitting clears the draft.
 
 A finding takes up to 10 screenshots, at least one. Add them three ways:
 

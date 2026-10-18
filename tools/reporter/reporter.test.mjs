@@ -193,29 +193,49 @@ test('old settings with one repository become one target named after it', () => 
   assert.deepEqual(normalizeSettings(normalizeSettings(old)), normalizeSettings(old))
 })
 
-function fakeStorage(initial) {
+function fakeStorage(initial, extra = {}) {
   const store = { ...initial }
+  const writes = []
   globalThis.chrome = {
     storage: {
       local: {
         get: async (key) => (key in store ? { [key]: structuredClone(store[key]) } : {}),
-        set: async (items) => Object.assign(store, structuredClone(items))
-      }
-    }
+        set: async (items) => {
+          writes.push(Object.keys(items))
+          Object.assign(store, structuredClone(items))
+        },
+        remove: async (key) => {
+          delete store[key]
+        }
+      },
+      session: { get: async () => ({}), remove: async () => {} }
+    },
+    ...extra
   }
-  return store
+  return { store, writes }
 }
 
 test('loading old settings stores them migrated, once', async () => {
-  const store = fakeStorage({ settings: { token: 'tok', repo: 'acme/site', branch: '', label: '', epic: '7' } })
+  const { store, writes } = fakeStorage({ settings: { token: 'tok', repo: 'acme/site', branch: '', label: '', epic: '7' } })
   const loaded = await settingsModule.loadSettings()
   assert.deepEqual(store.settings, loaded)
   assert.deepEqual(loaded.targets, [{ id: 'target-1', name: 'acme/site', repo: 'acme/site', epic: '7', branch: 'flow-findings' }])
   assert.equal('repo' in store.settings, false)
+  assert.deepEqual(await settingsModule.loadSettings(), loaded)
+  assert.equal(writes.length, 1)
+  const empty = fakeStorage({})
+  assert.deepEqual(await settingsModule.loadSettings(), DEFAULT_SETTINGS)
+  assert.equal(empty.writes.length, 0)
+})
+
+test('a migrated repository without a slash is refused on load, naming the target', async () => {
+  fakeStorage({ settings: { token: 'tok', repo: 'acme' } })
+  await assert.rejects(settingsModule.loadSettings(), /^Error: acme: Repository must look like owner\/name/)
+  assert.equal((await settingsModule.loadStoredSettings()).targets[0].repo, 'acme')
 })
 
 test('the chosen target is remembered per origin', async () => {
-  const store = fakeStorage({})
+  const { store } = fakeStorage({})
   await settingsModule.rememberTarget('https://acme.example', 't1')
   await settingsModule.rememberTarget('https://docs.acme.example', 't2')
   await settingsModule.rememberTarget('', 't2')
@@ -228,6 +248,7 @@ test('a target with a bad repository or epic is refused by name', () => {
   assert.doesNotThrow(() => checkTargets([TARGET, DOCS]))
   assert.throws(() => checkTargets([TARGET, { ...DOCS, repo: 'docs' }]), /^Error: Docs: Repository must look like owner\/name/)
   assert.throws(() => checkTargets([{ ...TARGET, name: '', epic: 'Bugs' }]), /^Error: Target 1: Epic must be an issue number/)
+  assert.throws(() => checkTargets([TARGET, { ...DOCS, name: 'Site' }]), /^Error: Two targets are named Site/)
 })
 
 test('the popup picks the draft target, else the one remembered for the origin, else the first', () => {
@@ -245,10 +266,12 @@ test('the popup picks the draft target, else the one remembered for the origin, 
 })
 
 test('a draft keeps its target, and an older draft has none', () => {
-  const draft = createDraft({ url: 'https://acme.example/' }, 't2', 5)
+  const draft = createDraft({ url: 'https://acme.example/' }, DOCS, 5)
   assert.equal(draft.targetId, 't2')
-  assert.equal(normalizeDraft(JSON.parse(JSON.stringify(draft))).targetId, 't2')
-  assert.equal(normalizeDraft({ screenshots: [] }).targetId, '')
+  assert.equal(draft.targetName, 'Docs')
+  const restored = normalizeDraft(JSON.parse(JSON.stringify(draft)))
+  assert.deepEqual([restored.targetId, restored.targetName], ['t2', 'Docs'])
+  assert.deepEqual([normalizeDraft({ screenshots: [] }).targetId, normalizeDraft({ screenshots: [] }).targetName], ['', ''])
 })
 
 test('the body and paths are the same for any target with the same repository', () => {
@@ -377,4 +400,115 @@ test('no target or a target with a bad repository is refused before any request'
   await assert.rejects(fileFinding(SETTINGS, null, REPORT, NOW), /No target chosen/)
   await assert.rejects(fileFinding(SETTINGS, { ...TARGET, repo: 'site' }, REPORT, NOW), /owner\/name/)
   assert.equal(calls.length, 0)
+})
+
+function fakeElement(tag = 'div') {
+  const listeners = {}
+  return {
+    tag,
+    value: '',
+    textContent: '',
+    hidden: tag === 'section' || tag === 'form' || tag === 'p',
+    disabled: false,
+    children: [],
+    listeners,
+    files: [],
+    classList: { toggle() {}, add() {} },
+    style: {},
+    setAttribute() {},
+    removeAttribute() {},
+    append(...children) { this.children.push(...children) },
+    replaceChildren(...children) { this.children = children },
+    addEventListener(type, handler) { (listeners[type] ||= []).push(handler) },
+    click() {}
+  }
+}
+
+function fakePopupPage() {
+  const elements = new Map()
+  globalThis.document = {
+    getElementById(id) {
+      if (!elements.has(id)) elements.set(id, fakeElement(['unconfigured'].includes(id) ? 'section' : id === 'report' ? 'form' : 'div'))
+      return elements.get(id)
+    },
+    createElement: (tag) => fakeElement(tag),
+    createTextNode: (text) => ({ textContent: text }),
+    addEventListener() {}
+  }
+  return (id) => elements.get(id)
+}
+
+const settle = async () => {
+  for (let round = 0; round < 50; round += 1) await new Promise((resolve) => setTimeout(resolve, 0))
+}
+
+let popupCase = 0
+async function openPopup(draft, targets = [TARGET, DOCS], chosen = {}) {
+  const element = fakePopupPage()
+  const storage = fakeStorage(
+    { settings: { token: TOKEN, label: 'flow:found', targets }, chosenTargets: chosen, draft },
+    {
+      runtime: { getURL: () => 'chrome-extension://reporter/', openOptionsPage() {}, sendMessage: async () => ({}) },
+      tabs: { query: async () => [], get: async () => { throw new Error('no tab') }, create: async () => {} },
+      scripting: { executeScript: async () => [] }
+    }
+  )
+  popupCase += 1
+  await import(pathToFileURL(join(copies, 'popup.mjs')).href + `?case=${popupCase}`)
+  await settle()
+  return { element, ...storage }
+}
+
+const DRAFT = {
+  startedAt: 1,
+  page: { url: 'https://docs.acme.example/guide', title: 'Guide', viewport: null, userAgent: 'UA', tabId: 3 },
+  targetId: 't2',
+  targetName: 'Docs',
+  fields: { ...emptyFields(), title: 'Broken link', description: 'It 404s' },
+  screenshots: [{ id: 's1', dataUrl: 'data:image/png;base64,AAAA', mime: 'image/png', caption: '', source: 'capture', addedAt: 1 }]
+}
+
+const fire = async (element, type) => {
+  for (const handler of element.listeners[type] || []) await handler({ preventDefault() {} })
+  await settle()
+}
+
+test('the popup restores a draft on its own target and remembers nothing until a finding is filed', async () => {
+  const { element, store } = await openPopup(DRAFT)
+  assert.equal(element('target').value, 't2')
+  assert.deepEqual(element('target').children.map((option) => option.textContent), ['Site', 'Docs'])
+  element('target').value = 't1'
+  await fire(element('target'), 'change')
+  assert.deepEqual(store.chosenTargets, {})
+  assert.deepEqual([store.draft.targetId, store.draft.targetName], ['t1', 'Site'])
+  let upload = 0
+  fakeGitHub([
+    { method: 'GET', path: /^\/repos\/acme\/site\/git\/ref\/heads\/flow-findings$/, reply: { json: {} } },
+    { method: 'PUT', path: /^\/repos\/acme\/site\/contents\//, reply: () => ({ json: { commit: { sha: `s${(upload += 1)}` } } }) },
+    { method: 'POST', path: /^\/repos\/acme\/site\/issues$/, reply: { status: 201, json: { id: 1, number: 8, html_url: 'https://github.com/acme/site/issues/8' } } }
+  ])
+  await fire(element('report'), 'submit')
+  assert.deepEqual(store.chosenTargets, { 'https://docs.acme.example': 't1' })
+  assert.equal('draft' in store, false)
+  assert.equal(element('status').children[1].textContent, ' in acme/site, with no epic.')
+})
+
+test('a restored draft whose target was removed says so and keeps its target until the person acts', async () => {
+  const { element, store, writes } = await openPopup({ ...DRAFT, targetId: 'gone', targetName: 'Old docs' }, [TARGET, DOCS], { 'https://docs.acme.example': 't2' })
+  assert.equal(element('target').value, 't2')
+  assert.equal(element('status').textContent, "This draft's target Old docs was removed; Docs is selected.")
+  assert.equal(store.draft.targetId, 'gone')
+  assert.equal(writes.some((keys) => keys.includes('draft')), false)
+})
+
+test('a submit whose target vanished is refused and reloads the targets', async () => {
+  const { element, store } = await openPopup(DRAFT)
+  store.settings = { token: TOKEN, label: 'flow:found', targets: [TARGET] }
+  const calls = fakeGitHub([])
+  await fire(element('report'), 'submit')
+  assert.equal(calls.length, 0)
+  assert.match(element('status').textContent, /no longer on the options page/)
+  assert.deepEqual(element('target').children.map((option) => option.textContent), ['Site'])
+  assert.equal(element('target').value, 't1')
+  assert.deepEqual(store.chosenTargets, {})
 })
