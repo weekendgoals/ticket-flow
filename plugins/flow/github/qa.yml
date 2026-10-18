@@ -62,8 +62,8 @@ jobs:
           prompt: /flow:qa ${{ env.QA_URL }} --unattended
           claude_args: |
             --model opus
-            --mcp-config '{"mcpServers":{"playwright":{"command":"npx","args":["--yes","@playwright/mcp@latest","--headless","--isolated","--output-dir","/tmp/flow-qa"]}}}'
-            --allowedTools "Bash,Read,Write,Glob,Grep,Agent,Task,Skill,mcp__playwright__*"
+            --mcp-config '{"mcpServers":{"playwright":{"command":"npx","args":["--yes","@playwright/mcp@0.0.83","--headless","--isolated","--output-dir","/tmp/flow-qa"]}}}'
+            --allowedTools "Bash,Read,Write,Glob,Grep,Agent,Task,Skill,mcp__playwright"
       - name: keep the screenshots
         if: always()
         uses: actions/upload-artifact@v4

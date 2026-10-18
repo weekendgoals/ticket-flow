@@ -96,12 +96,17 @@ export function deniedBy(patterns, candidate) {
   return patterns.find((pattern) => patternExpression(pattern).test(text)) ?? null
 }
 
+export class QaInputError extends Error {}
+
+const LARGEST_CODE_POINT = 0x10ffff
+
 function decodeXml(text) {
   return text.replace(/&(#x[0-9a-f]+|#\d+|amp|lt|gt|quot|apos);/gi, (match, entity) => {
     const name = entity.toLowerCase()
-    if (name.startsWith('#x')) return String.fromCodePoint(parseInt(name.slice(2), 16))
-    if (name.startsWith('#')) return String.fromCodePoint(Number(name.slice(1)))
-    return XML_ENTITIES[name]
+    if (!name.startsWith('#')) return XML_ENTITIES[name]
+    const codePoint = name.startsWith('#x') ? parseInt(name.slice(2), 16) : Number(name.slice(1))
+    if (!(codePoint <= LARGEST_CODE_POINT)) throw new QaInputError(`"${match}" is not a character, so the addresses around it cannot be read`)
+    return String.fromCodePoint(codePoint)
   })
 }
 
@@ -183,6 +188,16 @@ export function buildRoutes({ start, candidates, deny = [], cap = DEFAULT_ROUTE_
   return { origin: start.origin, routes, skipped }
 }
 
+export function sameSiteSitemaps(start, addresses) {
+  return addresses.filter((address) => {
+    try {
+      return new URL(address, start).origin === start.origin
+    } catch {
+      return false
+    }
+  })
+}
+
 export function normaliseFirstLine(line) {
   return String(line ?? '')
     .split(/\r?\n/)[0]
@@ -204,5 +219,5 @@ export function qaFingerprint(address, firstLine) {
   }
   const line = normaliseFirstLine(firstLine)
   if (!/\p{L}/u.test(line)) return { fingerprint: null, problem: "the first line has no words to fingerprint: give the finding's title or first sentence" }
-  return { fingerprint: `qa ${routePath(url)} ${line}`, problem: null }
+  return { fingerprint: `qa ${routePath(url).toLowerCase()} ${line}`, problem: null }
 }

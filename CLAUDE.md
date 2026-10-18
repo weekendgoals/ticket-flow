@@ -82,12 +82,13 @@ as of 2026-10-18; the pass count grows, the fail line stays `# fail 0`.
   extension's modules under a stubbed `fetch`. It is also their syntax
   check: plain `node --check` reads a `.js` file with no package.json as
   CommonJS, so the suite copies all seven modules to `.mjs` and checks each.
-- `node --test plugins/flow/scripts/qa.test.mjs` — `# pass 17`. The QA
+- `node --test plugins/flow/scripts/qa.test.mjs` — `# pass 18`. The QA
   parts without a browser, and `flow qa-*` against the fake `gh` (it
   asserts no call reached it); needs `git`.
   `node --test plugins/flow/github/qa.test.mjs` — `# pass 5`, the nightly
   QA template, read with `github/workflow-yaml.mjs` like `flow.yml`.
-- **Syntax:** `node --check` on every `.mjs` under `plugins/flow/scripts/`.
+- **Syntax:** `node --check` on every `.mjs` under `plugins/flow/scripts/`,
+  and on `plugins/flow/github/workflow-yaml.mjs`.
   It does not work on `workflows/run-epic.mjs` (a module body with a
   top-level `return`); parse that one the way the workflow runtime does:
   `node -e 'const s=require("fs").readFileSync("plugins/flow/workflows/run-epic.mjs","utf8").replace(/^export const meta/m,"const meta");new (Object.getPrototypeOf(async function(){}).constructor)("agent","parallel","pipeline","log","phase","args","budget",s)'`

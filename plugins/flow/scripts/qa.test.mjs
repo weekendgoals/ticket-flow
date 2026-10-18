@@ -6,7 +6,7 @@ import { join, dirname } from 'node:path'
 import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
 import { installFakeGh } from './tracker/fake-gh.mjs'
-import { parseQaSection, readQaConfig, parseWidthsOption, deniedBy, readSitemap, readLinks, buildRoutes, normaliseFirstLine, qaFingerprint, siteAddress, DEFAULT_WIDTHS, QA_KEYS } from './qa.mjs'
+import { parseQaSection, readQaConfig, parseWidthsOption, deniedBy, readSitemap, readLinks, buildRoutes, sameSiteSitemaps, normaliseFirstLine, qaFingerprint, siteAddress, QaInputError, DEFAULT_WIDTHS, QA_KEYS } from './qa.mjs'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const FLOW = join(here, 'flow.mjs')
@@ -114,6 +114,13 @@ test('a sitemap gives its pages, decoded; a sitemap index gives the sitemaps to 
   assert.equal(read.pages[5], 'https://shop.example/about', 'a CDATA location is read too')
   assert.deepEqual(readSitemap(fixture('sitemap-index.xml')), { pages: [], sitemaps: ['https://shop.example/sitemap-pages.xml', 'https://shop.example/sitemap-products.xml'] })
   assert.deepEqual(readSitemap('<html>not a sitemap</html>'), { pages: [], sitemaps: [] })
+  assert.deepEqual(readSitemap('<urlset><loc>https://shop.example/caf&#233;?a=&#x31;</loc></urlset>').pages, ['https://shop.example/café?a=1'])
+  assert.throws(() => readSitemap('<urlset><loc>https://shop.example/&#9999999999;</loc></urlset>'), (error) => error instanceof QaInputError && /"&#9999999999;" is not a character/.test(error.message))
+  assert.throws(() => readLinks('<a href="/&#x110000;">x</a>'), QaInputError)
+})
+
+test('only the site\'s own sitemaps are read next', () => {
+  assert.deepEqual(sameSiteSitemaps(start, ['https://shop.example/a.xml', '/b.xml', 'https://cdn.example/c.xml', 'http://shop.example/d.xml', 'http://[bad']), ['https://shop.example/a.xml', '/b.xml'])
 })
 
 test('links come from the anchors of a saved page, or one per line from a list', () => {
@@ -170,6 +177,7 @@ test('the fingerprint is the page path and the first line lowercased, numbers as
   assert.equal(qaFingerprint('https://shop.example/pricing', 'Pricing table overflows at 390px').fingerprint, qaFingerprint('https://shop.example/pricing/', 'pricing table  overflows at 393px.').fingerprint, 'the same problem found again files once')
   assert.notEqual(qaFingerprint('https://shop.example/a', 'Broken link').fingerprint, qaFingerprint('https://shop.example/b', 'Broken link').fingerprint)
   assert.equal(qaFingerprint('https://shop.example/', 'Hero image missing').fingerprint, 'qa / hero image missing')
+  assert.equal(qaFingerprint('https://shop.example/Pricing', 'Broken link').fingerprint, qaFingerprint('https://shop.example/pricing', 'Broken link').fingerprint, 'a link written with capitals is the same page found again')
   assert.doesNotMatch(qaFingerprint('https://shop.example/a-->b', 'x --> y --!> z').fingerprint, /--!?>|[\r\n]/, 'nothing that would end the marker early')
   assert.match(qaFingerprint('/pricing', 'x').problem, /is not an address/)
   assert.match(qaFingerprint('https://shop.example/', '!!! 404 ...').problem, /no words/, 'a line of numbers and punctuation would match every other such line')
@@ -232,6 +240,20 @@ test('flow qa-routes refuses what it cannot build from, by name', () => {
   const broken = flow(project('cli-routes-broken', { qa: { deny: 'checkout' } }), 'qa-routes', 'https://shop.example/', '--links', join(FIXTURES, 'start-page.html'))
   assert.equal(broken.status, 2, 'a deny list it cannot read is never skipped: the explorer would visit what it names')
   assert.match(broken.stderr, /"deny" must be a list/)
+  const missing = flow(root, 'qa-routes', 'https://shop.example/', '--sitemap', join(directory, 'missing.xml'))
+  assert.equal(missing.status, 2)
+  assert.match(missing.stderr, /^flow: --sitemap \S+missing\.xml cannot be read \(ENOENT\)$/m)
+  assert.doesNotMatch(missing.stderr, /at \S+:\d+:\d+/, 'a named problem, not a stack trace')
+  const badEntity = join(directory, 'bad-entity.xml')
+  writeFileSync(badEntity, '<urlset><url><loc>https://shop.example/&#9999999999;</loc></url></urlset>')
+  const unreadable = flow(root, 'qa-routes', 'https://shop.example/', '--sitemap', badEntity)
+  assert.equal(unreadable.status, 2)
+  assert.match(unreadable.stderr, /^flow: --sitemap \S+bad-entity\.xml: "&#9999999999;" is not a character/m)
+  assert.equal(flow(root, 'qa-routes', 'https://shop.example/', '--links', join(directory, 'missing.html')).status, 2)
+  const foreignIndex = join(directory, 'foreign-index.xml')
+  writeFileSync(foreignIndex, '<sitemapindex><sitemap><loc>https://shop.example/pages.xml</loc></sitemap><sitemap><loc>https://cdn.example/pages.xml</loc></sitemap></sitemapindex>')
+  const index = JSON.parse(flow(root, 'qa-routes', 'https://shop.example/', '--sitemap', foreignIndex).stdout)
+  assert.deepEqual([index.sitemaps, index.skipped.otherSiteSitemaps], [['https://shop.example/pages.xml'], 1], 'a sitemap on another host is never fetched')
 })
 
 test('flow qa-fingerprint prints one line the finding is filed with, and refuses a path or an empty line', () => {

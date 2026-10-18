@@ -14,9 +14,9 @@ stamps the version and date and bumps `plugin.json` in the same commit.
   start without one, naming the command that adds Playwright MCP; the
   plugin installs nothing. It reads `.flow.json`'s new `qa` section, picks
   the epic to file under (`--epic`, or the one open epic titled `Bugs`;
-  none stops it before the walk), builds the page list (given, else the
-  sitemap, else the start page's links; same site, deduplicated, `deny`
-  matches out, at most 60), and hires one `qa-explorer` agent per batch of
+  none stops it before the walk), builds the page list (`--routes`, else
+  `.flow.json`'s `routes`, else the sitemap, else the start page's links;
+  same site, deduplicated, `deny` matches out, at most 60), and hires one `qa-explorer` agent per batch of
   up to ten pages, one at a time. Each finding is filed with
   `flow create-finding --epic <e> --screenshots <dir> --fingerprint <f>`,
   one per problem across batches, and skipped when an open finding or
@@ -25,21 +25,27 @@ stamps the version and date and bumps `plugin.json` in the same commit.
   approves nothing.
 - **New agent: `qa-explorer`**, on the strongest model, with read-only
   tools plus the browser. At each page and width it records console errors
-  and failed requests, checks the page's own links for 404s, looks for
+  and failed requests, checks the page's own links for 404s with HEAD
+  requests only (never a link a `deny` pattern or a pay, sign-up, delete or
+  send word names, and never a GET when HEAD is refused), looks for
   horizontal overflow and clipped text, compares the document language with
   the text, reports the browser's accessibility problems and, on an epic
-  with design sources, runs the design comparison; a screenshot only where
-  something is wrong. It never submits a form or sends a message (except
-  with the project's `testMarker`), never clicks a payment, sign-up or
-  delete control or a `deny` match, never signs in, never leaves the site,
-  and is never told what anyone thinks is broken.
+  with design sources (served from a copy holding only them), runs the
+  design comparison; a screenshot only where something is wrong. It never
+  submits a form or sends a message (except with the project's
+  `testMarker`), never clicks a payment, sign-up or delete control or a
+  `deny` match, never signs in, never leaves the site, and is never told
+  what anyone thinks is broken: it gets the site notes the session copied
+  from the instruction files, never the files.
 - **New: `flow qa-config`, `flow qa-routes` and `flow qa-fingerprint`**
   (`scripts/qa.mjs`), the parts of the walk that need no browser and no
   GitHub. `qa-config [--widths]` prints the checked `qa` section
   (`routes`, `deny`, `widths`, `testMarker`); an unknown key or a wrong type
   is named and exits 2, in `qa-routes` too. `qa-routes <url>` builds the
   page list from `--routes`, `--sitemap` (an index lists the sitemaps to
-  read next), `--links` or `.flow.json`, with `--cap` (60). `qa-fingerprint
+  read next, the site's own only), `--links` or `.flow.json`, with `--cap`
+  (60); a file it cannot read, or an entity that is not a character, is
+  named and exits 2. `qa-fingerprint
   <url> "<first line>"` prints `qa <path> <the line, lowercased, numbers as
   #, punctuation dropped>`.
 - **`.flow.json` accepts a `qa` key.** `flow worktree`, `flow check-epic`

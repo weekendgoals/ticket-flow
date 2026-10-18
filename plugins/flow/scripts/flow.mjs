@@ -59,7 +59,7 @@ import { loadSources, workflowSources, meterTranscripts, meterComment, readMeter
 import { ticketStats, readEpicComments, summarize, overallStats, formatStats, combineMeters } from './stats.mjs'
 import { COPILOT_REVIEWER_LOGIN, BOTS, configuredBot, copilotUnavailable, botReview, sameLogin, summarizeChecks, sleepSeconds } from './review-bots.mjs'
 import { syncProjectStatus, projectBoardLine, ensureProjectBoard, findProjectBoard, placeOnBoard, statusOptionName, explain as explainProjectError, oneLine, DEFAULT_BOARD_TITLE } from './project-sync.mjs'
-import { siteAddress, readQaConfig, parseWidthsOption, readSitemap, readLinks, buildRoutes, qaFingerprint, DEFAULT_ROUTE_CAP } from './qa.mjs'
+import { siteAddress, readQaConfig, parseWidthsOption, readSitemap, readLinks, buildRoutes, sameSiteSitemaps, qaFingerprint, QaInputError, DEFAULT_ROUTE_CAP } from './qa.mjs'
 import {
   LABELS,
   EPIC_LABEL,
@@ -1796,15 +1796,30 @@ function commandQaConfig(positional, flags) {
   return 0
 }
 
+function readQaInput(option, file, parse) {
+  let text
+  try {
+    text = readFileSync(file, 'utf8')
+  } catch (error) {
+    throw new QaInputError(`${option} ${file} cannot be read (${error.code || error.message})`)
+  }
+  try {
+    return parse(text)
+  } catch (error) {
+    if (!(error instanceof QaInputError)) throw error
+    throw new QaInputError(`${option} ${file}: ${error.message}`)
+  }
+}
+
 function routeCandidates(flags, config) {
   const given = ['routes', 'sitemap', 'links'].filter((name) => flags[name] !== undefined)
   if (given.length > 1) throw new UsageError(`give one of --routes, --sitemap and --links, not ${given.map((name) => `--${name}`).join(' and ')}`)
   if (flags.sitemap) {
-    const read = flags.sitemap.map((file) => readSitemap(readFileSync(file, 'utf8')))
+    const read = flags.sitemap.map((file) => readQaInput('--sitemap', file, readSitemap))
     return { source: 'sitemap', candidates: read.flatMap((entry) => entry.pages), sitemaps: read.flatMap((entry) => entry.sitemaps) }
   }
-  if (flags.links !== undefined) return { source: 'links', candidates: readLinks(readFileSync(flags.links, 'utf8')), sitemaps: [] }
-  if (flags.routes !== undefined) return { source: 'routes', candidates: readLinks(readFileSync(flags.routes, 'utf8')), sitemaps: [] }
+  if (flags.links !== undefined) return { source: 'links', candidates: readQaInput('--links', flags.links, readLinks), sitemaps: [] }
+  if (flags.routes !== undefined) return { source: 'routes', candidates: readQaInput('--routes', flags.routes, readLinks), sitemaps: [] }
   if (config.routes.length) return { source: '.flow.json', candidates: config.routes, sitemaps: [] }
   return null
 }
@@ -1817,10 +1832,17 @@ function commandQaRoutes(positional, flags) {
   if (cap < 1) return printProblems([`--cap takes a whole number of pages above 0, and "${flags.cap}" is not one`])
   const { config, problems } = readQaConfig(qaConfigRoot(flags))
   if (problems.length) return printProblems(problems)
-  const found = routeCandidates(flags, config)
+  let found
+  try {
+    found = routeCandidates(flags, config)
+  } catch (error) {
+    if (!(error instanceof QaInputError)) throw error
+    return printProblems([error.message])
+  }
   if (!found) return printProblems(['nothing to build the route list from: give --routes, --sitemap or --links, or list the pages under "qa" "routes" in .flow.json'])
   const built = buildRoutes({ start: start.url, candidates: found.candidates, deny: config.deny, cap })
-  printJson({ source: found.source, ...built, sitemaps: found.sitemaps })
+  const sitemaps = sameSiteSitemaps(start.url, found.sitemaps)
+  printJson({ source: found.source, ...built, skipped: { ...built.skipped, otherSiteSitemaps: found.sitemaps.length - sitemaps.length }, sitemaps })
   return 0
 }
 

@@ -73,9 +73,12 @@ be read would be a walk with no brakes.
 
 Read the project's instruction files (`CLAUDE.md`, `AGENTS.md`) at the root
 for what they say about the site: a staging address, a page that must not
-be visited, a form that may be tested. They are context for the packet, not
-a second `deny` list: a rule that matters goes in `.flow.json`, where the
-route list applies it.
+be visited, a form that may be tested, the test marker. Copy only those
+lines into `<scratch>/site-notes.md`; that file, never the instruction
+files or their paths, goes to the explorers, because instruction files often
+list known bugs, and an explorer told where the bugs are looks only there.
+The notes are context, not a second `deny` list: a rule that matters goes
+in `.flow.json`, where the route list applies it.
 
 ## 3. Where the findings go
 
@@ -111,9 +114,10 @@ that gives more than the start page:
    FLOW qa-routes <url> --sitemap <scratch>/sitemap.xml
    ```
 
-   When the JSON lists `sitemaps` (the file was an index), fetch each of
-   the site's own (at most ten) into `<scratch>` and run it again with all
-   of them after `--sitemap`.
+   When the JSON lists `sitemaps` (the file was an index), fetch each (at
+   most ten) into `<scratch>` and run it again with all of them after
+   `--sitemap`. It lists only the site's own; `skipped.otherSiteSitemaps`
+   counts those on another host, which are never fetched.
 4. The start page's links:
 
    ```bash
@@ -143,17 +147,22 @@ the first one's page away. Give it:
 - the widths, the `deny` patterns and the `testMarker` (or "none") from
   `qa-config`;
 - a scratch directory of its own, `<scratch>/batch-<k>/`;
-- the paths of the project's instruction files;
+- the site notes from step 2 (`<scratch>/site-notes.md`), when there are
+  any;
 - when step 3 wrote a design map: its path, `${CLAUDE_PLUGIN_ROOT}/scripts/fidelity.mjs`,
   and an address the design sources are served at. Serve them yourself,
-  read-only and on this machine only, for the length of the walk
-  (`python3 -m http.server <port> --bind 127.0.0.1 --directory <repository root>`
-  in the background); with no way to serve them, say in the table that the
-  design was not compared.
+  read-only and on this machine only, for the length of the walk: copy each
+  file the epic's `Design sources:` line names (keeping its path) into
+  `<scratch>/design/`, and serve that directory alone
+  (`python3 -m http.server <port> --bind 127.0.0.1 --directory <scratch>/design`
+  in the background), never the repository, which would serve its `.env`
+  too. With no way to serve them, say in the table that the design was not
+  compared.
 
-**Never** the findings already filed, the epic's tickets, or what anybody
-suspects is broken: told where the bugs are, an explorer finds them there
-and stops looking. Duplicates are caught by fingerprint in step 7.
+**Never** the findings already filed, the epic's tickets, the instruction
+files or their paths, or what anybody suspects is broken: told where the
+bugs are, an explorer finds them there and stops looking. Duplicates are
+caught by fingerprint in step 7.
 
 Its report ends with one `json` block: `routes` (each page, whether it
 loaded, and why not) and `findings`. A report with no readable block is

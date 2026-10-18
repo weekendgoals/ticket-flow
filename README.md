@@ -682,9 +682,12 @@ What it does:
    links. Same site only, each page once, files that are not pages left
    out, every `deny` match left out, at most 60.
 4. Hires one `qa-explorer` agent per batch of up to ten pages, one at a
-   time (they share the session's one browser). At each page and width it
+   time (they share the session's one browser). Each is handed only the
+   site notes the session copied from your instruction files, never the
+   files: they often list known bugs. At each page and width it
    records console errors and failed requests, checks the page's own links
-   for 404s, looks for a page wider than the window and text cut off by its
+   for 404s with HEAD requests only (never a link a `deny` pattern or the
+   rules below name, and never a GET when HEAD is refused), looks for a page wider than the window and text cut off by its
    box, compares the document language with the text, reports the
    accessibility problems the browser shows and, with `--epic` on an epic
    with design sources, runs the design comparison. A screenshot only where
