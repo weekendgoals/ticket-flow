@@ -346,3 +346,44 @@ export function viewerLogin(environment = process.env) {
   viewerLoginOnce = login
   return login
 }
+
+const LINKED_PROJECTS_QUERY =
+  'query($owner:String!,$name:String!){repository(owner:$owner,name:$name){projectsV2(first:20){nodes{id title field(name:"Status"){... on ProjectV2SingleSelectField{id options{id name}}}}}}}'
+
+export function linkedProjects() {
+  const data = graphql(LINKED_PROJECTS_QUERY, {})
+  const repository = data && data.repository
+  if (!repository) throw new TrackerError('GitHub did not return this repository')
+  const nodes = (repository.projectsV2 && repository.projectsV2.nodes) || []
+  return nodes.filter(Boolean).map((node) => ({
+    id: node.id,
+    title: node.title,
+    statusField: node.field && node.field.id ? { id: node.field.id, options: (node.field.options || []).map((option) => ({ id: option.id, name: option.name })) } : null,
+  }))
+}
+
+const ISSUE_PROJECT_ITEMS_QUERY =
+  'query($owner:String!,$name:String!,$issue:Int!){repository(owner:$owner,name:$name){issue(number:$issue){id projectItems(first:20){nodes{id project{id}}}}}}'
+
+export function issueProjectItems(number) {
+  const data = graphql(ISSUE_PROJECT_ITEMS_QUERY, { issue: number })
+  const issue = data && data.repository && data.repository.issue
+  if (!issue) throw new TrackerError(`issue #${number} was not found`)
+  const nodes = (issue.projectItems && issue.projectItems.nodes) || []
+  return { id: issue.id, items: nodes.filter(Boolean).map((node) => ({ id: node.id, projectId: node.project ? node.project.id : null })) }
+}
+
+const ADD_PROJECT_ITEM_MUTATION = 'mutation($project:ID!,$content:ID!){addProjectV2ItemById(input:{projectId:$project,contentId:$content}){item{id}}}'
+const SET_SINGLE_SELECT_MUTATION =
+  'mutation($project:ID!,$item:ID!,$field:ID!,$option:String!){updateProjectV2ItemFieldValue(input:{projectId:$project,itemId:$item,fieldId:$field,value:{singleSelectOptionId:$option}}){projectV2Item{id}}}'
+
+export function addProjectItem(projectId, contentId) {
+  const data = graphql(ADD_PROJECT_ITEM_MUTATION, { project: projectId, content: contentId }, { inRepository: false })
+  const item = data && data.addProjectV2ItemById && data.addProjectV2ItemById.item
+  if (!item) throw new TrackerError('GitHub did not return the new project item')
+  return item.id
+}
+
+export function setProjectSingleSelect(projectId, itemId, fieldId, optionId) {
+  graphql(SET_SINGLE_SELECT_MUTATION, { project: projectId, item: itemId, field: fieldId, option: optionId }, { inRepository: false })
+}

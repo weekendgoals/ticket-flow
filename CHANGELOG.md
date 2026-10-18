@@ -5,6 +5,27 @@ a behaviour change in every project that installs it. Entries land in the same
 commit as the change; the pull request that brings them to the default branch
 stamps the version and date and bumps `plugin.json` in the same commit.
 
+## 3.1.0 (unreleased)
+
+- **New: the project board.** When the repository is linked to a GitHub
+  Project whose `Status` field has the options `Planned`, `In progress`,
+  `In review`, `Done`, `Needs human` and `Epic`, every command that changes a
+  state label (`label`, `start`, `merge`, `merge --epic`, `deliver`, `reset`,
+  `reset --once`, `needs-human`, and every refusal that hands a ticket to a
+  person) also sets the issue's `Status` there, right after the label
+  change; `create-epic` and `create-ticket` add the new issue to the project
+  as `Epic` or `Planned`. It is best effort and never a gate, and the
+  command always exits exactly as before. With no project linked, or a
+  token that cannot read projects (no `project` scope locally, or in the
+  Action a `FLOW_TOKEN` without the Projects permission), it stays silent;
+  when a linked project's `Status` lacks options, or a found board refuses
+  the add or the move, it prints one line starting
+  `project board not updated:`. Labels stay the only record of state; Flow
+  never reads the project back. `doctor` adds one line naming the project
+  it found, `none linked`, or the `Status` options it lacks, without
+  changing its exit code. The code is `scripts/project-sync.mjs`, with its
+  GraphQL calls in `tracker/github.mjs`.
+
 ## 3.0.0 — 2026-10-15
 
 Flow moves its board from markdown files in the repository to GitHub Issues.

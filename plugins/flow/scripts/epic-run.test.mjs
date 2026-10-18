@@ -129,6 +129,7 @@ function world({ epicLabels = ['flow:epic', 'flow:approved'], epic = {}, tickets
     [`GET ${R}/issues/1/comments?per_page=100`]: comments[1] || [],
     [`POST ${R}/issues/1/comments`]: { id: 1, html_url: 'https://github.com/o/r/issues/1#issuecomment-1' },
     [`PATCH ${R}/issues/1`]: epicIssue,
+    'graphql name={repo} owner={owner}': { data: { repository: { projectsV2: { nodes: [] } } } },
     ...extra,
   }
   for (const ticket of issues) {

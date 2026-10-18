@@ -34,7 +34,9 @@ epic). "Direct" or "without Flow" always overrides it.
   state, cycles, stuck), `ticket-steps.mjs` (the comments steps post and read
   back), `delivery.mjs` (every git call), `review-bots.mjs`, `meter.mjs`,
   `stats.mjs` (the figures `flow stats` reads back out of those comments),
-  `worktree-setup.mjs` (`.flow.json` `copy`/`setup` in a fresh copy).
+  `worktree-setup.mjs` (`.flow.json` `copy`/`setup` in a fresh copy),
+  `project-sync.mjs` (a linked GitHub Project's `Status` follows the state
+  labels, best effort, never read back).
 - `workflows/run-epic.mjs` — the `/flow:run` loop as a workflow script.
   `github/flow.yml` — the Action a project copies; it calls the same CLI.
 
@@ -44,7 +46,7 @@ Every suite needs Node ≥ 20 and nothing else unless noted; pass each test
 file path explicitly (`node --test <directory>` finds nothing here). Counts
 as of 2026-10-15; the pass count grows, the fail line stays `# fail 0`.
 
-- `node --test plugins/flow/scripts/flow.test.mjs` — `# pass 48`. The CLI
+- `node --test plugins/flow/scripts/flow.test.mjs` — `# pass 49`. The CLI
   end to end against the fake `gh`; one case needs `git` on PATH.
 - `node --test plugins/flow/scripts/lifecycle.test.mjs` — `# pass 39`. The
   ticket steps in throwaway repositories with a bare remote; needs `git`, `sh`.
@@ -52,8 +54,9 @@ as of 2026-10-15; the pass count grows, the fail line stays `# fail 0`.
   whole-epic commands, the same way.
 - `pull-request.test.mjs` `# pass 20`, `issue-body.test.mjs` `# pass 25`,
   `checks.test.mjs` `# pass 26` (real shell commands in a temp dir),
-  `tracker/github.test.mjs` `# pass 20`, `fidelity.test.mjs` `# pass 54`,
-  `stats.test.mjs` `# pass 12` (needs `git`), under `plugins/flow/scripts/`.
+  `tracker/github.test.mjs` `# pass 25`, `fidelity.test.mjs` `# pass 54`,
+  `stats.test.mjs` `# pass 12` (needs `git`), `project-sync.test.mjs`
+  `# pass 11`, under `plugins/flow/scripts/`.
 - `node --test plugins/flow/scripts/meter.test.mjs` — `# pass 16`. Builds
   its transcripts; no test reads a real one (they belong to whoever ran them).
 - `node --test plugins/flow/scripts/worktree-setup.test.mjs` — `# pass 18`;

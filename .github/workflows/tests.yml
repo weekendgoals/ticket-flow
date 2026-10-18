@@ -45,6 +45,7 @@ jobs:
           node --test plugins/flow/scripts/pull-request.test.mjs
           node --test plugins/flow/scripts/fidelity.test.mjs
           node --test plugins/flow/scripts/stats.test.mjs
+          node --test plugins/flow/scripts/project-sync.test.mjs
           node --test plugins/flow/scripts/meter.test.mjs
           node --test plugins/flow/scripts/worktree-setup.test.mjs
           node --test plugins/flow/workflows/run-epic.test.mjs

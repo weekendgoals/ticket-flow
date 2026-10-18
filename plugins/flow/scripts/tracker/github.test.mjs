@@ -242,3 +242,53 @@ test('viewerLogin takes FLOW_ACCOUNT as it is, asking GitHub nothing', () => {
   assert.equal(github.viewerLogin({ FLOW_ACCOUNT: ' github-actions[bot] ' }), 'github-actions[bot]')
   assert.equal(fake.calls().length, 0)
 })
+
+test('linkedProjects reads the linked projects with their Status options, and a project without that field has none', () => {
+  fake.setFixtures({
+    'graphql name={repo} owner={owner}': {
+      data: {
+        repository: {
+          projectsV2: {
+            nodes: [
+              { id: 'PVT_1', title: 'Flow board', field: { id: 'F_1', options: [{ id: 'O_1', name: 'Planned' }] } },
+              { id: 'PVT_2', title: 'Roadmap', field: null },
+            ],
+          },
+        },
+      },
+    },
+  })
+  assert.deepEqual(github.linkedProjects(), [
+    { id: 'PVT_1', title: 'Flow board', statusField: { id: 'F_1', options: [{ id: 'O_1', name: 'Planned' }] } },
+    { id: 'PVT_2', title: 'Roadmap', statusField: null },
+  ])
+  assert.match(fake.calls()[0].args.find((arg) => arg.startsWith('query=')), /projectsV2\(first:20\).*field\(name:"Status"\)/)
+})
+
+test('linkedProjects turns a GraphQL error into a TrackerError', () => {
+  fake.setFixtures({ 'graphql name={repo} owner={owner}': { data: null, errors: [{ message: "The 'projectsV2' field requires one of the following scopes: ['read:project']" }] } })
+  assert.throws(() => github.linkedProjects(), (error) => error instanceof github.TrackerError && /read:project/.test(error.message))
+})
+
+test('issueProjectItems returns the issue node id and the project of each of its items', () => {
+  fake.setFixtures({
+    'graphql issue=3 name={repo} owner={owner}': { data: { repository: { issue: { id: 'I_3', projectItems: { nodes: [{ id: 'PVTI_1', project: { id: 'PVT_1' } }] } } } } },
+  })
+  assert.deepEqual(github.issueProjectItems(3), { id: 'I_3', items: [{ id: 'PVTI_1', projectId: 'PVT_1' }] })
+  const call = fake.calls()[0]
+  assert.deepEqual(call.args.slice(-2), ['-F', 'issue=3'])
+})
+
+test('addProjectItem adds the issue to the project and returns the new item id', () => {
+  fake.setFixtures({ 'graphql content=I_3 project=PVT_1': { data: { addProjectV2ItemById: { item: { id: 'PVTI_9' } } } } })
+  assert.equal(github.addProjectItem('PVT_1', 'I_3'), 'PVTI_9')
+  assert.match(fake.calls()[0].args.find((arg) => arg.startsWith('query=')), /addProjectV2ItemById/)
+  assert.ok(!fake.calls()[0].args.includes('owner={owner}'), 'a mutation by node id names no repository')
+})
+
+test('setProjectSingleSelect sends the project, item, field and option ids', () => {
+  fake.setFixtures({ 'graphql field=F_1 item=PVTI_9 option=O_1 project=PVT_1': { data: { updateProjectV2ItemFieldValue: { projectV2Item: { id: 'PVTI_9' } } } } })
+  github.setProjectSingleSelect('PVT_1', 'PVTI_9', 'F_1', 'O_1')
+  assert.equal(fake.calls().length, 1)
+  assert.match(fake.calls()[0].args.find((arg) => arg.startsWith('query=')), /updateProjectV2ItemFieldValue.*singleSelectOptionId:\$option/)
+})

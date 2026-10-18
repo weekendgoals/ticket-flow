@@ -55,6 +55,7 @@ import {
 import { loadSources, workflowSources, meterTranscripts, meterComment, readMeterComment } from './meter.mjs'
 import { ticketStats, readEpicComments, summarize, overallStats, formatStats, combineMeters } from './stats.mjs'
 import { COPILOT_REVIEWER_LOGIN, BOTS, configuredBot, copilotUnavailable, botReview, sameLogin, summarizeChecks, sleepSeconds } from './review-bots.mjs'
+import { syncProjectStatus, projectBoardLine } from './project-sync.mjs'
 import {
   LABELS,
   EPIC_LABEL,
@@ -62,6 +63,7 @@ import {
   NEEDS_HUMAN_LABEL,
   START_LABEL,
   STATE_LABELS,
+  STATE_BY_LABEL,
   TIER_LABELS,
   MODEL_BY_TIER,
   ticketState,
@@ -202,6 +204,12 @@ function loadTicket(number) {
   return { issue, parsed: parseTicketBody(issue.body, designSources), epicAuthor }
 }
 
+function changeState(number, { add = [], remove = [], state = null }) {
+  github.addLabels(number, add)
+  github.removeLabels(number, remove)
+  if (state) syncProjectStatus(number, state)
+}
+
 function gitTopLevel() {
   const result = spawnSync('git', ['rev-parse', '--show-toplevel'], { encoding: 'utf8' })
   return result.status === 0 ? result.stdout.trim() : process.cwd()
@@ -215,13 +223,13 @@ function commandInit() {
 
 function commandDoctor() {
   const problems = []
+  const notes = []
   const finish = () => {
-    if (!problems.length) {
-      console.log('ok')
-      return 0
-    }
     for (const problem of problems) console.log(problem)
-    return 1
+    for (const note of notes) console.log(note)
+    if (problems.length) return 1
+    console.log('ok')
+    return 0
   }
   try {
     github.ghVersion()
@@ -247,6 +255,7 @@ function commandDoctor() {
   const present = new Set(github.listLabels().map((label) => label.name))
   const missing = LABELS.map((label) => label.name).filter((name) => !present.has(name))
   if (missing.length) problems.push(`Labels missing: ${missing.join(', ')}; run \`flow init\`.`)
+  notes.push(projectBoardLine())
   if (repo.hasIssues)
     for (const epicIssue of github.listIssues({ label: EPIC_LABEL })) {
       const epic = deriveEpic(epicIssue, github.listSubIssues(epicIssue.number))
@@ -419,8 +428,13 @@ function commandLabel(argv) {
     process.stderr.write(`#${number} would carry ${states.length} state labels (${states.join(', ')}); remove the old one in the same command\n`)
     return 1
   }
-  github.addLabels(number, add.filter((label) => !issue.labels.includes(label)))
-  github.removeLabels(number, remove.filter((label) => issue.labels.includes(label)))
+  const before = issue.labels.filter((label) => STATE_LABELS.includes(label))
+  const moved = states.length === 1 && !(before.length === 1 && before[0] === states[0])
+  changeState(number, {
+    add: add.filter((label) => !issue.labels.includes(label)),
+    remove: remove.filter((label) => issue.labels.includes(label)),
+    state: moved ? STATE_BY_LABEL[states[0]] : null,
+  })
   console.log(`#${number}: ${after.join(', ') || '(no labels)'}`)
   return 0
 }
@@ -435,6 +449,7 @@ function commandCreateEpic(flags) {
     return 1
   }
   const created = github.createIssue({ title: flags.title, body, labels: [EPIC_LABEL] })
+  syncProjectStatus(created.number, 'epic')
   console.log(created.number)
   return 0
 }
@@ -470,6 +485,7 @@ function commandCreateTicketWithoutEpic(positional, flags) {
     return 1
   }
   const created = github.createIssue({ title: flags.title, body, labels: [TICKET_LABEL, 'flow:planned', TIER_LABELS[tier]] })
+  syncProjectStatus(created.number, 'planned')
   console.log(created.number)
   return 0
 }
@@ -511,6 +527,7 @@ function commandCreateTicket(positional, flags) {
     return 1
   }
   const created = github.createIssue({ title: flags.title, body, labels: [TICKET_LABEL, 'flow:planned', TIER_LABELS[tier]] })
+  syncProjectStatus(created.number, 'planned')
   try {
     github.addSubIssue(epicNumber, created.id)
     github.updateIssueBody(epicNumber, withTicketListed(epic.body, created.number, flags.title))
@@ -561,8 +578,12 @@ function commandLink(positional) {
 function markNeedsHuman(number, text) {
   const { issue, epicAuthor } = loadTicket(number)
   const people = issue.assignees.length ? issue.assignees : [epicAuthor || issue.author].filter(Boolean)
-  github.addLabels(number, issue.labels.includes(NEEDS_HUMAN_LABEL) ? [] : [NEEDS_HUMAN_LABEL])
-  github.removeLabels(number, issue.labels.filter((label) => (STATE_LABELS.includes(label) && label !== NEEDS_HUMAN_LABEL) || label === START_LABEL))
+  const already = issue.labels.includes(NEEDS_HUMAN_LABEL)
+  changeState(number, {
+    add: already ? [] : [NEEDS_HUMAN_LABEL],
+    remove: issue.labels.filter((label) => (STATE_LABELS.includes(label) && label !== NEEDS_HUMAN_LABEL) || label === START_LABEL),
+    state: already ? null : 'needs-human',
+  })
   return github.comment(number, needsHumanComment({ people, text }))
 }
 
@@ -628,8 +649,7 @@ function commandStart(positional, flags) {
   if (!cut.ok) return refuse(number, state, `#${number} cannot start: ${cut.reason}`)
   const tier = ticketTier(issue.labels)
   const model = MODEL_BY_TIER[tier]
-  github.addLabels(number, ['flow:in-progress'])
-  github.removeLabels(number, ['flow:planned', ...(issue.labels.includes(START_LABEL) ? [START_LABEL] : [])])
+  changeState(number, { add: ['flow:in-progress'], remove: ['flow:planned', ...(issue.labels.includes(START_LABEL) ? [START_LABEL] : [])], state: 'in-progress' })
   const host = hostName()
   github.comment(number, startedComment({ host, model, branch, base, baseSha: cut.baseSha, resumedAt: cut.resumedAt }))
   printJson({
@@ -737,8 +757,7 @@ function mergeAcceptedTicket({ number, root, expectedSha = null }) {
     markNeedsHuman(number, text)
     return { code: 1, reason: text, needsHuman: true }
   }
-  github.addLabels(number, ['flow:done'])
-  github.removeLabels(number, issue.labels.filter((label) => STATE_LABELS.includes(label) && label !== 'flow:done'))
+  changeState(number, { add: ['flow:done'], remove: issue.labels.filter((label) => STATE_LABELS.includes(label) && label !== 'flow:done'), state: 'done' })
   github.comment(number, mergedComment({ sha, mergeSha: result.mergeSha, epicBranch, alreadyMerged: result.kind === 'already-merged', attempts: result.attempts }))
   const checked = withTicketChecked(epicIssue.body, number)
   if (checked !== normalizeNewlines(epicIssue.body)) github.updateIssueBody(epic.number, checked)
@@ -880,8 +899,11 @@ function commandReset(positional, flags) {
     printJson({ ticket: number, action: 'needs-human', resets: earlier })
     return 0
   }
-  github.addLabels(number, ['flow:planned'])
-  github.removeLabels(number, issue.labels.filter((label) => (STATE_LABELS.includes(label) && label !== 'flow:planned') || label === START_LABEL))
+  changeState(number, {
+    add: ['flow:planned'],
+    remove: issue.labels.filter((label) => (STATE_LABELS.includes(label) && label !== 'flow:planned') || label === START_LABEL),
+    state: 'planned',
+  })
   github.comment(number, resetComment({ host: hostName(), branch }))
   printJson({ ticket: number, action: 'reset', resets: earlier + 1 })
   return 0

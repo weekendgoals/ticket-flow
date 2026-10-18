@@ -16,6 +16,7 @@ const fake = installFakeGh(join(directory, 'bin'))
 const workdir = join(directory, 'work')
 mkdirSync(workdir)
 beforeEach(() => fake.clearCalls())
+const PROJECT_LOOKUP = 'graphql name={repo} owner={owner}'
 
 function flow(...args) {
   const result = spawnSync(process.execPath, [FLOW, ...args], {
@@ -89,6 +90,7 @@ function world({ epics = [], others = [], labels = LABELS.map((label) => label.n
     [`GET ${R}`]: { full_name: 'o/r', default_branch: 'main', has_issues: true, ...repo },
     [`GET ${R}/labels?per_page=100`]: labels.map((name) => ({ name, color: 'ededed', description: '' })),
     [`GET ${R}/issues?labels=flow%3Aepic&state=open&per_page=100`]: epics.map(({ epic }) => epic),
+    [PROJECT_LOOKUP]: { data: { repository: { projectsV2: { nodes: [] } } } },
   }
   const noEdits = { data: { repository: { issue: { userContentEdits: { pageInfo: { hasNextPage: false, endCursor: null }, nodes: [] } } } } }
   const add = (raw) => {
@@ -149,7 +151,7 @@ test('doctor prints ok and exits 0 on a healthy repository', () => {
   world({ epics: [tripExport()] })
   const result = flow('doctor')
   assert.equal(result.status, 0, result.stdout)
-  assert.equal(result.stdout.trim(), 'ok')
+  assert.deepEqual(result.stdout.trim().split('\n'), ['project board: none linked', 'ok'])
 })
 
 test('doctor names a missing gh and stops there', () => {
@@ -171,10 +173,11 @@ test('doctor names issues turned off, an unknown default branch and missing labe
   const result = flow('doctor')
   assert.equal(result.status, 1)
   const lines = result.stdout.trim().split('\n')
-  assert.equal(lines.length, 3, result.stdout)
+  assert.equal(lines.length, 4, result.stdout)
   assert.match(lines[0], /o\/r has issues turned off/)
   assert.match(lines[1], /default branch of o\/r is unknown/)
   assert.match(lines[2], /Labels missing: flow:ticket, .*tier:hard; run `flow init`/)
+  assert.equal(lines[3], 'project board: none linked')
 })
 
 test('doctor names an unreadable Blocked by line, a blocker outside the epic, and a cycle', () => {
@@ -498,7 +501,7 @@ test('label adds and removes labels, touching only what changes', () => {
   assert.equal(result.status, 0, result.stderr)
   assert.match(result.stdout, /#3: flow:ticket, flow:in-progress/)
   const writes = fake.calls().filter((call) => !call.key.startsWith('GET'))
-  assert.deepEqual(writes.map((call) => call.key), [`POST ${R}/issues/3/labels`, `DELETE ${R}/issues/3/labels/flow%3Aplanned`])
+  assert.deepEqual(writes.map((call) => call.key), [`POST ${R}/issues/3/labels`, `DELETE ${R}/issues/3/labels/flow%3Aplanned`, PROJECT_LOOKUP])
   assert.deepEqual(JSON.parse(writes[0].stdin), { labels: ['flow:in-progress'] })
 })
 
@@ -548,13 +551,13 @@ test('create-ticket creates the ticket, links it as a sub-issue and adds it to t
   assert.equal(result.status, 0, result.stderr)
   assert.equal(result.stdout.trim(), '71')
   const writes = fake.calls().filter((call) => !call.key.startsWith('GET'))
-  assert.deepEqual(writes.map((call) => call.key), [`POST ${R}/issues`, `POST ${R}/issues/1/sub_issues`, `PATCH ${R}/issues/1`])
+  assert.deepEqual(writes.map((call) => call.key), [`POST ${R}/issues`, PROJECT_LOOKUP, `POST ${R}/issues/1/sub_issues`, `PATCH ${R}/issues/1`])
   const created = JSON.parse(writes[0].stdin)
   assert.equal(created.title, 'The download button')
   assert.deepEqual(created.labels, ['flow:ticket', 'flow:planned', 'tier:easy'])
   assert.match(created.body, /^Epic: #1\nBlocked by: #2\n/)
-  assert.deepEqual(JSON.parse(writes[1].stdin), { sub_issue_id: 5071 })
-  assert.match(JSON.parse(writes[2].stdin).body, /- \[ \] #2 — ticket 2\n- \[ \] #71 — The download button/)
+  assert.deepEqual(JSON.parse(writes[2].stdin), { sub_issue_id: 5071 })
+  assert.match(JSON.parse(writes[3].stdin).body, /- \[ \] #2 — ticket 2\n- \[ \] #71 — The download button/)
 })
 
 test('create-ticket --no-epic creates a lone ticket with no Epic line and links it to nothing', () => {
@@ -564,7 +567,7 @@ test('create-ticket --no-epic creates a lone ticket with no Epic line and links 
   const result = flow('create-ticket', '--no-epic', '--file', file, '--title', 'Fix the typo', '--tier', 'easy')
   assert.equal(result.status, 0, result.stderr)
   assert.equal(result.stdout.trim(), '80')
-  assert.deepEqual(fake.calls().map((call) => call.key), [`POST ${R}/issues`])
+  assert.deepEqual(fake.calls().map((call) => call.key), [`POST ${R}/issues`, PROJECT_LOOKUP])
   const created = JSON.parse(fake.calls()[0].stdin)
   assert.deepEqual(created.labels, ['flow:ticket', 'flow:planned', 'tier:easy'])
   assert.match(created.body, /^## Scope/)
@@ -576,7 +579,10 @@ test('create-ticket --no-epic --repo files the ticket in another repository, and
   world({ extra: { [`POST ${R}/issues`]: issue(81) } })
   const result = flow('create-ticket', '--no-epic', '--repo', 'weekendgoals/ticket-flow', '--file', file, '--title', 'Retro proposal')
   assert.equal(result.status, 0, result.stderr)
-  assert.deepEqual(fake.calls().map((call) => [call.key, call.repo]), [[`POST ${R}/issues`, 'weekendgoals/ticket-flow']])
+  assert.deepEqual(fake.calls().map((call) => [call.key, call.repo]), [
+    [`POST ${R}/issues`, 'weekendgoals/ticket-flow'],
+    [PROJECT_LOOKUP, 'weekendgoals/ticket-flow'],
+  ])
   assert.equal(flow('create-ticket', '--no-epic', '--repo', 'not a slug', '--file', file, '--title', 'x').status, 2)
   const epicTicket = flow('create-ticket', '1', '--repo', 'weekendgoals/ticket-flow', '--file', file, '--title', 'x')
   assert.equal(epicTicket.status, 2)
@@ -710,9 +716,42 @@ test('needs-human swaps the state label and mentions the assignee', () => {
   const result = flow('needs-human', '3', '--text', 'The plan says the export is CSV; the code only writes JSON.')
   assert.equal(result.status, 0, result.stderr)
   const writes = fake.calls().filter((call) => !call.key.startsWith('GET'))
-  assert.deepEqual(writes.map((call) => call.key), [`POST ${R}/issues/3/labels`, `DELETE ${R}/issues/3/labels/flow%3Ain-progress`, `POST ${R}/issues/3/comments`])
+  assert.deepEqual(writes.map((call) => call.key), [`POST ${R}/issues/3/labels`, `DELETE ${R}/issues/3/labels/flow%3Ain-progress`, PROJECT_LOOKUP, `POST ${R}/issues/3/comments`])
   assert.deepEqual(JSON.parse(writes[0].stdin), { labels: ['flow:needs-human'] })
-  assert.equal(JSON.parse(writes[2].stdin).body, '<!-- flow:needs-human -->\n**This ticket needs a person.** @ana The plan says the export is CSV; the code only writes JSON.')
+  assert.equal(JSON.parse(writes[3].stdin).body, '<!-- flow:needs-human -->\n**This ticket needs a person.** @ana The plan says the export is CSV; the code only writes JSON.')
+})
+
+test('project-sync: needs-human also sets the ticket to Needs human on the linked project board', () => {
+  world({
+    epics: [{ epic: issue(1, { body: epicBody([3]), labels: epicLabels() }), tickets: [ticket(3, 1, 'in-progress')] }],
+    extra: {
+      [`POST ${R}/issues/3/labels`]: [],
+      [`DELETE ${R}/issues/3/labels/flow%3Ain-progress`]: null,
+      [`POST ${R}/issues/3/comments`]: { id: 4, html_url: null },
+      [PROJECT_LOOKUP]: {
+        data: {
+          repository: {
+            projectsV2: {
+              nodes: [
+                {
+                  id: 'PVT_1',
+                  title: 'Flow board',
+                  field: { id: 'F_status', options: ['Planned', 'In progress', 'In review', 'Done', 'Needs human', 'Epic'].map((name, index) => ({ id: `OPT_${index}`, name })) },
+                },
+              ],
+            },
+          },
+        },
+      },
+      'graphql issue=3 name={repo} owner={owner}': { data: { repository: { issue: { id: 'I_3', projectItems: { nodes: [{ id: 'PVTI_3', project: { id: 'PVT_1' } }] } } } } },
+      'graphql field=F_status item=PVTI_3 option=OPT_4 project=PVT_1': { data: { updateProjectV2ItemFieldValue: { projectV2Item: { id: 'PVTI_3' } } } },
+    },
+  })
+  const result = flow('needs-human', '3', '--text', 'The plan and the code disagree.')
+  assert.equal(result.status, 0, result.stderr)
+  assert.ok(!/project board not updated/.test(result.stderr), result.stderr)
+  const keys = fake.calls().map((call) => call.key)
+  assert.ok(keys.indexOf('graphql field=F_status item=PVTI_3 option=OPT_4 project=PVT_1') > keys.indexOf(`POST ${R}/issues/3/labels`), 'the Status follows the label change')
 })
 
 test('needs-human mentions the epic author when nobody is assigned', () => {

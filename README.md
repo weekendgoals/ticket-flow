@@ -123,6 +123,40 @@ ends `(fixes #9)`. Under `Delivery: release` every ticket is merged into
 `Delivery: incremental` each ticket opens its own pull request. **A person
 always merges into the default branch, and nothing runs after that merge.**
 
+## The project board
+
+A GitHub Project can show the same work as columns, one swimlane per epic. It
+is optional, and it is only a view: the labels stay the only record of a
+ticket's state, and Flow never reads the project back.
+
+1. Create a project (your profile or organization → Projects → New
+   project), and link it to the repository (the repository's Projects tab →
+   Link a project).
+2. In its `Status` field, name the options exactly `Planned`,
+   `In progress`, `In review`, `Done`, `Needs human` and `Epic` (case does
+   not matter; other options may stay).
+3. Use the Board layout and set Swimlanes to "Parent issue": every epic
+   becomes one swimlane with its tickets in it.
+4. Optionally turn on the project's auto-add workflow with the filter
+   `is:issue label:flow:ticket,flow:epic`, so issues made by hand show up too.
+
+From then on every command that changes a state label also moves the issue
+to the matching `Status`, right after the label has changed: `label`,
+`start`, `merge` and `deliver` when they mark a ticket done, `reset`,
+`needs-human`, and every step that hands a ticket to a person. `create-epic`
+and `create-ticket` add the new issue to the project (as `Epic` or
+`Planned`). Flow uses the first linked project whose `Status` has all six
+options; `flow doctor` names it.
+
+Locally, `gh` needs the `project` scope: `gh auth refresh -s project`. On
+GitHub, `FLOW_TOKEN` needs the Projects permission (read and write). When no
+project is linked, or the token cannot read the repository's projects, the
+commands say nothing: nobody asked for a board, and `flow doctor` is where
+you see why none was found. When a linked project's `Status` lacks some of
+the six options, or a board was found but the issue could not be added or
+moved, the command prints one line starting `project board not updated:`.
+Either way it carries on and exits exactly as it would have.
+
 ## `/flow:epic`
 
 `/flow:epic [name] [sources...]` turns a request into an epic. Sources can
@@ -326,7 +360,9 @@ your project's `.github/workflows/`, then add these repository secrets:
 - `FLOW_TOKEN`: a fine-grained personal access token or a GitHub App token
   with read and write access to contents, issues and pull requests. Labels
   added with the default `GITHUB_TOKEN` start no other workflow, and the
-  scheduler starts tickets by adding a label.
+  scheduler starts tickets by adding a label. To keep a
+  [project board](#the-project-board) in step, give it the Projects
+  permission (read and write) too.
 
 Flow trusts its own comments only from the account it runs as, and asks
 GitHub which that is. A GitHub App's installation token, and the default
@@ -380,7 +416,7 @@ every answer is read from GitHub (through `gh`) and git.
 | Command | What it does |
 |---|---|
 | `init` | Creates the eleven labels. Safe to run again |
-| `doctor` | Checks `gh`, sign-in, that issues are on, the labels, the default branch, and every open epic's `Blocked by` lines (unreadable, outside the epic, cycles). Prints `ok` or one sentence per problem |
+| `doctor` | Checks `gh`, sign-in, that issues are on, the labels, the default branch, and every open epic's `Blocked by` lines (unreadable, outside the epic, cycles). Prints one sentence per problem, then one line naming the project board (see [The project board](#the-project-board)), then `ok` when there was no problem |
 | `board [<epic>] [--json]` | The default branch, then open epics with approval, progress and branch; or one epic's tickets with tier, state and blockers |
 | `next <epic>` | JSON: `approved`, `ready`, `waiting`, `inProgress`, `done`, `needsHuman`, `planned`, `problems`. Exits 1 when the epic is not approved, has no tickets, or is stuck (unfinished tickets, none ready, none in progress) |
 | `ticket <n>` | One ticket parsed, as JSON, including who edited its body and when |
