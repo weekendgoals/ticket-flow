@@ -31,9 +31,13 @@ stamps the version and date and bumps `plugin.json` in the same commit.
 - **`flow board-sync`** also sets each release epic's `Release` (derived:
   `Released` when the epic is closed and the release pull request named in
   its comments merged, `Pull request open` while the epic is open with one
-  named, else `Building`) and closes every open `flow:done` ticket of a
-  release epic as completed; its summary counts both, and `--json` adds
-  `closed` and `releases`. `board-sync <epic>` reads a closed epic too.
+  named, `Building` while it is open with none; a closed epic whose release
+  did not merge gets no value, and the field keeps what it had) and closes
+  every open `flow:done` ticket of a release epic as completed; its summary
+  counts both, and `--json` adds `closed` and `releases`. Without an epic
+  number it also reads the board's items once and visits the closed epics
+  on it whose `Release` is not `Released`; `board-sync <epic>` reads a
+  closed epic that is not on the board.
 - **`github/flow.yml`** listens to `issues: closed` as well: a closed issue
   labelled `flow:epic` runs one new job, `board`, which runs `flow
   board-sync <epic>` and nothing else (it builds, merges and pushes
@@ -43,8 +47,10 @@ stamps the version and date and bumps `plugin.json` in the same commit.
   stated once in CLAUDE.md and quoted in the README, the ticket skill and
   the release pull request's last line, is now: "After a person merges into the default branch, no code work runs: what runs is the GitHub Action's `board` job, which closes `flow:done` tickets left open and writes the project board (Status, Release, figures), and the report page's rebuild, which only reads."
 - `tracker/github.mjs`: `reopenIssue`, `createProjectField`; the project
-  query reads every field's name and type, and item queries read the
-  `Release` value beside `Status`.
+  query reads every field's name and type (the first 100; a project with
+  more is a named error, so `init --board` never creates a field that
+  exists past the page), and item queries read the `Release` value beside
+  `Status`.
 - **New: the cost on the board.** Seven number fields, `Input tokens`,
   `Output tokens`, `Cache tokens` (cache writes plus reads), `Build
   minutes`, `Review minutes` (review plus fixes), `Total minutes` and
@@ -64,7 +70,8 @@ stamps the version and date and bumps `plugin.json` in the same commit.
   `<dir>/index.html` from the same figures as `flow stats --json` over every
   epic: one standalone page (styles and a small sort script inline, the
   data embedded once as JSON, nothing fetched) with the totals across
-  epics and, per epic, newest first, its state, its `Release` word, its
+  epics and, per epic, newest first, its state (`closed without release`
+  for a closed release epic whose release did not merge), its `Release` word, its
   release pull request, the instruction-file sizes and a sortable table of
   its tickets. `unknown` prints as `unknown`; a repository with no epics
   gets a page that says so. Rendering is `scripts/report.mjs`, pure.

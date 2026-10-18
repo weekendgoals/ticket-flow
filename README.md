@@ -226,6 +226,9 @@ epic's card and the table layout show where it stands:
 | `Pull request open` | every ticket is done and the release pull request waits for a person (set by `release-pr` once the pull request exists) |
 | `Released` | the release pull request merged into the default branch, which closed the epic |
 
+A release epic closed without its release pull request merging gets no
+value: the field keeps what it had.
+
 An incremental epic gets no value: each of its tickets ships alone. The
 move to `Released` comes from the Action's `board` job, the one job after a
 merge (see [How work is kept on GitHub](#how-work-is-kept-on-github)): the
@@ -769,7 +772,9 @@ one page with no build step, no library and nothing fetched. It has the
 repository, when it was made and the plugin's version; the totals across
 epics (tickets, time, tokens, review rounds, stops, the pace); then one
 section per epic, newest first, with its state (`running`, `stopped`,
-`built`, or `shipped` once the epic is closed), its `Release` word, its
+`built`, `shipped` once the epic is closed, or `closed without release`
+when a release epic closed without its release pull request merging), its
+`Release` word, its
 release pull request, the instruction files' size, and a table of its
 tickets (each linked to its issue: tier, state, time per step, tokens in
 and out, cache, review rounds, Important findings, acceptance runs, resets,
