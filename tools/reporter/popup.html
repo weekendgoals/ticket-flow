@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Report to Weekend Goals</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <section id="unconfigured" hidden>
+    <p>No GitHub token is configured yet. Configure the token on the options page before filing a report.</p>
+    <p><button type="button" id="open-options-main">Open options</button></p>
+  </section>
+
+  <p id="draft-bar" class="draft-bar muted" hidden>
+    <span id="draft-text"></span>
+    <a href="#" id="discard">Discard</a>
+  </p>
+
+  <form id="report" hidden>
+    <div class="shots-bar">
+      <span id="shots-count" class="shots-count muted"></span>
+      <button type="button" id="capture" class="secondary">Capture</button>
+      <button type="button" id="add-files" class="secondary">Add files</button>
+    </div>
+    <input type="file" id="file-input" accept="image/png,image/jpeg,image/webp,image/gif" multiple hidden>
+    <p id="shots-state" class="shots-state muted"></p>
+    <ul id="shots" class="shots-grid"></ul>
+
+    <p class="page">
+      <span id="page-title"></span><br>
+      <a id="page-url" class="muted" target="_blank" rel="noopener"></a>
+    </p>
+
+    <label>Title
+      <input type="text" id="title" required autocomplete="off">
+    </label>
+
+    <div class="row">
+      <label>Type
+        <select id="type">
+          <option value="bug" selected>bug</option>
+          <option value="change">change</option>
+        </select>
+      </label>
+      <label>Priority
+        <select id="priority">
+          <option value="low">low</option>
+          <option value="normal" selected>normal</option>
+          <option value="high">high</option>
+        </select>
+      </label>
+    </div>
+
+    <label>Description
+      <textarea id="description" rows="4"></textarea>
+    </label>
+
+    <label>Selected text
+      <textarea id="selection" rows="3"></textarea>
+    </label>
+
+    <button type="submit" id="submit">File report</button>
+    <p id="status" class="status" role="status"></p>
+  </form>
+
+  <p class="footer"><a href="#" id="open-options">Options</a></p>
+
+  <script type="module" src="popup.js"></script>
+</body>
+</html>

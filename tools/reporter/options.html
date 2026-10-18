@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Weekend Goals Reporter options</title>
+  <link rel="stylesheet" href="popup.css">
+  <style>
+    body {
+      width: auto;
+      max-width: 520px;
+      margin: 24px auto;
+    }
+    .actions {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+    }
+    .secondary {
+      color: #1c1f24;
+      background: #e6e9ee;
+    }
+  </style>
+</head>
+<body>
+  <h1>Weekend Goals Reporter</h1>
+  <form id="options">
+    <label>GitHub token
+      <input type="password" id="token" autocomplete="off" spellcheck="false">
+    </label>
+    <label>Repository (owner/name)
+      <input type="text" id="repo" autocomplete="off" spellcheck="false">
+    </label>
+    <label>Tickets branch
+      <input type="text" id="branch" autocomplete="off" spellcheck="false">
+    </label>
+    <label>Issue label
+      <input type="text" id="label" autocomplete="off" spellcheck="false">
+    </label>
+    <div class="actions">
+      <button type="submit">Save</button>
+      <button type="button" id="test" class="secondary">Test token</button>
+    </div>
+    <p id="status" class="status" role="status"></p>
+  </form>
+  <script type="module" src="options.js"></script>
+</body>
+</html>
