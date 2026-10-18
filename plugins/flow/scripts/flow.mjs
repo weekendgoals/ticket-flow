@@ -518,6 +518,18 @@ function commandCreateTicketWithoutEpic(positional, flags) {
   return 0
 }
 
+function blockerProblem(epicNumber, blockedBy) {
+  if (!blockedBy.length) return null
+  const subIssues = github.listSubIssues(epicNumber)
+  const findings = blockedBy.filter((number) => subIssues.some((issue) => issue.number === number && isFinding(issue)))
+  if (findings.length)
+    return { finding: true, text: `${findings.map((number) => `#${number}`).join(', ')} ${findings.length > 1 ? 'are findings' : 'is a finding'}, not a ticket: a ticket can wait only for tickets` }
+  const members = new Set(subIssues.filter((issue) => !isFinding(issue)).map((issue) => issue.number))
+  const outside = blockedBy.filter((number) => !members.has(number))
+  if (outside.length) return { finding: false, text: `blocked by ${outside.map((number) => `#${number}`).join(', ')}, which is not a ticket of epic #${epicNumber}` }
+  return null
+}
+
 function commandCreateTicket(positional, flags) {
   if (flags['no-epic']) return commandCreateTicketWithoutEpic(positional, flags)
   if (flags.repo !== undefined) throw new UsageError('--repo goes with --no-epic: an epic\'s tickets live in the epic\'s repository')
@@ -546,10 +558,8 @@ function commandCreateTicket(positional, flags) {
     ...(parsed.blockedByProblem ? [parsed.blockedByProblem] : []),
     ...parsed.criteria.problems.map((problem) => `line ${problem.line ?? '?'}: ${problem.why}: ${problem.text}`),
   ]
-  const members = new Set(github.listSubIssues(epicNumber).map((issue) => issue.number))
-  const outside = parsed.blockedBy.filter((number) => !members.has(number))
-  if (outside.length)
-    problems.push(`blocked by ${outside.map((number) => `#${number}`).join(', ')}, which is not a ticket of epic #${epicNumber}; create the blocking tickets first`)
+  const waitProblem = blockerProblem(epicNumber, parsed.blockedBy)
+  if (waitProblem) problems.push(waitProblem.finding ? waitProblem.text : `${waitProblem.text}; create the blocking tickets first`)
   if (problems.length) {
     for (const problem of problems) process.stderr.write(`${problem}\n`)
     return 1
@@ -628,7 +638,7 @@ const FINGERPRINT_EXISTS_EXIT = 3
 function readFingerprint(flags) {
   if (flags.fingerprint === undefined) return null
   const text = flags.fingerprint.trim()
-  if (!text || /[\r\n]|-->/.test(text)) throw new UsageError('--fingerprint takes one line of text without "-->"')
+  if (!text || /[\r\n]|--!?>/.test(text)) throw new UsageError('--fingerprint takes one line of text without "-->" or "--!>", either of which would end the marker early')
   return text
 }
 
@@ -670,6 +680,7 @@ function commandCreateFinding(positional, flags) {
   if (epicNumber !== null) {
     const epic = github.getIssue(epicNumber)
     if (!epic.labels.includes(EPIC_LABEL)) throw new UsageError(`#${epicNumber} is not an epic (it has no ${EPIC_LABEL} label)`)
+    if (epic.state === 'closed') throw new UsageError(`epic #${epicNumber} is closed, and a finding filed under it would never be triaged`)
   }
   if (fingerprint !== null) {
     const marker = fingerprintMarker(fingerprint)
@@ -811,6 +822,7 @@ function commandPromote(positional, flags) {
     return refusePromote('the ticket body has its own "## Report" section; promote writes that section from the finding, so leave it out')
   const epic = github.getIssue(epicNumber)
   if (!epic.labels.includes(EPIC_LABEL)) return refusePromote(`#${epicNumber} is not an epic (it has no ${EPIC_LABEL} label)`)
+  if (epic.state === 'closed') return refusePromote(`epic #${epicNumber} is closed, so a ticket under it would never be built`)
   const epicPlan = parseEpicBody(epic.body)
   if (epicPlan.problems.length) return refusePromote(`epic #${epicNumber} has settings that cannot be read: ${epicPlan.problems.join('; ')}`)
   let ticketBody
@@ -823,9 +835,8 @@ function commandPromote(positional, flags) {
   if (parsed.blockedByProblem) return refusePromote(`the ticket body ${parsed.blockedByProblem}`)
   if (parsed.criteria.problems.length)
     return refusePromote(`the ticket body's criteria cannot decide it: ${parsed.criteria.problems.map((problem) => `${problem.why}${problem.line === null ? '' : ` (line ${problem.line})`}`).join('; ')}`)
-  const members = new Set(github.listSubIssues(epicNumber).filter((issue) => !isFinding(issue)).map((issue) => issue.number))
-  const outside = parsed.blockedBy.filter((blocker) => !members.has(blocker))
-  if (outside.length) return refusePromote(`blocked by ${outside.map((blocker) => `#${blocker}`).join(', ')}, which is not a ticket of epic #${epicNumber}`)
+  const waitProblem = blockerProblem(epicNumber, parsed.blockedBy)
+  if (waitProblem) return refusePromote(waitProblem.text)
   const parent = github.parentIssue(number)
   const movedFrom = parent && parent.number !== epicNumber ? parent.number : null
   if (!parent || movedFrom !== null) {
@@ -853,7 +864,7 @@ function commandPromote(positional, flags) {
   return 0
 }
 
-const STATES_A_REFUSAL_STOPS =new Set(['planned', 'in-progress', 'in-review', 'unlabelled'])
+const STATES_A_REFUSAL_STOPS = new Set(['planned', 'in-progress', 'in-review', 'unlabelled'])
 
 function refuse(number, state, reason) {
   process.stderr.write(`${reason}\n`)

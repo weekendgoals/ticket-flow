@@ -180,7 +180,7 @@ export function commitToSideBranch(cwd, { branch, files, readme, message, retrie
   return { ok: false, reason: `${branch} on origin moved under every one of ${retries + 1} attempts to push` }
 }
 
-export function mergeIntoEpic(cwd,{ sha, epicBranch, subject, retries = PUSH_RETRIES }) {
+export function mergeIntoEpic(cwd, {sha, epicBranch, subject, retries = PUSH_RETRIES }) {
   if (!/^epic\//.test(String(epicBranch || '')))
     return { ok: false, kind: 'not-an-epic-branch', reason: `${epicBranch} is not an epic branch, and nothing here merges into any other branch` }
   if (!resolveCommit(cwd, sha)) return { ok: false, kind: 'unknown-commit', reason: `commit ${sha} is not in this clone; fetch the ticket branch first` }

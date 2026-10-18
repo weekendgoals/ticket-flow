@@ -81,6 +81,16 @@ stamps the version and date and bumps `plugin.json` in the same commit.
   only for an issue labelled `flow:epic`, so approving a finding schedules
   nothing, and its `ticket` job does not run for a `flow:start` on a
   finding. Copy `github/flow.yml` again to pick this up.
+- **Findings are kept whole and never waited on.** `promote` treats a
+  `## Report` boundary as its own only when the text above it is a ticket it
+  wrote (an `Epic:` first line and criteria that decide it), so a finding
+  whose own text holds that sequence is kept in full. `create-ticket` and
+  `promote` refuse a finding as a blocker ("#7 is a finding, not a ticket: a
+  ticket can wait only for tickets"), because a ticket waiting on one would
+  wait for ever once it is rejected. `create-finding --epic` and `promote`
+  refuse a closed epic, and `--fingerprint` refuses `--!>` as well as `-->`.
+  The fingerprint search covers open findings and tickets only, so a rejected
+  finding can be filed again by a later run.
 - **New: a standing epic.** `/flow:epic --standing "<title>"` (usually
   `Bugs`) writes an epic with `Delivery: incremental`, no `Branch:`, ground
   rules from the project's testing rules, and an empty `## Tickets`, which

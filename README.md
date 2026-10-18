@@ -428,8 +428,9 @@ start from one.
 `flow:ticket`, and `next`, `board`'s ticket list, `dispatch`, `check-epic`,
 `merge --epic` and `release-pr` read past it: it is not planned, not ready,
 not built and not stuck, and a release pull request neither ships nor closes
-it. It may be a sub-issue of an epic or have no parent. `flow board` prints, per epic and for findings with
-no epic, `findings: <n> waiting, <m> approved`.
+it. It may be a sub-issue of an epic or have no parent. `flow board`
+prints, per epic and for findings with no epic,
+`findings: <n> waiting, <m> approved`.
 
 **Its body is a person's words**, never refused for its shape, because the
 reporter is not Flow's user. The recommended shape:
@@ -449,9 +450,14 @@ people on GitHub that shape and the label, copy `github/finding.md` from the
 plugin to `.github/ISSUE_TEMPLATE/finding.md` in your project.
 
 **Filing one from a terminal or an agent**:
-`flow create-finding --title "<t>" --file <body> [--epic <e>] [--screenshots <dir>] [--fingerprint "<text>"]`.
-`--epic` makes it a sub-issue of that epic. `--screenshots` takes a directory
-of PNG, JPEG or WebP images: once the issue exists, they are committed to the
+
+```bash
+flow create-finding --title "<t>" --file <body> [--epic <e>] \
+  [--screenshots <dir>] [--fingerprint "<text>"]
+```
+
+`--epic` makes it a sub-issue of that epic, which must be open.
+`--screenshots` takes a directory of PNG, JPEG or WebP images: once the issue exists, they are committed to the
 branch `flow-findings` under `findings/<issue number>/` (the branch is
 created with only a `README.md` when it is missing, holds no code and is
 never merged), pushed, and listed under `## Screenshots` in the issue, each
@@ -461,7 +467,9 @@ the same `<!-- flow:finding fingerprint=<text> -->` line, nothing is filed
 and the command exits 3 printing that issue's number; otherwise the line is
 written at the top of the new body. An agent walking a site builds it from
 the page's address and a short description, so a nightly run files each bug
-once.
+once. Only open findings and open tickets are searched, so a finding that was
+rejected (closed) can be filed again by a later run; a person closes it
+again, or files a ticket that fixes what keeps being found.
 
 **A person approves a finding** by adding `flow:approved` to it, and rejects
 it by closing it. `flow found [<epic>] [--json]` lists the open ones: epic or
@@ -476,7 +484,12 @@ fail, and a tier), not a ticket (one sentence: it does not happen, it is
 already fixed, it duplicates another, or it is a question for the reporter),
 or too big for one ticket (it needs `/flow:epic`). It shows one table and
 waits for you to edit it or say go. Then it runs, per ticket,
-`flow promote <n> --file <ticket body> --tier easy|hard --epic <e> [--blocked-by <n>,<n>]`,
+
+```bash
+flow promote <n> --file <ticket body> --tier easy|hard --epic <e> \
+  [--blocked-by <n>,<n>]
+```
+
 the only way a finding becomes a ticket: it refuses (exit 2, one sentence) a
 finding nobody approved, criteria that cannot decide it, an epic that is not
 one or a `Blocked by` it cannot read; then it writes the ticket body with the

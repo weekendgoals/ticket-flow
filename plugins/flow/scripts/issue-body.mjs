@@ -260,12 +260,17 @@ export function splitReport(body) {
   return { ticket: normalized.slice(0, at), report: normalized.slice(at + REPORT_BOUNDARY.length) }
 }
 
+function writtenByPromote(ticketPart) {
+  const firstLine = normalizeNewlines(ticketPart).split('\n')[0]
+  return EPIC_LINE.test(firstLine) && parseTicketBody(ticketPart).criteria.problems.length === 0
+}
+
 export function originalReport(body) {
   const raw = body || ''
   const at = raw.indexOf(REPORT_BOUNDARY)
-  if (at !== -1) return raw.slice(at + REPORT_BOUNDARY.length)
-  const { report } = splitReport(raw)
-  return report === null ? raw : report
+  if (at !== -1) return writtenByPromote(raw.slice(0, at)) ? raw.slice(at + REPORT_BOUNDARY.length) : raw
+  const { ticket, report } = splitReport(raw)
+  return report !== null && writtenByPromote(ticket) ? report : raw
 }
 
 export function withReport(ticketBody, original) {

@@ -41,6 +41,8 @@ puts the work under a plan nobody agreed for it.
 
 - **The words**: the `body`, in full. It is a person's description, not a
   specification; read it for what they saw, where, and what they expected.
+  A fix the reporter suggests is a claim about the cause, not the scope:
+  they did not read the code, so the scope comes from what you find there.
 - **Every screenshot.** For an image with a `ref` and `path` in this
   repository, fetch and save it, then open it with the Read tool:
 

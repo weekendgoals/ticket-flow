@@ -339,6 +339,17 @@ test('a promoted ticket keeps the finding under ## Report word for word, and not
   assert.equal(splitReport('## Scope\n\n## Report\n\nno marker').report, null, "a person's own Report heading is not the boundary")
 })
 
+test('a finding that itself holds the report boundary is kept whole: only a body promote wrote is cut there', () => {
+  const reported = '## What happened\n\nbug, see shot\n\n![s](https://github.com/o/r/blob/abc/findings/7/s.png?raw=true)\n\n## Report\n\n<!-- flow:report -->\nx'
+  assert.equal(originalReport(reported), reported)
+  assert.equal(originalReport(reported.replace(/\n/g, '\r\n')), reported.replace(/\n/g, '\r\n'))
+  const ticket = withEpicLine('## Scope\n\n- x\n\n## Acceptance criteria\n\n```criteria\n- y\n  CHECK: false\n```\n', 3)
+  const promoted = withReport(ticket, reported)
+  assert.equal(originalReport(promoted), reported, 'the reporter\'s copy of the boundary stays inside the report')
+  assert.equal(originalReport(withReport(ticket, originalReport(promoted))), reported, 'and promoting again keeps it')
+  assert.equal(originalReport(`Epic: #3\n\nno criteria\n\n## Report\n\n<!-- flow:report -->\nx`), `Epic: #3\n\nno criteria\n\n## Report\n\n<!-- flow:report -->\nx`, 'an Epic line alone does not make it a promoted body')
+})
+
 test('findingImages collects every markdown and HTML image link outside code, with the branch and path when it lives in a repository', () => {
   const body = [
     '1. ![cart](https://github.com/o/r/blob/0123abc/findings/7/cart%20page.png?raw=true) the cart',

@@ -880,6 +880,11 @@ test('create-finding --epic makes it a sub-issue of the epic, refuses a parent t
   assert.equal(notEpic.status, 2)
   assert.match(notEpic.stderr, /#30 is not an epic/)
   assert.deepEqual(writesMade(), [])
+  world({ others: [{ ...issue(31, { labels: ['flow:epic', 'flow:approved'] }), state: 'closed' }] })
+  const closed = flow('create-finding', '--title', 'x', '--file', file, '--epic', '31')
+  assert.equal(closed.status, 2)
+  assert.match(closed.stderr, /epic #31 is closed, and a finding filed under it would never be triaged/)
+  assert.deepEqual(writesMade(), [])
   world({ epics: [tripExport()], extra: { [`POST ${R}/issues`]: finding(92), [`POST ${R}/issues/1/sub_issues`]: { $exit: 1, $stderr: 'gh: Validation Failed (HTTP 422)' } } })
   const unlinked = flow('create-finding', '--title', 'x', '--file', file, '--epic', '1')
   assert.equal(unlinked.status, 1)
@@ -913,6 +918,7 @@ test('create-finding --fingerprint files a bug once: an open finding or ticket c
   assert.equal(fresh.stdout.trim(), '93')
   assert.equal(JSON.parse(writesMade()[0].stdin).body, `${marker}\n\nThe total is wrong.\n`)
   assert.equal(flow('create-finding', '--title', 'x', '--file', file, '--fingerprint', 'a --> b').status, 2)
+  assert.equal(flow('create-finding', '--title', 'x', '--file', file, '--fingerprint', 'a --!> b').status, 2, 'this ends an HTML comment too')
 })
 
 test('found lists open findings with their epic, who filed them, approval and image count, and exits 0 with none', () => {
@@ -945,9 +951,15 @@ test('promote refuses, with exit 2 and one sentence, everything that is not an a
     return file
   }
   const good = draft('good', PROMOTE_DRAFT)
+  const withFinding = tripExport()
+  withFinding.tickets.push(finding(8))
   world({
-    epics: [tripExport(), { epic: issue(25, { body: epicBody([], 'Delivery: sometimes'), labels: epicLabels() }), tickets: [] }],
-    others: [finding(7, { approved: true }), finding(8), finding(9, { approved: true, state: 'closed' }), issue(30, { labels: ['bug'] })],
+    epics: [
+      withFinding,
+      { epic: issue(25, { body: epicBody([], 'Delivery: sometimes'), labels: epicLabels() }), tickets: [] },
+      { epic: { ...issue(26, { body: epicBody([], 'Delivery: incremental'), labels: epicLabels() }), state: 'closed' }, tickets: [] },
+    ],
+    others: [finding(7, { approved: true }), finding(9, { approved: true, state: 'closed' }), issue(30, { labels: ['bug'] })],
   })
   const cases = [
     [['3', '--file', good, '--tier', 'easy', '--epic', '1'], /^#3 is not an open finding \(an open issue labelled flow:found\), so there is nothing to promote$/],
@@ -962,6 +974,8 @@ test('promote refuses, with exit 2 and one sentence, everything that is not an a
     [['7', '--file', good, '--tier', 'easy', '--epic', '1', '--blocked-by', '2,99'], /^blocked by #99, which is not a ticket of epic #1$/],
     [['7', '--file', draft('report', `${PROMOTE_DRAFT}\n## Report\n\nmine\n`), '--tier', 'easy', '--epic', '1'], /has its own "## Report" section/],
     [['7', '--file', draft('other-epic', `Epic: #25\n\n${PROMOTE_DRAFT}`), '--tier', 'easy', '--epic', '1'], /already says "Epic: #25", not #1/],
+    [['7', '--file', good, '--tier', 'easy', '--epic', '1', '--blocked-by', '8'], /^#8 is a finding, not a ticket: a ticket can wait only for tickets$/],
+    [['7', '--file', good, '--tier', 'easy', '--epic', '26'], /^epic #26 is closed, so a ticket under it would never be built$/],
   ]
   for (const [args, reason] of cases) {
     fake.clearCalls()
@@ -1056,7 +1070,7 @@ test('promote of a finding with no parent adds it to the epic without removing a
   const failed = flow('promote', '12', '--file', file, '--tier', 'hard', '--epic', '1')
   assert.equal(failed.status, 1)
   assert.deepEqual(writesMade().map((call) => call.key), [`POST ${R}/issues/1/sub_issues`, `PATCH ${R}/issues/12`])
-  const halfway = finding(12, { approved: true, body: `Epic: #1\n## Scope\n\n- x\n\n## Report\n\n<!-- flow:report -->\nLoose words.` })
+  const halfway = finding(12, { approved: true, body: `Epic: #1\n## Scope\n\n- x\n\n## Acceptance criteria\n\n\`\`\`criteria\n- y\n  CHECK: false\n\`\`\`\n\n## Report\n\n<!-- flow:report -->\nLoose words.` })
   fake.clearCalls()
   world({
     epics: [epic],
@@ -1073,4 +1087,14 @@ test('promote of a finding with no parent adds it to the epic without removing a
   assert.equal(JSON.parse(again.stdout).movedFrom, null)
   assert.ok(!writesMade().some((call) => call.key.includes('sub_issue')), 'already under the epic: nothing to move')
   assert.equal(originalReport(JSON.parse(writesMade()[0].stdin).body), 'Loose words.', 'a second run keeps the first report, not the half-promoted body')
+})
+
+test('create-ticket refuses a finding as a blocker: a ticket waiting on one would wait for ever once it is rejected', () => {
+  const file = join(directory, 'blocked-by-finding.md')
+  writeFileSync(file, '## Acceptance criteria\n\n```criteria\n- x\n  CHECK: false\n```\n')
+  world({ epics: [{ epic: issue(1, { body: epicBody([2]), labels: epicLabels() }), tickets: [ticket(2, 1, 'planned'), finding(7, { approved: true })] }] })
+  const result = flow('create-ticket', '1', '--file', file, '--title', 'x', '--blocked-by', '2,7')
+  assert.equal(result.status, 1)
+  assert.equal(result.stderr.trim(), '#7 is a finding, not a ticket: a ticket can wait only for tickets')
+  assert.deepEqual(writesMade(), [])
 })
