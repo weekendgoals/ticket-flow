@@ -5,7 +5,7 @@ name: flow
 
 on:
   issues:
-    types: [labeled]
+    types: [labeled, closed]
   workflow_dispatch:
     inputs:
       ticket:
@@ -202,6 +202,26 @@ jobs:
           elif [ "$state" = "stopped" ]; then
             $FLOW post "$EPIC" --text "**Run stopped.** Nothing is ready and nothing is in progress; the tickets labelled flow:needs-human say why."
           fi
+
+  # The one job that runs after a person merges: the release pull request closes the epic, and this reads the epic and its tickets and brings the project board up to date (Status, Release, a done ticket left open closed). It builds, merges and pushes nothing, and changes no label.
+  board:
+    if: github.event_name == 'issues' && github.event.action == 'closed' && contains(github.event.issue.labels.*.name, 'flow:epic')
+    runs-on: ubuntu-latest
+    env:
+      EPIC: ${{ github.event.issue.number }}
+      GH_TOKEN: ${{ secrets.FLOW_TOKEN || github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ env.FLOW_PLUGIN_REPOSITORY }}
+          ref: ${{ env.FLOW_PLUGIN_REF }}
+          path: .flow-plugin
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: bring the project board up to date for the closed epic
+        run: $FLOW board-sync "$EPIC" || true
 
   pr:
     if: >-

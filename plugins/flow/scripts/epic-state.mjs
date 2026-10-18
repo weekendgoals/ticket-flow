@@ -217,3 +217,16 @@ export function nextSteps(epic) {
       : null
   return { result, stuckReason }
 }
+
+export const RELEASE_STAGES = { building: 'Building', open: 'Pull request open', released: 'Released' }
+
+export function isReleaseEpic(settings) {
+  return (settings.delivery || 'release') === 'release' && Boolean(settings.branch)
+}
+
+export function releaseStage({ settings, closed, releasePullRequestNamed, releaseMerged }) {
+  if (!isReleaseEpic(settings)) return null
+  if (closed && releaseMerged) return RELEASE_STAGES.released
+  if (!closed && releasePullRequestNamed) return RELEASE_STAGES.open
+  return RELEASE_STAGES.building
+}

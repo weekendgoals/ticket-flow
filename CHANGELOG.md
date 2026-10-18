@@ -5,6 +5,45 @@ a behaviour change in every project that installs it. Entries land in the same
 commit as the change; the pull request that brings them to the default branch
 stamps the version and date and bumps `plugin.json` in the same commit.
 
+## 3.3.0 (unreleased)
+
+- **A done ticket is a closed issue.** When `flow merge` (release delivery)
+  marks a ticket `flow:done`, it also closes the issue as completed, in the
+  same state change as the label and the board move, so the project board's
+  progress bar per epic counts it before the release ships. A refused close
+  is one stderr line and the merge still finishes. `flow label <n>
+  +flow:done` closes nothing, and incremental tickets are still closed by
+  their own pull request. The epic stays open until its release pull
+  request merges, and its `Closes #<n>` lines stay.
+- **A closed ticket going back to work is reopened** in the same change:
+  `needs-human` (and so `check-epic --mark`) on a closed ticket reopens it
+  and says so in its comment; `flow label` moving a closed ticket to any
+  state but done reopens it and says so in its output. `reset` still
+  refuses a done ticket.
+- **New: the board's `Release` field**, single select, for release epics
+  only: `Building` (set by `create-epic`), `Pull request open` (set by
+  `release-pr` once the pull request exists), `Released` (the release pull
+  request merged, which closed the epic). `flow init --board` creates it,
+  or completes its options keeping each epic's value; a `Release` field of
+  another kind is named and left alone, and the command exits 1. `flow
+  doctor`'s board line names it or its absence. A board without it is told
+  once per command, `project board not updated: … has no Release field`.
+- **`flow board-sync`** also sets each release epic's `Release` (derived:
+  `Released` when the epic is closed and the release pull request named in
+  its comments merged, `Pull request open` while the epic is open with one
+  named, else `Building`) and closes every open `flow:done` ticket of a
+  release epic as completed; its summary counts both, and `--json` adds
+  `closed` and `releases`. `board-sync <epic>` reads a closed epic too.
+- **`github/flow.yml`** listens to `issues: closed` as well: a closed issue
+  labelled `flow:epic` runs one new job, `board`, which runs `flow
+  board-sync <epic>` and nothing else (it builds, merges and pushes
+  nothing); a closed ticket or finding runs nothing. The rule is now "a
+  person merges into the default branch, and no work runs after", and the
+  release pull request's last line says "no work runs after the merge".
+- `tracker/github.mjs`: `reopenIssue`, `createProjectField`; the project
+  query reads every field's name and type, and item queries read the
+  `Release` value beside `Status`.
+
 ## 3.2.0 — 2026-10-18
 
 - **New: handoffs between tickets.** `flow handoff <n> --text "<lines>"` (or

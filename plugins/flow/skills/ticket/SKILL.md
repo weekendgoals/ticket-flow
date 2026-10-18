@@ -327,8 +327,9 @@ get its first one only.
 
 - **Release delivery** (the epic's default): it merges the accepted commit,
   never the branch tip, into the epic branch with `--no-ff` and the subject
-  `Merge #<n>: <title>`, pushes it, labels the ticket `flow:done`, ticks it
-  off the epic's list and posts the merge commit. When someone else pushed to
+  `Merge #<n>: <title>`, pushes it, labels the ticket `flow:done` and closes
+  it, so the board's progress bar counts it, ticks it off the epic's list
+  and posts the merge commit. When someone else pushed to
   the epic branch meanwhile it fetches and merges again, twice; after that,
   or on a merge conflict, it asks a person itself (naming the conflicting
   files). A conflict is never resolved by an agent here: the person decides
@@ -340,7 +341,9 @@ get its first one only.
   pull request's URL.
 
 No agent ever merges into the default branch: a person merges every pull
-request there, and nothing runs after that merge.
+request there, and no work runs after that merge (the one job that follows
+a release, `flow board-sync` on the closed epic, only brings the project
+board up to date).
 
 ## The pull request loop
 

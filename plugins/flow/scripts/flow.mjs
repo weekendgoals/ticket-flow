@@ -62,7 +62,23 @@ import {
 import { loadSources, workflowSources, meterTranscripts, meterComment, readMeterComment } from './meter.mjs'
 import { ticketStats, readEpicComments, summarize, overallStats, formatStats, combineMeters, firstStartBase } from './stats.mjs'
 import { COPILOT_REVIEWER_LOGIN, BOTS, configuredBot, copilotUnavailable, botReview, sameLogin, summarizeChecks, sleepSeconds } from './review-bots.mjs'
-import { syncProjectStatus, projectBoardLine, ensureProjectBoard, findProjectBoard, placeOnBoard, statusOptionName, explain as explainProjectError, oneLine, DEFAULT_BOARD_TITLE } from './project-sync.mjs'
+import {
+  syncProjectStatus,
+  syncProjectRelease,
+  projectBoardLine,
+  ensureProjectBoard,
+  ensureReleaseField,
+  findProjectBoard,
+  placeOnBoard,
+  placeRelease,
+  releaseFieldOf,
+  reportOnce,
+  statusOptionName,
+  explain as explainProjectError,
+  oneLine,
+  DEFAULT_BOARD_TITLE,
+  RELEASE_FIELD,
+} from './project-sync.mjs'
 import { siteAddress, readQaConfig, parseWidthsOption, readSitemap, readLinks, buildRoutes, sameSiteSitemaps, qaFingerprint, QaInputError, DEFAULT_ROUTE_CAP } from './qa.mjs'
 import {
   LABELS,
@@ -85,13 +101,17 @@ import {
   findingSummary,
   countFindings,
   findingsLine,
+  isReleaseEpic,
+  releaseStage,
+  RELEASE_STAGES,
 } from './epic-state.mjs'
 
 const USAGE = `usage: flow <command>
 
   init [--board [<title>]]               create the Flow labels in this repository
                                          (--board: also create, link or complete the project board; title Flow by default)
-  board-sync [<epic>] [--json]           set every epic's and ticket's Status on the project board from its labels
+  board-sync [<epic>] [--json]           set every epic's and ticket's Status on the project board from its labels, each release
+                                         epic's Release, and close the done tickets of release epics left open
   doctor                                 check gh, the repository, the labels and every open epic
   board [<epic>] [--json]                list open epics, or one epic's tickets
   next <epic>                            what can start now, as JSON (exit 1 when the epic is not approved, empty or stuck)
@@ -242,10 +262,29 @@ function loadTicket(number) {
   return { issue, parsed: parseTicketBody(issue.body, designSources), epicAuthor, epicIssue }
 }
 
-function changeState(number, { add = [], remove = [], state = null }) {
+function openOrClose(number, action) {
+  try {
+    if (action === 'close') github.closeIssue(number, 'completed')
+    else github.reopenIssue(number)
+    return true
+  } catch (error) {
+    if (!(error instanceof TrackerError) || error.missing) throw error
+    const remedy =
+      action === 'close'
+        ? `is done but still open, because GitHub refused to close it (${oneLine(error.message)}); close it by hand as completed, or run \`flow board-sync\` where a project board is linked`
+        : `is closed though it is no longer done, because GitHub refused to reopen it (${oneLine(error.message)}); reopen it by hand`
+    process.stderr.write(`#${number} ${remedy}\n`)
+    return false
+  }
+}
+
+function changeState(number, { add = [], remove = [], state = null, close = false, reopen = false }) {
   github.addLabels(number, add)
   github.removeLabels(number, remove)
+  const closed = close && openOrClose(number, 'close')
+  const reopened = reopen && openOrClose(number, 'reopen')
   if (state) syncProjectStatus(number, state)
+  return { closed, reopened }
 }
 
 function gitTopLevel() {
@@ -265,28 +304,32 @@ function commandInit(positional, flags) {
     process.stderr.write(`flow: ${outcome.refused}\n`)
     return 2
   }
-  for (const line of outcome.lines) console.log(line)
-  for (const problem of outcome.problems) process.stderr.write(`${problem}\n`)
-  return outcome.problems.length ? 1 : 0
+  const fields = ensureReleaseField()
+  const lines = [...outcome.lines, ...fields.lines]
+  const problems = [...outcome.problems, ...fields.problems]
+  for (const line of lines) console.log(line)
+  for (const problem of problems) process.stderr.write(`${problem}\n`)
+  return problems.length ? 1 : 0
 }
 
 function boardSyncEntries(epicNumber) {
   const entries = []
   const seen = new Set()
-  const add = (issue, { state, problem }) => {
+  const add = (issue, { state, problem }, { inReleaseEpic = false, releaseOf = null } = {}) => {
     if (seen.has(issue.number)) return
     seen.add(issue.number)
     if (isFinding(issue)) {
       if (issue.state !== 'closed') entries.push({ number: issue.number, state: null, problem: null, finding: true })
       return
     }
-    entries.push({ number: issue.number, state, problem, finding: false })
+    entries.push({ number: issue.number, state, problem, finding: false, open: issue.state !== 'closed', inReleaseEpic, releaseOf })
   }
   const epics = epicNumber === null ? github.listIssues({ label: EPIC_LABEL }) : [github.getIssue(epicNumber)]
   if (epicNumber !== null && !epics[0].labels.includes(EPIC_LABEL)) throw new UsageError(`#${epicNumber} is not an epic (it has no ${EPIC_LABEL} label)`)
   for (const epic of epics) {
-    add(epic, { state: 'epic', problem: null })
-    for (const sub of github.listSubIssues(epic.number)) add(sub, ticketState(sub.labels))
+    const settings = parseEpicBody(epic.body).settings
+    add(epic, { state: 'epic', problem: null }, { releaseOf: isReleaseEpic(settings) ? { issue: epic, settings } : null })
+    for (const sub of github.listSubIssues(epic.number)) add(sub, ticketState(sub.labels), { inReleaseEpic: isReleaseEpic(settings) })
   }
   if (epicNumber === null) for (const ticket of github.listIssues({ label: TICKET_LABEL })) add(ticket, ticketState(ticket.labels))
   return entries
@@ -307,32 +350,80 @@ function commandBoardSync(positional, flags) {
   const alreadyRight = []
   const skipped = []
   const failures = []
+  const closed = []
+  const releases = []
+  const release = releaseFieldOf(found.board)
+  const attempt = (number, kept, step) => {
+    try {
+      step()
+    } catch (error) {
+      if (!(error instanceof TrackerError) || error.missing) throw error
+      const reason = oneLine(explainProjectError(error))
+      failures.push({ number, reason })
+      process.stderr.write(`#${number} ${kept}, because ${reason}\n`)
+    }
+  }
   for (const entry of boardSyncEntries(epicNumber)) {
     if (entry.finding || entry.problem) {
       skipped.push({ number: entry.number, reason: entry.finding ? 'a finding, which is not on the board' : entry.problem })
       if (entry.problem) say(`#${entry.number} skipped: it ${entry.problem}`)
       continue
     }
-    try {
+    attempt(entry.number, 'kept its old Status', () => {
       const outcome = placeOnBoard(found.board, entry.number, entry.state)
       if (outcome === 'already right') {
         alreadyRight.push(entry.number)
-        continue
+        return
       }
       const change = { number: entry.number, status: statusOptionName(entry.state), added: outcome === 'added' }
       changes.push(change)
       say(`#${change.number} → ${change.status}${change.added ? ' (added to the board)' : ''}`)
-    } catch (error) {
-      if (!(error instanceof TrackerError) || error.missing) throw error
-      const reason = oneLine(explainProjectError(error))
-      failures.push({ number: entry.number, reason })
-      process.stderr.write(`#${entry.number} kept its old Status, because ${reason}\n`)
-    }
+    })
+    if (entry.inReleaseEpic && entry.state === 'done' && entry.open)
+      attempt(entry.number, 'stayed open', () => {
+        github.closeIssue(entry.number, 'completed')
+        closed.push(entry.number)
+        say(`#${entry.number} closed as completed: it is done`)
+      })
+    if (entry.releaseOf && release.problem) reportOnce(release.problem)
+    else if (entry.releaseOf)
+      attempt(entry.number, `kept its old ${RELEASE_FIELD}`, () => {
+        const value = releaseStageOf(entry.releaseOf)
+        if (placeRelease(found.board, entry.number, value) === 'already right') return
+        releases.push({ number: entry.number, release: value })
+        say(`#${entry.number} ${RELEASE_FIELD} → ${value}`)
+      })
   }
-  say(`${changes.length} set, ${alreadyRight.length} already right, ${skipped.length} skipped${failures.length ? `, ${failures.length} failed` : ''}`)
+  const counted = [
+    `${changes.length} set`,
+    `${alreadyRight.length} already right`,
+    `${skipped.length} skipped`,
+    ...(closed.length ? [`${closed.length} closed`] : []),
+    ...(releases.length ? [`${releases.length} ${RELEASE_FIELD} set`] : []),
+    ...(failures.length ? [`${failures.length} failed`] : []),
+  ]
+  say(counted.join(', '))
   if (flags.json)
-    printJson({ board: found.board.title, set: changes.length, alreadyRight: alreadyRight.length, skipped: skipped.length, failed: failures.length, changes, alreadyRightIssues: alreadyRight, skippedIssues: skipped, failures })
+    printJson({
+      board: found.board.title,
+      set: changes.length,
+      alreadyRight: alreadyRight.length,
+      skipped: skipped.length,
+      failed: failures.length,
+      changes,
+      alreadyRightIssues: alreadyRight,
+      skippedIssues: skipped,
+      closed,
+      releases,
+      failures,
+    })
   return failures.length ? 1 : 0
+}
+
+function releaseStageOf({ issue, settings }) {
+  const named = readEpicComments(github.listComments(issue.number)).releasePullRequest
+  const closed = issue.state === 'closed'
+  return releaseStage({ settings, closed, releasePullRequestNamed: Boolean(named), releaseMerged: Boolean(closed && named && github.getPullRequest(named).merged) })
 }
 
 function commandDoctor() {
@@ -592,12 +683,14 @@ function commandLabel(argv) {
   }
   const before = issue.labels.filter((label) => STATE_LABELS.includes(label))
   const moved = states.length === 1 && !(before.length === 1 && before[0] === states[0])
-  changeState(number, {
+  const state = moved ? STATE_BY_LABEL[states[0]] : null
+  const { reopened } = changeState(number, {
     add: add.filter((label) => !issue.labels.includes(label)),
     remove: remove.filter((label) => issue.labels.includes(label)),
-    state: moved ? STATE_BY_LABEL[states[0]] : null,
+    state,
+    reopen: Boolean(state) && state !== 'done' && issue.state === 'closed',
   })
-  console.log(`#${number}: ${after.join(', ') || '(no labels)'}`)
+  console.log(`#${number}: ${after.join(', ') || '(no labels)'}${reopened ? ' (reopened: a closed ticket carries no work)' : ''}`)
   return 0
 }
 
@@ -605,13 +698,14 @@ function commandCreateEpic(flags) {
   if (!flags.title) throw new UsageError('create-epic needs --title')
   if (flags.file === undefined) throw new UsageError('create-epic needs --file')
   const body = readFileSync(flags.file, 'utf8')
-  const { problems } = parseEpicBody(body)
+  const { problems, settings } = parseEpicBody(body)
   if (problems.length) {
     for (const problem of problems) process.stderr.write(`${problem}\n`)
     return 1
   }
   const created = github.createIssue({ title: flags.title, body, labels: [EPIC_LABEL] })
   syncProjectStatus(created.number, 'epic')
+  if (isReleaseEpic(settings)) syncProjectRelease(created.number, RELEASE_STAGES.building)
   console.log(created.number)
   return 0
 }
@@ -751,12 +845,13 @@ function markNeedsHuman(number, text) {
   const { issue, epicAuthor } = loadTicket(number)
   const people = issue.assignees.length ? issue.assignees : [epicAuthor || issue.author].filter(Boolean)
   const already = issue.labels.includes(NEEDS_HUMAN_LABEL)
-  changeState(number, {
+  const { reopened } = changeState(number, {
     add: already ? [] : [NEEDS_HUMAN_LABEL],
     remove: issue.labels.filter((label) => (STATE_LABELS.includes(label) && label !== NEEDS_HUMAN_LABEL) || label === START_LABEL),
     state: already ? null : 'needs-human',
+    reopen: issue.state === 'closed',
   })
-  return github.comment(number, needsHumanComment({ people, text }))
+  return github.comment(number, needsHumanComment({ people, text: reopened ? `${text} It was closed as done and is open again, since a closed ticket carries no work.` : text }))
 }
 
 function commandNeedsHuman(positional, flags) {
@@ -1215,7 +1310,7 @@ function mergeAcceptedTicket({ number, root, expectedSha = null }) {
     markNeedsHuman(number, text)
     return { code: 1, reason: text, needsHuman: true }
   }
-  changeState(number, { add: ['flow:done'], remove: issue.labels.filter((label) => STATE_LABELS.includes(label) && label !== 'flow:done'), state: 'done' })
+  changeState(number, { add: ['flow:done'], remove: issue.labels.filter((label) => STATE_LABELS.includes(label) && label !== 'flow:done'), state: 'done', close: true })
   github.comment(number, mergedComment({ sha, mergeSha: result.mergeSha, epicBranch, alreadyMerged: result.kind === 'already-merged', attempts: result.attempts }))
   const checked = withTicketChecked(epicIssue.body, number)
   if (checked !== normalizeNewlines(epicIssue.body)) github.updateIssueBody(epic.number, checked)
@@ -1509,7 +1604,7 @@ function releaseBody({ epic, plan, tickets }) {
       `Over ${metered.length} of ${tickets.length} ticket(s) with a cost comment: ${shownCount(totals.input)} input, ${shownCount(totals.output)} output, ${shownCount(totals.cacheCreation)} cache writes and ${shownCount(totals.cacheReads)} cache reads (tokens). Each ticket's comment has the figures by step and by model.`,
     )
   }
-  lines.push('', ...tickets.map((ticket) => `Closes #${ticket.number}`), `Closes #${epic.number}`, '', 'A person reviews and merges this pull request; nothing runs after the merge.')
+  lines.push('', ...tickets.map((ticket) => `Closes #${ticket.number}`), `Closes #${epic.number}`, '', 'A person reviews and merges this pull request; no work runs after the merge.')
   return lines.join('\n')
 }
 
@@ -1548,6 +1643,7 @@ function commandReleasePr(positional) {
     epicNumber,
     releasePrComment({ number: pullRequest.number, url: pullRequest.url, existing: Boolean(existing), epicBranch: epic.settings.branch, base }),
   )
+  syncProjectRelease(epicNumber, RELEASE_STAGES.open)
   printJson({ epic: epicNumber, pullRequest: pullRequest.number, url: pullRequest.url, base, existing: Boolean(existing) })
   return 0
 }

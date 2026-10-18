@@ -104,13 +104,15 @@ nothing else. A line that mentions blocking and cannot be read is reported
 by name and the ticket waits, because a guess about what a sentence meant
 is worse than a question.
 
-## A person merges to the default branch, and nothing runs after
+## A person merges to the default branch, and no work runs after
 
 Agents merge a ticket into its epic branch, by the exact commit that was
 reviewed, never by a branch name that could move. The step into the
 default branch is always a person's, through the epic's one pull request,
-and no step follows it: anything that ran after the merge would be work
-nobody reviewed, landing where everyone builds from.
+and no work follows it: anything that built or merged after the merge
+would be work nobody reviewed, landing where everyone builds from. Bringing
+the project board up to date afterwards (Flow 3.3) changes no code, which
+is why it is the one job allowed there.
 
 ## Replacing a field's options gives every option a new id
 

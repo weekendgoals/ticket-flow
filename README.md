@@ -124,7 +124,9 @@ Review fixes end `(review fix)`; a fix for a bug an earlier ticket shipped
 ends `(fixes #9)`. Under `Delivery: release` every ticket is merged into
 `epic/<name>` and the epic gets one pull request at the end; under
 `Delivery: incremental` each ticket opens its own pull request. **A person
-always merges into the default branch, and nothing runs after that merge.**
+always merges into the default branch, and no work runs after that merge**
+(the GitHub Action's one job after it only brings the project board up to
+date).
 
 ## The project board
 
@@ -141,7 +143,11 @@ ticket's state, and Flow never takes a state from the project.
    linked project already carries all six options, since Flow would go on
    writing to that one. With no project linked, it creates one with the
    title, sets its `Status` options to `Planned`, `In progress`,
-   `In review`, `Done`, `Needs human` and `Epic`, and links it. On an
+   `In review`, `Done`, `Needs human` and `Epic`, and links it. Either way
+   it then adds the `Release` field (below) when the board lacks it, or the
+   options it lacks, keeping each epic's value the same way; a field named
+   `Release` that is not single select is left alone, named, and the
+   command exits 1. On an
    existing project whose `Status` lacks some of them, it adds the missing
    ones and **keeps every option and every item's status**: GitHub gives
    every option a new id when the list changes, so the command first reads
@@ -160,8 +166,12 @@ ticket's state, and Flow never takes a state from the project.
 3. On a fresh board, or one that fell behind (it was linked late, or a token
    could not write to it for a while), run `flow board-sync [<epic>]`: it
    sets every open epic and its tickets, and every ticket with no epic, to
-   the `Status` its labels say, adding any that are missing. It reads each
-   item's current `Status` only to leave a right one alone.
+   the `Status` its labels say, adding any that are missing; gives each
+   release epic its `Release` value; and closes, as completed, every open
+   `flow:done` ticket of a release epic (one with a `Branch:`), which is how
+   tickets done before Flow 3.3 get counted. It reads each item's current
+   value only to leave a right one alone. `flow board-sync <epic>` works on
+   a closed epic too.
 
 From then on every command that changes a state label also moves the issue
 to the matching `Status`, right after the label has changed: `label`,
@@ -183,6 +193,38 @@ moved, the command prints one line starting `project board not updated:`.
 Either way it carries on and exits exactly as it would have. `init --board`
 and `board-sync` are the exception: they were asked to touch the board, so
 a refusal there exits 1 with that hint.
+
+**The progress bar.** A swimlane per epic shows closed sub-issues over all
+of them. So that it counts what is built, `flow merge` closes a ticket (as
+completed) when it marks it `flow:done`, while its code is still only on the
+epic branch; the open release pull request, and the epic's `Release` field,
+are the sign that the epic has not shipped. The epic itself stays open until
+a person merges the release pull request, whose `Closes #<n>` lines also
+close the tickets done before this version. When a done ticket goes back to
+work (`check-epic --mark` hands it to a person, or someone relabels it
+`flow:planned` to have it rebuilt), the issue is reopened with the label
+change, since a closed ticket carries no work; `flow reset` refuses a done
+ticket, as before. `flow label <n> +flow:done` closes nothing: a label is a
+label. Under incremental delivery the ticket's own pull request closes it
+when a person merges it.
+
+**The `Release` field.** A single-select field for epics only, so the
+board's columns and a `-status:Epic` filter stay as they are while the
+epic's card and the table layout show where it stands:
+
+| `Release` | Means |
+|---|---|
+| `Building` | its tickets are being built (set by `create-epic`) |
+| `Pull request open` | every ticket is done and the release pull request waits for a person (set by `release-pr` once the pull request exists) |
+| `Released` | the release pull request merged into the default branch, which closed the epic |
+
+An incremental epic gets no value: each of its tickets ships alone. Nothing
+in Flow runs after a person merges, except one job in the GitHub Action:
+the epic closing (`issues: closed` on a `flow:epic` issue, nothing else)
+runs `flow board-sync <epic>`, which reads the release pull request named in
+the epic's comments, as `flow stats` does, sees it merged and sets
+`Released`. Without the Action, run `flow board-sync <epic>` yourself after
+the merge. `flow doctor` names the field or its absence on the board line.
 
 A finding is not on the board: `flow create-finding` adds nothing to the
 project, and the issue joins it, as `Planned`, only when `flow promote` turns
@@ -469,6 +511,7 @@ The jobs:
 
 | Job | Runs when | What it does |
 |---|---|---|
+| `board` | an issue labelled `flow:epic` is closed (a closed ticket or finding runs nothing) | `flow board-sync <epic>`: the epic's `Release` becomes `Released` once its release pull request merged. The one job that runs after a person merges; it builds, merges and pushes nothing |
 | `route` | the epic gets `flow:approved` (an issue that is not an epic, such as a finding, starts nothing), or a ticket `flow:start` | Reads the epic's number from the event alone, so every scheduler run of one epic waits for the last |
 | `epic` | after `route`, and after every ticket | Withdraws a start request whose `ticket` job failed before it could, then `flow dispatch`: adds `flow:start` to up to `Parallel:` ready tickets. When everything is built: `flow check-epic`, then `flow release-pr` (which reuses an open one), and asks the review bot. Never runs Claude |
 | `ticket` | a ticket gets `flow:start` (a finding does not run it), or by hand with a ticket number | Runs `/flow:ticket #<n> --unattended --no-merge` on the tier's model, posts the cost from the run's output, keeps the screenshots as an artifact, and resets a run that died |
@@ -600,8 +643,8 @@ every answer is read from GitHub (through `gh`) and git.
 
 | Command | What it does |
 |---|---|
-| `init [--board [<title>]]` | Creates the twelve labels. Safe to run again. `--board` also makes sure a matching project board is linked: creates and links one (titled `Flow` by default), or adds the `Status` options a linked one lacks, keeping every option and every item's status; exits 2 when several linked projects could be meant, 1, with the `gh auth refresh -s project` hint, when GitHub refuses. See [The project board](#the-project-board) |
-| `board-sync [<epic>] [--json]` | Sets the project board's `Status` of every open epic (`Epic`) and ticket from its labels, adding missing ones; findings and tickets with no readable state are skipped. One line per change, then `<n> set, <m> already right, <k> skipped`. Exits 1 when no matching board is linked, or when any issue could not be set (the rest are still set) |
+| `init [--board [<title>]]` | Creates the twelve labels. Safe to run again. `--board` also makes sure a matching project board is linked: creates and links one (titled `Flow` by default), or adds the `Status` options a linked one lacks, keeping every option and every item's status, and adds the `Release` field or its missing options; exits 1 on a `Release` field of another kind, 2 when several linked projects could be meant, 1, with the `gh auth refresh -s project` hint, when GitHub refuses. See [The project board](#the-project-board) |
+| `board-sync [<epic>] [--json]` | Sets the project board's `Status` of every open epic (`Epic`) and ticket from its labels, adding missing ones; findings and tickets with no readable state are skipped. Sets each release epic's `Release`, and closes the open `flow:done` tickets of release epics. One line per change, then `<n> set, <m> already right, <k> skipped` (and how many were closed and how many `Release` values set; `--json` lists them as `closed` and `releases`). Exits 1 when no matching board is linked, or when any issue could not be set (the rest are still set) |
 | `doctor` | Checks `gh`, sign-in, that issues are on, the labels, the default branch, and every open epic's `Blocked by` lines (unreadable, outside the epic, cycles). Prints one sentence per problem, then one line naming the project board (see [The project board](#the-project-board)), then `ok` when there was no problem |
 | `board [<epic>] [--json]` | The default branch, then open epics with approval, progress and branch; or one epic's tickets with tier, state and blockers. Either way, how many findings wait or are approved |
 | `next <epic>` | JSON: `approved`, `ready`, `waiting`, `inProgress`, `done`, `needsHuman`, `planned`, `problems`. Exits 1 when the epic is not approved, has no tickets, or is stuck (unfinished tickets, none ready, none in progress) |
