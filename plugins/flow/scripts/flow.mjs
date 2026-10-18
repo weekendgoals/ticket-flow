@@ -319,7 +319,7 @@ function commandInit(positional, flags) {
   return problems.length ? 1 : 0
 }
 
-function boardSyncEntries(epicNumber) {
+function boardSyncEntries(epicNumber, closedEpicsOnBoard = []) {
   const entries = []
   const seen = new Set()
   const add = (issue, { state, problem }, { inReleaseEpic = false, releaseOf = null, delivery = null } = {}) => {
@@ -337,6 +337,13 @@ function boardSyncEntries(epicNumber) {
     const settings = parseEpicBody(epic.body).settings
     add(epic, { state: 'epic', problem: null }, { releaseOf: isReleaseEpic(settings) ? { issue: epic, settings } : null })
     for (const sub of github.listSubIssues(epic.number)) add(sub, ticketState(sub.labels), { inReleaseEpic: isReleaseEpic(settings), delivery: deliveryFor({ settings }) })
+  }
+  for (const number of closedEpicsOnBoard) {
+    if (seen.has(number)) continue
+    const issue = github.getIssue(number)
+    if (!issue.labels.includes(EPIC_LABEL) || issue.state !== 'closed') continue
+    const settings = parseEpicBody(issue.body).settings
+    if (isReleaseEpic(settings)) add(issue, { state: 'epic', problem: null }, { releaseOf: { issue, settings } })
   }
   if (epicNumber === null) for (const ticket of github.listIssues({ label: TICKET_LABEL })) add(ticket, ticketState(ticket.labels))
   return entries
@@ -372,7 +379,17 @@ function commandBoardSync(positional, flags) {
       process.stderr.write(`#${number} ${kept}, because ${reason}\n`)
     }
   }
-  for (const entry of boardSyncEntries(epicNumber)) {
+  let closedEpicsOnBoard = []
+  if (epicNumber === null && !release.problem)
+    try {
+      closedEpicsOnBoard = epicsAwaitingRelease(found)
+    } catch (error) {
+      if (!(error instanceof TrackerError) || error.missing) throw error
+      const reason = oneLine(explainProjectError(error))
+      failures.push({ number: null, reason })
+      process.stderr.write(`the items of ${found.board.title} could not be read, so no closed epic was visited for its ${RELEASE_FIELD}, because ${reason}\n`)
+    }
+  for (const entry of boardSyncEntries(epicNumber, closedEpicsOnBoard)) {
     if (entry.finding || entry.problem) {
       skipped.push({ number: entry.number, reason: entry.finding ? 'a finding, which is not on the board' : entry.problem })
       if (entry.problem) say(`#${entry.number} skipped: it ${entry.problem}`)
@@ -406,7 +423,7 @@ function commandBoardSync(positional, flags) {
     else if (entry.releaseOf)
       attempt(entry.number, `kept its old ${RELEASE_FIELD}`, () => {
         const value = releaseStageOf(entry.releaseOf)
-        if (placeRelease(found.board, entry.number, value) === 'already right') return
+        if (value === null || placeRelease(found.board, entry.number, value) === 'already right') return
         releases.push({ number: entry.number, release: value })
         say(`#${entry.number} ${RELEASE_FIELD} → ${value}`)
       })
@@ -437,6 +454,15 @@ function commandBoardSync(positional, flags) {
       failures,
     })
   return failures.length ? 1 : 0
+}
+
+function epicsAwaitingRelease(found) {
+  const epicOption = found.board.optionIds.get('epic')
+  return github
+    .projectItems(found.board.id)
+    .filter((item) => item.kind === 'Issue' && item.repositoryId === found.repository.id && item.status && item.status.optionId === epicOption)
+    .filter((item) => !(item.release && item.release.name === RELEASE_STAGES.released))
+    .map((item) => item.number)
 }
 
 function releaseStageOf({ issue, settings }) {
@@ -1608,6 +1634,9 @@ function shownCount(value) {
   return typeof value === 'number' ? value.toLocaleString('en-US') : 'unknown'
 }
 
+const NO_CODE_WORK_AFTER_MERGE =
+  "After a person merges into the default branch, no code work runs: what runs is the GitHub Action's `board` job, which closes `flow:done` tickets left open and writes the project board (Status, Release, figures), and the report page's rebuild, which only reads."
+
 function releaseBody({ epic, plan, tickets }) {
   const lines = [`Epic: #${epic.number}`, '']
   if (plan.outcome) lines.push('## Outcome', '', plan.outcome, '')
@@ -1623,7 +1652,7 @@ function releaseBody({ epic, plan, tickets }) {
       `Over ${metered.length} of ${tickets.length} ticket(s) with a cost comment: ${shownCount(totals.input)} input, ${shownCount(totals.output)} output, ${shownCount(totals.cacheCreation)} cache writes and ${shownCount(totals.cacheReads)} cache reads (tokens). Each ticket's comment has the figures by step and by model.`,
     )
   }
-  lines.push('', ...tickets.map((ticket) => `Closes #${ticket.number}`), `Closes #${epic.number}`, '', 'A person reviews and merges this pull request; no work runs after the merge.')
+  lines.push('', ...tickets.map((ticket) => `Closes #${ticket.number}`), `Closes #${epic.number}`, '', `A person reviews and merges this pull request. ${NO_CODE_WORK_AFTER_MERGE}`)
   return lines.join('\n')
 }
 

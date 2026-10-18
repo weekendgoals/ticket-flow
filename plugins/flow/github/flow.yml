@@ -1,6 +1,6 @@
 # Flow: builds the tickets of an approved epic on GitHub, with nobody watching.
 # Copy this file to .github/workflows/flow.yml in your project.
-# Events made with the default GITHUB_TOKEN start no other workflow, so the scheduler labels tickets with FLOW_TOKEN: a fine-grained personal access token or a GitHub App token (contents, issues and pull requests: read and write; add projects: read and write to keep a linked project board's Status in step).
+# Events made with the default GITHUB_TOKEN start no other workflow, so the scheduler labels tickets with FLOW_TOKEN: a fine-grained personal access token or a GitHub App token (contents, issues and pull requests: read and write). Add projects: read and write to keep a linked project board's Status, Release and figures in step; the Actions token cannot touch Projects. Issues write is what closes a done ticket.
 name: flow
 
 on:
@@ -203,10 +203,14 @@ jobs:
             $FLOW post "$EPIC" --text "**Run stopped.** Nothing is ready and nothing is in progress; the tickets labelled flow:needs-human say why."
           fi
 
-  # The one job that runs after a person merges: the release pull request closes the epic, and this reads the epic and its tickets and brings the project board up to date (Status, Release, a done ticket left open closed). It builds, merges and pushes nothing, and changes no label.
+  # After a person merges into the default branch, no code work runs: what runs is the GitHub Action's `board` job, which closes `flow:done` tickets left open and writes the project board (Status, Release, figures), and the report page's rebuild, which only reads. It builds, merges and pushes nothing, and changes no label.
   board:
     if: github.event_name == 'issues' && github.event.action == 'closed' && contains(github.event.issue.labels.*.name, 'flow:epic')
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: read
     env:
       EPIC: ${{ github.event.issue.number }}
       GH_TOKEN: ${{ secrets.FLOW_TOKEN || github.token }}

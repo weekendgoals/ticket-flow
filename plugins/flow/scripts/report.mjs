@@ -1,5 +1,5 @@
 import { duration } from './stats.mjs'
-import { releaseStage } from './epic-state.mjs'
+import { releaseStage, isReleaseEpic, RELEASE_STAGES } from './epic-state.mjs'
 
 const UNKNOWN = 'unknown'
 const isNumber = (value) => typeof value === 'number' && Number.isFinite(value)
@@ -39,7 +39,7 @@ export function cacheTokens(tokens) {
 }
 
 export function epicState(epic) {
-  if (epic.state === 'closed') return 'shipped'
+  if (epic.state === 'closed') return !isReleaseEpic({ delivery: epic.delivery, branch: epic.branch }) || epicRelease(epic) === RELEASE_STAGES.released ? 'shipped' : 'closed without release'
   if (!epic.tickets.length) return 'empty'
   if (epic.tickets.every((ticket) => ticket.state === 'done')) return 'built'
   if (epic.tickets.some((ticket) => ticket.state === 'in-progress' || ticket.state === 'in-review')) return 'running'

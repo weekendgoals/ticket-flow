@@ -37,9 +37,11 @@ stamps the version and date and bumps `plugin.json` in the same commit.
 - **`github/flow.yml`** listens to `issues: closed` as well: a closed issue
   labelled `flow:epic` runs one new job, `board`, which runs `flow
   board-sync <epic>` and nothing else (it builds, merges and pushes
-  nothing); a closed ticket or finding runs nothing. The rule is now "a
-  person merges into the default branch, and no work runs after", and the
-  release pull request's last line says "no work runs after the merge".
+  nothing), with its own permissions (contents and pull requests: read,
+  issues: write); a closed ticket or finding runs nothing. `Released` on
+  the board needs a `FLOW_TOKEN` with the Projects permission. The rule,
+  stated once in CLAUDE.md and quoted in the README, the ticket skill and
+  the release pull request's last line, is now: "After a person merges into the default branch, no code work runs: what runs is the GitHub Action's `board` job, which closes `flow:done` tickets left open and writes the project board (Status, Release, figures), and the report page's rebuild, which only reads."
 - `tracker/github.mjs`: `reopenIssue`, `createProjectField`; the project
   query reads every field's name and type, and item queries read the
   `Release` value beside `Status`.

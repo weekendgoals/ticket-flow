@@ -226,7 +226,6 @@ export function isReleaseEpic(settings) {
 
 export function releaseStage({ settings, closed, releasePullRequestNamed, releaseMerged }) {
   if (!isReleaseEpic(settings)) return null
-  if (closed && releaseMerged) return RELEASE_STAGES.released
-  if (!closed && releasePullRequestNamed) return RELEASE_STAGES.open
-  return RELEASE_STAGES.building
+  if (closed) return releaseMerged ? RELEASE_STAGES.released : null
+  return releasePullRequestNamed ? RELEASE_STAGES.open : RELEASE_STAGES.building
 }

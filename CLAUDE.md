@@ -76,9 +76,9 @@ as of 2026-10-18; the pass count grows, the fail line stays `# fail 0`.
   whole-epic commands, the same way.
 - `pull-request.test.mjs` `# pass 20`, `issue-body.test.mjs` `# pass 29`,
   `checks.test.mjs` `# pass 26` (real shell commands in a temp dir),
-  `tracker/github.test.mjs` `# pass 36`, `fidelity.test.mjs` `# pass 54`,
+  `tracker/github.test.mjs` `# pass 37`, `fidelity.test.mjs` `# pass 54`,
   `stats.test.mjs` `# pass 13` (needs `git`), `project-sync.test.mjs`
-  `# pass 33`, under `plugins/flow/scripts/`.
+  `# pass 34`, under `plugins/flow/scripts/`.
 - `node --test plugins/flow/scripts/meter.test.mjs` — `# pass 16`. Builds
   its transcripts; no test reads a real one (they belong to whoever ran them).
 - `node --test plugins/flow/scripts/worktree-setup.test.mjs` — `# pass 18`;
@@ -145,10 +145,13 @@ CI (`.github/workflows/tests.yml`) runs every suite and check above.
   the same commit. A skipped run never passes; a COMPARE is manual and counts
   in neither total nor passed; a malformed line fails the check rather than
   silently never running.
-- **A person merges into the default branch, and no work runs after.** No
-  agent merges or pushes toward it; both hosts end at the release pull
-  request. The one job after it, `flow board-sync` on the closed epic in
-  `flow.yml`, only reads issues and writes the project board. `Branch:` must start with `epic/`, refused everywhere otherwise.
+- **A person merges into the default branch, and no code work runs after.**
+  After a person merges into the default branch, no code work runs: what
+  runs is the GitHub Action's `board` job, which closes `flow:done` tickets
+  left open and writes the project board (Status, Release, figures), and
+  the report page's rebuild, which only reads. No agent merges or pushes
+  toward the default branch; both hosts end at the release pull request.
+  `Branch:` must start with `epic/`, refused everywhere otherwise.
   The one agent merge is a ticket into its epic branch, by the accepted
   commit, never by a name that could move.
 - **The reviewer never sees the builder's transcript or reasoning**, not even

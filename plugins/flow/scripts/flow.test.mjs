@@ -1418,7 +1418,7 @@ test('report writes one page of every epic, open and closed, from the same figur
   assert.match(html, /<h1>Flow report: o\/r<\/h1>/)
   assert.match(html, /by Flow \d+\.\d+\.\d+/)
   assert.deepEqual([...html.matchAll(/id="epic-(\d+)"/g)].map((match) => Number(match[1])), [7, 1])
-  assert.match(html, /id="epic-1">[\s\S]*?<span class="pill">shipped<\/span>/)
+  assert.match(html, /id="epic-1">[\s\S]*?<span class="pill">closed without release<\/span>/, 'closed, with no release pull request named, is not shipped')
   assert.deepEqual(writesMade(), [], 'the report reads and writes nothing on GitHub')
   const since = flow('report', '--out', out, '--since', '2026-10-10')
   assert.equal(since.status, 0, since.stderr)

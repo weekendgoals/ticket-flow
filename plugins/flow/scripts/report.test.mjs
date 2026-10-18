@@ -70,7 +70,10 @@ test('epic states and Release words follow the tickets and the release pull requ
   assert.equal(epicState({ ...base, tickets: [{ state: 'needs-human' }, { state: 'planned' }] }), 'stopped')
   assert.equal(epicState({ ...base, tickets: [{ state: 'planned' }] }), 'planned')
   assert.equal(epicRelease({ ...base, releasePullRequest: { number: 4, merged: false } }), 'Pull request open')
-  assert.equal(epicRelease({ ...base, state: 'closed', releasePullRequest: { number: 4, merged: false } }), 'Building')
+  assert.equal(epicRelease({ ...base, state: 'closed', releasePullRequest: { number: 4, merged: false } }), null, 'closed with its release unmerged: no value, the board keeps what it had')
+  assert.equal(epicState({ ...base, state: 'closed', releasePullRequest: { number: 4, merged: false }, tickets: [{ state: 'done' }] }), 'closed without release')
+  assert.equal(epicState({ ...base, state: 'closed', releasePullRequest: { number: 4, merged: true }, tickets: [{ state: 'done' }] }), 'shipped')
+  assert.equal(epicState({ ...base, delivery: 'incremental', branch: null, state: 'closed', tickets: [] }), 'shipped')
   assert.equal(epicRelease({ ...base, delivery: 'incremental', branch: null }), null)
 })
 

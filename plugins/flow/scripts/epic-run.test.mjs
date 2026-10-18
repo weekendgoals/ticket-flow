@@ -117,7 +117,7 @@ const DEFAULT_TICKETS = {
   4: { title: 'Export name', labels: ['flow:ticket', 'flow:planned'], criteria: '- the name\n  CHECK: test -f name.txt', blockedBy: 'Blocked by: #2' },
 }
 
-function world({ epicLabels = ['flow:epic', 'flow:approved'], epic = {}, tickets = {}, comments = {}, findings = [], extra = {} } = {}) {
+function world({ epicLabels = ['flow:epic', 'flow:approved'], epic = {}, tickets = {}, comments = {}, findings = [], closesOrReopens = [], extra = {} } = {}) {
   const epicIssue = issue(1, { title: 'Trip export', body: epicBody(epic), labels: epicLabels })
   const merged = Object.fromEntries(Object.entries(DEFAULT_TICKETS).map(([number, base]) => [number, { ...base, ...(tickets[number] || {}) }]))
   const issues = Object.entries(merged).map(([number, ticket]) => ({
@@ -142,7 +142,7 @@ function world({ epicLabels = ['flow:epic', 'flow:approved'], epic = {}, tickets
     fixtures[`GET ${R}/issues/${number}/comments?per_page=100`] = comments[number] || []
     fixtures[`POST ${R}/issues/${number}/comments`] = { id: number, html_url: `https://github.com/o/r/issues/${number}#issuecomment-${number}` }
     fixtures[`POST ${R}/issues/${number}/labels`] = []
-    fixtures[`PATCH ${R}/issues/${number}`] = { ...ticket, state: 'closed' }
+    if (closesOrReopens.includes(number)) fixtures[`PATCH ${R}/issues/${number}`] = { ...ticket, state: ticket.state === 'closed' ? 'open' : 'closed' }
     for (const label of ['flow:planned', 'flow:in-progress', 'flow:in-review', 'flow:start', 'flow:done'])
       fixtures[`DELETE ${R}/issues/${number}/labels/${encodeURIComponent(label)}`] = null
   }
@@ -158,7 +158,7 @@ beforeEach(() => fake.clearCalls())
 test('merge takes the commit the acceptance comment names, and refuses a different one', () => {
   const repo = repository()
   const sha = ticketBranch(repo, 2, { 'button.txt': 'b\n' })
-  world({ tickets: { 2: { labels: ['flow:ticket', 'flow:in-review'] } }, comments: { 2: [STARTED, accepted(sha)] } })
+  world({ tickets: { 2: { labels: ['flow:ticket', 'flow:in-review'] } }, comments: { 2: [STARTED, accepted(sha)] }, closesOrReopens: [2] })
   const wrong = flow(repo.work, ['merge', '2', '--sha', 'a'.repeat(40)])
   assert.equal(wrong.status, 1)
   assert.match(wrong.stderr, /#2 was accepted at [0-9a-f]{12}, not at aaaaaaaaaaaa; only the commit the acceptance comment names is merged/)
@@ -192,6 +192,7 @@ test('merge --epic merges every accepted ticket in the order the epic lists them
   world({
     tickets: { 2: { labels: ['flow:ticket', 'flow:in-review'] }, 3: { labels: ['flow:ticket', 'flow:in-review'] }, 4: { labels: ['flow:ticket', 'flow:in-progress'] } },
     comments: { 2: [STARTED, accepted(two)], 3: [STARTED, accepted(three)], 4: [STARTED] },
+    closesOrReopens: [2, 3],
   })
   const result = flow(repo.work, ['merge', '--epic', '1'])
   assert.equal(result.status, 0, result.stderr)
@@ -209,6 +210,7 @@ test('merge --epic names a ticket accepted under another account in notMerged in
   world({
     tickets: { 2: { labels: ['flow:ticket', 'flow:in-review'] }, 3: { labels: ['flow:ticket', 'flow:in-review'] } },
     comments: { 2: [STARTED, accepted(two)], 3: [STARTED, elsewhere] },
+    closesOrReopens: [2],
   })
   const result = flow(repo.work, ['merge', '--epic', '1'])
   assert.equal(result.status, 1)
@@ -296,7 +298,7 @@ test('check-epic --mark reopens a failing ticket that was closed as done, and sa
   commitFile(repo.work, 'button.txt', 'b\n', '#2: the button')
   git(repo.work, 'push', '-q', 'origin', 'HEAD:epic/trip-export')
   git(repo.work, 'checkout', '-q', 'main')
-  world({ tickets: { 2: { labels: ['flow:ticket', 'flow:done'], state: 'closed' }, 3: { labels: ['flow:ticket', 'flow:done'], state: 'closed' } } })
+  world({ tickets: { 2: { labels: ['flow:ticket', 'flow:done'], state: 'closed' }, 3: { labels: ['flow:ticket', 'flow:done'], state: 'closed' } }, closesOrReopens: [3] })
   const result = flow(repo.work, ['check-epic', '1', '--mark'])
   assert.equal(result.status, 1)
   assert.deepEqual(added(3), ['flow:needs-human'])
@@ -399,7 +401,7 @@ test('release-pr opens the epic\'s one pull request with its outcome, walkthroug
   assert.match(request.body, /^Epic: #1\n\n## Outcome\n\nTravellers can export a trip\.\n\n## Walkthrough\n\nA traveller opens a trip/)
   assert.match(request.body, /\| #2 Export button \| `111111111111` \|\n\| #3 Export file \| `222222222222` \|\n\| #4 Export name \| not recorded \|/)
   assert.match(request.body, /Over 2 of 3 ticket\(s\) with a cost comment: 4,000 input, 30 output, 15 cache writes and 300 cache reads/, 'a cost comment posted twice counts once; a second run of a ticket adds')
-  assert.match(request.body, /Closes #2\nCloses #3\nCloses #4\nCloses #1\n\nA person reviews and merges this pull request; no work runs after the merge\./)
+  assert.match(request.body, /Closes #2\nCloses #3\nCloses #4\nCloses #1\n\nA person reviews and merges this pull request\. After a person merges into the default branch, no code work runs: what runs is the GitHub Action's `board` job, which closes `flow:done` tickets left open and writes the project board \(Status, Release, figures\), and the report page's rebuild, which only reads\./)
   assert.match(posted(1)[0], /^<!-- flow:release-pr number=40 -->\n\*\*Release pull request opened:\*\* https:\/\/github\.com\/o\/r\/pull\/40/)
 })
 

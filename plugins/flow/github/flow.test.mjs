@@ -209,5 +209,8 @@ test('a closed epic runs only board-sync for that epic, and a closed ticket or f
   assert.deepEqual(runs, ['$FLOW board-sync "$EPIC" || true'])
   assert.ok(!board.steps.some((entry) => String(entry.uses || '').startsWith('anthropics/')), 'no agent runs after a merge')
   for (const job of ['ticket', 'route']) assert.match(workflow.jobs[job].if, /github\.event\.label\.name ==/, `${job} needs a label event, so a close starts nothing there`)
-  assert.match(text, /# The one job that runs after a person merges/)
+  assert.deepEqual(board.permissions, { contents: 'read', issues: 'write', 'pull-requests': 'read' }, 'it closes issues and reads the release pull request, nothing more')
+  const rule = readFileSync(join(dirname(templatePath), '..', '..', '..', 'CLAUDE.md'), 'utf8').replace(/\s+/g, ' ')
+  const stated = text.match(/# (After a person merges into the default branch, no code work runs: [^\n]*?which only reads\.)/)[1]
+  assert.ok(rule.includes(stated), 'the template quotes the rule as CLAUDE.md states it')
 })

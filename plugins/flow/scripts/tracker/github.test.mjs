@@ -317,7 +317,14 @@ test('linkedProjects reads the linked projects with their Status options, and a 
   })
   const query = fake.calls()[0].args.find((arg) => arg.startsWith('query='))
   assert.match(query, /repository\(owner:\$owner,name:\$name\)\{id owner\{id\} projectsV2\(first:20\).*field\(name:"Status"\).*options\{id name color description\}/)
-  assert.match(query, /fields\(first:50\)\{nodes\{\.\.\. on ProjectV2FieldCommon\{id name dataType\} \.\.\. on ProjectV2SingleSelectField\{options\{id name color description\}\}\}\}/)
+  assert.match(query, /fields\(first:100\)\{pageInfo\{hasNextPage\} nodes\{\.\.\. on ProjectV2FieldCommon\{id name dataType\} \.\.\. on ProjectV2SingleSelectField\{options\{id name color description\}\}\}\}/)
+})
+
+test('linkedProjects refuses a project with more fields than one page, naming it, rather than miss a field past the page', () => {
+  fake.setFixtures({
+    'graphql name={repo} owner={owner}': { data: { repository: { id: 'R_1', owner: { id: 'U_1' }, projectsV2: { nodes: [{ id: 'PVT_1', title: 'Big board', field: null, fields: { pageInfo: { hasNextPage: true }, nodes: [] } }] } } } },
+  })
+  assert.throws(() => github.linkedProjects(), (error) => error instanceof github.TrackerError && /the project Big board has more than 100 fields/.test(error.message))
 })
 
 test('linkedProjects turns a GraphQL error into a TrackerError', () => {

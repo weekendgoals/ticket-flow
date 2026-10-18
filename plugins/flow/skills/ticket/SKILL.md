@@ -341,9 +341,10 @@ get its first one only.
   pull request's URL.
 
 No agent ever merges into the default branch: a person merges every pull
-request there, and no work runs after that merge (the one job that follows
-a release, `flow board-sync` on the closed epic, only brings the project
-board up to date).
+request there. After a person merges into the default branch, no code work
+runs: what runs is the GitHub Action's `board` job, which closes
+`flow:done` tickets left open and writes the project board (Status,
+Release, figures), and the report page's rebuild, which only reads.
 
 ## The pull request loop
 

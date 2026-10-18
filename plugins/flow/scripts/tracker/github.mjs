@@ -390,7 +390,7 @@ export function viewerLogin(environment = process.env) {
 
 const STATUS_FIELD_SELECTION = 'field(name:"Status"){... on ProjectV2SingleSelectField{id options{id name color description}}}'
 const FIELD_SELECTION = '... on ProjectV2FieldCommon{id name dataType} ... on ProjectV2SingleSelectField{options{id name color description}}'
-const FIELDS_SELECTION = `fields(first:50){nodes{${FIELD_SELECTION}}}`
+const FIELDS_SELECTION = `fields(first:100){pageInfo{hasNextPage} nodes{${FIELD_SELECTION}}}`
 const LINKED_PROJECTS_QUERY = `query($owner:String!,$name:String!){repository(owner:$owner,name:$name){id owner{id} projectsV2(first:20){nodes{id title ${STATUS_FIELD_SELECTION} ${FIELDS_SELECTION}}}}}`
 const RELEASE_VALUE_SELECTION = 'release:fieldValueByName(name:"Release"){... on ProjectV2ItemFieldSingleSelectValue{optionId name}}'
 
@@ -401,6 +401,8 @@ function normalizeField(node) {
 }
 
 function normalizeProject(node) {
+  if (node.fields && node.fields.pageInfo && node.fields.pageInfo.hasNextPage)
+    throw new TrackerError(`the project ${node.title} has more than 100 fields, and Flow reads only the first 100, so it cannot tell whether the fields it needs exist`)
   return {
     id: node.id,
     title: node.title,

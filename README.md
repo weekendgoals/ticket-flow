@@ -124,9 +124,11 @@ Review fixes end `(review fix)`; a fix for a bug an earlier ticket shipped
 ends `(fixes #9)`. Under `Delivery: release` every ticket is merged into
 `epic/<name>` and the epic gets one pull request at the end; under
 `Delivery: incremental` each ticket opens its own pull request. **A person
-always merges into the default branch, and no work runs after that merge**
-(the GitHub Action's one job after it only brings the project board up to
-date).
+always merges into the default branch.**
+After a person merges into the default branch, no code work runs: what runs
+is the GitHub Action's `board` job, which closes `flow:done` tickets left
+open and writes the project board (Status, Release, figures), and the
+report page's rebuild, which only reads.
 
 ## The project board
 
@@ -173,8 +175,11 @@ ticket's state, and Flow never takes a state from the project.
    with a cost comment; and closes, as completed, every open
    `flow:done` ticket of a release epic (one with a `Branch:`), which is how
    tickets done before Flow 3.3 get counted. It reads each item's current
-   value only to leave a right one alone. `flow board-sync <epic>` works on
-   a closed epic too.
+   value only to leave a right one alone. Without an epic number it also
+   reads the board's items once and visits the closed epics on it whose
+   `Release` is not `Released` yet, so a release merged while nothing was
+   watching still reaches `Released`; `flow board-sync <epic>` is the way
+   for a closed epic that is not on the board.
 
 From then on every command that changes a state label also moves the issue
 to the matching `Status`, right after the label has changed: `label`,
@@ -221,10 +226,11 @@ epic's card and the table layout show where it stands:
 | `Pull request open` | every ticket is done and the release pull request waits for a person (set by `release-pr` once the pull request exists) |
 | `Released` | the release pull request merged into the default branch, which closed the epic |
 
-An incremental epic gets no value: each of its tickets ships alone. Nothing
-in Flow runs after a person merges, except one job in the GitHub Action:
-the epic closing (`issues: closed` on a `flow:epic` issue, nothing else)
-runs `flow board-sync <epic>`, which reads the release pull request named in
+An incremental epic gets no value: each of its tickets ships alone. The
+move to `Released` comes from the Action's `board` job, the one job after a
+merge (see [How work is kept on GitHub](#how-work-is-kept-on-github)): the
+epic closing (`issues: closed` on a `flow:epic` issue, nothing else) runs
+`flow board-sync <epic>`, which reads the release pull request named in
 the epic's comments, as `flow stats` does, sees it merged and sets
 `Released`. Without the Action, run `flow board-sync <epic>` yourself after
 the merge. `flow doctor` names the field or its absence on the board line.
@@ -238,7 +244,7 @@ so each ticket's cost comment is copied into seven number fields:
 | `Output tokens` | output tokens, all steps |
 | `Cache tokens` | cache writes plus cache reads |
 | `Build minutes` | the builder's time, in whole minutes |
-| `Review minutes` | review plus fixes |
+| `Review minutes` | review plus fixes; empty when either is unknown, which is every ticket whose meter saw no fixes session |
 | `Total minutes` | from the first start to the merge (or the last pull request comment) |
 | `Review rounds` | how many review rounds were posted |
 
@@ -540,7 +546,7 @@ The jobs:
 
 | Job | Runs when | What it does |
 |---|---|---|
-| `board` | an issue labelled `flow:epic` is closed (a closed ticket or finding runs nothing) | `flow board-sync <epic>`: the epic's `Release` becomes `Released` once its release pull request merged. The one job that runs after a person merges; it builds, merges and pushes nothing |
+| `board` | an issue labelled `flow:epic` is closed (a closed ticket or finding runs nothing) | `flow board-sync <epic>`: the epic's `Release` becomes `Released` once its release pull request merged. The one job after a merge (see [How work is kept on GitHub](#how-work-is-kept-on-github)); it builds, merges and pushes nothing. `Released` on the board needs a `FLOW_TOKEN` with the Projects permission: the Actions token cannot touch Projects, and the job then exits green having done nothing |
 | `route` | the epic gets `flow:approved` (an issue that is not an epic, such as a finding, starts nothing), or a ticket `flow:start` | Reads the epic's number from the event alone, so every scheduler run of one epic waits for the last |
 | `epic` | after `route`, and after every ticket | Withdraws a start request whose `ticket` job failed before it could, then `flow dispatch`: adds `flow:start` to up to `Parallel:` ready tickets. When everything is built: `flow check-epic`, then `flow release-pr` (which reuses an open one), and asks the review bot. Never runs Claude |
 | `ticket` | a ticket gets `flow:start` (a finding does not run it), or by hand with a ticket number | Runs `/flow:ticket #<n> --unattended --no-merge` on the tier's model, posts the cost from the run's output, keeps the screenshots as an artifact, and resets a run that died |

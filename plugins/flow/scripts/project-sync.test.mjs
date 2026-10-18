@@ -506,6 +506,7 @@ function boardWorld(extra = {}) {
     ...itemsOf(43, []),
     ...itemsOf(50, [onBoard('PVTI_50')]),
     'graphql content=I_43 project=PVT_flow': { data: { addProjectV2ItemById: { item: { id: 'PVTI_43' } } } },
+    'graphql project=PVT_flow': boardItems([]),
     [setStatus('PVTI_42', 'OPT_done')]: SET_RESPONSE,
     [setStatus('PVTI_43', 'OPT_planned')]: SET_RESPONSE,
     [setStatus('PVTI_50', 'OPT_in_progress')]: SET_RESPONSE,
@@ -820,4 +821,37 @@ test('init --board adds the number fields a board lacks, names them, and refuses
   assert.deepEqual(graphqlKeys(), [PROJECT_LOOKUP])
   const doctor = flow('doctor')
   assert.match(doctor.stdout, /^project board: Flow board, Release field: Building, Pull request open, Released, figures: Review rounds is a text field \(`flow init --board` adds the missing ones\)$/m)
+})
+
+test('a bare board-sync visits the closed epics on the board whose Release is not Released yet, and leaves the released ones and the open ones it already read', () => {
+  const closedEpic = (number, title) => ({ ...issue(number, { title, body: epicBody([]), labels: ['flow:epic', 'flow:approved'] }), state: 'closed' })
+  const onBoardItem = (id, number, release) => ({ id, content: { __typename: 'Issue', number, repository: { id: 'R_repo' } }, fieldValueByName: { optionId: 'OPT_epic', name: 'Epic' }, release: release ? { optionId: releaseId(release), name: release } : null })
+  const merged = (number) => ({ number, state: 'closed', merged_at: '2026-10-17T10:00:00Z', merge_commit_sha: 'abc', head: { ref: 'epic/trip-export' }, base: { ref: 'main' } })
+  const unmerged = (number) => ({ number, state: 'closed', merged_at: null, head: { ref: 'epic/trip-export' }, base: { ref: 'main' } })
+  boardWorld({
+    'graphql project=PVT_flow': boardItems([
+      onBoardItem('PVTI_40', 40, 'Building'),
+      onBoardItem('PVTI_70', 70, 'Pull request open'),
+      onBoardItem('PVTI_71', 71, 'Released'),
+      onBoardItem('PVTI_72', 72, 'Pull request open'),
+      { ...onBoardItem('PVTI_73', 73, null), content: { __typename: 'Issue', number: 73, repository: { id: 'R_elsewhere' } } },
+      { ...itemWith('PVTI_42', 42, 'Done') },
+    ]),
+    [`GET ${R}/issues/70`]: closedEpic(70, 'Shipped'),
+    [`GET ${R}/issues/72`]: closedEpic(72, 'Abandoned'),
+    [`GET ${R}/issues/70/comments?per_page=100`]: [releaseComment(90)],
+    [`GET ${R}/issues/72/comments?per_page=100`]: [releaseComment(91)],
+    [`GET ${R}/pulls/90`]: merged(90),
+    [`GET ${R}/pulls/91`]: unmerged(91),
+    ...itemsOf(70, [onBoard('PVTI_70', 'OPT_epic', 'PVT_flow', releaseId('Pull request open'))]),
+    ...itemsOf(72, [onBoard('PVTI_72', 'OPT_epic', 'PVT_flow', releaseId('Pull request open'))]),
+    [setRelease('PVTI_70', releaseId('Released'))]: SET_RESPONSE,
+  })
+  const result = flow('board-sync', '--json')
+  assert.equal(result.status, 0, result.stderr)
+  assert.deepEqual(JSON.parse(result.stdout).releases, [{ number: 70, release: 'Released' }])
+  const read = fake.calls().map((call) => call.key)
+  assert.ok(!read.includes(`GET ${R}/issues/71`), 'an epic already Released is not read again')
+  assert.ok(!read.includes(`GET ${R}/issues/73`), 'an issue of another repository is not read')
+  assert.ok(!graphqlKeys().some((key) => key.startsWith('graphql field=F_release item=PVTI_72')), 'an epic closed without its release merging gets no Release value: the field keeps what it had')
 })
