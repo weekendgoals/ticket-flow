@@ -76,18 +76,18 @@ as of 2026-10-19; the pass count grows, the fail line stays `# fail 0`.
   end to end against the fake `gh`; one case needs `git` on PATH.
 - `node --test plugins/flow/scripts/lifecycle.test.mjs` — `# pass 39`. The
   ticket steps in throwaway repositories with a bare remote; needs `git`, `sh`.
-- `node --test plugins/flow/scripts/epic-run.test.mjs` — `# pass 34`. The
+- `node --test plugins/flow/scripts/epic-run.test.mjs` — `# pass 36`. The
   whole-epic commands, the same way.
 - `pull-request.test.mjs` `# pass 20`, `issue-body.test.mjs` `# pass 29`,
   `checks.test.mjs` `# pass 26` (real shell commands in a temp dir),
   `tracker/github.test.mjs` `# pass 37`, `fidelity.test.mjs` `# pass 54`,
   `stats.test.mjs` `# pass 15` (needs `git`), `project-sync.test.mjs`
-  `# pass 34`, under `plugins/flow/scripts/`.
+  `# pass 34` (needs `git`), under `plugins/flow/scripts/`.
 - `node --test plugins/flow/scripts/meter.test.mjs` — `# pass 17`. Builds
   its transcripts; no test reads a real one (they belong to whoever ran them).
-- `node --test plugins/flow/scripts/worktree-setup.test.mjs` — `# pass 18`;
+- `node --test plugins/flow/scripts/worktree-setup.test.mjs` — `# pass 19`;
   needs `git`, POSIX `sh` and `sleep`.
-- `node --test plugins/flow/workflows/run-epic.test.mjs` — `# pass 23`
+- `node --test plugins/flow/workflows/run-epic.test.mjs` — `# pass 30`
   (stubbed `agent`, no git), `plugins/flow/github/flow.test.mjs` `# pass 14`.
 - `node --test tools/reporter/reporter.test.mjs` — `# pass 31`. The
   extension's modules under a stubbed `fetch`. It is also their syntax
@@ -186,7 +186,9 @@ CI (`.github/workflows/tests.yml`) runs every suite and check above.
 - **The run driver re-reads GitHub and trusts no agent's report.** Each
   round starts from `flow next`; an agent's answer only routes the next step,
   never names a commit to merge, and every gate is a command that reads the
-  issue. A dead builder is reset once, then goes to a person (one dead
+  issue. It parses each command's printed output itself, never a proxy's
+  summary of it, and a halt over what GitHub said needs two readings that
+  agree. A dead builder is reset once, then goes to a person (one dead
   before `start` is rebuilt once too: two rebuilds in all).
 - **A parallel failure falls back to serial and never halts**, with a
   comment on the epic. Merges into an epic branch are one at a time, in the

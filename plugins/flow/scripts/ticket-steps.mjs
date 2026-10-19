@@ -9,7 +9,7 @@ export const MERGED_MARKER = /^<!-- flow:merged sha=([0-9a-f]{7,40}) accepted=([
 export const REVIEW_MARKER = /^<!-- flow:review round=(\d+) important=(\d+)(?: head=([0-9a-f]{7,40}))? -->/
 export const COMPARED_HEADING = '**Compared:**'
 const MAX_REVIEW_ROUNDS = 2
-export const RELEASE_CHECK_MARKER = '<!-- flow:release-check -->'
+export const RELEASE_CHECK_MARKER = /^<!-- flow:release-check head=([0-9a-f]{7,40}) passed=(true|false) all=(true|false) -->/
 export const RELEASE_PR_MARKER = /^<!-- flow:release-pr number=(\d+) -->/
 export const NEEDS_HUMAN_MARKER = '<!-- flow:needs-human -->'
 export const NEEDS_HUMAN_LEAD = '**This ticket needs a person.**'
@@ -120,6 +120,24 @@ function lastMatch(comments, author, marker) {
 export function lastMerge(comments, author) {
   const found = lastMatch(comments, author, MERGED_MARKER)
   return found ? { mergeSha: found.match[1], accepted: found.match[2] } : null
+}
+
+export function releaseCheckMarker({ head, passed, all }) {
+  return `<!-- flow:release-check head=${head} passed=${passed} all=${all} -->`
+}
+
+export function lastReleaseCheck(comments, author) {
+  const found = lastMatch(comments, author, RELEASE_CHECK_MARKER)
+  return found ? { head: found.match[1], passed: found.match[2] === 'true', all: found.match[3] === 'true' } : null
+}
+
+export function releaseCheckRefusal({ check, head, epic, epicBranch }) {
+  const rerun = `run \`flow check-epic ${epic}\` first, because the release pull request carries only a head where every done ticket's checks passed`
+  if (!check) return `epic #${epic} has no epic check posted by this account; ${rerun}`
+  if (!sameCommit(check.head, head)) return `the latest epic check is of \`${check.head.slice(0, 12)}\`, not of the head of origin/${epicBranch} (\`${head.slice(0, 12)}\`); ${rerun}`
+  if (!check.passed) return `the latest epic check, at \`${head.slice(0, 12)}\`, did not pass; fix what it names, then ${rerun}`
+  if (!check.all) return `the latest epic check, at \`${head.slice(0, 12)}\`, judged only the tickets it was given; ${rerun}`
+  return null
 }
 
 export function handoffComment(text) {

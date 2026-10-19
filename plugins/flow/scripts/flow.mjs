@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url'
 import * as github from './tracker/github.mjs'
 import { TrackerError } from './tracker/github.mjs'
 import { parseEpicBody, parseTicketBody, parseDesignMap, withEpicLine, withBlockedBy, withTicketListed, withTicketChecked, normalizeNewlines, splitSections, withReport, originalReport, fingerprintMarker, retroFingerprint, findingImages, REPORT_MARKER } from './issue-body.mjs'
-import { CONFIG, ConfigError, apply as applyWorktreeSetup, createWorktree, removeWorktree, worktreePath } from './worktree-setup.mjs'
+import { CONFIG, ConfigError, BUDGET_MS as SETUP_BUDGET_MS, apply as applyWorktreeSetup, createWorktree, removeWorktree, worktreePath } from './worktree-setup.mjs'
 import { runCriteria, formatCheckReport, CHECK_TIMEOUT_MS, CHECK_MAX_BUFFER } from './checks.mjs'
 import {
   GitError,
@@ -55,7 +55,9 @@ import {
   reviewedHeadRefusal,
   importantCountMismatch,
   passingAcceptancesByOthers,
-  RELEASE_CHECK_MARKER,
+  releaseCheckMarker,
+  lastReleaseCheck,
+  releaseCheckRefusal,
   handoffComment,
   lastHandoff,
   MAX_HANDOFF_LENGTH,
@@ -166,9 +168,11 @@ const USAGE = `usage: flow <command>
   next, dispatch and the commands below run a whole epic:
   dispatch <epic>                        ask a host to start ready tickets (adds flow:start, up to Parallel:)
   worktree <n> [--remove]                a separate set-up working copy for one ticket, beside the repository
+                                         (one left from an earlier attempt is replaced)
   check-epic <epic> [--tickets <n>,<n>] [--mark]
                                          run the checks of done tickets at the epic branch's head, in a clean copy
-  release-pr <epic>                      open the epic's one pull request once every ticket is done
+  release-pr <epic> [--cwd <dir>]        open the epic's one pull request once every ticket is done and the latest
+                                         check-epic passed at the epic branch's head
   design-map <epic> [--out <file>]       write the epic's design map for the design comparison
 
   stats [<epic>] [--since <date>] [--json] [--cwd <dir>]
@@ -1561,7 +1565,7 @@ function commandCheckEpic(positional, flags) {
   }
   const failing = results.filter((result) => !result.allPassed)
   const allPassed = !setupFailure && !failing.length
-  const lines = [RELEASE_CHECK_MARKER]
+  const lines = [releaseCheckMarker({ head, passed: allPassed, all: listed === null })]
   if (setupFailure) lines.push(`**The epic check could not run** at \`${head.slice(0, 12)}\` of \`${epicBranch}\`: setting up a clean copy failed (${setupFailure}). Nothing was judged.`)
   else {
     lines.push(`**Epic check** at \`${head.slice(0, 12)}\` of \`${epicBranch}\`: ${results.length - failing.length} of ${results.length} ticket(s) still pass their checks.`)
@@ -1582,6 +1586,8 @@ function commandCheckEpic(positional, flags) {
 }
 
 function commandWorktree(positional, flags) {
+  const started = Date.now()
+  const elapsedSeconds = () => Math.round((Date.now() - started) / 1000)
   const number = issueNumber(positional[0], 'a ticket number')
   const root = requireRepository(flags)
   const path = worktreePath(root, `ticket-${number}`)
@@ -1603,9 +1609,12 @@ function commandWorktree(positional, flags) {
     return 1
   }
   fetchOrigin(root)
+  const replaced = existsSync(path)
+  if (replaced) removeWorktree(root, path)
   const made = createWorktree(root, { path, ref: `origin/${base}` })
   if (!made.ok) {
-    printJson({ ticket: number, path, base, configured: false, failure: { step: 'git worktree add', detail: made.reason } })
+    removeWorktree(root, path)
+    printJson({ ticket: number, path, base, replaced, configured: false, failure: { step: 'git worktree add', detail: made.reason }, elapsedSeconds: elapsedSeconds(), budgetSeconds: SETUP_BUDGET_MS / 1000 })
     return 1
   }
   let setup
@@ -1613,10 +1622,11 @@ function commandWorktree(positional, flags) {
     setup = applyWorktreeSetup({ repo: root, worktree: path })
   } catch (error) {
     if (!(error instanceof ConfigError)) throw error
-    setup = { configured: true, copied: [], ran: [], failure: { step: CONFIG, detail: error.message } }
+    setup = { configured: true, copied: [], ran: [], failure: { step: CONFIG, detail: error.message }, budgetMs: SETUP_BUDGET_MS }
   }
   if (setup.failure) removeWorktree(root, path)
-  printJson({ ticket: number, path, base, ...setup })
+  const { budgetMs, elapsedMs, ...done } = setup
+  printJson({ ticket: number, path, base, replaced, ...done, elapsedSeconds: elapsedSeconds(), ...(setup.failure ? { budgetSeconds: budgetMs / 1000 } : {}) })
   return setup.failure ? 1 : 0
 }
 
@@ -1656,8 +1666,9 @@ function releaseBody({ epic, plan, tickets }) {
   return lines.join('\n')
 }
 
-function commandReleasePr(positional) {
+function commandReleasePr(positional, flags) {
   const epicNumber = issueNumber(positional[0], 'an epic number')
+  const root = requireRepository(flags)
   const epicIssue = github.getIssue(epicNumber)
   if (!epicIssue.labels.includes(EPIC_LABEL)) throw new UsageError(`#${epicNumber} is not an epic (it has no ${EPIC_LABEL} label)`)
   const epic = deriveEpic(epicIssue, github.listSubIssues(epicNumber))
@@ -1675,6 +1686,17 @@ function commandReleasePr(positional) {
             : null
   if (refusal) {
     process.stderr.write(`${refusal}; the release pull request opens only when every ticket is merged\n`)
+    return 1
+  }
+  fetchOrigin(root)
+  const head = resolveCommit(root, `origin/${epic.settings.branch}`)
+  if (!head) {
+    process.stderr.write(`origin/${epic.settings.branch} does not exist, so there is nothing to release\n`)
+    return 1
+  }
+  const checkRefusal = releaseCheckRefusal({ check: lastReleaseCheck(github.listComments(epicNumber), github.viewerLogin()), head, epic: epicNumber, epicBranch: epic.settings.branch })
+  if (checkRefusal) {
+    process.stderr.write(`${checkRefusal}\n`)
     return 1
   }
   const tickets = epic.tickets.map((ticket) => {
@@ -2215,7 +2237,7 @@ function main(argv) {
     case 'worktree':
       return commandWorktree(positional, flags)
     case 'release-pr':
-      return commandReleasePr(positional)
+      return commandReleasePr(positional, flags)
     case 'design-map':
       return commandDesignMap(positional, flags)
     case 'dispatch':

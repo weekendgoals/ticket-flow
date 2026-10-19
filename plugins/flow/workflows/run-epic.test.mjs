@@ -36,7 +36,8 @@ function board({ ready = [], inProgress = [], done = [], needsHuman = [], waitin
     ...needsHuman.map((n) => ({ n, model: 'opus', state: 'needs-human' })),
     ...waiting.map((n) => ({ n, model: 'opus', state: 'waiting' })),
   ]
-  return { exitCode, approved, delivery, parallel, ready, inProgress, done, needsHuman, waiting, planned, tickets: all }
+  const next = { epic: 1, approved, ready, waiting: waiting.map((n) => ({ n, blockedBy: [] })), inProgress, done, needsHuman, planned, problems: [], delivery, parallel, branch: 'epic/x', tickets: all.map((entry) => ({ ...entry, title: `ticket ${entry.n}`, tier: entry.model === 'sonnet' ? 'easy' : 'hard', startRequested: false })) }
+  return { exitCode, output: JSON.stringify(next, null, 2) }
 }
 
 const ok = (output = '{}') => ({ exitCode: 0, output })
@@ -240,7 +241,7 @@ test('an accepted ticket the driver cannot merge goes to a person after one reco
   const run = await drive((label) => {
     if (label.startsWith('next:')) return ++reads === 1 ? board({ ready: [2] }) : reads <= 3 ? board({ inProgress: [2] }) : board({ needsHuman: [2] })
     if (label === 'fixes:#2') return { result: 'accepted', sha: 'f'.repeat(40), summary: 'accepted in a serial run' }
-    if (label === 'merge:#2') return { exitCode: 1, output: '' }
+    if (label.startsWith('merge:#2')) return { exitCode: 1, output: '' }
     if (label === 'reset:#2') return { exitCode: 1, output: JSON.stringify({ ticket: 2, action: 'refused', reason: 'waiting to be merged', accepted: 'f'.repeat(40) }) }
     return happyTicket(label) ?? releaseSteps(label)
   })
@@ -348,7 +349,7 @@ test('the proxy steps run on the faster model at low effort, and the board is re
   const run = await drive((label) => (label.startsWith('next:') ? next() : happyTicket(label) ?? releaseSteps(label)))
   for (const call of run.calls.filter((entry) => /^(next|post|check-epic|release-pr):/.test(entry.label))) assert.deepEqual([call.model, call.effort], ['sonnet', 'low'], call.label)
   assert.match(run.calls[0].prompt, /FLOW_UNATTENDED=1 node "\/plugins\/flow\/scripts\/flow\.mjs" next 1/)
-  assert.match(run.calls[0].prompt, /Never fill a field from memory/)
+  assert.match(run.calls[0].prompt, /Return its exit code and its standard output exactly as printed/)
   assert.ok(!run.calls.some((call) => call.model === 'haiku'))
 })
 
@@ -370,7 +371,7 @@ test('a hand-off to a person that fails counts as a round that changed nothing, 
   const run = await drive((label) => {
     if (label.startsWith('next:')) return ++reads === 1 ? board({ ready: [2] }) : board({ inProgress: [2] })
     if (label === 'worker:#2') return null
-    if (label === 'reset:#2') return { exitCode: 1, output: 'gh: HTTP 502' }
+    if (label.startsWith('reset:#2')) return { exitCode: 1, output: 'gh: HTTP 502' }
     if (label === 'needs-human:#2') return { exitCode: 1, output: 'gh: HTTP 502' }
     return releaseSteps(label)
   })
@@ -407,5 +408,101 @@ test('three rounds in a row that change nothing end the run, and a ticket alread
   assert.equal(run.labels.filter((label) => label === 'needs-human:#2').length, 1)
   assert.equal(run.out.outcome, 'stopped')
   assert.equal(run.out.stopReason, '3 rounds in a row changed nothing')
-  assert.ok(reads <= 6, `${reads} board reads`)
+  assert.ok(reads <= 7, `${reads} board reads: five rounds, and two final readings before it says not built`)
+})
+
+test('the board is parsed from what flow next printed, never from what the proxy says beside it', async () => {
+  const next = boards(board({ ready: [2] }), board({ done: [2] }))
+  const run = await drive((label) => {
+    if (label.startsWith('next:')) {
+      const printed = next()
+      return { ...printed, output: `Here is what it printed:\n${printed.output}\nAll done.`, approved: false, ready: [9], tickets: [] }
+    }
+    return happyTicket(label) ?? releaseSteps(label)
+  })
+  assert.equal(run.out.outcome, 'built', JSON.stringify(run.out))
+  assert.ok(run.labels.includes('worker:#2'))
+  assert.ok(!run.labels.includes('worker:#9'))
+  assert.ok(!run.labels.some((label) => /:again$/.test(label)), 'one reading that says approved is enough')
+})
+
+test('an answer with no board in it is read once more, then the run stops quoting the exit code and the last line', async () => {
+  const run = await drive((label) => (label.startsWith('next:') ? { exitCode: 1, output: 'Looking at it now.\ngh: HTTP 502 Bad Gateway' } : releaseSteps(label)))
+  assert.deepEqual(run.labels.slice(0, 2), ['next:#1:1', 'next:#1:1:retry'])
+  assert.equal(run.out.outcome, 'stopped')
+  assert.equal(run.out.stopReason, 'nobody could read the board from GitHub: `flow next` answered twice with no board in its output (exit 1): gh: HTTP 502 Bad Gateway')
+  const wrongShape = await drive((label) => (label.startsWith('next:') ? ok(JSON.stringify({ epic: 1, approved: 'yes', ready: ['2'] })) : releaseSteps(label)))
+  assert.match(wrongShape.out.stopReason, /^nobody could read the board/, 'JSON of another shape is no board')
+  const otherEpic = await drive((label) => (label.startsWith('next:') ? { ...board({ ready: [2] }), output: board({ ready: [2] }).output.replace('"epic": 1', '"epic": 7') } : releaseSteps(label)))
+  assert.match(otherEpic.out.stopReason, /^nobody could read the board/, 'another epic\'s board is not this one\'s')
+})
+
+test('one reading that says not approved is checked by a second; a second that says approved carries on', async () => {
+  const next = boards(board({ approved: false, exitCode: 1 }), board({ ready: [2] }), board({ done: [2] }))
+  const run = await drive((label) => (label.startsWith('next:') ? next() : happyTicket(label) ?? releaseSteps(label)))
+  assert.deepEqual(run.labels.slice(0, 3), ['next:#1:1', 'next:#1:1:again', 'post:#1:wave:1'])
+  assert.equal(run.out.outcome, 'built', JSON.stringify(run.out))
+})
+
+test('two readings that agree the epic is not approved stop the run, and the reason says both agreed', async () => {
+  const run = await drive((label) => (label.startsWith('next:') ? board({ approved: false, exitCode: 1 }) : releaseSteps(label)))
+  assert.deepEqual(run.labels.slice(0, 2), ['next:#1:1', 'next:#1:1:again'])
+  assert.equal(run.out.stopReason, 'epic #1 is not approved: two readings of the board from GitHub agreed')
+  assert.match(run.calls.find((call) => call.label === 'post:#1:end').prompt, /\*\*Run stopped\.\*\* Epic #1 is not approved: two readings of the board from GitHub agreed\./)
+})
+
+test('a final reading that says not built is checked by a second before the run gives up on the release', async () => {
+  let reads = 0
+  const run = await drive((label) => {
+    if (label.startsWith('next:')) {
+      reads++
+      return reads === 2 ? board({ inProgress: [2] }) : board({ done: [2] })
+    }
+    return releaseSteps(label)
+  })
+  assert.deepEqual(run.labels.slice(0, 3), ['next:#1:1', 'next:#1:final', 'next:#1:final:again'])
+  assert.equal(run.out.outcome, 'built')
+})
+
+test('a release pull request with no answer the first time is asked for once more, and the second answer counts', async () => {
+  let asked = 0
+  const run = await drive((label) => {
+    if (label.startsWith('next:')) return board({ done: [2] })
+    if (label.startsWith('release-pr:')) return ++asked === 1 ? ok('the command is still running') : ok('{"epic":1,"pullRequest":40,"url":"https://github.com/o/r/pull/40","existing":true}')
+    return releaseSteps(label)
+  })
+  assert.deepEqual(run.labels.filter((label) => /^(release-pr|pr-loop):/.test(label)), ['release-pr:#1', 'release-pr:#1:again', 'pr-loop:#1:1'])
+  assert.equal(run.out.outcome, 'built')
+  const never = await drive((label) => {
+    if (label.startsWith('next:')) return board({ done: [2] })
+    if (label.startsWith('release-pr:')) return { exitCode: 1, output: 'not every ticket is done' }
+    return releaseSteps(label)
+  })
+  assert.equal(never.out.outcome, 'stopped')
+  assert.equal(never.out.stopReason, 'the release pull request could not be opened: `flow release-pr` was asked twice and neither answer named one (exit 1): not every ticket is done')
+})
+
+test('a wave that falls back says why for each copy, with its time against the budget or the answer nobody could read, and removes every chosen copy', async () => {
+  const next = boards(board({ ready: [2, 3, 4], parallel: 3 }), board({ done: [2, 3, 4], parallel: 3 }))
+  const run = await drive((label) => {
+    if (label.startsWith('next:')) return next()
+    if (label === 'worktree:#2') return ok(JSON.stringify({ ticket: 2, path: '/wt/ticket-2', failure: null, elapsedSeconds: 30 }))
+    if (label === 'worktree:#3')
+      return { exitCode: 1, output: JSON.stringify({ ticket: 3, path: '/wt/ticket-3', failure: { step: 'setup: npm ci', detail: "the setup's 480-second budget ran out\nnpm WARN" }, elapsedSeconds: 481, budgetSeconds: 480 }) }
+    if (label.startsWith('worktree:#4')) return { exitCode: -1, output: 'The shell call was killed after two minutes.' }
+    if (label.startsWith('worktree-remove:')) return ok('{}')
+    return happyTicket(label) ?? releaseSteps(label)
+  })
+  assert.ok(run.labels.includes('worktree:#4:retry'), 'a JSON command with no JSON is asked once more')
+  assert.ok(!run.labels.includes('worktree:#2:retry'))
+  const fallback = run.calls.find((call) => call.label === 'post:#1:fallback:1').prompt
+  assert.match(fallback, /#3: setup: npm ci — the setup's 480-second budget ran out \(after 481s of a 480s budget\)/)
+  assert.match(fallback, /#4: no readable answer from `flow worktree` \(exit -1\): The shell call was killed after two minutes\./)
+  assert.match(run.logs.find((line) => line.startsWith('wave 1: separate working copies failed')), /#3: setup: npm ci .*after 481s of a 480s budget.*#4: no readable answer/)
+  assert.deepEqual(run.labels.filter((label) => label.startsWith('worktree-remove:')).sort(), ['worktree-remove:#2', 'worktree-remove:#3', 'worktree-remove:#4'])
+  const prompt = run.calls.find((call) => call.label === 'worktree:#2').prompt
+  assert.match(prompt, /Run it once, in the background with its output sent to a file, with a timeout of at least eleven minutes/)
+  assert.match(prompt, /Never run it a second time, because a second copy would run its setup beside the first\./)
+  assert.doesNotMatch(run.calls.find((call) => call.label === 'post:#1:wave:1').prompt, /eleven minutes/)
+  assert.equal(run.out.outcome, 'built')
 })

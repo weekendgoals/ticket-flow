@@ -110,6 +110,11 @@ ${criteria}
 const comment = (body, createdAt = '2026-10-14T10:00:00Z') => ({ id: 1, user: { login: 'flow-bot' }, body, created_at: createdAt })
 const accepted = (sha) => comment(`<!-- flow:acceptance sha=${sha} passed=true -->\n**Acceptance passed**`, '2026-10-14T12:00:00Z')
 const STARTED = comment('<!-- flow:started -->\n**Started** in an unattended run', '2026-10-14T10:00:00Z')
+const epicCheck = (head, { passed = true, all = true, author = 'flow-bot' } = {}) => ({
+  ...comment(`<!-- flow:release-check head=${head} passed=${passed} all=${all} -->\n**Epic check** at \`${head.slice(0, 12)}\``, '2026-10-14T13:00:00Z'),
+  user: { login: author },
+})
+const epicHead = (repo) => git(repo.remote, 'rev-parse', 'epic/trip-export')
 
 const DEFAULT_TICKETS = {
   2: { title: 'Export button', labels: ['flow:ticket', 'flow:planned', 'tier:easy'], criteria: '- the button\n  CHECK: test -f button.txt' },
@@ -284,7 +289,8 @@ test('check-epic runs the checks of the done tickets at the epic head in a clean
   const report = JSON.parse(result.stdout)
   assert.equal(report.head, git(repo.remote, 'rev-parse', 'epic/trip-export'))
   assert.deepEqual(report.tickets.map((ticket) => [ticket.ticket, ticket.allPassed]), [[2, true], [3, false]], 'the main checkout\'s files do not count')
-  assert.match(posted(1)[0], /^<!-- flow:release-check -->\n\*\*Epic check\*\* at `[0-9a-f]{12}` of `epic\/trip-export`: 1 of 2 ticket\(s\) still pass their checks\./)
+  assert.match(posted(1)[0], new RegExp(`^<!-- flow:release-check head=${report.head} passed=false all=true -->\n\\*\\*Epic check\\*\\* at`))
+  assert.match(posted(1)[0], /\*\*Epic check\*\* at `[0-9a-f]{12}` of `epic\/trip-export`: 1 of 2 ticket\(s\) still pass their checks\./)
   assert.match(posted(1)[0], /\| #3 Export file \| 0 of 1 \| FAIL: `test -f export\.txt` \(failed\) \|/)
   assert.deepEqual(added(3), ['flow:needs-human'])
   assert.match(posted(3)[0], /@ana This ticket's checks fail on the epic branch `epic\/trip-export` .* It stays merged/)
@@ -315,6 +321,7 @@ test('check-epic --tickets judges only the tickets named, and passes with nothin
   const result = flow(repo.work, ['check-epic', '1', '--tickets', '2', '--mark'])
   assert.equal(result.status, 0, result.stderr)
   assert.deepEqual(JSON.parse(result.stdout).tickets.map((ticket) => ticket.ticket), [2])
+  assert.match(posted(1)[0], /^<!-- flow:release-check head=[0-9a-f]{40} passed=true all=false -->\n/, 'a check of some tickets says so, so it cannot open the release')
   assert.deepEqual(added(2), [])
   assert.equal(flow(repo.work, ['check-epic', '1', '--tickets', '9']).status, 2)
 })
@@ -376,7 +383,7 @@ test('worktree reports a setup that fails, and leaves no half set-up copy behind
 
 test('release-pr refuses while a ticket is not done', () => {
   world({ tickets: { 2: { labels: ['flow:ticket', 'flow:done'] }, 3: { labels: ['flow:ticket', 'flow:needs-human'] }, 4: { labels: ['flow:ticket', 'flow:done'] } } })
-  const result = flow(directory, ['release-pr', '1'])
+  const result = flow(repository().work, ['release-pr', '1'])
   assert.equal(result.status, 1)
   assert.match(result.stderr, /not every ticket of epic #1 is done \(#3 needs-human\)/)
   assert.ok(!fake.calls().some((call) => call.key === `POST ${R}/pulls`))
@@ -385,15 +392,16 @@ test('release-pr refuses while a ticket is not done', () => {
 test('release-pr opens the epic\'s one pull request with its outcome, walkthrough, merge commits and cost over every run, and posts it on the epic', () => {
   const meter = (input) => comment(`<!-- flow:meter -->\n**Cost of #n**\n\n\`\`\`json\n${JSON.stringify({ flowMeter: 1, ticket: 2, roles: {}, models: {}, total: { input, output: 10, cacheCreation: 5, cacheReads: 100 } })}\n\`\`\``)
   const mergedMarker = (sha) => comment(`<!-- flow:merged sha=${sha} accepted=${'b'.repeat(40)} -->\n**Done.**`)
+  const repo = repository()
   world({
     tickets: { 2: { labels: ['flow:ticket', 'flow:done'], state: 'closed' }, 3: { labels: ['flow:ticket', 'flow:done'], state: 'closed' }, 4: { labels: ['flow:ticket', 'flow:done'] } },
-    comments: { 2: [mergedMarker('1'.repeat(40)), meter(1000), meter(1000), meter(500)], 3: [mergedMarker('2'.repeat(40)), meter(2500)], 4: [] },
+    comments: { 1: [epicCheck(epicHead(repo))], 2: [mergedMarker('1'.repeat(40)), meter(1000), meter(1000), meter(500)], 3: [mergedMarker('2'.repeat(40)), meter(2500)], 4: [] },
     extra: {
       [`GET ${R}/pulls?head=o%3Aepic%2Ftrip-export&state=open&per_page=100`]: [],
       [`POST ${R}/pulls`]: { number: 40, html_url: 'https://github.com/o/r/pull/40', head: { ref: 'epic/trip-export', sha: 'c'.repeat(40) }, base: { ref: 'main' } },
     },
   })
-  const result = flow(directory, ['release-pr', '1'])
+  const result = flow(repo.work, ['release-pr', '1'])
   assert.equal(result.status, 0, result.stderr)
   assert.deepEqual(JSON.parse(result.stdout), { epic: 1, pullRequest: 40, url: 'https://github.com/o/r/pull/40', base: 'main', existing: false })
   const request = JSON.parse(fake.calls().find((call) => call.key === `POST ${R}/pulls`).stdin)
@@ -406,15 +414,89 @@ test('release-pr opens the epic\'s one pull request with its outcome, walkthroug
 })
 
 test('release-pr reuses a release pull request that is already open', () => {
+  const repo = repository()
   world({
     tickets: { 2: { labels: ['flow:ticket', 'flow:done'] }, 3: { labels: ['flow:ticket', 'flow:done'] }, 4: { labels: ['flow:ticket', 'flow:done'] } },
+    comments: { 1: [epicCheck(epicHead(repo))] },
     extra: { [`GET ${R}/pulls?head=o%3Aepic%2Ftrip-export&state=open&per_page=100`]: [{ number: 40, html_url: 'https://github.com/o/r/pull/40', head: { ref: 'epic/trip-export', sha: 'c' }, base: { ref: 'main' } }] },
   })
-  const result = flow(directory, ['release-pr', '1'])
+  const result = flow(repo.work, ['release-pr', '1'])
   assert.equal(result.status, 0, result.stderr)
   assert.equal(JSON.parse(result.stdout).existing, true)
   assert.ok(!fake.calls().some((call) => call.key === `POST ${R}/pulls`))
   assert.match(posted(1)[0], /already open/)
+})
+
+test('release-pr opens only at a head the latest epic check from this account passed for every done ticket, and names check-epic as the way on', () => {
+  const repo = repository()
+  const done = { 2: { labels: ['flow:ticket', 'flow:done'] }, 3: { labels: ['flow:ticket', 'flow:done'] }, 4: { labels: ['flow:ticket', 'flow:done'] } }
+  const OPEN_PULLS = `GET ${R}/pulls?head=o%3Aepic%2Ftrip-export&state=open&per_page=100`
+  const created = { [OPEN_PULLS]: [], [`POST ${R}/pulls`]: { number: 40, html_url: 'https://github.com/o/r/pull/40', head: { ref: 'epic/trip-export', sha: 'c'.repeat(40) }, base: { ref: 'main' } } }
+  const attempt = (comments, extra = created) => {
+    fake.clearCalls()
+    world({ tickets: done, comments: { 1: comments }, extra })
+    return flow(repo.work, ['release-pr', '1'])
+  }
+  const head = epicHead(repo)
+  const older = 'a'.repeat(40)
+  for (const [comments, why] of [
+    [[], /^epic #1 has no epic check posted by this account; run `flow check-epic 1` first/],
+    [[epicCheck(head, { author: 'someone-else' })], /^epic #1 has no epic check posted by this account/],
+    [[epicCheck(older)], /^the latest epic check is of `aaaaaaaaaaaa`, not of the head of origin\/epic\/trip-export \(`[0-9a-f]{12}`\); run `flow check-epic 1` first/],
+    [[epicCheck(head), epicCheck(older)], /^the latest epic check is of `aaaaaaaaaaaa`/],
+    [[epicCheck(head, { passed: false })], /^the latest epic check, at `[0-9a-f]{12}`, did not pass; fix what it names, then run `flow check-epic 1` first/],
+    [[epicCheck(head, { all: false })], /^the latest epic check, at `[0-9a-f]{12}`, judged only the tickets it was given; run `flow check-epic 1` first/],
+    [[comment('<!-- flow:release-check -->\n**Epic check** at an older version')], /^epic #1 has no epic check posted by this account/],
+  ]) {
+    const refused = attempt(comments)
+    assert.equal(refused.status, 1, refused.stderr)
+    assert.match(refused.stderr, why)
+    assert.ok(!fake.calls().some((call) => call.key === `POST ${R}/pulls` || call.key === `POST ${R}/issues/1/comments`), refused.stderr)
+  }
+  const reused = attempt([], { [OPEN_PULLS]: [{ number: 40, html_url: 'https://github.com/o/r/pull/40', head: { ref: 'epic/trip-export', sha: 'c' }, base: { ref: 'main' } }] })
+  assert.equal(reused.status, 1, 'reusing an open pull request goes through the same gate')
+  assert.deepEqual(posted(1), [])
+  git(repo.work, 'checkout', '-q', 'epic/trip-export')
+  commitFile(repo.work, 'late.txt', 'after the check\n', 'a commit after the check')
+  git(repo.work, 'push', '-q', 'origin', 'HEAD:epic/trip-export')
+  git(repo.work, 'checkout', '-q', 'main')
+  const moved = attempt([epicCheck(head)])
+  assert.equal(moved.status, 1)
+  assert.match(moved.stderr, new RegExp(`is of \`${head.slice(0, 12)}\`, not of the head`), 'the branch moved after the check, and the gate reads origin, not the check')
+  const opened = attempt([epicCheck(head), epicCheck(epicHead(repo))])
+  assert.equal(opened.status, 0, opened.stderr)
+  assert.equal(JSON.parse(opened.stdout).pullRequest, 40)
+  assert.equal(flow(directory, ['release-pr', '1']).status, 2, 'it needs a repository to read the epic head from')
+})
+
+test('worktree replaces a copy an earlier attempt left behind, and says how long it ran, against the setup budget when it failed', () => {
+  const repo = repository()
+  git(repo.work, 'checkout', '-q', 'epic/trip-export')
+  commitFile(repo.work, '.flow.json', JSON.stringify({ setup: ['echo installed > installed.txt'] }), 'setup')
+  git(repo.work, 'push', '-q', 'origin', 'HEAD:epic/trip-export')
+  git(repo.work, 'checkout', '-q', 'main')
+  world()
+  const first = JSON.parse(flow(repo.work, ['worktree', '2']).stdout)
+  assert.equal(first.replaced, false)
+  assert.ok(Number.isInteger(first.elapsedSeconds), JSON.stringify(first))
+  assert.equal(first.budgetSeconds, undefined, 'a budget is named only beside a failure')
+  writeFileSync(join(first.path, 'half-made.txt'), 'left by a setup that was killed\n')
+  const again = flow(repo.work, ['worktree', '2'])
+  assert.equal(again.status, 0, again.stderr + again.stdout)
+  const replaced = JSON.parse(again.stdout)
+  assert.equal(replaced.replaced, true)
+  assert.ok(!existsSync(join(replaced.path, 'half-made.txt')), 'nothing of the earlier attempt is kept')
+  assert.equal(readFileSync(join(replaced.path, 'installed.txt'), 'utf8'), 'installed\n')
+  assert.equal(git(repo.work, 'worktree', 'list').split('\n').length, 2, 'one copy, registered once')
+  git(repo.work, 'checkout', '-q', 'epic/trip-export')
+  commitFile(repo.work, '.flow.json', JSON.stringify({ setup: ['exit 3'] }), 'a setup that fails')
+  git(repo.work, 'push', '-q', 'origin', 'HEAD:epic/trip-export')
+  git(repo.work, 'checkout', '-q', 'main')
+  const failed = flow(repo.work, ['worktree', '2'])
+  assert.equal(failed.status, 1)
+  const failure = JSON.parse(failed.stdout)
+  assert.deepEqual([failure.replaced, failure.budgetSeconds, Number.isInteger(failure.elapsedSeconds)], [true, 480, true])
+  assert.ok(!existsSync(failure.path))
 })
 
 test('design-map writes the epic\'s map for the comparison, and names a missing or broken one', () => {
@@ -642,8 +724,10 @@ test('start refuses a finding without asking a person, even unattended: it is no
 
 test('findings under an epic leave the run alone: dispatch still says built, and the release pull request opens without them', () => {
   const done = { 2: { labels: ['flow:ticket', 'flow:done'] }, 3: { labels: ['flow:ticket', 'flow:done'] }, 4: { labels: ['flow:ticket', 'flow:done'] } }
+  const repo = repository()
   world({
     tickets: done,
+    comments: { 1: [epicCheck(epicHead(repo))] },
     findings: [finding(7, { approved: true }), finding(8)],
     extra: {
       [`GET ${R}/pulls?head=o%3Aepic%2Ftrip-export&state=open&per_page=100`]: [],
@@ -654,7 +738,7 @@ test('findings under an epic leave the run alone: dispatch still says built, and
   assert.equal(dispatched.status, 0, dispatched.stderr)
   assert.deepEqual([JSON.parse(dispatched.stdout).state, JSON.parse(dispatched.stdout).started], ['built', []])
   assert.deepEqual([added(7), added(8)], [[], []])
-  const released = flow(directory, ['release-pr', '1'])
+  const released = flow(repo.work, ['release-pr', '1'])
   assert.equal(released.status, 0, released.stderr)
   const request = JSON.parse(fake.calls().find((call) => call.key === `POST ${R}/pulls`).stdin)
   assert.match(request.body, /Closes #2\nCloses #3\nCloses #4\nCloses #1\n/)
@@ -663,7 +747,7 @@ test('findings under an epic leave the run alone: dispatch still says built, and
   assert.deepEqual(JSON.parse(merged.stdout), { epic: 1, merged: [], notMerged: [] })
   fake.clearCalls()
   world({ tickets: { ...done, 3: { labels: ['flow:ticket', 'flow:in-progress'] } }, findings: [finding(7)] })
-  const refused = flow(directory, ['release-pr', '1'])
+  const refused = flow(repo.work, ['release-pr', '1'])
   assert.equal(refused.status, 1)
   assert.match(refused.stderr, /not every ticket of epic #1 is done \(#3 in-progress\);/)
 })

@@ -66,8 +66,15 @@ export function readWorktreeConfig(worktree) {
   return validateConfig(config)
 }
 
-export function apply({ repo, worktree, log = () => {}, budgetMs = BUDGET_MS }) {
-  const deadline = Date.now() + budgetMs
+export function apply(options) {
+  const started = Date.now()
+  const budgetMs = options.budgetMs ?? BUDGET_MS
+  const result = applySteps({ ...options, budgetMs, started })
+  return { ...result, budgetMs, elapsedMs: Date.now() - started }
+}
+
+function applySteps({ repo, worktree, log = () => {}, budgetMs, started }) {
+  const deadline = started + budgetMs
   const config = readWorktreeConfig(worktree)
   if (!config || (!config.copy.length && !config.setup.length)) return { configured: false, copied: [], ran: [], failure: null }
   const { copy, setup } = config

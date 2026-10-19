@@ -1,6 +1,6 @@
 import { test, after, beforeEach } from 'node:test'
 import assert from 'node:assert/strict'
-import { spawnSync } from 'node:child_process'
+import { spawnSync, execFileSync } from 'node:child_process'
 import { mkdtempSync, rmSync, writeFileSync, realpathSync, mkdirSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { tmpdir } from 'node:os'
@@ -22,6 +22,18 @@ beforeEach(() => fake.clearCalls())
 function flow(...args) {
   const result = spawnSync(process.execPath, [FLOW, ...args], { cwd: workdir, encoding: 'utf8', env: { ...process.env, ...fake.env } })
   return { status: result.status, stdout: result.stdout, stderr: result.stderr }
+}
+
+function epicBranchRepository() {
+  const env = { ...process.env, GIT_AUTHOR_NAME: 'Test', GIT_AUTHOR_EMAIL: 'test@example.com', GIT_COMMITTER_NAME: 'Test', GIT_COMMITTER_EMAIL: 'test@example.com', GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1' }
+  const git = (cwd, ...args) => execFileSync('git', args, { cwd, encoding: 'utf8', env }).trim()
+  const remote = join(directory, 'origin.git')
+  const work = join(directory, 'release-work')
+  git(directory, 'init', '-q', '--bare', '-b', 'main', remote)
+  git(directory, 'clone', '-q', remote, work)
+  git(work, 'commit', '-q', '--allow-empty', '-m', 'start')
+  git(work, 'push', '-q', 'origin', 'HEAD:main', 'HEAD:refs/heads/epic/trip-export')
+  return { work, head: git(work, 'rev-parse', 'HEAD') }
 }
 
 function issue(number, { title = `issue ${number}`, body = '', labels = [] } = {}) {
@@ -657,9 +669,11 @@ test('create-epic sets a release epic\'s Release to Building, an incremental epi
   assert.ok(!graphqlKeys().some((key) => key.startsWith('graphql field=F_release')), 'an incremental epic ships ticket by ticket, so it has no Release value')
   fake.clearCalls()
   const epic = issue(40, { title: 'Trip export', body: epicBody([42]), labels: ['flow:epic', 'flow:approved'] })
+  const repo = epicBranchRepository()
   world({
     [PROJECT_LOOKUP]: projects(project('PVT_flow', 'Flow board', statusField(FLOW_OPTIONS))),
     [`GET ${R}/issues/40`]: epic,
+    [`GET ${R}/issues/40/comments?per_page=100`]: [{ id: 8, user: { login: 'flow-bot' }, body: `<!-- flow:release-check head=${repo.head} passed=true all=true -->\n**Epic check**`, created_at: '2026-10-16T09:00:00Z' }],
     [`GET ${R}/issues/40/sub_issues?per_page=100`]: [issue(42, { body: ticketBody(40), labels: ['flow:ticket', 'flow:done'] })],
     [`GET ${R}/issues/42/comments?per_page=100`]: [],
     graphql: { data: { viewer: { login: 'flow-bot' } } },
@@ -669,7 +683,7 @@ test('create-epic sets a release epic\'s Release to Building, an incremental epi
     ...itemsOf(40, [onBoard('PVTI_40', 'OPT_epic', 'PVT_flow', releaseId('Building'))]),
     [setRelease('PVTI_40', releaseId('Pull request open'))]: SET_RESPONSE,
   })
-  const opened = flow('release-pr', '40')
+  const opened = flow('release-pr', '40', '--cwd', repo.work)
   assert.equal(opened.status, 0, opened.stderr)
   const keys = fake.calls().map((call) => call.key)
   assert.ok(keys.indexOf(setRelease('PVTI_40', releaseId('Pull request open'))) > keys.indexOf(`POST ${R}/pulls`), 'the Release moves once the pull request exists')

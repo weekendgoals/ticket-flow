@@ -231,6 +231,20 @@ test('the setup has a budget that ends before the shell call around it does, and
   assert.match(s.out, /FAILED at setup: sleep 1/, 'the command that ran out the clock is the one named')
 })
 
+test('the result says what budget the setup had and how long it ran, measured, whether it passed or failed', () => {
+  const passed = setUp(...project('timed', { config: { setup: ['sleep 1'] } }).args)
+  assert.equal(passed.code, 0, passed.out)
+  assert.equal(passed.result.budgetMs, 8 * 60 * 1000)
+  assert.ok(passed.result.elapsedMs >= 1000 && passed.result.elapsedMs < 60000, String(passed.result.elapsedMs))
+  const failed = setUp(...project('timed-out', { config: { setup: ['sleep 2'] } }).args, '--budget-ms', '300')
+  assert.equal(failed.code, 1)
+  assert.equal(failed.result.budgetMs, 300)
+  assert.ok(failed.result.elapsedMs >= 300 && failed.result.elapsedMs < 2000, String(failed.result.elapsedMs))
+  const nothing = setUp(...project('timed-nothing').args)
+  assert.equal(nothing.result.configured, false)
+  assert.ok(Number.isInteger(nothing.result.elapsedMs))
+})
+
 test('a listed file the main checkout does not have fails by name, and nothing after it runs', () => {
   const p = project('missing', { config: { copy: ['.env'], setup: ['echo ran > marker'] }, files: {} })
   const r = setUp(...p.args)

@@ -27,26 +27,6 @@ const MAX_IDLE_ROUNDS = 3
 const LOCAL_RUN_MARKER = '<!-- flow:local-run -->'
 const LOCAL_RUN_END_MARKER = '<!-- flow:local-run-end -->'
 
-const BOARD_SCHEMA = {
-  type: 'object',
-  properties: {
-    exitCode: { type: 'number' },
-    approved: { type: 'boolean' },
-    delivery: { type: ['string', 'null'] },
-    parallel: { type: ['number', 'null'] },
-    ready: { type: 'array', items: { type: 'number' } },
-    inProgress: { type: 'array', items: { type: 'number' } },
-    done: { type: 'array', items: { type: 'number' } },
-    needsHuman: { type: 'array', items: { type: 'number' } },
-    waiting: { type: 'array', items: { type: 'number' } },
-    planned: { type: 'array', items: { type: 'number' } },
-    tickets: {
-      type: 'array',
-      items: { type: 'object', properties: { n: { type: 'number' }, model: { type: 'string' }, state: { type: 'string' } }, required: ['n', 'model', 'state'] },
-    },
-  },
-  required: ['exitCode', 'approved', 'ready', 'inProgress', 'done', 'needsHuman', 'waiting', 'planned', 'tickets'],
-}
 const COMMAND_SCHEMA = {
   type: 'object',
   properties: { exitCode: { type: 'number' }, output: { type: 'string' } },
@@ -68,7 +48,15 @@ const PR_ROUND_SCHEMA = {
   required: ['result', 'summary'],
 }
 
-function commandPrompt(command, what) {
+const SHORT_RUN = 'It can run longer than one shell call allows: if it is still running after a few minutes, run it again in the background with its output sent to a file, wait for it to finish, and read the file.'
+const LONG_RUN = [
+  'It can run for many minutes: a `.flow.json` setup alone may take eight. Run it once, in the background with its output sent to a file, with a timeout of at least eleven minutes if your shell takes one; wait until it exits, then read the file.',
+  'Never run it a second time, because a second copy would run its setup beside the first.',
+].join(' ')
+const NEXT_WHAT = 'It prints JSON, and exits 1 when the epic is not approved, has no tickets or is stuck; that is an answer, not a failure.'
+const BOARD_LISTS = ['ready', 'inProgress', 'done', 'needsHuman', 'planned']
+
+function commandPrompt(command, what, long) {
   return [
     `Run this one command from the repository at ${repoRoot} and report what it did. Change nothing else, and do not try to fix anything it complains about.`,
     '',
@@ -77,34 +65,86 @@ function commandPrompt(command, what) {
     '```',
     '',
     `${what} Return its exit code and its standard output exactly as printed (the last 4000 characters when it is longer).`,
-    'It can run longer than one shell call allows: if it is still running after a few minutes, run it again in the background with its output sent to a file, wait for it to finish, and read the file.',
+    long ? LONG_RUN : SHORT_RUN,
   ].join('\n')
 }
 
-async function runCommand(command, label, what = '') {
-  const result = await agent(commandPrompt(command, what), { ...PROXY, label, schema: COMMAND_SCHEMA })
-  if (!result) return { exitCode: -1, output: '', json: null }
-  let json = null
+function jsonIn(output) {
   try {
-    json = JSON.parse(result.output)
+    return JSON.parse(output)
   } catch {
-    const start = result.output.indexOf('{')
-    const end = result.output.lastIndexOf('}')
-    if (start !== -1 && end > start)
-      try {
-        json = JSON.parse(result.output.slice(start, end + 1))
-      } catch {}
+    const start = output.indexOf('{')
+    const end = output.lastIndexOf('}')
+    if (start === -1 || end <= start) return null
+    try {
+      return JSON.parse(output.slice(start, end + 1))
+    } catch {
+      return null
+    }
   }
-  return { ...result, json }
+}
+
+function lastLine(output) {
+  const lines = String(output || '').split('\n').map((line) => line.trim()).filter(Boolean)
+  return lines.length ? lines[lines.length - 1].slice(0, 300) : '(no output)'
+}
+
+function commandName(command) {
+  return command.slice(FLOW.length).trim().split(/\s/)[0]
+}
+
+function unreadableText(result) {
+  return `no readable answer from \`flow ${result.command}\` (exit ${result.exitCode}): ${result.lastLine}`
+}
+
+async function askProxy(command, label, what, long) {
+  const result = await agent(commandPrompt(command, what, long), { ...PROXY, label, schema: COMMAND_SCHEMA })
+  const exitCode = result && typeof result.exitCode === 'number' ? result.exitCode : -1
+  const output = result && typeof result.output === 'string' ? result.output : ''
+  const json = jsonIn(output)
+  return { exitCode, output, json: json && typeof json === 'object' ? json : null, lastLine: lastLine(output), command: commandName(command) }
+}
+
+async function runCommand(command, label, what = '', { json = false, long = false } = {}) {
+  const first = await askProxy(command, label, what, long)
+  if (!json || first.json) return first
+  const second = await askProxy(command, `${label}:retry`, what, long)
+  return second.json ? second : { ...second, answer: 'unreadable' }
+}
+
+function boardOf(json) {
+  if (!json || json.epic !== epic || typeof json.approved !== 'boolean') return null
+  if (!BOARD_LISTS.every((key) => Array.isArray(json[key]) && json[key].every(Number.isInteger))) return null
+  if (!Array.isArray(json.waiting) || !json.waiting.every((entry) => entry && Number.isInteger(entry.n))) return null
+  if (!Array.isArray(json.tickets) || !json.tickets.every((entry) => entry && Number.isInteger(entry.n) && typeof entry.model === 'string' && typeof entry.state === 'string')) return null
+  if (json.delivery !== undefined && json.delivery !== null && typeof json.delivery !== 'string') return null
+  if (json.parallel !== undefined && json.parallel !== null && typeof json.parallel !== 'number') return null
+  return {
+    approved: json.approved,
+    delivery: json.delivery ?? null,
+    parallel: json.parallel ?? null,
+    ...Object.fromEntries(BOARD_LISTS.map((key) => [key, json[key]])),
+    waiting: json.waiting.map((entry) => entry.n),
+    tickets: json.tickets.map((entry) => ({ n: entry.n, model: entry.model, state: entry.state })),
+  }
+}
+
+async function readBoardOnce(label) {
+  const read = await runCommand(`${FLOW} next ${epic}`, label, NEXT_WHAT)
+  return { board: boardOf(read.json), exitCode: read.exitCode, lastLine: read.lastLine }
 }
 
 async function readBoard(round) {
-  const prompt = [
-    commandPrompt(`${FLOW} next ${epic}`, 'It prints JSON, and exits 1 when the epic is not approved, has no tickets or is stuck; that is an answer, not a failure.'),
-    '',
-    'Fill every field from that JSON: approved, delivery, parallel, ready, inProgress, done, needsHuman, planned, tickets (each with n, model, state), and waiting as just the ticket numbers ("n" of each entry). Never fill a field from memory or guess one.',
-  ].join('\n')
-  return agent(prompt, { ...PROXY, label: `next:#${epic}:${round}`, schema: BOARD_SCHEMA })
+  const first = await readBoardOnce(`next:#${epic}:${round}`)
+  return first.board ? first : readBoardOnce(`next:#${epic}:${round}:retry`)
+}
+
+function unreadBoardReason(reading) {
+  return `nobody could read the board from GitHub: \`flow next\` answered twice with no board in its output (exit ${reading.exitCode}): ${reading.lastLine}`
+}
+
+function isBuilt(reading) {
+  return Boolean(reading.board && reading.board.approved && reading.board.tickets.length && reading.board.tickets.every((ticket) => ticket.state === 'done'))
 }
 
 function skillPrompt(ticket, argumentsText, root, extra = []) {
@@ -182,17 +222,33 @@ async function postOnEpic(text, label) {
   return runCommand(`${FLOW} post ${epic} --file - <<'FLOW_TEXT'\n${text}\nFLOW_TEXT`, label, 'It adds one comment to the epic issue.')
 }
 
+function timeAgainstBudget(json) {
+  return Number.isFinite(json.elapsedSeconds) && Number.isFinite(json.budgetSeconds)
+    ? `after ${json.elapsedSeconds}s of a ${json.budgetSeconds}s budget`
+    : 'how long it ran is not recorded'
+}
+
+function worktreeFailure(ticket, result) {
+  if (!result || !result.json) return `#${ticket}: ${result ? unreadableText(result) : 'no readable answer from `flow worktree`: the step that asked for it failed'}`
+  const { failure } = result.json
+  if (failure) return `#${ticket}: ${failure.step} — ${String(failure.detail).split('\n')[0]} (${timeAgainstBudget(result.json)})`
+  if (result.exitCode === 0) return `#${ticket}: \`flow worktree\` printed a path that cannot be used in a command: ${JSON.stringify(result.json.path)}`
+  return `#${ticket}: \`flow worktree\` exited ${result.exitCode} without naming a failure: ${result.lastLine}`
+}
+
 async function makeWorktrees(tickets, wave) {
-  const made = await parallel(tickets.map((entry) => () => runCommand(`${FLOW} worktree ${entry.n}`, `worktree:#${entry.n}`, 'It prints JSON with the path of a new working copy and, on failure, why.')))
+  const made = await parallel(
+    tickets.map((entry) => () => runCommand(`${FLOW} worktree ${entry.n}`, `worktree:#${entry.n}`, 'It prints JSON with the path of a new working copy and, on failure, why.', { json: true, long: true })),
+  )
   const failures = []
   const roots = new Map()
   made.forEach((result, index) => {
     const ticket = tickets[index].n
-    if (result && result.exitCode === 0 && result.json && SAFE_PATH(result.json.path)) roots.set(ticket, result.json.path)
-    else failures.push(`#${ticket}: ${result && result.json && result.json.failure ? `${result.json.failure.step} — ${String(result.json.failure.detail).split('\n')[0]}` : 'the working copy could not be made'}`)
+    if (result && result.exitCode === 0 && result.json && !result.json.failure && SAFE_PATH(result.json.path)) roots.set(ticket, result.json.path)
+    else failures.push(worktreeFailure(ticket, result))
   })
   if (!failures.length) return { roots, failures }
-  await removeWorktrees([...roots.keys()])
+  await removeWorktrees(tickets.map((entry) => entry.n))
   log(`wave ${wave}: separate working copies failed (${failures.join('; ')}); this wave runs one ticket at a time`)
   return { roots: null, failures }
 }
@@ -220,7 +276,7 @@ function handedOff(ticket) {
 async function recover(ticket, why) {
   settled.add(ticket)
   log(`#${ticket}: ${why}; putting it back to planned once, or asking a person if that already happened`)
-  const reset = await runCommand(`${FLOW} reset ${ticket} --once`, `reset:#${ticket}`, 'It prints JSON whose "action" says what it did, also when it refuses.')
+  const reset = await runCommand(`${FLOW} reset ${ticket} --once`, `reset:#${ticket}`, 'It prints JSON whose "action" says what it did, also when it refuses.', { json: true })
   const action = reset.json ? reset.json.action : null
   if (action === 'reset') {
     resetSince.add(ticket)
@@ -239,18 +295,19 @@ async function recover(ticket, why) {
     log(`#${ticket}: it never started, so there is nothing to undo; it is built once more`)
     return 'reset'
   }
-  const told = await askPerson(ticket, `The run building this ticket stopped without a result, and it could not be put back to planned${reset.json && reset.json.reason ? `: ${reset.json.reason}` : '.'}`)
+  const because = reset.answer === 'unreadable' ? `: ${unreadableText(reset)}` : reset.json && reset.json.reason ? `: ${reset.json.reason}` : '.'
+  const told = await askPerson(ticket, `The run building this ticket stopped without a result, and it could not be put back to planned${because}`)
   return told ? 'needs-human' : 'unreached'
 }
 
 async function mergeAndCheck(tickets, delivered, release, wave) {
   const merged = []
   for (const ticket of tickets) {
-    const merge = await runCommand(`${FLOW} merge ${ticket}`, `merge:#${ticket}`, 'It merges the commit the acceptance comment names into the epic branch and prints JSON, or explains on standard error why not.')
-    if (merge.exitCode === 0) {
+    const merge = await runCommand(`${FLOW} merge ${ticket}`, `merge:#${ticket}`, 'It merges the commit the acceptance comment names into the epic branch and prints JSON, or explains on standard error why not.', { json: true })
+    if (merge.exitCode === 0 && merge.json) {
       merged.push(ticket)
       log(`#${ticket}: merged into the epic branch`)
-    } else log(`#${ticket}: not merged (exit ${merge.exitCode}); the ticket says why`)
+    } else log(`#${ticket}: not merged (${merge.answer === 'unreadable' ? unreadableText(merge) : `exit ${merge.exitCode}`}); the ticket says why`)
   }
   const landed = release ? [...delivered, ...merged] : merged
   if (!landed.length) return merged
@@ -258,8 +315,15 @@ async function mergeAndCheck(tickets, delivered, release, wave) {
     `${FLOW} check-epic ${epic} --tickets ${landed.join(',')} --mark`,
     `check-epic:#${epic}:${wave}`,
     'It runs the landed tickets\' checks at the epic branch head and prints JSON; a failing ticket is handed to a person by the command itself.',
+    { json: true, long: true },
   )
-  log(check.exitCode === 0 ? `wave ${wave}: every landed ticket still passes at the epic head` : `wave ${wave}: the epic check failed or could not run; see the epic issue`)
+  log(
+    check.answer === 'unreadable'
+      ? `wave ${wave}: the epic check's answer could not be read (${unreadableText(check)})`
+      : check.exitCode === 0
+        ? `wave ${wave}: every landed ticket still passes at the epic head`
+        : `wave ${wave}: the epic check failed or could not run; see the epic issue`,
+  )
   return merged
 }
 
@@ -317,15 +381,19 @@ let idleRounds = 0
 let stopReason = null
 for (;;) {
   round++
-  board = (await readBoard(round)) || (await readBoard(`${round}:retry`))
-  if (!board) {
-    stopReason = 'nobody could read the board from GitHub'
+  let reading = await readBoard(round)
+  if (reading.board && !reading.board.approved) {
+    reading = await readBoard(`${round}:again`)
+    if (reading.board && !reading.board.approved) {
+      stopReason = `epic #${epic} is not approved: two readings of the board from GitHub agreed`
+      break
+    }
+  }
+  if (!reading.board) {
+    stopReason = unreadBoardReason(reading)
     break
   }
-  if (!board.approved) {
-    stopReason = `epic #${epic} is not approved`
-    break
-  }
+  board = reading.board
   if (idleRounds >= MAX_IDLE_ROUNDS) {
     stopReason = `${MAX_IDLE_ROUNDS} rounds in a row changed nothing`
     break
@@ -384,20 +452,31 @@ for (;;) {
 }
 
 phase('Release')
-const final = (await readBoard('final')) || board
+let finalReading = await readBoard('final')
+if (finalReading.board && !isBuilt(finalReading)) {
+  finalReading = await readBoard('final:again')
+  if (finalReading.board && !isBuilt(finalReading) && !stopReason) stopReason = 'nothing more can start, and not every ticket is done: two readings of the board from GitHub agreed'
+}
+const final = finalReading.board || board
 const ticketsLeft = final ? final.tickets.filter((ticket) => ticket.state !== 'done').map((ticket) => ticket.n) : []
 const built = Boolean(final && final.approved && final.tickets.length && !ticketsLeft.length)
 let releasePullRequest = null
 let outcome = built ? 'built' : 'stopped'
 
 if (built && final.delivery !== 'incremental') {
-  const check = await runCommand(`${FLOW} check-epic ${epic} --mark`, `check-epic:#${epic}:release`, 'It runs every done ticket\'s checks at the epic branch head and prints JSON.')
-  if (check.exitCode !== 0) {
+  const check = await runCommand(`${FLOW} check-epic ${epic} --mark`, `check-epic:#${epic}:release`, 'It runs every done ticket\'s checks at the epic branch head and prints JSON.', { json: true, long: true })
+  if (check.answer === 'unreadable') {
+    outcome = 'stopped'
+    stopReason = `the checks at the epic head could not be read (${unreadableText(check)}), so no release pull request was opened`
+  } else if (check.exitCode !== 0) {
     outcome = 'stopped'
     stopReason = 'the checks at the epic head failed or could not run, so no release pull request was opened'
   } else {
-    const opened = await runCommand(`${FLOW} release-pr ${epic}`, `release-pr:#${epic}`, 'It opens the release pull request and prints JSON with its number and url.')
-    if (opened.exitCode === 0 && opened.json && opened.json.pullRequest) {
+    const openRelease = (label) => runCommand(`${FLOW} release-pr ${epic}`, label, 'It opens the release pull request, or finds the one already open, and prints JSON with its number and url.')
+    const hasPullRequest = (answer) => answer.exitCode === 0 && answer.json && Number.isInteger(answer.json.pullRequest)
+    let opened = await openRelease(`release-pr:#${epic}`)
+    if (!hasPullRequest(opened)) opened = await openRelease(`release-pr:#${epic}:again`)
+    if (hasPullRequest(opened)) {
       releasePullRequest = { number: opened.json.pullRequest, url: opened.json.url }
       for (const prRound of [1, 2]) {
         const answered = await agent(
@@ -412,7 +491,7 @@ if (built && final.delivery !== 'incremental') {
       }
     } else {
       outcome = 'stopped'
-      stopReason = 'the release pull request could not be opened; the epic issue or the command output says why'
+      stopReason = `the release pull request could not be opened: \`flow release-pr\` was asked twice and neither answer named one (exit ${opened.exitCode}): ${opened.lastLine}`
     }
   }
 }
@@ -421,7 +500,7 @@ const needsHuman = final ? final.needsHuman : []
 const closing =
   outcome === 'built'
     ? `**Run finished: built.**${releasePullRequest ? ` Release pull request: ${releasePullRequest.url}. A person reviews and merges it.` : ' Every ticket was delivered by its own pull request.'}`
-    : `**Run stopped.** ${stopReason || 'Nothing more can start.'}${needsHuman.length ? ` These tickets need a person: ${needsHuman.map((ticket) => `#${ticket}`).join(', ')}.` : ''}${ticketsLeft.length ? ` Not done: ${ticketsLeft.map((ticket) => `#${ticket}`).join(', ')}.` : ''}`
+    : `**Run stopped.** ${stopReason ? `${stopReason[0].toUpperCase()}${stopReason.slice(1)}.` : 'Nothing more can start.'}${needsHuman.length ? ` These tickets need a person: ${needsHuman.map((ticket) => `#${ticket}`).join(', ')}.` : ''}${ticketsLeft.length ? ` Not done: ${ticketsLeft.map((ticket) => `#${ticket}`).join(', ')}.` : ''}`
 await postOnEpic(`${LOCAL_RUN_END_MARKER}\n${closing}`, `post:#${epic}:end`)
 log(closing.replace(/\*\*/g, ''))
 

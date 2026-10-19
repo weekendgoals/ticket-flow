@@ -500,9 +500,23 @@ Each round it:
    order, and runs those tickets' checks again at the new epic head
    (`flow check-epic`), because two tickets that pass alone can break each
    other. If the copies cannot be set up, that round runs one ticket at a
-   time and the epic gets a comment saying so; the run never stops for it.
+   time and the epic gets a comment saying why, for each copy: the step
+   that failed and how long it ran against the setup's budget, or that no
+   readable answer came back. The run never stops for it, and it removes
+   every copy of that round. A copy left behind by an earlier attempt that
+   was killed is replaced, never reused, since nothing in it was built yet.
    One at a time, each ticket merges itself and is checked at the epic head
    the same way.
+
+A workflow script has no shell, so a small agent runs each `flow` command
+for it and hands back the exit code and what the command printed. The
+script parses that output itself and never takes the agent's summary of it,
+because a retelling is not the record. A command that prints JSON and
+brought none back is run once more by a fresh agent, and a stop over it
+quotes the exit code and the last line that came back. Before it halts over
+what GitHub said (the epic is not approved, or at the end not every ticket
+is done), it reads the board a second time and halts only when both
+readings agree.
 
 Every merge takes the commit the acceptance comment names, never one an
 agent reported. A builder that died after its ticket passed acceptance is
@@ -515,7 +529,9 @@ comment starting `<!-- flow:local-run-end -->`, posted from any account,
 clears it.
 When nothing is ready and nothing is in progress, it checks every ticket at
 the epic head, opens the release pull request (`flow release-pr`: the
-outcome, the walkthrough, each ticket's merge commit, the cost), answers its
+outcome, the walkthrough, each ticket's merge commit, the cost; it opens
+only at the head that check passed at, and an answer that names no pull
+request is asked for once more before the run gives up), answers its
 review and CI for up to two rounds, and posts the link on the epic. Then the
 session posts each ticket's cost from the run's records
 (`flow meter <n> --workflow <run dir>`).
@@ -727,10 +743,10 @@ every answer is read from GitHub (through `gh`) and git.
 | `reset <n> [--once]` | Puts a ticket whose run died back to planned; its branch keeps its commits. On a planned ticket whose `flow:start` request never started, takes the label off. Refuses a ticket that passed acceptance (it is waiting to be merged), answering in JSON either way. `--once`: if it was reset (or its request withdrawn) before, asks a person instead |
 | `merge <n> [--sha <sha>]` | Merges the accepted commit into the epic branch; with `--sha`, refuses unless that is the accepted commit |
 | `merge --epic <epic>` | Merges every accepted ticket of the epic, in the epic's order |
-| `check-epic <epic> [--tickets <n>,<n>] [--mark]` | Runs the done tickets' checks (or the listed ones') at the epic branch's head, in a clean copy set up from `.flow.json`, and posts the result on the epic. `--mark` hands each failing ticket to a person; it stays merged |
-| `worktree <n> [--remove]` | A separate working copy for one ticket, at `../.flow-worktrees/<repository>/ticket-<n>`, set up from `.flow.json` |
+| `check-epic <epic> [--tickets <n>,<n>] [--mark]` | Runs the done tickets' checks (or the listed ones') at the epic branch's head, in a clean copy set up from `.flow.json`, and posts the result on the epic, marked with the head, whether it passed and whether it judged every done ticket, which `release-pr` reads. `--mark` hands each failing ticket to a person; it stays merged |
+| `worktree <n> [--remove]` | A separate working copy for one ticket, at `../.flow-worktrees/<repository>/ticket-<n>`, set up from `.flow.json`. A copy an earlier attempt left there is removed and made again (`replaced: true`). The JSON says how long it ran (`elapsedSeconds`) and, on a failure, the setup's budget (`budgetSeconds`) |
 | `dispatch <epic>` | Adds `flow:start` to up to `Parallel:` ready tickets; says whether the epic is `running`, `built`, `stopped`, or `empty` (approved with no tickets yet, such as a standing epic before triage fills it). Refuses while a `/flow:run` is building the epic |
-| `release-pr <epic>` | Opens the epic's pull request once every ticket is done, and posts it on the epic |
+| `release-pr <epic> [--cwd <dir>]` | Opens the epic's pull request once every ticket is done, and posts it on the epic. Run in the repository: it refuses, naming `flow check-epic <epic>`, unless the latest epic check from the running account judged every done ticket, passed, and is at the head of `origin/<epic branch>`, because the pull request carries that head and nothing else checked it. Reusing an open pull request goes through the same gate. By hand: `flow check-epic <epic>`, then `flow release-pr <epic>` |
 | `design-map <epic> [--out <file>]` | Writes the epic's design map for the design comparison |
 | `stats [<epic>] [--since <date>] [--json] [--cwd <dir>]` | How the work went, per ticket, per epic and across epics; see [Looking back](#looking-back) |
 | `report --out <dir> [--since <date>] [--cwd <dir>]` | Writes `<dir>/index.html`, the figures of every epic as one page for GitHub Pages; see [The report page](#the-report-page) |

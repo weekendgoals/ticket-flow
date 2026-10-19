@@ -85,6 +85,19 @@ start); a merge conflict the agent cannot resolve. An epic also stops when
 tickets' checks fail at its head after merging. Anything else retries,
 becomes a comment, or falls back to building one ticket at a time.
 
+## A driver that reads a retelling halts on the retelling
+
+2026-10-19, epic #433. A workflow script has no shell, so the run driver
+had a small agent run each command and report what it printed, and for
+`flow next` it asked that agent to fill in a form from the JSON. Twice the
+run halted on the agent's account instead of on GitHub's: "epic #433 is not
+approved" while the label had been on the issue for hours, and "the release
+pull request could not be opened" twelve seconds after the command had
+opened it. The two false halts cost forty minutes of a person's attention.
+A retelling is not the record: the driver now parses what the command
+printed, asks once more when nothing readable came back, and halts over
+what GitHub said only when two readings agree.
+
 ## A gate is verified at the door its actor walks through
 
 A refusal only guards something if it lives in the command the guarded
