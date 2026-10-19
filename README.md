@@ -124,7 +124,11 @@ Review fixes end `(review fix)`; a fix for a bug an earlier ticket shipped
 ends `(fixes #9)`. Under `Delivery: release` every ticket is merged into
 `epic/<name>` and the epic gets one pull request at the end; under
 `Delivery: incremental` each ticket opens its own pull request. **A person
-always merges into the default branch, and nothing runs after that merge.**
+always merges into the default branch.**
+After a person merges into the default branch, no code work runs: what runs
+is the GitHub Action's `board` job, which closes `flow:done` tickets left
+open and writes the project board (Status, Release, figures), and the
+report page's rebuild, which only reads.
 
 ## The project board
 
@@ -151,6 +155,12 @@ ticket's state, and Flow never takes a state from the project.
    draft or pull request is set by hand). With all six already there, it
    only names the project. After a change it prints
    `Flow writes to: <title>`, the board every state change will use.
+   Either way it then adds the `Release` field (below) when the board lacks
+   it, or the options it lacks, keeping each epic's value the same way, and
+   the seven number fields of [the cost on the board](#the-cost-on-the-board)
+   that it lacks, naming what it created. A field of one of those names
+   that is of another kind is left alone, named, and the command exits 1:
+   renaming your field is not Flow's call.
 2. Two steps the GitHub API cannot do, which `init --board` reminds you of
    when it creates the project: use the Board layout and set Swimlanes to
    "Parent issue", so every epic becomes one swimlane with its tickets in
@@ -160,8 +170,16 @@ ticket's state, and Flow never takes a state from the project.
 3. On a fresh board, or one that fell behind (it was linked late, or a token
    could not write to it for a while), run `flow board-sync [<epic>]`: it
    sets every open epic and its tickets, and every ticket with no epic, to
-   the `Status` its labels say, adding any that are missing. It reads each
-   item's current `Status` only to leave a right one alone.
+   the `Status` its labels say, adding any that are missing; gives each
+   release epic its `Release` value; copies the figures of every ticket
+   with a cost comment; and closes, as completed, every open
+   `flow:done` ticket of a release epic (one with a `Branch:`), which is how
+   tickets done before Flow 3.3 get counted. It reads each item's current
+   value only to leave a right one alone. Without an epic number it also
+   reads the board's items once and visits the closed epics on it whose
+   `Release` is not `Released` yet, so a release merged while nothing was
+   watching still reaches `Released`; `flow board-sync <epic>` is the way
+   for a closed epic that is not on the board.
 
 From then on every command that changes a state label also moves the issue
 to the matching `Status`, right after the label has changed: `label`,
@@ -183,6 +201,65 @@ moved, the command prints one line starting `project board not updated:`.
 Either way it carries on and exits exactly as it would have. `init --board`
 and `board-sync` are the exception: they were asked to touch the board, so
 a refusal there exits 1 with that hint.
+
+**The progress bar.** A swimlane per epic shows closed sub-issues over all
+of them. So that it counts what is built, `flow merge` closes a ticket (as
+completed) when it marks it `flow:done`, while its code is still only on the
+epic branch; the open release pull request, and the epic's `Release` field,
+are the sign that the epic has not shipped. The epic itself stays open until
+a person merges the release pull request, whose `Closes #<n>` lines also
+close the tickets done before this version. When a done ticket goes back to
+work (`check-epic --mark` hands it to a person, or someone relabels it
+`flow:planned` to have it rebuilt), the issue is reopened with the label
+change, since a closed ticket carries no work; `flow reset` refuses a done
+ticket, as before. `flow label <n> +flow:done` closes nothing: a label is a
+label. Under incremental delivery the ticket's own pull request closes it
+when a person merges it.
+
+**The `Release` field.** A single-select field for epics only, so the
+board's columns and a `-status:Epic` filter stay as they are while the
+epic's card and the table layout show where it stands:
+
+| `Release` | Means |
+|---|---|
+| `Building` | its tickets are being built (set by `create-epic`) |
+| `Pull request open` | every ticket is done and the release pull request waits for a person (set by `release-pr` once the pull request exists) |
+| `Released` | the release pull request merged into the default branch, which closed the epic |
+
+A release epic closed without its release pull request merging gets no
+value: the field keeps what it had.
+
+An incremental epic gets no value: each of its tickets ships alone. The
+move to `Released` comes from the Action's `board` job, the one job after a
+merge (see [How work is kept on GitHub](#how-work-is-kept-on-github)): the
+epic closing (`issues: closed` on a `flow:epic` issue, nothing else) runs
+`flow board-sync <epic>`, which reads the release pull request named in
+the epic's comments, as `flow stats` does, sees it merged and sets
+`Released`. Without the Action, run `flow board-sync <epic>` yourself after
+the merge. `flow doctor` names the field or its absence on the board line.
+
+**The cost on the board.** The board's Insights charts can only draw fields,
+so each ticket's cost comment is copied into seven number fields:
+
+| Field | Holds |
+|---|---|
+| `Input tokens` | input tokens, all steps |
+| `Output tokens` | output tokens, all steps |
+| `Cache tokens` | cache writes plus cache reads |
+| `Build minutes` | the builder's time, in whole minutes |
+| `Review minutes` | review plus fixes; empty when either is unknown, which is every ticket whose meter saw no fixes session |
+| `Total minutes` | from the first start to the merge (or the last pull request comment) |
+| `Review rounds` | how many review rounds were posted |
+
+`flow meter` writes them right after it posts the cost comment, and
+`flow board-sync` for every ticket that has one; nothing else does, since a
+ticket's figures change only when a cost comment lands. A figure the
+comments do not carry is not written, and its cell stays empty: an empty
+cell means unknown, never 0, which would read as free. In Insights, make a
+chart with Sum of a field (say `Input tokens`), grouped by any single-select
+field (`Status`, or a size or area field of your own). The comment stays
+the record; the fields are the board's copy, and `flow doctor`'s board line
+says `figures: 7 fields` or names the missing ones.
 
 A finding is not on the board: `flow create-finding` adds nothing to the
 project, and the issue joins it, as `Planned`, only when `flow promote` turns
@@ -225,9 +302,11 @@ becomes `flow:needs-human`). Each step posts one comment on the issue:
    tree with uncommitted changes; cuts `ticket/<n>` from the epic branch
    (release) or the default branch (incremental, or no epic); labels it
    `flow:in-progress`; says who builds it, on which model.
-2. **Build** on the ticket's model, `tier:easy` on Sonnet, otherwise Opus,
-   with commits `#<n>: <what>`, no code comments, component tests for UI and
-   an end-to-end test only for a journey the epic names.
+2. **Build** on the ticket's model, `tier:easy` on Sonnet, otherwise Opus:
+   the `ticket-worker` agent builds it by the rules in
+   [`agents/ticket-worker.md`](plugins/flow/agents/ticket-worker.md) (scope,
+   commits, comments, tests, when to stop), and unattended the session reads
+   that file and builds by it itself.
 3. **Check** (`flow check`), then **screenshots** (`flow screenshots`) when
    the project says how to take them.
 4. **Review** (`flow:in-review`): a separate reviewer on the strongest model
@@ -378,6 +457,9 @@ answer. `--workflow <run dir>` reads one ticket's agents out of a
 `/flow:run` workflow run, by their labels (`worker:#12`, `reviewer:#12`,
 `fixes:#12`).
 
+The comment is the record; on a linked project board, `meter` also copies
+its figures into the [cost fields](#the-cost-on-the-board), the board's copy.
+
 ## Building a whole epic: two hosts
 
 An approved epic can be built with nobody watching, on your machine or on
@@ -469,6 +551,7 @@ The jobs:
 
 | Job | Runs when | What it does |
 |---|---|---|
+| `board` | an issue labelled `flow:epic` is closed (a closed ticket or finding runs nothing) | `flow board-sync <epic>`: the epic's `Release` becomes `Released` once its release pull request merged. The one job after a merge (see [How work is kept on GitHub](#how-work-is-kept-on-github)); it builds, merges and pushes nothing. `Released` on the board needs a `FLOW_TOKEN` with the Projects permission: the Actions token cannot touch Projects, and the job then exits green having done nothing |
 | `route` | the epic gets `flow:approved` (an issue that is not an epic, such as a finding, starts nothing), or a ticket `flow:start` | Reads the epic's number from the event alone, so every scheduler run of one epic waits for the last |
 | `epic` | after `route`, and after every ticket | Withdraws a start request whose `ticket` job failed before it could, then `flow dispatch`: adds `flow:start` to up to `Parallel:` ready tickets. When everything is built: `flow check-epic`, then `flow release-pr` (which reuses an open one), and asks the review bot. Never runs Claude |
 | `ticket` | a ticket gets `flow:start` (a finding does not run it), or by hand with a ticket number | Runs `/flow:ticket #<n> --unattended --no-merge` on the tier's model, posts the cost from the run's output, keeps the screenshots as an artifact, and resets a run that died |
@@ -600,9 +683,9 @@ every answer is read from GitHub (through `gh`) and git.
 
 | Command | What it does |
 |---|---|
-| `init [--board [<title>]]` | Creates the twelve labels. Safe to run again. `--board` also makes sure a matching project board is linked: creates and links one (titled `Flow` by default), or adds the `Status` options a linked one lacks, keeping every option and every item's status; exits 2 when several linked projects could be meant, 1, with the `gh auth refresh -s project` hint, when GitHub refuses. See [The project board](#the-project-board) |
-| `board-sync [<epic>] [--json]` | Sets the project board's `Status` of every open epic (`Epic`) and ticket from its labels, adding missing ones; findings and tickets with no readable state are skipped. One line per change, then `<n> set, <m> already right, <k> skipped`. Exits 1 when no matching board is linked, or when any issue could not be set (the rest are still set) |
-| `doctor` | Checks `gh`, sign-in, that issues are on, the labels, the default branch, and every open epic's `Blocked by` lines (unreadable, outside the epic, cycles). Prints one sentence per problem, then one line naming the project board (see [The project board](#the-project-board)), then `ok` when there was no problem |
+| `init [--board [<title>]]` | Creates the twelve labels. Safe to run again. `--board` also makes sure a matching project board is linked: creates and links one (titled `Flow` by default), or adds the `Status` options a linked one lacks, keeping every option and every item's status, and adds the `Release` field or its missing options and the seven number fields it lacks; exits 1 on a field of one of those names of another kind, 2 when several linked projects could be meant, 1, with the `gh auth refresh -s project` hint, when GitHub refuses. See [The project board](#the-project-board) |
+| `board-sync [<epic>] [--json]` | Sets the project board's `Status` of every open epic (`Epic`) and ticket from its labels, adding missing ones; findings and tickets with no readable state are skipped. Sets each release epic's `Release`, copies each metered ticket's figures, and closes the open `flow:done` tickets of release epics. One line per change, then `<n> set, <m> already right, <k> skipped` (and how many were closed, how many `Release` values set and how many tickets got figures; `--json` lists them as `closed`, `releases` and `figures`). Exits 1 when no matching board is linked, or when any issue could not be set (the rest are still set) |
+| `doctor` | Checks `gh`, sign-in, that issues are on, the labels, the default branch, and every open epic's `Blocked by` lines (unreadable, outside the epic, cycles). Prints one sentence per problem, then one line naming the project board, its `Release` field and its cost fields (see [The project board](#the-project-board)), then `ok` when there was no problem |
 | `board [<epic>] [--json]` | The default branch, then open epics with approval, progress and branch; or one epic's tickets with tier, state and blockers. Either way, how many findings wait or are approved |
 | `next <epic>` | JSON: `approved`, `ready`, `waiting`, `inProgress`, `done`, `needsHuman`, `planned`, `problems`. Exits 1 when the epic is not approved, has no tickets, or is stuck (unfinished tickets, none ready, none in progress) |
 | `ticket <n>` | One ticket parsed, as JSON, including who edited its body and when, and the latest handoff of each done ticket of its epic (`handoffs`, blockers first, read from at most twenty done tickets; `handoffsLeftOut` counts the ones not read), which it also prints on stderr under `handoffs:` |
@@ -626,7 +709,7 @@ every answer is read from GitHub (through `gh`) and git.
 | `accept <n>` | Runs the criteria on `ticket/<n>`'s committed head and posts the results with the commit; refuses an issue body edited after the start |
 | `deliver <n>` | Merges the accepted commit into the epic branch (release) or opens its pull request (incremental) |
 | `screenshots <n>` | Runs `.flow.json`'s `screenshots` command, commits and posts the images |
-| `meter <n> --transcripts [<role>=]<path> ... [--print]` | Posts what the ticket cost, read from transcripts, a headless run's output or the GitHub Action's |
+| `meter <n> --transcripts [<role>=]<path> ... [--print]` | Posts what the ticket cost, read from transcripts, a headless run's output or the GitHub Action's, then copies the figures to the project board's cost fields |
 | `meter <n> --workflow <run dir> [--print]` | The same, for one ticket of a `/flow:run` workflow run |
 | `pr-review-request <pr>` | Asks Copilot to review; prints `copilot`, `coderabbit` or `none` |
 | `pr-wait <pr> [--bot …] [--timeout <s>] [--interval <s>]` | Waits for the bot's review of the current head |
@@ -642,6 +725,7 @@ every answer is read from GitHub (through `gh`) and git.
 | `release-pr <epic>` | Opens the epic's pull request once every ticket is done, and posts it on the epic |
 | `design-map <epic> [--out <file>]` | Writes the epic's design map for the design comparison |
 | `stats [<epic>] [--since <date>] [--json] [--cwd <dir>]` | How the work went, per ticket, per epic and across epics; see [Looking back](#looking-back) |
+| `report --out <dir> [--since <date>] [--cwd <dir>]` | Writes `<dir>/index.html`, the figures of every epic as one page for GitHub Pages; see [The report page](#the-report-page) |
 | `qa-config [--widths <w>,<w>] [--cwd <dir>]` | The `qa` section of `.flow.json`, checked, with the defaults filled in, as JSON; exits 2 naming every unknown key or wrong type. Touches no GitHub |
 | `qa-routes <url> [--routes <file> \| --sitemap <file> … \| --links <file>] [--cap 60]` | The pages `/flow:qa` visits, as JSON: the start page, then same-site pages from a list, a sitemap (an index lists the sitemaps to read next) or a saved page's links (else `.flow.json`'s `routes`), each once, without `deny` matches or files that are not pages, capped; `skipped` says how many were left out and why. Exits 2 when there is nothing to build from |
 | `qa-fingerprint <url> "<first line>"` | The fingerprint a QA finding is filed with: the page's path and the normalised line |
@@ -681,6 +765,33 @@ ticket from start to end. A figure no comment or commit carries reads
 `unknown`; a sum that only some tickets carry says how many (`1,800 (1/2)`).
 Nothing is estimated. Run it inside a clone (or with `--cwd`), fetched: rework
 and escapes come from its `origin/` branches.
+
+### The report page
+
+`flow report --out <dir> [--since <date>]` writes `<dir>/index.html`: the
+same figures as `flow stats --json` over every epic, open and closed, as
+one page with no build step, no library and nothing fetched. It has the
+repository, when it was made and the plugin's version; the totals across
+epics (tickets, time, tokens, review rounds, stops, the pace); then one
+section per epic, newest first, with its state (`running`, `stopped`,
+`built`, `shipped` once the epic is closed, or `closed without release`
+when a release epic closed without its release pull request merging), its
+`Release` word, its
+release pull request, the instruction files' size, and a table of its
+tickets (each linked to its issue: tier, state, time per step, tokens in
+and out, cache, review rounds, Important findings, acceptance runs, resets,
+escapes, handoff, stops). A click on a column header sorts that table. A
+figure nothing carries reads `unknown`, never blank or 0. Tables scroll
+sideways at phone width; nothing else does. A repository with no epics gets
+a page that says so. The page is made fresh each time and nothing reads it
+back: the issues stay the record.
+
+To publish it, copy [`plugins/flow/github/report.yml`](plugins/flow/github/report.yml)
+to `.github/workflows/flow-report.yml` and set Settings, Pages, Source:
+GitHub Actions. It runs daily, by hand, and when an epic closes (a release
+shipped), with full history (stats reads git), and publishes with GitHub's
+own Pages actions. It reads issues and pull requests and writes only the
+Pages site; `FLOW_TOKEN` is used when set, as in `flow.yml`.
 
 ### `/flow:retro #<epic>`
 
@@ -845,8 +956,13 @@ keeps the screenshots as an artifact. Your project installs nothing for it.
   never told what anyone thinks is broken, clicks nothing that pays, signs
   up, deletes or sends, and files nothing.
 
-All five run on the strongest model available: what a reviewer, researcher
-or explorer left out cannot be checked afterwards.
+These five run on the strongest model available: what a reviewer,
+researcher or explorer left out cannot be checked afterwards.
+
+- **ticket-worker** — builds one ticket on its branch for `/flow:ticket`,
+  by the worker's rules its file holds, on the model the ticket's tier
+  decides (Sonnet for `tier:easy`, otherwise Opus). It is handed the
+  ticket's facts only, never the planning conversation.
 
 ## Further reading
 

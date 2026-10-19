@@ -1,0 +1,57 @@
+# Flow report: publishes one page with the figures of every epic and ticket (what `flow stats` reads) on the project's GitHub Pages, rebuilt from the issues and git on each run. Nothing reads it back: the issues stay the record.
+# Copy this file to .github/workflows/flow-report.yml in your project. One manual step: Settings, Pages, Source: GitHub Actions.
+# It runs every day, by hand, and when an epic closes (its release shipped). It reads issues and git and writes only the Pages site; FLOW_TOKEN as in flow.yml is used when set, else the Actions token.
+name: flow-report
+
+on:
+  schedule:
+    - cron: '41 4 * * *'
+  workflow_dispatch:
+  issues:
+    types: [closed]
+
+permissions:
+  contents: read
+  issues: read
+  pull-requests: read
+  pages: write
+  id-token: write
+
+env:
+  FLOW: node .flow-plugin/plugins/flow/scripts/flow.mjs
+  FLOW_PLUGIN_REPOSITORY: weekendgoals/ticket-flow
+  FLOW_PLUGIN_REF: main
+
+concurrency:
+  group: flow-report
+  cancel-in-progress: true
+
+jobs:
+  report:
+    if: github.event_name != 'issues' || contains(github.event.issue.labels.*.name, 'flow:epic')
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    env:
+      GH_TOKEN: ${{ secrets.FLOW_TOKEN || github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ env.FLOW_PLUGIN_REPOSITORY }}
+          ref: ${{ env.FLOW_PLUGIN_REF }}
+          path: .flow-plugin
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: write the report page
+        run: $FLOW report --out site
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+      - id: deploy
+        uses: actions/deploy-pages@v4

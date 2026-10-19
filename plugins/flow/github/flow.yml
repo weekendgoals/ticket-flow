@@ -1,11 +1,11 @@
 # Flow: builds the tickets of an approved epic on GitHub, with nobody watching.
 # Copy this file to .github/workflows/flow.yml in your project.
-# Events made with the default GITHUB_TOKEN start no other workflow, so the scheduler labels tickets with FLOW_TOKEN: a fine-grained personal access token or a GitHub App token (contents, issues and pull requests: read and write; add projects: read and write to keep a linked project board's Status in step).
+# Events made with the default GITHUB_TOKEN start no other workflow, so the scheduler labels tickets with FLOW_TOKEN: a fine-grained personal access token or a GitHub App token (contents, issues and pull requests: read and write). Add projects: read and write to keep a linked project board's Status, Release and figures in step; the Actions token cannot touch Projects. Issues write is what closes a done ticket.
 name: flow
 
 on:
   issues:
-    types: [labeled]
+    types: [labeled, closed]
   workflow_dispatch:
     inputs:
       ticket:
@@ -202,6 +202,30 @@ jobs:
           elif [ "$state" = "stopped" ]; then
             $FLOW post "$EPIC" --text "**Run stopped.** Nothing is ready and nothing is in progress; the tickets labelled flow:needs-human say why."
           fi
+
+  # After a person merges into the default branch, no code work runs: what runs is the GitHub Action's `board` job, which closes `flow:done` tickets left open and writes the project board (Status, Release, figures), and the report page's rebuild, which only reads. It builds, merges and pushes nothing, and changes no label.
+  board:
+    if: github.event_name == 'issues' && github.event.action == 'closed' && contains(github.event.issue.labels.*.name, 'flow:epic')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: read
+    env:
+      EPIC: ${{ github.event.issue.number }}
+      GH_TOKEN: ${{ secrets.FLOW_TOKEN || github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ env.FLOW_PLUGIN_REPOSITORY }}
+          ref: ${{ env.FLOW_PLUGIN_REF }}
+          path: .flow-plugin
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: bring the project board up to date for the closed epic
+        run: $FLOW board-sync "$EPIC" || true
 
   pr:
     if: >-

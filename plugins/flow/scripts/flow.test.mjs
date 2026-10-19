@@ -288,6 +288,17 @@ test('next exits 0 on a built epic, where every ticket is done', () => {
   assert.deepEqual(JSON.parse(result.stdout).done, [41, 42])
 })
 
+const closed = (raw) => ({ ...raw, state: 'closed', state_reason: 'completed' })
+
+test('an epic whose done tickets are closed is still built: next and board read closed sub-issues like open ones', () => {
+  world({ epics: [{ epic: issue(40, { body: epicBody([41, 42]), labels: epicLabels() }), tickets: [closed(ticket(41, 40, 'done')), closed(ticket(42, 40, 'done'))] }] })
+  const result = flow('next', '40')
+  assert.equal(result.status, 0, result.stderr)
+  assert.deepEqual(JSON.parse(result.stdout).done, [41, 42])
+  const board = flow('board', '--json')
+  assert.deepEqual(JSON.parse(board.stdout).epics.map((row) => [row.done, row.total]), [[2, 2]])
+})
+
 test('next exits 1 on a stuck epic: unreadable line, outside blocker and cycle all wait, nothing can start', () => {
   world({ epics: [brokenEpic()] })
   const result = flow('next', '10')
@@ -454,6 +465,17 @@ test('ticket carries the latest handoff of every done ticket of its epic from th
   assert.equal(result.stderr, 'handoffs:\n#3 ticket 3:\n- the file is CSV: the plan said JSON, the importer reads CSV\n\n#2 ticket 2:\n- the route is /trips/:id/export\n')
   assert.ok(!fake.calls().some((call) => call.key === `GET ${R}/issues/5/comments?per_page=100`), 'a ticket that is not done has nothing to hand off yet')
   assert.deepEqual(writesMade().filter((call) => call.key !== 'graphql' && !call.key.startsWith('graphql ')), [])
+})
+
+test('ticket hands on the handoff of a done ticket that is closed', () => {
+  const epic = issue(1, { title: 'Trip export', body: epicBody([2, 6]), labels: epicLabels() })
+  world({
+    epics: [{ epic, tickets: [closed(ticket(2, 1, 'done')), ticket(6, 1, 'planned', { blockedBy: 'Blocked by: #2' })] }],
+    extra: { ...VIEWER, [`GET ${R}/issues/2/comments?per_page=100`]: [rawComment(2, 21, handoffBody('- the route is /trips/:id/export'))] },
+  })
+  const result = flow('ticket', '6')
+  assert.equal(result.status, 0, result.stderr)
+  assert.deepEqual(JSON.parse(result.stdout).handoffs.map((entry) => [entry.number, entry.text]), [[2, '- the route is /trips/:id/export']])
 })
 
 test('ticket with no epic, or with no done ticket beside it, carries no handoff and reads no comments', () => {
@@ -650,6 +672,50 @@ test('label adds and removes labels, touching only what changes', () => {
   const writes = fake.calls().filter((call) => !call.key.startsWith('GET'))
   assert.deepEqual(writes.map((call) => call.key), [`POST ${R}/issues/3/labels`, `DELETE ${R}/issues/3/labels/flow%3Aplanned`, PROJECT_LOOKUP])
   assert.deepEqual(JSON.parse(writes[0].stdin), { labels: ['flow:in-progress'] })
+})
+
+test('label +flow:done closes nothing: a label is a label', () => {
+  world({
+    others: [issue(3, { labels: ['flow:ticket', 'flow:in-review'] })],
+    extra: { [`POST ${R}/issues/3/labels`]: [], [`DELETE ${R}/issues/3/labels/flow%3Ain-review`]: null },
+  })
+  const result = flow('label', '3', '+flow:done', '-flow:in-review')
+  assert.equal(result.status, 0, result.stderr)
+  assert.ok(!fake.calls().some((call) => call.key.startsWith('PATCH')), 'the issue stays open')
+})
+
+test('label reopens a closed ticket moved to any state but done, and says so', () => {
+  world({
+    others: [closed(issue(3, { labels: ['flow:ticket', 'flow:done'] }))],
+    extra: { [`POST ${R}/issues/3/labels`]: [], [`DELETE ${R}/issues/3/labels/flow%3Adone`]: null, [`PATCH ${R}/issues/3`]: issue(3, { labels: ['flow:ticket', 'flow:planned'] }) },
+  })
+  const result = flow('label', '3', '+flow:planned', '-flow:done')
+  assert.equal(result.status, 0, result.stderr)
+  assert.equal(result.stdout.trim(), '#3: flow:ticket, flow:planned (reopened: a closed ticket carries no work)')
+  const writes = fake.calls().filter((call) => !call.key.startsWith('GET'))
+  assert.deepEqual(writes.map((call) => call.key), [`POST ${R}/issues/3/labels`, `DELETE ${R}/issues/3/labels/flow%3Adone`, `PATCH ${R}/issues/3`, PROJECT_LOOKUP])
+  assert.deepEqual(JSON.parse(writes[2].stdin), { state: 'open' })
+  fake.clearCalls()
+  world({ others: [closed(issue(3, { labels: ['flow:ticket', 'flow:done'] }))], extra: { [`POST ${R}/issues/3/labels`]: [] } })
+  assert.equal(flow('label', '3', '+tier:easy').status, 0)
+  assert.ok(!fake.calls().some((call) => call.key.startsWith('PATCH')), 'a label that moves no state reopens nothing')
+})
+
+test('needs-human on a closed done ticket reopens it and says so in the comment', () => {
+  world({
+    epics: [{ epic: issue(1, { body: epicBody([3]), labels: epicLabels(), author: 'owner' }), tickets: [closed(ticket(3, 1, 'done'))] }],
+    extra: {
+      [`POST ${R}/issues/3/labels`]: [],
+      [`DELETE ${R}/issues/3/labels/flow%3Adone`]: null,
+      [`PATCH ${R}/issues/3`]: ticket(3, 1, 'needs-human'),
+      [`POST ${R}/issues/3/comments`]: { id: 2, html_url: null },
+    },
+  })
+  const result = flow('needs-human', '3', '--text', 'The export fails at the epic head.')
+  assert.equal(result.status, 0, result.stderr)
+  const posted = JSON.parse(fake.calls().find((call) => call.key === `POST ${R}/issues/3/comments`).stdin).body
+  assert.match(posted, /@owner The export fails at the epic head\. It was closed as done and is open again, since a closed ticket carries no work\.$/)
+  assert.deepEqual(JSON.parse(fake.calls().find((call) => call.key === `PATCH ${R}/issues/3`).stdin), { state: 'open' })
 })
 
 test('label refuses a change that would leave two state labels', () => {
@@ -1327,4 +1393,40 @@ test('create-ticket refuses a finding as a blocker: a ticket waiting on one woul
   assert.equal(result.status, 1)
   assert.equal(result.stderr.trim(), '#7 is a finding, not a ticket: a ticket can wait only for tickets')
   assert.deepEqual(writesMade(), [])
+})
+
+const ALL_EPICS = `GET ${R}/issues?labels=flow%3Aepic&state=all&per_page=100`
+
+test('report writes one page of every epic, open and closed, from the same figures as stats, and a repository with none gets a page saying so', () => {
+  const shipped = { ...issue(1, { title: 'Trip export', body: epicBody([2]), labels: epicLabels() }), state: 'closed', created_at: '2026-10-01T09:00:00Z' }
+  const open = { ...issue(7, { title: 'Bugs', body: epicBody([8]), labels: epicLabels() }), created_at: '2026-10-12T09:00:00Z' }
+  world({
+    epics: [
+      { epic: shipped, tickets: [closed(ticket(2, 1, 'done'))] },
+      { epic: open, tickets: [ticket(8, 7, 'in-progress')] },
+    ],
+    extra: {
+      [ALL_EPICS]: [open, shipped],
+      ...Object.fromEntries([1, 2, 7, 8].map((number) => [`GET ${R}/issues/${number}/comments?per_page=100`, []])),
+    },
+  })
+  const out = join(directory, 'site')
+  const result = flow('report', '--out', out)
+  assert.equal(result.status, 0, result.stderr)
+  assert.equal(result.stdout.trim(), `${join(out, 'index.html')}: 2 epic(s), 2 ticket(s)`)
+  const html = readFileSync(join(out, 'index.html'), 'utf8')
+  assert.match(html, /<h1>Flow report: o\/r<\/h1>/)
+  assert.match(html, /by Flow \d+\.\d+\.\d+/)
+  assert.deepEqual([...html.matchAll(/id="epic-(\d+)"/g)].map((match) => Number(match[1])), [7, 1])
+  assert.match(html, /id="epic-1">[\s\S]*?<span class="pill">closed without release<\/span>/, 'closed, with no release pull request named, is not shipped')
+  assert.deepEqual(writesMade(), [], 'the report reads and writes nothing on GitHub')
+  const since = flow('report', '--out', out, '--since', '2026-10-10')
+  assert.equal(since.status, 0, since.stderr)
+  assert.match(since.stdout, /: 1 epic\(s\), 1 ticket\(s\)$/m)
+  world({ extra: { [ALL_EPICS]: [] } })
+  const empty = flow('report', '--out', out)
+  assert.equal(empty.status, 0, empty.stderr)
+  assert.match(readFileSync(join(out, 'index.html'), 'utf8'), /no Flow epics yet/)
+  assert.equal(flow('report').status, 2)
+  assert.equal(flow('report', '1', '--out', out).status, 2)
 })

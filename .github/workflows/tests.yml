@@ -33,6 +33,7 @@ jobs:
           node --check plugins/flow/scripts/worktree-setup.mjs
           node --check plugins/flow/scripts/project-sync.mjs
           node --check plugins/flow/scripts/qa.mjs
+          node --check plugins/flow/scripts/report.mjs
           node --check plugins/flow/github/workflow-yaml.mjs
       - name: parse run-epic.mjs the way the workflow runtime does
         run: |
@@ -56,3 +57,5 @@ jobs:
           node --test tools/reporter/reporter.test.mjs
           node --test plugins/flow/scripts/qa.test.mjs
           node --test plugins/flow/github/qa.test.mjs
+          node --test plugins/flow/scripts/report.test.mjs
+          node --test plugins/flow/github/report.test.mjs

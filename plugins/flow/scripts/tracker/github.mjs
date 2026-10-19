@@ -143,6 +143,10 @@ export function closeIssue(number, reason = 'not_planned') {
   return normalizeIssue(apiWrite('PATCH', `${REPO}/issues/${number}`, { state: 'closed', state_reason: reason }))
 }
 
+export function reopenIssue(number) {
+  return normalizeIssue(apiWrite('PATCH', `${REPO}/issues/${number}`, { state: 'open' }))
+}
+
 export function removeSubIssue(parentNumber, childId) {
   apiWrite('DELETE', `${REPO}/issues/${parentNumber}/sub_issue`, { sub_issue_id: childId })
 }
@@ -385,17 +389,30 @@ export function viewerLogin(environment = process.env) {
 }
 
 const STATUS_FIELD_SELECTION = 'field(name:"Status"){... on ProjectV2SingleSelectField{id options{id name color description}}}'
-const LINKED_PROJECTS_QUERY = `query($owner:String!,$name:String!){repository(owner:$owner,name:$name){id owner{id} projectsV2(first:20){nodes{id title ${STATUS_FIELD_SELECTION}}}}}`
+const FIELD_SELECTION = '... on ProjectV2FieldCommon{id name dataType} ... on ProjectV2SingleSelectField{options{id name color description}}'
+const FIELDS_SELECTION = `fields(first:100){pageInfo{hasNextPage} nodes{${FIELD_SELECTION}}}`
+const LINKED_PROJECTS_QUERY = `query($owner:String!,$name:String!){repository(owner:$owner,name:$name){id owner{id} projectsV2(first:20){nodes{id title ${STATUS_FIELD_SELECTION} ${FIELDS_SELECTION}}}}}`
+const RELEASE_VALUE_SELECTION = 'release:fieldValueByName(name:"Release"){... on ProjectV2ItemFieldSingleSelectValue{optionId name}}'
+
+const normalizeOption = (option) => ({ id: option.id, name: option.name, color: option.color || null, description: option.description || '' })
+
+function normalizeField(node) {
+  return { id: node.id, name: node.name, dataType: node.dataType || null, options: Array.isArray(node.options) ? node.options.map(normalizeOption) : null }
+}
 
 function normalizeProject(node) {
+  if (node.fields && node.fields.pageInfo && node.fields.pageInfo.hasNextPage)
+    throw new TrackerError(`the project ${node.title} has more than 100 fields, and Flow reads only the first 100, so it cannot tell whether the fields it needs exist`)
   return {
     id: node.id,
     title: node.title,
-    statusField:
-      node.field && node.field.id
-        ? { id: node.field.id, options: (node.field.options || []).map((option) => ({ id: option.id, name: option.name, color: option.color || null, description: option.description || '' })) }
-        : null,
+    statusField: node.field && node.field.id ? { id: node.field.id, options: (node.field.options || []).map(normalizeOption) } : null,
+    fields: ((node.fields && node.fields.nodes) || []).filter((field) => field && field.id && field.name).map(normalizeField),
   }
+}
+
+function selectValue(value) {
+  return value && value.optionId ? { optionId: value.optionId, name: value.name || null } : null
 }
 
 export function linkedProjects() {
@@ -407,7 +424,7 @@ export function linkedProjects() {
 }
 
 const ISSUE_PROJECT_ITEMS_QUERY =
-  'query($owner:String!,$name:String!,$issue:Int!){repository(owner:$owner,name:$name){issue(number:$issue){id projectItems(first:20){nodes{id project{id} fieldValueByName(name:"Status"){... on ProjectV2ItemFieldSingleSelectValue{optionId name}}}}}}}'
+  `query($owner:String!,$name:String!,$issue:Int!){repository(owner:$owner,name:$name){issue(number:$issue){id projectItems(first:20){nodes{id project{id} fieldValueByName(name:"Status"){... on ProjectV2ItemFieldSingleSelectValue{optionId name}} ${RELEASE_VALUE_SELECTION}}}}}}`
 
 export function issueProjectItems(number) {
   const data = graphql(ISSUE_PROJECT_ITEMS_QUERY, { issue: number })
@@ -419,7 +436,8 @@ export function issueProjectItems(number) {
     items: nodes.filter(Boolean).map((node) => ({
       id: node.id,
       projectId: node.project ? node.project.id : null,
-      status: node.fieldValueByName && node.fieldValueByName.optionId ? { optionId: node.fieldValueByName.optionId, name: node.fieldValueByName.name || null } : null,
+      status: selectValue(node.fieldValueByName),
+      release: selectValue(node.release),
     })),
   }
 }
@@ -430,6 +448,9 @@ const SET_SINGLE_SELECT_MUTATION =
 const CREATE_PROJECT_MUTATION = `mutation($ownerId:ID!,$title:String!){createProjectV2(input:{ownerId:$ownerId,title:$title}){projectV2{id title ${STATUS_FIELD_SELECTION}}}}`
 const SET_FIELD_OPTIONS_MUTATION =
   'mutation($field:ID!,$options:[ProjectV2SingleSelectFieldOptionInput!]!){updateProjectV2Field(input:{fieldId:$field,singleSelectOptions:$options}){projectV2Field{... on ProjectV2SingleSelectField{id options{id name}}}}}'
+const SET_NUMBER_MUTATION =
+  'mutation($project:ID!,$item:ID!,$field:ID!,$value:Float!){updateProjectV2ItemFieldValue(input:{projectId:$project,itemId:$item,fieldId:$field,value:{number:$value}}){projectV2Item{id}}}'
+const CREATE_FIELD_MUTATION = `mutation($project:ID!,$name:String!,$dataType:ProjectV2CustomFieldType!,$options:[ProjectV2SingleSelectFieldOptionInput!]){createProjectV2Field(input:{projectId:$project,name:$name,dataType:$dataType,singleSelectOptions:$options}){projectV2Field{${FIELD_SELECTION}}}}`
 const LINK_PROJECT_MUTATION = 'mutation($project:ID!,$repository:ID!){linkProjectV2ToRepository(input:{projectId:$project,repositoryId:$repository}){repository{id}}}'
 
 export function addProjectItem(projectId, contentId) {
@@ -441,6 +462,10 @@ export function addProjectItem(projectId, contentId) {
 
 export function setProjectSingleSelect(projectId, itemId, fieldId, optionId) {
   graphql(SET_SINGLE_SELECT_MUTATION, { project: projectId, item: itemId, field: fieldId, option: optionId }, { inRepository: false })
+}
+
+export function setProjectNumber(projectId, itemId, fieldId, value) {
+  graphql(SET_NUMBER_MUTATION, { project: projectId, item: itemId, field: fieldId, value }, { inRepository: false })
 }
 
 export function createProject(ownerId, title) {
@@ -461,7 +486,7 @@ export function setSingleSelectOptions(fieldId, options) {
 }
 
 const PROJECT_ITEMS_QUERY =
-  'query($project:ID!,$cursor:String){node(id:$project){... on ProjectV2{items(first:100,after:$cursor){pageInfo{hasNextPage endCursor}nodes{id content{__typename ... on Issue{number repository{id}} ... on PullRequest{number repository{id}}} fieldValueByName(name:"Status"){... on ProjectV2ItemFieldSingleSelectValue{optionId name}}}}}}}'
+  `query($project:ID!,$cursor:String){node(id:$project){... on ProjectV2{items(first:100,after:$cursor){pageInfo{hasNextPage endCursor}nodes{id content{__typename ... on Issue{number repository{id}} ... on PullRequest{number repository{id}}} fieldValueByName(name:"Status"){... on ProjectV2ItemFieldSingleSelectValue{optionId name}} ${RELEASE_VALUE_SELECTION}}}}}}`
 
 export function projectItems(projectId) {
   const items = []
@@ -476,7 +501,8 @@ export function projectItems(projectId) {
         kind: node.content && node.content.__typename ? node.content.__typename : null,
         number: node.content && node.content.number ? node.content.number : null,
         repositoryId: node.content && node.content.repository ? node.content.repository.id : null,
-        status: node.fieldValueByName && node.fieldValueByName.optionId ? { optionId: node.fieldValueByName.optionId, name: node.fieldValueByName.name || null } : null,
+        status: selectValue(node.fieldValueByName),
+        release: selectValue(node.release),
       })
     if (!page.pageInfo.hasNextPage) return items
     if (!page.pageInfo.endCursor || page.pageInfo.endCursor === cursor) throw new TrackerError(`GitHub returned a page of project items with no way to the next one`)
@@ -486,4 +512,13 @@ export function projectItems(projectId) {
 
 export function linkProjectToRepository(projectId, repositoryId) {
   graphql(LINK_PROJECT_MUTATION, { project: projectId, repository: repositoryId }, { inRepository: false })
+}
+
+export function createProjectField(projectId, name, dataType, options = null) {
+  const variables = { project: projectId, name, dataType }
+  if (options) variables.options = options.map((option) => ({ name: option.name, color: option.color || 'GRAY', description: option.description || '' }))
+  const data = graphqlWithInput(CREATE_FIELD_MUTATION, variables)
+  const field = data && data.createProjectV2Field && data.createProjectV2Field.projectV2Field
+  if (!field || !field.id) throw new TrackerError(`GitHub did not return the new field ${name}`)
+  return normalizeField(field)
 }

@@ -104,13 +104,21 @@ nothing else. A line that mentions blocking and cannot be read is reported
 by name and the ticket waits, because a guess about what a sentence meant
 is worse than a question.
 
-## A person merges to the default branch, and nothing runs after
+## A person merges to the default branch, and no code work runs after
 
 Agents merge a ticket into its epic branch, by the exact commit that was
 reviewed, never by a branch name that could move. The step into the
-default branch is always a person's, through the epic's one pull request,
-and no step follows it: anything that ran after the merge would be work
-nobody reviewed, landing where everyone builds from.
+default branch is always a person's, through the epic's one pull request:
+anything that built or merged after that merge would be work nobody
+reviewed, landing where everyone builds from.
+
+2026-10-18, Flow 3.3. The project board's `Release` field could only reach
+`Released` if something ran after the merge, since nothing else sees the
+epic close. The first draft said "nothing runs after", and a review found
+the new job contradicting that sentence and every copy of it stating the
+exception differently. What it teaches: the line worth holding is code
+work, not any work, and an exception is stated once, where the rule is
+(CLAUDE.md), so the copies cannot drift.
 
 ## Replacing a field's options gives every option a new id
 

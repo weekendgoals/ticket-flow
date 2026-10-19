@@ -89,6 +89,12 @@ test('closeIssue closes an issue as not planned unless told another reason', () 
   assert.deepEqual(fake.calls().map((call) => JSON.parse(call.stdin)), [{ state: 'closed', state_reason: 'not_planned' }, { state: 'closed', state_reason: 'completed' }])
 })
 
+test('reopenIssue opens a closed issue again', () => {
+  fake.setFixtures({ [`PATCH ${R}/issues/7`]: rawIssue(7) })
+  assert.equal(github.reopenIssue(7).state, 'open')
+  assert.deepEqual(JSON.parse(fake.calls()[0].stdin), { state: 'open' })
+})
+
 test('removeSubIssue sends the child id to the parent\'s sub_issue endpoint', () => {
   fake.setFixtures({ [`DELETE ${R}/issues/1/sub_issue`]: rawIssue(7) })
   github.removeSubIssue(1, 9007)
@@ -280,7 +286,12 @@ test('linkedProjects reads the linked projects with their Status options, and a 
           owner: { id: 'U_1' },
           projectsV2: {
             nodes: [
-              { id: 'PVT_1', title: 'Flow board', field: { id: 'F_1', options: [{ id: 'O_1', name: 'Planned', color: 'GRAY', description: 'not started' }] } },
+              {
+                id: 'PVT_1',
+                title: 'Flow board',
+                field: { id: 'F_1', options: [{ id: 'O_1', name: 'Planned', color: 'GRAY', description: 'not started' }] },
+                fields: { nodes: [{ id: 'F_1', name: 'Status', dataType: 'SINGLE_SELECT', options: [{ id: 'O_1', name: 'Planned', color: 'GRAY', description: 'not started' }] }, { id: 'F_n', name: 'Input tokens', dataType: 'NUMBER' }, {}] },
+              },
               { id: 'PVT_2', title: 'Roadmap', field: null },
             ],
           },
@@ -292,11 +303,28 @@ test('linkedProjects reads the linked projects with their Status options, and a 
     repositoryId: 'R_1',
     ownerId: 'U_1',
     projects: [
-      { id: 'PVT_1', title: 'Flow board', statusField: { id: 'F_1', options: [{ id: 'O_1', name: 'Planned', color: 'GRAY', description: 'not started' }] } },
-      { id: 'PVT_2', title: 'Roadmap', statusField: null },
+      {
+        id: 'PVT_1',
+        title: 'Flow board',
+        statusField: { id: 'F_1', options: [{ id: 'O_1', name: 'Planned', color: 'GRAY', description: 'not started' }] },
+        fields: [
+          { id: 'F_1', name: 'Status', dataType: 'SINGLE_SELECT', options: [{ id: 'O_1', name: 'Planned', color: 'GRAY', description: 'not started' }] },
+          { id: 'F_n', name: 'Input tokens', dataType: 'NUMBER', options: null },
+        ],
+      },
+      { id: 'PVT_2', title: 'Roadmap', statusField: null, fields: [] },
     ],
   })
-  assert.match(fake.calls()[0].args.find((arg) => arg.startsWith('query=')), /repository\(owner:\$owner,name:\$name\)\{id owner\{id\} projectsV2\(first:20\).*field\(name:"Status"\).*options\{id name color description\}/)
+  const query = fake.calls()[0].args.find((arg) => arg.startsWith('query='))
+  assert.match(query, /repository\(owner:\$owner,name:\$name\)\{id owner\{id\} projectsV2\(first:20\).*field\(name:"Status"\).*options\{id name color description\}/)
+  assert.match(query, /fields\(first:100\)\{pageInfo\{hasNextPage\} nodes\{\.\.\. on ProjectV2FieldCommon\{id name dataType\} \.\.\. on ProjectV2SingleSelectField\{options\{id name color description\}\}\}\}/)
+})
+
+test('linkedProjects refuses a project with more fields than one page, naming it, rather than miss a field past the page', () => {
+  fake.setFixtures({
+    'graphql name={repo} owner={owner}': { data: { repository: { id: 'R_1', owner: { id: 'U_1' }, projectsV2: { nodes: [{ id: 'PVT_1', title: 'Big board', field: null, fields: { pageInfo: { hasNextPage: true }, nodes: [] } }] } } } },
+  })
+  assert.throws(() => github.linkedProjects(), (error) => error instanceof github.TrackerError && /the project Big board has more than 100 fields/.test(error.message))
 })
 
 test('linkedProjects turns a GraphQL error into a TrackerError', () => {
@@ -313,7 +341,7 @@ test('issueProjectItems returns the issue node id and the project of each of its
             id: 'I_3',
             projectItems: {
               nodes: [
-                { id: 'PVTI_1', project: { id: 'PVT_1' }, fieldValueByName: { optionId: 'O_2', name: 'In review' } },
+                { id: 'PVTI_1', project: { id: 'PVT_1' }, fieldValueByName: { optionId: 'O_2', name: 'In review' }, release: { optionId: 'R_1', name: 'Building' } },
                 { id: 'PVTI_2', project: { id: 'PVT_2' }, fieldValueByName: null },
               ],
             },
@@ -325,13 +353,13 @@ test('issueProjectItems returns the issue node id and the project of each of its
   assert.deepEqual(github.issueProjectItems(3), {
     id: 'I_3',
     items: [
-      { id: 'PVTI_1', projectId: 'PVT_1', status: { optionId: 'O_2', name: 'In review' } },
-      { id: 'PVTI_2', projectId: 'PVT_2', status: null },
+      { id: 'PVTI_1', projectId: 'PVT_1', status: { optionId: 'O_2', name: 'In review' }, release: { optionId: 'R_1', name: 'Building' } },
+      { id: 'PVTI_2', projectId: 'PVT_2', status: null, release: null },
     ],
   })
   const call = fake.calls()[0]
   assert.deepEqual(call.args.slice(-2), ['-F', 'issue=3'])
-  assert.match(call.args.find((arg) => arg.startsWith('query=')), /fieldValueByName\(name:"Status"\)\{\.\.\. on ProjectV2ItemFieldSingleSelectValue\{optionId name\}\}/)
+  assert.match(call.args.find((arg) => arg.startsWith('query=')), /fieldValueByName\(name:"Status"\)\{\.\.\. on ProjectV2ItemFieldSingleSelectValue\{optionId name\}\} release:fieldValueByName\(name:"Release"\)/)
 })
 
 test('addProjectItem adds the issue to the project and returns the new item id', () => {
@@ -354,7 +382,7 @@ test('createProject creates a project under the owner node and returns it with i
       data: { createProjectV2: { projectV2: { id: 'PVT_9', title: 'Flow', field: { id: 'F_9', options: [{ id: 'O_t', name: 'Todo', color: 'GREEN', description: '' }] } } } },
     },
   })
-  assert.deepEqual(github.createProject('U_1', 'Flow'), { id: 'PVT_9', title: 'Flow', statusField: { id: 'F_9', options: [{ id: 'O_t', name: 'Todo', color: 'GREEN', description: '' }] } })
+  assert.deepEqual(github.createProject('U_1', 'Flow'), { id: 'PVT_9', title: 'Flow', statusField: { id: 'F_9', options: [{ id: 'O_t', name: 'Todo', color: 'GREEN', description: '' }] }, fields: [] })
   assert.match(fake.calls()[0].args.find((arg) => arg.startsWith('query=')), /createProjectV2\(input:\{ownerId:\$ownerId,title:\$title\}\)/)
   assert.ok(!fake.calls()[0].args.includes('owner={owner}'))
 })
@@ -395,12 +423,40 @@ test('projectItems pages through every item of a project with its issue number a
   const page = (nodes, hasNextPage, endCursor = null) => ({ data: { node: { items: { pageInfo: { hasNextPage, endCursor }, nodes } } } })
   fake.setFixtures({
     'graphql project=PVT_1': page([{ id: 'PVTI_1', content: { __typename: 'Issue', number: 3, repository: { id: 'R_1' } }, fieldValueByName: { optionId: 'O_1', name: 'Todo' } }], true, 'c1'),
-    'graphql cursor=c1 project=PVT_1': page([{ id: 'PVTI_2', content: {}, fieldValueByName: null }], false),
+    'graphql cursor=c1 project=PVT_1': page([{ id: 'PVTI_2', content: {}, fieldValueByName: null, release: { optionId: 'R_2', name: 'Released' } }], false),
   })
   assert.deepEqual(github.projectItems('PVT_1'), [
-    { id: 'PVTI_1', kind: 'Issue', number: 3, repositoryId: 'R_1', status: { optionId: 'O_1', name: 'Todo' } },
-    { id: 'PVTI_2', kind: null, number: null, repositoryId: null, status: null },
+    { id: 'PVTI_1', kind: 'Issue', number: 3, repositoryId: 'R_1', status: { optionId: 'O_1', name: 'Todo' }, release: null },
+    { id: 'PVTI_2', kind: null, number: null, repositoryId: null, status: null, release: { optionId: 'R_2', name: 'Released' } },
   ])
   assert.deepEqual(fake.calls().map((call) => call.key), ['graphql project=PVT_1', 'graphql cursor=c1 project=PVT_1'])
   assert.match(fake.calls()[0].args.find((arg) => arg.startsWith('query=')), /items\(first:100,after:\$cursor\).*fieldValueByName\(name:"Status"\)/)
+})
+
+test('createProjectField creates a field of the data type asked, with options for a single select, and returns it', () => {
+  fake.setFixtures({
+    'graphql dataType=SINGLE_SELECT name=Release project=PVT_1': {
+      data: { createProjectV2Field: { projectV2Field: { id: 'F_r', name: 'Release', dataType: 'SINGLE_SELECT', options: [{ id: 'O_b', name: 'Building' }] } } },
+    },
+    'graphql dataType=NUMBER name=Input tokens project=PVT_1': { data: { createProjectV2Field: { projectV2Field: { id: 'F_i', name: 'Input tokens', dataType: 'NUMBER' } } } },
+  })
+  assert.deepEqual(github.createProjectField('PVT_1', 'Release', 'SINGLE_SELECT', [{ name: 'Building', color: 'YELLOW', description: 'being built' }]), {
+    id: 'F_r',
+    name: 'Release',
+    dataType: 'SINGLE_SELECT',
+    options: [{ id: 'O_b', name: 'Building', color: null, description: '' }],
+  })
+  assert.deepEqual(github.createProjectField('PVT_1', 'Input tokens', 'NUMBER'), { id: 'F_i', name: 'Input tokens', dataType: 'NUMBER', options: null })
+  const [select, number] = fake.calls().map((call) => JSON.parse(call.stdin))
+  assert.match(select.query, /createProjectV2Field\(input:\{projectId:\$project,name:\$name,dataType:\$dataType,singleSelectOptions:\$options\}\)/)
+  assert.deepEqual(select.variables.options, [{ name: 'Building', color: 'YELLOW', description: 'being built' }])
+  assert.ok(!('options' in number.variables), 'a number field is sent without options')
+})
+
+test('setProjectNumber sends the number as a number, for a Float field value', () => {
+  fake.setFixtures({ 'graphql field=F_1 item=PVTI_9 project=PVT_1 value=1540': { data: { updateProjectV2ItemFieldValue: { projectV2Item: { id: 'PVTI_9' } } } } })
+  github.setProjectNumber('PVT_1', 'PVTI_9', 'F_1', 1540)
+  const [call] = fake.calls()
+  assert.deepEqual(call.args.slice(-2), ['-F', 'value=1540'])
+  assert.match(call.args.find((arg) => arg.startsWith('query=')), /\$value:Float!.*value:\{number:\$value\}/)
 })

@@ -5,6 +5,92 @@ a behaviour change in every project that installs it. Entries land in the same
 commit as the change; the pull request that brings them to the default branch
 stamps the version and date and bumps `plugin.json` in the same commit.
 
+## 3.3.0 — 2026-10-19
+
+- **A done ticket is a closed issue.** When `flow merge` (release delivery)
+  marks a ticket `flow:done`, it also closes the issue as completed, in the
+  same state change as the label and the board move, so the project board's
+  progress bar per epic counts it before the release ships. A refused close
+  is one stderr line and the merge still finishes. `flow label <n>
+  +flow:done` closes nothing, and incremental tickets are still closed by
+  their own pull request. The epic stays open until its release pull
+  request merges, and its `Closes #<n>` lines stay.
+- **A closed ticket going back to work is reopened** in the same change:
+  `needs-human` (and so `check-epic --mark`) on a closed ticket reopens it
+  and says so in its comment; `flow label` moving a closed ticket to any
+  state but done reopens it and says so in its output. `reset` still
+  refuses a done ticket.
+- **New: the board's `Release` field**, single select, for release epics
+  only: `Building` (set by `create-epic`), `Pull request open` (set by
+  `release-pr` once the pull request exists), `Released` (the release pull
+  request merged, which closed the epic). `flow init --board` creates it,
+  or completes its options keeping each epic's value; a `Release` field of
+  another kind is named and left alone, and the command exits 1. `flow
+  doctor`'s board line names it or its absence. A board without it is told
+  once per command, `project board not updated: … has no Release field`.
+- **`flow board-sync`** also sets each release epic's `Release` (derived:
+  `Released` when the epic is closed and the release pull request named in
+  its comments merged, `Pull request open` while the epic is open with one
+  named, `Building` while it is open with none; a closed epic whose release
+  did not merge gets no value, and the field keeps what it had) and closes
+  every open `flow:done` ticket of a release epic as completed; its summary
+  counts both, and `--json` adds `closed` and `releases`. Without an epic
+  number it also reads the board's items once and visits the closed epics
+  on it whose `Release` is not `Released`; `board-sync <epic>` reads a
+  closed epic that is not on the board.
+- **`github/flow.yml`** listens to `issues: closed` as well: a closed issue
+  labelled `flow:epic` runs one new job, `board`, which runs `flow
+  board-sync <epic>` and nothing else (it builds, merges and pushes
+  nothing), with its own permissions (contents and pull requests: read,
+  issues: write); a closed ticket or finding runs nothing. `Released` on
+  the board needs a `FLOW_TOKEN` with the Projects permission. The rule,
+  stated once in CLAUDE.md and quoted in the README, the ticket skill and
+  the release pull request's last line, is now: "After a person merges into the default branch, no code work runs: what runs is the GitHub Action's `board` job, which closes `flow:done` tickets left open and writes the project board (Status, Release, figures), and the report page's rebuild, which only reads."
+- `tracker/github.mjs`: `reopenIssue`, `createProjectField`; the project
+  query reads every field's name and type (the first 100; a project with
+  more is a named error, so `init --board` never creates a field that
+  exists past the page), and item queries read the `Release` value beside
+  `Status`.
+- **New: the cost on the board.** Seven number fields, `Input tokens`,
+  `Output tokens`, `Cache tokens` (cache writes plus reads), `Build
+  minutes`, `Review minutes` (review plus fixes), `Total minutes` and
+  `Review rounds`, are copied from the figures `flow stats` reads for one
+  ticket, so the board's Insights can chart them. A figure that is unknown
+  is not written and its cell stays empty, never 0. `flow meter` writes
+  them right after posting the cost comment; `flow board-sync` for every
+  ticket with a cost comment (counted, and `figures` in `--json`). No board
+  linked: silent; a field missing: one `project board not updated:` line;
+  a refused write: one line; the command's exit code never changes.
+- **`flow init --board`** creates the number fields the board lacks and
+  names them; a field of one of those names of another kind is named, left
+  alone, and the command exits 1. `flow doctor`'s board line ends
+  `figures: 7 fields`, or names the missing and wrongly typed ones.
+- `tracker/github.mjs`: `setProjectNumber`.
+- **New: `flow report --out <dir> [--since <date>]`** writes
+  `<dir>/index.html` from the same figures as `flow stats --json` over every
+  epic: one standalone page (styles and a small sort script inline, the
+  data embedded once as JSON, nothing fetched) with the totals across
+  epics and, per epic, newest first, its state (`closed without release`
+  for a closed release epic whose release did not merge), its `Release` word, its
+  release pull request, the instruction-file sizes and a sortable table of
+  its tickets. `unknown` prints as `unknown`; a repository with no epics
+  gets a page that says so. Rendering is `scripts/report.mjs`, pure.
+- **New: `github/report.yml`**, a template to copy to
+  `.github/workflows/flow-report.yml`: daily, by hand, and when a
+  `flow:epic` issue closes, it runs `flow report --out site` with full
+  history and publishes it with `actions/configure-pages`,
+  `actions/upload-pages-artifact` and `actions/deploy-pages`. One manual
+  step: Settings, Pages, Source: GitHub Actions.
+
+- **New: the `ticket-worker` agent** (`agents/ticket-worker.md`). The
+  worker's rules move there from the ticket skill's step 3, word for word,
+  so they reach the worker from a file instead of being retyped by the
+  session that runs the ticket. Attended, step 3 spawns
+  `flow:ticket-worker` on the model `start` printed, with a prompt holding
+  only the ticket's facts; unattended (and so under `/flow:run` and the
+  GitHub Action), the session reads the file and follows it itself. It has
+  no `model:` line, since the tier decides, and every tool.
+
 ## 3.2.0 — 2026-10-18
 
 - **New: handoffs between tickets.** `flow handoff <n> --text "<lines>"` (or

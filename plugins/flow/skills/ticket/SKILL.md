@@ -105,48 +105,21 @@ handoffs.
 
 ## 3. Build
 
-**Attended:** spawn a worker with the Agent tool, `model:` set to the
-`model` that `start` printed (`sonnet` for `tier:easy`, `opus` otherwise),
-and a prompt that holds the ticket number, the branch, the ticket body, the
-handoffs, the epic's ground rules and design sources, the instruction files
-to read, and the rules below. Note the `agentId` the Agent tool returns:
-step 8 needs it. Do not build anything yourself: you read the plan and the
+**Attended:** spawn the worker with the Agent tool, `subagent_type:
+"flow:ticket-worker"`, `model:` set to the `model` that `start` printed
+(`sonnet` for `tier:easy`, `opus` otherwise), and a prompt that holds only
+the ticket's facts: its number, the branch, the ticket body, the handoffs,
+the epic's ground rules and design sources, the instruction files to read,
+and what `FLOW` stands for. Note the `agentId` the Agent tool returns: step 8
+needs it. Do not build anything yourself: you read the plan and the
 conversation, and code written from that context drifts from the issue.
 
-**Unattended:** you are the worker; follow the rules below yourself.
+**Unattended:** you are the worker: read
+`${CLAUDE_PLUGIN_ROOT}/agents/ticket-worker.md` and follow its rules
+yourself.
 
-The worker's rules, each with its reason:
-
-- **Stay inside the scope.** "Not in scope" usually names another ticket's
-  work.
-- **Never run `FLOW handoff` on another ticket**, only on `<n>`: the
-  reviewer of a later ticket reads a handoff as that ticket's decision, so
-  one written from here would put this work's claims in its mouth.
-- **No code comments.** Names carry the meaning; a comment is a second copy
-  of the code that nobody tests and that goes stale.
-- **Follow the project's instruction files**, and update them in the same
-  commit as any change they describe. Add only what cannot be derived from
-  the code, a test or a command's own help, and no history ("we used to…"):
-  the reviewer reports a line that restates or narrates, because every
-  line is read by every later session.
-- **UI work gets component tests** (react-testing-library) for logic,
-  rendering, state and edge cases inside a component. **An end-to-end browser
-  test only for a user journey the epic names** (routing, APIs, sign-in and
-  several screens together), using the Page Object Model; never one per
-  feature, because they are slow and break on unrelated changes.
-- **No translations** unless this is the epic's Translations ticket: strings
-  settle only when everything else is built.
-- **Commit in small steps**, each subject starting `#<n>: ` (`#12: add the
-  export endpoint`); that prefix is how the history ties a commit to its
-  ticket. A fix for a bug an already-merged ticket shipped ends `(fixes
-  #<m>)`. Stage only your own files, never `git add -A`.
-- **A necessary step outside the scope** is not a reason to stop: do it, say
-  what and why in the commit body, and post one comment
-  (`FLOW post <n> --text "..."`). The reviewer judges it.
-- **A real contradiction stops the ticket**: the ticket asks for something
-  the code makes impossible or wrong, or two of the documents disagree.
-  Stop and ask a person with both facts side by side ("the ticket says X;
-  `src/a.ts:40` does Y"). Never resolve it silently either way.
+The worker's rules, each with its reason, are in
+`${CLAUDE_PLUGIN_ROOT}/agents/ticket-worker.md`, and only there.
 
 ## 4. Check
 
@@ -233,9 +206,9 @@ after two rounds with an Important finding still open it is a stop, so an
 unattended run cannot loop. Rounds count from the latest start, so a
 ticket reset and resumed gets two more.
 
-**Important findings are fixed.** Attended: spawn a fresh worker on the same
-model with the findings, the branch and the worker rules; unattended: fix
-them yourself. Each fix is its own commit, `#<n>: <what> (review fix)`; that
+**Important findings are fixed.** Attended: spawn a fresh
+`flow:ticket-worker` on the same model with the findings and the branch (its
+file carries the rules); unattended: fix them yourself, by the same file. Each fix is its own commit, `#<n>: <what> (review fix)`; that
 suffix is how fixes are counted later. Then run `FLOW check <n>` again and
 spawn the reviewer once more, **over the fix commits only**
 (`<head before the fixes>..HEAD`), and post that report the same way (it
@@ -327,8 +300,9 @@ get its first one only.
 
 - **Release delivery** (the epic's default): it merges the accepted commit,
   never the branch tip, into the epic branch with `--no-ff` and the subject
-  `Merge #<n>: <title>`, pushes it, labels the ticket `flow:done`, ticks it
-  off the epic's list and posts the merge commit. When someone else pushed to
+  `Merge #<n>: <title>`, pushes it, labels the ticket `flow:done` and closes
+  it, so the board's progress bar counts it, ticks it off the epic's list
+  and posts the merge commit. When someone else pushed to
   the epic branch meanwhile it fetches and merges again, twice; after that,
   or on a merge conflict, it asks a person itself (naming the conflicting
   files). A conflict is never resolved by an agent here: the person decides
@@ -340,7 +314,10 @@ get its first one only.
   pull request's URL.
 
 No agent ever merges into the default branch: a person merges every pull
-request there, and nothing runs after that merge.
+request there. After a person merges into the default branch, no code work
+runs: what runs is the GitHub Action's `board` job, which closes
+`flow:done` tickets left open and writes the project board (Status,
+Release, figures), and the report page's rebuild, which only reads.
 
 ## The pull request loop
 

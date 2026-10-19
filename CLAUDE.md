@@ -29,7 +29,7 @@ epic). "Direct" or "without Flow" always overrides it.
   `check-epic`, `release-pr`, `design-map`), findings before they are
   tickets (`create-finding`, `found`, `promote`, `reject`,
   `retro-fingerprint`), the project
-  board (`board-sync`), and looking back (`stats`).
+  board (`board-sync`), and looking back (`stats`, `report`).
 - `scripts/tracker/github.mjs` — every `gh` call, as plain functions (a Jira
   tracker can sit behind them); `tracker/fake-gh.mjs` is the tests' `gh`.
 - `issue-body.mjs` (epic and ticket bodies, the design map), `checks.mjs`
@@ -37,10 +37,20 @@ epic). "Direct" or "without Flow" always overrides it.
   state, cycles, stuck), `ticket-steps.mjs` (the comments steps post and read
   back), `delivery.mjs` (every git call), `review-bots.mjs`, `meter.mjs`,
   `stats.mjs` (the figures `flow stats` reads back out of those comments),
+  `report.mjs` (those figures as one HTML page, pure: data in, page out;
+  `flow report --out <dir>` writes it and `github/report.yml` is the
+  template that publishes it on the project's GitHub Pages),
   `worktree-setup.mjs` (`.flow.json` `copy`/`setup` in a fresh copy),
   `project-sync.mjs` (a linked GitHub Project's `Status` follows the state
-  labels, best effort, never a source of state; `init --board` sets the
-  board up and `board-sync` catches it up).
+  labels, a release epic's `Release` field its release, and seven number
+  fields a ticket's cost comment, best effort, never a source of state; `init --board` sets the board up and
+  `board-sync` catches it up, closing the done tickets of release epics,
+  since `merge` closes a ticket it marks done so the board's progress bar
+  counts it).
+- `agents/ticket-worker.md` — the worker's rules, the one place they are
+  stated: `/flow:ticket` step 3 spawns it on the tier's model, and
+  unattended the session reads it and builds by it. The other five agents
+  are reviewers, the researcher, the retro miner and the QA explorer.
 - `skills/triage/SKILL.md` — `/flow:triage`: approved findings become
   tickets (or are rejected, or sent to `/flow:epic`) after one table.
 - `skills/qa/SKILL.md` — `/flow:qa`: `agents/qa-explorer.md` walks a live
@@ -62,23 +72,23 @@ Every suite needs Node ≥ 20 and nothing else unless noted; pass each test
 file path explicitly (`node --test <directory>` finds nothing here). Counts
 as of 2026-10-18; the pass count grows, the fail line stays `# fail 0`.
 
-- `node --test plugins/flow/scripts/flow.test.mjs` — `# pass 72`. The CLI
+- `node --test plugins/flow/scripts/flow.test.mjs` — `# pass 78`. The CLI
   end to end against the fake `gh`; one case needs `git` on PATH.
 - `node --test plugins/flow/scripts/lifecycle.test.mjs` — `# pass 39`. The
   ticket steps in throwaway repositories with a bare remote; needs `git`, `sh`.
-- `node --test plugins/flow/scripts/epic-run.test.mjs` — `# pass 32`. The
+- `node --test plugins/flow/scripts/epic-run.test.mjs` — `# pass 34`. The
   whole-epic commands, the same way.
 - `pull-request.test.mjs` `# pass 20`, `issue-body.test.mjs` `# pass 29`,
   `checks.test.mjs` `# pass 26` (real shell commands in a temp dir),
-  `tracker/github.test.mjs` `# pass 33`, `fidelity.test.mjs` `# pass 54`,
+  `tracker/github.test.mjs` `# pass 37`, `fidelity.test.mjs` `# pass 54`,
   `stats.test.mjs` `# pass 13` (needs `git`), `project-sync.test.mjs`
-  `# pass 24`, under `plugins/flow/scripts/`.
+  `# pass 34`, under `plugins/flow/scripts/`.
 - `node --test plugins/flow/scripts/meter.test.mjs` — `# pass 16`. Builds
   its transcripts; no test reads a real one (they belong to whoever ran them).
 - `node --test plugins/flow/scripts/worktree-setup.test.mjs` — `# pass 18`;
   needs `git`, POSIX `sh` and `sleep`.
 - `node --test plugins/flow/workflows/run-epic.test.mjs` — `# pass 23`
-  (stubbed `agent`, no git), `plugins/flow/github/flow.test.mjs` `# pass 13`.
+  (stubbed `agent`, no git), `plugins/flow/github/flow.test.mjs` `# pass 14`.
 - `node --test tools/reporter/reporter.test.mjs` — `# pass 31`. The
   extension's modules under a stubbed `fetch`. It is also their syntax
   check: plain `node --check` reads a `.js` file with no package.json as
@@ -88,6 +98,10 @@ as of 2026-10-18; the pass count grows, the fail line stays `# fail 0`.
   asserts no call reached it); needs `git`.
   `node --test plugins/flow/github/qa.test.mjs` — `# pass 5`, the nightly
   QA template, read with `github/workflow-yaml.mjs` like `flow.yml`.
+- `node --test plugins/flow/scripts/report.test.mjs` — `# pass 8`. The
+  report page from fixture data, no `gh`; its sort script runs against a
+  stubbed document. `node --test plugins/flow/github/report.test.mjs` —
+  `# pass 5`, the Pages template.
 - **Syntax:** `node --check` on every `.mjs` under `plugins/flow/scripts/`,
   and on `plugins/flow/github/workflow-yaml.mjs`.
   It does not work on `workflows/run-epic.mjs` (a module body with a
@@ -135,9 +149,13 @@ CI (`.github/workflows/tests.yml`) runs every suite and check above.
   the same commit. A skipped run never passes; a COMPARE is manual and counts
   in neither total nor passed; a malformed line fails the check rather than
   silently never running.
-- **A person merges into the default branch, and nothing runs after.** No
-  agent merges or pushes toward it; both hosts end at the release pull
-  request. `Branch:` must start with `epic/`, refused everywhere otherwise.
+- **A person merges into the default branch, and no code work runs after.**
+  After a person merges into the default branch, no code work runs: what
+  runs is the GitHub Action's `board` job, which closes `flow:done` tickets
+  left open and writes the project board (Status, Release, figures), and
+  the report page's rebuild, which only reads. No agent merges or pushes
+  toward the default branch; both hosts end at the release pull request.
+  `Branch:` must start with `epic/`, refused everywhere otherwise.
   The one agent merge is a ticket into its epic branch, by the accepted
   commit, never by a name that could move.
 - **The reviewer never sees the builder's transcript or reasoning**, not even

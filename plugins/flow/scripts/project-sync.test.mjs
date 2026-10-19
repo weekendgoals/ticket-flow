@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
 import { installFakeGh } from './tracker/fake-gh.mjs'
 import { LABELS } from './epic-state.mjs'
-import { PROJECT_STATUSES } from './project-sync.mjs'
+import { PROJECT_STATUSES, RELEASE_OPTIONS, FIGURE_FIELDS } from './project-sync.mjs'
 
 const FLOW = join(dirname(fileURLToPath(import.meta.url)), 'flow.mjs')
 const R = 'repos/{owner}/{repo}'
@@ -63,11 +63,18 @@ const ticketBody = (epic) => `Epic: #${epic}
 const optionId = (name) => `OPT_${name.replace(/\s+/g, '_').toLowerCase()}`
 const statusField = (names) => ({ id: 'F_status', options: names.map((name) => ({ id: optionId(name), name })) })
 const FLOW_OPTIONS = PROJECT_STATUSES.map((status) => status.option)
-const project = (id, title, field) => ({ id, title, field })
+const RELEASE_NAMES = RELEASE_OPTIONS.map((entry) => entry.option)
+const releaseId = (name) => `REL_${name.replace(/\s+/g, '_').toLowerCase()}`
+const releaseField = (names = RELEASE_NAMES, dataType = 'SINGLE_SELECT') => ({ id: 'F_release', name: 'Release', dataType, options: dataType === 'SINGLE_SELECT' ? names.map((name) => ({ id: releaseId(name), name })) : undefined })
+const FIGURE_NAMES = FIGURE_FIELDS.map((field) => field.name)
+const figureId = (name) => `F_${name.replace(/\s+/g, '_').toLowerCase()}`
+const numberFields = (names = FIGURE_NAMES) => names.map((name) => ({ id: figureId(name), name, dataType: 'NUMBER' }))
+const project = (id, title, field, fields = [releaseField(), ...numberFields()]) => ({ id, title, field, fields: { nodes: fields } })
 const projects = (...nodes) => ({ data: { repository: { id: 'R_repo', owner: { id: 'U_owner' }, projectsV2: { nodes } } } })
-const onBoard = (id, option = null, project = 'PVT_flow') => ({ id, project: { id: project }, fieldValueByName: option ? { optionId: option, name: option } : null })
+const onBoard = (id, option = null, project = 'PVT_flow', release = null) => ({ id, project: { id: project }, fieldValueByName: option ? { optionId: option, name: option } : null, release: release ? { optionId: release, name: release } : null })
 const itemsOf = (number, items) => ({ [`graphql issue=${number} name={repo} owner={owner}`]: { data: { repository: { issue: { id: `I_${number}`, projectItems: { nodes: items } } } } } })
 const setStatus = (item, option, project = 'PVT_flow') => `graphql field=F_status item=${item} option=${option} project=${project}`
+const setRelease = (item, option, project = 'PVT_flow') => `graphql field=F_release item=${item} option=${option} project=${project}`
 const SET_RESPONSE = { data: { updateProjectV2ItemFieldValue: { projectV2Item: { id: 'x' } } } }
 
 function world(extra = {}) {
@@ -241,7 +248,7 @@ test('doctor names the project board it found, none linked, or the Status option
   world({ [PROJECT_LOOKUP]: projects(project('PVT_flow', 'Flow board', statusField(FLOW_OPTIONS))) })
   const found = flow('doctor')
   assert.equal(found.status, 0, found.stdout)
-  assert.deepEqual(found.stdout.trim().split('\n'), ['project board: Flow board', 'ok'])
+  assert.deepEqual(found.stdout.trim().split('\n'), ['project board: Flow board, Release field: Building, Pull request open, Released, figures: 7 fields', 'ok'])
   world({ [PROJECT_LOOKUP]: projects() })
   const none = flow('doctor')
   assert.equal(none.status, 0, none.stdout)
@@ -490,12 +497,16 @@ function boardWorld(extra = {}) {
     [`GET ${R}/issues/40`]: epic,
     [`GET ${R}/issues/40/sub_issues?per_page=100`]: subs,
     [`GET ${R}/issues?labels=flow%3Aticket&state=open&per_page=100`]: [subs[0], subs[1], issue(50, { labels: ['flow:ticket', 'flow:in-progress'] })],
-    ...itemsOf(40, [onBoard('PVTI_40', 'OPT_epic')]),
+    ...itemsOf(40, [onBoard('PVTI_40', 'OPT_epic', 'PVT_flow', releaseId('Building'))]),
+    [`GET ${R}/issues/40/comments?per_page=100`]: [],
+    ...Object.fromEntries([41, 42, 43, 46, 50, 61].map((number) => [`GET ${R}/issues/${number}/comments?per_page=100`, []])),
+    [`PATCH ${R}/issues/42`]: { ...subs[1], state: 'closed' },
     ...itemsOf(41, [onBoard('PVTI_41x', 'OPT_planned', 'PVT_other'), onBoard('PVTI_41', 'OPT_in_review')]),
     ...itemsOf(42, [onBoard('PVTI_42', 'OPT_planned')]),
     ...itemsOf(43, []),
     ...itemsOf(50, [onBoard('PVTI_50')]),
     'graphql content=I_43 project=PVT_flow': { data: { addProjectV2ItemById: { item: { id: 'PVTI_43' } } } },
+    'graphql project=PVT_flow': boardItems([]),
     [setStatus('PVTI_42', 'OPT_done')]: SET_RESPONSE,
     [setStatus('PVTI_43', 'OPT_planned')]: SET_RESPONSE,
     [setStatus('PVTI_50', 'OPT_in_progress')]: SET_RESPONSE,
@@ -511,11 +522,13 @@ test('board-sync sets every epic and ticket whose Status is wrong or missing, le
   assert.equal(result.status, 0, result.stderr)
   assert.deepEqual(result.stdout.trim().split('\n'), [
     '#42 → Done',
+    '#42 closed as completed: it is done',
     '#43 → Planned (added to the board)',
     '#45 skipped: it has no state label (flow:planned, flow:in-progress, …)',
     '#50 → In progress',
-    '3 set, 2 already right, 2 skipped',
+    '3 set, 2 already right, 2 skipped, 1 closed',
   ])
+  assert.deepEqual(JSON.parse(fake.calls().find((call) => call.key === `PATCH ${R}/issues/42`).stdin), { state: 'closed', state_reason: 'completed' })
   assert.deepEqual(writes(), [setStatus('PVTI_42', 'OPT_done'), 'graphql content=I_43 project=PVT_flow', setStatus('PVTI_43', 'OPT_planned'), setStatus('PVTI_50', 'OPT_in_progress')])
   assert.ok(!graphqlKeys().includes('graphql issue=44 name={repo} owner={owner}'), 'a finding is not looked up on the board')
   assert.equal(lookups(), 1)
@@ -533,6 +546,8 @@ test('board-sync of one epic reads only that epic, and --json gives the counts a
     { number: 43, status: 'Planned', added: true },
   ])
   assert.deepEqual(report.alreadyRightIssues, [40, 41])
+  assert.deepEqual(report.closed, [42])
+  assert.deepEqual(report.releases, [])
   assert.deepEqual(report.skippedIssues.map((entry) => entry.number), [44, 45])
   assert.ok(!fake.calls().some((call) => call.key.includes('flow%3Aticket')), 'tickets with no epic are read only when no epic is named')
 })
@@ -557,7 +572,286 @@ test('board-sync prints a refused issue, goes on with the rest, and exits 1 at t
   assert.match(result.stderr, /^#42 kept its old Status, because the GitHub token may not read or write projects .*Resource not accessible by integration$/m)
   assert.deepEqual(
     result.stdout.trim().split('\n').filter((line) => !line.includes('skipped:')),
-    ['#43 → Planned (added to the board)', '#50 → In progress', '2 set, 2 already right, 2 skipped, 1 failed'],
+    ['#42 closed as completed: it is done', '#43 → Planned (added to the board)', '#50 → In progress', '2 set, 2 already right, 2 skipped, 1 closed, 1 failed'],
   )
   assert.ok(writes().includes(setStatus('PVTI_50', 'OPT_in_progress')))
+})
+
+test('board-sync closes the done tickets of a release epic only, and leaves a closed one and an incremental epic\'s tickets alone', () => {
+  const incrementalBody = epicBody([61]).replace('Delivery: release\nBranch: epic/trip-export', 'Delivery: incremental')
+  const incremental = issue(60, { title: 'Small fixes', body: incrementalBody, labels: ['flow:epic', 'flow:approved'] })
+  const closedDone = { ...issue(46, { labels: ['flow:ticket', 'flow:done'] }), state: 'closed' }
+  boardWorld({
+    [`GET ${R}/issues?labels=flow%3Aepic&state=open&per_page=100`]: [issue(40, { title: 'Trip export', body: epicBody([41, 42, 43, 44, 45, 46]), labels: ['flow:epic', 'flow:approved'] }), incremental],
+    [`GET ${R}/issues/40/sub_issues?per_page=100`]: [issue(42, { labels: ['flow:ticket', 'flow:done'] }), closedDone],
+    [`GET ${R}/issues/60/sub_issues?per_page=100`]: [issue(61, { labels: ['flow:ticket', 'flow:done'] })],
+    [`GET ${R}/issues?labels=flow%3Aticket&state=open&per_page=100`]: [],
+    ...itemsOf(46, [onBoard('PVTI_46', 'OPT_done')]),
+    ...itemsOf(60, [onBoard('PVTI_60', 'OPT_epic')]),
+    ...itemsOf(61, [onBoard('PVTI_61', 'OPT_done')]),
+  })
+  const result = flow('board-sync', '--json')
+  assert.equal(result.status, 0, result.stderr)
+  const report = JSON.parse(result.stdout)
+  assert.deepEqual(report.closed, [42])
+  assert.deepEqual(report.releases, [], 'an incremental epic gets no Release value')
+  assert.deepEqual(fake.calls().filter((call) => call.key.startsWith('PATCH')).map((call) => call.key), [`PATCH ${R}/issues/42`])
+  assert.ok(!fake.calls().some((call) => call.key === `GET ${R}/issues/60/comments?per_page=100`), 'an incremental epic\'s comments are not read for a Release value')
+})
+
+const releaseComment = (number) => ({ id: 9, user: { login: 'flow-bot' }, body: `<!-- flow:release-pr number=${number} -->\n**Release pull request opened**`, created_at: '2026-10-16T10:00:00Z' })
+
+test('board-sync derives each release epic\'s Release: Building, Pull request open while the epic is open, Released once it closed with its pull request merged', () => {
+  const epic = issue(40, { title: 'Trip export', body: epicBody([42]), labels: ['flow:epic', 'flow:approved'] })
+  const only = (extra) => ({
+    [`GET ${R}/issues/40/sub_issues?per_page=100`]: [],
+    ...itemsOf(40, [onBoard('PVTI_40', 'OPT_epic', 'PVT_flow', releaseId('Building'))]),
+    ...extra,
+  })
+  boardWorld(only({ [`GET ${R}/issues/40`]: epic }))
+  const building = flow('board-sync', '40')
+  assert.equal(building.status, 0, building.stderr)
+  assert.deepEqual(building.stdout.trim().split('\n'), ['0 set, 1 already right, 0 skipped'])
+  assert.ok(!graphqlKeys().some((key) => key.startsWith('graphql field=F_release')), 'a Release already right is not written')
+  boardWorld(only({ [`GET ${R}/issues/40`]: epic, [`GET ${R}/issues/40/comments?per_page=100`]: [releaseComment(77)], [setRelease('PVTI_40', releaseId('Pull request open'))]: SET_RESPONSE }))
+  const open = flow('board-sync', '40', '--json')
+  assert.equal(open.status, 0, open.stderr)
+  assert.deepEqual(JSON.parse(open.stdout).releases, [{ number: 40, release: 'Pull request open' }])
+  boardWorld(
+    only({
+      [`GET ${R}/issues/40`]: { ...epic, state: 'closed' },
+      [`GET ${R}/issues/40/comments?per_page=100`]: [releaseComment(77)],
+      [`GET ${R}/pulls/77`]: { number: 77, state: 'closed', merged_at: '2026-10-17T10:00:00Z', merge_commit_sha: 'abc', head: { ref: 'epic/trip-export' }, base: { ref: 'main' } },
+      [setRelease('PVTI_40', releaseId('Released'))]: SET_RESPONSE,
+    }),
+  )
+  const released = flow('board-sync', '40')
+  assert.equal(released.status, 0, released.stderr)
+  assert.deepEqual(released.stdout.trim().split('\n'), ['#40 Release → Released', '0 set, 1 already right, 0 skipped, 1 Release set'])
+})
+
+test('board-sync on a board with no Release field still sets every Status, and says once that init --board adds the field', () => {
+  boardWorld({ [PROJECT_LOOKUP]: projects(project('PVT_flow', 'Flow board', statusField(FLOW_OPTIONS), numberFields())) })
+  const result = flow('board-sync')
+  assert.equal(result.status, 0, result.stderr)
+  assert.deepEqual(projectLines(result.stderr), ['project board not updated: Flow board has no Release field; `flow init --board` adds it'])
+  assert.ok(!fake.calls().some((call) => call.key === `GET ${R}/issues/40/comments?per_page=100`))
+})
+
+test('create-epic sets a release epic\'s Release to Building, an incremental epic gets none, and release-pr sets Pull request open', () => {
+  const epicFile = join(directory, 'release-epic.md')
+  writeFileSync(epicFile, epicBody([]))
+  const incrementalFile = join(directory, 'incremental-epic.md')
+  writeFileSync(incrementalFile, epicBody([]).replace('Delivery: release\nBranch: epic/trip-export', 'Delivery: incremental'))
+  const created = issue(40, { title: 'Trip export', body: epicBody([]), labels: ['flow:epic'] })
+  world({
+    [PROJECT_LOOKUP]: projects(project('PVT_flow', 'Flow board', statusField(FLOW_OPTIONS))),
+    [`POST ${R}/issues`]: created,
+    ...itemsOf(40, [onBoard('PVTI_40', 'OPT_epic')]),
+    [setRelease('PVTI_40', releaseId('Building'))]: SET_RESPONSE,
+  })
+  assert.equal(flow('create-epic', '--title', 'Trip export', '--file', epicFile).status, 0)
+  assert.ok(graphqlKeys().includes(setRelease('PVTI_40', releaseId('Building'))))
+  fake.clearCalls()
+  assert.equal(flow('create-epic', '--title', 'Small fixes', '--file', incrementalFile).status, 0)
+  assert.ok(!graphqlKeys().some((key) => key.startsWith('graphql field=F_release')), 'an incremental epic ships ticket by ticket, so it has no Release value')
+  fake.clearCalls()
+  const epic = issue(40, { title: 'Trip export', body: epicBody([42]), labels: ['flow:epic', 'flow:approved'] })
+  world({
+    [PROJECT_LOOKUP]: projects(project('PVT_flow', 'Flow board', statusField(FLOW_OPTIONS))),
+    [`GET ${R}/issues/40`]: epic,
+    [`GET ${R}/issues/40/sub_issues?per_page=100`]: [issue(42, { body: ticketBody(40), labels: ['flow:ticket', 'flow:done'] })],
+    [`GET ${R}/issues/42/comments?per_page=100`]: [],
+    graphql: { data: { viewer: { login: 'flow-bot' } } },
+    [`GET ${R}/pulls?head=o%3Aepic%2Ftrip-export&state=open&per_page=100`]: [],
+    [`POST ${R}/pulls`]: { number: 77, html_url: 'https://github.com/o/r/pull/77', state: 'open', head: { ref: 'epic/trip-export' }, base: { ref: 'main' } },
+    [`POST ${R}/issues/40/comments`]: { id: 1, html_url: null },
+    ...itemsOf(40, [onBoard('PVTI_40', 'OPT_epic', 'PVT_flow', releaseId('Building'))]),
+    [setRelease('PVTI_40', releaseId('Pull request open'))]: SET_RESPONSE,
+  })
+  const opened = flow('release-pr', '40')
+  assert.equal(opened.status, 0, opened.stderr)
+  const keys = fake.calls().map((call) => call.key)
+  assert.ok(keys.indexOf(setRelease('PVTI_40', releaseId('Pull request open'))) > keys.indexOf(`POST ${R}/pulls`), 'the Release moves once the pull request exists')
+})
+
+test('init --board adds the Release field a board lacks, completes its options keeping each epic\'s value, and refuses one of another kind', () => {
+  const bare = projects(project('PVT_flow', 'Flow board', statusField(FLOW_OPTIONS), numberFields()))
+  world({
+    [PROJECT_LOOKUP]: lookupThen(bare, projects(project('PVT_flow', 'Flow board', statusField(FLOW_OPTIONS)))),
+    'graphql dataType=SINGLE_SELECT name=Release project=PVT_flow': { data: { createProjectV2Field: { projectV2Field: releaseField() } } },
+  })
+  const created = flow('init', '--board')
+  assert.equal(created.status, 0, created.stderr)
+  assert.deepEqual(created.stdout.trim().split('\n'), ['all 12 labels already there', 'project board: Flow board', 'project board: Flow board, added the field Release (Building, Pull request open, Released)'])
+  assert.deepEqual(
+    JSON.parse(fake.calls().find((call) => call.key === 'graphql dataType=SINGLE_SELECT name=Release project=PVT_flow').stdin).variables.options,
+    RELEASE_OPTIONS.map((entry) => ({ name: entry.option, color: entry.color, description: entry.description })),
+  )
+  fake.clearCalls()
+  const partial = projects(project('PVT_flow', 'Flow board', statusField(FLOW_OPTIONS), [releaseField(['Building']), ...numberFields()]))
+  world({
+    [PROJECT_LOOKUP]: lookupThen(partial, projects(project('PVT_flow', 'Flow board', statusField(FLOW_OPTIONS)))),
+    'graphql project=PVT_flow': boardItems([{ ...itemWith('PVTI_40', 40, 'Epic'), release: { optionId: releaseId('Building'), name: 'Building' } }, itemWith('PVTI_41', 41, 'Planned')]),
+    'graphql field=F_release': { data: { updateProjectV2Field: { projectV2Field: { id: 'F_release', options: RELEASE_NAMES.map((name) => ({ id: `NEW_${name}`, name })) } } } },
+    [setRelease('PVTI_40', 'NEW_Building')]: SET_RESPONSE,
+  })
+  const completed = flow('init', '--board')
+  assert.equal(completed.status, 0, completed.stderr)
+  assert.match(completed.stdout, /project board: Flow board, added Release options Pull request open, Released, restored 1 Release values$/m)
+  assert.deepEqual(graphqlKeys(), [PROJECT_LOOKUP, 'graphql project=PVT_flow', 'graphql field=F_release', setRelease('PVTI_40', 'NEW_Building')])
+  fake.clearCalls()
+  world({ [PROJECT_LOOKUP]: projects(project('PVT_flow', 'Flow board', statusField(FLOW_OPTIONS), [releaseField(RELEASE_NAMES, 'TEXT'), ...numberFields()])) })
+  const wrong = flow('init', '--board')
+  assert.equal(wrong.status, 1)
+  assert.match(wrong.stderr, /^Flow board has a field named Release that is a text field, not a single select one; Flow leaves the field as it is/m)
+  assert.deepEqual(graphqlKeys(), [PROJECT_LOOKUP])
+})
+
+const costComment = (number, { worker = 600, reviewer = 290, fixes = 31, cacheReads = 4000 } = {}) => ({
+  id: 70 + number,
+  user: { login: 'flow-bot' },
+  created_at: '2026-10-16T12:00:00Z',
+  body: `<!-- flow:meter -->\n**Cost of #${number}**\n\n\`\`\`json\n${JSON.stringify({
+    flowMeter: 1,
+    ticket: number,
+    roles: { worker: { wallSeconds: worker }, reviewer: { wallSeconds: reviewer }, ...(fixes === null ? {} : { fixes: { wallSeconds: fixes } }) },
+    models: {},
+    total: { input: 1200, output: 340, cacheCreation: 500, cacheReads, wallSeconds: 921 },
+  })}\n\`\`\``,
+})
+const reviewComment = (number, round) => ({ id: 80 + round, user: { login: 'flow-bot' }, created_at: '2026-10-16T11:00:00Z', body: `<!-- flow:review round=${round} important=0 -->\n**Review round ${round}**` })
+const setNumber = (item, name, value) => `graphql field=${figureId(name)} item=${item} project=PVT_flow value=${value}`
+const NUMBER_SET = { data: { updateProjectV2ItemFieldValue: { projectV2Item: { id: 'x' } } } }
+const writtenNumbers = () => graphqlKeys().filter((key) => key.includes(' value=')).map((key) => key.match(/field=(\S+) item=(\S+) project=\S+ value=(\S+)/).slice(1))
+
+function meterWorld(extra = {}) {
+  const transcript = join(directory, 'worker.jsonl')
+  writeFileSync(
+    transcript,
+    [
+      { type: 'assistant', timestamp: '2026-10-16T10:00:00Z', requestId: 'r1', message: { id: 'm1', model: 'claude-opus-5', role: 'assistant', content: [{ type: 'text', text: 'ok' }], usage: { input_tokens: 10, output_tokens: 1, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 } } },
+    ]
+      .map((line) => JSON.stringify(line))
+      .join('\n'),
+  )
+  world({
+    [PROJECT_LOOKUP]: projects(project('PVT_flow', 'Flow board', statusField(FLOW_OPTIONS))),
+    [`POST ${R}/issues/12/comments`]: { id: 3, html_url: 'https://github.com/o/r/issues/12#issuecomment-3' },
+    [`GET ${R}/issues/12`]: issue(12, { body: ticketBody(40), labels: ['flow:ticket', 'flow:in-review'] }),
+    [`GET ${R}/issues/40`]: issue(40, { body: epicBody([12]), labels: ['flow:epic'] }),
+    [`GET ${R}/issues/12/comments?per_page=100`]: [reviewComment(12, 1), reviewComment(12, 2), costComment(12, { fixes: null })],
+    ...itemsOf(12, [onBoard('PVTI_12', 'OPT_in_review')]),
+    ...Object.fromEntries(FIGURE_NAMES.flatMap((name) => [0, 2, 10, 15, 1540, 4500, 1200, 340].map((value) => [setNumber('PVTI_12', name, value), NUMBER_SET]))),
+    ...extra,
+  })
+  return transcript
+}
+
+test('meter copies the ticket\'s figures to its board item after posting the cost comment, and leaves a figure no comment carries unwritten', () => {
+  const transcript = meterWorld()
+  const result = flow('meter', '12', '--transcripts', `worker=${transcript}`)
+  assert.equal(result.status, 0, result.stderr)
+  assert.equal(result.stderr, '')
+  assert.deepEqual(writtenNumbers(), [
+    [figureId('Input tokens'), 'PVTI_12', '1200'],
+    [figureId('Output tokens'), 'PVTI_12', '340'],
+    [figureId('Cache tokens'), 'PVTI_12', '4500'],
+    [figureId('Build minutes'), 'PVTI_12', '10'],
+    [figureId('Review rounds'), 'PVTI_12', '2'],
+  ], 'Review minutes has no fixes figure and Total minutes no start or merge comment, so both stay empty rather than 0')
+  const keys = fake.calls().map((call) => call.key)
+  assert.ok(keys.indexOf(`POST ${R}/issues/12/comments`) < keys.indexOf(`GET ${R}/issues/12/comments?per_page=100`), 'the comment is posted first, then read back')
+  assert.match(fake.calls().find((call) => call.key === setNumber('PVTI_12', 'Input tokens', 1200)).args.find((arg) => arg.startsWith('query=')), /value:\{number:\$value\}/)
+})
+
+test('meter with no board linked writes no figure and says nothing; with a field missing it says so once and writes the rest; the exit code never changes', () => {
+  const transcript = meterWorld({ [PROJECT_LOOKUP]: projects() })
+  const none = flow('meter', '12', '--transcripts', transcript)
+  assert.equal(none.status, 0)
+  assert.equal(none.stderr, '')
+  assert.deepEqual(writtenNumbers(), [])
+  assert.ok(!fake.calls().some((call) => call.key === `GET ${R}/issues/12/comments?per_page=100`), 'with no board nothing is read back')
+  fake.clearCalls()
+  meterWorld({ [PROJECT_LOOKUP]: projects(project('PVT_flow', 'Flow board', statusField(FLOW_OPTIONS), [releaseField(), ...numberFields(FIGURE_NAMES.filter((name) => name !== 'Cache tokens'))])) })
+  const lacking = flow('meter', '12', '--transcripts', transcript)
+  assert.equal(lacking.status, 0)
+  assert.deepEqual(projectLines(lacking.stderr), ['project board not updated: Flow board has no number fields Cache tokens; `flow init --board` adds them'])
+  assert.ok(!writtenNumbers().some(([field]) => field === figureId('Cache tokens')))
+  assert.equal(writtenNumbers().length, 4)
+  fake.clearCalls()
+  meterWorld({ [setNumber('PVTI_12', 'Input tokens', 1200)]: { data: null, errors: [{ message: 'Resource not accessible by integration' }] } })
+  const refused = flow('meter', '12', '--transcripts', transcript)
+  assert.equal(refused.status, 0)
+  assert.match(projectLines(refused.stderr)[0], /^project board not updated: #12's figures were not written to Flow board, because the GitHub token may not/)
+})
+
+test('board-sync copies the figures of every metered ticket, counts them, and writes none for a ticket with no cost comment', () => {
+  boardWorld({
+    [`GET ${R}/issues/41/comments?per_page=100`]: [reviewComment(41, 1), costComment(41)],
+    ...Object.fromEntries(FIGURE_NAMES.flatMap((name) => [1, 5, 10, 1200, 340, 4500].map((value) => [setNumber('PVTI_41', name, value), NUMBER_SET]))),
+  })
+  const result = flow('board-sync', '40', '--json')
+  assert.equal(result.status, 0, result.stderr)
+  const report = JSON.parse(result.stdout)
+  assert.deepEqual(report.figures, [41])
+  assert.deepEqual(new Set(writtenNumbers().map(([, item]) => item)), new Set(['PVTI_41']))
+  assert.deepEqual(writtenNumbers().find(([field]) => field === figureId('Review minutes')), [figureId('Review minutes'), 'PVTI_41', '5'])
+  const text = flow('board-sync', '40')
+  assert.match(text.stdout, /^#41 figures: Input tokens, Output tokens, Cache tokens, Build minutes, Review minutes, Review rounds$/m)
+  assert.match(text.stdout, /, 1 with figures$/m)
+})
+
+test('init --board adds the number fields a board lacks, names them, and refuses to touch one of another kind', () => {
+  const some = projects(project('PVT_flow', 'Flow board', statusField(FLOW_OPTIONS), [releaseField(), ...numberFields(['Input tokens'])]))
+  const created = (name) => ({ data: { createProjectV2Field: { projectV2Field: { id: figureId(name), name, dataType: 'NUMBER' } } } })
+  world({
+    [PROJECT_LOOKUP]: some,
+    ...Object.fromEntries(FIGURE_NAMES.map((name) => [`graphql dataType=NUMBER name=${name} project=PVT_flow`, created(name)])),
+  })
+  const result = flow('init', '--board')
+  assert.equal(result.status, 0, result.stderr)
+  assert.match(result.stdout, /^project board: Flow board, added the number fields Output tokens, Cache tokens, Build minutes, Review minutes, Total minutes, Review rounds$/m)
+  assert.deepEqual(graphqlKeys().filter((key) => key.includes('dataType=')).length, 6)
+  fake.clearCalls()
+  world({ [PROJECT_LOOKUP]: projects(project('PVT_flow', 'Flow board', statusField(FLOW_OPTIONS), [releaseField(), ...numberFields(FIGURE_NAMES.filter((name) => name !== 'Review rounds')), { id: 'F_rr', name: 'Review rounds', dataType: 'TEXT' }])) })
+  const wrong = flow('init', '--board')
+  assert.equal(wrong.status, 1)
+  assert.match(wrong.stderr, /^Flow board has a field named Review rounds that is a text field, not a number one; Flow leaves the field as it is/m)
+  assert.deepEqual(graphqlKeys(), [PROJECT_LOOKUP])
+  const doctor = flow('doctor')
+  assert.match(doctor.stdout, /^project board: Flow board, Release field: Building, Pull request open, Released, figures: Review rounds is a text field \(`flow init --board` adds the missing ones\)$/m)
+})
+
+test('a bare board-sync visits the closed epics on the board whose Release is not Released yet, and leaves the released ones and the open ones it already read', () => {
+  const closedEpic = (number, title) => ({ ...issue(number, { title, body: epicBody([]), labels: ['flow:epic', 'flow:approved'] }), state: 'closed' })
+  const onBoardItem = (id, number, release) => ({ id, content: { __typename: 'Issue', number, repository: { id: 'R_repo' } }, fieldValueByName: { optionId: 'OPT_epic', name: 'Epic' }, release: release ? { optionId: releaseId(release), name: release } : null })
+  const merged = (number) => ({ number, state: 'closed', merged_at: '2026-10-17T10:00:00Z', merge_commit_sha: 'abc', head: { ref: 'epic/trip-export' }, base: { ref: 'main' } })
+  const unmerged = (number) => ({ number, state: 'closed', merged_at: null, head: { ref: 'epic/trip-export' }, base: { ref: 'main' } })
+  boardWorld({
+    'graphql project=PVT_flow': boardItems([
+      onBoardItem('PVTI_40', 40, 'Building'),
+      onBoardItem('PVTI_70', 70, 'Pull request open'),
+      onBoardItem('PVTI_71', 71, 'Released'),
+      onBoardItem('PVTI_72', 72, 'Pull request open'),
+      { ...onBoardItem('PVTI_73', 73, null), content: { __typename: 'Issue', number: 73, repository: { id: 'R_elsewhere' } } },
+      { ...itemWith('PVTI_42', 42, 'Done') },
+    ]),
+    [`GET ${R}/issues/70`]: closedEpic(70, 'Shipped'),
+    [`GET ${R}/issues/72`]: closedEpic(72, 'Abandoned'),
+    [`GET ${R}/issues/70/comments?per_page=100`]: [releaseComment(90)],
+    [`GET ${R}/issues/72/comments?per_page=100`]: [releaseComment(91)],
+    [`GET ${R}/pulls/90`]: merged(90),
+    [`GET ${R}/pulls/91`]: unmerged(91),
+    ...itemsOf(70, [onBoard('PVTI_70', 'OPT_epic', 'PVT_flow', releaseId('Pull request open'))]),
+    ...itemsOf(72, [onBoard('PVTI_72', 'OPT_epic', 'PVT_flow', releaseId('Pull request open'))]),
+    [setRelease('PVTI_70', releaseId('Released'))]: SET_RESPONSE,
+  })
+  const result = flow('board-sync', '--json')
+  assert.equal(result.status, 0, result.stderr)
+  assert.deepEqual(JSON.parse(result.stdout).releases, [{ number: 70, release: 'Released' }])
+  const read = fake.calls().map((call) => call.key)
+  assert.ok(!read.includes(`GET ${R}/issues/71`), 'an epic already Released is not read again')
+  assert.ok(!read.includes(`GET ${R}/issues/73`), 'an issue of another repository is not read')
+  assert.ok(!graphqlKeys().some((key) => key.startsWith('graphql field=F_release item=PVTI_72')), 'an epic closed without its release merging gets no Release value: the field keeps what it had')
 })

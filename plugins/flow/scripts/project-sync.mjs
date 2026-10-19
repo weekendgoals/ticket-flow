@@ -1,5 +1,9 @@
 import * as github from './tracker/github.mjs'
 import { TrackerError } from './tracker/github.mjs'
+import { RELEASE_STAGES, ticketState } from './epic-state.mjs'
+import { parseTicketBody, parseEpicBody } from './issue-body.mjs'
+import { deliveryFor } from './ticket-steps.mjs'
+import { ticketStats } from './stats.mjs'
 
 export const PROJECT_STATUSES = [
   { state: 'planned', option: 'Planned', color: 'GRAY' },
@@ -8,6 +12,27 @@ export const PROJECT_STATUSES = [
   { state: 'done', option: 'Done', color: 'GREEN' },
   { state: 'needs-human', option: 'Needs human', color: 'RED' },
   { state: 'epic', option: 'Epic', color: 'PURPLE' },
+]
+
+export const RELEASE_FIELD = 'Release'
+export const RELEASE_OPTIONS = [
+  { option: RELEASE_STAGES.building, color: 'YELLOW', description: 'Its tickets are being built' },
+  { option: RELEASE_STAGES.open, color: 'BLUE', description: 'Every ticket is done; the release pull request waits for a person' },
+  { option: RELEASE_STAGES.released, color: 'GREEN', description: 'The release pull request merged into the default branch' },
+]
+
+const isNumber = (value) => typeof value === 'number' && Number.isFinite(value)
+const minutes = (seconds) => (isNumber(seconds) ? Math.round(seconds / 60) : null)
+const sumKnown = (a, b) => (isNumber(a) && isNumber(b) ? a + b : null)
+
+export const FIGURE_FIELDS = [
+  { name: 'Input tokens', of: (stats) => stats.tokens.input },
+  { name: 'Output tokens', of: (stats) => stats.tokens.output },
+  { name: 'Cache tokens', of: (stats) => sumKnown(stats.tokens.cacheCreation, stats.tokens.cacheReads) },
+  { name: 'Build minutes', of: (stats) => minutes(stats.steps.worker) },
+  { name: 'Review minutes', of: (stats) => minutes(sumKnown(stats.steps.review, stats.steps.fixes)) },
+  { name: 'Total minutes', of: (stats) => minutes(stats.steps.whole) },
+  { name: 'Review rounds', of: (stats) => stats.reviewRounds },
 ]
 
 export const DEFAULT_BOARD_TITLE = 'Flow'
@@ -22,6 +47,7 @@ const PERMISSION_HINT =
 
 let lookupOnce = null
 let lookupReported = false
+const reportedOnce = new Set()
 
 const sameName = (a, b) => a.trim().toLowerCase() === b.trim().toLowerCase()
 export const oneLine = (text) => String(text).replace(/\s*\n\s*/g, ' ').trim()
@@ -35,9 +61,49 @@ export function statusOptionName(state) {
   return status ? status.option : null
 }
 
+function lacking(options, wanted) {
+  return wanted.filter((name) => !(options || []).some((option) => sameName(option.name, name)))
+}
+
 function missingOptions(project) {
-  const options = (project.statusField && project.statusField.options) || []
-  return PROJECT_STATUSES.map((status) => status.option).filter((name) => !options.some((option) => sameName(option.name, name)))
+  return lacking(project.statusField && project.statusField.options, PROJECT_STATUSES.map((status) => status.option))
+}
+
+export function fieldNamed(board, name) {
+  return (board.fields || []).find((field) => sameName(field.name, name)) || null
+}
+
+const FIELD_KINDS = { SINGLE_SELECT: 'single select', NUMBER: 'number', TEXT: 'text', DATE: 'date', ITERATION: 'iteration' }
+const kindOf = (field) => FIELD_KINDS[field.dataType] || String(field.dataType || 'unknown').toLowerCase()
+
+export function wrongKind(board, field, wanted) {
+  return `${board.title} has a field named ${field.name} that is a ${kindOf(field)} field, not a ${FIELD_KINDS[wanted]} one; Flow leaves the field as it is, so rename or remove it and run \`flow init --board\` again`
+}
+
+export function releaseFieldOf(board) {
+  const field = fieldNamed(board, RELEASE_FIELD)
+  if (!field) return { problem: `${board.title} has no ${RELEASE_FIELD} field; \`flow init --board\` adds it`, missing: true }
+  if (field.dataType !== 'SINGLE_SELECT') return { problem: wrongKind(board, field, 'SINGLE_SELECT'), field }
+  const missing = lacking(field.options, RELEASE_OPTIONS.map((entry) => entry.option))
+  if (missing.length) return { problem: `${board.title}'s ${RELEASE_FIELD} field has no options ${missing.join(', ')}; \`flow init --board\` adds them`, field, missingOptions: missing }
+  return { field, optionIds: new Map(RELEASE_OPTIONS.map((entry) => [entry.option, field.options.find((option) => sameName(option.name, entry.option)).id])) }
+}
+
+export function figureFieldsOf(board) {
+  const ids = new Map()
+  const missing = []
+  const wrong = []
+  for (const { name } of FIGURE_FIELDS) {
+    const field = fieldNamed(board, name)
+    if (!field) missing.push(name)
+    else if (field.dataType !== 'NUMBER') wrong.push(field)
+    else ids.set(name, field.id)
+  }
+  const problems = [
+    ...(missing.length ? [`${board.title} has no number fields ${missing.join(', ')}; \`flow init --board\` adds them`] : []),
+    ...wrong.map((field) => wrongKind(board, field, 'NUMBER')),
+  ]
+  return { ids, missing, wrong, problem: problems.length ? problems.join('; ') : null }
 }
 
 function lookUp() {
@@ -54,7 +120,7 @@ function lookUp() {
     const optionIds = new Map(
       PROJECT_STATUSES.map((status) => [status.state, board.statusField.options.find((option) => sameName(option.name, status.option)).id]),
     )
-    return { board: { id: board.id, title: board.title, fieldId: board.statusField.id, optionIds }, kind: 'found', reason: null, repository, projects }
+    return { board: { id: board.id, title: board.title, fieldId: board.statusField.id, optionIds, fields: board.fields || [] }, kind: 'found', reason: null, repository, projects }
   }
   if (!projects.length) return { board: null, kind: 'none', reason: 'no GitHub Project is linked to this repository', repository, projects }
   const closest = projects.find((project) => project.statusField) || projects[0]
@@ -69,35 +135,132 @@ export function findProjectBoard() {
 
 export function projectBoardLine() {
   const found = findProjectBoard()
-  if (found.kind === 'found') return `project board: ${found.board.title}`
+  if (found.kind === 'found') return `project board: ${found.board.title}, ${releaseLine(found.board)}, ${figuresLine(found.board)}`
   if (found.kind === 'none') return 'project board: none linked'
   if (found.kind === 'mismatch') return `project board: ${found.reason}`
   return `project board: not checked: ${oneLine(found.reason)}`
+}
+
+function releaseLine(board) {
+  const release = releaseFieldOf(board)
+  if (release.missing) return `no ${RELEASE_FIELD} field (\`flow init --board\` adds it)`
+  if (release.problem) return `${RELEASE_FIELD}: ${release.problem}`
+  return `${RELEASE_FIELD} field: ${RELEASE_OPTIONS.map((entry) => entry.option).join(', ')}`
+}
+
+function figuresLine(board) {
+  const figures = figureFieldsOf(board)
+  if (!figures.problem) return `figures: ${FIGURE_FIELDS.length} fields`
+  const named = [...figures.missing.map((name) => `${name} missing`), ...figures.wrong.map((field) => `${field.name} is a ${kindOf(field)} field`)]
+  return `figures: ${named.join(', ')} (\`flow init --board\` adds the missing ones)`
 }
 
 function report(line) {
   process.stderr.write(`project board not updated: ${oneLine(line)}\n`)
 }
 
+export function reportOnce(line) {
+  if (reportedOnce.has(line)) return
+  reportedOnce.add(line)
+  report(line)
+}
+
+function noBoard(found) {
+  if (found.kind === 'mismatch' && !lookupReported) report(found.reason)
+  lookupReported = true
+  return false
+}
+
+export function boardItem(board, number, state = null) {
+  const issue = github.issueProjectItems(number)
+  const item = issue.items.find((entry) => entry.projectId === board.id)
+  if (item) return { item, added: false }
+  const id = github.addProjectItem(board.id, issue.id)
+  const wanted = typeof state === 'function' ? state() : state
+  const optionId = wanted ? board.optionIds.get(wanted) : null
+  if (optionId) github.setProjectSingleSelect(board.id, id, board.fieldId, optionId)
+  return { item: { id, projectId: board.id, status: optionId ? { optionId } : null, release: null }, added: true }
+}
+
 export function placeOnBoard(board, number, state) {
   const optionId = board.optionIds.get(state)
   if (!optionId) throw new TrackerError(`#${number} is in the state "${state}", which no Status option stands for`)
-  const issue = github.issueProjectItems(number)
-  const item = issue.items.find((entry) => entry.projectId === board.id)
-  if (item && item.status && item.status.optionId === optionId) return 'already right'
-  const itemId = item ? item.id : github.addProjectItem(board.id, issue.id)
-  github.setProjectSingleSelect(board.id, itemId, board.fieldId, optionId)
-  return item ? 'set' : 'added'
+  const { item, added } = boardItem(board, number, state)
+  if (added) return 'added'
+  if (item.status && item.status.optionId === optionId) return 'already right'
+  github.setProjectSingleSelect(board.id, item.id, board.fieldId, optionId)
+  return 'set'
+}
+
+export function placeRelease(board, number, value) {
+  const release = releaseFieldOf(board)
+  if (release.problem) throw new TrackerError(release.problem)
+  const optionId = release.optionIds.get(value)
+  if (!optionId) throw new TrackerError(`"${value}" is not one of the ${RELEASE_FIELD} options`)
+  const { item } = boardItem(board, number, 'epic')
+  if (item.release && item.release.optionId === optionId) return 'already right'
+  github.setProjectSingleSelect(board.id, item.id, release.field.id, optionId)
+  return 'set'
+}
+
+function deliveryOf(issue) {
+  const epicNumber = parseTicketBody(issue.body).epic
+  return deliveryFor(epicNumber === null ? null : { settings: parseEpicBody(github.getIssue(epicNumber).body).settings })
+}
+
+export function placeFigures(board, number, { comments = null, delivery = null } = {}) {
+  const fields = figureFieldsOf(board)
+  if (!fields.ids.size) return []
+  const read = comments || github.listComments(number)
+  if (!ticketStats({ ticket: { number }, comments: read }).metered) return []
+  let issue = null
+  const issueOf = () => issue || (issue = github.getIssue(number))
+  const stats = ticketStats({ ticket: { number }, comments: read, delivery: delivery || deliveryOf(issueOf()) })
+  const values = FIGURE_FIELDS.map((field) => ({ name: field.name, value: field.of(stats) })).filter((entry) => isNumber(entry.value) && fields.ids.has(entry.name))
+  if (!values.length) return []
+  const { item } = boardItem(board, number, () => ticketState(issueOf().labels).state)
+  for (const entry of values) github.setProjectNumber(board.id, item.id, fields.ids.get(entry.name), entry.value)
+  return values.map((entry) => entry.name)
+}
+
+export function syncProjectFigures(number, known = {}) {
+  try {
+    const found = findProjectBoard()
+    if (!found.board) return noBoard(found)
+    const fields = figureFieldsOf(found.board)
+    if (fields.problem) reportOnce(fields.problem)
+    return placeFigures(found.board, number, known).length > 0
+  } catch (error) {
+    report(`#${number}'s figures were not written to ${boardTitle()}, because ${explain(error)}`)
+    return false
+  }
+}
+
+function boardTitle() {
+  return lookupOnce && lookupOnce.board ? lookupOnce.board.title : 'the project'
+}
+
+export function syncProjectRelease(number, value) {
+  try {
+    const found = findProjectBoard()
+    if (!found.board) return noBoard(found)
+    const release = releaseFieldOf(found.board)
+    if (release.problem) {
+      reportOnce(release.problem)
+      return false
+    }
+    placeRelease(found.board, number, value)
+    return true
+  } catch (error) {
+    report(`#${number} kept its old ${RELEASE_FIELD} in ${boardTitle()}, because ${explain(error)}`)
+    return false
+  }
 }
 
 export function syncProjectStatus(number, state) {
   try {
     const found = findProjectBoard()
-    if (!found.board) {
-      if (found.kind === 'mismatch' && !lookupReported) report(found.reason)
-      lookupReported = true
-      return false
-    }
+    if (!found.board) return noBoard(found)
     if (!found.board.optionIds.get(state)) {
       report(`#${number} is in the state "${state}", which no Status option stands for`)
       return false
@@ -105,12 +268,12 @@ export function syncProjectStatus(number, state) {
     placeOnBoard(found.board, number, state)
     return true
   } catch (error) {
-    report(`#${number} kept its old Status in ${lookupOnce && lookupOnce.board ? lookupOnce.board.title : 'the project'}, because ${explain(error)}`)
+    report(`#${number} kept its old Status in ${boardTitle()}, because ${explain(error)}`)
     return false
   }
 }
 
-const newOption = (status) => ({ name: status.option, color: status.color, description: '' })
+const newOption = (entry) => ({ name: entry.option, color: entry.color, description: entry.description || '' })
 
 function notSetUp(step) {
   try {
@@ -126,29 +289,29 @@ function itemName(item, repositoryId) {
   return item.kind === 'PullRequest' ? `PR #${item.number}` : `#${item.number}`
 }
 
-function completeOptions(project, missing, repositoryId) {
-  const items = notSetUp(() => github.projectItems(project.id)).filter((item) => item.status && item.status.name)
-  const replaced = notSetUp(() =>
-    github.setSingleSelectOptions(project.statusField.id, [
-      ...project.statusField.options,
-      ...PROJECT_STATUSES.filter((status) => missing.includes(status.option)).map(newOption),
-    ]),
-  )
+const STATUS_COMPLETION = { field: (project) => project.statusField, wanted: PROJECT_STATUSES, valueOf: (item) => item.status, added: 'options', restored: 'item statuses' }
+const RELEASE_COMPLETION = { field: (project) => fieldNamed(project, RELEASE_FIELD), wanted: RELEASE_OPTIONS, valueOf: (item) => item.release, added: `${RELEASE_FIELD} options`, restored: `${RELEASE_FIELD} values` }
+
+function completeOptions(project, missing, repositoryId, kind = STATUS_COMPLETION) {
+  const field = kind.field(project)
+  const items = notSetUp(() => github.projectItems(project.id)).filter((item) => kind.valueOf(item) && kind.valueOf(item).name)
+  const replaced = notSetUp(() => github.setSingleSelectOptions(field.id, [...field.options, ...kind.wanted.filter((entry) => missing.includes(entry.option)).map(newOption)]))
   const problems = []
   let restored = 0
   for (const item of items) {
-    const option = replaced.options.find((entry) => sameName(entry.name, item.status.name))
+    const was = kind.valueOf(item).name
+    const option = replaced.options.find((entry) => sameName(entry.name, was))
     try {
       github.setProjectSingleSelect(project.id, item.id, replaced.fieldId, option ? option.id : null)
       restored++
     } catch (error) {
       if (!(error instanceof TrackerError) || error.missing) throw error
       problems.push(
-        `${itemName(item, repositoryId)} was "${item.status.name}" and could not be set back, because ${oneLine(explain(error))}; \`flow board-sync\` restores every Flow issue from its labels, and a draft or pull request is set by hand`,
+        `${itemName(item, repositoryId)} was "${was}" and could not be set back, because ${oneLine(explain(error))}; \`flow board-sync\` restores every Flow issue from its labels, and a draft or pull request is set by hand`,
       )
     }
   }
-  return { lines: [`project board: ${project.title}, added options ${missing.join(', ')}, restored ${restored} item statuses`], problems, changed: project }
+  return { lines: [`project board: ${project.title}, added ${kind.added} ${missing.join(', ')}, restored ${restored} ${kind.restored}`], problems, changed: project }
 }
 
 function createBoard(repository, title) {
@@ -207,4 +370,38 @@ export function ensureProjectBoard(title = DEFAULT_BOARD_TITLE) {
   if (after.board && after.board.id === outcome.changed.id) return { ...outcome, lines: [...outcome.lines, `Flow writes to: ${after.board.title}`] }
   const writesTo = after.board ? `Flow writes to ${after.board.title} instead` : `Flow writes to no board, because ${oneLine(after.reason)}`
   return { ...outcome, problems: [...outcome.problems, `${outcome.changed.title} was set up, but ${writesTo}; \`flow doctor\` names the board Flow uses`] }
+}
+
+function ensureReleaseField(found) {
+  const board = found.board
+  const release = releaseFieldOf(board)
+  if (!release.problem) return { lines: [], problems: [], changed: false }
+  if (!release.missing && !release.missingOptions) return { lines: [], problems: [release.problem], changed: false }
+  if (release.missing) {
+    notSetUp(() => github.createProjectField(board.id, RELEASE_FIELD, 'SINGLE_SELECT', RELEASE_OPTIONS.map(newOption)))
+    return { lines: [`project board: ${board.title}, added the field ${RELEASE_FIELD} (${RELEASE_OPTIONS.map((entry) => entry.option).join(', ')})`], problems: [], changed: true }
+  }
+  return { ...completeOptions(board, release.missingOptions, found.repository.id, RELEASE_COMPLETION), changed: true }
+}
+
+function ensureFigureFields(found) {
+  const board = found.board
+  const figures = figureFieldsOf(board)
+  for (const name of figures.missing) notSetUp(() => github.createProjectField(board.id, name, 'NUMBER'))
+  return {
+    lines: figures.missing.length ? [`project board: ${board.title}, added the number fields ${figures.missing.join(', ')}`] : [],
+    problems: figures.wrong.map((field) => wrongKind(board, field, 'NUMBER')),
+    changed: figures.missing.length > 0,
+  }
+}
+
+export function ensureBoardFields() {
+  const found = findProjectBoard()
+  if (!found.board) return { lines: [], problems: [] }
+  const outcomes = [ensureReleaseField(found), ensureFigureFields(found)]
+  if (outcomes.some((outcome) => outcome.changed)) {
+    lookupOnce = null
+    lookupReported = false
+  }
+  return { lines: outcomes.flatMap((outcome) => outcome.lines), problems: outcomes.flatMap((outcome) => outcome.problems) }
 }
