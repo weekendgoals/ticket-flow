@@ -324,7 +324,7 @@ async function recover(ticket, why) {
 async function resolveConflict(ticket) {
   const model = board ? workerModel(board, ticket) : 'opus'
   log(`#${ticket}: its merge conflicts with the epic branch; a fresh worker on ${model} resolves it, once`)
-  const built = await agent(skillPrompt(ticket, `#${ticket} --unattended --resolve-conflict`, repoRoot), { label: `worker:#${ticket}:conflict`, model, schema: STEP_SCHEMA })
+  const built = await agent(skillPrompt(ticket, `#${ticket} --unattended --until-review --resolve-conflict`, repoRoot), { label: `worker:#${ticket}:conflict`, model, schema: STEP_SCHEMA })
   if (!built || built.result !== 'review' || !built.range) {
     log(`#${ticket}: the conflict was not resolved (${built ? built.summary : 'no answer'})`)
     return false
@@ -521,7 +521,8 @@ const parkedAtEnd = Boolean(final && final.approved && noStops && final.needsHum
 if ((built || parkedAtEnd) && final.delivery !== 'incremental') {
   const checkWhat = 'It runs every done ticket\'s checks at the epic branch head and prints JSON.'
   let check = await runCommand(`${FLOW} check-epic ${epic} --mark`, `check-epic:#${epic}:release`, checkWhat, { json: true, long: true })
-  if (noStops && check.answer !== 'unreadable' && check.exitCode !== 0) {
+  const parkedByCheck = check.json && check.json.setupFailure == null && Array.isArray(check.json.tickets) && check.json.tickets.some((ticket) => ticket && ticket.allPassed === false)
+  if (noStops && check.answer !== 'unreadable' && check.exitCode !== 0 && parkedByCheck) {
     log('release: a ticket failed its checks at the epic head and is parked; the tickets still done are checked once more, so a draft can open over them')
     check = await runCommand(`${FLOW} check-epic ${epic} --mark`, `check-epic:#${epic}:release:again`, checkWhat, { json: true, long: true })
   }

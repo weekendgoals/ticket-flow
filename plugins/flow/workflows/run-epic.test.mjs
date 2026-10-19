@@ -598,7 +598,7 @@ test('a merge that conflicts under Stops: none is resolved once by a fresh worke
   assert.deepEqual(order, ['merge:#2', 'worker:#2:conflict', 'reviewer:#2:conflict', 'fixes:#2:conflict', 'merge:#2:again'])
   assert.equal(merges, 2, 'the second merge of #2 and the merge of #3')
   const resolver = run.calls.find((call) => call.label === 'worker:#2:conflict')
-  assert.match(resolver.prompt, /args "#2 --unattended --resolve-conflict"/)
+  assert.match(resolver.prompt, /args "#2 --unattended --until-review --resolve-conflict"/, 'the driver hires the reviewer itself, so the resolver stops at REVIEW')
   assert.match(resolver.prompt, /The repository is \/repo: run every command there\./)
   assert.match(run.calls.find((call) => call.label === 'reviewer:#2:conflict').prompt, /the merge of the epic branch into the ticket branch that resolved a conflict, only[\s\S]*Commit range: ccc333\.\.ddd444/)
   assert.match(run.calls.find((call) => call.label === 'fixes:#2:conflict').prompt, /args "#2 --unattended --after-review 2 --no-merge"[\s\S]*post its report with `--head ddd444`/)
@@ -641,7 +641,7 @@ test('under Stops: none a release check that fails parks the failing ticket and 
   let checks = 0
   const run = await drive((label) => {
     if (label.startsWith('next:')) return next()
-    if (/^check-epic:#1:release/.test(label)) return ++checks === 1 ? { exitCode: 1, output: '{"allPassed":false}' } : ok('{"allPassed":true}')
+    if (/^check-epic:#1:release/.test(label)) return ++checks === 1 ? { exitCode: 1, output: '{"setupFailure":null,"tickets":[{"ticket":3,"allPassed":false}],"allPassed":false}' } : ok('{"allPassed":true}')
     if (/^release-pr:/.test(label)) return ok('{"epic":1,"pullRequest":40,"url":"https://github.com/o/r/pull/40","draft":true}')
     return happyTicket(label) ?? releaseSteps(label)
   })
@@ -654,5 +654,16 @@ test('under Stops: ask a run that ends with a ticket needing a person opens no r
   const run = await drive((label) => (label.startsWith('next:') ? next() : happyTicket(label) ?? releaseSteps(label)))
   assert.ok(!run.labels.some((label) => /^(release-pr|check-epic:#1:release)/.test(label)))
   assert.equal(run.out.releasePullRequest, null)
+})
+
+test('under Stops: none a release check that could not run (a setup failure) is not run a second time, and no pull request opens', async () => {
+  const next = boards(board({ ready: [2], stops: 'none' }), board({ done: [2, 3], stops: 'none' }))
+  const run = await drive((label) => {
+    if (label.startsWith('next:')) return next()
+    if (/^check-epic:#1:release/.test(label)) return { exitCode: 1, output: '{"setupFailure":"setup: npm ci: exited 1","tickets":[],"allPassed":false}' }
+    return happyTicket(label) ?? releaseSteps(label)
+  })
+  assert.deepEqual(run.labels.filter((label) => /^(check-epic:#1:release|release-pr)/.test(label)), ['check-epic:#1:release'])
+  assert.equal(run.out.outcome, 'stopped')
 })
 

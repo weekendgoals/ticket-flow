@@ -803,3 +803,15 @@ test('a second conflict since the start, after a fresh worker resolved the first
   assert.match(posted(2)[0], /^<!-- flow:needs-human -->\n\*\*This ticket is parked\.\*\* Merging `[0-9a-f]{12}` into `epic\/trip-export` conflicts in `README\.md`\. Nothing was merged\. It conflicted before/)
   assert.ok(labelCalls().includes(`POST ${R}/issues/2/labels {"labels":["flow:needs-human"]}`))
 })
+
+test('a disputed check that was skipped still fails acceptance: a skip is fixed by giving the command what it needs, never disputed', () => {
+  const { work } = startedTicket()
+  commitFile(work, 'export.txt', 'trip\n', '#2: write the export')
+  const skipping = '- the file exists\n  CHECK: test -f export.txt\n- the database suite\n  CHECK: echo "1 skipped"'
+  world({ settings: NO_STOPS, ticket2: { labels: ['flow:ticket', 'flow:in-review'], criteria: skipping }, comments: [STARTED, dispute(2), reviewed()] })
+  const result = flow(work, ['accept', '2'], { FLOW_UNATTENDED: '1' })
+  assert.equal(result.status, 1)
+  const json = JSON.parse(result.stdout)
+  assert.deepEqual([json.checks[1].status, json.accepted, json.disputed], ['skipped', false, []])
+  assert.match(posted(2)[0], /passed=false seconds=\d+ -->\n\*\*Acceptance failed\*\*/)
+})

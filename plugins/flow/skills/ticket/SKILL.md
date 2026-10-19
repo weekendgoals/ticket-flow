@@ -449,12 +449,20 @@ changes where the skill stops or starts; every step still posts its comment.
   `origin/<epic branch>` into it, and resolve every conflict keeping both
   sides' intent: the epic branch's merged tickets are facts, and this
   ticket adapts to them. Commit `#<n>: merge <epic branch>, conflict
-  resolved`, run `FLOW check <n>`, and end with
-  `REVIEW <head before>..<head>`. The host has that commit reviewed once
-  and calls you with `--after-review 2 --no-merge`: an Important finding
-  there parks the ticket, and otherwise `FLOW accept` takes the reviewed
-  head and the host merges the accepted commit, so the one agent merge is
-  still a ticket into its epic branch by the accepted commit.
+  resolved` and run `FLOW check <n>`. Then one of two endings:
+  - with `--until-review` (a host that hires the reviewer itself, as
+    `/flow:run` does, because an agent it started cannot start another):
+    end with `REVIEW <head before>..<head>`; the host has that commit
+    reviewed once and calls you with `--after-review 2 --no-merge`;
+  - without it (the GitHub Action, which makes no second call): run step 6
+    yourself, one review round over `<head before>..<head>` only, posted
+    the same way; an Important finding parks the ticket, since this is its
+    last round; otherwise run step 7 and end with `ACCEPTED <sha>`, as
+    `--no-merge` does.
+
+  Either way `FLOW accept` takes only the reviewed head and the host merges
+  the accepted commit, so the one agent merge is still a ticket into its
+  epic branch by the accepted commit.
 
 A host that stops the skill early reads the result from GitHub, not from
 your reply: `REVIEW`, `ACCEPTED` and `CONFLICT` tell it which step comes next, and it

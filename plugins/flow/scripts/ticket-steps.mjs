@@ -95,8 +95,9 @@ export function startWithdrawnComment() {
   return `${START_WITHDRAWN_MARKER}\n**Start request withdrawn.** The job asked to build this ticket stopped before the ticket started, so \`flow:start\` is taken off; the ticket is planned, and the next start request builds it.`
 }
 
-export function releasePrComment({ number, url, existing, epicBranch, base, draft = false, markedReady = false }) {
+export function releasePrComment({ number, url, existing, epicBranch, base, draft = false, markedReady = false, convertedToDraft = false }) {
   const marker = `<!-- flow:release-pr number=${number} -->`
+  if (convertedToDraft) return `${marker}\n**Release pull request converted back to a draft:** ${url} (\`${epicBranch}\` into \`${base}\`). A ticket is no longer done, so the body was rewritten to list what is not built; it is marked ready again once every ticket is done.`
   if (markedReady) return `${marker}\n**Release pull request marked ready for review:** ${url} (\`${epicBranch}\` into \`${base}\`). Every ticket is built now, so its body was rewritten in full. A person reviews and merges it.`
   if (draft) return `${marker}\n**Release pull request ${existing ? 'updated, still a draft' : 'opened as a draft'}:** ${url} (\`${epicBranch}\` into \`${base}\`). Some tickets are parked or not built, and its body lists them; it is marked ready once every ticket is done.`
   return `${marker}\n**Release pull request ${existing ? 'already open' : 'opened'}:** ${url} (\`${epicBranch}\` into \`${base}\`). A person reviews and merges it.`
@@ -285,7 +286,7 @@ export function acceptanceComment({ sha, report, seconds = null, disputed = [] }
 export function coveredByDisputes(report, disputes) {
   const failing = report.checks.filter((check) => check.status !== 'passed')
   if (report.allPassed || !failing.length || report.problems.length) return []
-  if (!failing.every((check) => disputes.has(check.n))) return []
+  if (!failing.every((check) => check.status === 'failed' && disputes.has(check.n))) return []
   return failing.map((check) => ({ n: check.n, check: check.check, text: disputes.get(check.n).text }))
 }
 
@@ -462,4 +463,15 @@ export function lastPullRequestRound(comments, author) {
   if (!rounds.length) return null
   const latest = rounds[rounds.length - 1]
   return { round: Number(latest[1]), text: latest[2].trim() || 'see its comment on the epic' }
+}
+
+export function resolutionPending(comments, author) {
+  const mine = byAuthor(comments, author)
+  const marks = mine.filter((comment) => comment.body.startsWith(CONFLICT_MARKER) || comment.body.startsWith(RESOLVE_MARKER) || MERGED_MARKER.test(comment.body))
+  if (!marks.length || !marks[marks.length - 1].body.startsWith(RESOLVE_MARKER)) return false
+  const askedAt = Date.parse(marks[marks.length - 1].createdAt)
+  return !mine.some((comment) => {
+    const match = comment.body.match(ACCEPTANCE_MARKER)
+    return match && match[2] === 'true' && Date.parse(comment.createdAt) > askedAt
+  })
 }

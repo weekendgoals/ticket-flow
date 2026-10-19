@@ -274,6 +274,14 @@ test('a pull request is created as a draft only when asked, and updatePullReques
   assert.match(JSON.parse(fake.calls()[1].stdin).query, /markPullRequestReadyForReview\(input:\{pullRequestId:\$id\}\)/)
   fake.setFixtures({ [`PATCH ${R}/pulls/40`]: draftPull, 'graphql id=PR_40': { data: { markPullRequestReadyForReview: { pullRequest: { number: 40, isDraft: true } } } } })
   assert.throws(() => github.updatePullRequest(40, { body: 'x', ready: true }), /did not mark pull request #40 ready for review/)
+  const readyPull = { ...draftPull, draft: false }
+  fake.setFixtures({ [`PATCH ${R}/pulls/40`]: readyPull, 'graphql id=PR_40': { data: { convertPullRequestToDraft: { pullRequest: { number: 40, isDraft: true } } } } })
+  fake.clearCalls()
+  const converted = github.updatePullRequest(40, { body: 'a ticket is parked', draft: true })
+  assert.deepEqual([converted.draft, fake.calls().map((call) => call.key)], [true, [`PATCH ${R}/pulls/40`, 'graphql id=PR_40']])
+  assert.match(JSON.parse(fake.calls()[1].stdin).query, /convertPullRequestToDraft\(input:\{pullRequestId:\$id\}\)/)
+  fake.setFixtures({ [`PATCH ${R}/pulls/40`]: readyPull, 'graphql id=PR_40': { data: { convertPullRequestToDraft: { pullRequest: { number: 40, isDraft: false } } } } })
+  assert.throws(() => github.updatePullRequest(40, { body: 'x', draft: true }), /did not convert pull request #40 to a draft/)
 })
 
 test('findOpenPullRequest asks for the head branch qualified by the repository owner', () => {

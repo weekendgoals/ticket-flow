@@ -53,6 +53,8 @@ The worker's rules, each with its reason:
   is a stop after a real effort. Under `Stops: none`, unattended, record it
   instead: `FLOW dispute <n> --check <k> --text "<what the line asks, what
   is true, the evidence>"`, `<k>` being the check's number in
-  `FLOW check <n>`'s order. Never edit the criteria in the issue: the gate
+  `FLOW check <n>`'s order. A **skipped** check cannot be disputed, because
+  a skip means the command lacked something (a database, a credential):
+  give it what it needs. Never edit the criteria in the issue: the gate
   stays the person's, and `FLOW accept` passes a failing check only when
   it is disputed.

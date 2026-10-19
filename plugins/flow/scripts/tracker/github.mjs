@@ -286,14 +286,26 @@ export function createPullRequest({ title, head, base, body, draft = false }) {
 }
 
 const READY_FOR_REVIEW_MUTATION = 'mutation($id:ID!){markPullRequestReadyForReview(input:{pullRequestId:$id}){pullRequest{number isDraft}}}'
+const CONVERT_TO_DRAFT_MUTATION = 'mutation($id:ID!){convertPullRequestToDraft(input:{pullRequestId:$id}){pullRequest{number isDraft}}}'
 
-export function updatePullRequest(number, { body, ready = false }) {
+function setDraft(number, nodeId, draft) {
+  const [mutation, field] = draft ? [CONVERT_TO_DRAFT_MUTATION, 'convertPullRequestToDraft'] : [READY_FOR_REVIEW_MUTATION, 'markPullRequestReadyForReview']
+  const data = graphqlWithInput(mutation, { id: nodeId })
+  const changed = data && data[field] && data[field].pullRequest
+  if (!changed || changed.isDraft !== draft) throw new TrackerError(`GitHub did not ${draft ? `convert pull request #${number} to a draft` : `mark pull request #${number} ready for review`}`)
+}
+
+export function updatePullRequest(number, { body, ready = false, draft = false }) {
   const updated = normalizePullRequest(apiWrite('PATCH', `${REPO}/pulls/${number}`, { body }))
-  if (!ready || !updated.draft) return updated
-  const data = graphqlWithInput(READY_FOR_REVIEW_MUTATION, { id: updated.nodeId })
-  const marked = data && data.markPullRequestReadyForReview && data.markPullRequestReadyForReview.pullRequest
-  if (!marked || marked.isDraft) throw new TrackerError(`GitHub did not mark pull request #${number} ready for review`)
-  return { ...updated, draft: false }
+  if (ready && updated.draft) {
+    setDraft(number, updated.nodeId, false)
+    return { ...updated, draft: false }
+  }
+  if (draft && !updated.draft) {
+    setDraft(number, updated.nodeId, true)
+    return { ...updated, draft: true }
+  }
+  return updated
 }
 
 export function requestReviewers(number, reviewers) {

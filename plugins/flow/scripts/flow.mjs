@@ -71,6 +71,7 @@ import {
   conflictsSince,
   awaitingResolution,
   resolveRequested,
+  resolutionPending,
   departuresOf,
   disputesOf,
   latestDisputes,
@@ -159,7 +160,8 @@ const USAGE = `usage: flow <command>
                                          under Stops: none, unattended: record the smallest departure from the plan that was built
   dispute <n> --check <k> --text "<what the line asks; what is true; the evidence>"
                                          under Stops: none, unattended: record that check <k> cannot pass as written; accept then
-                                         passes a ticket whose every failing check is disputed
+                                         passes a ticket whose every failing check is disputed (a skipped check cannot be:
+                                         give it what it needs)
   create-finding --title "<t>" --file <md> [--epic <e>] [--screenshots <dir>] [--fingerprint "<text>"] [--repo <owner>/<name>]
                                          file a bug or idea as a finding (flow:found): evidence, no criteria, nothing starts from it
                                          (--fingerprint: exit 3 with the existing number when it was filed before or rejected;
@@ -1032,7 +1034,7 @@ function commandDepart(positional, flags) {
 
 function commandDispute(positional, flags) {
   const number = issueNumber(positional[0], 'a ticket number')
-  if (flags.check === undefined || !/^\d+$/.test(flags.check)) throw new UsageError('dispute needs --check <k>: the number of the CHECK in `flow check`\'s order')
+  if (flags.check === undefined || !/^\d+$/.test(flags.check)) throw new UsageError('dispute needs --check <k>: the number of the CHECK in `flow check`\'s order, one that failed; a skipped check cannot be disputed, because a skip means the command lacked something, so give it what it needs')
   const check = Number(flags.check)
   const text = normalizeNewlines(readText(flags)).trim()
   const { issue, parsed, epicIssue } = loadTicket(number)
@@ -1566,6 +1568,10 @@ function commandMerge(positional, flags) {
     const account = github.viewerLogin()
     for (const ticket of waiting) {
       const comments = github.listComments(ticket.number)
+      if (ticket.labels.includes(START_LABEL) || resolutionPending(comments, account)) {
+        notMerged.push({ ticket: ticket.number, reason: `#${ticket.number}: a fresh worker is resolving its conflict; it is merged once that worker's commit is accepted` })
+        continue
+      }
       if (!lastAcceptance(comments, account)?.passed) {
         const elsewhere = passingAcceptancesByOthers(comments, account)
         if (elsewhere.length)
@@ -1848,7 +1854,7 @@ function releaseBody({ epic, plan, tickets, notBuilt = [] }) {
     )
   }
   if (notBuilt.length) {
-    lines.push('', '## Not built', '', 'This pull request is a draft: these tickets are not merged into the epic branch, so the epic is not finished. Once a person has decided each and the run has built them, it is marked ready for review.', '')
+    lines.push('', '## Not built', '', 'This pull request is a draft: these tickets are not done (parked, or never started), so the epic is not finished. Once a person has decided each and a run has built them, it is marked ready for review.', '')
     for (const ticket of notBuilt) lines.push(`- #${ticket.number} ${ticket.title} (${ticket.state})${ticket.reason ? `: ${ticket.reason}` : ''}`)
   }
   lines.push('', ...tickets.map((ticket) => `Closes #${ticket.number}`), ...(notBuilt.length ? [] : [`Closes #${epic.number}`]), '', `A person reviews and merges this pull request. ${NO_CODE_WORK_AFTER_MERGE}`)
@@ -1914,17 +1920,21 @@ function commandReleasePr(positional, flags) {
   const existing = github.findOpenPullRequest(epic.settings.branch)
   let pullRequest
   let markedReady = false
+  let convertedToDraft = false
   if (!existing) pullRequest = github.createPullRequest({ title: epic.title, head: epic.settings.branch, base, body, draft })
   else if (existing.draft) {
     pullRequest = github.updatePullRequest(existing.number, { body, ready: !draft })
     markedReady = !draft
+  } else if (draft) {
+    pullRequest = github.updatePullRequest(existing.number, { body, draft: true })
+    convertedToDraft = true
   } else pullRequest = existing
   github.comment(
     epicNumber,
-    releasePrComment({ number: pullRequest.number, url: pullRequest.url, existing: Boolean(existing), epicBranch: epic.settings.branch, base, draft, markedReady }),
+    releasePrComment({ number: pullRequest.number, url: pullRequest.url, existing: Boolean(existing), epicBranch: epic.settings.branch, base, draft, markedReady, convertedToDraft }),
   )
   syncProjectRelease(epicNumber, draft ? RELEASE_STAGES.building : RELEASE_STAGES.open)
-  printJson({ epic: epicNumber, pullRequest: pullRequest.number, url: pullRequest.url, base, existing: Boolean(existing), draft, markedReady, notBuilt: notBuilt.map((ticket) => ticket.number) })
+  printJson({ epic: epicNumber, pullRequest: pullRequest.number, url: pullRequest.url, base, existing: Boolean(existing), draft, markedReady, convertedToDraft, notBuilt: notBuilt.map((ticket) => ticket.number) })
   return 0
 }
 
@@ -2026,7 +2036,7 @@ function commandDispatch(positional) {
   const slots = Math.max(0, width - result.inProgress.length - flagged.length)
   const started = result.ready.filter((number) => !flagged.includes(number)).slice(0, slots)
   for (const number of started) github.addLabels(number, [START_LABEL])
-  const resolving = epic.settings.stops === 'none' ? requestResolutions(epic) : []
+  const resolving = parksInstead(epic.settings.stops) ? requestResolutions(epic) : []
   const busy = result.inProgress.length + flagged.length + started.length
   const state = busy ? 'running' : !epic.tickets.length ? 'empty' : epic.tickets.every((ticket) => ticket.state === 'done') ? 'built' : 'stopped'
   printJson({ epic: epic.number, parallel: width, stops: epic.settings.stops, started, alreadyAsked: flagged, inProgress: result.inProgress, resolving, needsHuman: result.needsHuman, state })

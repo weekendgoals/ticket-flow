@@ -74,9 +74,9 @@ as of 2026-10-19; the pass count grows, the fail line stays `# fail 0`.
 
 - `node --test plugins/flow/scripts/flow.test.mjs` — `# pass 92`. The CLI
   end to end against the fake `gh`; one case needs `git` on PATH.
-- `node --test plugins/flow/scripts/lifecycle.test.mjs` — `# pass 43`. The
+- `node --test plugins/flow/scripts/lifecycle.test.mjs` — `# pass 44`. The
   ticket steps in throwaway repositories with a bare remote; needs `git`, `sh`.
-- `node --test plugins/flow/scripts/epic-run.test.mjs` — `# pass 45`. The
+- `node --test plugins/flow/scripts/epic-run.test.mjs` — `# pass 47`. The
   whole-epic commands, the same way.
 - `pull-request.test.mjs` `# pass 20`, `issue-body.test.mjs` `# pass 30`,
   `checks.test.mjs` `# pass 27` (real shell commands in a temp dir),
@@ -87,7 +87,7 @@ as of 2026-10-19; the pass count grows, the fail line stays `# fail 0`.
   its transcripts; no test reads a real one (they belong to whoever ran them).
 - `node --test plugins/flow/scripts/worktree-setup.test.mjs` — `# pass 19`;
   needs `git`, POSIX `sh` and `sleep`.
-- `node --test plugins/flow/workflows/run-epic.test.mjs` — `# pass 40`
+- `node --test plugins/flow/workflows/run-epic.test.mjs` — `# pass 41`
   (stubbed `agent`, no git), `plugins/flow/github/flow.test.mjs` `# pass 17`.
 - `node --test tools/reporter/reporter.test.mjs` — `# pass 31`. The
   extension's modules under a stubbed `fetch`. It is also their syntax

@@ -430,7 +430,7 @@ test('release-pr opens the epic\'s one pull request with its outcome, walkthroug
   })
   const result = flow(repo.work, ['release-pr', '1'])
   assert.equal(result.status, 0, result.stderr)
-  assert.deepEqual(JSON.parse(result.stdout), { epic: 1, pullRequest: 40, url: 'https://github.com/o/r/pull/40', base: 'main', existing: false, draft: false, markedReady: false, notBuilt: [] })
+  assert.deepEqual(JSON.parse(result.stdout), { epic: 1, pullRequest: 40, url: 'https://github.com/o/r/pull/40', base: 'main', existing: false, draft: false, markedReady: false, convertedToDraft: false, notBuilt: [] })
   const request = JSON.parse(fake.calls().find((call) => call.key === `POST ${R}/pulls`).stdin)
   assert.deepEqual([request.title, request.head, request.base], ['Trip export', 'epic/trip-export', 'main'])
   assert.match(request.body, /^Epic: #1\n\n## Outcome\n\nTravellers can export a trip\.\n\n## Walkthrough\n\nA traveller opens a trip/)
@@ -944,17 +944,20 @@ test('under Stops: none dispatch asks for a conflict to be resolved, once: a mar
   const resolve = comment('<!-- flow:resolve -->\n**Conflict to resolve.**', '2026-10-14T13:05:00Z')
   const inReview = { labels: ['flow:ticket', 'flow:in-review'] }
   world({ epic: NO_STOPS_EPIC, tickets: { 2: inReview, 3: inReview, 4: { labels: ['flow:ticket', 'flow:planned'], blockedBy: 'Blocked by: #2' } }, comments: { 2: [STARTED, accepted('a'.repeat(40)), conflict], 3: [STARTED, accepted('b'.repeat(40))] } })
-  const result = JSON.parse(flow(directory, ['dispatch', '1']).stdout)
+  const unattended = { FLOW_UNATTENDED: '1' }
+  assert.deepEqual(JSON.parse(flow(directory, ['dispatch', '1']).stdout).resolving, [], 'attended, nothing is asked: a person in the session decides')
+  fake.clearCalls()
+  const result = JSON.parse(flow(directory, ['dispatch', '1'], unattended).stdout)
   assert.deepEqual([result.resolving, result.state], [[2], 'running'])
   assert.deepEqual(added(2), ['flow:start'])
   assert.match(posted(2)[0], /^<!-- flow:resolve -->\n\*\*Conflict to resolve\.\*\* .*`ticket\/2`/)
   assert.deepEqual([added(3), posted(3)], [[], []])
   world({ epic: NO_STOPS_EPIC, tickets: { 2: inReview, 3: { labels: ['flow:ticket', 'flow:done'] } }, comments: { 2: [STARTED, conflict, resolve] } })
   fake.clearCalls()
-  assert.deepEqual(JSON.parse(flow(directory, ['dispatch', '1']).stdout).resolving, [], 'a resolution already asked for is not asked again')
+  assert.deepEqual(JSON.parse(flow(directory, ['dispatch', '1'], unattended).stdout).resolving, [], 'a resolution already asked for is not asked again')
   world({ tickets: { 2: inReview }, comments: { 2: [STARTED, conflict] } })
   fake.clearCalls()
-  assert.deepEqual(JSON.parse(flow(directory, ['dispatch', '1']).stdout).resolving, [], 'under Stops: ask nothing is read or asked')
+  assert.deepEqual(JSON.parse(flow(directory, ['dispatch', '1'], unattended).stdout).resolving, [], 'under Stops: ask nothing is read or asked')
 })
 
 const parkedTicket = { labels: ['flow:ticket', 'flow:needs-human'] }
@@ -970,11 +973,11 @@ test('release-pr --draft under Stops: none opens a draft with the done tickets, 
   })
   const result = flow(repo.work, ['release-pr', '1', '--draft'])
   assert.equal(result.status, 0, result.stderr)
-  assert.deepEqual(JSON.parse(result.stdout), { epic: 1, pullRequest: 40, url: 'https://github.com/o/r/pull/40', base: 'main', existing: false, draft: true, markedReady: false, notBuilt: [3, 4] })
+  assert.deepEqual(JSON.parse(result.stdout), { epic: 1, pullRequest: 40, url: 'https://github.com/o/r/pull/40', base: 'main', existing: false, draft: true, markedReady: false, convertedToDraft: false, notBuilt: [3, 4] })
   const request = JSON.parse(fake.calls().find((call) => call.key === `POST ${R}/pulls`).stdin)
   assert.equal(request.draft, true)
   assert.match(request.body, /## Tickets\n\n\| Ticket \| Merged as \|\n\|---\|---\|\n\| #2 Export button \| `111111111111` \|\n\n## Departures/)
-  assert.match(request.body, /## Not built\n\nThis pull request is a draft: [^\n]*\n\n- #3 Export file \(parked\): Acceptance still fails after two rounds of fixes\.\n- #4 Export name \(waiting\)\n/)
+  assert.match(request.body, /## Not built\n\nThis pull request is a draft: these tickets are not done \(parked, or never started\)[^\n]*\n\n- #3 Export file \(parked\): Acceptance still fails after two rounds of fixes\.\n- #4 Export name \(waiting\)\n/)
   assert.match(request.body, /\nCloses #2\n\nA person reviews/)
   assert.doesNotMatch(request.body, /Closes #[134]\b/)
   assert.match(posted(1)[0], /^<!-- flow:release-pr number=40 -->\n\*\*Release pull request opened as a draft:\*\* https:\/\/github\.com\/o\/r\/pull\/40/)
@@ -1015,3 +1018,46 @@ test('once every ticket is done, release-pr rewrites the open draft in full and 
   assert.ok(!keys.includes(`POST ${R}/pulls`))
   assert.match(posted(1)[0], /^<!-- flow:release-pr number=40 -->\n\*\*Release pull request marked ready for review:\*\*/)
 })
+
+test('merge --epic leaves a ticket whose conflict a fresh worker is resolving, asked by flow:start or a resolve comment with no acceptance after it, and merges it once that worker\'s commit is accepted', () => {
+  const repo = repository()
+  const sha = ticketBranch(repo, 4, { 'name.txt': 'n\n' })
+  const conflict = comment('<!-- flow:conflict -->\n**Merge conflict.**', '2026-10-14T12:30:00Z')
+  const resolve = comment('<!-- flow:resolve -->\n**Conflict to resolve.**', '2026-10-14T12:40:00Z')
+  const acceptedAfter = comment(`<!-- flow:acceptance sha=${sha} passed=true -->\n**Acceptance passed**`, '2026-10-14T13:30:00Z')
+  world({
+    epic: NO_STOPS_EPIC,
+    tickets: { 2: { labels: ['flow:ticket', 'flow:in-review'] }, 3: { labels: ['flow:ticket', 'flow:in-review', 'flow:start'] }, 4: { labels: ['flow:ticket', 'flow:in-review'] } },
+    comments: { 2: [STARTED, accepted('a'.repeat(40)), conflict, resolve], 3: [STARTED, accepted('b'.repeat(40)), conflict], 4: [STARTED, accepted('c'.repeat(40)), conflict, resolve, acceptedAfter] },
+    closesOrReopens: [4],
+  })
+  const before = epicHead(repo)
+  const result = flow(repo.work, ['merge', '--epic', '1'], { FLOW_UNATTENDED: '1' })
+  const json = JSON.parse(result.stdout)
+  assert.deepEqual(json.merged.map((entry) => entry.ticket), [4])
+  assert.deepEqual(json.notMerged, [2, 3].map((ticket) => ({ ticket, reason: `#${ticket}: a fresh worker is resolving its conflict; it is merged once that worker's commit is accepted` })))
+  assert.equal(git(repo.remote, 'rev-parse', `${epicHead(repo)}^2`), sha)
+  assert.notEqual(epicHead(repo), before)
+  assert.deepEqual([posted(2), posted(3), added(2), added(3)], [[], [], [], []], 'neither is touched, so nothing parks it')
+})
+
+test('release-pr --draft converts a release pull request that was marked ready back to a draft when a ticket is no longer done, and rewrites its body', () => {
+  const repo = repository()
+  world({
+    epic: NO_STOPS_EPIC,
+    tickets: { 2: { labels: ['flow:ticket', 'flow:done'] }, 3: parkedTicket, 4: { labels: ['flow:ticket', 'flow:done'] } },
+    comments: { 1: [epicCheck(epicHead(repo))], 3: [parkedComment] },
+    extra: {
+      [OPEN_RELEASE_PULLS]: [{ ...NEW_RELEASE_PULL, draft: false, node_id: 'PR_40' }],
+      [`PATCH ${R}/pulls/40`]: { ...NEW_RELEASE_PULL, draft: false, node_id: 'PR_40' },
+      'graphql id=PR_40': { data: { convertPullRequestToDraft: { pullRequest: { number: 40, isDraft: true } } } },
+    },
+  })
+  const result = flow(repo.work, ['release-pr', '1', '--draft'])
+  assert.equal(result.status, 0, result.stderr)
+  assert.deepEqual(['draft', 'markedReady', 'convertedToDraft'].map((key) => JSON.parse(result.stdout)[key]), [true, false, true])
+  assert.match(JSON.parse(fake.calls().find((call) => call.key === `PATCH ${R}/pulls/40`).stdin).body, /## Not built\n[\s\S]*- #3 Export file \(parked\)/)
+  assert.match(JSON.parse(fake.calls().find((call) => call.key === 'graphql id=PR_40').stdin).query, /convertPullRequestToDraft/)
+  assert.match(posted(1)[0], /^<!-- flow:release-pr number=40 -->\n\*\*Release pull request converted back to a draft:\*\*/)
+})
+
