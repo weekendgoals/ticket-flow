@@ -196,14 +196,18 @@ jobs:
           echo "$dispatched"
           state="$(echo "$dispatched" | jq -r '.state')"
           stops="$(echo "$dispatched" | jq -r '.stops')"
-          if [ "$state" = "built" ]; then
+          if [ "$stops" = "none" ] && { [ "$state" = "built" ] || [ "$state" = "stopped" ]; }; then
             if [ "$($FLOW next "$EPIC" | jq -r '.delivery')" = "release" ]; then
-              $FLOW check-epic "$EPIC" --mark || exit 1
-              opened="$($FLOW release-pr "$EPIC")" || exit 1
-              pr="$(echo "$opened" | jq -r '.pullRequest')"
-              $FLOW pr-review-request "$pr" || true
+              if $FLOW check-epic "$EPIC" --mark || $FLOW check-epic "$EPIC" --mark; then
+                if opened="$($FLOW release-pr "$EPIC" --draft)"; then $FLOW pr-review-request "$(echo "$opened" | jq -r '.pullRequest')" || true; fi
+              fi
             fi
-            if [ "$stops" = "none" ]; then $FLOW run-report "$EPIC" --post --outcome built; fi
+            $FLOW run-report "$EPIC" --post
+          elif [ "$state" = "built" ] && [ "$($FLOW next "$EPIC" | jq -r '.delivery')" = "release" ]; then
+            $FLOW check-epic "$EPIC" --mark || exit 1
+            opened="$($FLOW release-pr "$EPIC")" || exit 1
+            pr="$(echo "$opened" | jq -r '.pullRequest')"
+            $FLOW pr-review-request "$pr" || true
           elif [ "$state" = "stopped" ]; then
             $FLOW run-report "$EPIC" --post --outcome stopped --text "nothing is ready and nothing is in progress"
           fi

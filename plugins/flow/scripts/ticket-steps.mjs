@@ -95,8 +95,11 @@ export function startWithdrawnComment() {
   return `${START_WITHDRAWN_MARKER}\n**Start request withdrawn.** The job asked to build this ticket stopped before the ticket started, so \`flow:start\` is taken off; the ticket is planned, and the next start request builds it.`
 }
 
-export function releasePrComment({ number, url, existing, epicBranch, base }) {
-  return `<!-- flow:release-pr number=${number} -->\n**Release pull request ${existing ? 'already open' : 'opened'}:** ${url} (\`${epicBranch}\` into \`${base}\`). A person reviews and merges it.`
+export function releasePrComment({ number, url, existing, epicBranch, base, draft = false, markedReady = false }) {
+  const marker = `<!-- flow:release-pr number=${number} -->`
+  if (markedReady) return `${marker}\n**Release pull request marked ready for review:** ${url} (\`${epicBranch}\` into \`${base}\`). Every ticket is built now, so its body was rewritten in full. A person reviews and merges it.`
+  if (draft) return `${marker}\n**Release pull request ${existing ? 'updated, still a draft' : 'opened as a draft'}:** ${url} (\`${epicBranch}\` into \`${base}\`). Some tickets are parked or not built, and its body lists them; it is marked ready once every ticket is done.`
+  return `${marker}\n**Release pull request ${existing ? 'already open' : 'opened'}:** ${url} (\`${epicBranch}\` into \`${base}\`). A person reviews and merges it.`
 }
 
 export function localRunLive(comments) {
@@ -416,7 +419,8 @@ function noStopsReport({ outcome, reason, tickets, releasePullRequest, people, p
   if (notBuilt.length) lines.push('', `**Not built:** ${notBuilt.map((ticket) => `${named(ticket)} (${notBuiltState(ticket)})`).join(', ')}.`)
   lines.push('', ...claimLines('Departures', tickets, (ticket) => (ticket.departures || []).map((departure) => `${named(ticket)}: ${departure.text}`)))
   lines.push('', ...claimLines('Disputed checks', tickets, (ticket) => (ticket.disputes || []).map((dispute) => `${named(ticket)}, check ${dispute.check}: ${dispute.text}`)))
-  lines.push('', `**Release pull request:** ${releasePullRequest ? releasePullRequest.url || `#${releasePullRequest.number}` : 'none opened'}.`)
+  const draftNote = releasePullRequest && releasePullRequest.draft ? ', a draft while anything is not built; it is marked ready once every ticket is done' : ''
+  lines.push('', `**Release pull request:** ${releasePullRequest ? `${releasePullRequest.url || `#${releasePullRequest.number}`}${draftNote}` : 'none opened'}.`)
   if (pullRequestRound) lines.push(`Its latest pull request round (${pullRequestRound.round}) left: ${pullRequestRound.text}`)
   return lines.join('\n')
 }

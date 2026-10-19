@@ -134,7 +134,12 @@ done ticket's checks at the epic head, opens the release pull request
 cost; it refuses unless that check passed at the head the pull request
 carries, so run `FLOW check-epic <e>` first when you open it by hand),
 answers its review bot and CI for up to two rounds, and posts the
-pull request on the epic.
+pull request on the epic. Under `Stops: none` it does the same when the run ends
+with tickets parked, and opens the pull request as a draft
+(`FLOW release-pr <e> --draft`): over the done tickets, with a `## Not built`
+section and no line closing the epic. When a check at the epic head parks a
+ticket there, the done ones are checked once more first. A later run that
+builds the parked tickets marks the draft ready for review.
 
 ## 3. Report
 
@@ -149,7 +154,8 @@ When the workflow returns:
    running it again posts nothing twice. A figure the records lack reads
    `unknown`; never estimate one.
 2. Tell the person, in a few lines: built or stopped, the release pull
-   request's URL, and every ticket that needs a person (or was parked) with
+   request's URL (and whether it is a draft), and every ticket that needs a
+   person (or was parked) with
    the one-line reason from its issue (`FLOW run-report <e>` prints them). Their next step is to review and
    merge the release pull request, or to answer those tickets and run
    `/flow:run #<e>` again: a ticket they fixed and labelled `flow:planned`

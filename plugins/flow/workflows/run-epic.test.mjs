@@ -28,7 +28,7 @@ async function drive(reply, args = ARGS) {
   }
 }
 
-function board({ ready = [], inProgress = [], done = [], needsHuman = [], waiting = [], planned = [], parallel = 1, delivery = 'release', approved = true, tickets = null, exitCode = 0 } = {}) {
+function board({ ready = [], inProgress = [], done = [], needsHuman = [], waiting = [], planned = [], parallel = 1, delivery = 'release', approved = true, tickets = null, exitCode = 0, stops = 'ask' } = {}) {
   const all = tickets || [
     ...ready.map((n) => ({ n, model: n % 2 ? 'opus' : 'sonnet', state: 'ready' })),
     ...inProgress.map((n) => ({ n, model: 'opus', state: 'in-progress' })),
@@ -36,7 +36,7 @@ function board({ ready = [], inProgress = [], done = [], needsHuman = [], waitin
     ...needsHuman.map((n) => ({ n, model: 'opus', state: 'needs-human' })),
     ...waiting.map((n) => ({ n, model: 'opus', state: 'waiting' })),
   ]
-  const next = { epic: 1, approved, ready, waiting: waiting.map((n) => ({ n, blockedBy: [] })), inProgress, done, needsHuman, planned, problems: [], delivery, parallel, branch: 'epic/x', tickets: all.map((entry) => ({ ...entry, title: `ticket ${entry.n}`, tier: entry.model === 'sonnet' ? 'easy' : 'hard', startRequested: false })) }
+  const next = { epic: 1, approved, ready, waiting: waiting.map((n) => ({ n, blockedBy: [] })), inProgress, done, needsHuman, planned, problems: [], delivery, parallel, stops, branch: 'epic/x', tickets: all.map((entry) => ({ ...entry, title: `ticket ${entry.n}`, tier: entry.model === 'sonnet' ? 'easy' : 'hard', startRequested: false })) }
   return { exitCode, output: JSON.stringify(next, null, 2) }
 }
 
@@ -66,7 +66,7 @@ test('a serial run builds the ready tickets one per round, each by the skill on 
   const next = boards(board({ ready: [2] }), board({ ready: [3], done: [2] }), board({ done: [2, 3] }), board({ done: [2, 3] }))
   const run = await drive((label) => (label.startsWith('next:') ? next() : happyTicket(label) ?? releaseSteps(label)))
   assert.equal(run.out.outcome, 'built', JSON.stringify(run.out))
-  assert.deepEqual(run.out.releasePullRequest, { number: 40, url: 'https://github.com/o/r/pull/40' })
+  assert.deepEqual(run.out.releasePullRequest, { number: 40, url: 'https://github.com/o/r/pull/40', draft: false })
   assert.deepEqual(run.labels, [
     'next:#1:1',
     'post:#1:wave:1',
@@ -620,5 +620,39 @@ test('a second conflict after the resolution is left to the merge command, which
   assert.ok(run.labels.includes('merge:#2:again'))
   assert.ok(!run.labels.includes('merge:#2'), 'a ticket that conflicted while delivering itself goes straight to the resolution')
   assert.ok(run.logs.some((line) => /#2: not merged \(exit 1\)/.test(line)))
+})
+
+test('under Stops: none a run that ends with tickets parked checks the done ones at the epic head and opens the release pull request as a draft', async () => {
+  const next = boards(board({ ready: [2], stops: 'none' }), board({ done: [2], needsHuman: [3], waiting: [4], stops: 'none' }))
+  const run = await drive((label) => {
+    if (label.startsWith('next:')) return next()
+    if (/^release-pr:/.test(label)) return ok('{"epic":1,"pullRequest":40,"url":"https://github.com/o/r/pull/40","draft":true}')
+    return happyTicket(label) ?? releaseSteps(label)
+  })
+  assert.equal(run.out.outcome, 'stopped')
+  assert.deepEqual(run.out.releasePullRequest, { number: 40, url: 'https://github.com/o/r/pull/40', draft: true })
+  assert.ok(run.labels.indexOf('check-epic:#1:release') < run.labels.indexOf('release-pr:#1'), 'the epic check runs first, as before')
+  assert.match(run.calls.find((call) => call.label === 'release-pr:#1').prompt, /flow\.mjs" release-pr 1 --draft\n/)
+  assert.match(run.calls.find((call) => call.label === 'post:#1:end').prompt, /--outcome stopped --file - <<'FLOW_TEXT'\n[^\n]*\nFLOW_TEXT/)
+})
+
+test('under Stops: none a release check that fails parks the failing ticket and is run once more over the tickets still done, then a draft opens', async () => {
+  const next = boards(board({ ready: [2], stops: 'none' }), board({ done: [2, 3], stops: 'none' }))
+  let checks = 0
+  const run = await drive((label) => {
+    if (label.startsWith('next:')) return next()
+    if (/^check-epic:#1:release/.test(label)) return ++checks === 1 ? { exitCode: 1, output: '{"allPassed":false}' } : ok('{"allPassed":true}')
+    if (/^release-pr:/.test(label)) return ok('{"epic":1,"pullRequest":40,"url":"https://github.com/o/r/pull/40","draft":true}')
+    return happyTicket(label) ?? releaseSteps(label)
+  })
+  assert.deepEqual(run.labels.filter((label) => /^(check-epic:#1:release|release-pr)/.test(label)), ['check-epic:#1:release', 'check-epic:#1:release:again', 'release-pr:#1'])
+  assert.equal(run.out.releasePullRequest.draft, true)
+})
+
+test('under Stops: ask a run that ends with a ticket needing a person opens no release pull request, as before', async () => {
+  const next = boards(board({ ready: [2] }), board({ done: [2], needsHuman: [3] }))
+  const run = await drive((label) => (label.startsWith('next:') ? next() : happyTicket(label) ?? releaseSteps(label)))
+  assert.ok(!run.labels.some((label) => /^(release-pr|check-epic:#1:release)/.test(label)))
+  assert.equal(run.out.releasePullRequest, null)
 })
 

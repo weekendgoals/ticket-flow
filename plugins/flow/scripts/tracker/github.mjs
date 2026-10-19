@@ -261,6 +261,7 @@ function normalizePullRequest(raw) {
     url: raw.html_url || null,
     state: raw.state,
     draft: Boolean(raw.draft),
+    nodeId: raw.node_id || null,
     head: raw.head ? raw.head.ref : null,
     headSha: raw.head ? raw.head.sha : null,
     base: raw.base ? raw.base.ref : null,
@@ -280,8 +281,19 @@ export function findOpenPullRequest(head) {
   return found.length ? normalizePullRequest(found[0]) : null
 }
 
-export function createPullRequest({ title, head, base, body }) {
-  return normalizePullRequest(apiWrite('POST', `${REPO}/pulls`, { title, head, base, body }))
+export function createPullRequest({ title, head, base, body, draft = false }) {
+  return normalizePullRequest(apiWrite('POST', `${REPO}/pulls`, { title, head, base, body, ...(draft ? { draft: true } : {}) }))
+}
+
+const READY_FOR_REVIEW_MUTATION = 'mutation($id:ID!){markPullRequestReadyForReview(input:{pullRequestId:$id}){pullRequest{number isDraft}}}'
+
+export function updatePullRequest(number, { body, ready = false }) {
+  const updated = normalizePullRequest(apiWrite('PATCH', `${REPO}/pulls/${number}`, { body }))
+  if (!ready || !updated.draft) return updated
+  const data = graphqlWithInput(READY_FOR_REVIEW_MUTATION, { id: updated.nodeId })
+  const marked = data && data.markPullRequestReadyForReview && data.markPullRequestReadyForReview.pullRequest
+  if (!marked || marked.isDraft) throw new TrackerError(`GitHub did not mark pull request #${number} ready for review`)
+  return { ...updated, draft: false }
 }
 
 export function requestReviewers(number, reviewers) {

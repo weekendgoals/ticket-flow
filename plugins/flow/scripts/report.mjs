@@ -54,6 +54,7 @@ export function epicRelease(epic) {
     closed: epic.state === 'closed',
     releasePullRequestNamed: Boolean(release),
     releaseMerged: Boolean(release && release.merged),
+    releaseDraft: Boolean(release && release.draft),
   })
 }
 

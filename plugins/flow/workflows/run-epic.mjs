@@ -126,6 +126,7 @@ function boardProblem(json) {
     return 'its JSON\'s "tickets" entries do not each carry "n", "model" and "state"'
   if (json.delivery !== undefined && json.delivery !== null && typeof json.delivery !== 'string') return 'its JSON\'s "delivery" is not text'
   if (json.parallel !== undefined && json.parallel !== null && typeof json.parallel !== 'number') return 'its JSON\'s "parallel" is not a number'
+  if (json.stops !== undefined && json.stops !== null && typeof json.stops !== 'string') return 'its JSON\'s "stops" is not text'
   return null
 }
 
@@ -137,6 +138,7 @@ function boardOf(json) {
     board: {
     approved: json.approved,
     delivery: json.delivery ?? null,
+    stops: json.stops === 'none' ? 'none' : 'ask',
     parallel: json.parallel ?? null,
     ...Object.fromEntries(BOARD_LISTS.map((key) => [key, json[key]])),
     waiting: json.waiting.map((entry) => entry.n),
@@ -513,9 +515,16 @@ const ticketsLeft = final ? final.tickets.filter((ticket) => ticket.state !== 'd
 const built = Boolean(final && final.approved && final.tickets.length && !ticketsLeft.length)
 let releasePullRequest = null
 let outcome = built ? 'built' : 'stopped'
+const noStops = Boolean(final && final.stops === 'none')
+const parkedAtEnd = Boolean(final && final.approved && noStops && final.needsHuman.length && !final.ready.length && !final.inProgress.length)
 
-if (built && final.delivery !== 'incremental') {
-  const check = await runCommand(`${FLOW} check-epic ${epic} --mark`, `check-epic:#${epic}:release`, 'It runs every done ticket\'s checks at the epic branch head and prints JSON.', { json: true, long: true })
+if ((built || parkedAtEnd) && final.delivery !== 'incremental') {
+  const checkWhat = 'It runs every done ticket\'s checks at the epic branch head and prints JSON.'
+  let check = await runCommand(`${FLOW} check-epic ${epic} --mark`, `check-epic:#${epic}:release`, checkWhat, { json: true, long: true })
+  if (noStops && check.answer !== 'unreadable' && check.exitCode !== 0) {
+    log('release: a ticket failed its checks at the epic head and is parked; the tickets still done are checked once more, so a draft can open over them')
+    check = await runCommand(`${FLOW} check-epic ${epic} --mark`, `check-epic:#${epic}:release:again`, checkWhat, { json: true, long: true })
+  }
   if (check.answer === 'unreadable') log(`release: the epic check's answer could not be read (${unreadableText(check)}); release-pr reads the check's own comment on the epic`)
   if (check.answer !== 'unreadable' && check.exitCode !== 0) {
     outcome = 'stopped'
@@ -523,16 +532,20 @@ if (built && final.delivery !== 'incremental') {
   } else {
     const openRelease = (label) =>
       askProxy(
-        `${FLOW} release-pr ${epic}`,
+        `${FLOW} release-pr ${epic}${noStops ? ' --draft' : ''}`,
         label,
-        'It opens the release pull request, or finds the one already open. When it refuses, it prints no JSON and says why on standard error: then return that line as the output.',
+        `It opens the release pull request${noStops ? ' (as a draft while tickets are parked)' : ''}, or finds the one already open. When it refuses, it prints no JSON and says why on standard error: then return that line as the output.`,
         { json: true, long: false },
       )
     const hasPullRequest = (answer) => answer.exitCode === 0 && answer.json && Number.isInteger(answer.json.pullRequest)
     let opened = await openRelease(`release-pr:#${epic}`)
     if (!hasPullRequest(opened)) opened = await openRelease(`release-pr:#${epic}:again`)
     if (hasPullRequest(opened)) {
-      releasePullRequest = { number: opened.json.pullRequest, url: opened.json.url }
+      releasePullRequest = { number: opened.json.pullRequest, url: opened.json.url, draft: opened.json.draft === true }
+      if (releasePullRequest.draft) {
+        outcome = 'stopped'
+        if (!stopReason) stopReason = 'some tickets are parked, so the release pull request is a draft until they are built'
+      }
       for (const prRound of [1, 2]) {
         const answered = await agent(
           [

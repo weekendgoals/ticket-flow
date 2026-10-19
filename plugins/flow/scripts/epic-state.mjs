@@ -225,8 +225,8 @@ export function isReleaseEpic(settings) {
   return (settings.delivery || 'release') === 'release' && Boolean(settings.branch)
 }
 
-export function releaseStage({ settings, closed, releasePullRequestNamed, releaseMerged }) {
+export function releaseStage({ settings, closed, releasePullRequestNamed, releaseMerged, releaseDraft = false }) {
   if (!isReleaseEpic(settings)) return null
   if (closed) return releaseMerged ? RELEASE_STAGES.released : null
-  return releasePullRequestNamed ? RELEASE_STAGES.open : RELEASE_STAGES.building
+  return releasePullRequestNamed && !releaseDraft ? RELEASE_STAGES.open : RELEASE_STAGES.building
 }

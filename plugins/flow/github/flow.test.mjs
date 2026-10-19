@@ -75,7 +75,7 @@ test('the scheduler\'s closing is run-report, the text the local driver posts to
   const run = step('epic', (entry) => entry.run && /dispatch/.test(entry.run)).run
   assert.match(run, /stops="\$\(echo "\$dispatched" \| jq -r '\.stops'\)"/)
   assert.match(run, /elif \[ "\$state" = "stopped" \]; then\n\s*\$FLOW run-report "\$EPIC" --post --outcome stopped --text "nothing is ready and nothing is in progress"\n/)
-  assert.match(run, /if \[ "\$stops" = "none" \]; then \$FLOW run-report "\$EPIC" --post --outcome built; fi/)
+  assert.match(run, /\n\s*\$FLOW run-report "\$EPIC" --post\n\s*elif/, 'under Stops: none the report is posted whether the epic is built or stopped, its outcome read from the tickets')
   assert.doesNotMatch(run, /\$FLOW post "\$EPIC"/, 'no second text for the closing')
 })
 
@@ -84,6 +84,13 @@ test('a conflict under Stops: none is routed back to the ticket job: dispatch as
   assert.match(read, /echo "mode=\$\(echo "\$ticket" \| jq -r 'if \.resolveConflict then " --resolve-conflict" else "" end'\)" >> "\$GITHUB_OUTPUT"/)
   assert.match(claudeStep('ticket').with.prompt, /--no-merge\$\{\{ steps\.read\.outputs\.mode \}\}$/)
   assert.match(step('epic', (entry) => entry.run && /dispatch/.test(entry.run)).run, /\$FLOW dispatch "\$EPIC"/, 'dispatch, which the epic job runs, is what asks for the resolution')
+})
+
+test('under Stops: none a stopped or built epic gets its release pull request through --draft, after an epic check run once more when the first parked a ticket', () => {
+  const run = step('epic', (entry) => entry.run && /dispatch/.test(entry.run)).run
+  assert.match(run, /if \[ "\$stops" = "none" \] && \{ \[ "\$state" = "built" \] \|\| \[ "\$state" = "stopped" \]; \}; then/)
+  assert.match(run, /if \$FLOW check-epic "\$EPIC" --mark \|\| \$FLOW check-epic "\$EPIC" --mark; then\n\s*if opened="\$\(\$FLOW release-pr "\$EPIC" --draft\)"; then/)
+  assert.equal((run.match(/--draft/g) || []).length, 1, 'only the Stops: none branch asks for a draft')
 })
 
 test('the pull request job answers reviews and failed checks on ticket and epic branches through the ticket skill\'s loop', () => {

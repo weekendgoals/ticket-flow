@@ -72,23 +72,23 @@ Every suite needs Node ≥ 20 and nothing else unless noted; pass each test
 file path explicitly (`node --test <directory>` finds nothing here). Counts
 as of 2026-10-19; the pass count grows, the fail line stays `# fail 0`.
 
-- `node --test plugins/flow/scripts/flow.test.mjs` — `# pass 91`. The CLI
+- `node --test plugins/flow/scripts/flow.test.mjs` — `# pass 92`. The CLI
   end to end against the fake `gh`; one case needs `git` on PATH.
 - `node --test plugins/flow/scripts/lifecycle.test.mjs` — `# pass 43`. The
   ticket steps in throwaway repositories with a bare remote; needs `git`, `sh`.
-- `node --test plugins/flow/scripts/epic-run.test.mjs` — `# pass 42`. The
+- `node --test plugins/flow/scripts/epic-run.test.mjs` — `# pass 45`. The
   whole-epic commands, the same way.
 - `pull-request.test.mjs` `# pass 20`, `issue-body.test.mjs` `# pass 30`,
   `checks.test.mjs` `# pass 27` (real shell commands in a temp dir),
-  `tracker/github.test.mjs` `# pass 37`, `fidelity.test.mjs` `# pass 54`,
+  `tracker/github.test.mjs` `# pass 38`, `fidelity.test.mjs` `# pass 54`,
   `stats.test.mjs` `# pass 17` (needs `git`), `project-sync.test.mjs`
-  `# pass 34` (needs `git`), under `plugins/flow/scripts/`.
+  `# pass 35` (needs `git`), under `plugins/flow/scripts/`.
 - `node --test plugins/flow/scripts/meter.test.mjs` — `# pass 18`. Builds
   its transcripts; no test reads a real one (they belong to whoever ran them).
 - `node --test plugins/flow/scripts/worktree-setup.test.mjs` — `# pass 19`;
   needs `git`, POSIX `sh` and `sleep`.
-- `node --test plugins/flow/workflows/run-epic.test.mjs` — `# pass 37`
-  (stubbed `agent`, no git), `plugins/flow/github/flow.test.mjs` `# pass 16`.
+- `node --test plugins/flow/workflows/run-epic.test.mjs` — `# pass 40`
+  (stubbed `agent`, no git), `plugins/flow/github/flow.test.mjs` `# pass 17`.
 - `node --test tools/reporter/reporter.test.mjs` — `# pass 31`. The
   extension's modules under a stubbed `fetch`. It is also their syntax
   check: plain `node --check` reads a `.js` file with no package.json as

@@ -193,8 +193,11 @@ const USAGE = `usage: flow <command>
                                          (one left from an earlier attempt is replaced)
   check-epic <epic> [--tickets <n>,<n>] [--mark]
                                          run the checks of done tickets at the epic branch's head, in a clean copy
-  release-pr <epic> [--cwd <dir>]        open the epic's one pull request once every ticket is done and the latest
-                                         check-epic passed at the epic branch's head
+  release-pr <epic> [--draft] [--cwd <dir>]
+                                         open the epic's one pull request once every ticket is done and the latest
+                                         check-epic passed at the epic branch's head (--draft, under Stops: none: with
+                                         tickets parked and nothing in progress, open it as a draft listing what is not built;
+                                         once every ticket is done, the draft is rewritten and marked ready)
   design-map <epic> [--out <file>]       write the epic's design map for the design comparison
   run-report <epic> [--outcome built|stopped] [--text "<why it stopped>" | --file <md>] [--local] [--post]
                                          the run's closing report, from the epic and its tickets' comments (--post: also post it
@@ -216,7 +219,7 @@ const USAGE = `usage: flow <command>
 
 const VALUE_FLAGS = new Set(['--file', '--epic-file', '--text', '--title', '--tier', '--cwd', '--blocked-by', '--bot', '--timeout', '--interval', '--sha', '--epic', '--tickets', '--out', '--workflow', '--important', '--grace', '--since', '--repo', '--head', '--screenshots', '--fingerprint', '--routes', '--links', '--cap', '--widths', '--outcome', '--check'])
 const REPEATABLE_FLAGS = new Set(['--transcripts', '--sitemap'])
-const BOOLEAN_FLAGS = new Set(['--board', '--json', '--no-epic', '--print', '--wait', '--once', '--mark', '--remove', '--review', '--all', '--local', '--post'])
+const BOOLEAN_FLAGS = new Set(['--board', '--json', '--no-epic', '--print', '--wait', '--once', '--mark', '--remove', '--review', '--all', '--local', '--post', '--draft'])
 const DEFAULT_WAIT_SECONDS = 1800
 const DEFAULT_POLL_SECONDS = 30
 const DEFAULT_SCREENSHOTS_DIR = '.flow/screenshots/{n}'
@@ -498,7 +501,16 @@ function epicsAwaitingRelease(found) {
 function releaseStageOf({ issue, settings }) {
   const named = readEpicComments(github.listComments(issue.number)).releasePullRequest
   const closed = issue.state === 'closed'
-  return releaseStage({ settings, closed, releasePullRequestNamed: Boolean(named), releaseMerged: Boolean(closed && named && github.getPullRequest(named).merged) })
+  return releaseStage({ settings, closed, releasePullRequestNamed: Boolean(named), releaseMerged: Boolean(closed && named && github.getPullRequest(named).merged), releaseDraft: Boolean(!closed && named && isDraft(named)) })
+}
+
+function isDraft(number) {
+  try {
+    return github.getPullRequest(number).draft
+  } catch (error) {
+    if (!(error instanceof TrackerError) || error.missing) throw error
+    return false
+  }
 }
 
 function commandDoctor() {
@@ -1816,7 +1828,7 @@ function claimSection(heading, tickets, linesOf) {
   return [`## ${heading}`, '', ...(found.length ? found : ['None.'])]
 }
 
-function releaseBody({ epic, plan, tickets }) {
+function releaseBody({ epic, plan, tickets, notBuilt = [] }) {
   const lines = [`Epic: #${epic.number}`, '']
   if (plan.outcome) lines.push('## Outcome', '', plan.outcome, '')
   if (plan.walkthrough) lines.push('## Walkthrough', '', plan.walkthrough, '')
@@ -1835,8 +1847,28 @@ function releaseBody({ epic, plan, tickets }) {
       `Over ${metered.length} of ${tickets.length} ticket(s) with a cost comment: ${shownCount(totals.input)} input, ${shownCount(totals.output)} output, ${shownCount(totals.cacheCreation)} cache writes and ${shownCount(totals.cacheReads)} cache reads (tokens). Each ticket's comment has the figures by step and by model.`,
     )
   }
-  lines.push('', ...tickets.map((ticket) => `Closes #${ticket.number}`), `Closes #${epic.number}`, '', `A person reviews and merges this pull request. ${NO_CODE_WORK_AFTER_MERGE}`)
+  if (notBuilt.length) {
+    lines.push('', '## Not built', '', 'This pull request is a draft: these tickets are not merged into the epic branch, so the epic is not finished. Once a person has decided each and the run has built them, it is marked ready for review.', '')
+    for (const ticket of notBuilt) lines.push(`- #${ticket.number} ${ticket.title} (${ticket.state})${ticket.reason ? `: ${ticket.reason}` : ''}`)
+  }
+  lines.push('', ...tickets.map((ticket) => `Closes #${ticket.number}`), ...(notBuilt.length ? [] : [`Closes #${epic.number}`]), '', `A person reviews and merges this pull request. ${NO_CODE_WORK_AFTER_MERGE}`)
   return lines.join('\n')
+}
+
+function releasePrRefusal(epic, epicNumber, draft) {
+  if (!epic.approved) return `epic #${epicNumber} is not approved`
+  if (deliveryFor(epic) !== 'release') return `epic #${epicNumber} is not a release epic; each of its tickets has its own pull request`
+  const branchRefusal = epicBranchRefusal(epic)
+  if (branchRefusal) return branchRefusal
+  if (!epic.tickets.length) return `epic #${epicNumber} has no tickets`
+  const unfinished = epic.tickets.filter((ticket) => ticket.state !== 'done')
+  if (!unfinished.length) return null
+  const listed = unfinished.map((ticket) => `#${ticket.number} ${ticket.state}`).join(', ')
+  if (!draft) return `not every ticket of epic #${epicNumber} is done (${listed}); the release pull request opens only when every ticket is merged`
+  if (epic.settings.stops !== 'none') return `--draft is for an epic under Stops: none, and epic #${epicNumber} is under Stops: ${epic.settings.stops || 'unreadable'}; there the release pull request opens only when every ticket is merged`
+  const moving = epic.tickets.filter((ticket) => ['ready', 'in-progress', 'in-review'].includes(ticket.shownState))
+  if (moving.length) return `a draft release pull request opens only when nothing is ready and nothing is in progress (${moving.map((ticket) => `#${ticket.number} ${ticket.shownState}`).join(', ')})`
+  return null
 }
 
 function commandReleasePr(positional, flags) {
@@ -1845,20 +1877,9 @@ function commandReleasePr(positional, flags) {
   const epicIssue = github.getIssue(epicNumber)
   if (!epicIssue.labels.includes(EPIC_LABEL)) throw new UsageError(`#${epicNumber} is not an epic (it has no ${EPIC_LABEL} label)`)
   const epic = deriveEpic(epicIssue, github.listSubIssues(epicNumber))
-  const branchRefusal = deliveryFor(epic) === 'release' ? epicBranchRefusal(epic) : null
-  const refusal = !epic.approved
-    ? `epic #${epicNumber} is not approved`
-    : deliveryFor(epic) !== 'release'
-      ? `epic #${epicNumber} is not a release epic; each of its tickets has its own pull request`
-      : branchRefusal
-        ? branchRefusal
-        : !epic.tickets.length
-          ? `epic #${epicNumber} has no tickets`
-          : epic.tickets.some((ticket) => ticket.state !== 'done')
-            ? `not every ticket of epic #${epicNumber} is done (${epic.tickets.filter((ticket) => ticket.state !== 'done').map((ticket) => `#${ticket.number} ${ticket.state}`).join(', ')})`
-            : null
+  const refusal = releasePrRefusal(epic, epicNumber, Boolean(flags.draft))
   if (refusal) {
-    process.stderr.write(`${refusal}; the release pull request opens only when every ticket is merged\n`)
+    process.stderr.write(`${refusal}\n`)
     return 1
   }
   fetchOrigin(root)
@@ -1867,27 +1888,43 @@ function commandReleasePr(positional, flags) {
     process.stderr.write(`origin/${epic.settings.branch} does not exist, so there is nothing to release\n`)
     return 1
   }
-  const checkRefusal = releaseCheckRefusal({ check: lastReleaseCheck(github.listComments(epicNumber), github.viewerLogin()), head, epic: epicNumber, epicBranch: epic.settings.branch })
+  const account = github.viewerLogin()
+  const checkRefusal = releaseCheckRefusal({ check: lastReleaseCheck(github.listComments(epicNumber), account), head, epic: epicNumber, epicBranch: epic.settings.branch })
   if (checkRefusal) {
     process.stderr.write(`${checkRefusal}\n`)
     return 1
   }
-  const tickets = epic.tickets.map((ticket) => {
-    const comments = github.listComments(ticket.number)
-    const merged = lastMerge(comments, github.viewerLogin())
-    const meter = combineMeters(comments.map((comment) => readMeterComment(comment.body)).filter(Boolean))
-    return { number: ticket.number, title: ticket.title, mergeSha: merged ? merged.mergeSha : null, meter, departures: departuresOf(comments, github.viewerLogin()), disputes: disputesOf(comments, github.viewerLogin()) }
-  })
+  const read = epic.tickets.map((ticket) => ({ ticket, comments: github.listComments(ticket.number) }))
+  const tickets = read
+    .filter(({ ticket }) => ticket.state === 'done')
+    .map(({ ticket, comments }) => {
+      const merged = lastMerge(comments, account)
+      const meter = combineMeters(comments.map((comment) => readMeterComment(comment.body)).filter(Boolean))
+      return { number: ticket.number, title: ticket.title, mergeSha: merged ? merged.mergeSha : null, meter, departures: departuresOf(comments, account), disputes: disputesOf(comments, account) }
+    })
+  const notBuilt = read
+    .filter(({ ticket }) => ticket.state !== 'done')
+    .map(({ ticket, comments }) => {
+      const stop = ticket.state === 'needs-human' ? lastStop(comments, account) : null
+      return { number: ticket.number, title: ticket.title, state: ticket.state === 'needs-human' ? 'parked' : ticket.shownState, reason: stop ? stop.reason : null }
+    })
+  const draft = notBuilt.length > 0
+  const body = releaseBody({ epic, plan: parseEpicBody(epicIssue.body), tickets, notBuilt })
   const base = github.defaultBranch()
   const existing = github.findOpenPullRequest(epic.settings.branch)
-  const pullRequest =
-    existing || github.createPullRequest({ title: epic.title, head: epic.settings.branch, base, body: releaseBody({ epic, plan: parseEpicBody(epicIssue.body), tickets }) })
+  let pullRequest
+  let markedReady = false
+  if (!existing) pullRequest = github.createPullRequest({ title: epic.title, head: epic.settings.branch, base, body, draft })
+  else if (existing.draft) {
+    pullRequest = github.updatePullRequest(existing.number, { body, ready: !draft })
+    markedReady = !draft
+  } else pullRequest = existing
   github.comment(
     epicNumber,
-    releasePrComment({ number: pullRequest.number, url: pullRequest.url, existing: Boolean(existing), epicBranch: epic.settings.branch, base }),
+    releasePrComment({ number: pullRequest.number, url: pullRequest.url, existing: Boolean(existing), epicBranch: epic.settings.branch, base, draft, markedReady }),
   )
-  syncProjectRelease(epicNumber, RELEASE_STAGES.open)
-  printJson({ epic: epicNumber, pullRequest: pullRequest.number, url: pullRequest.url, base, existing: Boolean(existing) })
+  syncProjectRelease(epicNumber, draft ? RELEASE_STAGES.building : RELEASE_STAGES.open)
+  printJson({ epic: epicNumber, pullRequest: pullRequest.number, url: pullRequest.url, base, existing: Boolean(existing), draft, markedReady, notBuilt: notBuilt.map((ticket) => ticket.number) })
   return 0
 }
 
@@ -2231,10 +2268,10 @@ function releasePullRequestOf(number) {
   if (!number) return { shown: null, mergeCommit: null }
   try {
     const pullRequest = github.getPullRequest(number)
-    return { shown: { number, url: pullRequest.url, merged: pullRequest.merged, mergedAt: pullRequest.mergedAt }, mergeCommit: pullRequest.mergeCommitSha }
+    return { shown: { number, url: pullRequest.url, merged: pullRequest.merged, mergedAt: pullRequest.mergedAt, draft: pullRequest.draft }, mergeCommit: pullRequest.mergeCommitSha }
   } catch (error) {
     if (!(error instanceof TrackerError)) throw error
-    return { shown: { number, url: null, merged: null, mergedAt: null }, mergeCommit: null }
+    return { shown: { number, url: null, merged: null, mergedAt: null, draft: null }, mergeCommit: null }
   }
 }
 

@@ -342,7 +342,7 @@ test('stats <epic> --json reads the comments and git: steps, tokens, rounds, rew
   const stats = JSON.parse(result.stdout)
   assert.equal(stats.epics.length, 1)
   const [epic] = stats.epics
-  assert.deepEqual(epic.releasePullRequest, { number: 12, url: 'https://github.com/o/r/pull/12', merged: true, mergedAt: '2026-10-15T08:00:00Z' })
+  assert.deepEqual(epic.releasePullRequest, { number: 12, url: 'https://github.com/o/r/pull/12', merged: true, mergedAt: '2026-10-15T08:00:00Z', draft: false })
   const [two, three] = epic.tickets
   assert.deepEqual(two.steps, { worker: 600, review: 120, fixes: 180, acceptance: 20, delivery: 600, whole: 4200 })
   assert.equal(two.rework, 2)

@@ -1710,3 +1710,12 @@ test('run-report under Stops: none names what the release pull request\'s latest
   })
   assert.match(flow('run-report', '1').stdout, /\*\*Release pull request:\*\* https:\/\/github\.com\/o\/r\/pull\/40\.\nIts latest pull request round \(2\) left: one thread open on src\/export\.ts; checks pass\.\n$/)
 })
+
+test('run-report says the release pull request is a draft while it is one', () => {
+  reportWorld({
+    epicComments: [rawComment(1, 11, '<!-- flow:release-pr number=40 -->\n**Release pull request opened as a draft:** https://github.com/o/r/pull/40')],
+    extra: { [`GET ${R}/pulls/40`]: { number: 40, html_url: 'https://github.com/o/r/pull/40', state: 'open', draft: true, head: { ref: 'epic/trip-export', sha: 'abc' }, base: { ref: 'main' } } },
+  })
+  assert.match(flow('run-report', '1').stdout, /\*\*Release pull request:\*\* https:\/\/github\.com\/o\/r\/pull\/40, a draft while anything is not built; it is marked ready once every ticket is done\./)
+})
+

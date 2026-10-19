@@ -642,6 +642,24 @@ test('board-sync derives each release epic\'s Release: Building, Pull request op
   assert.deepEqual(released.stdout.trim().split('\n'), ['#40 Release → Released', '0 set, 1 already right, 0 skipped, 1 Release set'])
 })
 
+test('board-sync keeps a release epic at Building while its release pull request is a draft, and moves it to Pull request open once it is ready', () => {
+  const epic = issue(40, { title: 'Trip export', body: epicBody([42]), labels: ['flow:epic', 'flow:approved'] })
+  const pull = (draft) => ({ number: 77, state: 'open', draft, head: { ref: 'epic/trip-export' }, base: { ref: 'main' } })
+  const only = (extra) => ({
+    [`GET ${R}/issues/40`]: epic,
+    [`GET ${R}/issues/40/sub_issues?per_page=100`]: [],
+    [`GET ${R}/issues/40/comments?per_page=100`]: [releaseComment(77)],
+    ...itemsOf(40, [onBoard('PVTI_40', 'OPT_epic', 'PVT_flow', releaseId('Building'))]),
+    ...extra,
+  })
+  boardWorld(only({ [`GET ${R}/pulls/77`]: pull(true) }))
+  const drafted = flow('board-sync', '40')
+  assert.equal(drafted.status, 0, drafted.stderr)
+  assert.deepEqual(drafted.stdout.trim().split('\n'), ['0 set, 1 already right, 0 skipped'])
+  boardWorld(only({ [`GET ${R}/pulls/77`]: pull(false), [setRelease('PVTI_40', releaseId('Pull request open'))]: SET_RESPONSE }))
+  assert.deepEqual(JSON.parse(flow('board-sync', '40', '--json').stdout).releases, [{ number: 40, release: 'Pull request open' }])
+})
+
 test('board-sync on a board with no Release field still sets every Status, and says once that init --board adds the field', () => {
   boardWorld({ [PROJECT_LOOKUP]: projects(project('PVT_flow', 'Flow board', statusField(FLOW_OPTIONS), numberFields())) })
   const result = flow('board-sync')
