@@ -47,6 +47,22 @@ needed that no agent may make, and these are all of them:
    started.
 3. **A merge conflict** with the epic branch.
 
+**Under `Stops: none`** (the epic's `## Settings` says it) in an unattended
+run, nothing stops: the same `FLOW needs-human` **parks** the ticket, with
+the same label and no mention, because the person reads every parked
+ticket once, in the run's report at the end. What each stop becomes there:
+
+1. a gate still failing after two rounds: parked, since no agent may waive
+   a gate;
+2. the ticket contradicting the code, or a CHECK looking wrong: parked; an
+   issue body edited after the start stays a stop under any setting,
+   because whoever edited it is present and acting on it, and the refusal
+   mentions them;
+3. a merge conflict: parked.
+
+Attended, `Stops: none` changes nothing: the person is in the chat, and a
+question costs nothing.
+
 Anything else (a flaky command, a slow review bot, a network error, a dirty
 working tree on the host) is retried, mentioned in a comment, or worked
 around; a stop on infrastructure is a false alarm that teaches people to

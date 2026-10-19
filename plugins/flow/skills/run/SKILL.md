@@ -106,7 +106,10 @@ after two rounds of fixes: the acceptance checks, an Important review
 finding, a pull request thread or check; the plan and the work disagreeing;
 a merge conflict), or when its checks fail at the epic head after merging;
 then it is labelled `flow:needs-human`, its assignee (or the epic's author)
-is mentioned, and the run carries on with the others. A builder that dies
+is mentioned, and the run carries on with the others. Under `Stops: none`
+the ticket is parked instead: the same label, no mention, and the run's
+closing report (`FLOW run-report`) lists it with its reason and mentions
+the epic's people once, at the end. A builder that dies
 without a result (a session limit, a crash) is reset and built again once,
 from its branch; a second death goes to a person. A builder that died after
 its ticket passed acceptance is not built again: the accepted commit is
@@ -139,8 +142,8 @@ When the workflow returns:
    running it again posts nothing twice. A figure the records lack reads
    `unknown`; never estimate one.
 2. Tell the person, in a few lines: built or stopped, the release pull
-   request's URL, and every ticket that needs a person with the one-line
-   reason from its issue (`FLOW board <e>`). Their next step is to review and
+   request's URL, and every ticket that needs a person (or was parked) with
+   the one-line reason from its issue (`FLOW run-report <e>` prints them). Their next step is to review and
    merge the release pull request, or to answer those tickets and run
    `/flow:run #<e>` again: a ticket they fixed and labelled `flow:planned`
    is picked up where its branch left off.

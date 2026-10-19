@@ -95,7 +95,8 @@ test('a serial run builds the ready tickets one per round, each by the skill on 
   assert.match(run.calls.find((call) => call.label === 'check-epic:#1:1').prompt, /check-epic 1 --tickets 2 --mark/, 'a ticket that merged itself is checked at the epic head too')
   assert.match(run.calls.find((call) => call.label === 'post:#1:wave:1').prompt, /<!-- flow:local-run -->\n\*\*Wave 1:\*\*/)
   const end = run.calls.find((call) => call.label === 'post:#1:end')
-  assert.match(end.prompt, /\*\*Run finished: built\.\*\* Release pull request: https:\/\/github\.com\/o\/r\/pull\/40/)
+  assert.match(end.prompt, /flow\.mjs" run-report 1 --post --local --outcome built\n/, 'the closing is read from GitHub by run-report, one text for both hosts')
+  assert.doesNotMatch(end.prompt, /FLOW_TEXT/, 'a built run passes no stop reason')
 })
 
 test('the driver hires the reviewer: the ticket reviewer agent, on its own model, never told what the worker said', async () => {
@@ -205,7 +206,7 @@ test('a worker that stops without a result is reset once and built again; a seco
   assert.equal(run.out.outcome, 'stopped')
   assert.deepEqual(run.out.needsHuman, [2])
   assert.ok(!run.labels.includes('release-pr:#1'))
-  assert.match(run.calls.find((call) => call.label === 'post:#1:end').prompt, /\*\*Run stopped\.\*\* .*These tickets need a person: #2\. Not done: #2\./)
+  assert.match(run.calls.find((call) => call.label === 'post:#1:end').prompt, /run-report 1 --post --local --outcome stopped --file - <<'FLOW_TEXT'\nnothing more can start, and not every ticket is done: two readings of the board from GitHub agreed\nFLOW_TEXT/)
 })
 
 test('a ticket the skill stopped is left to its person, and the run carries on', async () => {
@@ -314,7 +315,7 @@ test('an incremental epic ends built with no release pull request: each ticket h
   const run = await drive((label) => (label.startsWith('next:') ? board({ done: [2], delivery: 'incremental' }) : releaseSteps(label)))
   assert.equal(run.out.outcome, 'built')
   assert.ok(!run.labels.some((label) => /^(check-epic|release-pr|pr-loop):/.test(label)))
-  assert.match(run.calls.find((call) => call.label === 'post:#1:end').prompt, /Every ticket was delivered by its own pull request/)
+  assert.match(run.calls.find((call) => call.label === 'post:#1:end').prompt, /run-report 1 --post --local --outcome built\n/)
 })
 
 test('the release pull request loop runs a second round only after a round that pushed fixes', async () => {
@@ -450,7 +451,7 @@ test('two readings that agree the epic is not approved stop the run, and the rea
   const run = await drive((label) => (label.startsWith('next:') ? board({ approved: false, exitCode: 1 }) : releaseSteps(label)))
   assert.deepEqual(run.labels.slice(0, 2), ['next:#1:1', 'next:#1:1:again'])
   assert.equal(run.out.stopReason, 'epic #1 is not approved: two readings of the board from GitHub agreed')
-  assert.match(run.calls.find((call) => call.label === 'post:#1:end').prompt, /\*\*Run stopped\.\*\* Epic #1 is not approved: two readings of the board from GitHub agreed\./)
+  assert.match(run.calls.find((call) => call.label === 'post:#1:end').prompt, /--outcome stopped --file - <<'FLOW_TEXT'\nepic #1 is not approved: two readings of the board from GitHub agreed\nFLOW_TEXT/)
 })
 
 test('a final reading that says not built is checked by a second before the run gives up on the release', async () => {

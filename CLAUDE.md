@@ -26,7 +26,7 @@ epic). "Direct" or "without Flow" always overrides it.
   `create-ticket`, `link`, `needs-human`), one ticket's steps (`start`,
   `accept`, `handoff`, `deliver`, `screenshots`, `meter`, `reset`), the pull-request
   loop (`pr-*`) and a whole epic (`dispatch`, `worktree`, `merge`,
-  `check-epic`, `release-pr`, `design-map`), findings before they are
+  `check-epic`, `release-pr`, `design-map`, `run-report`), findings before they are
   tickets (`create-finding`, `found`, `promote`, `reject`,
   `retro-fingerprint`), the project
   board (`board-sync`), and looking back (`stats`, `report`).
@@ -72,23 +72,23 @@ Every suite needs Node ≥ 20 and nothing else unless noted; pass each test
 file path explicitly (`node --test <directory>` finds nothing here). Counts
 as of 2026-10-19; the pass count grows, the fail line stays `# fail 0`.
 
-- `node --test plugins/flow/scripts/flow.test.mjs` — `# pass 79`. The CLI
+- `node --test plugins/flow/scripts/flow.test.mjs` — `# pass 85`. The CLI
   end to end against the fake `gh`; one case needs `git` on PATH.
 - `node --test plugins/flow/scripts/lifecycle.test.mjs` — `# pass 39`. The
   ticket steps in throwaway repositories with a bare remote; needs `git`, `sh`.
 - `node --test plugins/flow/scripts/epic-run.test.mjs` — `# pass 37`. The
   whole-epic commands, the same way.
-- `pull-request.test.mjs` `# pass 20`, `issue-body.test.mjs` `# pass 29`,
+- `pull-request.test.mjs` `# pass 20`, `issue-body.test.mjs` `# pass 30`,
   `checks.test.mjs` `# pass 27` (real shell commands in a temp dir),
   `tracker/github.test.mjs` `# pass 37`, `fidelity.test.mjs` `# pass 54`,
-  `stats.test.mjs` `# pass 15` (needs `git`), `project-sync.test.mjs`
+  `stats.test.mjs` `# pass 16` (needs `git`), `project-sync.test.mjs`
   `# pass 34` (needs `git`), under `plugins/flow/scripts/`.
 - `node --test plugins/flow/scripts/meter.test.mjs` — `# pass 18`. Builds
   its transcripts; no test reads a real one (they belong to whoever ran them).
 - `node --test plugins/flow/scripts/worktree-setup.test.mjs` — `# pass 19`;
   needs `git`, POSIX `sh` and `sleep`.
 - `node --test plugins/flow/workflows/run-epic.test.mjs` — `# pass 35`
-  (stubbed `agent`, no git), `plugins/flow/github/flow.test.mjs` `# pass 14`.
+  (stubbed `agent`, no git), `plugins/flow/github/flow.test.mjs` `# pass 15`.
 - `node --test tools/reporter/reporter.test.mjs` — `# pass 31`. The
   extension's modules under a stubbed `fetch`. It is also their syntax
   check: plain `node --check` reads a `.js` file with no package.json as
@@ -183,6 +183,11 @@ CI (`.github/workflows/tests.yml`) runs every suite and check above.
   rounds of fixes (acceptance, review, pull request; `accept` counts review
   rounds), plan and work disagreeing, or a merge conflict; an epic also for
   checks failing at its head after merging. Infrastructure halts are noise.
+  Under `Stops: none` (unattended only) nothing stops: an agent decides
+  where it may and records it (a departure, a dispute, a resolved
+  conflict), what it may not decide is parked without a mention, and the
+  person reads every decision once on the release pull request, which
+  opens as a draft while anything is parked.
 - **The run driver re-reads GitHub and trusts no agent's report.** Each
   round starts from `flow next`; an agent's answer only routes the next step,
   never names a commit to merge, and every gate is a command that reads the

@@ -5,12 +5,14 @@ import {
   REVIEW_MARKER,
   RESET_MARKER,
   RELEASE_PR_MARKER,
-  NEEDS_HUMAN_MARKER,
-  NEEDS_HUMAN_LEAD,
+  isStopComment,
+  isParkedComment,
+  stopText,
   SERIAL_WAVE_MARKER,
   PULL_REQUEST_COMMENT,
   LOCAL_RUN_END_MARKER,
   HANDOFF_MARKER,
+  RUN_STOPPED_LEAD,
 } from './ticket-steps.mjs'
 import { readMeterComment, EFFORT_NAME, MODEL_NAME, ROLES, UNNAMED_MODEL } from './meter.mjs'
 
@@ -20,7 +22,6 @@ const ROLE_OF_STEP = { worker: 'worker', review: 'reviewer', fixes: 'fixes' }
 const REVIEW_FIX = /\(review fix\)\s*$/
 const FIXES = /\(fixes #(\d+)\)\s*$/
 const TICKET_PREFIX = /^#(\d+):/
-const RUN_STOPPED_LEAD = '**Run stopped.**'
 const SECONDS_PER_DAY = 86400
 const START_BASE = /\bat `([0-9a-f]{7,40})`/
 
@@ -100,19 +101,6 @@ function evidence(comment) {
   return { at: comment.createdAt || null, author: comment.author || null, url: comment.url || null }
 }
 
-function stopReason(body) {
-  const withoutMarker = body.startsWith(NEEDS_HUMAN_MARKER) ? body.slice(NEEDS_HUMAN_MARKER.length).trimStart() : body
-  return withoutMarker
-    .slice(NEEDS_HUMAN_LEAD.length)
-    .trim()
-    .replace(/^(?:@[\w-]+(?:\[bot\])?\s+)+/, '')
-    .trim()
-}
-
-function isStop(body) {
-  return body.startsWith(NEEDS_HUMAN_MARKER) || body.startsWith(NEEDS_HUMAN_LEAD)
-}
-
 function readTicketComments(comments) {
   const starts = []
   const acceptances = []
@@ -128,7 +116,7 @@ function readTicketComments(comments) {
     if (body.startsWith(HANDOFF_MARKER)) handoff = true
     if (body.startsWith(STARTED_MARKER)) starts.push(comment)
     if (body.startsWith(RESET_MARKER)) resets++
-    if (isStop(body)) stops.push({ ...evidence(comment), reason: stopReason(body) })
+    if (isStopComment(body)) stops.push({ ...evidence(comment), reason: stopText(body), parked: isParkedComment(body) })
     if (PULL_REQUEST_COMMENT.test(body)) pullRequestComments.push(comment)
     const acceptance = body.match(ACCEPTANCE_MARKER)
     if (acceptance) acceptances.push({ comment, sha: acceptance[1], passed: acceptance[2] === 'true', seconds: acceptance[3] === undefined ? null : Number(acceptance[3]) })
@@ -245,7 +233,7 @@ export function readEpicComments(comments) {
     }
     const lines = body.split('\n')
     const lead = lines[0] === LOCAL_RUN_END_MARKER ? lines.slice(1).join('\n') : body
-    if (lead.startsWith(RUN_STOPPED_LEAD)) runStops.push({ ...evidence(comment), reason: lead.slice(RUN_STOPPED_LEAD.length).trim() })
+    if (lead.startsWith(RUN_STOPPED_LEAD)) runStops.push({ ...evidence(comment), reason: lead.slice(RUN_STOPPED_LEAD.length).trim().split('\n')[0].trim() })
     const release = body.match(RELEASE_PR_MARKER)
     if (release) releasePullRequest = Number(release[1])
   }

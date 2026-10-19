@@ -204,6 +204,7 @@ export function nextSteps(epic) {
     problems: epic.problems,
     delivery: epic.settings.delivery,
     parallel: epic.settings.parallel,
+    stops: epic.settings.stops,
     branch: epic.settings.branch,
     tickets: epic.tickets.map((ticket) => ({ n: ticket.number, title: ticket.title, tier: ticket.tier, model: MODEL_BY_TIER[ticket.tier], state: ticket.shownState, startRequested: ticket.labels.includes(START_LABEL) })),
   }

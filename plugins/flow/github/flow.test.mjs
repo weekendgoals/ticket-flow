@@ -71,6 +71,14 @@ test('the scheduler never runs Claude, labels with FLOW_TOKEN so the label start
   assert.match(run, /\$FLOW pr-review-request "\$pr"/)
 })
 
+test('the scheduler\'s closing is run-report, the text the local driver posts too: on a stopped epic always, and on a built one under Stops: none, which mentions nobody before the end', () => {
+  const run = step('epic', (entry) => entry.run && /dispatch/.test(entry.run)).run
+  assert.match(run, /stops="\$\(echo "\$dispatched" \| jq -r '\.stops'\)"/)
+  assert.match(run, /elif \[ "\$state" = "stopped" \]; then\n\s*\$FLOW run-report "\$EPIC" --post --outcome stopped --text "nothing is ready and nothing is in progress"\n/)
+  assert.match(run, /if \[ "\$stops" = "none" \]; then \$FLOW run-report "\$EPIC" --post --outcome built; fi/)
+  assert.doesNotMatch(run, /\$FLOW post "\$EPIC"/, 'no second text for the closing')
+})
+
 test('the pull request job answers reviews and failed checks on ticket and epic branches through the ticket skill\'s loop', () => {
   assert.match(workflow.jobs.pr.if, /startsWith\(github\.event\.pull_request\.head\.ref, 'ticket\/'\)/)
   assert.match(workflow.jobs.pr.if, /startsWith\(github\.event\.check_suite\.head_branch, 'epic\/'\)/)

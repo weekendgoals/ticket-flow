@@ -77,6 +77,14 @@ test('a cost comment whose roles are null or not objects reads as those roles ab
   assert.deepEqual([record.steps.worker, record.tokens.input, record.roleModels.worker, record.effort.worker], [null, null, null, null])
 })
 
+test('a parked ticket is a stop in the figures, with its reason and marked parked, and a run report counts as a run stop by its first line', () => {
+  const parked = '<!-- flow:needs-human -->\n**This ticket is parked.** The epic branch conflicts in README.md.'
+  const record = ticketStats({ ticket: { number: 2, title: 'Export', state: 'needs-human', tier: 'hard' }, comments: [comment(parked, '2026-10-14T10:30:00Z', { id: 3 })] })
+  assert.deepEqual(record.stops.map(({ reason, parked: wasParked }) => [reason, wasParked]), [['The epic branch conflicts in README.md.', true]])
+  const report = '<!-- flow:local-run-end -->\n**Run stopped.** Nothing more can start.\n\n@ana Under `Stops: none` this run asked nobody while it ran.\n\n**Built:** none.'
+  assert.deepEqual(readEpicComments([comment(report, '2026-10-14T12:00:00Z', { id: 4 })]).runStops.map((stop) => stop.reason), ['Nothing more can start.'])
+})
+
 test('a ticket record: time per step from the cost comment and the step comments, rounds, findings and the reason it stopped', () => {
   const comments = [
     comment(started, '2026-10-14T10:00:00Z', { id: 1 }),
@@ -98,7 +106,7 @@ test('a ticket record: time per step from the cost comment and the step comments
   assert.equal(record.failedAcceptances, 1)
   assert.equal(record.resets, 1)
   assert.equal(record.compactions, 1)
-  assert.deepEqual(record.stops, [{ at: '2026-10-14T10:30:00Z', author: 'flow-bot', url: 'https://github.com/o/r/issues/2#issuecomment-3', reason: 'Two rounds and the export still fails.' }])
+  assert.deepEqual(record.stops, [{ at: '2026-10-14T10:30:00Z', author: 'flow-bot', url: 'https://github.com/o/r/issues/2#issuecomment-3', reason: 'Two rounds and the export still fails.', parked: false }])
   assert.equal(record.rework, null, 'no git was read, so rework is unknown, not zero')
   assert.equal(record.escapes, null)
 })

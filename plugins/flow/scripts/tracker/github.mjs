@@ -260,6 +260,7 @@ function normalizePullRequest(raw) {
     number: raw.number,
     url: raw.html_url || null,
     state: raw.state,
+    draft: Boolean(raw.draft),
     head: raw.head ? raw.head.ref : null,
     headSha: raw.head ? raw.head.sha : null,
     base: raw.base ? raw.base.ref : null,

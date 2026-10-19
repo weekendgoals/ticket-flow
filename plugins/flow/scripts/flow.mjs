@@ -29,6 +29,7 @@ import {
 } from './delivery.mjs'
 import {
   isUnattended,
+  parksInstead,
   hostName,
   startRefusal,
   deliveryFor,
@@ -60,6 +61,9 @@ import {
   releaseCheckRefusal,
   handoffComment,
   lastHandoff,
+  lastStop,
+  lastReleasePullRequest,
+  runReport,
   MAX_HANDOFF_LENGTH,
 } from './ticket-steps.mjs'
 import { loadSources, workflowSources, workflowRuns, meterTranscripts, meterComment, readMeterComment } from './meter.mjs'
@@ -174,6 +178,10 @@ const USAGE = `usage: flow <command>
   release-pr <epic> [--cwd <dir>]        open the epic's one pull request once every ticket is done and the latest
                                          check-epic passed at the epic branch's head
   design-map <epic> [--out <file>]       write the epic's design map for the design comparison
+  run-report <epic> [--outcome built|stopped] [--text "<why it stopped>" | --file <md>] [--local] [--post]
+                                         the run's closing report, from the epic and its tickets' comments (--post: also post it
+                                         on the epic; --local: as the end of a /flow:run). Under Stops: none it lists what was
+                                         built, parked and decided, and mentions the epic's people once
 
   stats [<epic>] [--since <date>] [--json] [--cwd <dir>]
                                          how the work went: time per step, tokens per model, review rounds,
@@ -188,9 +196,9 @@ const USAGE = `usage: flow <command>
                                          the pages to visit: same site only, deduplicated, no "deny" match, capped, as JSON
   qa-fingerprint <url> "<first line>"    the fingerprint a QA finding is filed with: the page's path and the normalised line`
 
-const VALUE_FLAGS = new Set(['--file', '--epic-file', '--text', '--title', '--tier', '--cwd', '--blocked-by', '--bot', '--timeout', '--interval', '--sha', '--epic', '--tickets', '--out', '--workflow', '--important', '--grace', '--since', '--repo', '--head', '--screenshots', '--fingerprint', '--routes', '--links', '--cap', '--widths'])
+const VALUE_FLAGS = new Set(['--file', '--epic-file', '--text', '--title', '--tier', '--cwd', '--blocked-by', '--bot', '--timeout', '--interval', '--sha', '--epic', '--tickets', '--out', '--workflow', '--important', '--grace', '--since', '--repo', '--head', '--screenshots', '--fingerprint', '--routes', '--links', '--cap', '--widths', '--outcome'])
 const REPEATABLE_FLAGS = new Set(['--transcripts', '--sitemap'])
-const BOOLEAN_FLAGS = new Set(['--board', '--json', '--no-epic', '--print', '--wait', '--once', '--mark', '--remove', '--review', '--all'])
+const BOOLEAN_FLAGS = new Set(['--board', '--json', '--no-epic', '--print', '--wait', '--once', '--mark', '--remove', '--review', '--all', '--local', '--post'])
 const DEFAULT_WAIT_SECONDS = 1800
 const DEFAULT_POLL_SECONDS = 30
 const DEFAULT_SCREENSHOTS_DIR = '.flow/screenshots/{n}'
@@ -524,7 +532,7 @@ function commandBoard(positional, flags) {
     const defaultBranch = github.defaultBranch()
     if (flags.json) return printJson({ defaultBranch, ...epic })
     console.log(`#${epic.number} ${epic.title}`)
-    console.log(`${epic.approved ? 'approved' : 'not approved'} · branch ${epic.settings.branch || '(none set)'} from ${defaultBranch || '(unknown default branch)'} · ${epic.settings.delivery || 'unreadable'} delivery · parallel ${epic.settings.parallel ?? 'unreadable'}`)
+    console.log(`${epic.approved ? 'approved' : 'not approved'} · branch ${epic.settings.branch || '(none set)'} from ${defaultBranch || '(unknown default branch)'} · ${epic.settings.delivery || 'unreadable'} delivery · parallel ${epic.settings.parallel ?? 'unreadable'} · stops ${epic.settings.stops ?? 'unreadable'}`)
     console.log('')
     if (!epic.tickets.length) console.log('no tickets')
     else
@@ -890,9 +898,15 @@ function commandLink(positional) {
   return 0
 }
 
+function stopsOf(epicIssue) {
+  if (!epicIssue || !epicIssue.labels.includes(EPIC_LABEL)) return 'ask'
+  return parseEpicBody(epicIssue.body).settings.stops
+}
+
 function markNeedsHuman(number, text, details = '') {
-  const { issue, epicAuthor } = loadTicket(number)
+  const { issue, epicAuthor, epicIssue } = loadTicket(number)
   const people = issue.assignees.length ? issue.assignees : [epicAuthor || issue.author].filter(Boolean)
+  const parked = parksInstead(stopsOf(epicIssue))
   const already = issue.labels.includes(NEEDS_HUMAN_LABEL)
   const { reopened } = changeState(number, {
     add: already ? [] : [NEEDS_HUMAN_LABEL],
@@ -901,7 +915,7 @@ function markNeedsHuman(number, text, details = '') {
     reopen: issue.state === 'closed',
   })
   const sentence = reopened ? `${text} It was closed as done and is open again, since a closed ticket carries no work.` : text
-  return github.comment(number, needsHumanComment({ people, text: details ? `${sentence}\n\n${details}` : sentence }))
+  return github.comment(number, needsHumanComment({ people, parked, text: details ? `${sentence}\n\n${details}` : sentence }))
 }
 
 function commandNeedsHuman(positional, flags) {
@@ -909,6 +923,7 @@ function commandNeedsHuman(positional, flags) {
   if (!flags.text) throw new UsageError('needs-human needs --text "<why>"')
   const posted = markNeedsHuman(number, flags.text)
   console.log(posted.url || `#${number} marked ${NEEDS_HUMAN_LABEL}`)
+  return 0
 }
 
 const HANDOFF_STATES = new Set(['in-review', 'done'])
@@ -1749,6 +1764,56 @@ function commandReleasePr(positional, flags) {
   return 0
 }
 
+const RUN_OUTCOMES = new Set(['built', 'stopped'])
+
+function releasePullRequestShown(number) {
+  if (!number) return null
+  try {
+    const pullRequest = github.getPullRequest(number)
+    return { number, url: pullRequest.url, draft: pullRequest.draft }
+  } catch (error) {
+    if (!(error instanceof TrackerError) || error.missing) throw error
+    return { number, url: null, draft: null }
+  }
+}
+
+function commandRunReport(positional, flags) {
+  const epicNumber = issueNumber(positional[0], 'an epic number')
+  if (flags.outcome !== undefined && !RUN_OUTCOMES.has(flags.outcome)) throw new UsageError(`--outcome must be built or stopped, got "${flags.outcome}"`)
+  const reason = flags.file !== undefined || flags.text !== undefined ? normalizeNewlines(readText(flags)).trim() || null : null
+  const epicIssue = github.getIssue(epicNumber)
+  if (!epicIssue.labels.includes(EPIC_LABEL)) throw new UsageError(`#${epicNumber} is not an epic (it has no ${EPIC_LABEL} label)`)
+  const epic = deriveEpic(epicIssue, github.listSubIssues(epicNumber))
+  const account = github.viewerLogin()
+  const tickets = epic.tickets.map((ticket) => {
+    const comments = github.listComments(ticket.number)
+    return {
+      number: ticket.number,
+      title: ticket.title,
+      state: ticket.shownState,
+      unfinishedBlockers: ticket.unfinishedBlockers,
+      stop: ticket.state === 'needs-human' ? lastStop(comments, account) : null,
+    }
+  })
+  const allDone = epic.tickets.length > 0 && epic.tickets.every((ticket) => ticket.state === 'done')
+  const text = runReport({
+    stops: epic.settings.stops,
+    outcome: flags.outcome || (allDone ? 'built' : 'stopped'),
+    reason,
+    delivery: deliveryFor(epic),
+    tickets,
+    releasePullRequest: releasePullRequestShown(lastReleasePullRequest(github.listComments(epicNumber), account)),
+    people: epicIssue.assignees.length ? epicIssue.assignees : [epicIssue.author].filter(Boolean),
+    local: Boolean(flags.local),
+  })
+  console.log(text)
+  if (flags.post) {
+    const posted = github.comment(epicNumber, text)
+    process.stderr.write(`${posted.url || `posted on #${epicNumber}`}\n`)
+  }
+  return 0
+}
+
 function commandDesignMap(positional, flags) {
   const epicNumber = issueNumber(positional[0], 'an epic number')
   const epicIssue = github.getIssue(epicNumber)
@@ -1795,7 +1860,7 @@ function commandDispatch(positional) {
   for (const number of started) github.addLabels(number, [START_LABEL])
   const busy = result.inProgress.length + flagged.length + started.length
   const state = busy ? 'running' : !epic.tickets.length ? 'empty' : epic.tickets.every((ticket) => ticket.state === 'done') ? 'built' : 'stopped'
-  printJson({ epic: epic.number, parallel: width, started, alreadyAsked: flagged, inProgress: result.inProgress, needsHuman: result.needsHuman, state })
+  printJson({ epic: epic.number, parallel: width, stops: epic.settings.stops, started, alreadyAsked: flagged, inProgress: result.inProgress, needsHuman: result.needsHuman, state })
   return 0
 }
 
@@ -2292,6 +2357,8 @@ function main(argv) {
       return commandReleasePr(positional, flags)
     case 'design-map':
       return commandDesignMap(positional, flags)
+    case 'run-report':
+      return commandRunReport(positional, flags)
     case 'dispatch':
       return commandDispatch(positional)
     case 'stats':

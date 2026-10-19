@@ -149,3 +149,20 @@ A name that looks unchanged is not proof that what points at it still
 holds: an API that replaces a list may rebuild every entry in it. Before
 writing to a shared record, ask what refers to the thing being replaced,
 and test the references, not the names.
+
+## A stop costs a context switch, and the decision can wait for the pull request
+
+2026-10-19, epic #433 in weekendgoals. One six-ticket unattended run
+stopped seven times. Two were false (Flow 3.4 removed them); of the five
+real ones, three were plan mistakes a plan reviewer now catches. Each stop
+cost the person a context switch, about an hour of waiting in all, and
+each ended the run short of its release pull request, so the work waited
+for the person's next look.
+
+What it teaches: the person reads the release pull request anyway, so most
+decisions can wait there. Under `Stops: none` an agent decides what it may
+and records it on the ticket, what it may not decide is parked without a
+mention while the run builds everything else, and the person is told once,
+at the end. A project that wants a person in the loop keeps `ask`, and an
+attended session always asks, because a question in the chat costs
+nothing.

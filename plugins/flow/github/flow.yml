@@ -194,13 +194,17 @@ jobs:
           dispatched="$($FLOW dispatch "$EPIC")"
           echo "$dispatched"
           state="$(echo "$dispatched" | jq -r '.state')"
-          if [ "$state" = "built" ] && [ "$($FLOW next "$EPIC" | jq -r '.delivery')" = "release" ]; then
-            $FLOW check-epic "$EPIC" --mark || exit 1
-            opened="$($FLOW release-pr "$EPIC")" || exit 1
-            pr="$(echo "$opened" | jq -r '.pullRequest')"
-            $FLOW pr-review-request "$pr" || true
+          stops="$(echo "$dispatched" | jq -r '.stops')"
+          if [ "$state" = "built" ]; then
+            if [ "$($FLOW next "$EPIC" | jq -r '.delivery')" = "release" ]; then
+              $FLOW check-epic "$EPIC" --mark || exit 1
+              opened="$($FLOW release-pr "$EPIC")" || exit 1
+              pr="$(echo "$opened" | jq -r '.pullRequest')"
+              $FLOW pr-review-request "$pr" || true
+            fi
+            if [ "$stops" = "none" ]; then $FLOW run-report "$EPIC" --post --outcome built; fi
           elif [ "$state" = "stopped" ]; then
-            $FLOW post "$EPIC" --text "**Run stopped.** Nothing is ready and nothing is in progress; the tickets labelled flow:needs-human say why."
+            $FLOW run-report "$EPIC" --post --outcome stopped --text "nothing is ready and nothing is in progress"
           fi
 
   # After a person merges into the default branch, no code work runs: what runs is the GitHub Action's `board` job, which closes `flow:done` tickets left open and writes the project board (Status, Release, figures), and the report page's rebuild, which only reads. It builds, merges and pushes nothing, and changes no label.

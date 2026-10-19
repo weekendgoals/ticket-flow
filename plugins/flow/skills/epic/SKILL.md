@@ -108,7 +108,11 @@ chat, compactly:
 4. **What runs side by side**: which tickets can be built at the same time,
    and the `Parallel:` setting you propose (1, 2 or 3). Two tickets can run
    together only if neither waits for the other and they do not edit the same
-   files.
+   files. In the same breath, ask which `Stops:` they want for a run
+   with nobody watching: `ask` (a ticket that needs a decision stops and
+   mentions them) or `none` (nothing stops: an agent decides where it may
+   and records it, the rest is parked, and the release pull request is
+   where they read what was decided).
 5. **Delivery**: `release` (the default: every ticket merges into one epic
    branch, and one pull request goes to the default branch at the end) or
    `incremental` (each ticket opens its own pull request to the default
@@ -142,6 +146,7 @@ position: issue numbers do not exist yet.
 
 Delivery: release
 Parallel: 1
+Stops: ask
 Branch: epic/<short-name>
 Design sources: <repository paths of design files, comma-separated; omit the line when there is no design>
 Consequence paths: <globs where a mistake is expensive, e.g. src/auth/**, migrations/**; omit when none>
@@ -188,6 +193,11 @@ that decided it: only the plan may say an element is not built, never the
 ticket that failed to build it. The comparison reads the map with
 `FLOW design-map <epic> --out <file>`, and `FLOW create-epic` refuses a map
 it cannot read.
+
+`Stops:` is what an unattended run does with a decision no agent may make:
+`ask` stops the ticket and mentions a person; `none` stops nothing, parks
+what no agent may decide and reports everything once at the end. Write the
+one the user chose in step 3.
 
 Leave `## Tickets` empty: `create-ticket` adds each ticket there as it is
 created. One `Key: value` per settings line; `FLOW create-epic` refuses
@@ -329,7 +339,10 @@ Show the user, in this order:
    and its questions.
 6. With `Delivery: release`, say plainly: "after your approval, the tickets
    are built, reviewed and merged into the epic branch without asking you;
-   your next decision is the pull request at the end."
+   your next decision is the pull request at the end." With `Stops: none`,
+   add: "nothing stops for you while it runs; what an agent decided and
+   what it parked is in the run's report and on the release pull
+   request."
 
 **Ask: "Create this on GitHub?" and wait.** Nothing is created before a yes.
 If the user wants a teammate to approve on GitHub instead, create everything
@@ -434,6 +447,7 @@ time. There is nothing to research, split or review, so there is one stop.
 
    Delivery: incremental
    Parallel: 1
+   Stops: ask
 
    ## Ground rules
 
@@ -445,7 +459,8 @@ time. There is nothing to research, split or review, so there is one stop.
    ## Tickets
    ```
 
-   `Delivery: incremental` and **no `Branch:` line**: each ticket is built
+   `Stops: ask`, because each fix is its own small pull request, so a stop
+   holds back nothing else. `Delivery: incremental` and **no `Branch:` line**: each ticket is built
    from the default branch and opens its own pull request, because bug fixes
    arrive one at a time and must not wait for each other in one release.
    `## Tickets` stays empty; `promote` lists each ticket there.

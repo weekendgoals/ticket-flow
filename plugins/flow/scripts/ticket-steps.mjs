@@ -13,6 +13,7 @@ export const RELEASE_CHECK_MARKER = /^<!-- flow:release-check head=([0-9a-f]{7,4
 export const RELEASE_PR_MARKER = /^<!-- flow:release-pr number=(\d+) -->/
 export const NEEDS_HUMAN_MARKER = '<!-- flow:needs-human -->'
 export const NEEDS_HUMAN_LEAD = '**This ticket needs a person.**'
+export const PARKED_LEAD = '**This ticket is parked.**'
 export const SERIAL_WAVE_MARKER = /^<!-- flow:serial wave=([\w:-]+) tickets=(\d+(?:,\d+)*) -->$/m
 export const PULL_REQUEST_COMMENT = /^\*\*Pull request (opened|already open|round \d+):?\*\*/
 export const UNATTENDED_VARIABLE = 'FLOW_UNATTENDED'
@@ -22,6 +23,10 @@ export const MAX_HANDOFF_LENGTH = 1200
 
 export function isUnattended(environment = process.env) {
   return environment[UNATTENDED_VARIABLE] === '1'
+}
+
+export function parksInstead(stops, environment = process.env) {
+  return stops === 'none' && isUnattended(environment)
 }
 
 export function hostName(environment = process.env) {
@@ -260,12 +265,98 @@ export function acceptanceComment({ sha, report, seconds = null }) {
   return lines.join('\n')
 }
 
-export function needsHumanComment({ people, text }) {
+export function needsHumanComment({ people, text, parked = false }) {
+  if (parked) return `${NEEDS_HUMAN_MARKER}\n${PARKED_LEAD} ${text}`
   const mention = people.map((login) => `@${login}`).join(' ')
   return `${NEEDS_HUMAN_MARKER}\n${NEEDS_HUMAN_LEAD} ${mention ? `${mention} ` : ''}${text}`
+}
+
+export function isStopComment(body) {
+  return body.startsWith(NEEDS_HUMAN_MARKER) || body.startsWith(NEEDS_HUMAN_LEAD) || body.startsWith(PARKED_LEAD)
+}
+
+export function stopText(body) {
+  const withoutMarker = body.startsWith(NEEDS_HUMAN_MARKER) ? body.slice(NEEDS_HUMAN_MARKER.length).trimStart() : body
+  const lead = [NEEDS_HUMAN_LEAD, PARKED_LEAD].find((candidate) => withoutMarker.startsWith(candidate)) || ''
+  return withoutMarker
+    .slice(lead.length)
+    .trim()
+    .replace(/^(?:@[\w-]+(?:\[bot\])?\s+)+/, '')
+    .trim()
+}
+
+export function isParkedComment(body) {
+  const withoutMarker = body.startsWith(NEEDS_HUMAN_MARKER) ? body.slice(NEEDS_HUMAN_MARKER.length).trimStart() : body
+  return withoutMarker.startsWith(PARKED_LEAD)
+}
+
+export function lastStop(comments, author) {
+  const found = byAuthor(comments, author).filter((comment) => isStopComment(comment.body))
+  if (!found.length) return null
+  const latest = found[found.length - 1]
+  return { reason: stopText(latest.body).split('\n')[0].trim(), parked: isParkedComment(latest.body), url: latest.url || null }
 }
 
 export function editedRefusal({ edits, startedAt }) {
   const who = edits.map((edit) => `${edit.editor ? `@${edit.editor}` : 'someone'} at ${edit.editedAt}`).join(', ')
   return `**Acceptance refused:** the issue body, which holds the acceptance criteria, was edited after work started (${startedAt}) by ${who}. The criteria are the gate, so a person has to confirm the edit before this ticket can pass.`
+}
+
+export const RUN_FINISHED_LEAD = '**Run finished: built.**'
+export const RUN_STOPPED_LEAD = '**Run stopped.**'
+
+export function lastReleasePullRequest(comments, author) {
+  const found = lastMatch(comments, author, RELEASE_PR_MARKER)
+  return found ? Number(found.match[1]) : null
+}
+
+function asSentence(text) {
+  const trimmed = String(text).trim()
+  const capital = `${trimmed[0].toUpperCase()}${trimmed.slice(1)}`
+  return /[.!?]$/.test(capital) ? capital : `${capital}.`
+}
+
+function numbered(tickets) {
+  return tickets.map((ticket) => `#${ticket.number}`).join(', ')
+}
+
+function named(ticket) {
+  return `#${ticket.number} ${ticket.title}`
+}
+
+function notBuiltState(ticket) {
+  if (ticket.unfinishedBlockers && ticket.unfinishedBlockers.length && ['planned', 'waiting'].includes(ticket.state)) return `waiting for ${numbered(ticket.unfinishedBlockers.map((number) => ({ number })))}`
+  return ticket.state
+}
+
+function askReport({ outcome, reason, delivery, tickets, releasePullRequest }) {
+  if (outcome === 'built') {
+    if (releasePullRequest) return `${RUN_FINISHED_LEAD} Release pull request: ${releasePullRequest.url}. A person reviews and merges it.`
+    return `${RUN_FINISHED_LEAD}${delivery === 'incremental' ? ' Every ticket was delivered by its own pull request.' : ''}`
+  }
+  const waiting = tickets.filter((ticket) => ticket.state === 'needs-human')
+  const notDone = tickets.filter((ticket) => ticket.state !== 'done')
+  return `${RUN_STOPPED_LEAD} ${reason ? asSentence(reason) : 'Nothing more can start.'}${waiting.length ? ` These tickets need a person: ${numbered(waiting)}.` : ''}${notDone.length ? ` Not done: ${numbered(notDone)}.` : ''}`
+}
+
+function noStopsReport({ outcome, reason, tickets, releasePullRequest, people }) {
+  const lead = outcome === 'built' ? RUN_FINISHED_LEAD : `${RUN_STOPPED_LEAD} ${reason ? asSentence(reason) : 'Nothing more can start.'}`
+  const mention = people.map((login) => `@${login}`).join(' ')
+  const lines = [lead, '', `${mention ? `${mention} ` : ''}Under \`Stops: none\` this run asked nobody while it ran: what it decided and what it parked is below, to read once, here and on the release pull request.`]
+  const built = tickets.filter((ticket) => ticket.state === 'done')
+  const parked = tickets.filter((ticket) => ticket.state === 'needs-human')
+  const notBuilt = tickets.filter((ticket) => ticket.state !== 'done' && ticket.state !== 'needs-human')
+  lines.push('', `**Built:** ${built.length ? built.map(named).join(', ') : 'none'}.`)
+  if (parked.length) {
+    lines.push('', '**Parked**, for a person to decide (relabel a ticket `flow:planned` to have it built again from its branch):')
+    for (const ticket of parked) lines.push(`- ${named(ticket)}: ${ticket.stop && ticket.stop.reason ? ticket.stop.reason : 'no parking comment from this account'}`)
+  } else lines.push('', '**Parked:** none.')
+  if (notBuilt.length) lines.push('', `**Not built:** ${notBuilt.map((ticket) => `${named(ticket)} (${notBuiltState(ticket)})`).join(', ')}.`)
+  lines.push('', `**Release pull request:** ${releasePullRequest ? releasePullRequest.url || `#${releasePullRequest.number}` : 'none opened'}.`)
+  return lines.join('\n')
+}
+
+export function runReport({ stops, outcome, reason = null, delivery, tickets, releasePullRequest = null, people = [], local = false }) {
+  const text = stops === 'none' ? noStopsReport({ outcome, reason, tickets, releasePullRequest, people }) : askReport({ outcome, reason, delivery, tickets, releasePullRequest })
+  return local ? `${LOCAL_RUN_END_MARKER}\n${text}` : text
 }

@@ -25,7 +25,6 @@ const PROXY = { model: 'sonnet', effort: 'low' }
 const WORKER_MODELS = new Set(['sonnet', 'opus'])
 const MAX_IDLE_ROUNDS = 3
 const LOCAL_RUN_MARKER = '<!-- flow:local-run -->'
-const LOCAL_RUN_END_MARKER = '<!-- flow:local-run-end -->'
 
 const COMMAND_SCHEMA = {
   type: 'object',
@@ -519,11 +518,12 @@ if (built && final.delivery !== 'incremental') {
 }
 
 const needsHuman = final ? final.needsHuman : []
-const closing =
-  outcome === 'built'
-    ? `**Run finished: built.**${releasePullRequest ? ` Release pull request: ${releasePullRequest.url}. A person reviews and merges it.` : ' Every ticket was delivered by its own pull request.'}`
-    : `**Run stopped.** ${stopReason ? `${stopReason[0].toUpperCase()}${stopReason.slice(1)}.` : 'Nothing more can start.'}${needsHuman.length ? ` These tickets need a person: ${needsHuman.map((ticket) => `#${ticket}`).join(', ')}.` : ''}${ticketsLeft.length ? ` Not done: ${ticketsLeft.map((ticket) => `#${ticket}`).join(', ')}.` : ''}`
-await postOnEpic(`${LOCAL_RUN_END_MARKER}\n${closing}`, `post:#${epic}:end`)
-log(closing.replace(/\*\*/g, ''))
+const reasonText = stopReason && outcome !== 'built' ? ` --file - <<'FLOW_TEXT'\n${stopReason}\nFLOW_TEXT` : ''
+const report = await runCommand(
+  `${FLOW} run-report ${epic} --post --local --outcome ${outcome}${reasonText}`,
+  `post:#${epic}:end`,
+  'It posts the run\'s closing report on the epic issue, read from the epic and its tickets, and prints it.',
+)
+log(`run ${outcome}${stopReason && outcome !== 'built' ? `: ${stopReason}` : ''}${report.exitCode === 0 ? '' : ` (the closing report could not be posted: exit ${report.exitCode}, ${report.lastLine})`}`)
 
 return { outcome, epic, releasePullRequest, needsHuman, notDone: ticketsLeft, stopReason, rounds: round, tickets: records }
