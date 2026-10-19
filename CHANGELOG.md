@@ -5,7 +5,7 @@ a behaviour change in every project that installs it. Entries land in the same
 commit as the change; the pull request that brings them to the default branch
 stamps the version and date and bumps `plugin.json` in the same commit.
 
-## 3.3.0 (unreleased)
+## 3.3.0 — 2026-10-19
 
 - **A done ticket is a closed issue.** When `flow merge` (release delivery)
   marks a ticket `flow:done`, it also closes the issue as completed, in the
