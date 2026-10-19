@@ -73,6 +73,7 @@ jobs:
           ticket="$($FLOW ticket "$TICKET")"
           echo "model=$(echo "$ticket" | jq -r '.model')" >> "$GITHUB_OUTPUT"
           echo "epic=$(echo "$ticket" | jq -r '.epic // empty')" >> "$GITHUB_OUTPUT"
+          echo "mode=$(echo "$ticket" | jq -r 'if .resolveConflict then " --resolve-conflict" else "" end')" >> "$GITHUB_OUTPUT"
       - name: build the ticket
         id: claude
         uses: anthropics/claude-code-action@v1
@@ -85,7 +86,7 @@ jobs:
           github_token: ${{ secrets.FLOW_TOKEN || github.token }}
           plugin_marketplaces: https://github.com/weekendgoals/ticket-flow.git
           plugins: flow@ticket-flow
-          prompt: /flow:ticket #${{ env.TICKET }} --unattended --no-merge
+          prompt: /flow:ticket #${{ env.TICKET }} --unattended --no-merge${{ steps.read.outputs.mode }}
           claude_args: --model ${{ steps.read.outputs.model }} --allowedTools "Bash,Read,Edit,Write,Glob,Grep,Agent,Task,Skill,WebFetch"
       # execution_file is the output anthropics/claude-code-action@v1 documents for the run's messages as JSON (action.yml, outputs).
       - name: post what it cost

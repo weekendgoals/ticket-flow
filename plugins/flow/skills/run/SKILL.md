@@ -83,7 +83,9 @@ round the script:
 5. side by side: merges the accepted commits into the epic branch one at a
    time, in document order, then runs those tickets' checks again at the
    new epic head (`FLOW check-epic --mark`), because two tickets that pass
-   alone can break each other. One at a time: each ticket merges itself,
+   alone can break each other. A check that fails there runs a second time
+   at the same head first, and one that passes then is reported as passed
+   on the second run, so a flaky check is visible rather than a stop. One at a time: each ticket merges itself,
    and its checks run again at the epic head the same way.
 
 It posts each wave and its end on the epic issue. When the separate
@@ -109,7 +111,12 @@ then it is labelled `flow:needs-human`, its assignee (or the epic's author)
 is mentioned, and the run carries on with the others. Under `Stops: none`
 the ticket is parked instead: the same label, no mention, and the run's
 closing report (`FLOW run-report`) lists it with its reason and mentions
-the epic's people once, at the end. A builder that dies
+the epic's people once, at the end. Two stops become no stop
+there: a merge conflict is resolved once by a fresh worker (the skill's
+`--resolve-conflict`; its merge commit is reviewed once, then accepted and
+merged by the usual gates, and a second conflict parks the ticket), and the
+release pull request's loop ends after two rounds with what remains named
+in its comment, since a person owns the pull request anyway. A builder that dies
 without a result (a session limit, a crash) is reset and built again once,
 from its branch; a second death goes to a person. A builder that died after
 its ticket passed acceptance is not built again: the accepted commit is

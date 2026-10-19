@@ -7,7 +7,7 @@ import * as github from './tracker/github.mjs'
 import { TrackerError } from './tracker/github.mjs'
 import { parseEpicBody, parseTicketBody, parseDesignMap, withEpicLine, withBlockedBy, withTicketListed, withTicketChecked, normalizeNewlines, splitSections, withReport, originalReport, fingerprintMarker, retroFingerprint, findingImages, REPORT_MARKER } from './issue-body.mjs'
 import { CONFIG, ConfigError, BUDGET_MS as SETUP_BUDGET_MS, apply as applyWorktreeSetup, createWorktree, removeWorktree, worktreePath } from './worktree-setup.mjs'
-import { runCriteria, formatCheckReport, CHECK_TIMEOUT_MS, CHECK_MAX_BUFFER } from './checks.mjs'
+import { runCriteria, runChecks, formatCheckReport, CHECK_TIMEOUT_MS, CHECK_MAX_BUFFER } from './checks.mjs'
 import {
   GitError,
   git,
@@ -63,8 +63,14 @@ import {
   lastHandoff,
   lastStop,
   lastReleasePullRequest,
+  lastPullRequestRound,
   departureComment,
   disputeComment,
+  conflictComment,
+  resolveRequestComment,
+  conflictsSince,
+  awaitingResolution,
+  resolveRequested,
   departuresOf,
   disputesOf,
   latestDisputes,
@@ -681,15 +687,16 @@ function commandTicket(positional) {
     handoffsLeftOut: handoffs.leftOut,
     departures: claims.departures,
     disputes: claims.disputes,
+    resolveConflict: claims.resolveConflict,
   })
 }
 
 function ownClaims(number, epicIssue) {
-  if (stopsOf(epicIssue) !== 'none') return { departures: [], disputes: [] }
+  if (stopsOf(epicIssue) !== 'none') return { departures: [], disputes: [], resolveConflict: false }
   const account = github.viewerLogin()
   const comments = github.listComments(number)
   const started = lastStart(comments, account)
-  return { departures: departuresOf(comments, account), disputes: disputesOf(comments, account, started ? started.createdAt : null) }
+  return { departures: departuresOf(comments, account), disputes: disputesOf(comments, account, started ? started.createdAt : null), resolveConflict: resolveRequested(comments, account) }
 }
 
 function claimLinesOf({ departures, disputes }) {
@@ -1409,6 +1416,10 @@ function commandAccept(positional, flags) {
   return accepted ? 0 : 1
 }
 
+function conflictText({ result, epicBranch, sha }) {
+  return `Merging \`${sha.slice(0, 12)}\` into \`${epicBranch}\` conflicts in ${result.files.map((file) => `\`${file}\``).join(', ')}. Nothing was merged.`
+}
+
 function mergeFailureText({ result, epicBranch, sha }) {
   if (result.kind === 'conflict')
     return `Merging \`${sha.slice(0, 12)}\` into \`${epicBranch}\` conflicts in ${result.files.map((file) => `\`${file}\``).join(', ')}. Nothing was merged; a person resolves the conflict on the ticket branch.`
@@ -1447,12 +1458,22 @@ function mergeAcceptedTicket({ number, root, expectedSha = null }) {
     return { code: refuse(number, state, reason), reason }
   }
   const result = mergeIntoEpic(root, { sha, epicBranch, subject: `Merge #${number}: ${issue.title}` })
+  if (!result.ok && result.kind === 'conflict' && parksInstead(stopsOf(epicIssue))) {
+    const text = conflictText({ result, epicBranch, sha })
+    const started = lastStart(comments, account)
+    if (conflictsSince(comments, account, started ? started.createdAt : null) > 0) {
+      markNeedsHuman(number, `${text} It conflicted before, after a fresh worker had resolved the first conflict, so it is parked.`)
+      return { code: 1, reason: text, needsHuman: true, json: { ticket: number, kind: 'conflict', files: result.files, parked: true } }
+    }
+    github.comment(number, conflictComment(text))
+    return { code: 1, reason: text, json: { ticket: number, kind: 'conflict', files: result.files, parked: false } }
+  }
   if (!result.ok) {
     const text = mergeFailureText({ result, epicBranch, sha })
     markNeedsHuman(number, text)
     return { code: 1, reason: text, needsHuman: true }
   }
-  changeState(number, { add: ['flow:done'], remove: issue.labels.filter((label) => STATE_LABELS.includes(label) && label !== 'flow:done'), state: 'done', close: true })
+  changeState(number, { add: ['flow:done'], remove: issue.labels.filter((label) => (STATE_LABELS.includes(label) && label !== 'flow:done') || label === START_LABEL), state: 'done', close: true })
   github.comment(number, mergedComment({ sha, mergeSha: result.mergeSha, epicBranch, alreadyMerged: result.kind === 'already-merged', attempts: result.attempts }))
   const checked = withTicketChecked(epicIssue.body, number)
   if (checked !== normalizeNewlines(epicIssue.body)) github.updateIssueBody(epic.number, checked)
@@ -1544,7 +1565,7 @@ function commandMerge(positional, flags) {
       }
       const outcome = mergeAcceptedTicket({ number: ticket.number, root })
       if (outcome.code === 0) merged.push(outcome.json)
-      else notMerged.push({ ticket: ticket.number, reason: outcome.reason })
+      else notMerged.push({ ticket: ticket.number, reason: outcome.reason, ...(outcome.json ? { kind: outcome.json.kind, files: outcome.json.files, parked: outcome.json.parked } : {}) })
     }
     printJson({ epic: epic.number, merged, notMerged })
     return notMerged.length ? 1 : 0
@@ -1553,6 +1574,7 @@ function commandMerge(positional, flags) {
   const outcome = mergeAcceptedTicket({ number, root, expectedSha: flags.sha || null })
   if (outcome.code !== 0) {
     process.stderr.write(`${outcome.reason}\n`)
+    if (outcome.json) printJson(outcome.json)
     return outcome.code
   }
   printJson(outcome.json)
@@ -1628,6 +1650,24 @@ function failedTailsText(failedChecks) {
     .join('\n\n')
 }
 
+function rerunFailing(criteria, report, cwd) {
+  const failing = report.checks.map((check, index) => (check.status === 'passed' ? -1 : index)).filter((index) => index >= 0)
+  if (!failing.length || report.problems.length) return { report, passedOnSecondRun: [] }
+  const again = runChecks(failing.map((index) => criteria.checks[index]), { cwd })
+  const checks = [...report.checks]
+  failing.forEach((index, position) => (checks[index] = { ...again[position], n: index + 1, ranTwice: true }))
+  const passed = checks.filter((check) => check.passed).length
+  const passedOnSecondRun = failing.filter((index) => checks[index].passed).map((index) => index + 1)
+  return {
+    report: { ...report, checks, passed, skipped: checks.filter((check) => check.status === 'skipped').length, allPassed: passed === checks.length && !report.problems.length },
+    passedOnSecondRun,
+  }
+}
+
+function secondRunNote(result) {
+  return result.passedOnSecondRun.length ? ` (check ${result.passedOnSecondRun.join(', ')} passed on the second run)` : ''
+}
+
 function commandCheckEpic(positional, flags) {
   const epicNumber = issueNumber(positional[0], 'an epic number')
   const root = requireRepository(flags)
@@ -1668,7 +1708,7 @@ function commandCheckEpic(positional, flags) {
       for (const ticket of chosen) {
         const issue = github.getIssue(ticket.number)
         const criteria = parseTicketBody(issue.body, epic.settings.designSources).criteria
-        const report = runCriteria({ ticket: ticket.number, ...criteria }, { cwd: path })
+        const { report, passedOnSecondRun } = rerunFailing(criteria, runCriteria({ ticket: ticket.number, ...criteria }, { cwd: path }), path)
         const failed = report.checks.filter((check) => check.status !== 'passed')
         results.push({
           ticket: ticket.number,
@@ -1677,6 +1717,7 @@ function commandCheckEpic(positional, flags) {
           total: report.total,
           skipped: report.skipped,
           allPassed: report.allPassed,
+          passedOnSecondRun,
           failures: report.allPassed ? '' : failedChecksText(report),
           failedChecks: failed.map((check) => ({ check: check.check, exitCode: check.exitCode, evidence: check.evidence })),
           tails: failed.map((check) => ({ check: check.check, tail: check.tail })),
@@ -1693,7 +1734,7 @@ function commandCheckEpic(positional, flags) {
     lines.push(`**Epic check** at \`${head.slice(0, 12)}\` of \`${epicBranch}\`: ${results.length - failing.length} of ${results.length} ticket(s) still pass their checks.`)
     if (results.length) {
       lines.push('', '| Ticket | Checks | Result |', '|---|---|---|')
-      for (const result of results) lines.push(`| #${result.ticket} ${result.title.replace(/\|/g, '\\|')} | ${result.passed} of ${result.total} | ${result.allPassed ? 'pass' : `FAIL: ${result.failures.replace(/\|/g, '\\|').replace(/\n/g, ' ')}`} |`)
+      for (const result of results) lines.push(`| #${result.ticket} ${result.title.replace(/\|/g, '\\|')} | ${result.passed} of ${result.total} | ${result.allPassed ? 'pass' : `FAIL: ${result.failures.replace(/\|/g, '\\|').replace(/\n/g, ' ')}`}${secondRunNote(result)} |`)
     }
   }
   github.comment(epicNumber, lines.join('\n'))
@@ -1884,13 +1925,15 @@ function commandRunReport(positional, flags) {
     }
   })
   const allDone = epic.tickets.length > 0 && epic.tickets.every((ticket) => ticket.state === 'done')
+  const epicComments = github.listComments(epicNumber)
   const text = runReport({
     stops: epic.settings.stops,
     outcome: flags.outcome || (allDone ? 'built' : 'stopped'),
     reason,
     delivery: deliveryFor(epic),
     tickets,
-    releasePullRequest: releasePullRequestShown(lastReleasePullRequest(github.listComments(epicNumber), account)),
+    releasePullRequest: releasePullRequestShown(lastReleasePullRequest(epicComments, account)),
+    pullRequestRound: lastPullRequestRound(epicComments, account),
     people: epicIssue.assignees.length ? epicIssue.assignees : [epicIssue.author].filter(Boolean),
     local: Boolean(flags.local),
   })
@@ -1946,10 +1989,23 @@ function commandDispatch(positional) {
   const slots = Math.max(0, width - result.inProgress.length - flagged.length)
   const started = result.ready.filter((number) => !flagged.includes(number)).slice(0, slots)
   for (const number of started) github.addLabels(number, [START_LABEL])
+  const resolving = epic.settings.stops === 'none' ? requestResolutions(epic) : []
   const busy = result.inProgress.length + flagged.length + started.length
   const state = busy ? 'running' : !epic.tickets.length ? 'empty' : epic.tickets.every((ticket) => ticket.state === 'done') ? 'built' : 'stopped'
-  printJson({ epic: epic.number, parallel: width, stops: epic.settings.stops, started, alreadyAsked: flagged, inProgress: result.inProgress, needsHuman: result.needsHuman, state })
+  printJson({ epic: epic.number, parallel: width, stops: epic.settings.stops, started, alreadyAsked: flagged, inProgress: result.inProgress, resolving, needsHuman: result.needsHuman, state })
   return 0
+}
+
+function requestResolutions(epic) {
+  const waiting = epic.tickets.filter((ticket) => ticket.state === 'in-review' && !ticket.labels.includes(START_LABEL))
+  if (!waiting.length) return []
+  const account = github.viewerLogin()
+  const asked = waiting.filter((ticket) => awaitingResolution(github.listComments(ticket.number), account)).map((ticket) => ticket.number)
+  for (const number of asked) {
+    github.comment(number, resolveRequestComment(number))
+    github.addLabels(number, [START_LABEL])
+  }
+  return asked
 }
 
 function readFlowConfig(root) {

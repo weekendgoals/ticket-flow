@@ -24,6 +24,8 @@ export const DEPARTURE_MARKER = '<!-- flow:departure -->'
 const DEPARTURE_LEAD = '**Departure.**'
 export const DISPUTE_MARKER = /^<!-- flow:dispute check=(\d+) -->/
 export const MAX_CLAIM_LENGTH = 600
+export const CONFLICT_MARKER = '<!-- flow:conflict -->'
+export const RESOLVE_MARKER = '<!-- flow:resolve -->'
 
 export function isUnattended(environment = process.env) {
   return environment[UNATTENDED_VARIABLE] === '1'
@@ -399,7 +401,7 @@ function claimLines(heading, tickets, linesOf) {
   return found.length ? [`**${heading}:**`, ...found.map((line) => `- ${line}`)] : [`**${heading}:** none.`]
 }
 
-function noStopsReport({ outcome, reason, tickets, releasePullRequest, people }) {
+function noStopsReport({ outcome, reason, tickets, releasePullRequest, people, pullRequestRound }) {
   const lead = outcome === 'built' ? RUN_FINISHED_LEAD : `${RUN_STOPPED_LEAD} ${reason ? asSentence(reason) : 'Nothing more can start.'}`
   const mention = people.map((login) => `@${login}`).join(' ')
   const lines = [lead, '', `${mention ? `${mention} ` : ''}Under \`Stops: none\` this run asked nobody while it ran: what it decided and what it parked is below, to read once, here and on the release pull request.`]
@@ -415,10 +417,45 @@ function noStopsReport({ outcome, reason, tickets, releasePullRequest, people })
   lines.push('', ...claimLines('Departures', tickets, (ticket) => (ticket.departures || []).map((departure) => `${named(ticket)}: ${departure.text}`)))
   lines.push('', ...claimLines('Disputed checks', tickets, (ticket) => (ticket.disputes || []).map((dispute) => `${named(ticket)}, check ${dispute.check}: ${dispute.text}`)))
   lines.push('', `**Release pull request:** ${releasePullRequest ? releasePullRequest.url || `#${releasePullRequest.number}` : 'none opened'}.`)
+  if (pullRequestRound) lines.push(`Its latest pull request round (${pullRequestRound.round}) left: ${pullRequestRound.text}`)
   return lines.join('\n')
 }
 
-export function runReport({ stops, outcome, reason = null, delivery, tickets, releasePullRequest = null, people = [], local = false }) {
-  const text = stops === 'none' ? noStopsReport({ outcome, reason, tickets, releasePullRequest, people }) : askReport({ outcome, reason, delivery, tickets, releasePullRequest })
+export function runReport({ stops, outcome, reason = null, delivery, tickets, releasePullRequest = null, pullRequestRound = null, people = [], local = false }) {
+  const text = stops === 'none' ? noStopsReport({ outcome, reason, tickets, releasePullRequest, people, pullRequestRound }) : askReport({ outcome, reason, delivery, tickets, releasePullRequest })
   return local ? `${LOCAL_RUN_END_MARKER}\n${text}` : text
+}
+
+export function conflictComment(text) {
+  return `${CONFLICT_MARKER}\n**Merge conflict.** ${text} Under \`Stops: none\` a fresh worker merges the epic branch into the ticket branch, resolves it keeping both sides' intent, and has that commit reviewed; a second conflict parks the ticket.`
+}
+
+export function resolveRequestComment(number) {
+  return `${RESOLVE_MARKER}\n**Conflict to resolve.** The accepted commit conflicts with the epic branch, so this ticket is built once more to resolve it: the epic branch is merged into \`ticket/${number}\`, and the result is reviewed, accepted and merged by the usual gates.`
+}
+
+export function conflictsSince(comments, author, since = null) {
+  const sinceTime = since ? Date.parse(since) : null
+  return byAuthor(comments, author).filter((comment) => comment.body.startsWith(CONFLICT_MARKER) && (sinceTime === null || Date.parse(comment.createdAt) >= sinceTime)).length
+}
+
+export function awaitingResolution(comments, author) {
+  const marks = byAuthor(comments, author).filter((comment) => comment.body.startsWith(CONFLICT_MARKER) || comment.body.startsWith(RESOLVE_MARKER) || MERGED_MARKER.test(comment.body))
+  return marks.length > 0 && marks[marks.length - 1].body.startsWith(CONFLICT_MARKER)
+}
+
+export function resolveRequested(comments, author) {
+  const marks = byAuthor(comments, author).filter((comment) => comment.body.startsWith(CONFLICT_MARKER) || comment.body.startsWith(RESOLVE_MARKER) || MERGED_MARKER.test(comment.body))
+  return marks.length > 0 && marks[marks.length - 1].body.startsWith(RESOLVE_MARKER)
+}
+
+const PULL_REQUEST_ROUND = /^\*\*Pull request round (\d+):\*\*\s*(.*)$/
+
+export function lastPullRequestRound(comments, author) {
+  const rounds = byAuthor(comments, author)
+    .map((comment) => comment.body.split('\n')[0].match(PULL_REQUEST_ROUND))
+    .filter(Boolean)
+  if (!rounds.length) return null
+  const latest = rounds[rounds.length - 1]
+  return { round: Number(latest[1]), text: latest[2].trim() || 'see its comment on the epic' }
 }

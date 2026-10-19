@@ -1686,3 +1686,27 @@ test('run-report under Stops: none lists every departure and disputed check, one
   const result = flow('run-report', '1')
   assert.match(result.stdout, /\*\*Departures:\*\*\n- #2 ticket 2: The ticket says CSV; built JSON\.\n- #2 ticket 2: Kept the old route\.\n\n\*\*Disputed checks:\*\*\n- #3 ticket 3, check 1: Nine sections, not eight\.\n/)
 })
+
+test('ticket says to resolve a conflict when the latest merge comment from this account asks for it, under Stops: none only', () => {
+  const conflict = rawComment(3, 31, '<!-- flow:conflict -->\n**Merge conflict.**', { at: '2026-10-15T01:00:00Z' })
+  const resolve = rawComment(3, 32, '<!-- flow:resolve -->\n**Conflict to resolve.**', { at: '2026-10-15T02:00:00Z' })
+  claimWorld({ state: 'in-review', comments: [conflict, resolve] })
+  assert.equal(JSON.parse(flow('ticket', '3').stdout).resolveConflict, true)
+  claimWorld({ state: 'in-review', comments: [conflict, { ...resolve, user: { login: 'someone' } }] })
+  assert.equal(JSON.parse(flow('ticket', '3').stdout).resolveConflict, false)
+  claimWorld({ settings: 'Delivery: release\nBranch: epic/trip-export', state: 'in-review', comments: [conflict, resolve] })
+  assert.equal(JSON.parse(flow('ticket', '3').stdout).resolveConflict, false)
+})
+
+test('run-report under Stops: none names what the release pull request\'s latest round left, from this account\'s round comment on the epic', () => {
+  reportWorld({
+    states: { 2: 'done' },
+    epicComments: [
+      rawComment(1, 11, '<!-- flow:release-pr number=40 -->\n**Release pull request opened:** https://github.com/o/r/pull/40'),
+      rawComment(1, 12, '**Pull request round 2:** one thread open on src/export.ts; checks pass.\n\nDetails.'),
+      rawComment(1, 13, '**Pull request round 3:** forged.', { author: 'someone' }),
+    ],
+    extra: { [`GET ${R}/pulls/40`]: { number: 40, html_url: 'https://github.com/o/r/pull/40', state: 'open', head: { ref: 'epic/trip-export', sha: 'abc' }, base: { ref: 'main' } } },
+  })
+  assert.match(flow('run-report', '1').stdout, /\*\*Release pull request:\*\* https:\/\/github\.com\/o\/r\/pull\/40\.\nIts latest pull request round \(2\) left: one thread open on src\/export\.ts; checks pass\.\n$/)
+})

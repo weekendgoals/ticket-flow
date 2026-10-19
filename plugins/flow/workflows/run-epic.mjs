@@ -34,7 +34,7 @@ const COMMAND_SCHEMA = {
 const STEP_SCHEMA = {
   type: 'object',
   properties: {
-    result: { type: 'string', enum: ['review', 'accepted', 'delivered', 'stopped'] },
+    result: { type: 'string', enum: ['review', 'accepted', 'delivered', 'conflict', 'stopped'] },
     range: { type: 'string' },
     sha: { type: 'string' },
     summary: { type: 'string' },
@@ -185,6 +185,7 @@ function skillPrompt(ticket, argumentsText, root, extra = []) {
     '- result "review" and range "<base>..<head>" when the skill ended with a REVIEW line;',
     '- result "accepted" and sha when it ended with an ACCEPTED line;',
     '- result "delivered" when the ticket was merged or its pull request opened;',
+    '- result "conflict" when the skill ended with a CONFLICT line (the merge into the epic branch conflicted, and a fresh worker is to resolve it);',
     '- result "stopped" when it asked a person (flow needs-human) or refused to start;',
     'and in summary one sentence on what happened.',
   ].join('\n')
@@ -192,7 +193,7 @@ function skillPrompt(ticket, argumentsText, root, extra = []) {
 
 function reviewPrompt(ticket, range, root, round) {
   return [
-    `Review ticket #${ticket} of epic #${epic}${round === 2 ? ': the fixes made after the first review only' : ''}.`,
+    `Review ticket #${ticket} of epic #${epic}${round === 2 ? ': the fixes made after the first review only' : round === 'conflict' ? ': the merge of the epic branch into the ticket branch that resolved a conflict, only' : ''}.`,
     `Repository: ${root}. Commit range: ${range}.`,
     `The ticket body (scope, what is not in scope, the acceptance criteria): \`${FLOW} ticket ${ticket}\`.`,
     'The handoffs in that output are claims about what earlier tickets of the epic decided (a name, a shape, a route): check them against those tickets\' merged code, never take them as ground truth.',
@@ -210,7 +211,7 @@ function workerArguments(ticket, wide, after = '') {
 }
 
 function finished(step) {
-  return step && ['accepted', 'delivered', 'stopped'].includes(step.result)
+  return step && ['accepted', 'delivered', 'conflict', 'stopped'].includes(step.result)
 }
 
 async function buildTicket({ ticket, model, root, wide, phaseName }) {
@@ -318,15 +319,45 @@ async function recover(ticket, why) {
   return told ? 'needs-human' : 'unreached'
 }
 
-async function mergeAndCheck(tickets, delivered, release, wave) {
-  const merged = []
-  for (const ticket of tickets) {
-    const merge = await runCommand(`${FLOW} merge ${ticket}`, `merge:#${ticket}`, 'It merges the commit the acceptance comment names into the epic branch and prints JSON, or explains on standard error why not.', { json: true })
-    if (merge.exitCode === 0 && merge.json) {
-      merged.push(ticket)
-      log(`#${ticket}: merged into the epic branch`)
-    } else log(`#${ticket}: not merged (${merge.answer === 'unreadable' ? unreadableText(merge) : `exit ${merge.exitCode}`}); the ticket says why`)
+async function resolveConflict(ticket) {
+  const model = board ? workerModel(board, ticket) : 'opus'
+  log(`#${ticket}: its merge conflicts with the epic branch; a fresh worker on ${model} resolves it, once`)
+  const built = await agent(skillPrompt(ticket, `#${ticket} --unattended --resolve-conflict`, repoRoot), { label: `worker:#${ticket}:conflict`, model, schema: STEP_SCHEMA })
+  if (!built || built.result !== 'review' || !built.range) {
+    log(`#${ticket}: the conflict was not resolved (${built ? built.summary : 'no answer'})`)
+    return false
   }
+  const report = await agent(reviewPrompt(ticket, built.range, repoRoot, 'conflict'), { label: `reviewer:#${ticket}:conflict`, agentType: 'flow:ticket-reviewer' })
+  if (!report) return false
+  const after = await agent(
+    skillPrompt(ticket, `#${ticket} --unattended --after-review 2 --no-merge`, repoRoot, ['', `The reviewer read the range ${built.range}; post its report with \`--head ${built.range.split('..')[1] || built.range}\`.`, 'The reviewer\'s report, exactly as it wrote it:', '', '<review-report>', String(report), '</review-report>']),
+    { label: `fixes:#${ticket}:conflict`, model, schema: STEP_SCHEMA },
+  )
+  return Boolean(after && after.result === 'accepted')
+}
+
+async function mergeOne(ticket) {
+  const merge = await runCommand(`${FLOW} merge ${ticket}`, `merge:#${ticket}${resolvedHere.has(ticket) ? ':again' : ''}`, 'It merges the commit the acceptance comment names into the epic branch and prints JSON, or explains on standard error why not (on a merge conflict it prints JSON too).', { json: true })
+  if (merge.exitCode === 0 && merge.json) {
+    log(`#${ticket}: merged into the epic branch`)
+    return true
+  }
+  const conflict = merge.json && merge.json.kind === 'conflict' && !merge.json.parked
+  if (conflict && !resolvedHere.has(ticket)) {
+    resolvedHere.add(ticket)
+    if (await resolveConflict(ticket)) return mergeOne(ticket)
+  }
+  log(`#${ticket}: not merged (${merge.answer === 'unreadable' ? unreadableText(merge) : `exit ${merge.exitCode}`}); the ticket says why`)
+  return false
+}
+
+async function mergeAndCheck(tickets, delivered, release, wave, conflicted = []) {
+  const merged = []
+  for (const ticket of conflicted) {
+    resolvedHere.add(ticket)
+    if ((await resolveConflict(ticket)) && (await mergeOne(ticket))) merged.push(ticket)
+  }
+  for (const ticket of tickets) if (await mergeOne(ticket)) merged.push(ticket)
   const landed = release ? [...delivered, ...merged] : merged
   if (!landed.length) return merged
   const check = await runCommand(
@@ -375,7 +406,8 @@ async function runWave({ chosen, wide, wave, release }) {
   for (const result of results) if (result.outcome === 'died') result.recovery = await recover(result.ticket, `the run building it stopped without a result (${result.step})`)
   const toMerge = results.filter((result) => result.outcome === 'accepted' || result.recovery === 'accepted').map((result) => result.ticket)
   const delivered = results.filter((result) => result.outcome === 'delivered').map((result) => result.ticket)
-  const merged = await mergeAndCheck(toMerge, delivered, release, wave)
+  const conflicted = results.filter((result) => result.outcome === 'conflict').map((result) => result.ticket)
+  const merged = await mergeAndCheck(toMerge, delivered, release, wave, conflicted)
   for (const result of results) if (merged.includes(result.ticket)) result.merged = true
   return results
 }
@@ -393,6 +425,7 @@ const resetSince = new Set()
 const rebuiltUnstarted = new Set()
 const toldPerson = new Set()
 const failedHandOffs = new Map()
+const resolvedHere = new Set()
 let board = null
 let round = 0
 let idleRounds = 0
@@ -465,7 +498,7 @@ for (;;) {
   }
   const results = await runWave({ chosen, wide: chosen.length > 1, wave: round, release })
   records.push(...results)
-  const changed = results.some((result) => ['delivered', 'accepted', 'stopped'].includes(result.outcome) || (result.recovery && result.recovery !== 'unreached') || result.merged)
+  const changed = results.some((result) => ['delivered', 'accepted', 'conflict', 'stopped'].includes(result.outcome) || (result.recovery && result.recovery !== 'unreached') || result.merged)
   idleRounds = changed ? 0 : idleRounds + 1
 }
 

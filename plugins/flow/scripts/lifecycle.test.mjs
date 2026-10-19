@@ -767,3 +767,39 @@ test('a dispute changes nothing under Stops: ask, attended, before the start, fr
     assert.match(posted(2)[0], /passed=false seconds=\d+ -->\n\*\*Acceptance failed\*\*/, `case ${index}`)
   }
 })
+
+function conflictingTicket() {
+  const repo = startedTicket()
+  const sha = commitFile(repo.work, 'README.md', 'ticket version\n', '#2: rewrite the readme')
+  const other = join(repo.root, 'other')
+  git(repo.root, 'clone', '-q', repo.remote, other)
+  git(other, 'checkout', '-q', 'epic/trip-export')
+  commitFile(other, 'README.md', 'epic version\n', '#3: rewrite it too')
+  git(other, 'push', '-q', 'origin', 'epic/trip-export')
+  return { ...repo, sha }
+}
+
+test('under Stops: none, unattended, a merge conflict is left in review for a fresh worker: a marked comment naming the files, no mention, and the conflict in the JSON', () => {
+  const { work, remote, sha } = conflictingTicket()
+  const before = git(remote, 'rev-parse', 'epic/trip-export')
+  world({ settings: NO_STOPS, ticket2: { labels: ['flow:ticket', 'flow:in-review'] }, comments: [STARTED, accepted(sha)] })
+  const result = flow(work, ['merge', '2'], { FLOW_UNATTENDED: '1' })
+  assert.equal(result.status, 1)
+  assert.deepEqual(JSON.parse(result.stdout), { ticket: 2, kind: 'conflict', files: ['README.md'], parked: false })
+  assert.equal(git(remote, 'rev-parse', 'epic/trip-export'), before)
+  const [body] = posted(2)
+  assert.match(body, /^<!-- flow:conflict -->\n\*\*Merge conflict\.\*\* Merging `[0-9a-f]{12}` into `epic\/trip-export` conflicts in `README\.md`\. Nothing was merged\./)
+  assert.doesNotMatch(body, /@/)
+  assert.deepEqual(labelCalls(), [], 'the ticket stays in review')
+})
+
+test('a second conflict since the start, after a fresh worker resolved the first, parks the ticket', () => {
+  const { work, sha } = conflictingTicket()
+  const firstConflict = comment('<!-- flow:conflict -->\n**Merge conflict.** Earlier.', '2026-10-14T12:30:00Z')
+  world({ settings: NO_STOPS, ticket2: { labels: ['flow:ticket', 'flow:in-review'] }, comments: [STARTED, accepted(sha), firstConflict] })
+  const result = flow(work, ['merge', '2'], { FLOW_UNATTENDED: '1' })
+  assert.equal(result.status, 1)
+  assert.equal(JSON.parse(result.stdout).parked, true)
+  assert.match(posted(2)[0], /^<!-- flow:needs-human -->\n\*\*This ticket is parked\.\*\* Merging `[0-9a-f]{12}` into `epic\/trip-export` conflicts in `README\.md`\. Nothing was merged\. It conflicted before/)
+  assert.ok(labelCalls().includes(`POST ${R}/issues/2/labels {"labels":["flow:needs-human"]}`))
+})

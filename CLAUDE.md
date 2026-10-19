@@ -72,11 +72,11 @@ Every suite needs Node ≥ 20 and nothing else unless noted; pass each test
 file path explicitly (`node --test <directory>` finds nothing here). Counts
 as of 2026-10-19; the pass count grows, the fail line stays `# fail 0`.
 
-- `node --test plugins/flow/scripts/flow.test.mjs` — `# pass 89`. The CLI
+- `node --test plugins/flow/scripts/flow.test.mjs` — `# pass 91`. The CLI
   end to end against the fake `gh`; one case needs `git` on PATH.
-- `node --test plugins/flow/scripts/lifecycle.test.mjs` — `# pass 41`. The
+- `node --test plugins/flow/scripts/lifecycle.test.mjs` — `# pass 43`. The
   ticket steps in throwaway repositories with a bare remote; needs `git`, `sh`.
-- `node --test plugins/flow/scripts/epic-run.test.mjs` — `# pass 39`. The
+- `node --test plugins/flow/scripts/epic-run.test.mjs` — `# pass 42`. The
   whole-epic commands, the same way.
 - `pull-request.test.mjs` `# pass 20`, `issue-body.test.mjs` `# pass 30`,
   `checks.test.mjs` `# pass 27` (real shell commands in a temp dir),
@@ -87,8 +87,8 @@ as of 2026-10-19; the pass count grows, the fail line stays `# fail 0`.
   its transcripts; no test reads a real one (they belong to whoever ran them).
 - `node --test plugins/flow/scripts/worktree-setup.test.mjs` — `# pass 19`;
   needs `git`, POSIX `sh` and `sleep`.
-- `node --test plugins/flow/workflows/run-epic.test.mjs` — `# pass 35`
-  (stubbed `agent`, no git), `plugins/flow/github/flow.test.mjs` `# pass 15`.
+- `node --test plugins/flow/workflows/run-epic.test.mjs` — `# pass 37`
+  (stubbed `agent`, no git), `plugins/flow/github/flow.test.mjs` `# pass 16`.
 - `node --test tools/reporter/reporter.test.mjs` — `# pass 31`. The
   extension's modules under a stubbed `fetch`. It is also their syntax
   check: plain `node --check` reads a `.js` file with no package.json as
@@ -182,7 +182,8 @@ CI (`.github/workflows/tests.yml`) runs every suite and check above.
 - **A ticket stops only when no agent may decide**: a gate failing after two
   rounds of fixes (acceptance, review, pull request; `accept` counts review
   rounds), plan and work disagreeing, or a merge conflict; an epic also for
-  checks failing at its head after merging. Infrastructure halts are noise.
+  checks failing at its head after merging (each failing check runs a second
+  time at that head first). Infrastructure halts are noise.
   Under `Stops: none` (unattended only) nothing stops: an agent decides
   where it may and records it (a departure, a dispute, a resolved
   conflict), what it may not decide is parked without a mention, and the

@@ -53,7 +53,9 @@ the same label and no mention, because the person reads every parked
 ticket once, in the run's report at the end. What each stop becomes there:
 
 1. a gate still failing after two rounds: parked, since no agent may waive
-   a gate;
+   a gate, except the pull request loop's, which does not stop at all: the
+   round's comment says what remains and a person owns the pull request
+   anyway;
 2. the ticket contradicting the code: a **departure**, the smallest change
    of plan that keeps the walkthrough true, built and recorded with
    `FLOW depart` (the worker's rules say how), because the reviewer and
@@ -62,7 +64,9 @@ ticket once, in the run's report at the end. What each stop becomes there:
    edit of the criteria, which stay the person's gate; an issue body
    edited after the start stays a stop under any setting, because whoever
    edited it is present and acting on it, and the refusal mentions them;
-3. a merge conflict: parked.
+3. a merge conflict: resolved once by a fresh worker
+   (`--resolve-conflict`, below), whose merge commit is reviewed, accepted
+   and merged by the usual gates; a second conflict parks the ticket.
 
 Attended, `Stops: none` changes nothing: the person is in the chat, and a
 question costs nothing.
@@ -336,8 +340,12 @@ get its first one only.
   and posts the merge commit. When someone else pushed to
   the epic branch meanwhile it fetches and merges again, twice; after that,
   or on a merge conflict, it asks a person itself (naming the conflicting
-  files). A conflict is never resolved by an agent here: the person decides
-  which side's intent wins.
+  files). Under `Stops: ask` a conflict is never resolved by an agent: the
+  person decides which side's intent wins. Under `Stops: none`,
+  unattended, a first conflict leaves the ticket in review with a comment
+  naming the files and prints `"kind": "conflict"` (exit 1): end your reply
+  with the line `CONFLICT` and stop, because the host has a fresh worker
+  resolve it, which never saw this build.
 - **Incremental delivery, or no epic:** it pushes the accepted commit to
   `ticket/<n>` and opens a pull request into the default branch that closes
   the ticket when merged. Then run the pull request loop below, and finish
@@ -378,6 +386,10 @@ For a ticket's pull request (and, later, an epic's release pull request).
 Post one comment per round on the ticket, starting `**Pull request round
 <k>:**`: threads fixed, threads answered, checks. After two rounds, a thread
 or failing check that remains stops the ticket: ask a person, naming it.
+Under `Stops: none`, unattended, it stops nothing: the second round's
+comment says on its first line what remains, the run's report lists it
+under the pull request, and the loop ends there, because a person owns the
+pull request anyway.
 
 ## 10. End
 
@@ -427,8 +439,23 @@ changes where the skill stops or starts; every step still posts its comment.
   ticket (head `ticket/<n>`) or, for a release pull request (head
   `epic/<name>`), on the epic its body names (`Epic: #<e>`). Count the
   earlier comments that start `**Pull request round`: after two rounds,
-  stop and ask a person instead of running a third.
+  stop and ask a person instead of running a third (under `Stops: none`,
+  end without asking, the remains named in the round's comment).
+- `--resolve-conflict`: under `Stops: none`, the ticket is in review and
+  its latest merge comment from this account is a conflict (`FLOW ticket
+  <n>` says `"resolveConflict": true` once a host asked). Do not run
+  `FLOW start`: the branch exists. Run `FLOW label <n> -flow:start` (a host
+  may have used it to ask), check out `ticket/<n>`, note its head, merge
+  `origin/<epic branch>` into it, and resolve every conflict keeping both
+  sides' intent: the epic branch's merged tickets are facts, and this
+  ticket adapts to them. Commit `#<n>: merge <epic branch>, conflict
+  resolved`, run `FLOW check <n>`, and end with
+  `REVIEW <head before>..<head>`. The host has that commit reviewed once
+  and calls you with `--after-review 2 --no-merge`: an Important finding
+  there parks the ticket, and otherwise `FLOW accept` takes the reviewed
+  head and the host merges the accepted commit, so the one agent merge is
+  still a ticket into its epic branch by the accepted commit.
 
 A host that stops the skill early reads the result from GitHub, not from
-your reply: `REVIEW` and `ACCEPTED` tell it which step comes next, and it
+your reply: `REVIEW`, `ACCEPTED` and `CONFLICT` tell it which step comes next, and it
 checks the labels and comments before acting on them.

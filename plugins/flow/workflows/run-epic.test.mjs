@@ -574,3 +574,51 @@ test('a copy whose git step failed is timed without a budget, since no setup sta
   })
   assert.match(run.calls.find((call) => call.label === 'post:#1:fallback:1').prompt, /#3: git worktree add — git worktree add failed: fatal: invalid reference \(after 1s\)/)
 })
+
+test('a merge that conflicts under Stops: none is resolved once by a fresh worker in conflict mode, reviewed over the merge commit, accepted, and merged again', async () => {
+  const next = boards(board({ ready: [2, 3], parallel: 2 }), board({ done: [2, 3], parallel: 2 }))
+  let merges = 0
+  const run = await drive((label) => {
+    if (label.startsWith('next:')) return next()
+    if (label.startsWith('worktree:#')) return ok(JSON.stringify({ path: `/wt/ticket-${label.slice(10)}`, failure: null }))
+    if (label.startsWith('worktree-remove:')) return ok('{}')
+    if (label === 'fixes:#2' || label === 'fixes:#3') return { result: 'accepted', sha: 'a'.repeat(40), summary: 'accepted' }
+    if (label === 'merge:#2') return { exitCode: 1, output: JSON.stringify({ ticket: 2, kind: 'conflict', files: ['README.md'], parked: false }) }
+    if (label === 'worker:#2:conflict') return { result: 'review', range: 'ccc333..ddd444', summary: 'merged the epic branch' }
+    if (label === 'reviewer:#2:conflict') return '**Important.** None.\n\n**Nits.** None.'
+    if (label === 'fixes:#2:conflict') return { result: 'accepted', sha: 'd'.repeat(40), summary: 'accepted' }
+    if (label.startsWith('merge:')) {
+      merges++
+      return ok('{"merge":"x"}')
+    }
+    return happyTicket(label) ?? releaseSteps(label)
+  })
+  assert.equal(run.out.outcome, 'built', JSON.stringify(run.out))
+  const order = run.labels.filter((label) => /^(merge|worker|reviewer|fixes):#2:?/.test(label) && !/^(worker|reviewer|fixes):#2$/.test(label))
+  assert.deepEqual(order, ['merge:#2', 'worker:#2:conflict', 'reviewer:#2:conflict', 'fixes:#2:conflict', 'merge:#2:again'])
+  assert.equal(merges, 2, 'the second merge of #2 and the merge of #3')
+  const resolver = run.calls.find((call) => call.label === 'worker:#2:conflict')
+  assert.match(resolver.prompt, /args "#2 --unattended --resolve-conflict"/)
+  assert.match(resolver.prompt, /The repository is \/repo: run every command there\./)
+  assert.match(run.calls.find((call) => call.label === 'reviewer:#2:conflict').prompt, /the merge of the epic branch into the ticket branch that resolved a conflict, only[\s\S]*Commit range: ccc333\.\.ddd444/)
+  assert.match(run.calls.find((call) => call.label === 'fixes:#2:conflict').prompt, /args "#2 --unattended --after-review 2 --no-merge"[\s\S]*post its report with `--head ddd444`/)
+})
+
+test('a second conflict after the resolution is left to the merge command, which parks the ticket; the run does not resolve twice', async () => {
+  const next = boards(board({ ready: [2] }), board({ needsHuman: [2] }), board({ needsHuman: [2] }))
+  const run = await drive((label) => {
+    if (label.startsWith('next:')) return next()
+    if (label === 'fixes:#2') return { result: 'conflict', summary: 'the merge conflicted' }
+    if (label === 'worker:#2:conflict') return { result: 'review', range: 'ccc333..ddd444', summary: 'merged the epic branch' }
+    if (label === 'reviewer:#2:conflict') return '**Important.** None.\n\n**Nits.** None.'
+    if (label === 'fixes:#2:conflict') return { result: 'accepted', sha: 'd'.repeat(40), summary: 'accepted' }
+    if (label === 'merge:#2:again') return { exitCode: 1, output: JSON.stringify({ ticket: 2, kind: 'conflict', files: ['README.md'], parked: true }) }
+    return happyTicket(label) ?? releaseSteps(label)
+  })
+  assert.equal(run.out.outcome, 'stopped')
+  assert.equal(run.labels.filter((label) => label === 'worker:#2:conflict').length, 1)
+  assert.ok(run.labels.includes('merge:#2:again'))
+  assert.ok(!run.labels.includes('merge:#2'), 'a ticket that conflicted while delivering itself goes straight to the resolution')
+  assert.ok(run.logs.some((line) => /#2: not merged \(exit 1\)/.test(line)))
+})
+

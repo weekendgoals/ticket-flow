@@ -913,3 +913,46 @@ test('under Stops: ask the release pull request has no departures or disputed ch
   assert.equal(flow(repo.work, ['release-pr', '1']).status, 0)
   assert.doesNotMatch(JSON.parse(fake.calls().find((call) => call.key === `POST ${R}/pulls`).stdin).body, /## Departures|## Disputed checks/)
 })
+
+test('check-epic runs a failing check once more at the same head, and a check that passes then is reported as passed on the second run', () => {
+  const repo = repository()
+  const counter = join(repo.root, 'runs')
+  writeFileSync(counter, '')
+  const flaky = `- the export, flaky\n  CHECK: echo x >> ${counter} && test $(wc -l < ${counter}) -ge 2`
+  world({ tickets: { 2: { labels: ['flow:ticket', 'flow:done'], criteria: flaky }, 3: { labels: ['flow:ticket', 'flow:done'], criteria: '- always fails\n  CHECK: false' }, 4: { labels: ['flow:ticket', 'flow:planned'] } } })
+  const result = flow(repo.work, ['check-epic', '1'])
+  assert.equal(result.status, 1)
+  const report = JSON.parse(result.stdout)
+  assert.deepEqual(report.tickets.map((ticket) => [ticket.ticket, ticket.allPassed, ticket.passedOnSecondRun]), [[2, true, [1]], [3, false, []]])
+  assert.equal(readFileSync(counter, 'utf8').split('\n').filter(Boolean).length, 2, 'the flaky check ran twice, no more')
+  assert.match(posted(1)[0], /\| #2 Export button \| 1 of 1 \| pass \(check 1 passed on the second run\) \|/)
+  assert.match(posted(1)[0], /\| #3 Export file \| 0 of 1 \| FAIL: `false` \(exit 1\) \|/)
+})
+
+test('under Stops: none a check still failing at the epic head after its second run parks the ticket, which stays merged', () => {
+  const repo = repository()
+  world({ epic: NO_STOPS_EPIC, tickets: { 2: { labels: ['flow:ticket', 'flow:done'], assignees: ['ana'] }, 3: { labels: ['flow:ticket', 'flow:planned'] }, 4: { labels: ['flow:ticket', 'flow:planned'] } } })
+  const result = flow(repo.work, ['check-epic', '1', '--mark'], { FLOW_UNATTENDED: '1' })
+  assert.equal(result.status, 1)
+  assert.deepEqual(added(2), ['flow:needs-human'])
+  assert.match(posted(2)[0], /^<!-- flow:needs-human -->\n\*\*This ticket is parked\.\*\* This ticket's checks fail on the epic branch/)
+  assert.doesNotMatch(posted(2)[0], /@ana/)
+})
+
+test('under Stops: none dispatch asks for a conflict to be resolved, once: a marked comment and flow:start on the ticket in review whose latest merge comment is a conflict', () => {
+  const conflict = comment('<!-- flow:conflict -->\n**Merge conflict.** Merging into epic/trip-export conflicts in `README.md`.', '2026-10-14T13:00:00Z')
+  const resolve = comment('<!-- flow:resolve -->\n**Conflict to resolve.**', '2026-10-14T13:05:00Z')
+  const inReview = { labels: ['flow:ticket', 'flow:in-review'] }
+  world({ epic: NO_STOPS_EPIC, tickets: { 2: inReview, 3: inReview, 4: { labels: ['flow:ticket', 'flow:planned'], blockedBy: 'Blocked by: #2' } }, comments: { 2: [STARTED, accepted('a'.repeat(40)), conflict], 3: [STARTED, accepted('b'.repeat(40))] } })
+  const result = JSON.parse(flow(directory, ['dispatch', '1']).stdout)
+  assert.deepEqual([result.resolving, result.state], [[2], 'running'])
+  assert.deepEqual(added(2), ['flow:start'])
+  assert.match(posted(2)[0], /^<!-- flow:resolve -->\n\*\*Conflict to resolve\.\*\* .*`ticket\/2`/)
+  assert.deepEqual([added(3), posted(3)], [[], []])
+  world({ epic: NO_STOPS_EPIC, tickets: { 2: inReview, 3: { labels: ['flow:ticket', 'flow:done'] } }, comments: { 2: [STARTED, conflict, resolve] } })
+  fake.clearCalls()
+  assert.deepEqual(JSON.parse(flow(directory, ['dispatch', '1']).stdout).resolving, [], 'a resolution already asked for is not asked again')
+  world({ tickets: { 2: inReview }, comments: { 2: [STARTED, conflict] } })
+  fake.clearCalls()
+  assert.deepEqual(JSON.parse(flow(directory, ['dispatch', '1']).stdout).resolving, [], 'under Stops: ask nothing is read or asked')
+})

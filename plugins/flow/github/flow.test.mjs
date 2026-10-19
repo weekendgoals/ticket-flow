@@ -43,7 +43,7 @@ test('the ticket job installs the plugin from this marketplace and runs the tick
   assert.equal(claude.uses, 'anthropics/claude-code-action@v1')
   assert.equal(claude.with.plugin_marketplaces, 'https://github.com/weekendgoals/ticket-flow.git')
   assert.equal(claude.with.plugins, 'flow@ticket-flow')
-  assert.equal(claude.with.prompt, '/flow:ticket #${{ env.TICKET }} --unattended --no-merge')
+  assert.equal(claude.with.prompt, '/flow:ticket #${{ env.TICKET }} --unattended --no-merge${{ steps.read.outputs.mode }}')
   assert.match(claude.with.claude_args, /^--model \$\{\{ steps\.read\.outputs\.model \}\} --allowedTools "[^"]*Bash[^"]*Skill[^"]*"/)
   assert.equal(claude.with.anthropic_api_key, '${{ secrets.ANTHROPIC_API_KEY }}')
   assert.equal(claude.env.FLOW_UNATTENDED, '1')
@@ -77,6 +77,13 @@ test('the scheduler\'s closing is run-report, the text the local driver posts to
   assert.match(run, /elif \[ "\$state" = "stopped" \]; then\n\s*\$FLOW run-report "\$EPIC" --post --outcome stopped --text "nothing is ready and nothing is in progress"\n/)
   assert.match(run, /if \[ "\$stops" = "none" \]; then \$FLOW run-report "\$EPIC" --post --outcome built; fi/)
   assert.doesNotMatch(run, /\$FLOW post "\$EPIC"/, 'no second text for the closing')
+})
+
+test('a conflict under Stops: none is routed back to the ticket job: dispatch asks with flow:start, and the job runs the skill in conflict mode when flow ticket says so', () => {
+  const read = step('ticket', (entry) => entry.id === 'read').run
+  assert.match(read, /echo "mode=\$\(echo "\$ticket" \| jq -r 'if \.resolveConflict then " --resolve-conflict" else "" end'\)" >> "\$GITHUB_OUTPUT"/)
+  assert.match(claudeStep('ticket').with.prompt, /--no-merge\$\{\{ steps\.read\.outputs\.mode \}\}$/)
+  assert.match(step('epic', (entry) => entry.run && /dispatch/.test(entry.run)).run, /\$FLOW dispatch "\$EPIC"/, 'dispatch, which the epic job runs, is what asks for the resolution')
 })
 
 test('the pull request job answers reviews and failed checks on ticket and epic branches through the ticket skill\'s loop', () => {
