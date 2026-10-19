@@ -62,7 +62,7 @@ import {
   lastHandoff,
   MAX_HANDOFF_LENGTH,
 } from './ticket-steps.mjs'
-import { loadSources, workflowSources, meterTranscripts, meterComment, readMeterComment } from './meter.mjs'
+import { loadSources, workflowSources, workflowRuns, meterTranscripts, meterComment, readMeterComment } from './meter.mjs'
 import { ticketStats, readEpicComments, summarize, overallStats, formatStats, combineMeters, firstStartBase } from './stats.mjs'
 import { COPILOT_REVIEWER_LOGIN, BOTS, configuredBot, copilotUnavailable, botReview, sameLogin, summarizeChecks, sleepSeconds } from './review-bots.mjs'
 import {
@@ -890,7 +890,7 @@ function commandLink(positional) {
   return 0
 }
 
-function markNeedsHuman(number, text) {
+function markNeedsHuman(number, text, details = '') {
   const { issue, epicAuthor } = loadTicket(number)
   const people = issue.assignees.length ? issue.assignees : [epicAuthor || issue.author].filter(Boolean)
   const already = issue.labels.includes(NEEDS_HUMAN_LABEL)
@@ -900,7 +900,8 @@ function markNeedsHuman(number, text) {
     state: already ? null : 'needs-human',
     reopen: issue.state === 'closed',
   })
-  return github.comment(number, needsHumanComment({ people, text: reopened ? `${text} It was closed as done and is open again, since a closed ticket carries no work.` : text }))
+  const sentence = reopened ? `${text} It was closed as done and is open again, since a closed ticket carries no work.` : text
+  return github.comment(number, needsHumanComment({ people, text: details ? `${sentence}\n\n${details}` : sentence }))
 }
 
 function commandNeedsHuman(positional, flags) {
@@ -1511,10 +1512,28 @@ function commandReset(positional, flags) {
   return 0
 }
 
+function failedCheckCause(check) {
+  if (check.status === 'skipped') return `skipped — ${check.evidence}`
+  return check.evidence.startsWith('exit ') ? check.evidence : `exit ${check.exitCode} — ${check.evidence}`
+}
+
 function failedChecksText(report) {
-  const failed = report.checks.filter((check) => check.status !== 'passed').map((check) => `\`${check.check}\` (${check.status})`)
+  const failed = report.checks.filter((check) => check.status !== 'passed').map((check) => `\`${check.check}\` (${failedCheckCause(check)})`)
   const problems = report.problems.map((problem) => problem.why)
   return [...failed, ...problems].join('; ')
+}
+
+function fenced(text) {
+  const longest = Math.max(2, ...(text.match(/`+/g) || []).map((run) => run.length))
+  const fence = '`'.repeat(longest + 1)
+  return `${fence}text\n${text}\n${fence}`
+}
+
+function failedTailsText(failedChecks) {
+  return failedChecks
+    .filter((check) => check.tail)
+    .map((check) => `\`${check.check}\`, the end of its output:\n\n${fenced(check.tail)}`)
+    .join('\n\n')
 }
 
 function commandCheckEpic(positional, flags) {
@@ -1558,7 +1577,8 @@ function commandCheckEpic(positional, flags) {
         const issue = github.getIssue(ticket.number)
         const criteria = parseTicketBody(issue.body, epic.settings.designSources).criteria
         const report = runCriteria({ ticket: ticket.number, ...criteria }, { cwd: path })
-        results.push({ ticket: ticket.number, title: ticket.title, passed: report.passed, total: report.total, skipped: report.skipped, allPassed: report.allPassed, failures: report.allPassed ? '' : failedChecksText(report) })
+        const failedChecks = report.checks.filter((check) => check.status !== 'passed').map((check) => ({ check: check.check, exitCode: check.exitCode, evidence: check.evidence, tail: check.tail }))
+        results.push({ ticket: ticket.number, title: ticket.title, passed: report.passed, total: report.total, skipped: report.skipped, allPassed: report.allPassed, failures: report.allPassed ? '' : failedChecksText(report), failedChecks })
       }
   } finally {
     removeWorktree(root, path)
@@ -1571,7 +1591,7 @@ function commandCheckEpic(positional, flags) {
     lines.push(`**Epic check** at \`${head.slice(0, 12)}\` of \`${epicBranch}\`: ${results.length - failing.length} of ${results.length} ticket(s) still pass their checks.`)
     if (results.length) {
       lines.push('', '| Ticket | Checks | Result |', '|---|---|---|')
-      for (const result of results) lines.push(`| #${result.ticket} ${result.title.replace(/\|/g, '\\|')} | ${result.passed} of ${result.total} | ${result.allPassed ? 'pass' : `FAIL: ${result.failures.replace(/\|/g, '\\|')}`} |`)
+      for (const result of results) lines.push(`| #${result.ticket} ${result.title.replace(/\|/g, '\\|')} | ${result.passed} of ${result.total} | ${result.allPassed ? 'pass' : `FAIL: ${result.failures.replace(/\|/g, '\\|').replace(/\n/g, ' ')}`} |`)
     }
   }
   github.comment(epicNumber, lines.join('\n'))
@@ -1580,6 +1600,7 @@ function commandCheckEpic(positional, flags) {
       markNeedsHuman(
         result.ticket,
         `This ticket's checks fail on the epic branch \`${epicBranch}\` at \`${head.slice(0, 12)}\`, after it was merged: ${result.failures}. It stays merged; whether it needs a fix ticket is a person's call.`,
+        failedTailsText(result.failedChecks),
       )
   printJson({ epic: epicNumber, branch: epicBranch, head, setupFailure, tickets: results, allPassed })
   return allPassed ? 0 : 1
@@ -1839,13 +1860,34 @@ function commandScreenshots(positional, flags) {
   return 0
 }
 
+function runsNotMetered(number, found) {
+  const meters = github.listComments(number).map((comment) => readMeterComment(comment.body)).filter(Boolean)
+  const covered = new Set(meters.flatMap((meter) => (Array.isArray(meter.runs) ? meter.runs : [])))
+  const unlisted = meters.some((meter) => !Array.isArray(meter.runs))
+  const candidates = unlisted ? found.filter((run) => run.given) : found
+  if (unlisted)
+    process.stderr.write(`#${number} has a cost comment from before runs were recorded, which cannot say which run it covered; reading only the run given, ${candidates[0].id}\n`)
+  return candidates.filter((run) => !covered.has(run.id))
+}
+
 function commandMeter(positional, flags) {
   const number = issueNumber(positional[0], 'a ticket number')
   if (!flags.transcripts && flags.workflow === undefined)
     throw new UsageError("meter needs --transcripts <path> (a transcript file, a directory of them, or a headless run's output) or --workflow <run dir>")
   let sources
+  let runs = null
   try {
-    sources = [...(flags.transcripts ? loadSources(flags.transcripts) : []), ...(flags.workflow !== undefined ? workflowSources(flags.workflow, number) : [])]
+    sources = flags.transcripts ? loadSources(flags.transcripts) : []
+    if (flags.workflow !== undefined) {
+      const found = workflowRuns(flags.workflow, number)
+      const chosen = flags.print ? found : runsNotMetered(number, found)
+      if (!chosen.length && !sources.length) {
+        console.log(`every workflow run that built #${number} (${found.map((run) => run.id).join(', ')}) is already in a cost comment on it; nothing posted`)
+        return 0
+      }
+      runs = chosen.map((run) => run.id)
+      sources.push(...chosen.flatMap((run) => workflowSources(run.directory, number)))
+    }
   } catch (error) {
     process.stderr.write(`${error.message}\n`)
     return 1
@@ -1854,7 +1896,7 @@ function commandMeter(positional, flags) {
     process.stderr.write(`no transcript found for #${number} in ${[...(flags.transcripts || []), ...(flags.workflow !== undefined ? [flags.workflow] : [])].join(', ')}\n`)
     return 1
   }
-  const body = meterComment({ ticket: number, sourceCount: sources.length, meter: meterTranscripts(sources) })
+  const body = meterComment({ ticket: number, sourceCount: sources.length, meter: meterTranscripts(sources), runs })
   if (flags.print) {
     console.log(body)
     return 0

@@ -291,11 +291,36 @@ test('check-epic runs the checks of the done tickets at the epic head in a clean
   assert.deepEqual(report.tickets.map((ticket) => [ticket.ticket, ticket.allPassed]), [[2, true], [3, false]], 'the main checkout\'s files do not count')
   assert.match(posted(1)[0], new RegExp(`^<!-- flow:release-check head=${report.head} passed=false all=true -->\n\\*\\*Epic check\\*\\* at`))
   assert.match(posted(1)[0], /\*\*Epic check\*\* at `[0-9a-f]{12}` of `epic\/trip-export`: 1 of 2 ticket\(s\) still pass their checks\./)
-  assert.match(posted(1)[0], /\| #3 Export file \| 0 of 1 \| FAIL: `test -f export\.txt` \(failed\) \|/)
+  assert.match(posted(1)[0], /\| #3 Export file \| 0 of 1 \| FAIL: `test -f export\.txt` \(exit 1\) \|/)
   assert.deepEqual(added(3), ['flow:needs-human'])
   assert.match(posted(3)[0], /@ana This ticket's checks fail on the epic branch `epic\/trip-export` .* It stays merged/)
   assert.deepEqual(posted(2), [])
   assert.equal(git(repo.work, 'worktree', 'list').split('\n').length, 1, 'the clean copy is removed')
+})
+
+test('a check failing at the epic head says why: the evidence in the table and the JSON, and the end of its output in the hand-off to a person', () => {
+  const repo = repository()
+  world({
+    tickets: {
+      2: { labels: ['flow:ticket', 'flow:done'], criteria: "- the end-to-end suite\n  CHECK: for n in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25; do echo \"line $n\"; done; echo 'Error: port 3000 is already in use (``` fenced)' >&2; exit 7" },
+      3: { labels: ['flow:ticket', 'flow:done'], criteria: '- prints yes\n  CHECK: echo no\n  EXPECT: yes' },
+    },
+  })
+  const result = flow(repo.work, ['check-epic', '1', '--mark'])
+  assert.equal(result.status, 1)
+  const report = JSON.parse(result.stdout)
+  assert.match(report.tickets[0].failures, /^`for n in .*` \(exit 7 — line 24 \/ line 25 \/ Error: port 3000 is already in use \(``` fenced\)\)$/)
+  assert.equal(report.tickets[1].failures, '`echo no` (exit 0, but the output does not contain "yes")')
+  assert.equal(report.tickets[0].failedChecks[0].tail.split('\n').length, 20)
+  const table = posted(1)[0].split('\n').filter((line) => line.startsWith('| #'))
+  assert.equal(table.length, 2, 'each cell stays one line')
+  assert.match(table[0], /FAIL: `for n in .*` \(exit 7 — line 24 \/ line 25 \/ Error: port 3000 is already in use/)
+  assert.doesNotMatch(posted(1)[0], /line 6\b/, 'the table carries the evidence, not the tail')
+  const handOff = posted(2)[0]
+  assert.match(handOff, /after it was merged: `for n in .*` \(exit 7 — line 24 \/ line 25 \/ Error: port 3000 is already in use \(``` fenced\)\)\. It stays merged; whether it needs a fix ticket is a person's call\.\n\n`for n in .*`, the end of its output:\n\n````text\nline 7\n/)
+  assert.match(handOff, /line 25\nError: port 3000 is already in use \(``` fenced\)\n````$/)
+  assert.doesNotMatch(handOff, /line 6\n/, 'twenty lines, no more')
+  assert.match(posted(3)[0], /the output does not contain "yes"\)\. It stays merged; whether it needs a fix ticket is a person's call\.\n\n`echo no`, the end of its output:\n\n```text\nno\n```$/)
 })
 
 test('check-epic --mark reopens a failing ticket that was closed as done, and says so on it', () => {

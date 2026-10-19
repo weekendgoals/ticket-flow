@@ -72,18 +72,18 @@ Every suite needs Node ≥ 20 and nothing else unless noted; pass each test
 file path explicitly (`node --test <directory>` finds nothing here). Counts
 as of 2026-10-19; the pass count grows, the fail line stays `# fail 0`.
 
-- `node --test plugins/flow/scripts/flow.test.mjs` — `# pass 78`. The CLI
+- `node --test plugins/flow/scripts/flow.test.mjs` — `# pass 79`. The CLI
   end to end against the fake `gh`; one case needs `git` on PATH.
 - `node --test plugins/flow/scripts/lifecycle.test.mjs` — `# pass 39`. The
   ticket steps in throwaway repositories with a bare remote; needs `git`, `sh`.
-- `node --test plugins/flow/scripts/epic-run.test.mjs` — `# pass 36`. The
+- `node --test plugins/flow/scripts/epic-run.test.mjs` — `# pass 37`. The
   whole-epic commands, the same way.
 - `pull-request.test.mjs` `# pass 20`, `issue-body.test.mjs` `# pass 29`,
-  `checks.test.mjs` `# pass 26` (real shell commands in a temp dir),
+  `checks.test.mjs` `# pass 27` (real shell commands in a temp dir),
   `tracker/github.test.mjs` `# pass 37`, `fidelity.test.mjs` `# pass 54`,
   `stats.test.mjs` `# pass 15` (needs `git`), `project-sync.test.mjs`
   `# pass 34` (needs `git`), under `plugins/flow/scripts/`.
-- `node --test plugins/flow/scripts/meter.test.mjs` — `# pass 17`. Builds
+- `node --test plugins/flow/scripts/meter.test.mjs` — `# pass 18`. Builds
   its transcripts; no test reads a real one (they belong to whoever ran them).
 - `node --test plugins/flow/scripts/worktree-setup.test.mjs` — `# pass 19`;
   needs `git`, POSIX `sh` and `sleep`.

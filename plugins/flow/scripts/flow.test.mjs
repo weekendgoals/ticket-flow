@@ -1431,3 +1431,56 @@ test('report writes one page of every epic, open and closed, from the same figur
   assert.equal(flow('report').status, 2)
   assert.equal(flow('report', '1', '--out', out).status, 2)
 })
+
+test('meter --workflow posts one comment over every run that built the ticket, posts nothing once each run is in a comment, and reads only the run given beside a comment from before runs were listed', () => {
+  const parent = join(directory, 'workflows')
+  const runOf = (id, ticket, input) => {
+    mkdirSync(join(parent, id), { recursive: true })
+    writeFileSync(join(parent, id, 'journal.jsonl'), `${JSON.stringify({ type: 'started', agentId: `${id}-w`, label: `worker:#${ticket}` })}\n`)
+    writeFileSync(join(parent, id, `agent-${id}-w.jsonl`), `${JSON.stringify({ type: 'assistant', timestamp: '2026-10-18T09:00:00Z', message: { id: `m-${id}`, model: 'claude-opus-5', usage: { input_tokens: input, output_tokens: 1, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 } } })}\n`)
+  }
+  runOf('run-a', 12, 100)
+  runOf('run-b', 12, 20)
+  runOf('run-c', 13, 5000)
+  const comments = `GET ${R}/issues/12/comments?per_page=100`
+  const post = `POST ${R}/issues/12/comments`
+  const meterWorld = (existing) =>
+    fake.setFixtures({ [comments]: existing.map((body, index) => ({ id: index + 1, user: { login: 'flow-bot' }, body, created_at: '2026-10-18T10:00:00Z' })), [post]: { id: 9, html_url: 'https://github.com/o/r/issues/12#issuecomment-9' }, [PROJECT_LOOKUP]: { data: { repository: { projectsV2: { nodes: [] } } } } })
+  const postedBodies = () => fake.calls().filter((call) => call.key === post).map((call) => JSON.parse(call.stdin).body)
+  const json = (body) => JSON.parse(body.match(/```json\n(.+)\n```/)[1])
+
+  meterWorld([])
+  const first = flow('meter', '12', '--workflow', join(parent, 'run-b'))
+  assert.equal(first.status, 0, first.stderr)
+  const [both] = postedBodies()
+  assert.match(both, /read from 2 transcript file\(s\) of 2 workflow run\(s\) \(run-a, run-b\)\./)
+  assert.deepEqual([json(both).runs, json(both).total.input], [['run-a', 'run-b'], 120], 'the halted first run counts, and run-c built another ticket')
+
+  fake.clearCalls()
+  meterWorld([both])
+  const again = flow('meter', '12', '--workflow', join(parent, 'run-b'))
+  assert.equal(again.status, 0, again.stderr)
+  assert.match(again.stdout, /every workflow run that built #12 \(run-a, run-b\) is already in a cost comment on it; nothing posted/)
+  assert.deepEqual(postedBodies(), [])
+
+  runOf('run-d', 12, 3)
+  fake.clearCalls()
+  meterWorld([both])
+  assert.equal(flow('meter', '12', '--workflow', join(parent, 'run-d')).status, 0)
+  assert.deepEqual(json(postedBodies()[0]).runs, ['run-d'], 'only the run no comment lists, so a sum over the comments counts each run once')
+
+  const legacy = '<!-- flow:meter -->\n**Cost of #12**\n\n```json\n{"flowMeter":1,"ticket":12,"roles":{},"models":{},"total":{"input":100,"output":1,"cacheCreation":0,"cacheReads":0}}\n```'
+  fake.clearCalls()
+  meterWorld([legacy])
+  const narrowed = flow('meter', '12', '--workflow', join(parent, 'run-b'))
+  assert.equal(narrowed.status, 0, narrowed.stderr)
+  assert.match(narrowed.stderr, /#12 has a cost comment from before runs were recorded, which cannot say which run it covered; reading only the run given, run-b/)
+  assert.deepEqual([json(postedBodies()[0]).runs, json(postedBodies()[0]).total.input], [['run-b'], 20])
+
+  fake.clearCalls()
+  fake.setFixtures({})
+  const printed = flow('meter', '12', '--workflow', join(parent, 'run-b'), '--print')
+  assert.equal(printed.status, 0, printed.stderr)
+  assert.deepEqual(json(printed.stdout).runs, ['run-a', 'run-b', 'run-d'])
+  assert.deepEqual(fake.calls(), [], '--print posts nothing, so it reads no comment either')
+})

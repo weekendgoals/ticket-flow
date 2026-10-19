@@ -132,7 +132,10 @@ When the workflow returns:
 1. Post what each ticket cost, from the run's own records. The run
    directory is the one the Workflow result names
    (`…/subagents/workflows/<run id>/`); once for every ticket number in its
-   `tickets`: `FLOW meter <n> --workflow <run dir>`. A figure the records lack reads
+   `tickets`: `FLOW meter <n> --workflow <run dir>`. It reads every run of
+   that workflows directory that built the ticket (a ticket that halted and
+   resumed spans two) and skips a run a cost comment already covers, so
+   running it again posts nothing twice. A figure the records lack reads
    `unknown`; never estimate one.
 2. Tell the person, in a few lines: built or stopped, the release pull
    request's URL, and every ticket that needs a person with the one-line

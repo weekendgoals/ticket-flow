@@ -16,6 +16,8 @@ const CHECK_QUOTED_SCRIPT = /\bnode\s+-e\b|\bsh\s+-c\b/
 
 export const CHECK_TIMEOUT_MS = 600_000
 export const CHECK_MAX_BUFFER = 64 * 1024 * 1024
+export const TAIL_LINES = 20
+export const TAIL_CHARACTERS = 2000
 
 export const CHECK_SKIP_MARK = /^[\s│|>]*[↓○]|(?<![\w-])\d+\s+skipped\b|\bskipped\s*\(\s*\d+\s*\)|#\s*skip(ped)?\b/i
 export const CHECK_RAN_MARK =
@@ -123,6 +125,11 @@ export function parseChecks(text, designSources = null, { firstLine = 1 } = {}) 
   return { checks, compares, problems }
 }
 
+function outputTail(output) {
+  const lines = output.replace(/\r\n?/g, '\n').trimEnd().split('\n').slice(-TAIL_LINES).join('\n')
+  return lines.length > TAIL_CHARACTERS ? lines.slice(-TAIL_CHARACTERS) : lines
+}
+
 function describeRunError(error, timeoutMs) {
   if (error.code === 'ETIMEDOUT') return `timed out after ${timeoutMs / 1000}s`
   if (error.code === 'ENOBUFS')
@@ -160,7 +167,7 @@ export function runCheck(check, { cwd, ran = null, timeoutMs = CHECK_TIMEOUT_MS 
   else if (!exitedCleanly)
     evidence = `exit ${exitCode}${output.trim() ? ` — ${output.trim().split('\n').slice(-3).join(' / ').slice(0, 300)}` : ''}`
   else evidence = `exit 0, but the output does not contain ${JSON.stringify(check.expect)}`
-  return { criterion: check.criterion, check: check.check, expect: check.expect, exitCode, passed, status, evidence }
+  return { criterion: check.criterion, check: check.check, expect: check.expect, exitCode, passed, status, evidence, tail: passed ? '' : outputTail(output) }
 }
 
 export function runChecks(checks, options = {}) {
@@ -202,6 +209,7 @@ export function formatCheckReport(report) {
     out.push(`${STATUS_MARK[result.status]} ${result.n}/${checks.length} ${result.criterion || '(no criterion bullet above the CHECK line)'}`)
     out.push(`    $ ${result.check}`)
     out.push(`    ${result.evidence}`)
+    if (result.status === 'failed' && result.tail) out.push('    the end of its output:', ...result.tail.split('\n').map((line) => `      ${line}`))
     if (result.status === 'skipped')
       out.push('    the evidence is a skip: the named work did not run, so this criterion has not passed. Give the command what it needed (a database, a credential, a service), or point EXPECT at a line that proves it ran.')
   }
