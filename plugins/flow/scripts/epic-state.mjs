@@ -28,7 +28,7 @@ export const LABELS = [
   { name: 'flow:done', color: '0e8a16', description: 'Merged into the epic branch' },
   { name: NEEDS_HUMAN_LABEL, color: 'd93f0b', description: 'Stopped: a person has to decide something' },
   { name: START_LABEL, color: 'bfdadc', description: 'Asks a host to start building this ticket now; removed when it starts' },
-  { name: FOUND_LABEL, color: 'f9d0c4', description: 'A bug or idea with evidence and no criteria yet; a person approves it, then triage turns it into a ticket' },
+  { name: FOUND_LABEL, color: 'f9d0c4', description: 'A bug or idea with evidence and no criteria yet; a person approves it, then triage makes it a ticket' },
   { name: TIER_LABELS.easy, color: 'ededed', description: 'Straightforward ticket, built by the faster model' },
   { name: TIER_LABELS.hard, color: '555555', description: 'Demanding ticket, built by the strongest model' },
 ]
