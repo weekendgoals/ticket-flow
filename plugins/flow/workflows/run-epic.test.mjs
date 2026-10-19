@@ -155,7 +155,7 @@ test('Parallel: 2 builds two tickets side by side in their own working copies, a
   const worker = run.calls.find((call) => call.label === 'worker:#3')
   assert.match(worker.prompt, /Work only in \/wt\/ticket-3/)
   assert.match(worker.prompt, /args "#3 --unattended --until-review --no-merge"/)
-  assert.match(run.calls.find((call) => call.label === 'merge:#2').prompt, /FLOW_UNATTENDED=1 node "\/plugins\/flow\/scripts\/flow\.mjs" merge 2\n/, 'the acceptance comment names the commit, never an agent')
+  assert.match(run.calls.find((call) => call.label === 'merge:#2').prompt, /FLOW_UNATTENDED=1 FLOW_JSON=compact node "\/plugins\/flow\/scripts\/flow\.mjs" merge 2\n/, 'the acceptance comment names the commit, never an agent')
   assert.match(run.calls.find((call) => call.label === 'check-epic:#1:1').prompt, /check-epic 1 --tickets 2,3 --mark/)
   assert.ok(run.labels.indexOf('worktree-remove:#2') < run.labels.indexOf('merge:#2'), 'the working copies are gone before the merges, so no ticket branch is still checked out in one')
   assert.ok(!run.labels.includes('worker:#4'), 'Parallel: 2 takes two of the three ready tickets')
@@ -348,8 +348,10 @@ test('the proxy steps run on the faster model at low effort, and the board is re
   const next = boards(board({ ready: [2] }), board({ done: [2] }))
   const run = await drive((label) => (label.startsWith('next:') ? next() : happyTicket(label) ?? releaseSteps(label)))
   for (const call of run.calls.filter((entry) => /^(next|post|check-epic|release-pr):/.test(entry.label))) assert.deepEqual([call.model, call.effort], ['sonnet', 'low'], call.label)
-  assert.match(run.calls[0].prompt, /FLOW_UNATTENDED=1 node "\/plugins\/flow\/scripts\/flow\.mjs" next 1/)
-  assert.match(run.calls[0].prompt, /Return its exit code and its standard output exactly as printed/)
+  assert.match(run.calls[0].prompt, /FLOW_UNATTENDED=1 FLOW_JSON=compact node "\/plugins\/flow\/scripts\/flow\.mjs" next 1/)
+  assert.match(run.calls[0].prompt, /It prints one JSON object on its standard output: return that object whole, exactly as printed, however long it is, and leave out anything printed before it\./)
+  assert.doesNotMatch(run.calls[0].prompt, /last 4000 characters/)
+  assert.match(run.calls.find((call) => call.label === 'post:#1:wave:1').prompt, /the last 4000 characters when it is longer/)
   assert.ok(!run.calls.some((call) => call.model === 'haiku'))
 })
 
@@ -493,16 +495,79 @@ test('a wave that falls back says why for each copy, with its time against the b
     if (label.startsWith('worktree-remove:')) return ok('{}')
     return happyTicket(label) ?? releaseSteps(label)
   })
-  assert.ok(run.labels.includes('worktree:#4:retry'), 'a JSON command with no JSON is asked once more')
-  assert.ok(!run.labels.includes('worktree:#2:retry'))
+  assert.ok(!run.labels.some((label) => label.endsWith(':retry')), 'a long command is never asked twice: a second copy would run beside the first')
   const fallback = run.calls.find((call) => call.label === 'post:#1:fallback:1').prompt
   assert.match(fallback, /#3: setup: npm ci — the setup's 480-second budget ran out \(after 481s of a 480s budget\)/)
   assert.match(fallback, /#4: no readable answer from `flow worktree` \(exit -1\): The shell call was killed after two minutes\./)
   assert.match(run.logs.find((line) => line.startsWith('wave 1: separate working copies failed')), /#3: setup: npm ci .*after 481s of a 480s budget.*#4: no readable answer/)
   assert.deepEqual(run.labels.filter((label) => label.startsWith('worktree-remove:')).sort(), ['worktree-remove:#2', 'worktree-remove:#3', 'worktree-remove:#4'])
   const prompt = run.calls.find((call) => call.label === 'worktree:#2').prompt
-  assert.match(prompt, /Run it once, in the background with its output sent to a file, with a timeout of at least eleven minutes/)
-  assert.match(prompt, /Never run it a second time, because a second copy would run its setup beside the first\./)
-  assert.doesNotMatch(run.calls.find((call) => call.label === 'post:#1:wave:1').prompt, /eleven minutes/)
+  assert.match(prompt, /Run it once, in the background so no shell timeout cuts it, with its output sent to a file; wait until it has exited, looking every minute or so; then read the file\./)
+  assert.match(prompt, /Never run it a second time, because a second copy would run beside the first\./)
+  assert.doesNotMatch(prompt, /timeout of/)
+  assert.doesNotMatch(run.calls.find((call) => call.label === 'post:#1:wave:1').prompt, /Never run it a second time/)
   assert.equal(run.out.outcome, 'built')
+})
+
+test('a board of forty tickets with long titles, printed compact, is read whole; the same board pretty-printed and cut to its last 4,000 characters stops the run, saying so', async () => {
+  const tickets = Array.from({ length: 40 }, (_, index) => ({ n: index + 2, title: `A long ticket title that says exactly what this ticket builds, number ${index + 2}`, tier: 'hard', model: 'opus', state: 'done', startRequested: false }))
+  const next = { epic: 1, approved: true, ready: [], waiting: [], inProgress: [], done: tickets.map((entry) => entry.n), needsHuman: [], planned: [], problems: [], delivery: 'release', parallel: 1, branch: 'epic/x', tickets }
+  const compact = JSON.stringify(next)
+  assert.ok(compact.length > 4000, `${compact.length} characters`)
+  const whole = await drive((label) => (label.startsWith('next:') ? ok(compact) : releaseSteps(label)))
+  assert.equal(whole.out.outcome, 'built', whole.out.stopReason)
+  const cut = JSON.stringify(next, null, 2).slice(-4000)
+  const truncated = await drive((label) => (label.startsWith('next:') ? ok(cut) : releaseSteps(label)))
+  assert.equal(truncated.out.outcome, 'stopped')
+  assert.match(truncated.out.stopReason, /^nobody could read the board from GitHub: `flow next` answered twice with no board in its output \(exit 0\): /)
+})
+
+test('JSON of the wrong shape is named in the stop reason, not quoted by its last line', async () => {
+  const otherEpic = await drive((label) => (label.startsWith('next:') ? ok(board({ ready: [2] }).output.replace('"epic": 1', '"epic": 7')) : releaseSteps(label)))
+  assert.match(otherEpic.out.stopReason, /\(exit 0\): its JSON is the board of epic 7, not of #1$/)
+  const badList = await drive((label) => (label.startsWith('next:') ? ok(JSON.stringify({ epic: 1, approved: true, ready: ['2'] })) : releaseSteps(label)))
+  assert.match(badList.out.stopReason, /its JSON's "ready" is not a list of ticket numbers$/)
+})
+
+test('an unreadable release check does not stop the run: release-pr reads the check from GitHub, and its refusal is the stop reason', async () => {
+  const unreadable = (label) => (label === 'check-epic:#1:release' ? { exitCode: -1, output: 'The shell call was killed.' } : undefined)
+  const opened = await drive((label) => (label.startsWith('next:') ? board({ done: [2] }) : unreadable(label) ?? releaseSteps(label)))
+  assert.deepEqual(opened.labels.filter((label) => /^(check-epic|release-pr|pr-loop):/.test(label)), ['check-epic:#1:release', 'release-pr:#1', 'pr-loop:#1:1'])
+  assert.equal(opened.out.outcome, 'built')
+  assert.ok(opened.logs.some((line) => /release: the epic check's answer could not be read \(no readable answer from `flow check-epic` \(exit -1\): The shell call was killed\.\)/.test(line)))
+  const refusal = 'the latest epic check is of `aaaaaaaaaaaa`, not of the head of origin/epic/x (`bbbbbbbbbbbb`); run `flow check-epic 1` first'
+  const refused = await drive((label) => {
+    if (label.startsWith('next:')) return board({ done: [2] })
+    if (label.startsWith('release-pr:')) return { exitCode: 1, output: refusal }
+    return unreadable(label) ?? releaseSteps(label)
+  })
+  assert.deepEqual(refused.labels.filter((label) => /^(check-epic|release-pr):/.test(label)), ['check-epic:#1:release', 'release-pr:#1', 'release-pr:#1:again'])
+  assert.equal(refused.out.outcome, 'stopped')
+  assert.ok(refused.out.stopReason.endsWith(`(exit 1): ${refusal}`), refused.out.stopReason)
+  assert.ok(!refused.labels.some((label) => label.endsWith(':retry')))
+  const failed = await drive((label) => (label.startsWith('next:') ? board({ done: [2] }) : label === 'check-epic:#1:release' ? { exitCode: 1, output: '{"allPassed":false}' } : releaseSteps(label)))
+  assert.ok(!failed.labels.includes('release-pr:#1'), 'a readable failed check still stops before the release')
+})
+
+test('a wave check-epic with no readable answer is logged, never asked twice', async () => {
+  const next = boards(board({ ready: [2] }), board({ done: [2] }))
+  const run = await drive((label) => {
+    if (label.startsWith('next:')) return next()
+    if (label === 'check-epic:#1:1') return { exitCode: -1, output: '' }
+    return happyTicket(label) ?? releaseSteps(label)
+  })
+  assert.ok(!run.labels.some((label) => /^(check-epic|worktree):.*:retry$/.test(label)))
+  assert.ok(run.logs.some((line) => line === "wave 1: the epic check's answer could not be read (no readable answer from `flow check-epic` (exit -1): (no output))"))
+})
+
+test('a copy whose git step failed is timed without a budget, since no setup started', async () => {
+  const next = boards(board({ ready: [2, 3], parallel: 2 }), board({ done: [2, 3], parallel: 2 }))
+  const run = await drive((label) => {
+    if (label.startsWith('next:')) return next()
+    if (label === 'worktree:#2') return ok(JSON.stringify({ ticket: 2, path: '/wt/ticket-2', failure: null, elapsedSeconds: 3 }))
+    if (label === 'worktree:#3') return { exitCode: 1, output: JSON.stringify({ ticket: 3, path: '/wt/ticket-3', failure: { step: 'git worktree add', detail: 'git worktree add failed: fatal: invalid reference' }, elapsedSeconds: 1 }) }
+    if (label.startsWith('worktree-remove:')) return ok('{}')
+    return happyTicket(label) ?? releaseSteps(label)
+  })
+  assert.match(run.calls.find((call) => call.label === 'post:#1:fallback:1').prompt, /#3: git worktree add — git worktree add failed: fatal: invalid reference \(after 1s\)/)
 })

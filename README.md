@@ -518,9 +518,11 @@ Each round it:
 A workflow script has no shell, so a small agent runs each `flow` command
 for it and hands back the exit code and what the command printed. The
 script parses that output itself and never takes the agent's summary of it,
-because a retelling is not the record. A command that prints JSON and
-brought none back is run once more by a fresh agent, and a stop over it
-quotes the exit code and the last line that came back. Before it halts over
+because a retelling is not the record. A short command that prints JSON
+and brought none back is run once more by a fresh agent; `flow worktree`
+and `flow check-epic`, which can run for many minutes, are run once only,
+because a second copy would run beside the first. A stop over an answer
+nobody could read quotes the exit code and the last line that came back. Before it halts over
 what GitHub said (the epic is not approved, or at the end not every ticket
 is done), it reads the board a second time and halts only when both
 readings agree.
@@ -537,8 +539,9 @@ clears it.
 When nothing is ready and nothing is in progress, it checks every ticket at
 the epic head, opens the release pull request (`flow release-pr`: the
 outcome, the walkthrough, each ticket's merge commit, the cost; it opens
-only at the head that check passed at, and an answer that names no pull
-request is asked for once more before the run gives up), answers its
+only at the head that check passed at, whatever the helper said of the
+check, and an answer that names no pull request is asked for once more
+before the run gives up, quoting the refusal), answers its
 review and CI for up to two rounds, and posts the link on the epic. Then the
 session posts each ticket's cost from the run's records
 (`flow meter <n> --workflow <run dir>`).
@@ -710,7 +713,10 @@ titled `Bugs` when there is exactly one.
 ## The `flow` command
 
 `node <plugin root>/scripts/flow.mjs <command>`. It stores nothing locally:
-every answer is read from GitHub (through `gh`) and git.
+every answer is read from GitHub (through `gh`) and git. JSON is printed
+indented for people; `FLOW_JSON=compact` prints it on one line, which is how
+`/flow:run` reads it, since its helper agent hands back a long output whole
+only when told to.
 
 | Command | What it does |
 |---|---|

@@ -87,7 +87,7 @@ as of 2026-10-19; the pass count grows, the fail line stays `# fail 0`.
   its transcripts; no test reads a real one (they belong to whoever ran them).
 - `node --test plugins/flow/scripts/worktree-setup.test.mjs` — `# pass 19`;
   needs `git`, POSIX `sh` and `sleep`.
-- `node --test plugins/flow/workflows/run-epic.test.mjs` — `# pass 30`
+- `node --test plugins/flow/workflows/run-epic.test.mjs` — `# pass 35`
   (stubbed `agent`, no git), `plugins/flow/github/flow.test.mjs` `# pass 14`.
 - `node --test tools/reporter/reporter.test.mjs` — `# pass 31`. The
   extension's modules under a stubbed `fetch`. It is also their syntax

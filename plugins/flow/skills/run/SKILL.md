@@ -98,7 +98,8 @@ agent's summary of a command is not what GitHub said. Before it halts over
 the board (the epic not approved, or not every ticket done at the end), it
 reads the board once more and halts only when both readings agree; a stop
 over a command that answered nothing readable quotes its exit code and last
-line.
+line. `worktree` and `check-epic` are never asked for twice, because a
+second copy would run beside the first.
 
 A ticket stops only for what `/flow:ticket` stops for (a gate still failing
 after two rounds of fixes: the acceptance checks, an Important review

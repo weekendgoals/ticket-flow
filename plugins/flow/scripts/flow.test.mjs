@@ -247,6 +247,9 @@ test('next lists ready, waiting, in-progress and done tickets, and exits 0 while
   assert.deepEqual(next.problems, [])
   assert.deepEqual([next.delivery, next.parallel], ['release', 1])
   assert.deepEqual(next.tickets.find((ticket) => ticket.n === 5), { n: 5, title: next.tickets.find((ticket) => ticket.n === 5).title, tier: 'hard', model: 'opus', state: 'in-progress', startRequested: false })
+  assert.ok(result.stdout.split('\n').length > 3, 'pretty by default, for people and the Action\'s logs')
+  const compact = spawnSync(process.execPath, [FLOW, 'next', '1'], { cwd: workdir, encoding: 'utf8', env: { ...process.env, ...fake.env, FLOW_ACCOUNT: '', FLOW_JSON: 'compact' } })
+  assert.equal(compact.stdout, `${JSON.stringify(next)}\n`, 'FLOW_JSON=compact prints the same JSON on one line')
 })
 
 test('next on an unapproved epic reports approved false, nothing ready, and exits 1', () => {
@@ -1476,6 +1479,22 @@ test('meter --workflow posts one comment over every run that built the ticket, p
   assert.equal(narrowed.status, 0, narrowed.stderr)
   assert.match(narrowed.stderr, /#12 has a cost comment from before runs were recorded, which cannot say which run it covered; reading only the run given, run-b/)
   assert.deepEqual([json(postedBodies()[0]).runs, json(postedBodies()[0]).total.input], [['run-b'], 20])
+  const runB = postedBodies()[0]
+
+  fake.clearCalls()
+  meterWorld([legacy, runB])
+  const legacyCovered = flow('meter', '12', '--workflow', join(parent, 'run-b'))
+  assert.equal(legacyCovered.status, 0, legacyCovered.stderr)
+  assert.match(legacyCovered.stdout, /every workflow run that built #12 \(run-b\) is already in a cost comment on it; nothing posted/, 'only the run that was a candidate is named')
+
+  const transcript = join(parent, 'run-a', 'agent-run-a-w.jsonl')
+  fake.clearCalls()
+  meterWorld([both, legacy.replace('"ticket":12', '"ticket":12,"runs":["run-d"]')])
+  const withTranscripts = flow('meter', '12', '--workflow', join(parent, 'run-b'), '--transcripts', `worker=${transcript}`)
+  assert.equal(withTranscripts.status, 0, withTranscripts.stderr)
+  const transcriptsOnly = postedBodies()[0]
+  assert.doesNotMatch(transcriptsOnly, /workflow run\(s\)/)
+  assert.equal(json(transcriptsOnly).runs, undefined, 'no run was read, so the comment records none')
 
   fake.clearCalls()
   fake.setFixtures({})

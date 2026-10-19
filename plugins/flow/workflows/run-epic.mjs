@@ -20,7 +20,7 @@ if (!epic || !SAFE_PATH(repoRoot) || !SAFE_PATH(pluginRoot))
     'flow-run-epic needs args {epic: <issue number>, repoRoot: <absolute path>, pluginRoot: <absolute path>}, paths without quotes, backticks, "$" or line breaks; the flow:run skill supplies them',
   )
 
-const FLOW = `FLOW_UNATTENDED=1 node "${pluginRoot}/scripts/flow.mjs"`
+const FLOW = `FLOW_UNATTENDED=1 FLOW_JSON=compact node "${pluginRoot}/scripts/flow.mjs"`
 const PROXY = { model: 'sonnet', effort: 'low' }
 const WORKER_MODELS = new Set(['sonnet', 'opus'])
 const MAX_IDLE_ROUNDS = 3
@@ -50,13 +50,17 @@ const PR_ROUND_SCHEMA = {
 
 const SHORT_RUN = 'It can run longer than one shell call allows: if it is still running after a few minutes, run it again in the background with its output sent to a file, wait for it to finish, and read the file.'
 const LONG_RUN = [
-  'It can run for many minutes: a `.flow.json` setup alone may take eight. Run it once, in the background with its output sent to a file, with a timeout of at least eleven minutes if your shell takes one; wait until it exits, then read the file.',
-  'Never run it a second time, because a second copy would run its setup beside the first.',
+  'It can run for many minutes: a `.flow.json` setup alone may take eight, and every check after it up to ten more.',
+  'Run it once, in the background so no shell timeout cuts it, with its output sent to a file; wait until it has exited, looking every minute or so; then read the file.',
+  'Never run it a second time, because a second copy would run beside the first.',
 ].join(' ')
 const NEXT_WHAT = 'It prints JSON, and exits 1 when the epic is not approved, has no tickets or is stuck; that is an answer, not a failure.'
 const BOARD_LISTS = ['ready', 'inProgress', 'done', 'needsHuman', 'planned']
 
-function commandPrompt(command, what, long) {
+const WHOLE_JSON = 'It prints one JSON object on its standard output: return that object whole, exactly as printed, however long it is, and leave out anything printed before it.'
+const OUTPUT_TAIL = 'Return its exit code and its standard output exactly as printed (the last 4000 characters when it is longer).'
+
+function commandPrompt(command, what, { json, long }) {
   return [
     `Run this one command from the repository at ${repoRoot} and report what it did. Change nothing else, and do not try to fix anything it complains about.`,
     '',
@@ -64,7 +68,7 @@ function commandPrompt(command, what, long) {
     `cd "${repoRoot}" && ${command}`,
     '```',
     '',
-    `${what} Return its exit code and its standard output exactly as printed (the last 4000 characters when it is longer).`,
+    `${what} ${json ? `Return its exit code. ${WHOLE_JSON}` : OUTPUT_TAIL}`,
     long ? LONG_RUN : SHORT_RUN,
   ].join('\n')
 }
@@ -97,8 +101,8 @@ function unreadableText(result) {
   return `no readable answer from \`flow ${result.command}\` (exit ${result.exitCode}): ${result.lastLine}`
 }
 
-async function askProxy(command, label, what, long) {
-  const result = await agent(commandPrompt(command, what, long), { ...PROXY, label, schema: COMMAND_SCHEMA })
+async function askProxy(command, label, what, shape) {
+  const result = await agent(commandPrompt(command, what, shape), { ...PROXY, label, schema: COMMAND_SCHEMA })
   const exitCode = result && typeof result.exitCode === 'number' ? result.exitCode : -1
   const output = result && typeof result.output === 'string' ? result.output : ''
   const json = jsonIn(output)
@@ -106,32 +110,47 @@ async function askProxy(command, label, what, long) {
 }
 
 async function runCommand(command, label, what = '', { json = false, long = false } = {}) {
-  const first = await askProxy(command, label, what, long)
+  const first = await askProxy(command, label, what, { json, long })
   if (!json || first.json) return first
-  const second = await askProxy(command, `${label}:retry`, what, long)
+  if (long) return { ...first, answer: 'unreadable' }
+  const second = await askProxy(command, `${label}:retry`, what, { json, long })
   return second.json ? second : { ...second, answer: 'unreadable' }
 }
 
+function boardProblem(json) {
+  if (json.epic !== epic) return `its JSON is the board of epic ${JSON.stringify(json.epic ?? null)}, not of #${epic}`
+  if (typeof json.approved !== 'boolean') return 'its JSON has no true or false "approved"'
+  const list = BOARD_LISTS.find((key) => !Array.isArray(json[key]) || !json[key].every(Number.isInteger))
+  if (list) return `its JSON's "${list}" is not a list of ticket numbers`
+  if (!Array.isArray(json.waiting) || !json.waiting.every((entry) => entry && Number.isInteger(entry.n))) return 'its JSON\'s "waiting" entries do not each carry a ticket number "n"'
+  if (!Array.isArray(json.tickets) || !json.tickets.every((entry) => entry && Number.isInteger(entry.n) && typeof entry.model === 'string' && typeof entry.state === 'string'))
+    return 'its JSON\'s "tickets" entries do not each carry "n", "model" and "state"'
+  if (json.delivery !== undefined && json.delivery !== null && typeof json.delivery !== 'string') return 'its JSON\'s "delivery" is not text'
+  if (json.parallel !== undefined && json.parallel !== null && typeof json.parallel !== 'number') return 'its JSON\'s "parallel" is not a number'
+  return null
+}
+
 function boardOf(json) {
-  if (!json || json.epic !== epic || typeof json.approved !== 'boolean') return null
-  if (!BOARD_LISTS.every((key) => Array.isArray(json[key]) && json[key].every(Number.isInteger))) return null
-  if (!Array.isArray(json.waiting) || !json.waiting.every((entry) => entry && Number.isInteger(entry.n))) return null
-  if (!Array.isArray(json.tickets) || !json.tickets.every((entry) => entry && Number.isInteger(entry.n) && typeof entry.model === 'string' && typeof entry.state === 'string')) return null
-  if (json.delivery !== undefined && json.delivery !== null && typeof json.delivery !== 'string') return null
-  if (json.parallel !== undefined && json.parallel !== null && typeof json.parallel !== 'number') return null
+  if (!json) return { board: null, why: null }
+  const why = boardProblem(json)
+  if (why) return { board: null, why }
   return {
+    board: {
     approved: json.approved,
     delivery: json.delivery ?? null,
     parallel: json.parallel ?? null,
     ...Object.fromEntries(BOARD_LISTS.map((key) => [key, json[key]])),
     waiting: json.waiting.map((entry) => entry.n),
     tickets: json.tickets.map((entry) => ({ n: entry.n, model: entry.model, state: entry.state })),
+    },
+    why: null,
   }
 }
 
 async function readBoardOnce(label) {
-  const read = await runCommand(`${FLOW} next ${epic}`, label, NEXT_WHAT)
-  return { board: boardOf(read.json), exitCode: read.exitCode, lastLine: read.lastLine }
+  const read = await askProxy(`${FLOW} next ${epic}`, label, NEXT_WHAT, { json: true, long: false })
+  const { board, why } = boardOf(read.json)
+  return { board, exitCode: read.exitCode, lastLine: why || read.lastLine }
 }
 
 async function readBoard(round) {
@@ -223,9 +242,8 @@ async function postOnEpic(text, label) {
 }
 
 function timeAgainstBudget(json) {
-  return Number.isFinite(json.elapsedSeconds) && Number.isFinite(json.budgetSeconds)
-    ? `after ${json.elapsedSeconds}s of a ${json.budgetSeconds}s budget`
-    : 'how long it ran is not recorded'
+  if (!Number.isFinite(json.elapsedSeconds)) return 'how long it ran is not recorded'
+  return Number.isFinite(json.budgetSeconds) ? `after ${json.elapsedSeconds}s of a ${json.budgetSeconds}s budget` : `after ${json.elapsedSeconds}s`
 }
 
 function worktreeFailure(ticket, result) {
@@ -465,14 +483,18 @@ let outcome = built ? 'built' : 'stopped'
 
 if (built && final.delivery !== 'incremental') {
   const check = await runCommand(`${FLOW} check-epic ${epic} --mark`, `check-epic:#${epic}:release`, 'It runs every done ticket\'s checks at the epic branch head and prints JSON.', { json: true, long: true })
-  if (check.answer === 'unreadable') {
-    outcome = 'stopped'
-    stopReason = `the checks at the epic head could not be read (${unreadableText(check)}), so no release pull request was opened`
-  } else if (check.exitCode !== 0) {
+  if (check.answer === 'unreadable') log(`release: the epic check's answer could not be read (${unreadableText(check)}); release-pr reads the check's own comment on the epic`)
+  if (check.answer !== 'unreadable' && check.exitCode !== 0) {
     outcome = 'stopped'
     stopReason = 'the checks at the epic head failed or could not run, so no release pull request was opened'
   } else {
-    const openRelease = (label) => runCommand(`${FLOW} release-pr ${epic}`, label, 'It opens the release pull request, or finds the one already open, and prints JSON with its number and url.')
+    const openRelease = (label) =>
+      askProxy(
+        `${FLOW} release-pr ${epic}`,
+        label,
+        'It opens the release pull request, or finds the one already open. When it refuses, it prints no JSON and says why on standard error: then return that line as the output.',
+        { json: true, long: false },
+      )
     const hasPullRequest = (answer) => answer.exitCode === 0 && answer.json && Number.isInteger(answer.json.pullRequest)
     let opened = await openRelease(`release-pr:#${epic}`)
     if (!hasPullRequest(opened)) opened = await openRelease(`release-pr:#${epic}:again`)

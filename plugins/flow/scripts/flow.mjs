@@ -235,7 +235,7 @@ function readText(flags) {
 }
 
 function printJson(value) {
-  process.stdout.write(`${JSON.stringify(value, null, 2)}\n`)
+  process.stdout.write(`${process.env.FLOW_JSON === 'compact' ? JSON.stringify(value) : JSON.stringify(value, null, 2)}\n`)
 }
 
 function formatTable(headers, rows) {
@@ -1577,8 +1577,18 @@ function commandCheckEpic(positional, flags) {
         const issue = github.getIssue(ticket.number)
         const criteria = parseTicketBody(issue.body, epic.settings.designSources).criteria
         const report = runCriteria({ ticket: ticket.number, ...criteria }, { cwd: path })
-        const failedChecks = report.checks.filter((check) => check.status !== 'passed').map((check) => ({ check: check.check, exitCode: check.exitCode, evidence: check.evidence, tail: check.tail }))
-        results.push({ ticket: ticket.number, title: ticket.title, passed: report.passed, total: report.total, skipped: report.skipped, allPassed: report.allPassed, failures: report.allPassed ? '' : failedChecksText(report), failedChecks })
+        const failed = report.checks.filter((check) => check.status !== 'passed')
+        results.push({
+          ticket: ticket.number,
+          title: ticket.title,
+          passed: report.passed,
+          total: report.total,
+          skipped: report.skipped,
+          allPassed: report.allPassed,
+          failures: report.allPassed ? '' : failedChecksText(report),
+          failedChecks: failed.map((check) => ({ check: check.check, exitCode: check.exitCode, evidence: check.evidence })),
+          tails: failed.map((check) => ({ check: check.check, tail: check.tail })),
+        })
       }
   } finally {
     removeWorktree(root, path)
@@ -1600,9 +1610,9 @@ function commandCheckEpic(positional, flags) {
       markNeedsHuman(
         result.ticket,
         `This ticket's checks fail on the epic branch \`${epicBranch}\` at \`${head.slice(0, 12)}\`, after it was merged: ${result.failures}. It stays merged; whether it needs a fix ticket is a person's call.`,
-        failedTailsText(result.failedChecks),
+        failedTailsText(result.tails),
       )
-  printJson({ epic: epicNumber, branch: epicBranch, head, setupFailure, tickets: results, allPassed })
+  printJson({ epic: epicNumber, branch: epicBranch, head, setupFailure, tickets: results.map(({ tails, ...shown }) => shown), allPassed })
   return allPassed ? 0 : 1
 }
 
@@ -1635,7 +1645,7 @@ function commandWorktree(positional, flags) {
   const made = createWorktree(root, { path, ref: `origin/${base}` })
   if (!made.ok) {
     removeWorktree(root, path)
-    printJson({ ticket: number, path, base, replaced, configured: false, failure: { step: 'git worktree add', detail: made.reason }, elapsedSeconds: elapsedSeconds(), budgetSeconds: SETUP_BUDGET_MS / 1000 })
+    printJson({ ticket: number, path, base, replaced, configured: false, failure: { step: 'git worktree add', detail: made.reason }, elapsedSeconds: elapsedSeconds() })
     return 1
   }
   let setup
@@ -1865,9 +1875,9 @@ function runsNotMetered(number, found) {
   const covered = new Set(meters.flatMap((meter) => (Array.isArray(meter.runs) ? meter.runs : [])))
   const unlisted = meters.some((meter) => !Array.isArray(meter.runs))
   const candidates = unlisted ? found.filter((run) => run.given) : found
-  if (unlisted)
+  if (unlisted && candidates.length)
     process.stderr.write(`#${number} has a cost comment from before runs were recorded, which cannot say which run it covered; reading only the run given, ${candidates[0].id}\n`)
-  return candidates.filter((run) => !covered.has(run.id))
+  return { candidates, chosen: candidates.filter((run) => !covered.has(run.id)) }
 }
 
 function commandMeter(positional, flags) {
@@ -1880,12 +1890,12 @@ function commandMeter(positional, flags) {
     sources = flags.transcripts ? loadSources(flags.transcripts) : []
     if (flags.workflow !== undefined) {
       const found = workflowRuns(flags.workflow, number)
-      const chosen = flags.print ? found : runsNotMetered(number, found)
+      const { candidates, chosen } = flags.print ? { candidates: found, chosen: found } : runsNotMetered(number, found)
       if (!chosen.length && !sources.length) {
-        console.log(`every workflow run that built #${number} (${found.map((run) => run.id).join(', ')}) is already in a cost comment on it; nothing posted`)
+        console.log(`every workflow run that built #${number} (${candidates.map((run) => run.id).join(', ')}) is already in a cost comment on it; nothing posted`)
         return 0
       }
-      runs = chosen.map((run) => run.id)
+      runs = chosen.length ? chosen.map((run) => run.id) : null
       sources.push(...chosen.flatMap((run) => workflowSources(run.directory, number)))
     }
   } catch (error) {
