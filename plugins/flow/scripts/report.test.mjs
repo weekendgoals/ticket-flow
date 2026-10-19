@@ -80,8 +80,8 @@ test('epic states and Release words follow the tickets and the release pull requ
 test('a ticket row links the issue and prints every column, with unknown for a figure no comment carries, never blank or 0', () => {
   const html = render()
   const row = (number) => html.match(new RegExp(`<tr data-epic="\\d+" data-ticket="${number}">(.*?)</tr>`))[1].match(/<td>(.*?)<\/td>/g).map((cell) => cell.slice(4, -5))
-  assert.deepEqual(TICKET_COLUMNS.map((column) => column.label), ['#', 'title', 'tier', 'models', 'effort', 'state', 'build', 'review', 'fixes', 'accept', 'deliver', 'whole', 'tokens in', 'tokens out', 'cache', 'review rounds', 'important', 'acceptance runs', 'resets', 'escapes', 'handoff', 'stops'])
-  assert.deepEqual(row(2), ['<a href="https://github.com/o/r/issues/2">#2</a>', 'ticket 2', 'hard', 'unknown', 'unknown', 'done', '30m', '10m', 'unknown', 'unknown', 'unknown', 'unknown', '1,200', '300', '7,050', '0', '0', '0', '0', 'unknown', 'yes', '0'])
+  assert.deepEqual(TICKET_COLUMNS.map((column) => column.label), ['#', 'title', 'tier', 'models', 'effort', 'state', 'build', 'review', 'fixes', 'accept', 'deliver', 'whole', 'tokens in', 'tokens out', 'cache', 'review rounds', 'important', 'acceptance runs', 'resets', 'escapes', 'handoff', 'stops', 'departures', 'disputes'])
+  assert.deepEqual(row(2), ['<a href="https://github.com/o/r/issues/2">#2</a>', 'ticket 2', 'hard', 'unknown', 'unknown', 'done', '30m', '10m', 'unknown', 'unknown', 'unknown', 'unknown', '1,200', '300', '7,050', '0', '0', '0', '0', 'unknown', 'yes', '0', '0', '0'])
   assert.deepEqual(row(3).slice(3, 5), ['unknown', 'unknown'], 'a ticket with no cost comment shows unknown models and effort')
   assert.deepEqual(row(3).slice(6, 15), Array(9).fill('unknown'), 'a ticket with no cost comment shows unknown time and tokens')
   assert.equal(row(3)[20], 'no')

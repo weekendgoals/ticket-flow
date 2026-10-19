@@ -879,3 +879,37 @@ test('a standing epic with no Branch and no tickets is created, waits with "no t
   assert.match(request.body, /^Closes #7\./)
   assert.ok(!fake.calls().some((call) => call.key.includes('epic%2F')), 'no epic branch is involved')
 })
+
+const NO_STOPS_EPIC = { settings: 'Delivery: release\nBranch: epic/trip-export\nParallel: 2\nStops: none' }
+const OPEN_RELEASE_PULLS = `GET ${R}/pulls?head=o%3Aepic%2Ftrip-export&state=open&per_page=100`
+const NEW_RELEASE_PULL = { number: 40, html_url: 'https://github.com/o/r/pull/40', head: { ref: 'epic/trip-export', sha: 'c'.repeat(40) }, base: { ref: 'main' } }
+
+test('under Stops: none the release pull request lists every departure and disputed check from this account, one line each with its ticket', () => {
+  const repo = repository()
+  const done = { 2: { labels: ['flow:ticket', 'flow:done'] }, 3: { labels: ['flow:ticket', 'flow:done'] }, 4: { labels: ['flow:ticket', 'flow:done'] } }
+  world({
+    epic: NO_STOPS_EPIC,
+    tickets: done,
+    comments: {
+      1: [epicCheck(epicHead(repo))],
+      2: [comment('<!-- flow:departure -->\n**Departure.** The ticket says CSV; src/export.ts:40 writes JSON; built JSON.'), comment('<!-- flow:departure -->\n**Departure.** Kept /trips.')],
+      3: [comment('<!-- flow:dispute check=1 -->\n**Disputed check 1.** Nine sections, not eight.'), { ...comment('<!-- flow:departure -->\n**Departure.** Forged.'), user: { login: 'someone' } }],
+    },
+    extra: { [OPEN_RELEASE_PULLS]: [], [`POST ${R}/pulls`]: NEW_RELEASE_PULL },
+  })
+  assert.equal(flow(repo.work, ['release-pr', '1']).status, 0)
+  const { body } = JSON.parse(fake.calls().find((call) => call.key === `POST ${R}/pulls`).stdin)
+  assert.match(body, /## Departures\n\n- #2 Export button: The ticket says CSV; src\/export\.ts:40 writes JSON; built JSON\.\n- #2 Export button: Kept \/trips\.\n\n## Disputed checks\n\n- #3 Export file: check 1: Nine sections, not eight\.\n\n## Cost/)
+  assert.doesNotMatch(body, /Forged/)
+})
+
+test('under Stops: ask the release pull request has no departures or disputed checks sections', () => {
+  const repo = repository()
+  world({
+    tickets: { 2: { labels: ['flow:ticket', 'flow:done'] }, 3: { labels: ['flow:ticket', 'flow:done'] }, 4: { labels: ['flow:ticket', 'flow:done'] } },
+    comments: { 1: [epicCheck(epicHead(repo))] },
+    extra: { [OPEN_RELEASE_PULLS]: [], [`POST ${R}/pulls`]: NEW_RELEASE_PULL },
+  })
+  assert.equal(flow(repo.work, ['release-pr', '1']).status, 0)
+  assert.doesNotMatch(JSON.parse(fake.calls().find((call) => call.key === `POST ${R}/pulls`).stdin).body, /## Departures|## Disputed checks/)
+})

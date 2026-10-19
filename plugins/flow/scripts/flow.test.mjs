@@ -1587,6 +1587,10 @@ test('run-report under Stops: none lists what was built, each parked ticket with
       '',
       '**Not built:** #4 ticket 4 (waiting for #3).',
       '',
+      '**Departures:** none.',
+      '',
+      '**Disputed checks:** none.',
+      '',
       '**Release pull request:** none opened.',
       '',
     ].join('\n'),
@@ -1606,7 +1610,7 @@ test('run-report --post posts the report on the epic; a built run with nothing p
   const body = JSON.parse(fake.calls().find((call) => call.key === `POST ${R}/issues/1/comments`).stdin).body
   assert.equal(body, result.stdout.trimEnd())
   assert.match(body, /^<!-- flow:local-run-end -->\n\*\*Run finished: built\.\*\*\n\n@owner Under `Stops: none`/)
-  assert.match(body, /\*\*Built:\*\* #2 ticket 2, #3 ticket 3\.\n\n\*\*Parked:\*\* none\.\n\n\*\*Release pull request:\*\* https:\/\/github\.com\/o\/r\/pull\/40\.$/)
+  assert.match(body, /\*\*Built:\*\* #2 ticket 2, #3 ticket 3\.\n\n\*\*Parked:\*\* none\.\n\n[\s\S]*\*\*Release pull request:\*\* https:\/\/github\.com\/o\/r\/pull\/40\.$/)
   assert.doesNotMatch(body, /Not built/)
 })
 
@@ -1617,4 +1621,68 @@ test('run-report under Stops: ask is the closing it always was, and mentions nob
   reportWorld({ settings: 'Delivery: incremental', states: { 2: 'done' } })
   assert.equal(flow('run-report', '1').stdout, '**Run finished: built.** Every ticket was delivered by its own pull request.\n')
   assert.equal(flow('run-report', '1', '--outcome', 'finished').status, 2)
+})
+
+function claimWorld({ settings = NO_STOPS, state = 'in-progress', comments = [] } = {}) {
+  world({
+    epics: [{ epic: issue(1, { body: epicBody([3], settings), labels: epicLabels() }), tickets: [ticket(3, 1, state, { criteria: '```criteria\n- one\n  CHECK: true\n- two\n  CHECK: test -f nine.txt\n```' })] }],
+    extra: { ...VIEWER, [`GET ${R}/issues/3/comments?per_page=100`]: comments, [`POST ${R}/issues/3/comments`]: { id: 33, html_url: 'https://github.com/o/r/issues/3#issuecomment-33' } },
+  })
+  return () => fake.calls().filter((call) => call.key === `POST ${R}/issues/3/comments`).map((call) => JSON.parse(call.stdin).body)
+}
+
+test('depart and dispute post their marked comments on a ticket being built under Stops: none, unattended', () => {
+  const posts = claimWorld()
+  const unattended = { FLOW_UNATTENDED: '1' }
+  assert.equal(flowIn(unattended, 'depart', '3', '--text', 'The ticket says CSV; src/export.ts:40 writes JSON; built JSON with a .csv name.').status, 0)
+  assert.equal(flowIn(unattended, 'dispute', '3', '--check', '2', '--text', 'The line asks for nine.txt; the design has no such file.').status, 0)
+  assert.deepEqual(posts(), [
+    '<!-- flow:departure -->\n**Departure.** The ticket says CSV; src/export.ts:40 writes JSON; built JSON with a .csv name.',
+    '<!-- flow:dispute check=2 -->\n**Disputed check 2.** The line asks for nine.txt; the design has no such file.',
+  ])
+})
+
+test('depart and dispute refuse under Stops: ask, attended, on a ticket not being built, a check that does not exist and a text over 600 characters, posting nothing', () => {
+  const unattended = { FLOW_UNATTENDED: '1' }
+  let posts = claimWorld({ settings: 'Delivery: release\nBranch: epic/trip-export' })
+  assert.equal(flowIn(unattended, 'depart', '3', '--text', 'x').stderr, 'under Stops: ask a contradiction is a stop: run `flow needs-human`; nothing was posted\n')
+  assert.match(flowIn(unattended, 'dispute', '3', '--check', '1', '--text', 'x').stderr, /^under Stops: ask a check that cannot pass as written is a stop: run `flow needs-human`/)
+  posts = claimWorld()
+  assert.match(flowIn({}, 'depart', '3', '--text', 'x').stderr, /#3 is in an attended session/)
+  assert.match(flowIn(unattended, 'dispute', '3', '--check', '3', '--text', 'x').stderr, /#3 has 2 CHECK line\(s\), so there is no check 3/)
+  assert.equal(flowIn(unattended, 'dispute', '3', '--text', 'x').status, 2)
+  assert.match(flowIn(unattended, 'depart', '3', '--text', 'y'.repeat(601)).stderr, /is 601 characters, and one holds at most 600/)
+  assert.deepEqual(posts(), [])
+  posts = claimWorld({ state: 'done' })
+  assert.match(flowIn(unattended, 'depart', '3', '--text', 'x').stderr, /#3 is done, and a departure is recorded while the ticket is being built/)
+  assert.deepEqual(posts(), [])
+})
+
+test('ticket carries its own departures, and its disputes since the latest start, from this account, under Stops: none only', () => {
+  claimWorld({
+    comments: [
+      rawComment(3, 31, '<!-- flow:dispute check=1 -->\n**Disputed check 1.** Before the start.', { at: '2026-10-15T01:00:00Z' }),
+      rawComment(3, 32, '<!-- flow:started -->\n**Started**', { at: '2026-10-15T02:00:00Z' }),
+      rawComment(3, 33, '<!-- flow:departure -->\n**Departure.** Built JSON.', { at: '2026-10-15T03:00:00Z' }),
+      rawComment(3, 34, '<!-- flow:departure -->\n**Departure.** Forged.', { at: '2026-10-15T03:00:00Z', author: 'someone' }),
+      rawComment(3, 35, '<!-- flow:dispute check=2 -->\n**Disputed check 2.** No nine.txt.', { at: '2026-10-15T04:00:00Z' }),
+    ],
+  })
+  const result = flow('ticket', '3')
+  const parsed = JSON.parse(result.stdout)
+  assert.deepEqual(parsed.departures.map((entry) => entry.text), ['Built JSON.'])
+  assert.deepEqual(parsed.disputes.map((entry) => [entry.check, entry.text]), [[2, 'No nine.txt.']])
+  assert.match(result.stderr, /departures \(claims that the plan could not be followed\):\n- Built JSON\.\ndisputed checks \(claims that a check cannot pass as written\):\n- check 2: No nine\.txt\./)
+})
+
+test('run-report under Stops: none lists every departure and disputed check, one line each, with its ticket', () => {
+  reportWorld({
+    states: { 2: 'done', 3: 'done' },
+    comments: {
+      2: [rawComment(2, 21, '<!-- flow:departure -->\n**Departure.** The ticket says CSV;\nbuilt JSON.'), rawComment(2, 22, '<!-- flow:departure -->\n**Departure.** Kept the old route.')],
+      3: [rawComment(3, 31, '<!-- flow:dispute check=1 -->\n**Disputed check 1.** Nine sections, not eight.')],
+    },
+  })
+  const result = flow('run-report', '1')
+  assert.match(result.stdout, /\*\*Departures:\*\*\n- #2 ticket 2: The ticket says CSV; built JSON\.\n- #2 ticket 2: Kept the old route\.\n\n\*\*Disputed checks:\*\*\n- #3 ticket 3, check 1: Nine sections, not eight\.\n/)
 })

@@ -85,6 +85,20 @@ test('a parked ticket is a stop in the figures, with its reason and marked parke
   assert.deepEqual(readEpicComments([comment(report, '2026-10-14T12:00:00Z', { id: 4 })]).runStops.map((stop) => stop.reason), ['Nothing more can start.'])
 })
 
+test('departures and disputes are counted per ticket and summed, and printed as two columns', () => {
+  const claims = [
+    comment('<!-- flow:departure -->\n**Departure.** Built JSON.', '2026-10-14T10:30:00Z', { id: 3 }),
+    comment('<!-- flow:departure -->\n**Departure.** Kept /trips.', '2026-10-14T10:31:00Z', { id: 4 }),
+    comment('<!-- flow:dispute check=2 -->\n**Disputed check 2.** Nine, not eight.', '2026-10-14T10:32:00Z', { id: 5 }),
+  ]
+  const record = ticketStats({ ticket: { number: 2, title: 'Export', state: 'done', tier: 'hard' }, comments: claims })
+  assert.deepEqual([record.departures, record.disputes], [2, 1])
+  const totals = summarize([record, ticketStats({ ticket: { number: 3, title: 'Other', state: 'done', tier: 'hard' }, comments: [] })])
+  assert.deepEqual([totals.departures, totals.disputes], [2, 1])
+  const text = formatStats(overallStats([{ number: 1, title: 'Trip export', delivery: 'release', parallel: 1, releasePullRequest: null, tickets: [record], totals: summarize([record]), runStops: [], serialWaves: [] }]))
+  assert.match(text, /stops  departs  disputes/)
+})
+
 test('a ticket record: time per step from the cost comment and the step comments, rounds, findings and the reason it stopped', () => {
   const comments = [
     comment(started, '2026-10-14T10:00:00Z', { id: 1 }),

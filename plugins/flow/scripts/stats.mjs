@@ -13,6 +13,8 @@ import {
   LOCAL_RUN_END_MARKER,
   HANDOFF_MARKER,
   RUN_STOPPED_LEAD,
+  DEPARTURE_MARKER,
+  DISPUTE_MARKER,
 } from './ticket-steps.mjs'
 import { readMeterComment, EFFORT_NAME, MODEL_NAME, ROLES, UNNAMED_MODEL } from './meter.mjs'
 
@@ -111,9 +113,13 @@ function readTicketComments(comments) {
   const stops = []
   let resets = 0
   let handoff = false
+  let departures = 0
+  let disputes = 0
   for (const comment of comments) {
     const body = comment.body || ''
     if (body.startsWith(HANDOFF_MARKER)) handoff = true
+    if (body.startsWith(DEPARTURE_MARKER)) departures++
+    if (DISPUTE_MARKER.test(body)) disputes++
     if (body.startsWith(STARTED_MARKER)) starts.push(comment)
     if (body.startsWith(RESET_MARKER)) resets++
     if (isStopComment(body)) stops.push({ ...evidence(comment), reason: stopText(body), parked: isParkedComment(body) })
@@ -127,7 +133,7 @@ function readTicketComments(comments) {
     const meter = readMeterSafely(body)
     if (isRecord(meter)) meters.push(meter)
   }
-  return { starts, acceptances, merges, reviews, pullRequestComments, meters, stops, resets, handoff }
+  return { starts, acceptances, merges, reviews, pullRequestComments, meters, stops, resets, handoff, departures, disputes }
 }
 
 function readMeterSafely(body) {
@@ -204,6 +210,8 @@ export function ticketStats({ ticket, comments, subjects = null, defaultSubjects
     ...commitCounts(subjects, ticket.number),
     ...escapeCounts(defaultSubjects, ticket.number),
     stops: record.stops,
+    departures: record.departures,
+    disputes: record.disputes,
     ranSerially: fallback.map((wave) => ({ wave: wave.wave, reason: wave.reason, url: wave.url })),
     startedAt: record.starts.length ? record.starts[0].createdAt : null,
     endedAt: deliveryEnd(record, delivery)?.createdAt ?? null,
@@ -264,6 +272,8 @@ export function summarize(tickets) {
     rework: partial(tickets.map((ticket) => ticket.rework)),
     escapes: partial(tickets.map((ticket) => ticket.escapes)),
     stops: tickets.reduce((sum, ticket) => sum + ticket.stops.length, 0),
+    departures: tickets.reduce((sum, ticket) => sum + ticket.departures, 0),
+    disputes: tickets.reduce((sum, ticket) => sum + ticket.disputes, 0),
     handoffs: tickets.filter((ticket) => ticket.handoff).length,
     ranSerially: tickets.filter((ticket) => ticket.ranSerially.length).map((ticket) => ticket.number),
   }
@@ -321,7 +331,7 @@ function table(headers, rows) {
   return [render(headers), render(widths.map((width) => '-'.repeat(width))), ...rows.map(render)].join('\n')
 }
 
-const TICKET_HEADERS = ['#', 'state', 'worker', 'review', 'fixes', 'accept', 'deliver', 'whole', 'input', 'output', 'cache w', 'cache r', 'peak', 'compact', 'rounds', 'important', 'rework', 'escapes', 'stops']
+const TICKET_HEADERS = ['#', 'state', 'worker', 'review', 'fixes', 'accept', 'deliver', 'whole', 'input', 'output', 'cache w', 'cache r', 'peak', 'compact', 'rounds', 'important', 'rework', 'escapes', 'stops', 'departs', 'disputes']
 
 function ticketRow(ticket) {
   return [
@@ -336,6 +346,8 @@ function ticketRow(ticket) {
     count(ticket.rework),
     count(ticket.escapes),
     ticket.stops.length,
+    ticket.departures,
+    ticket.disputes,
   ]
 }
 
@@ -352,6 +364,8 @@ function totalRow(label, totals) {
     shownPartial(totals.rework),
     shownPartial(totals.escapes),
     totals.stops,
+    totals.departures,
+    totals.disputes,
   ]
 }
 

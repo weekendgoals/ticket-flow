@@ -63,6 +63,13 @@ import {
   lastHandoff,
   lastStop,
   lastReleasePullRequest,
+  departureComment,
+  disputeComment,
+  departuresOf,
+  disputesOf,
+  latestDisputes,
+  coveredByDisputes,
+  MAX_CLAIM_LENGTH,
   runReport,
   MAX_HANDOFF_LENGTH,
 } from './ticket-steps.mjs'
@@ -142,6 +149,11 @@ const USAGE = `usage: flow <command>
   needs-human <n> --text "<why>"         stop a ticket and ask a person
   handoff <n> --text "<lines>" | --file <md>
                                          what later tickets need from this one, once it is in review or done (the latest wins)
+  depart <n> --text "<the ticket says X; the code does Y; built Z>"
+                                         under Stops: none, unattended: record the smallest departure from the plan that was built
+  dispute <n> --check <k> --text "<what the line asks; what is true; the evidence>"
+                                         under Stops: none, unattended: record that check <k> cannot pass as written; accept then
+                                         passes a ticket whose every failing check is disputed
   create-finding --title "<t>" --file <md> [--epic <e>] [--screenshots <dir>] [--fingerprint "<text>"] [--repo <owner>/<name>]
                                          file a bug or idea as a finding (flow:found): evidence, no criteria, nothing starts from it
                                          (--fingerprint: exit 3 with the existing number when it was filed before or rejected;
@@ -196,7 +208,7 @@ const USAGE = `usage: flow <command>
                                          the pages to visit: same site only, deduplicated, no "deny" match, capped, as JSON
   qa-fingerprint <url> "<first line>"    the fingerprint a QA finding is filed with: the page's path and the normalised line`
 
-const VALUE_FLAGS = new Set(['--file', '--epic-file', '--text', '--title', '--tier', '--cwd', '--blocked-by', '--bot', '--timeout', '--interval', '--sha', '--epic', '--tickets', '--out', '--workflow', '--important', '--grace', '--since', '--repo', '--head', '--screenshots', '--fingerprint', '--routes', '--links', '--cap', '--widths', '--outcome'])
+const VALUE_FLAGS = new Set(['--file', '--epic-file', '--text', '--title', '--tier', '--cwd', '--blocked-by', '--bot', '--timeout', '--interval', '--sha', '--epic', '--tickets', '--out', '--workflow', '--important', '--grace', '--since', '--repo', '--head', '--screenshots', '--fingerprint', '--routes', '--links', '--cap', '--widths', '--outcome', '--check'])
 const REPEATABLE_FLAGS = new Set(['--transcripts', '--sitemap'])
 const BOOLEAN_FLAGS = new Set(['--board', '--json', '--no-epic', '--print', '--wait', '--once', '--mark', '--remove', '--review', '--all', '--local', '--post'])
 const DEFAULT_WAIT_SECONDS = 1800
@@ -645,6 +657,8 @@ function commandTicket(positional) {
   const tier = ticketTier(issue.labels)
   const handoffs = earlierHandoffs(number, parsed, epicIssue)
   process.stderr.write(`${handoffLines(handoffs).join('\n').trimEnd()}\n`)
+  const claims = ownClaims(number, epicIssue)
+  if (claims.departures.length || claims.disputes.length) process.stderr.write(`${claimLinesOf(claims).join('\n')}\n`)
   printJson({
     number: issue.number,
     title: issue.title,
@@ -665,7 +679,24 @@ function commandTicket(positional) {
     edits: github.bodyEditHistory(number),
     handoffs: handoffs.shown,
     handoffsLeftOut: handoffs.leftOut,
+    departures: claims.departures,
+    disputes: claims.disputes,
   })
+}
+
+function ownClaims(number, epicIssue) {
+  if (stopsOf(epicIssue) !== 'none') return { departures: [], disputes: [] }
+  const account = github.viewerLogin()
+  const comments = github.listComments(number)
+  const started = lastStart(comments, account)
+  return { departures: departuresOf(comments, account), disputes: disputesOf(comments, account, started ? started.createdAt : null) }
+}
+
+function claimLinesOf({ departures, disputes }) {
+  return [
+    ...(departures.length ? ['departures (claims that the plan could not be followed):', ...departures.map((departure) => `- ${departure.text}`)] : []),
+    ...(disputes.length ? ['disputed checks (claims that a check cannot pass as written):', ...disputes.map((dispute) => `- check ${dispute.check}: ${dispute.text}`)] : []),
+  ]
 }
 
 function draftCriteria(flags) {
@@ -949,6 +980,48 @@ function commandHandoff(positional, flags) {
   if (earlier) console.log(`it replaces the handoff of ${earlier.at}: later tickets read only the latest one`)
   if (state === 'done') console.log(`#${number} is done, so this handoff is its last: it cannot be replaced`)
   return 0
+}
+
+function claimRefusal({ number, what, text, issue, epicIssue, stopName }) {
+  if (!text) return `the ${what} is empty: write what the ticket says, what is true, and what was done`
+  if (text.length > MAX_CLAIM_LENGTH)
+    return `the ${what} is ${text.length} characters, and one holds at most ${MAX_CLAIM_LENGTH}: the facts and the decision, never why it is right, because the reviewer reads it`
+  const { state } = ticketState(issue.labels)
+  if (!ACCEPTABLE_STATES.has(state)) return `#${number} is ${state}, and a ${what} is recorded while the ticket is being built: in progress or in review`
+  const stops = stopsOf(epicIssue)
+  if (stops !== 'none') return `under ${stops === null ? 'an unreadable Stops: setting' : 'Stops: ask'} ${stopName} is a stop: run \`flow needs-human\``
+  if (!isUnattended()) return `#${number} is in an attended session, and a person here answers ${stopName} in the chat: ask them, or run \`flow needs-human\``
+  return null
+}
+
+function postClaim(number, refusal, body) {
+  if (refusal) {
+    process.stderr.write(`${refusal}; nothing was posted\n`)
+    return 1
+  }
+  const posted = github.comment(number, body)
+  console.log(posted.url || `posted on #${number}`)
+  return 0
+}
+
+function commandDepart(positional, flags) {
+  const number = issueNumber(positional[0], 'a ticket number')
+  const text = normalizeNewlines(readText(flags)).trim()
+  const { issue, epicIssue } = loadTicket(number)
+  return postClaim(number, claimRefusal({ number, what: 'departure', text, issue, epicIssue, stopName: 'a contradiction' }), departureComment(text))
+}
+
+function commandDispute(positional, flags) {
+  const number = issueNumber(positional[0], 'a ticket number')
+  if (flags.check === undefined || !/^\d+$/.test(flags.check)) throw new UsageError('dispute needs --check <k>: the number of the CHECK in `flow check`\'s order')
+  const check = Number(flags.check)
+  const text = normalizeNewlines(readText(flags)).trim()
+  const { issue, parsed, epicIssue } = loadTicket(number)
+  const count = parsed.criteria.checks.length
+  const refusal =
+    claimRefusal({ number, what: 'dispute', text, issue, epicIssue, stopName: 'a check that cannot pass as written' }) ||
+    (check < 1 || check > count ? `#${number} has ${count} CHECK line(s), so there is no check ${check}; count them in \`flow check ${number}\`'s order` : null)
+  return postClaim(number, refusal, disputeComment(check, text))
 }
 
 const IMAGE_TYPES = new Set(['.png', '.jpg', '.jpeg', '.webp'])
@@ -1292,7 +1365,7 @@ const ACCEPTABLE_STATES = new Set(['in-progress', 'in-review'])
 function commandAccept(positional, flags) {
   const number = issueNumber(positional[0], 'a ticket number')
   const root = requireRepository(flags)
-  const { issue, parsed } = loadTicket(number)
+  const { issue, parsed, epicIssue } = loadTicket(number)
   const { state } = ticketState(issue.labels)
   const fail = (reason) => {
     process.stderr.write(`${reason}\n`)
@@ -1326,10 +1399,14 @@ function commandAccept(positional, flags) {
     return fail(`#${number} has a COMPARE criterion and no comment starting "**Compared:**"; post the comparison table (or "**Compared:** not run — <why>") first, because nothing else shows the design was checked`)
   const began = Date.now()
   const report = runCriteria({ ticket: number, ...parsed.criteria }, { cwd: root })
-  github.comment(number, acceptanceComment({ sha, report, seconds: Math.round((Date.now() - began) / 1000) }))
+  const disputes = parksInstead(stopsOf(epicIssue)) ? latestDisputes(disputesOf(comments, account, started.createdAt)) : new Map()
+  const disputed = coveredByDisputes(report, disputes)
+  const accepted = report.allPassed || disputed.length > 0
+  github.comment(number, acceptanceComment({ sha, report, seconds: Math.round((Date.now() - began) / 1000), disputed }))
   process.stderr.write(`${formatCheckReport(report)}\n`)
-  printJson({ sha, ...report })
-  return report.allPassed ? 0 : 1
+  if (disputed.length) process.stderr.write(`accepted with ${disputed.length} disputed check(s): ${disputed.map((entry) => entry.n).join(', ')}\n`)
+  printJson({ sha, ...report, accepted, disputed })
+  return accepted ? 0 : 1
 }
 
 function mergeFailureText({ result, epicBranch, sha }) {
@@ -1693,12 +1770,21 @@ function shownCount(value) {
 const NO_CODE_WORK_AFTER_MERGE =
   "After a person merges into the default branch, no code work runs: what runs is the GitHub Action's `board` job, which closes `flow:done` tickets left open and writes the project board (Status, Release, figures), and the report page's rebuild, which only reads."
 
+function claimSection(heading, tickets, linesOf) {
+  const found = tickets.flatMap((ticket) => linesOf(ticket).map((line) => `- #${ticket.number} ${ticket.title}: ${line}`))
+  return [`## ${heading}`, '', ...(found.length ? found : ['None.'])]
+}
+
 function releaseBody({ epic, plan, tickets }) {
   const lines = [`Epic: #${epic.number}`, '']
   if (plan.outcome) lines.push('## Outcome', '', plan.outcome, '')
   if (plan.walkthrough) lines.push('## Walkthrough', '', plan.walkthrough, '')
   lines.push('## Tickets', '', '| Ticket | Merged as |', '|---|---|')
   for (const ticket of tickets) lines.push(`| #${ticket.number} ${ticket.title.replace(/\|/g, '\\|')} | ${ticket.mergeSha ? `\`${ticket.mergeSha.slice(0, 12)}\`` : 'not recorded'} |`)
+  if (epic.settings.stops === 'none') {
+    lines.push('', ...claimSection('Departures', tickets, (ticket) => ticket.departures.map((departure) => departure.text)))
+    lines.push('', ...claimSection('Disputed checks', tickets, (ticket) => ticket.disputes.map((dispute) => `check ${dispute.check}: ${dispute.text}`)))
+  }
   const metered = tickets.filter((ticket) => ticket.meter)
   lines.push('', '## Cost', '')
   if (!metered.length) lines.push('No ticket has a cost comment, so the cost is unknown.')
@@ -1749,7 +1835,7 @@ function commandReleasePr(positional, flags) {
     const comments = github.listComments(ticket.number)
     const merged = lastMerge(comments, github.viewerLogin())
     const meter = combineMeters(comments.map((comment) => readMeterComment(comment.body)).filter(Boolean))
-    return { number: ticket.number, title: ticket.title, mergeSha: merged ? merged.mergeSha : null, meter }
+    return { number: ticket.number, title: ticket.title, mergeSha: merged ? merged.mergeSha : null, meter, departures: departuresOf(comments, github.viewerLogin()), disputes: disputesOf(comments, github.viewerLogin()) }
   })
   const base = github.defaultBranch()
   const existing = github.findOpenPullRequest(epic.settings.branch)
@@ -1793,6 +1879,8 @@ function commandRunReport(positional, flags) {
       state: ticket.shownState,
       unfinishedBlockers: ticket.unfinishedBlockers,
       stop: ticket.state === 'needs-human' ? lastStop(comments, account) : null,
+      departures: departuresOf(comments, account),
+      disputes: disputesOf(comments, account),
     }
   })
   const allDone = epic.tickets.length > 0 && epic.tickets.every((ticket) => ticket.state === 'done')
@@ -2315,6 +2403,10 @@ function main(argv) {
       return commandNeedsHuman(positional, flags)
     case 'handoff':
       return commandHandoff(positional, flags)
+    case 'depart':
+      return commandDepart(positional, flags)
+    case 'dispute':
+      return commandDispute(positional, flags)
     case 'create-finding':
       return commandCreateFinding(positional, flags)
     case 'found':

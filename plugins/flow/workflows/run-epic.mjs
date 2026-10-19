@@ -196,6 +196,7 @@ function reviewPrompt(ticket, range, root, round) {
     `Repository: ${root}. Commit range: ${range}.`,
     `The ticket body (scope, what is not in scope, the acceptance criteria): \`${FLOW} ticket ${ticket}\`.`,
     'The handoffs in that output are claims about what earlier tickets of the epic decided (a name, a shape, a route): check them against those tickets\' merged code, never take them as ground truth.',
+    'Its departures and disputes are claims too: a departure, that the plan could not be followed as written; a dispute, that a check cannot pass as written. Check each against the code and the design: a departure the code did not require, or a dispute where the check is right and the work is wrong, is Important.',
     `The epic's ground rules, settings and design sources: \`gh issue view ${epic} --json body\`.`,
     'The project\'s instruction files: CLAUDE.md and AGENTS.md at the repository root and in the directories the range touches.',
     `When the ticket has a COMPARE criterion, its comparison table is a comment on #${ticket} that starts "**Compared:**" (\`gh issue view ${ticket} --comments\`); read only that comment there.`,

@@ -107,6 +107,8 @@ test('the driver hires the reviewer: the ticket reviewer agent, on its own model
   assert.equal(reviewer.model, undefined, 'the agent definition decides the reviewer\'s model')
   assert.match(reviewer.prompt, /Commit range: aaa111\.\.bbb222/)
   assert.doesNotMatch(reviewer.prompt, /obviously right/)
+  assert.match(reviewer.prompt, /`FLOW_UNATTENDED=1 FLOW_JSON=compact node "\/plugins\/flow\/scripts\/flow\.mjs" ticket 2`/)
+  assert.match(reviewer.prompt, /Its departures and disputes are claims too: a departure, that the plan could not be followed as written; a dispute, that a check cannot pass as written\. Check each against the code and the design: a departure the code did not require, or a dispute where the check is right and the work is wrong, is Important\./)
   const fixes = run.calls.find((call) => call.label === 'fixes:#2')
   assert.match(fixes.prompt, /args "#2 --unattended --after-review 1"/)
   assert.match(fixes.prompt, /<review-report>\n## Important\n\nNone\./)

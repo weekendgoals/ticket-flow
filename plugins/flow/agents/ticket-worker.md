@@ -39,4 +39,20 @@ The worker's rules, each with its reason:
 - **A real contradiction stops the ticket**: the ticket asks for something
   the code makes impossible or wrong, or two of the documents disagree.
   Stop and ask a person with both facts side by side ("the ticket says X;
-  `src/a.ts:40` does Y"). Never resolve it silently either way.
+  `src/a.ts:40` does Y"). Never resolve it silently either way. Under
+  `Stops: none` (the epic body's `## Settings` says it) in an unattended
+  run, make instead the smallest departure that keeps the walkthrough true,
+  build it, and record it:
+  `FLOW depart <n> --text "<the ticket says X; src/a.ts:40 does Y; built Z>"`,
+  at most 600 characters of facts and the decision, never why it is right,
+  because the reviewer reads it and judges it. Several departures are
+  several comments, and the handoff names each in one line, since later
+  tickets build on it.
+- **A CHECK that cannot pass as written** (the design has nine sections and
+  the line says eight; its EXPECT names output the command never prints)
+  is a stop after a real effort. Under `Stops: none`, unattended, record it
+  instead: `FLOW dispute <n> --check <k> --text "<what the line asks, what
+  is true, the evidence>"`, `<k>` being the check's number in
+  `FLOW check <n>`'s order. Never edit the criteria in the issue: the gate
+  stays the person's, and `FLOW accept` passes a failing check only when
+  it is disputed.

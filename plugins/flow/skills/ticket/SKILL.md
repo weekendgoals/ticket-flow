@@ -54,10 +54,14 @@ ticket once, in the run's report at the end. What each stop becomes there:
 
 1. a gate still failing after two rounds: parked, since no agent may waive
    a gate;
-2. the ticket contradicting the code, or a CHECK looking wrong: parked; an
-   issue body edited after the start stays a stop under any setting,
-   because whoever edited it is present and acting on it, and the refusal
-   mentions them;
+2. the ticket contradicting the code: a **departure**, the smallest change
+   of plan that keeps the walkthrough true, built and recorded with
+   `FLOW depart` (the worker's rules say how), because the reviewer and
+   then the person can judge a decision on record; a CHECK that cannot
+   pass as written: a **dispute**, recorded with `FLOW dispute`, never an
+   edit of the criteria, which stay the person's gate; an issue body
+   edited after the start stays a stop under any setting, because whoever
+   edited it is present and acting on it, and the refusal mentions them;
 3. a merge conflict: parked.
 
 Attended, `Stops: none` changes nothing: the person is in the chat, and a
@@ -148,7 +152,8 @@ check again. A **skipped** run does not pass (the suite exited 0 but the
 named tests never ran, often for a missing database or credential): give it
 what it needs. If after a real effort a CHECK still fails and you believe the
 CHECK itself is wrong, stop and ask a person with the command and its
-output; never edit the criteria in the issue, because they are the gate.
+output (under `Stops: none`, unattended: dispute it, by the worker's rules);
+never edit the criteria in the issue, because they are the gate.
 
 A `COMPARE:` criterion is never run by `FLOW check` (it needs a browser).
 Serve the design file and the built page, open each at every width the line
@@ -202,6 +207,11 @@ cannot be checked afterwards). Note its `agentId`. Give it:
 - the handoffs `FLOW ticket <n>` printed, which are claims about earlier
   tickets, not this worker's reasoning: the reviewer checks them against
   those tickets' merged code;
+- the ticket's own departures and disputed checks, which `FLOW ticket <n>`
+  prints under `departures` and `disputes` (the comments as posted, nothing
+  else): claims that the plan could not be followed and that a check cannot
+  pass as written, which the reviewer checks against the code and the
+  design;
 - the epic's ground rules and design sources, when there is an epic;
 - the paths of the project's instruction files;
 - whether the ticket has a `COMPARE:` criterion.
@@ -251,7 +261,11 @@ remove or ignore them), no review round posted or one with an Important
 finding open, a `COMPARE:` criterion with no `**Compared:**` comment, or an
 issue body edited after the start comment (it posts that refusal, naming
 who edited). Otherwise it runs the criteria from the issue and posts the
-results with the commit they judged. Only that commit can be delivered.
+results with the commit they judged. Only that commit can be delivered. Under
+`Stops: none`, unattended, it passes a ticket whose every failing check has
+a dispute from this account posted after the latest start, and says
+`passed, with N disputed check(s)`, listing each; a failing check with no
+dispute still fails.
 
 `start`, `accept`, `deliver`, `merge`, `reset` and `release-pr` read their
 own earlier comments only from the account running them, so a comment anyone
@@ -295,7 +309,8 @@ one, which read it through `FLOW ticket` before their code:
 
 - what changed that the plan did not say;
 - decisions that bind later tickets: a name, a shape, a route;
-- where the plan was wrong, and what was done instead.
+- where the plan was wrong, and what was done instead: each departure in
+  one line, since later tickets build on it.
 
 Nothing a reader gets from the diff, and never why the code is right: a
 handoff states decisions, and later reviewers read it too. When the plan

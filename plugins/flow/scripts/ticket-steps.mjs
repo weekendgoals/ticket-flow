@@ -1,5 +1,5 @@
 export const STARTED_MARKER = '<!-- flow:started -->'
-export const ACCEPTANCE_MARKER = /^<!-- flow:acceptance sha=([0-9a-f]{7,40}) passed=(true|false)(?: seconds=(\d+))? -->/
+export const ACCEPTANCE_MARKER = /^<!-- flow:acceptance sha=([0-9a-f]{7,40}) passed=(true|false)(?: seconds=(\d+))?(?: disputed=(\d+))? -->/
 export const METER_MARKER = '<!-- flow:meter -->'
 export const RESET_MARKER = '<!-- flow:reset -->'
 const START_WITHDRAWN_MARKER = '<!-- flow:start-withdrawn -->'
@@ -20,6 +20,10 @@ export const UNATTENDED_VARIABLE = 'FLOW_UNATTENDED'
 export const HANDOFF_MARKER = '<!-- flow:handoff -->'
 const HANDOFF_LEAD = '**Handoff.**'
 export const MAX_HANDOFF_LENGTH = 1200
+export const DEPARTURE_MARKER = '<!-- flow:departure -->'
+const DEPARTURE_LEAD = '**Departure.**'
+export const DISPUTE_MARKER = /^<!-- flow:dispute check=(\d+) -->/
+export const MAX_CLAIM_LENGTH = 600
 
 export function isUnattended(environment = process.env) {
   return environment[UNATTENDED_VARIABLE] === '1'
@@ -246,13 +250,21 @@ function cell(text) {
 
 const RESULT_WORDS = { passed: 'pass', failed: 'FAIL', skipped: 'SKIPPED (does not pass)' }
 
-export function acceptanceComment({ sha, report, seconds = null }) {
-  const lines = [`<!-- flow:acceptance sha=${sha} passed=${report.allPassed}${Number.isInteger(seconds) ? ` seconds=${seconds}` : ''} -->`]
-  lines.push(`**Acceptance ${report.allPassed ? 'passed' : 'failed'}** at \`${sha.slice(0, 12)}\`: ${report.passed} of ${report.total} checks passed${report.skipped ? `, ${report.skipped} skipped` : ''}.`)
+export function acceptanceComment({ sha, report, seconds = null, disputed = [] }) {
+  const passed = report.allPassed || disputed.length > 0
+  const disputedMark = disputed.length ? ` disputed=${disputed.length}` : ''
+  const lines = [`<!-- flow:acceptance sha=${sha} passed=${passed}${Number.isInteger(seconds) ? ` seconds=${seconds}` : ''}${disputedMark} -->`]
+  const verdict = report.allPassed ? 'passed' : disputed.length ? `passed, with ${disputed.length} disputed check(s)` : 'failed'
+  lines.push(`**Acceptance ${verdict}** at \`${sha.slice(0, 12)}\`: ${report.passed} of ${report.total} checks passed${report.skipped ? `, ${report.skipped} skipped` : ''}.`)
+  const disputedChecks = new Set(disputed.map((entry) => entry.n))
   if (report.checks.length) {
     lines.push('', '| # | Criterion | Command | Result | Evidence |', '|---|---|---|---|---|')
     for (const check of report.checks)
-      lines.push(`| ${check.n} | ${cell(check.criterion || '—')} | \`${cell(check.check)}\` | ${RESULT_WORDS[check.status]} | ${cell(check.evidence)} |`)
+      lines.push(`| ${check.n} | ${cell(check.criterion || '—')} | \`${cell(check.check)}\` | ${RESULT_WORDS[check.status]}${disputedChecks.has(check.n) ? ' (disputed)' : ''} | ${cell(check.evidence)} |`)
+  }
+  if (disputed.length) {
+    lines.push('', 'Disputed checks, which the worker holds cannot pass as written; the reviewer and the person read each:')
+    for (const entry of disputed) lines.push(`- check ${entry.n}, \`${entry.check}\`: ${oneLine(entry.text)}`)
   }
   if (report.compares.length) {
     lines.push('', 'Design comparisons are run by hand and are not counted above; each needs its **Compared:** table posted on this issue:')
@@ -263,6 +275,49 @@ export function acceptanceComment({ sha, report, seconds = null }) {
     for (const problem of report.problems) lines.push(`- line ${problem.line ?? '?'}: ${problem.why}`)
   }
   return lines.join('\n')
+}
+
+export function coveredByDisputes(report, disputes) {
+  const failing = report.checks.filter((check) => check.status !== 'passed')
+  if (report.allPassed || !failing.length || report.problems.length) return []
+  if (!failing.every((check) => disputes.has(check.n))) return []
+  return failing.map((check) => ({ n: check.n, check: check.check, text: disputes.get(check.n).text }))
+}
+
+function oneLine(text) {
+  return String(text).replace(/\s*\n\s*/g, ' ').trim()
+}
+
+export function departureComment(text) {
+  return `${DEPARTURE_MARKER}\n${DEPARTURE_LEAD} ${text.trim()}`
+}
+
+export function disputeComment(check, text) {
+  return `<!-- flow:dispute check=${check} -->\n**Disputed check ${check}.** ${text.trim()}`
+}
+
+function claimText(body, lead) {
+  const rest = body.split('\n').slice(1).join('\n').trim()
+  return oneLine(rest.startsWith(lead) ? rest.slice(lead.length) : rest)
+}
+
+export function departuresOf(comments, author) {
+  return byAuthor(comments, author)
+    .filter((comment) => comment.body.startsWith(DEPARTURE_MARKER))
+    .map((comment) => ({ text: claimText(comment.body, DEPARTURE_LEAD), url: comment.url || null, at: comment.createdAt || null }))
+}
+
+export function disputesOf(comments, author, since = null) {
+  const sinceTime = since ? Date.parse(since) : null
+  return byAuthor(comments, author)
+    .filter((comment) => sinceTime === null || Date.parse(comment.createdAt) >= sinceTime)
+    .map((comment) => ({ comment, match: comment.body.match(DISPUTE_MARKER) }))
+    .filter(({ match }) => match)
+    .map(({ comment, match }) => ({ check: Number(match[1]), text: claimText(comment.body, `**Disputed check ${match[1]}.**`), url: comment.url || null, at: comment.createdAt || null }))
+}
+
+export function latestDisputes(disputes) {
+  return new Map(disputes.map((dispute) => [dispute.check, dispute]))
 }
 
 export function needsHumanComment({ people, text, parked = false }) {
@@ -339,6 +394,11 @@ function askReport({ outcome, reason, delivery, tickets, releasePullRequest }) {
   return `${RUN_STOPPED_LEAD} ${reason ? asSentence(reason) : 'Nothing more can start.'}${waiting.length ? ` These tickets need a person: ${numbered(waiting)}.` : ''}${notDone.length ? ` Not done: ${numbered(notDone)}.` : ''}`
 }
 
+function claimLines(heading, tickets, linesOf) {
+  const found = tickets.flatMap(linesOf)
+  return found.length ? [`**${heading}:**`, ...found.map((line) => `- ${line}`)] : [`**${heading}:** none.`]
+}
+
 function noStopsReport({ outcome, reason, tickets, releasePullRequest, people }) {
   const lead = outcome === 'built' ? RUN_FINISHED_LEAD : `${RUN_STOPPED_LEAD} ${reason ? asSentence(reason) : 'Nothing more can start.'}`
   const mention = people.map((login) => `@${login}`).join(' ')
@@ -352,6 +412,8 @@ function noStopsReport({ outcome, reason, tickets, releasePullRequest, people })
     for (const ticket of parked) lines.push(`- ${named(ticket)}: ${ticket.stop && ticket.stop.reason ? ticket.stop.reason : 'no parking comment from this account'}`)
   } else lines.push('', '**Parked:** none.')
   if (notBuilt.length) lines.push('', `**Not built:** ${notBuilt.map((ticket) => `${named(ticket)} (${notBuiltState(ticket)})`).join(', ')}.`)
+  lines.push('', ...claimLines('Departures', tickets, (ticket) => (ticket.departures || []).map((departure) => `${named(ticket)}: ${departure.text}`)))
+  lines.push('', ...claimLines('Disputed checks', tickets, (ticket) => (ticket.disputes || []).map((dispute) => `${named(ticket)}, check ${dispute.check}: ${dispute.text}`)))
   lines.push('', `**Release pull request:** ${releasePullRequest ? releasePullRequest.url || `#${releasePullRequest.number}` : 'none opened'}.`)
   return lines.join('\n')
 }
