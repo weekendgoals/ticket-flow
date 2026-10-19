@@ -5,7 +5,7 @@ a behaviour change in every project that installs it. Entries land in the same
 commit as the change; the pull request that brings them to the default branch
 stamps the version and date and bumps `plugin.json` in the same commit.
 
-## 3.3.1 (unreleased)
+## 3.3.1 — 2026-10-19
 
 - **`flow init` no longer fails on the `flow:found` label.** Its description was 105 characters and GitHub refuses one over 100 with a 422, so `init` stopped before the labels after it and before `--board`. The description is shorter now, and a test keeps every label's under the limit.
 
