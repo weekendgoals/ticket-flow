@@ -2,7 +2,8 @@ import { readFileSync, readdirSync, statSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { METER_MARKER } from './ticket-steps.mjs'
 
-const ROLES = ['worker', 'reviewer', 'fixes']
+export const ROLES = ['worker', 'reviewer', 'fixes']
+export const UNNAMED_MODEL = 'unknown'
 export const METER_FORMAT_VERSION = 1
 const SYNTHETIC_MODEL = '<synthetic>'
 export const MODEL_NAME = /^[A-Za-z](?:[A-Za-z0-9._:\/-]*[A-Za-z0-9])?$/
@@ -138,7 +139,7 @@ function summarizeGroup(group) {
   const byModel = {}
   for (const model of group.models) byModel[model] = figuresOf(entries.filter((entry) => entry.model === model).map((entry) => entry.usage))
   const unnamed = entries.filter((entry) => entry.model === null)
-  if (unnamed.length) byModel.unknown = figuresOf(unnamed.map((entry) => entry.usage))
+  if (unnamed.length) byModel[UNNAMED_MODEL] = figuresOf(unnamed.map((entry) => entry.usage))
   return {
     ...figuresOf(entries.map((entry) => entry.usage)),
     compactions: Math.max(group.boundaries, group.summaries),

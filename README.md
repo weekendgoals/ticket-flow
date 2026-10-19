@@ -447,12 +447,13 @@ itself) and posts, per step and per model: input and output tokens, cache
 writes and reads, the largest context any single request held, compactions,
 and time from first to last message, plus the same figures as JSON for later
 reading. Each step also names its models and its **effort**: the distinct
-`effort` values (`low`, `medium`, `high`) on that step's assistant lines,
-which a Claude Code session transcript records beside each message, sorted
-and joined by `, ` when a run changed it. A source that does not carry it
-(a headless run's `stream-json` or the Action's file may not) reads
-`unknown` in the `Effort` column and `null` in the JSON. Anything a
-transcript does not record reads `unknown`: nothing is estimated. Attended, the transcripts are under
+`effort` values (such as `low`, `medium`, `high`, `xhigh`) on that step's
+assistant lines, which a Claude Code session transcript records beside each
+message, sorted and joined by `, ` when a run changed it. A source that does
+not carry it (a headless run's `stream-json` or the Action's file may not)
+reads `unknown` in the `Effort` column and `null` in the JSON. Anything a
+transcript does not record reads `unknown`: nothing is estimated. Attended,
+the transcripts are under
 `~/.claude/projects/<project>/<session>/subagents/agent-<id>.jsonl`, where
 `<id>` is the `agentId` the Agent tool returned.
 

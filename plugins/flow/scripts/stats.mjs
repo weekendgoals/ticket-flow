@@ -12,12 +12,10 @@ import {
   LOCAL_RUN_END_MARKER,
   HANDOFF_MARKER,
 } from './ticket-steps.mjs'
-import { readMeterComment, EFFORT_NAME, MODEL_NAME } from './meter.mjs'
+import { readMeterComment, EFFORT_NAME, MODEL_NAME, ROLES, UNNAMED_MODEL } from './meter.mjs'
 
 const TOKEN_FIGURES = ['input', 'output', 'cacheCreation', 'cacheReads']
 const STEPS = ['worker', 'review', 'fixes', 'acceptance', 'delivery', 'whole']
-const ROLES = ['worker', 'reviewer', 'fixes']
-const UNNAMED_MODEL = 'unknown'
 const ROLE_OF_STEP = { worker: 'worker', review: 'reviewer', fixes: 'fixes' }
 const REVIEW_FIX = /\(review fix\)\s*$/
 const FIXES = /\(fixes #(\d+)\)\s*$/
@@ -36,7 +34,10 @@ function bothMax(a, b) {
   return isNumber(a) && isNumber(b) ? Math.max(a, b) : null
 }
 
-function figuresOf(raw = {}) {
+const isRecord = (value) => Boolean(value) && typeof value === 'object' && !Array.isArray(value)
+
+function figuresOf(given) {
+  const raw = isRecord(given) ? given : {}
   const figures = {}
   for (const name of [...TOKEN_FIGURES, 'compactions', 'wallSeconds']) figures[name] = isNumber(raw[name]) ? raw[name] : null
   figures.peakContext = isNumber(raw.peakContext) ? raw.peakContext : null
@@ -51,7 +52,7 @@ function addFigures(a, b) {
 }
 
 function mergeNamed(target, named) {
-  for (const [name, raw] of Object.entries(named || {})) target[name] = target[name] ? addFigures(target[name], figuresOf(raw)) : figuresOf(raw)
+  for (const [name, raw] of Object.entries(isRecord(named) ? named : {})) target[name] = target[name] ? addFigures(target[name], figuresOf(raw)) : figuresOf(raw)
 }
 
 function union(a, b) {
@@ -60,15 +61,16 @@ function union(a, b) {
 }
 
 function modelNamesOf(raw) {
-  return raw && typeof raw.models === 'object' && raw.models ? Object.keys(raw.models).filter((name) => name !== UNNAMED_MODEL && MODEL_NAME.test(name)) : []
+  return isRecord(raw.models) ? Object.keys(raw.models).filter((name) => name !== UNNAMED_MODEL && MODEL_NAME.test(name)) : []
 }
 
 function mergeRoles(target, roles) {
-  for (const [role, raw] of Object.entries(roles || {})) {
+  for (const [role, raw] of Object.entries(isRecord(roles) ? roles : {})) {
+    if (!isRecord(raw)) continue
     const before = target[role]
     target[role] = before ? addFigures(before, figuresOf(raw)) : figuresOf(raw)
     target[role].modelNames = [...new Set([...(before ? before.modelNames : []), ...modelNamesOf(raw)])]
-    target[role].effort = union(before ? before.effort : null, raw && raw.effort)
+    target[role].effort = union(before ? before.effort : null, raw.effort)
   }
 }
 
@@ -135,7 +137,7 @@ function readTicketComments(comments) {
     const review = body.match(REVIEW_MARKER)
     if (review) reviews.push({ ...evidence(comment), round: Number(review[1]), important: Number(review[2]) })
     const meter = readMeterSafely(body)
-    if (meter) meters.push(meter)
+    if (isRecord(meter)) meters.push(meter)
   }
   return { starts, acceptances, merges, reviews, pullRequestComments, meters, stops, resets, handoff }
 }

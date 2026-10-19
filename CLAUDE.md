@@ -81,7 +81,7 @@ as of 2026-10-19; the pass count grows, the fail line stays `# fail 0`.
 - `pull-request.test.mjs` `# pass 20`, `issue-body.test.mjs` `# pass 29`,
   `checks.test.mjs` `# pass 26` (real shell commands in a temp dir),
   `tracker/github.test.mjs` `# pass 37`, `fidelity.test.mjs` `# pass 54`,
-  `stats.test.mjs` `# pass 14` (needs `git`), `project-sync.test.mjs`
+  `stats.test.mjs` `# pass 15` (needs `git`), `project-sync.test.mjs`
   `# pass 34`, under `plugins/flow/scripts/`.
 - `node --test plugins/flow/scripts/meter.test.mjs` — `# pass 17`. Builds
   its transcripts; no test reads a real one (they belong to whoever ran them).

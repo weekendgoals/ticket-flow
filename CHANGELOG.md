@@ -11,6 +11,8 @@ stamps the version and date and bumps `plugin.json` in the same commit.
 
 - **Models and effort, observed, in every report.** `flow meter` records per step the effort the session ran at (the distinct `effort` values on its assistant lines, sorted, or `null` when no line carries one, which a headless run's output may not carry) and the cost comment's step table gains an `Effort` column after `Models` (`unknown` when none was recorded). `flow stats` reads them back per role (`roleModels` and `effort` in the JSON, unioned across a ticket's cost comments) and prints one line per ticket, `- #12 models: worker claude-opus-5-5 high, reviewer claude-fable-5-1 high`. The report page has two sortable ticket columns after `tier`, `models` and `effort`, per role and without the `claude-` prefix, `unknown` where the meter has nothing. The project board gains no field.
 
+- **A malformed cost comment no longer stops `flow stats`.** A cost comment whose JSON had a role set to `null` (or the comment's figures not an object) threw while combining the meters, so `flow stats`, `release-pr` and `board-sync` stopped on that ticket; anyone who can comment could post one. Such a role now reads as absent, and its figures as `unknown`.
+
 ## 3.3.0 — 2026-10-19
 
 - **A done ticket is a closed issue.** When `flow merge` (release delivery)

@@ -64,6 +64,19 @@ test('combineMeters keeps a figure one run did not record unknown, rather than c
   assert.equal(combineMeters([meterOf(), blind]).total.input, null)
 })
 
+test('a cost comment whose roles are null or not objects reads as those roles absent, and does not stop stats', () => {
+  const broken = { ...meterOf(), roles: { worker: null, reviewer: 'x', fixes: [1] } }
+  const combined = combineMeters([broken, meterOf()])
+  assert.deepEqual(Object.keys(combined.roles), ['worker', 'reviewer'])
+  assert.equal(combined.roles.worker.input, 1000)
+  const body = `<!-- flow:meter -->\n**Cost**\n\n\`\`\`json\n${JSON.stringify({ flowMeter: 1, ticket: 2, roles: { worker: null }, models: null, total: null })}\n\`\`\``
+  const nothing = `<!-- flow:meter -->\n**Cost**\n\n\`\`\`json\nnull\n\`\`\``
+  const record = ticketStats({ ticket: { number: 2, title: 'Export', state: 'done', tier: 'hard' }, comments: [comment(body, '2026-10-14T11:50:00Z', { id: 1 }), comment(nothing, '2026-10-14T11:51:00Z', { id: 2 })] })
+  assert.equal(record.metered, true)
+  assert.equal(record.meterRuns, 1)
+  assert.deepEqual([record.steps.worker, record.tokens.input, record.roleModels.worker, record.effort.worker], [null, null, null, null])
+})
+
 test('a ticket record: time per step from the cost comment and the step comments, rounds, findings and the reason it stopped', () => {
   const comments = [
     comment(started, '2026-10-14T10:00:00Z', { id: 1 }),
@@ -133,6 +146,13 @@ test('models and effort per role come from the cost comments, two comments for o
   const text = formatStats(overallStats([epic]))
   assert.match(text, /^- #2 models: worker claude-opus-5-5 high, reviewer claude-fable-5-1 high$/m)
   assert.match(text, /^- #4 models: worker claude-opus-5-5 high\/low, reviewer claude-fable-5-1 effort unknown$/m)
+  const hostileMeter = run(['high'], null)
+  hostileMeter.roles.worker.models['claude-<b>'] = figures(1, 1)
+  const hostile = ticketStats({ ticket: { number: 5, title: 'Hostile', state: 'done', tier: 'easy' }, comments: [comment(meterComment({ ticket: 5, sourceCount: 1, meter: hostileMeter }), '2026-10-14T11:50:00Z')] })
+  assert.deepEqual(hostile.roleModels.worker, ['claude-opus-5-5'], 'a posted model name that is not a model name is dropped on reading')
+  const hostileText = formatStats(overallStats([{ ...epic, tickets: [hostile], totals: summarize([hostile]) }]))
+  assert.match(hostileText, /^- #5 models: worker claude-opus-5-5 high, reviewer claude-fable-5-1 effort unknown$/m)
+  assert.doesNotMatch(hostileText.split('\n').find((line) => line.startsWith('- #5')), /<b>/)
 })
 
 test('incremental delivery ends at the last pull request comment, since a person merges the pull request', () => {
