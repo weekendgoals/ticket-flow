@@ -27,7 +27,8 @@ of these is missing, say so at the top and work with what you have.
 ## Read, in this order
 
 1. `FLOW stats <epic> --json` from the repository: per ticket, time per
-   step, tokens per model, largest context, compactions, review rounds and
+   step, tokens per model, models and effort per role, largest context,
+   compactions, review rounds and
    Important findings, `(review fix)` commits, `(fixes #n)` commits on the
    default branch, stops for a person with their reasons, waves built one at
    a time. `null` means no comment or commit carried the figure: say

@@ -80,11 +80,12 @@ test('epic states and Release words follow the tickets and the release pull requ
 test('a ticket row links the issue and prints every column, with unknown for a figure no comment carries, never blank or 0', () => {
   const html = render()
   const row = (number) => html.match(new RegExp(`<tr data-epic="\\d+" data-ticket="${number}">(.*?)</tr>`))[1].match(/<td>(.*?)<\/td>/g).map((cell) => cell.slice(4, -5))
-  assert.deepEqual(TICKET_COLUMNS.map((column) => column.label), ['#', 'title', 'tier', 'state', 'build', 'review', 'fixes', 'accept', 'deliver', 'whole', 'tokens in', 'tokens out', 'cache', 'review rounds', 'important', 'acceptance runs', 'resets', 'escapes', 'handoff', 'stops'])
-  assert.deepEqual(row(2), ['<a href="https://github.com/o/r/issues/2">#2</a>', 'ticket 2', 'hard', 'done', '30m', '10m', 'unknown', 'unknown', 'unknown', 'unknown', '1,200', '300', '7,050', '0', '0', '0', '0', 'unknown', 'yes', '0'])
-  assert.deepEqual(row(3).slice(4, 13), Array(9).fill('unknown'), 'a ticket with no cost comment shows unknown time and tokens')
-  assert.equal(row(3)[18], 'no')
-  assert.equal(row(11)[19], '1')
+  assert.deepEqual(TICKET_COLUMNS.map((column) => column.label), ['#', 'title', 'tier', 'models', 'effort', 'state', 'build', 'review', 'fixes', 'accept', 'deliver', 'whole', 'tokens in', 'tokens out', 'cache', 'review rounds', 'important', 'acceptance runs', 'resets', 'escapes', 'handoff', 'stops'])
+  assert.deepEqual(row(2), ['<a href="https://github.com/o/r/issues/2">#2</a>', 'ticket 2', 'hard', 'unknown', 'unknown', 'done', '30m', '10m', 'unknown', 'unknown', 'unknown', 'unknown', '1,200', '300', '7,050', '0', '0', '0', '0', 'unknown', 'yes', '0'])
+  assert.deepEqual(row(3).slice(3, 5), ['unknown', 'unknown'], 'a ticket with no cost comment shows unknown models and effort')
+  assert.deepEqual(row(3).slice(6, 15), Array(9).fill('unknown'), 'a ticket with no cost comment shows unknown time and tokens')
+  assert.equal(row(3)[20], 'no')
+  assert.equal(row(11)[21], '1')
   for (const cell of row(3)) assert.notEqual(cell, '')
 })
 
@@ -143,4 +144,36 @@ test('a click on a column header sorts the rows of that epic by the embedded dat
   assert.deepEqual(order(), [2, 3])
   listeners.number()
   assert.deepEqual(order(), [3, 2])
+})
+
+const roleMeter = (number, roles) =>
+  comment(`<!-- flow:meter -->\n**Cost**\n\n\`\`\`json\n${JSON.stringify({ flowMeter: 1, ticket: number, roles, models: {}, total: { input: 1, output: 1, cacheCreation: 0, cacheReads: 0 } })}\n\`\`\``, at('14T12:00:00'))
+
+test('the models and effort columns name each role, drop the claude- prefix, say unknown where the meter has nothing, escape what they print and sort by their text', () => {
+  const known = ticket(2, 'done', [roleMeter(2, { worker: { models: { 'claude-opus-5-5': {} }, effort: ['high'] }, reviewer: { models: { 'claude-fable-5-1': {} }, effort: ['high', 'medium'] } })])
+  const half = ticket(3, 'done', [roleMeter(3, { worker: { models: { 'claude-opus-5-5': {}, 'claude-haiku-4-5': {} } } })])
+  const hostile = ticket(4, 'done', [], { roleModels: { worker: ['claude-<img src=x onerror=alert(1)>'], reviewer: null, fixes: null }, effort: { worker: ['"><b>'], reviewer: null, fixes: null } })
+  const none = ticket(5, 'done', [])
+  const stats = overallStats([epic({ number: 1, title: 'Models', tickets: [known, half, hostile, none] })])
+  const html = render(stats)
+  const cells = (number) => html.match(new RegExp(`<tr data-epic="1" data-ticket="${number}">(.*?)</tr>`))[1].match(/<td>(.*?)<\/td>/g).map((cell) => cell.slice(4, -5)).slice(3, 5)
+  assert.deepEqual(cells(2), ['worker opus-5-5 · reviewer fable-5-1', 'worker high · reviewer high/medium'])
+  assert.deepEqual(cells(3), ['worker opus-5-5/haiku-4-5 · reviewer unknown', 'unknown'])
+  assert.deepEqual(cells(4), ['worker &lt;img src=x onerror=alert(1)&gt; · reviewer unknown', 'worker &quot;&gt;&lt;b&gt; · reviewer unknown'])
+  assert.deepEqual(cells(5), ['unknown', 'unknown'])
+  assert.doesNotMatch(html, /<img src=x/)
+  const data = html.match(/<script type="application\/json" id="flow-data">([\s\S]*?)<\/script>/)[1]
+  const rows = [2, 3, 4, 5].map((number) => ({ dataset: { epic: '1', ticket: String(number) } }))
+  const body = { rows: [...rows], appendChild(row) { this.rows.splice(this.rows.indexOf(row), 1); this.rows.push(row) } }
+  const listeners = {}
+  const buttons = TICKET_COLUMNS.map((column) => ({ getAttribute: () => column.key, addEventListener: (_, listener) => { listeners[column.key] = listener } }))
+  const document = { getElementById: () => ({ textContent: data }), querySelectorAll: () => [{ tBodies: [body], querySelectorAll: () => buttons }] }
+  new Function('document', html.match(/<script>([\s\S]*?)<\/script>/)[1])(document)
+  const order = () => body.rows.map((row) => Number(row.dataset.ticket))
+  listeners.modelsText()
+  assert.deepEqual(order(), [4, 2, 3, 5], 'by the text shown, unknown last')
+  listeners.modelsText()
+  assert.deepEqual(order(), [3, 2, 4, 5], 'reversed, unknown still last')
+  listeners.effortText()
+  assert.deepEqual(order(), [4, 2, 3, 5])
 })

@@ -9,6 +9,8 @@ stamps the version and date and bumps `plugin.json` in the same commit.
 
 - **`flow init` no longer fails on the `flow:found` label.** Its description was 105 characters and GitHub refuses one over 100 with a 422, so `init` stopped before the labels after it and before `--board`. The description is shorter now, and a test keeps every label's under the limit.
 
+- **Models and effort, observed, in every report.** `flow meter` records per step the effort the session ran at (the distinct `effort` values on its assistant lines, sorted, or `null` when no line carries one, which a headless run's output may not carry) and the cost comment's step table gains an `Effort` column after `Models` (`unknown` when none was recorded). `flow stats` reads them back per role (`roleModels` and `effort` in the JSON, unioned across a ticket's cost comments) and prints one line per ticket, `- #12 models: worker claude-opus-5-5 high, reviewer claude-fable-5-1 high`. The report page has two sortable ticket columns after `tier`, `models` and `effort`, per role and without the `claude-` prefix, `unknown` where the meter has nothing. The project board gains no field.
+
 ## 3.3.0 — 2026-10-19
 
 - **A done ticket is a closed issue.** When `flow merge` (release delivery)

@@ -259,7 +259,9 @@ cell means unknown, never 0, which would read as free. In Insights, make a
 chart with Sum of a field (say `Input tokens`), grouped by any single-select
 field (`Status`, or a size or area field of your own). The comment stays
 the record; the fields are the board's copy, and `flow doctor`'s board line
-says `figures: 7 fields` or names the missing ones.
+says `figures: 7 fields` or names the missing ones. Models and effort are
+not on the board (a text field cannot be charted, and the tier is already a
+label); they are on the cost comment and the report page.
 
 A finding is not on the board: `flow create-finding` adds nothing to the
 project, and the issue joins it, as `Planned`, only when `flow promote` turns
@@ -444,8 +446,13 @@ Claude Code transcripts (a file, a directory, or a headless run's
 itself) and posts, per step and per model: input and output tokens, cache
 writes and reads, the largest context any single request held, compactions,
 and time from first to last message, plus the same figures as JSON for later
-reading. Anything a transcript does not record reads `unknown`: nothing is
-estimated. Attended, the transcripts are under
+reading. Each step also names its models and its **effort**: the distinct
+`effort` values (`low`, `medium`, `high`) on that step's assistant lines,
+which a Claude Code session transcript records beside each message, sorted
+and joined by `, ` when a run changed it. A source that does not carry it
+(a headless run's `stream-json` or the Action's file may not) reads
+`unknown` in the `Effort` column and `null` in the JSON. Anything a
+transcript does not record reads `unknown`: nothing is estimated. Attended, the transcripts are under
 `~/.claude/projects/<project>/<session>/subagents/agent-<id>.jsonl`, where
 `<id>` is the `agentId` the Agent tool returned.
 
@@ -744,6 +751,12 @@ else. Per ticket, and summed per epic:
   start;
 - **tokens** in, out, cache writes and cache reads, per model, the largest
   context any one request held, and compactions;
+- **models and effort per role**, from the cost comments, one printed line
+  per ticket (`- #12 models: worker claude-opus-5-5 high, reviewer
+  claude-fable-5-1 high`; `worker unknown` where no comment carries it), and
+  `roleModels` and `effort` (`{ worker, reviewer, fixes }`, each a list or
+  `null`) in the JSON; two cost comments for one ticket union them, and the
+  epic totals add nothing for effort, since a sum of efforts means nothing;
 - **review rounds** and their Important findings;
 - **rework**: commits ending `(review fix)`; **escaped defects**: commits on
   the default branch ending `(fixes #n)`, counted against ticket `#n`;
@@ -778,7 +791,9 @@ section per epic, newest first, with its state (`running`, `stopped`,
 when a release epic closed without its release pull request merging), its
 `Release` word, its
 release pull request, the instruction files' size, and a table of its
-tickets (each linked to its issue: tier, state, time per step, tokens in
+tickets (each linked to its issue: tier, models and effort per role
+without the `claude-` prefix, as in `worker opus-5-5 · reviewer fable-5-1`,
+state, time per step, tokens in
 and out, cache, review rounds, Important findings, acceptance runs, resets,
 escapes, handoff, stops). A click on a column header sorts that table. A
 figure nothing carries reads `unknown`, never blank or 0. Tables scroll

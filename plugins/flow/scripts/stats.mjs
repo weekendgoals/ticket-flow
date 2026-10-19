@@ -12,10 +12,12 @@ import {
   LOCAL_RUN_END_MARKER,
   HANDOFF_MARKER,
 } from './ticket-steps.mjs'
-import { readMeterComment } from './meter.mjs'
+import { readMeterComment, EFFORT_NAME, MODEL_NAME } from './meter.mjs'
 
 const TOKEN_FIGURES = ['input', 'output', 'cacheCreation', 'cacheReads']
 const STEPS = ['worker', 'review', 'fixes', 'acceptance', 'delivery', 'whole']
+const ROLES = ['worker', 'reviewer', 'fixes']
+const UNNAMED_MODEL = 'unknown'
 const ROLE_OF_STEP = { worker: 'worker', review: 'reviewer', fixes: 'fixes' }
 const REVIEW_FIX = /\(review fix\)\s*$/
 const FIXES = /\(fixes #(\d+)\)\s*$/
@@ -52,13 +54,31 @@ function mergeNamed(target, named) {
   for (const [name, raw] of Object.entries(named || {})) target[name] = target[name] ? addFigures(target[name], figuresOf(raw)) : figuresOf(raw)
 }
 
+function union(a, b) {
+  const values = [...(a || []), ...(Array.isArray(b) ? b.filter((value) => typeof value === 'string' && EFFORT_NAME.test(value)) : [])]
+  return values.length ? [...new Set(values)].sort() : null
+}
+
+function modelNamesOf(raw) {
+  return raw && typeof raw.models === 'object' && raw.models ? Object.keys(raw.models).filter((name) => name !== UNNAMED_MODEL && MODEL_NAME.test(name)) : []
+}
+
+function mergeRoles(target, roles) {
+  for (const [role, raw] of Object.entries(roles || {})) {
+    const before = target[role]
+    target[role] = before ? addFigures(before, figuresOf(raw)) : figuresOf(raw)
+    target[role].modelNames = [...new Set([...(before ? before.modelNames : []), ...modelNamesOf(raw)])]
+    target[role].effort = union(before ? before.effort : null, raw && raw.effort)
+  }
+}
+
 export function combineMeters(meters) {
   const distinct = [...new Map(meters.map((meter) => [JSON.stringify(meter), meter])).values()]
   if (!distinct.length) return null
   const roles = {}
   const models = {}
   for (const meter of distinct) {
-    mergeNamed(roles, meter.roles)
+    mergeRoles(roles, meter.roles)
     mergeNamed(models, meter.models)
   }
   const total = distinct.map((meter) => figuresOf(meter.total)).reduce(addFigures)
@@ -179,6 +199,8 @@ export function ticketStats({ ticket, comments, subjects = null, defaultSubjects
     steps,
     tokens: Object.fromEntries(TOKEN_FIGURES.map((name) => [name, meter ? meter.total[name] : null])),
     models: meter ? meter.models : {},
+    roleModels: Object.fromEntries(ROLES.map((role) => [role, meter && meter.roles[role] && meter.roles[role].modelNames.length ? meter.roles[role].modelNames : null])),
+    effort: Object.fromEntries(ROLES.map((role) => [role, meter && meter.roles[role] ? meter.roles[role].effort : null])),
     peakContext: meter ? meter.total.peakContext : null,
     compactions: meter ? meter.total.compactions : null,
     reviewRounds: record.reviews.length,
@@ -354,6 +376,21 @@ function modelLines(models) {
   ]
 }
 
+export function roleText(ticket, role, model = (name) => name) {
+  const models = ticket.roleModels && ticket.roleModels[role]
+  const effort = ticket.effort && ticket.effort[role]
+  if (!models && !effort) return `${role} unknown`
+  return `${role} ${models ? models.map(model).join('/') : 'model unknown'} ${effort ? effort.join('/') : 'effort unknown'}`
+}
+
+function modelsPerTicket(tickets) {
+  return ['Models and effort per ticket, as the cost comments recorded them:', ...tickets.map((ticket) => `- #${ticket.number} models: ${shownRoles(ticket).map((role) => roleText(ticket, role)).join(', ')}`)]
+}
+
+export function shownRoles(ticket) {
+  return ROLES.filter((role) => role !== 'fixes' || (ticket.roleModels && ticket.roleModels.fixes) || (ticket.effort && ticket.effort.fixes))
+}
+
 function paceLine(figures) {
   if (!figures.ticketsTimed) return 'Pace: unknown (no done ticket has both a start and an end comment).'
   return `Pace: ${figures.ticketsPerDay === null ? 'unknown' : figures.ticketsPerDay} ticket(s) per day over ${duration(figures.spanSeconds)} (${figures.ticketsTimed} of ${figures.ticketsDone} done ticket(s) timed); median ticket ${duration(figures.medianTicketSeconds)} from start to end.`
@@ -365,6 +402,7 @@ function epicLines(epic) {
   const releaseText = release ? `release pull request #${release.number} ${release.merged === null ? '(state unknown)' : release.merged ? 'merged' : 'not merged'}` : 'no release pull request'
   lines.push(`#${epic.number} ${epic.title} · ${epic.delivery} delivery · parallel ${epic.parallel ?? 'unknown'} · ${releaseText}`, '')
   lines.push(table(TICKET_HEADERS, [...epic.tickets.map(ticketRow), totalRow('total', epic.totals)]))
+  if (epic.tickets.length) lines.push('', ...modelsPerTicket(epic.tickets))
   lines.push('', ...modelLines(epic.totals.models))
   lines.push('', `Handoffs: ${epic.totals.handoffs} of ${epic.totals.tickets} ticket(s) left one for the tickets after them.`)
   const stops = epic.tickets.flatMap((ticket) => ticket.stops.map((stop) => ({ ticket: ticket.number, ...stop })))

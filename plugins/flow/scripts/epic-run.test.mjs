@@ -460,7 +460,7 @@ test('meter --workflow reads one ticket\'s agents out of a workflow run', () => 
   writeFileSync(join(run, 'agent-w.jsonl'), `${JSON.stringify({ type: 'assistant', timestamp: '2026-10-15T09:00:00Z', message: { id: 'm', model: 'claude-sonnet-5', usage: { input_tokens: 7, output_tokens: 3, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 } } })}\n`)
   const result = flow(directory, ['meter', '2', '--workflow', run, '--print'])
   assert.equal(result.status, 0, result.stderr)
-  assert.match(result.stdout, /\| worker \| claude-sonnet-5 \| 7 \| 3 \|/)
+  assert.match(result.stdout, /\| worker \| claude-sonnet-5 \| unknown \| 7 \| 3 \|/)
   assert.equal(flow(directory, ['meter', '3', '--workflow', run, '--print']).status, 1)
 })
 

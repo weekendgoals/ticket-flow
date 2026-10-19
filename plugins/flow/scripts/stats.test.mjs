@@ -103,6 +103,36 @@ test('a ticket with no cost comment reads unknown for every figure only that com
   const row = text.split('\n').find((line) => line.startsWith('#3 '))
   assert.match(row, /^#3\s+done\s+unknown\s+unknown\s+unknown\s+unknown\s+5m\s+30m\s+unknown\s+unknown\s+unknown\s+unknown\s+unknown\s+unknown/)
   assert.match(text, /No ticket has a cost comment, so tokens per model are unknown\./)
+  assert.deepEqual([record.roleModels, record.effort], [{ worker: null, reviewer: null, fixes: null }, { worker: null, reviewer: null, fixes: null }])
+  assert.match(text, /^- #3 models: worker unknown, reviewer unknown$/m)
+})
+
+test('models and effort per role come from the cost comments, two comments for one ticket union their sets, and the line names each role', () => {
+  const run = (workerEffort, reviewerEffort) => {
+    const meter = meterOf()
+    meter.roles.worker.models = { 'claude-opus-5-5': figures(1000, 200) }
+    meter.roles.worker.effort = workerEffort
+    meter.roles.reviewer.models = { 'claude-fable-5-1': figures(500, 50), unknown: figures(1, 1) }
+    meter.roles.reviewer.effort = reviewerEffort
+    return meter
+  }
+  const first = run(['high'], null)
+  const second = run(['medium', 'nope | <b>'], null)
+  second.roles.worker.models['claude-sonnet-5'] = figures(1, 1)
+  const combined = combineMeters([first, second])
+  assert.deepEqual(combined.roles.worker.effort, ['high', 'medium'], 'unioned, sorted, and a value that is not a plain word is dropped')
+  assert.deepEqual(combined.roles.worker.modelNames, ['claude-opus-5-5', 'claude-sonnet-5'])
+  assert.equal(combined.roles.reviewer.effort, null)
+  const comments = [comment(meterComment({ ticket: 2, sourceCount: 2, meter: run(['high'], ['high']) }), '2026-10-14T11:50:00Z', { id: 9 })]
+  const record = ticketStats({ ticket: { number: 2, title: 'Export', state: 'done', tier: 'hard' }, comments })
+  assert.deepEqual(record.roleModels, { worker: ['claude-opus-5-5'], reviewer: ['claude-fable-5-1'], fixes: null }, 'usage with no model name is not a model')
+  assert.deepEqual(record.effort, { worker: ['high'], reviewer: ['high'], fixes: null })
+  assert.deepEqual(Object.keys(record.models), ['claude-opus-5', 'claude-fable-5'], 'the per-model figures stay as they were')
+  const halfKnown = ticketStats({ ticket: { number: 4, title: 'Half', state: 'done', tier: 'easy' }, comments: [comment(meterComment({ ticket: 4, sourceCount: 1, meter: run(['low', 'high'], null) }), '2026-10-14T11:50:00Z')] })
+  const epic = { number: 1, title: 'Trip export', delivery: 'release', parallel: 1, releasePullRequest: null, serialWaves: [], runStops: [], tickets: [record, halfKnown], totals: summarize([record, halfKnown]) }
+  const text = formatStats(overallStats([epic]))
+  assert.match(text, /^- #2 models: worker claude-opus-5-5 high, reviewer claude-fable-5-1 high$/m)
+  assert.match(text, /^- #4 models: worker claude-opus-5-5 high\/low, reviewer claude-fable-5-1 effort unknown$/m)
 })
 
 test('incremental delivery ends at the last pull request comment, since a person merges the pull request', () => {
