@@ -5,12 +5,16 @@ import {
   REVIEW_MARKER,
   RESET_MARKER,
   RELEASE_PR_MARKER,
-  NEEDS_HUMAN_MARKER,
-  NEEDS_HUMAN_LEAD,
+  isStopComment,
+  isParkedComment,
+  stopText,
   SERIAL_WAVE_MARKER,
   PULL_REQUEST_COMMENT,
   LOCAL_RUN_END_MARKER,
   HANDOFF_MARKER,
+  RUN_STOPPED_LEAD,
+  DEPARTURE_MARKER,
+  DISPUTE_MARKER,
 } from './ticket-steps.mjs'
 import { readMeterComment, EFFORT_NAME, MODEL_NAME, ROLES, UNNAMED_MODEL } from './meter.mjs'
 
@@ -20,7 +24,6 @@ const ROLE_OF_STEP = { worker: 'worker', review: 'reviewer', fixes: 'fixes' }
 const REVIEW_FIX = /\(review fix\)\s*$/
 const FIXES = /\(fixes #(\d+)\)\s*$/
 const TICKET_PREFIX = /^#(\d+):/
-const RUN_STOPPED_LEAD = '**Run stopped.**'
 const SECONDS_PER_DAY = 86400
 const START_BASE = /\bat `([0-9a-f]{7,40})`/
 
@@ -100,19 +103,6 @@ function evidence(comment) {
   return { at: comment.createdAt || null, author: comment.author || null, url: comment.url || null }
 }
 
-function stopReason(body) {
-  const withoutMarker = body.startsWith(NEEDS_HUMAN_MARKER) ? body.slice(NEEDS_HUMAN_MARKER.length).trimStart() : body
-  return withoutMarker
-    .slice(NEEDS_HUMAN_LEAD.length)
-    .trim()
-    .replace(/^(?:@[\w-]+(?:\[bot\])?\s+)+/, '')
-    .trim()
-}
-
-function isStop(body) {
-  return body.startsWith(NEEDS_HUMAN_MARKER) || body.startsWith(NEEDS_HUMAN_LEAD)
-}
-
 function readTicketComments(comments) {
   const starts = []
   const acceptances = []
@@ -123,12 +113,16 @@ function readTicketComments(comments) {
   const stops = []
   let resets = 0
   let handoff = false
+  let departures = 0
+  let disputes = 0
   for (const comment of comments) {
     const body = comment.body || ''
     if (body.startsWith(HANDOFF_MARKER)) handoff = true
+    if (body.startsWith(DEPARTURE_MARKER)) departures++
+    if (DISPUTE_MARKER.test(body)) disputes++
     if (body.startsWith(STARTED_MARKER)) starts.push(comment)
     if (body.startsWith(RESET_MARKER)) resets++
-    if (isStop(body)) stops.push({ ...evidence(comment), reason: stopReason(body) })
+    if (isStopComment(body)) stops.push({ ...evidence(comment), reason: stopText(body), parked: isParkedComment(body) })
     if (PULL_REQUEST_COMMENT.test(body)) pullRequestComments.push(comment)
     const acceptance = body.match(ACCEPTANCE_MARKER)
     if (acceptance) acceptances.push({ comment, sha: acceptance[1], passed: acceptance[2] === 'true', seconds: acceptance[3] === undefined ? null : Number(acceptance[3]) })
@@ -139,7 +133,7 @@ function readTicketComments(comments) {
     const meter = readMeterSafely(body)
     if (isRecord(meter)) meters.push(meter)
   }
-  return { starts, acceptances, merges, reviews, pullRequestComments, meters, stops, resets, handoff }
+  return { starts, acceptances, merges, reviews, pullRequestComments, meters, stops, resets, handoff, departures, disputes }
 }
 
 function readMeterSafely(body) {
@@ -216,6 +210,8 @@ export function ticketStats({ ticket, comments, subjects = null, defaultSubjects
     ...commitCounts(subjects, ticket.number),
     ...escapeCounts(defaultSubjects, ticket.number),
     stops: record.stops,
+    departures: record.departures,
+    disputes: record.disputes,
     ranSerially: fallback.map((wave) => ({ wave: wave.wave, reason: wave.reason, url: wave.url })),
     startedAt: record.starts.length ? record.starts[0].createdAt : null,
     endedAt: deliveryEnd(record, delivery)?.createdAt ?? null,
@@ -245,7 +241,7 @@ export function readEpicComments(comments) {
     }
     const lines = body.split('\n')
     const lead = lines[0] === LOCAL_RUN_END_MARKER ? lines.slice(1).join('\n') : body
-    if (lead.startsWith(RUN_STOPPED_LEAD)) runStops.push({ ...evidence(comment), reason: lead.slice(RUN_STOPPED_LEAD.length).trim() })
+    if (lead.startsWith(RUN_STOPPED_LEAD)) runStops.push({ ...evidence(comment), reason: lead.slice(RUN_STOPPED_LEAD.length).trim().split('\n')[0].trim() })
     const release = body.match(RELEASE_PR_MARKER)
     if (release) releasePullRequest = Number(release[1])
   }
@@ -276,6 +272,8 @@ export function summarize(tickets) {
     rework: partial(tickets.map((ticket) => ticket.rework)),
     escapes: partial(tickets.map((ticket) => ticket.escapes)),
     stops: tickets.reduce((sum, ticket) => sum + ticket.stops.length, 0),
+    departures: tickets.reduce((sum, ticket) => sum + ticket.departures, 0),
+    disputes: tickets.reduce((sum, ticket) => sum + ticket.disputes, 0),
     handoffs: tickets.filter((ticket) => ticket.handoff).length,
     ranSerially: tickets.filter((ticket) => ticket.ranSerially.length).map((ticket) => ticket.number),
   }
@@ -333,7 +331,7 @@ function table(headers, rows) {
   return [render(headers), render(widths.map((width) => '-'.repeat(width))), ...rows.map(render)].join('\n')
 }
 
-const TICKET_HEADERS = ['#', 'state', 'worker', 'review', 'fixes', 'accept', 'deliver', 'whole', 'input', 'output', 'cache w', 'cache r', 'peak', 'compact', 'rounds', 'important', 'rework', 'escapes', 'stops']
+const TICKET_HEADERS = ['#', 'state', 'worker', 'review', 'fixes', 'accept', 'deliver', 'whole', 'input', 'output', 'cache w', 'cache r', 'peak', 'compact', 'rounds', 'important', 'rework', 'escapes', 'stops', 'departs', 'disputes']
 
 function ticketRow(ticket) {
   return [
@@ -348,6 +346,8 @@ function ticketRow(ticket) {
     count(ticket.rework),
     count(ticket.escapes),
     ticket.stops.length,
+    ticket.departures,
+    ticket.disputes,
   ]
 }
 
@@ -364,6 +364,8 @@ function totalRow(label, totals) {
     shownPartial(totals.rework),
     shownPartial(totals.escapes),
     totals.stops,
+    totals.departures,
+    totals.disputes,
   ]
 }
 

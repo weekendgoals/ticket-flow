@@ -115,7 +115,7 @@ test('an epic body yields its outcome, settings and ordered ticket list', () => 
 })
 
 test('settings default to a serial release, and a value that cannot be read is a problem, never a default', () => {
-  assert.deepEqual(parseSettings('').settings, { delivery: 'release', parallel: 1, designSources: null, consequencePaths: [], branch: null, rejectedBranch: null, other: {} })
+  assert.deepEqual(parseSettings('').settings, { delivery: 'release', parallel: 1, stops: 'ask', designSources: null, consequencePaths: [], branch: null, rejectedBranch: null, other: {} })
   const bad = parseSettings('Delivery: incremetal\nParallel: 4\nthis line is prose')
   assert.equal(bad.settings.delivery, null)
   assert.equal(bad.settings.parallel, null)
@@ -124,6 +124,16 @@ test('settings default to a serial release, and a value that cannot be read is a
   assert.match(bad.problems[1], /from 1 to 3/)
   assert.match(bad.problems[2], /not "Key: value"/)
   assert.equal(parseSettings('- Delivery: Incremental').settings.delivery, 'incremental')
+})
+
+test('Stops: reads ask or none in any case, defaults to ask, and any other value is a problem with no default', () => {
+  assert.equal(parseSettings('').settings.stops, 'ask')
+  assert.equal(parseSettings('Stops: ask').settings.stops, 'ask')
+  assert.equal(parseSettings('Stops: None').settings.stops, 'none')
+  const bad = parseSettings('Stops: never')
+  assert.equal(bad.settings.stops, null)
+  assert.deepEqual(bad.problems, ['"Stops: never" is neither ask nor none'])
+  assert.deepEqual(parseSettings('Stops: none').problems, [])
 })
 
 test('a ticket body yields its epic, blockers, sections and parsed criteria', () => {

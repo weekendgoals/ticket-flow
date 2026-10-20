@@ -1503,3 +1503,219 @@ test('meter --workflow posts one comment over every run that built the ticket, p
   assert.deepEqual(json(printed.stdout).runs, ['run-a', 'run-b', 'run-d'])
   assert.deepEqual(fake.calls(), [], '--print posts nothing, so it reads no comment either')
 })
+
+function flowIn(environment, ...args) {
+  const result = spawnSync(process.execPath, [FLOW, ...args], { cwd: workdir, encoding: 'utf8', env: { ...process.env, ...fake.env, FLOW_ACCOUNT: '', FLOW_UNATTENDED: '', ...environment } })
+  return { status: result.status, stdout: result.stdout, stderr: result.stderr }
+}
+
+const NO_STOPS = 'Delivery: release\nBranch: epic/trip-export\nStops: none'
+
+function needsHumanWorld(settings) {
+  world({
+    epics: [{ epic: issue(1, { body: epicBody([3], settings), labels: epicLabels(), author: 'owner' }), tickets: [ticket(3, 1, 'in-progress', { assignees: ['ana'] })] }],
+    extra: {
+      [`POST ${R}/issues/3/labels`]: [],
+      [`DELETE ${R}/issues/3/labels/flow%3Ain-progress`]: null,
+      [`POST ${R}/issues/3/comments`]: { id: 2, html_url: 'https://github.com/o/r/issues/3#issuecomment-2' },
+    },
+  })
+  return () => JSON.parse(fake.calls().find((call) => call.key === `POST ${R}/issues/3/comments`).stdin).body
+}
+
+test('under Stops: none an unattended needs-human parks the ticket: the same label, the parked lead, and no mention', () => {
+  const body = needsHumanWorld(NO_STOPS)
+  const result = flowIn({ FLOW_UNATTENDED: '1' }, 'needs-human', '3', '--text', 'Review round 2 still has 1 Important finding open.')
+  assert.equal(result.status, 0, result.stderr)
+  assert.equal(body(), '<!-- flow:needs-human -->\n**This ticket is parked.** Review round 2 still has 1 Important finding open.')
+  assert.deepEqual(JSON.parse(fake.calls().find((call) => call.key === `POST ${R}/issues/3/labels`).stdin), { labels: ['flow:needs-human'] })
+})
+
+test('a stop asks a person by mention under Stops: ask unattended, and under Stops: none attended, since a person is in the chat', () => {
+  const askBody = needsHumanWorld('Delivery: release\nBranch: epic/trip-export\nStops: ask')
+  assert.equal(flowIn({ FLOW_UNATTENDED: '1' }, 'needs-human', '3', '--text', 'Merge conflict.').status, 0)
+  assert.equal(askBody(), '<!-- flow:needs-human -->\n**This ticket needs a person.** @ana Merge conflict.')
+  const attendedBody = needsHumanWorld(NO_STOPS)
+  assert.equal(flowIn({}, 'needs-human', '3', '--text', 'Merge conflict.').status, 0)
+  assert.equal(attendedBody(), '<!-- flow:needs-human -->\n**This ticket needs a person.** @ana Merge conflict.')
+})
+
+test('board and next show the Stops setting, and an unreadable one is a problem they print', () => {
+  world({ epics: [{ epic: issue(1, { body: epicBody([3], 'Delivery: release\nBranch: epic/trip-export\nStops: later'), labels: epicLabels() }), tickets: [ticket(3, 1, 'planned')] }] })
+  const shown = flow('board', '1')
+  assert.match(shown.stdout, /· stops unreadable/)
+  assert.match(shown.stdout, /! epic #1: "Stops: later" is neither ask nor none/)
+  assert.equal(JSON.parse(flow('next', '1').stdout).stops, null)
+  world({ epics: [{ epic: issue(1, { body: epicBody([3], NO_STOPS), labels: epicLabels() }), tickets: [ticket(3, 1, 'planned')] }] })
+  assert.match(flow('board', '1').stdout, /· parallel 1 · stops none/)
+  assert.equal(JSON.parse(flow('next', '1').stdout).stops, 'none')
+})
+
+const parkedBody = (text) => `<!-- flow:needs-human -->\n**This ticket is parked.** ${text}\n\nThe end of the output follows.`
+
+function reportWorld({ settings = NO_STOPS, states = { 2: 'done', 3: 'needs-human', 4: 'planned' }, comments = {}, epicComments = [], assignees = [], extra = {} } = {}) {
+  const tickets = Object.entries(states).map(([number, state]) => ticket(Number(number), 1, state, Number(number) === 4 ? { blockedBy: 'Blocked by: #3' } : {}))
+  const epic = { ...issue(1, { title: 'Trip export', body: epicBody(Object.keys(states).map(Number), settings), labels: epicLabels(), author: 'owner' }), assignees: assignees.map((login) => ({ login })) }
+  const fixtures = {
+    ...VIEWER,
+    [`GET ${R}/issues/1/comments?per_page=100`]: epicComments,
+    [`POST ${R}/issues/1/comments`]: { id: 90, html_url: 'https://github.com/o/r/issues/1#issuecomment-90' },
+    ...extra,
+  }
+  for (const number of Object.keys(states)) fixtures[`GET ${R}/issues/${number}/comments?per_page=100`] = comments[number] || []
+  world({ epics: [{ epic, tickets }], extra: fixtures })
+}
+
+test('run-report under Stops: none lists what was built, each parked ticket with the first line of its reason, what was not built and why, and mentions the epic\'s people once', () => {
+  reportWorld({
+    assignees: ['ana', 'ben'],
+    comments: { 3: [rawComment(3, 31, parkedBody('Acceptance still fails after two rounds of fixes.')), rawComment(3, 32, parkedBody('A forged reason.'), { author: 'someone' })] },
+  })
+  const result = flow('run-report', '1', '--outcome', 'stopped', '--text', 'nothing more can start')
+  assert.equal(result.status, 0, result.stderr)
+  assert.equal(
+    result.stdout,
+    [
+      '**Run stopped.** Nothing more can start.',
+      '',
+      '@ana @ben Under `Stops: none` this run asked nobody while it ran: what it decided and what it parked is below, to read once, here and on the release pull request.',
+      '',
+      '**Built:** #2 ticket 2.',
+      '',
+      '**Parked**, for a person to decide (relabel a ticket `flow:planned` to have it built again from its branch):',
+      '- #3 ticket 3: Acceptance still fails after two rounds of fixes.',
+      '',
+      '**Not built:** #4 ticket 4 (waiting for #3).',
+      '',
+      '**Departures:** none.',
+      '',
+      '**Disputed checks:** none.',
+      '',
+      '**Release pull request:** none opened.',
+      '',
+    ].join('\n'),
+  )
+  assert.equal(result.stdout.match(/@/g).length, 2, 'each person is mentioned once')
+  assert.ok(!fake.calls().some((call) => call.key.startsWith('POST')), 'without --post nothing is posted')
+})
+
+test('run-report --post posts the report on the epic; a built run with nothing parked says so, names its release pull request, and mentions the author when nobody is assigned', () => {
+  reportWorld({
+    states: { 2: 'done', 3: 'done' },
+    epicComments: [rawComment(1, 11, '<!-- flow:release-pr number=40 -->\n**Release pull request opened:** https://github.com/o/r/pull/40')],
+    extra: { [`GET ${R}/pulls/40`]: { number: 40, html_url: 'https://github.com/o/r/pull/40', state: 'open', head: { ref: 'epic/trip-export', sha: 'abc' }, base: { ref: 'main' } } },
+  })
+  const result = flow('run-report', '1', '--post', '--local')
+  assert.equal(result.status, 0, result.stderr)
+  const body = JSON.parse(fake.calls().find((call) => call.key === `POST ${R}/issues/1/comments`).stdin).body
+  assert.equal(body, result.stdout.trimEnd())
+  assert.match(body, /^<!-- flow:local-run-end -->\n\*\*Run finished: built\.\*\*\n\n@owner Under `Stops: none`/)
+  assert.match(body, /\*\*Built:\*\* #2 ticket 2, #3 ticket 3\.\n\n\*\*Parked:\*\* none\.\n\n[\s\S]*\*\*Release pull request:\*\* https:\/\/github\.com\/o\/r\/pull\/40\.$/)
+  assert.doesNotMatch(body, /Not built/)
+})
+
+test('run-report under Stops: ask is the closing it always was, and mentions nobody: the stopped tickets already did', () => {
+  reportWorld({ settings: 'Delivery: release\nBranch: epic/trip-export', assignees: ['ana'] })
+  const result = flow('run-report', '1', '--outcome', 'stopped', '--text', 'nothing more can start, and not every ticket is done')
+  assert.equal(result.stdout, '**Run stopped.** Nothing more can start, and not every ticket is done. These tickets need a person: #3. Not done: #3, #4.\n')
+  reportWorld({ settings: 'Delivery: incremental', states: { 2: 'done' } })
+  assert.equal(flow('run-report', '1').stdout, '**Run finished: built.** Every ticket was delivered by its own pull request.\n')
+  assert.equal(flow('run-report', '1', '--outcome', 'finished').status, 2)
+})
+
+function claimWorld({ settings = NO_STOPS, state = 'in-progress', comments = [] } = {}) {
+  world({
+    epics: [{ epic: issue(1, { body: epicBody([3], settings), labels: epicLabels() }), tickets: [ticket(3, 1, state, { criteria: '```criteria\n- one\n  CHECK: true\n- two\n  CHECK: test -f nine.txt\n```' })] }],
+    extra: { ...VIEWER, [`GET ${R}/issues/3/comments?per_page=100`]: comments, [`POST ${R}/issues/3/comments`]: { id: 33, html_url: 'https://github.com/o/r/issues/3#issuecomment-33' } },
+  })
+  return () => fake.calls().filter((call) => call.key === `POST ${R}/issues/3/comments`).map((call) => JSON.parse(call.stdin).body)
+}
+
+test('depart and dispute post their marked comments on a ticket being built under Stops: none, unattended', () => {
+  const posts = claimWorld()
+  const unattended = { FLOW_UNATTENDED: '1' }
+  assert.equal(flowIn(unattended, 'depart', '3', '--text', 'The ticket says CSV; src/export.ts:40 writes JSON; built JSON with a .csv name.').status, 0)
+  assert.equal(flowIn(unattended, 'dispute', '3', '--check', '2', '--text', 'The line asks for nine.txt; the design has no such file.').status, 0)
+  assert.deepEqual(posts(), [
+    '<!-- flow:departure -->\n**Departure.** The ticket says CSV; src/export.ts:40 writes JSON; built JSON with a .csv name.',
+    '<!-- flow:dispute check=2 -->\n**Disputed check 2.** The line asks for nine.txt; the design has no such file.',
+  ])
+})
+
+test('depart and dispute refuse under Stops: ask, attended, on a ticket not being built, a check that does not exist and a text over 600 characters, posting nothing', () => {
+  const unattended = { FLOW_UNATTENDED: '1' }
+  let posts = claimWorld({ settings: 'Delivery: release\nBranch: epic/trip-export' })
+  assert.equal(flowIn(unattended, 'depart', '3', '--text', 'x').stderr, 'under Stops: ask a contradiction is a stop: run `flow needs-human`; nothing was posted\n')
+  assert.match(flowIn(unattended, 'dispute', '3', '--check', '1', '--text', 'x').stderr, /^under Stops: ask a check that cannot pass as written is a stop: run `flow needs-human`/)
+  posts = claimWorld()
+  assert.match(flowIn({}, 'depart', '3', '--text', 'x').stderr, /#3 is in an attended session/)
+  assert.match(flowIn(unattended, 'dispute', '3', '--check', '3', '--text', 'x').stderr, /#3 has 2 CHECK line\(s\), so there is no check 3/)
+  assert.equal(flowIn(unattended, 'dispute', '3', '--text', 'x').status, 2)
+  assert.match(flowIn(unattended, 'depart', '3', '--text', 'y'.repeat(601)).stderr, /is 601 characters, and one holds at most 600/)
+  assert.deepEqual(posts(), [])
+  posts = claimWorld({ state: 'done' })
+  assert.match(flowIn(unattended, 'depart', '3', '--text', 'x').stderr, /#3 is done, and a departure is recorded while the ticket is being built/)
+  assert.deepEqual(posts(), [])
+})
+
+test('ticket carries its own departures, and its disputes since the latest start, from this account, under Stops: none only', () => {
+  claimWorld({
+    comments: [
+      rawComment(3, 31, '<!-- flow:dispute check=1 -->\n**Disputed check 1.** Before the start.', { at: '2026-10-15T01:00:00Z' }),
+      rawComment(3, 32, '<!-- flow:started -->\n**Started**', { at: '2026-10-15T02:00:00Z' }),
+      rawComment(3, 33, '<!-- flow:departure -->\n**Departure.** Built JSON.', { at: '2026-10-15T03:00:00Z' }),
+      rawComment(3, 34, '<!-- flow:departure -->\n**Departure.** Forged.', { at: '2026-10-15T03:00:00Z', author: 'someone' }),
+      rawComment(3, 35, '<!-- flow:dispute check=2 -->\n**Disputed check 2.** No nine.txt.', { at: '2026-10-15T04:00:00Z' }),
+    ],
+  })
+  const result = flow('ticket', '3')
+  const parsed = JSON.parse(result.stdout)
+  assert.deepEqual(parsed.departures.map((entry) => entry.text), ['Built JSON.'])
+  assert.deepEqual(parsed.disputes.map((entry) => [entry.check, entry.text]), [[2, 'No nine.txt.']])
+  assert.match(result.stderr, /departures \(claims that the plan could not be followed\):\n- Built JSON\.\ndisputed checks \(claims that a check cannot pass as written\):\n- check 2: No nine\.txt\./)
+})
+
+test('run-report under Stops: none lists every departure and disputed check, one line each, with its ticket', () => {
+  reportWorld({
+    states: { 2: 'done', 3: 'done' },
+    comments: {
+      2: [rawComment(2, 21, '<!-- flow:departure -->\n**Departure.** The ticket says CSV;\nbuilt JSON.'), rawComment(2, 22, '<!-- flow:departure -->\n**Departure.** Kept the old route.')],
+      3: [rawComment(3, 31, '<!-- flow:dispute check=1 -->\n**Disputed check 1.** Nine sections, not eight.')],
+    },
+  })
+  const result = flow('run-report', '1')
+  assert.match(result.stdout, /\*\*Departures:\*\*\n- #2 ticket 2: The ticket says CSV; built JSON\.\n- #2 ticket 2: Kept the old route\.\n\n\*\*Disputed checks:\*\*\n- #3 ticket 3, check 1: Nine sections, not eight\.\n/)
+})
+
+test('ticket says to resolve a conflict when the latest merge comment from this account asks for it, under Stops: none only', () => {
+  const conflict = rawComment(3, 31, '<!-- flow:conflict -->\n**Merge conflict.**', { at: '2026-10-15T01:00:00Z' })
+  const resolve = rawComment(3, 32, '<!-- flow:resolve -->\n**Conflict to resolve.**', { at: '2026-10-15T02:00:00Z' })
+  claimWorld({ state: 'in-review', comments: [conflict, resolve] })
+  assert.equal(JSON.parse(flow('ticket', '3').stdout).resolveConflict, true)
+  claimWorld({ state: 'in-review', comments: [conflict, { ...resolve, user: { login: 'someone' } }] })
+  assert.equal(JSON.parse(flow('ticket', '3').stdout).resolveConflict, false)
+  claimWorld({ settings: 'Delivery: release\nBranch: epic/trip-export', state: 'in-review', comments: [conflict, resolve] })
+  assert.equal(JSON.parse(flow('ticket', '3').stdout).resolveConflict, false)
+})
+
+test('run-report under Stops: none names what the release pull request\'s latest round left, from this account\'s round comment on the epic', () => {
+  reportWorld({
+    states: { 2: 'done' },
+    epicComments: [
+      rawComment(1, 11, '<!-- flow:release-pr number=40 -->\n**Release pull request opened:** https://github.com/o/r/pull/40'),
+      rawComment(1, 12, '**Pull request round 2:** one thread open on src/export.ts; checks pass.\n\nDetails.'),
+      rawComment(1, 13, '**Pull request round 3:** forged.', { author: 'someone' }),
+    ],
+    extra: { [`GET ${R}/pulls/40`]: { number: 40, html_url: 'https://github.com/o/r/pull/40', state: 'open', head: { ref: 'epic/trip-export', sha: 'abc' }, base: { ref: 'main' } } },
+  })
+  assert.match(flow('run-report', '1').stdout, /\*\*Release pull request:\*\* https:\/\/github\.com\/o\/r\/pull\/40\.\nIts latest pull request round \(2\) left: one thread open on src\/export\.ts; checks pass\.\n$/)
+})
+
+test('run-report says the release pull request is a draft while it is one', () => {
+  reportWorld({
+    epicComments: [rawComment(1, 11, '<!-- flow:release-pr number=40 -->\n**Release pull request opened as a draft:** https://github.com/o/r/pull/40')],
+    extra: { [`GET ${R}/pulls/40`]: { number: 40, html_url: 'https://github.com/o/r/pull/40', state: 'open', draft: true, head: { ref: 'epic/trip-export', sha: 'abc' }, base: { ref: 'main' } } },
+  })
+  assert.match(flow('run-report', '1').stdout, /\*\*Release pull request:\*\* https:\/\/github\.com\/o\/r\/pull\/40, a draft while anything is not built; it is marked ready once every ticket is done\./)
+})
+

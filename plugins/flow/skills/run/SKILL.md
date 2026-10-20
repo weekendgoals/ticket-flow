@@ -83,7 +83,9 @@ round the script:
 5. side by side: merges the accepted commits into the epic branch one at a
    time, in document order, then runs those tickets' checks again at the
    new epic head (`FLOW check-epic --mark`), because two tickets that pass
-   alone can break each other. One at a time: each ticket merges itself,
+   alone can break each other. A check that fails there runs a second time
+   at the same head first, and one that passes then is reported as passed
+   on the second run, so a flaky check is visible rather than a stop. One at a time: each ticket merges itself,
    and its checks run again at the epic head the same way.
 
 It posts each wave and its end on the epic issue. When the separate
@@ -98,15 +100,19 @@ agent's summary of a command is not what GitHub said. Before it halts over
 the board (the epic not approved, or not every ticket done at the end), it
 reads the board once more and halts only when both readings agree; a stop
 over a command that answered nothing readable quotes its exit code and last
-line. `worktree` and `check-epic` are never asked for twice, because a
-second copy would run beside the first.
+line. `worktree` and `check-epic` are never asked for again over an
+unreadable answer, because a second copy would run beside the first.
 
 A ticket stops only for what `/flow:ticket` stops for (a gate still failing
 after two rounds of fixes: the acceptance checks, an Important review
 finding, a pull request thread or check; the plan and the work disagreeing;
 a merge conflict), or when its checks fail at the epic head after merging;
 then it is labelled `flow:needs-human`, its assignee (or the epic's author)
-is mentioned, and the run carries on with the others. A builder that dies
+is mentioned, and the run carries on with the others. Under `Stops: none`
+the ticket is parked instead (same label, no mention; the closing
+`FLOW run-report` lists it and mentions the epic's people once), and what
+each stop becomes there is the list at the top of the ticket skill, the one
+copy of it. A builder that dies
 without a result (a session limit, a crash) is reset and built again once,
 from its branch; a second death goes to a person. A builder that died after
 its ticket passed acceptance is not built again: the accepted commit is
@@ -124,7 +130,12 @@ done ticket's checks at the epic head, opens the release pull request
 cost; it refuses unless that check passed at the head the pull request
 carries, so run `FLOW check-epic <e>` first when you open it by hand),
 answers its review bot and CI for up to two rounds, and posts the
-pull request on the epic.
+pull request on the epic. Under `Stops: none` it does the same when the run ends
+with tickets parked, and opens the pull request as a draft
+(`FLOW release-pr <e> --draft`): over the done tickets, with a `## Not built`
+section and no line closing the epic. When a check at the epic head parks a
+ticket there, the done ones are checked once more first. A later run that
+builds the parked tickets marks the draft ready for review.
 
 ## 3. Report
 
@@ -139,8 +150,9 @@ When the workflow returns:
    running it again posts nothing twice. A figure the records lack reads
    `unknown`; never estimate one.
 2. Tell the person, in a few lines: built or stopped, the release pull
-   request's URL, and every ticket that needs a person with the one-line
-   reason from its issue (`FLOW board <e>`). Their next step is to review and
+   request's URL (and whether it is a draft), and every ticket that needs a
+   person (or was parked) with
+   the one-line reason from its issue (`FLOW run-report <e>` prints them). Their next step is to review and
    merge the release pull request, or to answer those tickets and run
    `/flow:run #<e>` again: a ticket they fixed and labelled `flow:planned`
    is picked up where its branch left off.

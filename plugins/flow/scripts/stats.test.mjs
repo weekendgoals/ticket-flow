@@ -77,6 +77,28 @@ test('a cost comment whose roles are null or not objects reads as those roles ab
   assert.deepEqual([record.steps.worker, record.tokens.input, record.roleModels.worker, record.effort.worker], [null, null, null, null])
 })
 
+test('a parked ticket is a stop in the figures, with its reason and marked parked, and a run report counts as a run stop by its first line', () => {
+  const parked = '<!-- flow:needs-human -->\n**This ticket is parked.** The epic branch conflicts in README.md.'
+  const record = ticketStats({ ticket: { number: 2, title: 'Export', state: 'needs-human', tier: 'hard' }, comments: [comment(parked, '2026-10-14T10:30:00Z', { id: 3 })] })
+  assert.deepEqual(record.stops.map(({ reason, parked: wasParked }) => [reason, wasParked]), [['The epic branch conflicts in README.md.', true]])
+  const report = '<!-- flow:local-run-end -->\n**Run stopped.** Nothing more can start.\n\n@ana Under `Stops: none` this run asked nobody while it ran.\n\n**Built:** none.'
+  assert.deepEqual(readEpicComments([comment(report, '2026-10-14T12:00:00Z', { id: 4 })]).runStops.map((stop) => stop.reason), ['Nothing more can start.'])
+})
+
+test('departures and disputes are counted per ticket and summed, and printed as two columns', () => {
+  const claims = [
+    comment('<!-- flow:departure -->\n**Departure.** Built JSON.', '2026-10-14T10:30:00Z', { id: 3 }),
+    comment('<!-- flow:departure -->\n**Departure.** Kept /trips.', '2026-10-14T10:31:00Z', { id: 4 }),
+    comment('<!-- flow:dispute check=2 -->\n**Disputed check 2.** Nine, not eight.', '2026-10-14T10:32:00Z', { id: 5 }),
+  ]
+  const record = ticketStats({ ticket: { number: 2, title: 'Export', state: 'done', tier: 'hard' }, comments: claims })
+  assert.deepEqual([record.departures, record.disputes], [2, 1])
+  const totals = summarize([record, ticketStats({ ticket: { number: 3, title: 'Other', state: 'done', tier: 'hard' }, comments: [] })])
+  assert.deepEqual([totals.departures, totals.disputes], [2, 1])
+  const text = formatStats(overallStats([{ number: 1, title: 'Trip export', delivery: 'release', parallel: 1, releasePullRequest: null, tickets: [record], totals: summarize([record]), runStops: [], serialWaves: [] }]))
+  assert.match(text, /stops  departs  disputes/)
+})
+
 test('a ticket record: time per step from the cost comment and the step comments, rounds, findings and the reason it stopped', () => {
   const comments = [
     comment(started, '2026-10-14T10:00:00Z', { id: 1 }),
@@ -98,7 +120,7 @@ test('a ticket record: time per step from the cost comment and the step comments
   assert.equal(record.failedAcceptances, 1)
   assert.equal(record.resets, 1)
   assert.equal(record.compactions, 1)
-  assert.deepEqual(record.stops, [{ at: '2026-10-14T10:30:00Z', author: 'flow-bot', url: 'https://github.com/o/r/issues/2#issuecomment-3', reason: 'Two rounds and the export still fails.' }])
+  assert.deepEqual(record.stops, [{ at: '2026-10-14T10:30:00Z', author: 'flow-bot', url: 'https://github.com/o/r/issues/2#issuecomment-3', reason: 'Two rounds and the export still fails.', parked: false }])
   assert.equal(record.rework, null, 'no git was read, so rework is unknown, not zero')
   assert.equal(record.escapes, null)
 })
@@ -320,7 +342,7 @@ test('stats <epic> --json reads the comments and git: steps, tokens, rounds, rew
   const stats = JSON.parse(result.stdout)
   assert.equal(stats.epics.length, 1)
   const [epic] = stats.epics
-  assert.deepEqual(epic.releasePullRequest, { number: 12, url: 'https://github.com/o/r/pull/12', merged: true, mergedAt: '2026-10-15T08:00:00Z' })
+  assert.deepEqual(epic.releasePullRequest, { number: 12, url: 'https://github.com/o/r/pull/12', merged: true, mergedAt: '2026-10-15T08:00:00Z', draft: false })
   const [two, three] = epic.tickets
   assert.deepEqual(two.steps, { worker: 600, review: 120, fixes: 180, acceptance: 20, delivery: 600, whole: 4200 })
   assert.equal(two.rework, 2)

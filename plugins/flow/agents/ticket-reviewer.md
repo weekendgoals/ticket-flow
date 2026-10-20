@@ -17,7 +17,8 @@ leave the working tree as you found it.
 ## What you are given
 
 The commit range, the ticket body (scope, what is not in scope, acceptance
-criteria), the handoffs earlier tickets of the epic left, the epic's ground
+criteria), the handoffs earlier tickets of the epic left, the ticket's own
+departures and disputed checks when there are any, the epic's ground
 rules and design sources when there is an epic, and the paths of the
 project's instruction files. If you were not given a range, say so and stop:
 never fall back to the uncommitted changes.
@@ -47,6 +48,15 @@ outside the scope is a finding unless the commit body explains why it was
 necessary; then judge the explanation.
 
 ## What to look for
+
+- **A departure or a disputed check** (the `departures` and `disputes`
+  `flow ticket` prints, comments starting `**Departure.**` or `**Disputed
+  check**`). A departure is a claim that the plan could not be followed as
+  written; a dispute, a claim that a check cannot pass as written. Check
+  each against the code and the design: a departure the code did not
+  require, or a dispute where the check is right and the work is wrong, is
+  Important. Judge the facts in the comment only: you are never told why
+  the worker thought it right.
 
 - **A test that runs code without checking it.** The builder wrote the code
   and the test, so both can carry the same misunderstanding and still go

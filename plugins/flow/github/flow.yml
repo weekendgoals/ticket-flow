@@ -73,6 +73,7 @@ jobs:
           ticket="$($FLOW ticket "$TICKET")"
           echo "model=$(echo "$ticket" | jq -r '.model')" >> "$GITHUB_OUTPUT"
           echo "epic=$(echo "$ticket" | jq -r '.epic // empty')" >> "$GITHUB_OUTPUT"
+          echo "mode=$(echo "$ticket" | jq -r 'if .resolveConflict then "--resolve-conflict" else "" end')" >> "$GITHUB_OUTPUT"
       - name: build the ticket
         id: claude
         uses: anthropics/claude-code-action@v1
@@ -85,7 +86,7 @@ jobs:
           github_token: ${{ secrets.FLOW_TOKEN || github.token }}
           plugin_marketplaces: https://github.com/weekendgoals/ticket-flow.git
           plugins: flow@ticket-flow
-          prompt: /flow:ticket #${{ env.TICKET }} --unattended --no-merge
+          prompt: /flow:ticket #${{ env.TICKET }} --unattended --no-merge ${{ steps.read.outputs.mode }}
           claude_args: --model ${{ steps.read.outputs.model }} --allowedTools "Bash,Read,Edit,Write,Glob,Grep,Agent,Task,Skill,WebFetch"
       # execution_file is the output anthropics/claude-code-action@v1 documents for the run's messages as JSON (action.yml, outputs).
       - name: post what it cost
@@ -194,13 +195,21 @@ jobs:
           dispatched="$($FLOW dispatch "$EPIC")"
           echo "$dispatched"
           state="$(echo "$dispatched" | jq -r '.state')"
-          if [ "$state" = "built" ] && [ "$($FLOW next "$EPIC" | jq -r '.delivery')" = "release" ]; then
+          stops="$(echo "$dispatched" | jq -r '.stops')"
+          if [ "$stops" = "none" ] && { [ "$state" = "built" ] || [ "$state" = "stopped" ]; }; then
+            if [ "$($FLOW next "$EPIC" | jq -r '.delivery')" = "release" ]; then
+              if $FLOW check-epic "$EPIC" --mark || $FLOW check-epic "$EPIC" --mark; then
+                if opened="$($FLOW release-pr "$EPIC" --draft)"; then $FLOW pr-review-request "$(echo "$opened" | jq -r '.pullRequest')" || true; fi
+              fi
+            fi
+            $FLOW run-report "$EPIC" --post
+          elif [ "$state" = "built" ] && [ "$($FLOW next "$EPIC" | jq -r '.delivery')" = "release" ]; then
             $FLOW check-epic "$EPIC" --mark || exit 1
             opened="$($FLOW release-pr "$EPIC")" || exit 1
             pr="$(echo "$opened" | jq -r '.pullRequest')"
             $FLOW pr-review-request "$pr" || true
           elif [ "$state" = "stopped" ]; then
-            $FLOW post "$EPIC" --text "**Run stopped.** Nothing is ready and nothing is in progress; the tickets labelled flow:needs-human say why."
+            $FLOW run-report "$EPIC" --post --outcome stopped --text "nothing is ready and nothing is in progress"
           fi
 
   # After a person merges into the default branch, no code work runs: what runs is the GitHub Action's `board` job, which closes `flow:done` tickets left open and writes the project board (Status, Release, figures), and the report page's rebuild, which only reads. It builds, merges and pushes nothing, and changes no label.

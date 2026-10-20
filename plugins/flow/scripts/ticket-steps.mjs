@@ -1,5 +1,5 @@
 export const STARTED_MARKER = '<!-- flow:started -->'
-export const ACCEPTANCE_MARKER = /^<!-- flow:acceptance sha=([0-9a-f]{7,40}) passed=(true|false)(?: seconds=(\d+))? -->/
+export const ACCEPTANCE_MARKER = /^<!-- flow:acceptance sha=([0-9a-f]{7,40}) passed=(true|false)(?: seconds=(\d+))?(?: disputed=(\d+))? -->/
 export const METER_MARKER = '<!-- flow:meter -->'
 export const RESET_MARKER = '<!-- flow:reset -->'
 const START_WITHDRAWN_MARKER = '<!-- flow:start-withdrawn -->'
@@ -13,15 +13,26 @@ export const RELEASE_CHECK_MARKER = /^<!-- flow:release-check head=([0-9a-f]{7,4
 export const RELEASE_PR_MARKER = /^<!-- flow:release-pr number=(\d+) -->/
 export const NEEDS_HUMAN_MARKER = '<!-- flow:needs-human -->'
 export const NEEDS_HUMAN_LEAD = '**This ticket needs a person.**'
+export const PARKED_LEAD = '**This ticket is parked.**'
 export const SERIAL_WAVE_MARKER = /^<!-- flow:serial wave=([\w:-]+) tickets=(\d+(?:,\d+)*) -->$/m
 export const PULL_REQUEST_COMMENT = /^\*\*Pull request (opened|already open|round \d+):?\*\*/
 export const UNATTENDED_VARIABLE = 'FLOW_UNATTENDED'
 export const HANDOFF_MARKER = '<!-- flow:handoff -->'
 const HANDOFF_LEAD = '**Handoff.**'
 export const MAX_HANDOFF_LENGTH = 1200
+export const DEPARTURE_MARKER = '<!-- flow:departure -->'
+const DEPARTURE_LEAD = '**Departure.**'
+export const DISPUTE_MARKER = /^<!-- flow:dispute check=(\d+) -->/
+export const MAX_CLAIM_LENGTH = 600
+export const CONFLICT_MARKER = '<!-- flow:conflict -->'
+export const RESOLVE_MARKER = '<!-- flow:resolve -->'
 
 export function isUnattended(environment = process.env) {
   return environment[UNATTENDED_VARIABLE] === '1'
+}
+
+export function parksInstead(stops, environment = process.env) {
+  return stops === 'none' && isUnattended(environment)
 }
 
 export function hostName(environment = process.env) {
@@ -84,8 +95,12 @@ export function startWithdrawnComment() {
   return `${START_WITHDRAWN_MARKER}\n**Start request withdrawn.** The job asked to build this ticket stopped before the ticket started, so \`flow:start\` is taken off; the ticket is planned, and the next start request builds it.`
 }
 
-export function releasePrComment({ number, url, existing, epicBranch, base }) {
-  return `<!-- flow:release-pr number=${number} -->\n**Release pull request ${existing ? 'already open' : 'opened'}:** ${url} (\`${epicBranch}\` into \`${base}\`). A person reviews and merges it.`
+export function releasePrComment({ number, url, existing, epicBranch, base, draft = false, markedReady = false, convertedToDraft = false }) {
+  const marker = `<!-- flow:release-pr number=${number} -->`
+  if (convertedToDraft) return `${marker}\n**Release pull request converted back to a draft:** ${url} (\`${epicBranch}\` into \`${base}\`). A ticket is no longer done, so the body was rewritten to list what is not built; it is marked ready again once every ticket is done.`
+  if (markedReady) return `${marker}\n**Release pull request marked ready for review:** ${url} (\`${epicBranch}\` into \`${base}\`). Every ticket is built now, so its body was rewritten in full. A person reviews and merges it.`
+  if (draft) return `${marker}\n**Release pull request ${existing ? 'updated, still a draft' : 'opened as a draft'}:** ${url} (\`${epicBranch}\` into \`${base}\`). Some tickets are parked or not built, and its body lists them; it is marked ready once every ticket is done.`
+  return `${marker}\n**Release pull request ${existing ? 'already open' : 'opened'}:** ${url} (\`${epicBranch}\` into \`${base}\`). A person reviews and merges it.`
 }
 
 export function localRunLive(comments) {
@@ -241,13 +256,21 @@ function cell(text) {
 
 const RESULT_WORDS = { passed: 'pass', failed: 'FAIL', skipped: 'SKIPPED (does not pass)' }
 
-export function acceptanceComment({ sha, report, seconds = null }) {
-  const lines = [`<!-- flow:acceptance sha=${sha} passed=${report.allPassed}${Number.isInteger(seconds) ? ` seconds=${seconds}` : ''} -->`]
-  lines.push(`**Acceptance ${report.allPassed ? 'passed' : 'failed'}** at \`${sha.slice(0, 12)}\`: ${report.passed} of ${report.total} checks passed${report.skipped ? `, ${report.skipped} skipped` : ''}.`)
+export function acceptanceComment({ sha, report, seconds = null, disputed = [] }) {
+  const passed = report.allPassed || disputed.length > 0
+  const disputedMark = disputed.length ? ` disputed=${disputed.length}` : ''
+  const lines = [`<!-- flow:acceptance sha=${sha} passed=${passed}${Number.isInteger(seconds) ? ` seconds=${seconds}` : ''}${disputedMark} -->`]
+  const verdict = report.allPassed ? 'passed' : disputed.length ? `passed, with ${disputed.length} disputed check(s)` : 'failed'
+  lines.push(`**Acceptance ${verdict}** at \`${sha.slice(0, 12)}\`: ${report.passed} of ${report.total} checks passed${report.skipped ? `, ${report.skipped} skipped` : ''}.`)
+  const disputedChecks = new Set(disputed.map((entry) => entry.n))
   if (report.checks.length) {
     lines.push('', '| # | Criterion | Command | Result | Evidence |', '|---|---|---|---|---|')
     for (const check of report.checks)
-      lines.push(`| ${check.n} | ${cell(check.criterion || '—')} | \`${cell(check.check)}\` | ${RESULT_WORDS[check.status]} | ${cell(check.evidence)} |`)
+      lines.push(`| ${check.n} | ${cell(check.criterion || '—')} | \`${cell(check.check)}\` | ${RESULT_WORDS[check.status]}${disputedChecks.has(check.n) ? ' (disputed)' : ''} | ${cell(check.evidence)} |`)
+  }
+  if (disputed.length) {
+    lines.push('', 'Disputed checks, which the worker holds cannot pass as written; the reviewer and the person read each:')
+    for (const entry of disputed) lines.push(`- check ${entry.n}, \`${entry.check}\`: ${oneLine(entry.text)}`)
   }
   if (report.compares.length) {
     lines.push('', 'Design comparisons are run by hand and are not counted above; each needs its **Compared:** table posted on this issue:')
@@ -260,12 +283,195 @@ export function acceptanceComment({ sha, report, seconds = null }) {
   return lines.join('\n')
 }
 
-export function needsHumanComment({ people, text }) {
+export function coveredByDisputes(report, disputes) {
+  const failing = report.checks.filter((check) => check.status !== 'passed')
+  if (report.allPassed || !failing.length || report.problems.length) return []
+  if (!failing.every((check) => check.status === 'failed' && disputes.has(check.n))) return []
+  return failing.map((check) => ({ n: check.n, check: check.check, text: disputes.get(check.n).text }))
+}
+
+function oneLine(text) {
+  return String(text).replace(/\s*\n\s*/g, ' ').trim()
+}
+
+export function departureComment(text) {
+  return `${DEPARTURE_MARKER}\n${DEPARTURE_LEAD} ${text.trim()}`
+}
+
+export function disputeComment(check, text) {
+  return `<!-- flow:dispute check=${check} -->\n**Disputed check ${check}.** ${text.trim()}`
+}
+
+function claimText(body, lead) {
+  const rest = body.split('\n').slice(1).join('\n').trim()
+  return oneLine(rest.startsWith(lead) ? rest.slice(lead.length) : rest)
+}
+
+export function departuresOf(comments, author) {
+  return byAuthor(comments, author)
+    .filter((comment) => comment.body.startsWith(DEPARTURE_MARKER))
+    .map((comment) => ({ text: claimText(comment.body, DEPARTURE_LEAD), url: comment.url || null, at: comment.createdAt || null }))
+}
+
+export function disputesOf(comments, author, since = null) {
+  const sinceTime = since ? Date.parse(since) : null
+  return byAuthor(comments, author)
+    .filter((comment) => sinceTime === null || Date.parse(comment.createdAt) >= sinceTime)
+    .map((comment) => ({ comment, match: comment.body.match(DISPUTE_MARKER) }))
+    .filter(({ match }) => match)
+    .map(({ comment, match }) => ({ check: Number(match[1]), text: claimText(comment.body, `**Disputed check ${match[1]}.**`), url: comment.url || null, at: comment.createdAt || null }))
+}
+
+export function latestDisputes(disputes) {
+  return new Map(disputes.map((dispute) => [dispute.check, dispute]))
+}
+
+export function needsHumanComment({ people, text, parked = false }) {
+  if (parked) return `${NEEDS_HUMAN_MARKER}\n${PARKED_LEAD} ${text}`
   const mention = people.map((login) => `@${login}`).join(' ')
   return `${NEEDS_HUMAN_MARKER}\n${NEEDS_HUMAN_LEAD} ${mention ? `${mention} ` : ''}${text}`
+}
+
+export function isStopComment(body) {
+  return body.startsWith(NEEDS_HUMAN_MARKER) || body.startsWith(NEEDS_HUMAN_LEAD) || body.startsWith(PARKED_LEAD)
+}
+
+export function stopText(body) {
+  const withoutMarker = body.startsWith(NEEDS_HUMAN_MARKER) ? body.slice(NEEDS_HUMAN_MARKER.length).trimStart() : body
+  const lead = [NEEDS_HUMAN_LEAD, PARKED_LEAD].find((candidate) => withoutMarker.startsWith(candidate)) || ''
+  return withoutMarker
+    .slice(lead.length)
+    .trim()
+    .replace(/^(?:@[\w-]+(?:\[bot\])?\s+)+/, '')
+    .trim()
+}
+
+export function isParkedComment(body) {
+  const withoutMarker = body.startsWith(NEEDS_HUMAN_MARKER) ? body.slice(NEEDS_HUMAN_MARKER.length).trimStart() : body
+  return withoutMarker.startsWith(PARKED_LEAD)
+}
+
+export function lastStop(comments, author) {
+  const found = byAuthor(comments, author).filter((comment) => isStopComment(comment.body))
+  if (!found.length) return null
+  const latest = found[found.length - 1]
+  return { reason: stopText(latest.body).split('\n')[0].trim(), parked: isParkedComment(latest.body), url: latest.url || null }
 }
 
 export function editedRefusal({ edits, startedAt }) {
   const who = edits.map((edit) => `${edit.editor ? `@${edit.editor}` : 'someone'} at ${edit.editedAt}`).join(', ')
   return `**Acceptance refused:** the issue body, which holds the acceptance criteria, was edited after work started (${startedAt}) by ${who}. The criteria are the gate, so a person has to confirm the edit before this ticket can pass.`
+}
+
+export const RUN_FINISHED_LEAD = '**Run finished: built.**'
+export const RUN_STOPPED_LEAD = '**Run stopped.**'
+
+export function lastReleasePullRequest(comments, author) {
+  const found = lastMatch(comments, author, RELEASE_PR_MARKER)
+  return found ? Number(found.match[1]) : null
+}
+
+function asSentence(text) {
+  const trimmed = String(text).trim()
+  const capital = `${trimmed[0].toUpperCase()}${trimmed.slice(1)}`
+  return /[.!?]$/.test(capital) ? capital : `${capital}.`
+}
+
+function numbered(tickets) {
+  return tickets.map((ticket) => `#${ticket.number}`).join(', ')
+}
+
+function named(ticket) {
+  return `#${ticket.number} ${ticket.title}`
+}
+
+function notBuiltState(ticket) {
+  if (ticket.unfinishedBlockers && ticket.unfinishedBlockers.length && ['planned', 'waiting'].includes(ticket.state)) return `waiting for ${numbered(ticket.unfinishedBlockers.map((number) => ({ number })))}`
+  return ticket.state
+}
+
+function askReport({ outcome, reason, delivery, tickets, releasePullRequest }) {
+  if (outcome === 'built') {
+    if (releasePullRequest) return `${RUN_FINISHED_LEAD} Release pull request: ${releasePullRequest.url}. A person reviews and merges it.`
+    return `${RUN_FINISHED_LEAD}${delivery === 'incremental' ? ' Every ticket was delivered by its own pull request.' : ''}`
+  }
+  const waiting = tickets.filter((ticket) => ticket.state === 'needs-human')
+  const notDone = tickets.filter((ticket) => ticket.state !== 'done')
+  return `${RUN_STOPPED_LEAD} ${reason ? asSentence(reason) : 'Nothing more can start.'}${waiting.length ? ` These tickets need a person: ${numbered(waiting)}.` : ''}${notDone.length ? ` Not done: ${numbered(notDone)}.` : ''}`
+}
+
+function claimLines(heading, tickets, linesOf) {
+  const found = tickets.flatMap(linesOf)
+  return found.length ? [`**${heading}:**`, ...found.map((line) => `- ${line}`)] : [`**${heading}:** none.`]
+}
+
+function noStopsReport({ outcome, reason, tickets, releasePullRequest, people, pullRequestRound }) {
+  const lead = outcome === 'built' ? RUN_FINISHED_LEAD : `${RUN_STOPPED_LEAD} ${reason ? asSentence(reason) : 'Nothing more can start.'}`
+  const mention = people.map((login) => `@${login}`).join(' ')
+  const lines = [lead, '', `${mention ? `${mention} ` : ''}Under \`Stops: none\` this run asked nobody while it ran: what it decided and what it parked is below, to read once, here and on the release pull request.`]
+  const built = tickets.filter((ticket) => ticket.state === 'done')
+  const parked = tickets.filter((ticket) => ticket.state === 'needs-human')
+  const notBuilt = tickets.filter((ticket) => ticket.state !== 'done' && ticket.state !== 'needs-human')
+  lines.push('', `**Built:** ${built.length ? built.map(named).join(', ') : 'none'}.`)
+  if (parked.length) {
+    lines.push('', '**Parked**, for a person to decide (relabel a ticket `flow:planned` to have it built again from its branch):')
+    for (const ticket of parked) lines.push(`- ${named(ticket)}: ${ticket.stop && ticket.stop.reason ? ticket.stop.reason : 'no parking comment from this account'}`)
+  } else lines.push('', '**Parked:** none.')
+  if (notBuilt.length) lines.push('', `**Not built:** ${notBuilt.map((ticket) => `${named(ticket)} (${notBuiltState(ticket)})`).join(', ')}.`)
+  lines.push('', ...claimLines('Departures', tickets, (ticket) => (ticket.departures || []).map((departure) => `${named(ticket)}: ${departure.text}`)))
+  lines.push('', ...claimLines('Disputed checks', tickets, (ticket) => (ticket.disputes || []).map((dispute) => `${named(ticket)}, check ${dispute.check}: ${dispute.text}`)))
+  const draftNote = releasePullRequest && releasePullRequest.draft ? ', a draft while anything is not built; it is marked ready once every ticket is done' : ''
+  lines.push('', `**Release pull request:** ${releasePullRequest ? `${releasePullRequest.url || `#${releasePullRequest.number}`}${draftNote}` : 'none opened'}.`)
+  if (pullRequestRound) lines.push(`Its latest pull request round (${pullRequestRound.round}) left: ${pullRequestRound.text}`)
+  return lines.join('\n')
+}
+
+export function runReport({ stops, outcome, reason = null, delivery, tickets, releasePullRequest = null, pullRequestRound = null, people = [], local = false }) {
+  const text = stops === 'none' ? noStopsReport({ outcome, reason, tickets, releasePullRequest, people, pullRequestRound }) : askReport({ outcome, reason, delivery, tickets, releasePullRequest })
+  return local ? `${LOCAL_RUN_END_MARKER}\n${text}` : text
+}
+
+export function conflictComment(text) {
+  return `${CONFLICT_MARKER}\n**Merge conflict.** ${text} Under \`Stops: none\` a fresh worker merges the epic branch into the ticket branch, resolves it keeping both sides' intent, and has that commit reviewed; a second conflict parks the ticket.`
+}
+
+export function resolveRequestComment(number) {
+  return `${RESOLVE_MARKER}\n**Conflict to resolve.** The accepted commit conflicts with the epic branch, so this ticket is built once more to resolve it: the epic branch is merged into \`ticket/${number}\`, and the result is reviewed, accepted and merged by the usual gates.`
+}
+
+export function conflictsSince(comments, author, since = null) {
+  const sinceTime = since ? Date.parse(since) : null
+  return byAuthor(comments, author).filter((comment) => comment.body.startsWith(CONFLICT_MARKER) && (sinceTime === null || Date.parse(comment.createdAt) >= sinceTime)).length
+}
+
+export function awaitingResolution(comments, author) {
+  const marks = byAuthor(comments, author).filter((comment) => comment.body.startsWith(CONFLICT_MARKER) || comment.body.startsWith(RESOLVE_MARKER) || MERGED_MARKER.test(comment.body))
+  return marks.length > 0 && marks[marks.length - 1].body.startsWith(CONFLICT_MARKER)
+}
+
+export function resolveRequested(comments, author) {
+  const marks = byAuthor(comments, author).filter((comment) => comment.body.startsWith(CONFLICT_MARKER) || comment.body.startsWith(RESOLVE_MARKER) || MERGED_MARKER.test(comment.body))
+  return marks.length > 0 && marks[marks.length - 1].body.startsWith(RESOLVE_MARKER)
+}
+
+const PULL_REQUEST_ROUND = /^\*\*Pull request round (\d+):\*\*\s*(.*)$/
+
+export function lastPullRequestRound(comments, author) {
+  const rounds = byAuthor(comments, author)
+    .map((comment) => comment.body.split('\n')[0].match(PULL_REQUEST_ROUND))
+    .filter(Boolean)
+  if (!rounds.length) return null
+  const latest = rounds[rounds.length - 1]
+  return { round: Number(latest[1]), text: latest[2].trim() || 'see its comment on the epic' }
+}
+
+export function resolutionPending(comments, author) {
+  const mine = byAuthor(comments, author)
+  const marks = mine.filter((comment) => comment.body.startsWith(CONFLICT_MARKER) || comment.body.startsWith(RESOLVE_MARKER) || MERGED_MARKER.test(comment.body))
+  if (!marks.length || !marks[marks.length - 1].body.startsWith(RESOLVE_MARKER)) return false
+  const askedAt = Date.parse(marks[marks.length - 1].createdAt)
+  return !mine.some((comment) => {
+    const match = comment.body.match(ACCEPTANCE_MARKER)
+    return match && match[2] === 'true' && Date.parse(comment.createdAt) > askedAt
+  })
 }

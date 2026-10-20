@@ -43,7 +43,7 @@ test('the ticket job installs the plugin from this marketplace and runs the tick
   assert.equal(claude.uses, 'anthropics/claude-code-action@v1')
   assert.equal(claude.with.plugin_marketplaces, 'https://github.com/weekendgoals/ticket-flow.git')
   assert.equal(claude.with.plugins, 'flow@ticket-flow')
-  assert.equal(claude.with.prompt, '/flow:ticket #${{ env.TICKET }} --unattended --no-merge')
+  assert.equal(claude.with.prompt, '/flow:ticket #${{ env.TICKET }} --unattended --no-merge ${{ steps.read.outputs.mode }}')
   assert.match(claude.with.claude_args, /^--model \$\{\{ steps\.read\.outputs\.model \}\} --allowedTools "[^"]*Bash[^"]*Skill[^"]*"/)
   assert.equal(claude.with.anthropic_api_key, '${{ secrets.ANTHROPIC_API_KEY }}')
   assert.equal(claude.env.FLOW_UNATTENDED, '1')
@@ -69,6 +69,28 @@ test('the scheduler never runs Claude, labels with FLOW_TOKEN so the label start
   assert.match(run, /\$FLOW check-epic "\$EPIC" --mark \|\| exit 1\n\s*opened="\$\(\$FLOW release-pr "\$EPIC"\)" \|\| exit 1\n/, 'a failed check fails the step and opens nothing, whatever shell options a copy runs with')
   assert.doesNotMatch(run, /check-epic[^\n]*&&/, 'under bash -e a failed member of an && list does not fail the step')
   assert.match(run, /\$FLOW pr-review-request "\$pr"/)
+})
+
+test('the scheduler\'s closing is run-report, the text the local driver posts too: on a stopped epic always, and on a built one under Stops: none, which mentions nobody before the end', () => {
+  const run = step('epic', (entry) => entry.run && /dispatch/.test(entry.run)).run
+  assert.match(run, /stops="\$\(echo "\$dispatched" \| jq -r '\.stops'\)"/)
+  assert.match(run, /elif \[ "\$state" = "stopped" \]; then\n\s*\$FLOW run-report "\$EPIC" --post --outcome stopped --text "nothing is ready and nothing is in progress"\n/)
+  assert.match(run, /\n\s*\$FLOW run-report "\$EPIC" --post\n\s*elif/, 'under Stops: none the report is posted whether the epic is built or stopped, its outcome read from the tickets')
+  assert.doesNotMatch(run, /\$FLOW post "\$EPIC"/, 'no second text for the closing')
+})
+
+test('a conflict under Stops: none is routed back to the ticket job: dispatch asks with flow:start, and the job runs the skill in conflict mode when flow ticket says so', () => {
+  const read = step('ticket', (entry) => entry.id === 'read').run
+  assert.match(read, /echo "mode=\$\(echo "\$ticket" \| jq -r 'if \.resolveConflict then "--resolve-conflict" else "" end'\)" >> "\$GITHUB_OUTPUT"/)
+  assert.match(claudeStep('ticket').with.prompt, /--no-merge \$\{\{ steps\.read\.outputs\.mode \}\}$/)
+  assert.match(step('epic', (entry) => entry.run && /dispatch/.test(entry.run)).run, /\$FLOW dispatch "\$EPIC"/, 'dispatch, which the epic job runs, is what asks for the resolution')
+})
+
+test('under Stops: none a stopped or built epic gets its release pull request through --draft, after an epic check run once more when the first parked a ticket', () => {
+  const run = step('epic', (entry) => entry.run && /dispatch/.test(entry.run)).run
+  assert.match(run, /if \[ "\$stops" = "none" \] && \{ \[ "\$state" = "built" \] \|\| \[ "\$state" = "stopped" \]; \}; then/)
+  assert.match(run, /if \$FLOW check-epic "\$EPIC" --mark \|\| \$FLOW check-epic "\$EPIC" --mark; then\n\s*if opened="\$\(\$FLOW release-pr "\$EPIC" --draft\)"; then/)
+  assert.equal((run.match(/--draft/g) || []).length, 1, 'only the Stops: none branch asks for a draft')
 })
 
 test('the pull request job answers reviews and failed checks on ticket and epic branches through the ticket skill\'s loop', () => {

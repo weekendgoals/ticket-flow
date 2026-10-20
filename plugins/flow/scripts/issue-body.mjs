@@ -12,6 +12,7 @@ const SETTING_LINE = /^[ \t]*(?:[-*][ \t]+)?([A-Za-z][A-Za-z ]*?)[ \t]*:[ \t]*(.
 export const DESIGN_MAP_FENCE = 'design-map'
 export const EPIC_BRANCH = /^epic\/[A-Za-z0-9][A-Za-z0-9._-]*(?:\/[A-Za-z0-9][A-Za-z0-9._-]*)*$/
 export const DELIVERY_MODES = ['release', 'incremental']
+export const STOP_MODES = ['ask', 'none']
 
 export function isEpicBranch(name) {
   return typeof name === 'string' && EPIC_BRANCH.test(name) && !name.includes('..') && !name.endsWith('.lock')
@@ -121,7 +122,7 @@ export function rejectedBranchProblem(value) {
 }
 
 export function parseSettings(text) {
-  const settings = { delivery: 'release', parallel: 1, designSources: null, consequencePaths: [], branch: null, rejectedBranch: null, other: {} }
+  const settings = { delivery: 'release', parallel: 1, stops: 'ask', designSources: null, consequencePaths: [], branch: null, rejectedBranch: null, other: {} }
   const problems = []
   for (const entry of scanLines(text || '')) {
     if (entry.fence !== null || !entry.line.trim()) continue
@@ -145,6 +146,13 @@ export function parseSettings(text) {
       else {
         settings.parallel = null
         problems.push(`"Parallel: ${value}" is not a number from 1 to ${MAX_PARALLEL}`)
+      }
+    } else if (key === 'stops') {
+      const mode = value.toLowerCase()
+      if (STOP_MODES.includes(mode)) settings.stops = mode
+      else {
+        settings.stops = null
+        problems.push(`"Stops: ${value}" is neither ask nor none`)
       }
     } else if (key === 'design sources') {
       settings.designSources = splitList(value)

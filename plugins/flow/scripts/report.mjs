@@ -54,6 +54,7 @@ export function epicRelease(epic) {
     closed: epic.state === 'closed',
     releasePullRequestNamed: Boolean(release),
     releaseMerged: Boolean(release && release.merged),
+    releaseDraft: Boolean(release && release.draft),
   })
 }
 
@@ -91,6 +92,8 @@ export const TICKET_COLUMNS = [
   { key: 'escapes', label: 'escapes', value: (ticket) => ticket.escapes, show: count },
   { key: 'handoff', label: 'handoff', value: (ticket) => (ticket.handoff ? 'yes' : 'no') },
   { key: 'stops', label: 'stops', value: (ticket) => (Array.isArray(ticket.stops) ? ticket.stops.length : null), show: count },
+  { key: 'departures', label: 'departures', value: (ticket) => ticket.departures, show: count },
+  { key: 'disputes', label: 'disputes', value: (ticket) => ticket.disputes, show: count },
 ]
 
 function issueLink(repository, number) {

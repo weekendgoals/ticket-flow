@@ -730,3 +730,88 @@ test('an unattended start on a dirty working tree exits nonzero without touching
   assert.deepEqual(posted(2), [])
   assert.deepEqual(labelCalls(), [])
 })
+
+const NO_STOPS = 'Delivery: release\nBranch: epic/trip-export\nStops: none'
+const TWO_CHECKS = '- the file exists\n  CHECK: test -f export.txt\n- the design has eight sections\n  CHECK: test -f eight-sections.txt'
+const dispute = (check, createdAt = '2026-10-14T10:30:00Z') => comment(`<!-- flow:dispute check=${check} -->\n**Disputed check ${check}.** The line asks for eight sections; designs/trip.html has nine.`, createdAt)
+
+test('under Stops: none, unattended, accept passes a ticket whose every failing check is disputed after the start, and says so in its comment and marker', () => {
+  const { work } = startedTicket()
+  const sha = commitFile(work, 'export.txt', 'trip\n', '#2: write the export')
+  world({ settings: NO_STOPS, ticket2: { labels: ['flow:ticket', 'flow:in-review'], criteria: TWO_CHECKS }, comments: [STARTED, dispute(2), reviewed()] })
+  const result = flow(work, ['accept', '2'], { FLOW_UNATTENDED: '1' })
+  assert.equal(result.status, 0, result.stderr)
+  const json = JSON.parse(result.stdout)
+  assert.deepEqual([json.allPassed, json.accepted, json.disputed.map((entry) => entry.n)], [false, true, [2]])
+  const [body] = posted(2)
+  assert.match(body, new RegExp(`^<!-- flow:acceptance sha=${sha} passed=true seconds=\\d+ disputed=1 -->\n\\*\\*Acceptance passed, with 1 disputed check\\(s\\)\\*\\* at`))
+  assert.match(body, /\| 2 \| the design has eight sections \| `test -f eight-sections\.txt` \| FAIL \(disputed\) \|/)
+  assert.match(body, /- check 2, `test -f eight-sections\.txt`: The line asks for eight sections; designs\/trip\.html has nine\./)
+})
+
+test('a dispute changes nothing under Stops: ask, attended, before the start, from another account, or when another failing check has none', () => {
+  const cases = [
+    { settings: 'Delivery: release\nBranch: epic/trip-export', comments: [STARTED, dispute(2)], environment: { FLOW_UNATTENDED: '1' } },
+    { settings: NO_STOPS, comments: [STARTED, dispute(2)], environment: {} },
+    { settings: NO_STOPS, comments: [dispute(2, '2026-10-14T09:00:00Z'), STARTED], environment: { FLOW_UNATTENDED: '1' } },
+    { settings: NO_STOPS, comments: [STARTED, by('someone', dispute(2))], environment: { FLOW_UNATTENDED: '1' } },
+    { settings: NO_STOPS, comments: [STARTED, dispute(2)], environment: { FLOW_UNATTENDED: '1' }, criteria: `${TWO_CHECKS}\n- a third\n  CHECK: test -f third.txt` },
+  ]
+  for (const [index, entry] of cases.entries()) {
+    const { work } = startedTicket()
+    commitFile(work, 'export.txt', 'trip\n', '#2: write the export')
+    world({ settings: entry.settings, ticket2: { labels: ['flow:ticket', 'flow:in-review'], criteria: entry.criteria || TWO_CHECKS }, comments: [...entry.comments, reviewed()] })
+    fake.clearCalls()
+    const result = flow(work, ['accept', '2'], entry.environment)
+    assert.equal(result.status, 1, `case ${index}: ${result.stderr}`)
+    assert.match(posted(2)[0], /passed=false seconds=\d+ -->\n\*\*Acceptance failed\*\*/, `case ${index}`)
+  }
+})
+
+function conflictingTicket() {
+  const repo = startedTicket()
+  const sha = commitFile(repo.work, 'README.md', 'ticket version\n', '#2: rewrite the readme')
+  const other = join(repo.root, 'other')
+  git(repo.root, 'clone', '-q', repo.remote, other)
+  git(other, 'checkout', '-q', 'epic/trip-export')
+  commitFile(other, 'README.md', 'epic version\n', '#3: rewrite it too')
+  git(other, 'push', '-q', 'origin', 'epic/trip-export')
+  return { ...repo, sha }
+}
+
+test('under Stops: none, unattended, a merge conflict is left in review for a fresh worker: a marked comment naming the files, no mention, and the conflict in the JSON', () => {
+  const { work, remote, sha } = conflictingTicket()
+  const before = git(remote, 'rev-parse', 'epic/trip-export')
+  world({ settings: NO_STOPS, ticket2: { labels: ['flow:ticket', 'flow:in-review'] }, comments: [STARTED, accepted(sha)] })
+  const result = flow(work, ['merge', '2'], { FLOW_UNATTENDED: '1' })
+  assert.equal(result.status, 1)
+  assert.deepEqual(JSON.parse(result.stdout), { ticket: 2, kind: 'conflict', files: ['README.md'], parked: false })
+  assert.equal(git(remote, 'rev-parse', 'epic/trip-export'), before)
+  const [body] = posted(2)
+  assert.match(body, /^<!-- flow:conflict -->\n\*\*Merge conflict\.\*\* Merging `[0-9a-f]{12}` into `epic\/trip-export` conflicts in `README\.md`\. Nothing was merged\./)
+  assert.doesNotMatch(body, /@/)
+  assert.deepEqual(labelCalls(), [], 'the ticket stays in review')
+})
+
+test('a second conflict since the start, after a fresh worker resolved the first, parks the ticket', () => {
+  const { work, sha } = conflictingTicket()
+  const firstConflict = comment('<!-- flow:conflict -->\n**Merge conflict.** Earlier.', '2026-10-14T12:30:00Z')
+  world({ settings: NO_STOPS, ticket2: { labels: ['flow:ticket', 'flow:in-review'] }, comments: [STARTED, accepted(sha), firstConflict] })
+  const result = flow(work, ['merge', '2'], { FLOW_UNATTENDED: '1' })
+  assert.equal(result.status, 1)
+  assert.equal(JSON.parse(result.stdout).parked, true)
+  assert.match(posted(2)[0], /^<!-- flow:needs-human -->\n\*\*This ticket is parked\.\*\* Merging `[0-9a-f]{12}` into `epic\/trip-export` conflicts in `README\.md`\. Nothing was merged\. It conflicted before/)
+  assert.ok(labelCalls().includes(`POST ${R}/issues/2/labels {"labels":["flow:needs-human"]}`))
+})
+
+test('a disputed check that was skipped still fails acceptance: a skip is fixed by giving the command what it needs, never disputed', () => {
+  const { work } = startedTicket()
+  commitFile(work, 'export.txt', 'trip\n', '#2: write the export')
+  const skipping = '- the file exists\n  CHECK: test -f export.txt\n- the database suite\n  CHECK: echo "1 skipped"'
+  world({ settings: NO_STOPS, ticket2: { labels: ['flow:ticket', 'flow:in-review'], criteria: skipping }, comments: [STARTED, dispute(2), reviewed()] })
+  const result = flow(work, ['accept', '2'], { FLOW_UNATTENDED: '1' })
+  assert.equal(result.status, 1)
+  const json = JSON.parse(result.stdout)
+  assert.deepEqual([json.checks[1].status, json.accepted, json.disputed], ['skipped', false, []])
+  assert.match(posted(2)[0], /passed=false seconds=\d+ -->\n\*\*Acceptance failed\*\*/)
+})

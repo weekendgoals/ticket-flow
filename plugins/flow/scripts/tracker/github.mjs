@@ -260,6 +260,8 @@ function normalizePullRequest(raw) {
     number: raw.number,
     url: raw.html_url || null,
     state: raw.state,
+    draft: Boolean(raw.draft),
+    nodeId: raw.node_id || null,
     head: raw.head ? raw.head.ref : null,
     headSha: raw.head ? raw.head.sha : null,
     base: raw.base ? raw.base.ref : null,
@@ -279,8 +281,31 @@ export function findOpenPullRequest(head) {
   return found.length ? normalizePullRequest(found[0]) : null
 }
 
-export function createPullRequest({ title, head, base, body }) {
-  return normalizePullRequest(apiWrite('POST', `${REPO}/pulls`, { title, head, base, body }))
+export function createPullRequest({ title, head, base, body, draft = false }) {
+  return normalizePullRequest(apiWrite('POST', `${REPO}/pulls`, { title, head, base, body, ...(draft ? { draft: true } : {}) }))
+}
+
+const READY_FOR_REVIEW_MUTATION = 'mutation($id:ID!){markPullRequestReadyForReview(input:{pullRequestId:$id}){pullRequest{number isDraft}}}'
+const CONVERT_TO_DRAFT_MUTATION = 'mutation($id:ID!){convertPullRequestToDraft(input:{pullRequestId:$id}){pullRequest{number isDraft}}}'
+
+function setDraft(number, nodeId, draft) {
+  const [mutation, field] = draft ? [CONVERT_TO_DRAFT_MUTATION, 'convertPullRequestToDraft'] : [READY_FOR_REVIEW_MUTATION, 'markPullRequestReadyForReview']
+  const data = graphqlWithInput(mutation, { id: nodeId })
+  const changed = data && data[field] && data[field].pullRequest
+  if (!changed || changed.isDraft !== draft) throw new TrackerError(`GitHub did not ${draft ? `convert pull request #${number} to a draft` : `mark pull request #${number} ready for review`}`)
+}
+
+export function updatePullRequest(number, { body, ready = false, draft = false }) {
+  const updated = normalizePullRequest(apiWrite('PATCH', `${REPO}/pulls/${number}`, { body }))
+  if (ready && updated.draft) {
+    setDraft(number, updated.nodeId, false)
+    return { ...updated, draft: false }
+  }
+  if (draft && !updated.draft) {
+    setDraft(number, updated.nodeId, true)
+    return { ...updated, draft: true }
+  }
+  return updated
 }
 
 export function requestReviewers(number, reviewers) {

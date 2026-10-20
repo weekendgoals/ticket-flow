@@ -222,8 +222,8 @@ epic's card and the table layout show where it stands:
 
 | `Release` | Means |
 |---|---|
-| `Building` | its tickets are being built (set by `create-epic`) |
-| `Pull request open` | every ticket is done and the release pull request waits for a person (set by `release-pr` once the pull request exists) |
+| `Building` | its tickets are being built (set by `create-epic`), or its release pull request is a draft while tickets are parked (`Stops: none`) |
+| `Pull request open` | every ticket is done and the release pull request waits for a person (set by `release-pr` once the pull request exists and is not a draft) |
 | `Released` | the release pull request merged into the default branch, which closed the epic |
 
 A release epic closed without its release pull request merging gets no
@@ -341,7 +341,10 @@ make: a gate still fails after two rounds of fixes (acceptance, an Important
 review finding, a pull request thread or check); the plan and the work
 disagree (the ticket contradicts the code, a check looks wrong, the issue
 body changed after the start); or a merge conflict. Everything else is
-retried or noted in a comment.
+retried or noted in a comment. Under `Stops: none`, in an unattended run, an agent
+decides where it may and records it (a departure from the plan, a disputed
+check), parks the rest instead of stopping, and the run reports it all at
+the end; see [A run with no stops](#a-run-with-no-stops).
 
 **A ticket whose run died can be resumed.** `flow reset <n>` puts a ticket
 left in progress back to planned, with a comment, and keeps its branch;
@@ -405,7 +408,8 @@ for that review; `flow pr-threads` lists the unresolved threads, and each is
 fixed or answered, then closed with `flow pr-resolve` and a reply;
 `flow pr-checks --wait` waits for CI, and a failure is fixed; a pull request
 no check ever appears on is said to have no CI, never read as passing. Two
-rounds, then a person. One comment per round on the ticket.
+rounds, then a person (under `Stops: none`, two rounds and the comment says
+what remains). One comment per round on the ticket.
 
 ### `.flow.json`
 
@@ -536,8 +540,9 @@ scheduler) refuses to start anything, whichever account posted them; the
 rule holds only through that mark. A run that was killed leaves it, and a
 comment starting `<!-- flow:local-run-end -->`, posted from any account,
 clears it.
-When nothing is ready and nothing is in progress, it checks every ticket at
-the epic head, opens the release pull request (`flow release-pr`: the
+When nothing is ready and nothing is in progress (under `Stops: none`,
+also when tickets are parked: then the pull request is a draft), it checks
+every ticket at the epic head, opens the release pull request (`flow release-pr`: the
 outcome, the walkthrough, each ticket's merge commit, the cost; it opens
 only at the head that check passed at, whatever the helper said of the
 check, and an answer that names no pull request is asked for once more
@@ -587,10 +592,86 @@ The jobs:
 |---|---|---|
 | `board` | an issue labelled `flow:epic` is closed (a closed ticket or finding runs nothing) | `flow board-sync <epic>`: the epic's `Release` becomes `Released` once its release pull request merged. The one job after a merge (see [How work is kept on GitHub](#how-work-is-kept-on-github)); it builds, merges and pushes nothing. `Released` on the board needs a `FLOW_TOKEN` with the Projects permission: the Actions token cannot touch Projects, and the job then exits green having done nothing |
 | `route` | the epic gets `flow:approved` (an issue that is not an epic, such as a finding, starts nothing), or a ticket `flow:start` | Reads the epic's number from the event alone, so every scheduler run of one epic waits for the last |
-| `epic` | after `route`, and after every ticket | Withdraws a start request whose `ticket` job failed before it could, then `flow dispatch`: adds `flow:start` to up to `Parallel:` ready tickets. When everything is built: `flow check-epic`, then `flow release-pr` (which reuses an open one), and asks the review bot. Never runs Claude |
-| `ticket` | a ticket gets `flow:start` (a finding does not run it), or by hand with a ticket number | Runs `/flow:ticket #<n> --unattended --no-merge` on the tier's model, posts the cost from the run's output, keeps the screenshots as an artifact, and resets a run that died |
+| `epic` | after `route`, and after every ticket | Withdraws a start request whose `ticket` job failed before it could, then `flow dispatch`: adds `flow:start` to up to `Parallel:` ready tickets. When everything is built: `flow check-epic`, then `flow release-pr` (which reuses an open one), and asks the review bot. When nothing is ready and nothing is in progress, posts `flow run-report`. Under `Stops: none`, once built or stopped: `flow check-epic` (once more when the first parked a ticket), `flow release-pr --draft` (a draft while tickets are parked, marked ready once all are done), then `flow run-report`. Never runs Claude |
+| `ticket` | a ticket gets `flow:start` (a finding does not run it), or by hand with a ticket number | Runs `/flow:ticket #<n> --unattended --no-merge` on the tier's model (with `--resolve-conflict` when `flow ticket` says a conflict is to be resolved), posts the cost from the run's output, keeps the screenshots as an artifact, and resets a run that died |
 | `merge` | after `ticket` | One at a time per epic: merges every accepted ticket into the epic branch in the epic's order (`flow merge --epic`), then checks them at the new head |
 | `pr` | a review is submitted, or checks fail, on a `ticket/` or `epic/` pull request | Runs one round of the pull request loop (`/flow:ticket --pr-loop <pr>`). A ticket's pull request is left to its `ticket` job, which runs its own loop, until the ticket is done |
+
+### A run with no stops
+
+`Stops:` in the epic's `## Settings` says what an unattended run does when a
+ticket reaches something no agent may decide:
+
+- `Stops: ask` (the default): the ticket stops and asks a person by
+  mention, and the run carries on with the others.
+- `Stops: none`: nothing stops. An agent decides where it may and records
+  the decision on the ticket; what it may not decide is **parked**, and the
+  person reads every decision and every parked ticket once, at the end.
+
+**Departures and disputes.** A departure (`flow depart <n> --text "<the
+ticket says X; src/a.ts:40 does Y; built Z>"`) and a dispute
+(`flow dispute <n> --check <k> --text "<what the line asks, what is true,
+the evidence>"`) are comments on the ticket, starting `**Departure.**` and
+`**Disputed check <k>.**`, at most 600 characters each: the facts and the
+decision, never why it is right, because the reviewer reads them. `<k>` is
+the check's number in `flow check`'s order. Both refuse a ticket that is
+not in progress or in review, and refuse under `Stops: ask` or attended,
+so the setting is enforced in the command. A dispute never edits the
+criteria, which stay the person's gate: `flow accept` passes a ticket only
+when every check that failed has a dispute from the running account posted
+after the latest start, and its comment says `passed, with N disputed
+check(s)` and lists each. The reviewer gets them as claims to check (a
+departure the code did not require, or a dispute where the check is right
+and the work is wrong, is Important), the handoff names each departure in
+one line, and the release pull request lists them all under
+`## Departures` and `## Disputed checks`.
+
+It applies only to unattended runs (`FLOW_UNATTENDED=1`, which both hosts
+set): attended, the person is in the chat and a question costs nothing, so
+a stop asks as under `ask`. A standing epic for findings keeps `ask`.
+
+A parked ticket carries the same `flow:needs-human` label as a stopped one,
+so `flow next`, the board, `flow dispatch` and the project's `Status` read
+it the same way, and the way back is the same: relabel it `flow:planned`.
+Its comment starts `**This ticket is parked.**` with the reason and
+mentions nobody, because the person is told once, at the end. The run
+never ends for a parked ticket: it goes on with everything not blocked by
+it, and a ticket that waits for one (a Translations ticket blocked by
+every other) is left waiting, which the end report says.
+
+| Stops under `ask` | Under `none` |
+|---|---|
+| The acceptance checks still fail after two rounds of fixes | Parked |
+| An Important review finding is still open after two rounds | Parked |
+| A pull request thread or check is still open after two rounds | No stop: the second round's comment says what remains, the run's report lists it under the pull request, and a person owns the pull request anyway |
+| The ticket contradicts the code | A **departure**: the worker makes the smallest change of plan that keeps the walkthrough true, builds it and records it (`flow depart`) |
+| A `CHECK` itself looks wrong | A **dispute**: after a real effort the worker records why the check cannot pass as written (`flow dispute`), and acceptance passes a ticket whose every failing check is disputed |
+| The issue body was edited after the start | Still a stop: whoever edited a ticket mid-run is present and acting on it, and the refusal, which mentions them, answers their own action |
+| A merge conflict with the epic branch | Resolved once by a fresh worker: it merges the epic branch into `ticket/<n>` keeping both sides' intent, that commit is reviewed (an Important finding parks the ticket), accepted and merged by the usual gates; a second conflict parks the ticket |
+| A ticket's checks fail at the epic head after merging | Run a second time first (under either setting); still failing: parked, and it stays merged. No agent commits to the epic branch except by merging an accepted ticket |
+| A builder died twice, or a start was refused | Parked |
+
+**One report at the end.** `flow run-report <epic>` writes the closing
+comment both hosts post, the local run's and the Action's alike, from the
+epic and its tickets' comments. Under `none` it lists the built tickets,
+each parked ticket with the first line of its reason, what was not built
+and why, every departure and disputed check, and the release pull request, and mentions the epic's assignees
+(or its author) once, there. Under `ask` it is the closing the run always
+posted. `flow stats` counts a parked ticket as a stop, with its reason.
+
+The person reads it all once, on the release pull request, which is where
+they read the work anyway. When the run ends with tickets parked (nothing
+ready, nothing in progress), it still opens that pull request, as a
+**draft**: `flow check-epic` runs over the done tickets first, as always,
+then `flow release-pr <epic> --draft`. Its `## Tickets` table lists the done
+tickets, a `## Not built` section lists each parked or unstarted ticket with
+its state and the first line of its reason, and it has `Closes` lines only
+for the tickets in it and none for the epic, which is not finished. The
+epic's `Release` stays `Building` while the pull request is a draft. Once
+the person has decided the parked tickets (relabel each `flow:planned`) and
+a run has built them, `release-pr` finds the open draft, rewrites its body
+in full, marks it ready for review, sets `Release` to `Pull request open`,
+and says on the epic that it was marked ready. Should a ticket stop being done afterwards, the next `release-pr --draft` converts it back to a draft and rewrites its body, since it is a draft while anything is not built.
 
 ## `/flow:quick "<what>"`
 
@@ -724,8 +805,8 @@ only when told to.
 | `board-sync [<epic>] [--json]` | Sets the project board's `Status` of every open epic (`Epic`) and ticket from its labels, adding missing ones; findings and tickets with no readable state are skipped. Sets each release epic's `Release`, copies each metered ticket's figures, and closes the open `flow:done` tickets of release epics. One line per change, then `<n> set, <m> already right, <k> skipped` (and how many were closed, how many `Release` values set and how many tickets got figures; `--json` lists them as `closed`, `releases` and `figures`). Exits 1 when no matching board is linked, or when any issue could not be set (the rest are still set) |
 | `doctor` | Checks `gh`, sign-in, that issues are on, the labels, the default branch, and every open epic's `Blocked by` lines (unreadable, outside the epic, cycles). Prints one sentence per problem, then one line naming the project board, its `Release` field and its cost fields (see [The project board](#the-project-board)), then `ok` when there was no problem |
 | `board [<epic>] [--json]` | The default branch, then open epics with approval, progress and branch; or one epic's tickets with tier, state and blockers. Either way, how many findings wait or are approved |
-| `next <epic>` | JSON: `approved`, `ready`, `waiting`, `inProgress`, `done`, `needsHuman`, `planned`, `problems`. Exits 1 when the epic is not approved, has no tickets, or is stuck (unfinished tickets, none ready, none in progress) |
-| `ticket <n>` | One ticket parsed, as JSON, including who edited its body and when, and the latest handoff of each done ticket of its epic (`handoffs`, blockers first, read from at most twenty done tickets; `handoffsLeftOut` counts the ones not read), which it also prints on stderr under `handoffs:` |
+| `next <epic>` | JSON: `approved`, `ready`, `waiting`, `inProgress`, `done`, `needsHuman`, `planned`, `problems`, and the settings `delivery`, `parallel`, `stops` and `branch`. Exits 1 when the epic is not approved, has no tickets, or is stuck (unfinished tickets, none ready, none in progress) |
+| `ticket <n>` | One ticket parsed, as JSON, including who edited its body and when, and the latest handoff of each done ticket of its epic (`handoffs`, blockers first, read from at most twenty done tickets; `handoffsLeftOut` counts the ones not read), which it also prints on stderr under `handoffs:`. Under `Stops: none`, the ticket's own `departures` and its `disputes` since the latest start, from the running account |
 | `check <n> [--cwd <dir>]` | Runs the ticket's criteria from the repository root (or `--cwd`). JSON results on stdout, with every edit of the issue body (who, when) and the last 20 lines of each failed check's output (`tail`); a readable table on stderr, the tail indented under each failed check. Exits 1 unless every check passed, and when the ticket has no criteria |
 | `check --file <md> [--epic-file <md>]` | The same for a draft that is not on GitHub yet |
 | `post <n> --file <md>` or `--text "<md>"` | Adds a comment |
@@ -735,7 +816,9 @@ only when told to.
 | `create-ticket <epic> --file <md> --title "<t>" [--tier easy\|hard] [--blocked-by <n>,<n>]` | Creates the ticket, writes its `Epic:` and `Blocked by:` lines, links it as a sub-issue and adds it to the epic's task list; prints its number |
 | `link <epic> <n>` | Finishes a `create-ticket` that created the issue but could not link it. Safe to repeat |
 | `create-ticket --no-epic --file <md> --title "<t>" [--tier easy\|hard] [--repo <owner>/<name>]` | Creates a ticket that belongs to no epic (counts as approved); `--repo` files it in another repository, such as the plugin's |
-| `needs-human <n> --text "<why>"` | Marks the ticket `flow:needs-human` and asks a person, by mention |
+| `needs-human <n> --text "<why>"` | Marks the ticket `flow:needs-human` and asks a person, by mention; under `Stops: none` in an unattended run it parks the ticket instead, mentioning nobody |
+| `depart <n> --text "<facts>"` or `--file <md>` | Under `Stops: none`, unattended: records a departure from the plan on a ticket in progress or in review (at most 600 characters); refuses otherwise, naming `flow needs-human` under `Stops: ask` |
+| `dispute <n> --check <k> --text "<facts>"` or `--file <md>` | Under `Stops: none`, unattended: records that check `<k>` (in `flow check`'s order) cannot pass as written; refuses a `<k>` the ticket does not have, and as `depart` does |
 | `handoff <n> --text "<lines>"` or `--file <md>` | Posts the ticket's handoff for the tickets after it; refuses one that is not in review or done, a done one that already has a handoff, and a text over 1,200 characters. The latest one counts |
 | `create-finding --title "<t>" --file <md> [--epic <e>] [--screenshots <dir>] [--fingerprint "<text>"] [--repo <owner>/<name>]` | Files a finding (`flow:found`), its images on the `flow-findings` branch; prints its number, or exits 3 with the existing one when the fingerprint was filed before or rejected. `--repo` files it in another repository (no `--screenshots` there) |
 | `retro-fingerprint <epic> --text "<line>"` | Prints the fingerprint a retro files a proposal with: this repository, the epic, and the line in lower case with only letters and digits |
@@ -743,7 +826,7 @@ only when told to.
 | `promote <n> --file <md> --tier easy\|hard --epic <e> [--blocked-by <n>,<n>]` | Turns an approved finding into a planned ticket of the epic, keeping its text under `## Report`; refuses with exit 2 otherwise |
 | `reject <n> --text "<why>"` | Says why a finding is not a ticket and closes it as not planned |
 | `start <n>` | Starts a ready ticket: branch, label, first comment. JSON out; refuses otherwise (unattended: and asks a person) |
-| `accept <n>` | Runs the criteria on `ticket/<n>`'s committed head and posts the results with the commit; refuses an issue body edited after the start |
+| `accept <n>` | Runs the criteria on `ticket/<n>`'s committed head and posts the results with the commit; refuses an issue body edited after the start. Under `Stops: none`, unattended, passes when every failing check is disputed (`passed, with N disputed check(s)`; the marker carries `disputed=N`) |
 | `deliver <n>` | Merges the accepted commit into the epic branch (release) or opens its pull request (incremental) |
 | `screenshots <n>` | Runs `.flow.json`'s `screenshots` command, commits and posts the images |
 | `meter <n> --transcripts [<role>=]<path> ... [--print]` | Posts what the ticket cost, read from transcripts, a headless run's output or the GitHub Action's, then copies the figures to the project board's cost fields |
@@ -754,13 +837,14 @@ only when told to.
 | `pr-resolve <thread-id> --text "<reply>"` | Replies on a thread, then resolves it |
 | `pr-checks <pr> [--wait] [--grace <s>]` | CI checks as JSON; exit 1 when one failed, 3 when some are still running, 4 when none appeared (under `--wait` it gives them 90 seconds first) |
 | `reset <n> [--once]` | Puts a ticket whose run died back to planned; its branch keeps its commits. On a planned ticket whose `flow:start` request never started, takes the label off. Refuses a ticket that passed acceptance (it is waiting to be merged), answering in JSON either way. `--once`: if it was reset (or its request withdrawn) before, asks a person instead |
-| `merge <n> [--sha <sha>]` | Merges the accepted commit into the epic branch; with `--sha`, refuses unless that is the accepted commit |
-| `merge --epic <epic>` | Merges every accepted ticket of the epic, in the epic's order |
-| `check-epic <epic> [--tickets <n>,<n>] [--mark]` | Runs the done tickets' checks (or the listed ones') at the epic branch's head, in a clean copy set up from `.flow.json`, and posts the result on the epic, marked with the head, whether it passed and whether it judged every done ticket, which `release-pr` reads. A failed check reads `` `cmd` (exit N — <evidence>) ``. `--mark` hands each failing ticket to a person, with the end of each failed check's output; it stays merged |
+| `merge <n> [--sha <sha>]` | Merges the accepted commit into the epic branch; with `--sha`, refuses unless that is the accepted commit. Under `Stops: none`, unattended, a first conflict since the start posts a `<!-- flow:conflict -->` comment naming the files, leaves the ticket in review and prints `{ "kind": "conflict", "files": [...] }` (exit 1); a second one parks the ticket |
+| `merge --epic <epic>` | Merges every accepted ticket of the epic, in the epic's order; leaves out, in `notMerged`, a ticket whose conflict a fresh worker is resolving (it carries `flow:start`, or its latest merge comment asks for a resolution and no acceptance came after), so the old commit is not merged under it |
+| `check-epic <epic> [--tickets <n>,<n>] [--mark]` | Runs the done tickets' checks (or the listed ones') at the epic branch's head, in a clean copy set up from `.flow.json`, and posts the result on the epic, marked with the head, whether it passed and whether it judged every done ticket, which `release-pr` reads. A failing check is run a second time at the same head first; one that passes then reads `pass (check <k> passed on the second run)` and is listed in the JSON's `passedOnSecondRun`. A failed check reads `` `cmd` (exit N — <evidence>) ``. `--mark` hands each failing ticket to a person (under `Stops: none`, unattended, parks it), with the end of each failed check's output; it stays merged |
 | `worktree <n> [--remove]` | A separate working copy for one ticket, at `../.flow-worktrees/<repository>/ticket-<n>`, set up from `.flow.json`. A copy an earlier attempt left there is removed and made again (`replaced: true`). The JSON says how long it ran (`elapsedSeconds`) and, on a failure, the setup's budget (`budgetSeconds`) |
-| `dispatch <epic>` | Adds `flow:start` to up to `Parallel:` ready tickets; says whether the epic is `running`, `built`, `stopped`, or `empty` (approved with no tickets yet, such as a standing epic before triage fills it). Refuses while a `/flow:run` is building the epic |
-| `release-pr <epic> [--cwd <dir>]` | Opens the epic's pull request once every ticket is done, and posts it on the epic. Run in the repository: it refuses, naming `flow check-epic <epic>`, unless the latest epic check from the running account judged every done ticket, passed, and is at the head of `origin/<epic branch>`, because the pull request carries that head and nothing else checked it. Reusing an open pull request goes through the same gate. By hand: `flow check-epic <epic>`, then `flow release-pr <epic>` |
+| `dispatch <epic>` | Adds `flow:start` to up to `Parallel:` ready tickets; prints the epic's `stops` setting; under `Stops: none` asks for each ticket in review whose latest merge comment is a conflict to be resolved (a `<!-- flow:resolve -->` comment and `flow:start`, listed in `resolving`); says whether the epic is `running`, `built`, `stopped`, or `empty` (approved with no tickets yet, such as a standing epic before triage fills it). Refuses while a `/flow:run` is building the epic |
+| `release-pr <epic> [--draft] [--cwd <dir>]` | Opens the epic's pull request once every ticket is done, and posts it on the epic. `--draft`, under `Stops: none` only and while nothing is ready or in progress: opens it as a draft over the done tickets, with a `## Not built` section and no `Closes #<epic>`, keeping `Release` at `Building`; once every ticket is done, `release-pr` rewrites an open draft's body in full and marks it ready for review, and with `--draft` it converts a ready one back to a draft when a ticket is no longer done. Run in the repository: it refuses, naming `flow check-epic <epic>`, unless the latest epic check from the running account judged every done ticket, passed, and is at the head of `origin/<epic branch>`, because the pull request carries that head and nothing else checked it. Reusing an open pull request goes through the same gate. By hand: `flow check-epic <epic>`, then `flow release-pr <epic>` |
 | `design-map <epic> [--out <file>]` | Writes the epic's design map for the design comparison |
+| `run-report <epic> [--outcome built\|stopped] [--text "<why>" \| --file <md>] [--local] [--post]` | Prints the run's closing report, read from the epic and its tickets' comments; `--post` also posts it on the epic, `--local` as the end of a `/flow:run`. Under `Stops: none` it lists what was built, parked and not built, with the release pull request, and mentions the epic's people once; see [A run with no stops](#a-run-with-no-stops) |
 | `stats [<epic>] [--since <date>] [--json] [--cwd <dir>]` | How the work went, per ticket, per epic and across epics; see [Looking back](#looking-back) |
 | `report --out <dir> [--since <date>] [--cwd <dir>]` | Writes `<dir>/index.html`, the figures of every epic as one page for GitHub Pages; see [The report page](#the-report-page) |
 | `qa-config [--widths <w>,<w>] [--cwd <dir>]` | The `qa` section of `.flow.json`, checked, with the defaults filled in, as JSON; exits 2 naming every unknown key or wrong type. Touches no GitHub |
@@ -790,11 +874,14 @@ else. Per ticket, and summed per epic:
 - **review rounds** and their Important findings;
 - **rework**: commits ending `(review fix)`; **escaped defects**: commits on
   the default branch ending `(fixes #n)`, counted against ticket `#n`;
-- **stops for a person**, each with its reason and a link, runs that
+- **stops for a person**, each with its reason and a link (a parked ticket
+  counts, marked `parked: true`), runs that
   stopped, and tickets that were planned side by side but built one at a
   time, with the reason;
 - whether each ticket left a **handoff** (`handoff: true` or `false`), and
   how many did;
+- **departures** and **disputed checks** per ticket (`departures`,
+  `disputes`), the decisions an agent recorded under `Stops: none`;
 - the **instruction files'** size (`CLAUDE.md` and `AGENTS.md` anywhere in
   the tree, lines and bytes), read from git at the commit the epic's first
   ticket started from and at the release pull request's merge commit, as
@@ -825,7 +912,7 @@ tickets (each linked to its issue: tier, models and effort per role
 without the `claude-` prefix, as in `worker opus-5-5 · reviewer fable-5-1`,
 state, time per step, tokens in
 and out, cache, review rounds, Important findings, acceptance runs, resets,
-escapes, handoff, stops). A click on a column header sorts that table. A
+escapes, handoff, stops, departures, disputes). A click on a column header sorts that table. A
 figure nothing carries reads `unknown`, never blank or 0. Tables scroll
 sideways at phone width; nothing else does. A repository with no epics gets
 a page that says so. The page is made fresh each time and nothing reads it

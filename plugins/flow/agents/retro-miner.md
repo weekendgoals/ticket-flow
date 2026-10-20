@@ -30,15 +30,20 @@ of these is missing, say so at the top and work with what you have.
    step, tokens per model, models and effort per role, largest context,
    compactions, review rounds and
    Important findings, `(review fix)` commits, `(fixes #n)` commits on the
-   default branch, stops for a person with their reasons, waves built one at
-   a time. `null` means no comment or commit carried the figure: say
+   default branch, stops for a person with their reasons (a parked ticket
+   counts, `parked: true`), departures and disputed checks per ticket,
+   waves built one at a time. `null` means no comment or commit carried the figure: say
    "unknown" and never fill it in from a guess.
 2. Every ticket's comments: `gh issue view <n> --comments`, and the epic's
    own (`gh issue view <epic> --comments`). The review rounds, acceptance
    results and stops are there in full, and so is each ticket's handoff (a
    comment starting `<!-- flow:handoff -->`; the latest one counts):
    what the ticket decided that the plan did not say, and where the plan was
-   wrong. `stats` says which tickets left one (`handoff`).
+   wrong. `stats` says which tickets left one (`handoff`). Under
+   `Stops: none`, read each departure (a comment starting
+   `<!-- flow:departure -->`) and each disputed check (`<!-- flow:dispute`)
+   too: what an agent decided instead of stopping, and the reviewer's
+   verdict on it in the next review round.
 3. The release pull request: `gh pr view <pr> --comments`,
    `FLOW pr-threads <pr> --all` (every review thread, resolved ones too) and
    `FLOW pr-checks <pr>`. For an epic without one, each ticket's own pull
@@ -60,7 +65,9 @@ teaches the wrong lesson.
    question itself?** One line per stop (ticket stops and runs that
    stopped): what was asked, what the person did next (read it from the
    comments that follow), and whether a command, a rule in a skill or a
-   line in the plan would have answered it. A stop on infrastructure (a
+   line in the plan would have answered it. A parked ticket is a stop here
+   too, and so is each departure and disputed check: say whether the plan
+   could have said what the agent had to decide. A stop on infrastructure (a
    session limit, a network failure, a tool that died) is a defect in the
    plugin, not a question. Then count the QA explorer's findings among the
    epic's sub-issues, open and closed (a body with a line starting

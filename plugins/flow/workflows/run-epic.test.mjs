@@ -28,7 +28,7 @@ async function drive(reply, args = ARGS) {
   }
 }
 
-function board({ ready = [], inProgress = [], done = [], needsHuman = [], waiting = [], planned = [], parallel = 1, delivery = 'release', approved = true, tickets = null, exitCode = 0 } = {}) {
+function board({ ready = [], inProgress = [], done = [], needsHuman = [], waiting = [], planned = [], parallel = 1, delivery = 'release', approved = true, tickets = null, exitCode = 0, stops = 'ask' } = {}) {
   const all = tickets || [
     ...ready.map((n) => ({ n, model: n % 2 ? 'opus' : 'sonnet', state: 'ready' })),
     ...inProgress.map((n) => ({ n, model: 'opus', state: 'in-progress' })),
@@ -36,7 +36,7 @@ function board({ ready = [], inProgress = [], done = [], needsHuman = [], waitin
     ...needsHuman.map((n) => ({ n, model: 'opus', state: 'needs-human' })),
     ...waiting.map((n) => ({ n, model: 'opus', state: 'waiting' })),
   ]
-  const next = { epic: 1, approved, ready, waiting: waiting.map((n) => ({ n, blockedBy: [] })), inProgress, done, needsHuman, planned, problems: [], delivery, parallel, branch: 'epic/x', tickets: all.map((entry) => ({ ...entry, title: `ticket ${entry.n}`, tier: entry.model === 'sonnet' ? 'easy' : 'hard', startRequested: false })) }
+  const next = { epic: 1, approved, ready, waiting: waiting.map((n) => ({ n, blockedBy: [] })), inProgress, done, needsHuman, planned, problems: [], delivery, parallel, stops, branch: 'epic/x', tickets: all.map((entry) => ({ ...entry, title: `ticket ${entry.n}`, tier: entry.model === 'sonnet' ? 'easy' : 'hard', startRequested: false })) }
   return { exitCode, output: JSON.stringify(next, null, 2) }
 }
 
@@ -66,7 +66,7 @@ test('a serial run builds the ready tickets one per round, each by the skill on 
   const next = boards(board({ ready: [2] }), board({ ready: [3], done: [2] }), board({ done: [2, 3] }), board({ done: [2, 3] }))
   const run = await drive((label) => (label.startsWith('next:') ? next() : happyTicket(label) ?? releaseSteps(label)))
   assert.equal(run.out.outcome, 'built', JSON.stringify(run.out))
-  assert.deepEqual(run.out.releasePullRequest, { number: 40, url: 'https://github.com/o/r/pull/40' })
+  assert.deepEqual(run.out.releasePullRequest, { number: 40, url: 'https://github.com/o/r/pull/40', draft: false })
   assert.deepEqual(run.labels, [
     'next:#1:1',
     'post:#1:wave:1',
@@ -95,7 +95,8 @@ test('a serial run builds the ready tickets one per round, each by the skill on 
   assert.match(run.calls.find((call) => call.label === 'check-epic:#1:1').prompt, /check-epic 1 --tickets 2 --mark/, 'a ticket that merged itself is checked at the epic head too')
   assert.match(run.calls.find((call) => call.label === 'post:#1:wave:1').prompt, /<!-- flow:local-run -->\n\*\*Wave 1:\*\*/)
   const end = run.calls.find((call) => call.label === 'post:#1:end')
-  assert.match(end.prompt, /\*\*Run finished: built\.\*\* Release pull request: https:\/\/github\.com\/o\/r\/pull\/40/)
+  assert.match(end.prompt, /flow\.mjs" run-report 1 --post --local --outcome built\n/, 'the closing is read from GitHub by run-report, one text for both hosts')
+  assert.doesNotMatch(end.prompt, /FLOW_TEXT/, 'a built run passes no stop reason')
 })
 
 test('the driver hires the reviewer: the ticket reviewer agent, on its own model, never told what the worker said', async () => {
@@ -106,6 +107,8 @@ test('the driver hires the reviewer: the ticket reviewer agent, on its own model
   assert.equal(reviewer.model, undefined, 'the agent definition decides the reviewer\'s model')
   assert.match(reviewer.prompt, /Commit range: aaa111\.\.bbb222/)
   assert.doesNotMatch(reviewer.prompt, /obviously right/)
+  assert.match(reviewer.prompt, /`FLOW_UNATTENDED=1 FLOW_JSON=compact node "\/plugins\/flow\/scripts\/flow\.mjs" ticket 2`/)
+  assert.match(reviewer.prompt, /Its departures and disputes are claims too: a departure, that the plan could not be followed as written; a dispute, that a check cannot pass as written\. Check each against the code and the design: a departure the code did not require, or a dispute where the check is right and the work is wrong, is Important\./)
   const fixes = run.calls.find((call) => call.label === 'fixes:#2')
   assert.match(fixes.prompt, /args "#2 --unattended --after-review 1"/)
   assert.match(fixes.prompt, /<review-report>\n## Important\n\nNone\./)
@@ -205,7 +208,7 @@ test('a worker that stops without a result is reset once and built again; a seco
   assert.equal(run.out.outcome, 'stopped')
   assert.deepEqual(run.out.needsHuman, [2])
   assert.ok(!run.labels.includes('release-pr:#1'))
-  assert.match(run.calls.find((call) => call.label === 'post:#1:end').prompt, /\*\*Run stopped\.\*\* .*These tickets need a person: #2\. Not done: #2\./)
+  assert.match(run.calls.find((call) => call.label === 'post:#1:end').prompt, /run-report 1 --post --local --outcome stopped --file - <<'FLOW_TEXT'\nnothing more can start, and not every ticket is done: two readings of the board from GitHub agreed\nFLOW_TEXT/)
 })
 
 test('a ticket the skill stopped is left to its person, and the run carries on', async () => {
@@ -314,7 +317,7 @@ test('an incremental epic ends built with no release pull request: each ticket h
   const run = await drive((label) => (label.startsWith('next:') ? board({ done: [2], delivery: 'incremental' }) : releaseSteps(label)))
   assert.equal(run.out.outcome, 'built')
   assert.ok(!run.labels.some((label) => /^(check-epic|release-pr|pr-loop):/.test(label)))
-  assert.match(run.calls.find((call) => call.label === 'post:#1:end').prompt, /Every ticket was delivered by its own pull request/)
+  assert.match(run.calls.find((call) => call.label === 'post:#1:end').prompt, /run-report 1 --post --local --outcome built\n/)
 })
 
 test('the release pull request loop runs a second round only after a round that pushed fixes', async () => {
@@ -450,7 +453,7 @@ test('two readings that agree the epic is not approved stop the run, and the rea
   const run = await drive((label) => (label.startsWith('next:') ? board({ approved: false, exitCode: 1 }) : releaseSteps(label)))
   assert.deepEqual(run.labels.slice(0, 2), ['next:#1:1', 'next:#1:1:again'])
   assert.equal(run.out.stopReason, 'epic #1 is not approved: two readings of the board from GitHub agreed')
-  assert.match(run.calls.find((call) => call.label === 'post:#1:end').prompt, /\*\*Run stopped\.\*\* Epic #1 is not approved: two readings of the board from GitHub agreed\./)
+  assert.match(run.calls.find((call) => call.label === 'post:#1:end').prompt, /--outcome stopped --file - <<'FLOW_TEXT'\nepic #1 is not approved: two readings of the board from GitHub agreed\nFLOW_TEXT/)
 })
 
 test('a final reading that says not built is checked by a second before the run gives up on the release', async () => {
@@ -571,3 +574,96 @@ test('a copy whose git step failed is timed without a budget, since no setup sta
   })
   assert.match(run.calls.find((call) => call.label === 'post:#1:fallback:1').prompt, /#3: git worktree add — git worktree add failed: fatal: invalid reference \(after 1s\)/)
 })
+
+test('a merge that conflicts under Stops: none is resolved once by a fresh worker in conflict mode, reviewed over the merge commit, accepted, and merged again', async () => {
+  const next = boards(board({ ready: [2, 3], parallel: 2 }), board({ done: [2, 3], parallel: 2 }))
+  let merges = 0
+  const run = await drive((label) => {
+    if (label.startsWith('next:')) return next()
+    if (label.startsWith('worktree:#')) return ok(JSON.stringify({ path: `/wt/ticket-${label.slice(10)}`, failure: null }))
+    if (label.startsWith('worktree-remove:')) return ok('{}')
+    if (label === 'fixes:#2' || label === 'fixes:#3') return { result: 'accepted', sha: 'a'.repeat(40), summary: 'accepted' }
+    if (label === 'merge:#2') return { exitCode: 1, output: JSON.stringify({ ticket: 2, kind: 'conflict', files: ['README.md'], parked: false }) }
+    if (label === 'worker:#2:conflict') return { result: 'review', range: 'ccc333..ddd444', summary: 'merged the epic branch' }
+    if (label === 'reviewer:#2:conflict') return '**Important.** None.\n\n**Nits.** None.'
+    if (label === 'fixes:#2:conflict') return { result: 'accepted', sha: 'd'.repeat(40), summary: 'accepted' }
+    if (label.startsWith('merge:')) {
+      merges++
+      return ok('{"merge":"x"}')
+    }
+    return happyTicket(label) ?? releaseSteps(label)
+  })
+  assert.equal(run.out.outcome, 'built', JSON.stringify(run.out))
+  const order = run.labels.filter((label) => /^(merge|worker|reviewer|fixes):#2:?/.test(label) && !/^(worker|reviewer|fixes):#2$/.test(label))
+  assert.deepEqual(order, ['merge:#2', 'worker:#2:conflict', 'reviewer:#2:conflict', 'fixes:#2:conflict', 'merge:#2:again'])
+  assert.equal(merges, 2, 'the second merge of #2 and the merge of #3')
+  const resolver = run.calls.find((call) => call.label === 'worker:#2:conflict')
+  assert.match(resolver.prompt, /args "#2 --unattended --until-review --resolve-conflict"/, 'the driver hires the reviewer itself, so the resolver stops at REVIEW')
+  assert.match(resolver.prompt, /The repository is \/repo: run every command there\./)
+  assert.match(run.calls.find((call) => call.label === 'reviewer:#2:conflict').prompt, /the merge of the epic branch into the ticket branch that resolved a conflict, only[\s\S]*Commit range: ccc333\.\.ddd444/)
+  assert.match(run.calls.find((call) => call.label === 'fixes:#2:conflict').prompt, /args "#2 --unattended --after-review 2 --no-merge"[\s\S]*post its report with `--head ddd444`/)
+})
+
+test('a second conflict after the resolution is left to the merge command, which parks the ticket; the run does not resolve twice', async () => {
+  const next = boards(board({ ready: [2] }), board({ needsHuman: [2] }), board({ needsHuman: [2] }))
+  const run = await drive((label) => {
+    if (label.startsWith('next:')) return next()
+    if (label === 'fixes:#2') return { result: 'conflict', summary: 'the merge conflicted' }
+    if (label === 'worker:#2:conflict') return { result: 'review', range: 'ccc333..ddd444', summary: 'merged the epic branch' }
+    if (label === 'reviewer:#2:conflict') return '**Important.** None.\n\n**Nits.** None.'
+    if (label === 'fixes:#2:conflict') return { result: 'accepted', sha: 'd'.repeat(40), summary: 'accepted' }
+    if (label === 'merge:#2:again') return { exitCode: 1, output: JSON.stringify({ ticket: 2, kind: 'conflict', files: ['README.md'], parked: true }) }
+    return happyTicket(label) ?? releaseSteps(label)
+  })
+  assert.equal(run.out.outcome, 'stopped')
+  assert.equal(run.labels.filter((label) => label === 'worker:#2:conflict').length, 1)
+  assert.ok(run.labels.includes('merge:#2:again'))
+  assert.ok(!run.labels.includes('merge:#2'), 'a ticket that conflicted while delivering itself goes straight to the resolution')
+  assert.ok(run.logs.some((line) => /#2: not merged \(exit 1\)/.test(line)))
+})
+
+test('under Stops: none a run that ends with tickets parked checks the done ones at the epic head and opens the release pull request as a draft', async () => {
+  const next = boards(board({ ready: [2], stops: 'none' }), board({ done: [2], needsHuman: [3], waiting: [4], stops: 'none' }))
+  const run = await drive((label) => {
+    if (label.startsWith('next:')) return next()
+    if (/^release-pr:/.test(label)) return ok('{"epic":1,"pullRequest":40,"url":"https://github.com/o/r/pull/40","draft":true}')
+    return happyTicket(label) ?? releaseSteps(label)
+  })
+  assert.equal(run.out.outcome, 'stopped')
+  assert.deepEqual(run.out.releasePullRequest, { number: 40, url: 'https://github.com/o/r/pull/40', draft: true })
+  assert.ok(run.labels.indexOf('check-epic:#1:release') < run.labels.indexOf('release-pr:#1'), 'the epic check runs first, as before')
+  assert.match(run.calls.find((call) => call.label === 'release-pr:#1').prompt, /flow\.mjs" release-pr 1 --draft\n/)
+  assert.match(run.calls.find((call) => call.label === 'post:#1:end').prompt, /--outcome stopped --file - <<'FLOW_TEXT'\n[^\n]*\nFLOW_TEXT/)
+})
+
+test('under Stops: none a release check that fails parks the failing ticket and is run once more over the tickets still done, then a draft opens', async () => {
+  const next = boards(board({ ready: [2], stops: 'none' }), board({ done: [2, 3], stops: 'none' }))
+  let checks = 0
+  const run = await drive((label) => {
+    if (label.startsWith('next:')) return next()
+    if (/^check-epic:#1:release/.test(label)) return ++checks === 1 ? { exitCode: 1, output: '{"setupFailure":null,"tickets":[{"ticket":3,"allPassed":false}],"allPassed":false}' } : ok('{"allPassed":true}')
+    if (/^release-pr:/.test(label)) return ok('{"epic":1,"pullRequest":40,"url":"https://github.com/o/r/pull/40","draft":true}')
+    return happyTicket(label) ?? releaseSteps(label)
+  })
+  assert.deepEqual(run.labels.filter((label) => /^(check-epic:#1:release|release-pr)/.test(label)), ['check-epic:#1:release', 'check-epic:#1:release:again', 'release-pr:#1'])
+  assert.equal(run.out.releasePullRequest.draft, true)
+})
+
+test('under Stops: ask a run that ends with a ticket needing a person opens no release pull request, as before', async () => {
+  const next = boards(board({ ready: [2] }), board({ done: [2], needsHuman: [3] }))
+  const run = await drive((label) => (label.startsWith('next:') ? next() : happyTicket(label) ?? releaseSteps(label)))
+  assert.ok(!run.labels.some((label) => /^(release-pr|check-epic:#1:release)/.test(label)))
+  assert.equal(run.out.releasePullRequest, null)
+})
+
+test('under Stops: none a release check that could not run (a setup failure) is not run a second time, and no pull request opens', async () => {
+  const next = boards(board({ ready: [2], stops: 'none' }), board({ done: [2, 3], stops: 'none' }))
+  const run = await drive((label) => {
+    if (label.startsWith('next:')) return next()
+    if (/^check-epic:#1:release/.test(label)) return { exitCode: 1, output: '{"setupFailure":"setup: npm ci: exited 1","tickets":[],"allPassed":false}' }
+    return happyTicket(label) ?? releaseSteps(label)
+  })
+  assert.deepEqual(run.labels.filter((label) => /^(check-epic:#1:release|release-pr)/.test(label)), ['check-epic:#1:release'])
+  assert.equal(run.out.outcome, 'stopped')
+})
+

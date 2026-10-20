@@ -25,7 +25,6 @@ const PROXY = { model: 'sonnet', effort: 'low' }
 const WORKER_MODELS = new Set(['sonnet', 'opus'])
 const MAX_IDLE_ROUNDS = 3
 const LOCAL_RUN_MARKER = '<!-- flow:local-run -->'
-const LOCAL_RUN_END_MARKER = '<!-- flow:local-run-end -->'
 
 const COMMAND_SCHEMA = {
   type: 'object',
@@ -35,7 +34,7 @@ const COMMAND_SCHEMA = {
 const STEP_SCHEMA = {
   type: 'object',
   properties: {
-    result: { type: 'string', enum: ['review', 'accepted', 'delivered', 'stopped'] },
+    result: { type: 'string', enum: ['review', 'accepted', 'delivered', 'conflict', 'stopped'] },
     range: { type: 'string' },
     sha: { type: 'string' },
     summary: { type: 'string' },
@@ -127,6 +126,7 @@ function boardProblem(json) {
     return 'its JSON\'s "tickets" entries do not each carry "n", "model" and "state"'
   if (json.delivery !== undefined && json.delivery !== null && typeof json.delivery !== 'string') return 'its JSON\'s "delivery" is not text'
   if (json.parallel !== undefined && json.parallel !== null && typeof json.parallel !== 'number') return 'its JSON\'s "parallel" is not a number'
+  if (json.stops !== undefined && json.stops !== null && typeof json.stops !== 'string') return 'its JSON\'s "stops" is not text'
   return null
 }
 
@@ -138,6 +138,7 @@ function boardOf(json) {
     board: {
     approved: json.approved,
     delivery: json.delivery ?? null,
+    stops: json.stops === 'none' ? 'none' : 'ask',
     parallel: json.parallel ?? null,
     ...Object.fromEntries(BOARD_LISTS.map((key) => [key, json[key]])),
     waiting: json.waiting.map((entry) => entry.n),
@@ -186,6 +187,7 @@ function skillPrompt(ticket, argumentsText, root, extra = []) {
     '- result "review" and range "<base>..<head>" when the skill ended with a REVIEW line;',
     '- result "accepted" and sha when it ended with an ACCEPTED line;',
     '- result "delivered" when the ticket was merged or its pull request opened;',
+    '- result "conflict" when the skill ended with a CONFLICT line (the merge into the epic branch conflicted, and a fresh worker is to resolve it);',
     '- result "stopped" when it asked a person (flow needs-human) or refused to start;',
     'and in summary one sentence on what happened.',
   ].join('\n')
@@ -193,10 +195,11 @@ function skillPrompt(ticket, argumentsText, root, extra = []) {
 
 function reviewPrompt(ticket, range, root, round) {
   return [
-    `Review ticket #${ticket} of epic #${epic}${round === 2 ? ': the fixes made after the first review only' : ''}.`,
+    `Review ticket #${ticket} of epic #${epic}${round === 2 ? ': the fixes made after the first review only' : round === 'conflict' ? ': the merge of the epic branch into the ticket branch that resolved a conflict, only' : ''}.`,
     `Repository: ${root}. Commit range: ${range}.`,
     `The ticket body (scope, what is not in scope, the acceptance criteria): \`${FLOW} ticket ${ticket}\`.`,
     'The handoffs in that output are claims about what earlier tickets of the epic decided (a name, a shape, a route): check them against those tickets\' merged code, never take them as ground truth.',
+    'Its departures and disputes are claims too: a departure, that the plan could not be followed as written; a dispute, that a check cannot pass as written. Check each against the code and the design: a departure the code did not require, or a dispute where the check is right and the work is wrong, is Important.',
     `The epic's ground rules, settings and design sources: \`gh issue view ${epic} --json body\`.`,
     'The project\'s instruction files: CLAUDE.md and AGENTS.md at the repository root and in the directories the range touches.',
     `When the ticket has a COMPARE criterion, its comparison table is a comment on #${ticket} that starts "**Compared:**" (\`gh issue view ${ticket} --comments\`); read only that comment there.`,
@@ -210,7 +213,7 @@ function workerArguments(ticket, wide, after = '') {
 }
 
 function finished(step) {
-  return step && ['accepted', 'delivered', 'stopped'].includes(step.result)
+  return step && ['accepted', 'delivered', 'conflict', 'stopped'].includes(step.result)
 }
 
 async function buildTicket({ ticket, model, root, wide, phaseName }) {
@@ -318,15 +321,45 @@ async function recover(ticket, why) {
   return told ? 'needs-human' : 'unreached'
 }
 
-async function mergeAndCheck(tickets, delivered, release, wave) {
-  const merged = []
-  for (const ticket of tickets) {
-    const merge = await runCommand(`${FLOW} merge ${ticket}`, `merge:#${ticket}`, 'It merges the commit the acceptance comment names into the epic branch and prints JSON, or explains on standard error why not.', { json: true })
-    if (merge.exitCode === 0 && merge.json) {
-      merged.push(ticket)
-      log(`#${ticket}: merged into the epic branch`)
-    } else log(`#${ticket}: not merged (${merge.answer === 'unreadable' ? unreadableText(merge) : `exit ${merge.exitCode}`}); the ticket says why`)
+async function resolveConflict(ticket) {
+  const model = board ? workerModel(board, ticket) : 'opus'
+  log(`#${ticket}: its merge conflicts with the epic branch; a fresh worker on ${model} resolves it, once`)
+  const built = await agent(skillPrompt(ticket, `#${ticket} --unattended --until-review --resolve-conflict`, repoRoot), { label: `worker:#${ticket}:conflict`, model, schema: STEP_SCHEMA })
+  if (!built || built.result !== 'review' || !built.range) {
+    log(`#${ticket}: the conflict was not resolved (${built ? built.summary : 'no answer'})`)
+    return false
   }
+  const report = await agent(reviewPrompt(ticket, built.range, repoRoot, 'conflict'), { label: `reviewer:#${ticket}:conflict`, agentType: 'flow:ticket-reviewer' })
+  if (!report) return false
+  const after = await agent(
+    skillPrompt(ticket, `#${ticket} --unattended --after-review 2 --no-merge`, repoRoot, ['', `The reviewer read the range ${built.range}; post its report with \`--head ${built.range.split('..')[1] || built.range}\`.`, 'The reviewer\'s report, exactly as it wrote it:', '', '<review-report>', String(report), '</review-report>']),
+    { label: `fixes:#${ticket}:conflict`, model, schema: STEP_SCHEMA },
+  )
+  return Boolean(after && after.result === 'accepted')
+}
+
+async function mergeOne(ticket) {
+  const merge = await runCommand(`${FLOW} merge ${ticket}`, `merge:#${ticket}${resolvedHere.has(ticket) ? ':again' : ''}`, 'It merges the commit the acceptance comment names into the epic branch and prints JSON, or explains on standard error why not (on a merge conflict it prints JSON too).', { json: true })
+  if (merge.exitCode === 0 && merge.json) {
+    log(`#${ticket}: merged into the epic branch`)
+    return true
+  }
+  const conflict = merge.json && merge.json.kind === 'conflict' && !merge.json.parked
+  if (conflict && !resolvedHere.has(ticket)) {
+    resolvedHere.add(ticket)
+    if (await resolveConflict(ticket)) return mergeOne(ticket)
+  }
+  log(`#${ticket}: not merged (${merge.answer === 'unreadable' ? unreadableText(merge) : `exit ${merge.exitCode}`}); the ticket says why`)
+  return false
+}
+
+async function mergeAndCheck(tickets, delivered, release, wave, conflicted = []) {
+  const merged = []
+  for (const ticket of conflicted) {
+    resolvedHere.add(ticket)
+    if ((await resolveConflict(ticket)) && (await mergeOne(ticket))) merged.push(ticket)
+  }
+  for (const ticket of tickets) if (await mergeOne(ticket)) merged.push(ticket)
   const landed = release ? [...delivered, ...merged] : merged
   if (!landed.length) return merged
   const check = await runCommand(
@@ -375,7 +408,8 @@ async function runWave({ chosen, wide, wave, release }) {
   for (const result of results) if (result.outcome === 'died') result.recovery = await recover(result.ticket, `the run building it stopped without a result (${result.step})`)
   const toMerge = results.filter((result) => result.outcome === 'accepted' || result.recovery === 'accepted').map((result) => result.ticket)
   const delivered = results.filter((result) => result.outcome === 'delivered').map((result) => result.ticket)
-  const merged = await mergeAndCheck(toMerge, delivered, release, wave)
+  const conflicted = results.filter((result) => result.outcome === 'conflict').map((result) => result.ticket)
+  const merged = await mergeAndCheck(toMerge, delivered, release, wave, conflicted)
   for (const result of results) if (merged.includes(result.ticket)) result.merged = true
   return results
 }
@@ -393,6 +427,7 @@ const resetSince = new Set()
 const rebuiltUnstarted = new Set()
 const toldPerson = new Set()
 const failedHandOffs = new Map()
+const resolvedHere = new Set()
 let board = null
 let round = 0
 let idleRounds = 0
@@ -465,7 +500,7 @@ for (;;) {
   }
   const results = await runWave({ chosen, wide: chosen.length > 1, wave: round, release })
   records.push(...results)
-  const changed = results.some((result) => ['delivered', 'accepted', 'stopped'].includes(result.outcome) || (result.recovery && result.recovery !== 'unreached') || result.merged)
+  const changed = results.some((result) => ['delivered', 'accepted', 'conflict', 'stopped'].includes(result.outcome) || (result.recovery && result.recovery !== 'unreached') || result.merged)
   idleRounds = changed ? 0 : idleRounds + 1
 }
 
@@ -480,9 +515,17 @@ const ticketsLeft = final ? final.tickets.filter((ticket) => ticket.state !== 'd
 const built = Boolean(final && final.approved && final.tickets.length && !ticketsLeft.length)
 let releasePullRequest = null
 let outcome = built ? 'built' : 'stopped'
+const noStops = Boolean(final && final.stops === 'none')
+const parkedAtEnd = Boolean(final && final.approved && noStops && final.needsHuman.length && !final.ready.length && !final.inProgress.length)
 
-if (built && final.delivery !== 'incremental') {
-  const check = await runCommand(`${FLOW} check-epic ${epic} --mark`, `check-epic:#${epic}:release`, 'It runs every done ticket\'s checks at the epic branch head and prints JSON.', { json: true, long: true })
+if ((built || parkedAtEnd) && final.delivery !== 'incremental') {
+  const checkWhat = 'It runs every done ticket\'s checks at the epic branch head and prints JSON.'
+  let check = await runCommand(`${FLOW} check-epic ${epic} --mark`, `check-epic:#${epic}:release`, checkWhat, { json: true, long: true })
+  const parkedByCheck = check.json && check.json.setupFailure == null && Array.isArray(check.json.tickets) && check.json.tickets.some((ticket) => ticket && ticket.allPassed === false)
+  if (noStops && check.answer !== 'unreadable' && check.exitCode !== 0 && parkedByCheck) {
+    log('release: a ticket failed its checks at the epic head and is parked; the tickets still done are checked once more, so a draft can open over them')
+    check = await runCommand(`${FLOW} check-epic ${epic} --mark`, `check-epic:#${epic}:release:again`, checkWhat, { json: true, long: true })
+  }
   if (check.answer === 'unreadable') log(`release: the epic check's answer could not be read (${unreadableText(check)}); release-pr reads the check's own comment on the epic`)
   if (check.answer !== 'unreadable' && check.exitCode !== 0) {
     outcome = 'stopped'
@@ -490,16 +533,20 @@ if (built && final.delivery !== 'incremental') {
   } else {
     const openRelease = (label) =>
       askProxy(
-        `${FLOW} release-pr ${epic}`,
+        `${FLOW} release-pr ${epic}${noStops ? ' --draft' : ''}`,
         label,
-        'It opens the release pull request, or finds the one already open. When it refuses, it prints no JSON and says why on standard error: then return that line as the output.',
+        `It opens the release pull request${noStops ? ' (as a draft while tickets are parked)' : ''}, or finds the one already open. When it refuses, it prints no JSON and says why on standard error: then return that line as the output.`,
         { json: true, long: false },
       )
     const hasPullRequest = (answer) => answer.exitCode === 0 && answer.json && Number.isInteger(answer.json.pullRequest)
     let opened = await openRelease(`release-pr:#${epic}`)
     if (!hasPullRequest(opened)) opened = await openRelease(`release-pr:#${epic}:again`)
     if (hasPullRequest(opened)) {
-      releasePullRequest = { number: opened.json.pullRequest, url: opened.json.url }
+      releasePullRequest = { number: opened.json.pullRequest, url: opened.json.url, draft: opened.json.draft === true }
+      if (releasePullRequest.draft) {
+        outcome = 'stopped'
+        if (!stopReason) stopReason = 'some tickets are parked, so the release pull request is a draft until they are built'
+      }
       for (const prRound of [1, 2]) {
         const answered = await agent(
           [
@@ -519,11 +566,12 @@ if (built && final.delivery !== 'incremental') {
 }
 
 const needsHuman = final ? final.needsHuman : []
-const closing =
-  outcome === 'built'
-    ? `**Run finished: built.**${releasePullRequest ? ` Release pull request: ${releasePullRequest.url}. A person reviews and merges it.` : ' Every ticket was delivered by its own pull request.'}`
-    : `**Run stopped.** ${stopReason ? `${stopReason[0].toUpperCase()}${stopReason.slice(1)}.` : 'Nothing more can start.'}${needsHuman.length ? ` These tickets need a person: ${needsHuman.map((ticket) => `#${ticket}`).join(', ')}.` : ''}${ticketsLeft.length ? ` Not done: ${ticketsLeft.map((ticket) => `#${ticket}`).join(', ')}.` : ''}`
-await postOnEpic(`${LOCAL_RUN_END_MARKER}\n${closing}`, `post:#${epic}:end`)
-log(closing.replace(/\*\*/g, ''))
+const reasonText = stopReason && outcome !== 'built' ? ` --file - <<'FLOW_TEXT'\n${stopReason}\nFLOW_TEXT` : ''
+const report = await runCommand(
+  `${FLOW} run-report ${epic} --post --local --outcome ${outcome}${reasonText}`,
+  `post:#${epic}:end`,
+  'It posts the run\'s closing report on the epic issue, read from the epic and its tickets, and prints it.',
+)
+log(`run ${outcome}${stopReason && outcome !== 'built' ? `: ${stopReason}` : ''}${report.exitCode === 0 ? '' : ` (the closing report could not be posted: exit ${report.exitCode}, ${report.lastLine})`}`)
 
 return { outcome, epic, releasePullRequest, needsHuman, notDone: ticketsLeft, stopReason, rounds: round, tickets: records }
