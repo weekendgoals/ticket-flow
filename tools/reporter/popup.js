@@ -1,6 +1,6 @@
 import { loadSettings, loadChosenTargets, rememberTarget, chooseTarget, originOf } from './settings.js';
 import { fileFinding } from './github.js';
-import { SCREENSHOT_MIMES } from './report-body.js';
+import { SCREENSHOT_MIMES, issueTitle, quoteLines } from './report-body.js';
 import {
   MAX_SCREENSHOTS,
   MAX_FILE_BYTES,
@@ -15,7 +15,7 @@ import {
 
 const PENDING_KEY = 'pendingSelection';
 const CAP_MESSAGE = `Limit of ${MAX_SCREENSHOTS} screenshots reached. Remove one to add another.`;
-const FIELD_NAMES = ['title', 'type', 'priority', 'description', 'steps', 'expected', 'selection'];
+const FIELD_NAMES = ['title', 'description'];
 
 const elements = {
   unconfigured: document.getElementById('unconfigured'),
@@ -33,12 +33,7 @@ const elements = {
   pageUrl: document.getElementById('page-url'),
   target: document.getElementById('target'),
   title: document.getElementById('title'),
-  type: document.getElementById('type'),
-  priority: document.getElementById('priority'),
   description: document.getElementById('description'),
-  steps: document.getElementById('steps'),
-  expected: document.getElementById('expected'),
-  selection: document.getElementById('selection'),
   submit: document.getElementById('submit'),
   status: document.getElementById('status')
 };
@@ -124,15 +119,19 @@ async function inspectPage(tabId) {
   try {
     const [injection] = await chrome.scripting.executeScript({
       target: { tabId },
-      func: () => ({
-        selection: window.getSelection().toString(),
-        viewport: { w: window.innerWidth, h: window.innerHeight, dpr: window.devicePixelRatio }
-      })
+      func: () => ({ w: window.innerWidth, h: window.innerHeight, dpr: window.devicePixelRatio })
     });
-    return injection && injection.result ? injection.result : { selection: '', viewport: null };
+    return injection && injection.result ? injection.result : null;
   } catch {
-    return { selection: '', viewport: null };
+    return null;
   }
+}
+
+function withSelection(description, text) {
+  const quoted = quoteLines(text);
+  if (!quoted) return description;
+  const written = description.trimEnd();
+  return written ? `${written}\n\n${quoted}` : `${quoted}\n\n`;
 }
 
 async function captureTab(windowId) {
@@ -414,11 +413,12 @@ async function beginDraft(pending) {
   renderScreenshots();
 
   const capturing = captureAndAdd(tab.windowId);
-  const inspected = await inspectPage(tab.id);
+  const viewport = await inspectPage(tab.id);
   if (state.draft !== draft) return;
-  draft.page.viewport = inspected.viewport;
-  const pendingText = pending && pending.tabId === tab.id && pending.text ? pending.text : '';
-  elements.selection.value = pendingText || inspected.selection;
+  draft.page.viewport = viewport;
+  if (pending && pending.tabId === tab.id && pending.text) {
+    elements.description.value = withSelection(elements.description.value, pending.text);
+  }
   await capturing;
   await persistDraft();
 }
@@ -434,9 +434,7 @@ async function restoreDraft(draft, pending) {
   const note = lostTargetNote(draft, target);
   if (note) setStatus(note);
   if (pending && pending.text) {
-    elements.selection.value = elements.selection.value
-      ? `${elements.selection.value}\n${pending.text}`
-      : pending.text;
+    elements.description.value = withSelection(elements.description.value, pending.text);
     await persistDraft();
   }
 }
@@ -519,6 +517,10 @@ elements.form.addEventListener('submit', async (event) => {
   event.preventDefault();
   const draft = state.draft;
   if (!draft || state.submitted || state.busy) return;
+  if (!elements.description.value.trim()) {
+    setStatus('Say what happened.', true);
+    return;
+  }
   if (draft.screenshots.length === 0) {
     setStatus('Add at least one screenshot.', true);
     return;
@@ -538,13 +540,8 @@ elements.form.addEventListener('submit', async (event) => {
       throw new Error('The chosen target is no longer on the options page. Choose another.');
     }
     const issue = await fileFinding(settings, target, {
-      title: draft.fields.title.trim(),
-      type: draft.fields.type,
-      priority: draft.fields.priority,
+      title: issueTitle(draft.fields, draft.page),
       description: draft.fields.description,
-      steps: draft.fields.steps,
-      expected: draft.fields.expected,
-      selection: draft.fields.selection,
       url: draft.page.url,
       pageTitle: draft.page.title,
       viewport: draft.page.viewport,

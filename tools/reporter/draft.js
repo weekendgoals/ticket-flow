@@ -6,7 +6,7 @@ export const SAVE_DELAY_MS = 300;
 const SOURCES = ['capture', 'file', 'paste'];
 
 export function emptyFields() {
-  return { title: '', type: 'bug', priority: 'normal', description: '', steps: '', expected: '', selection: '' };
+  return { title: '', description: '' };
 }
 
 export function createDraft(page, target = null, now = Date.now()) {

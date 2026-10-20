@@ -973,8 +973,8 @@ comment on the epic says what was filed and why each rejected row was not.
 ## The reporter extension
 
 `tools/reporter/` is a Chrome extension for filing findings from the page
-you are looking at: you capture or paste screenshots, say what happened,
-the steps and what should have happened, and it files a GitHub issue
+you are looking at: you capture or paste screenshots, say what happened
+and optionally give a title, and it files a GitHub issue
 labelled `flow:found` under the epic you set in its options (usually the
 open Bugs epic), with the screenshots committed to the `flow-findings`
 branch and linked by commit. It has no build step: open

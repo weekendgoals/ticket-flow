@@ -42,15 +42,6 @@ textarea {
   resize: vertical;
 }
 
-.row {
-  display: flex;
-  gap: 12px;
-}
-
-.row label {
-  flex: 1;
-}
-
 .draft-bar {
   margin: 0 0 10px;
   font-size: 12px;

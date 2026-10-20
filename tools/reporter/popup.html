@@ -37,39 +37,11 @@
     </label>
 
     <label>Title
-      <input type="text" id="title" required autocomplete="off">
+      <input type="text" id="title" placeholder="Optional" autocomplete="off">
     </label>
-
-    <div class="row">
-      <label>Type
-        <select id="type">
-          <option value="bug" selected>bug</option>
-          <option value="change">change</option>
-        </select>
-      </label>
-      <label>Priority
-        <select id="priority">
-          <option value="low">low</option>
-          <option value="normal" selected>normal</option>
-          <option value="high">high</option>
-        </select>
-      </label>
-    </div>
 
     <label>What happened
-      <textarea id="description" rows="4"></textarea>
-    </label>
-
-    <label>Steps
-      <textarea id="steps" rows="3" placeholder="1. Open the page&#10;2. Click…"></textarea>
-    </label>
-
-    <label>What should have happened
-      <textarea id="expected" rows="2" placeholder="Optional"></textarea>
-    </label>
-
-    <label>Selected text
-      <textarea id="selection" rows="3"></textarea>
+      <textarea id="description" rows="6"></textarea>
     </label>
 
     <button type="submit" id="submit">File finding</button>

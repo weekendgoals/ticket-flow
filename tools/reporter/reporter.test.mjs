@@ -39,12 +39,7 @@ const DOCS = { id: 't2', name: 'Docs', repo: 'acme/docs', branch: 'docs-shots', 
 
 const REPORT = {
   title: 'Score overlaps the crest',
-  type: 'bug',
-  priority: 'high',
   description: '  The   score\noverlaps the crest on narrow screens  ',
-  steps: '1. Open the match page\n2. Narrow the window',
-  expected: 'The score sits beside the crest',
-  selection: 'Arsenal 2\n1 Chelsea',
   url: 'https://acme.example/matches/42?tab=live#top',
   pageTitle: 'Arsenal v Chelsea',
   viewport: { w: 390, h: 844, dpr: 3 },
@@ -135,19 +130,7 @@ test('the issue body has the finding shape, fingerprint first', () => {
       '## Where',
       '',
       'https://acme.example/matches/42?tab=live#top — Arsenal v Chelsea, viewport 390×844, Mozilla/5.0 Test',
-      'Type: bug; priority: high; finding id: 20261018-101500-abcd',
-      '',
-      '## Steps',
-      '',
-      '1. Open the match page\n2. Narrow the window',
-      '',
-      '## Expected',
-      '',
-      'The score sits beside the crest',
-      '',
-      '## Selected text',
-      '',
-      '> Arsenal 2\n> 1 Chelsea',
+      'finding id: 20261018-101500-abcd',
       '',
       '## Screenshots',
       '',
@@ -157,10 +140,24 @@ test('the issue body has the finding shape, fingerprint first', () => {
   )
 })
 
-test('empty Steps and Expected say none, and no selection leaves its section out', () => {
-  const text = body.buildIssueBody(TARGET, { ...REPORT, steps: ' ', expected: '', selection: '' }, 'id', UPLOADS)
-  assert.match(text, /## Steps\n\n_none_\n\n## Expected\n\n_none_\n\n## Screenshots\n/)
-  assert.doesNotMatch(text, /## Selected text/)
+test('the body has no Steps, Expected or Selected text, and no type or priority', () => {
+  const text = body.buildIssueBody(TARGET, { ...REPORT, type: 'bug', priority: 'high', steps: '1. go', expected: 'x', selection: 'y' }, 'id', UPLOADS)
+  assert.deepEqual(text.match(/^## .*/gm), ['## What happened', '## Where', '## Screenshots'])
+  assert.doesNotMatch(text, /Type:|priority/)
+})
+
+test('an empty title is the first line of what happened, clipped at a word boundary, else the page title', () => {
+  const page = { title: 'Arsenal v Chelsea' }
+  assert.equal(body.issueTitle({ title: '  Typed  ', description: 'ignored' }, page), 'Typed')
+  assert.equal(body.issueTitle({ title: ' ', description: '\n  The score overlaps  \nsecond line' }, page), 'The score overlaps')
+  const long = 'The score overlaps the crest on narrow screens and the main menu covers the league table below it'
+  const clipped = body.issueTitle({ title: '', description: long }, page)
+  assert.equal(clipped, 'The score overlaps the crest on narrow screens and the main menu covers the…')
+  assert.ok(clipped.length <= body.TITLE_LENGTH)
+  assert.equal(body.issueTitle({ title: '', description: 'x'.repeat(100) }, page), `${'x'.repeat(79)}…`)
+  assert.equal(body.issueTitle({ title: '', description: 'y'.repeat(80) }, page), 'y'.repeat(80))
+  assert.equal(body.issueTitle({ title: '', description: ' \n ' }, page), 'Arsenal v Chelsea')
+  assert.equal(body.issueTitle({ title: '', description: '' }, { title: '' }), '')
 })
 
 test('the epic option takes an issue number, with or without #, or nothing', () => {
@@ -193,7 +190,7 @@ test('old settings with one repository become one target named after it', () => 
   assert.deepEqual(normalizeSettings(normalizeSettings(old)), normalizeSettings(old))
 })
 
-function fakeStorage(initial, extra = {}) {
+function fakeStorage(initial, extra = {}, session = {}) {
   const store = { ...initial }
   const writes = []
   globalThis.chrome = {
@@ -208,7 +205,13 @@ function fakeStorage(initial, extra = {}) {
           delete store[key]
         }
       },
-      session: { get: async () => ({}), remove: async () => {} }
+      session: {
+        get: async (key) => (key in session ? { [key]: structuredClone(session[key]) } : {}),
+        set: async (items) => Object.assign(session, structuredClone(items)),
+        remove: async (key) => {
+          delete session[key]
+        }
+      }
     },
     ...extra
   }
@@ -281,11 +284,11 @@ test('the body and paths are the same for any target with the same repository', 
   assert.doesNotMatch(body.buildIssueBody(DOCS, REPORT, 'id', UPLOADS), /acme\/site\/blob/)
 })
 
-test('a draft keeps Steps and Expected, and an older draft gets them empty', () => {
-  assert.deepEqual(Object.keys(emptyFields()), ['title', 'type', 'priority', 'description', 'steps', 'expected', 'selection'])
-  const restored = normalizeDraft({ screenshots: [], fields: { title: 'x', steps: '1. go' } })
-  assert.equal(restored.fields.steps, '1. go')
-  assert.equal(restored.fields.expected, '')
+test('a draft holds a title and what happened, and a draft of the previous version loses its other fields', () => {
+  assert.deepEqual(Object.keys(emptyFields()), ['title', 'description'])
+  const old = { title: 'x', type: 'change', priority: 'high', description: 'It broke', steps: '1. go', expected: 'y', selection: 'z' }
+  assert.deepEqual(normalizeDraft({ screenshots: [], fields: old }).fields, { title: 'x', description: 'It broke' })
+  assert.deepEqual(normalizeDraft({ screenshots: [] }).fields, { title: '', description: '' })
 })
 
 function fakeGitHub(answers) {
@@ -443,20 +446,38 @@ const settle = async () => {
 }
 
 let popupCase = 0
-async function openPopup(draft, targets = [TARGET, DOCS], chosen = {}) {
+async function openPopup(draft, targets = [TARGET, DOCS], chosen = {}, { session = {}, tabs = [], messages = [] } = {}) {
   const element = fakePopupPage()
+  const local = { settings: { token: TOKEN, label: 'flow:found', targets }, chosenTargets: chosen }
+  if (draft) local.draft = draft
   const storage = fakeStorage(
-    { settings: { token: TOKEN, label: 'flow:found', targets }, chosenTargets: chosen, draft },
+    local,
     {
-      runtime: { getURL: () => 'chrome-extension://reporter/', openOptionsPage() {}, sendMessage: async () => ({}) },
-      tabs: { query: async () => [], get: async () => { throw new Error('no tab') }, create: async () => {} },
-      scripting: { executeScript: async () => [] }
-    }
+      runtime: {
+        getURL: () => 'chrome-extension://reporter/',
+        openOptionsPage() {},
+        sendMessage: async (message) => {
+          messages.push(message)
+          return message.type === 'captureTab' ? { dataUrl: 'data:image/png;base64,CCCC' } : {}
+        }
+      },
+      tabs: {
+        query: async () => tabs,
+        get: async (id) => {
+          const tab = tabs.find((candidate) => candidate.id === id)
+          if (!tab) throw new Error('no tab')
+          return tab
+        },
+        create: async () => {}
+      },
+      scripting: { executeScript: async () => [{ result: { w: 800, h: 600, dpr: 2 } }] }
+    },
+    session
   )
   popupCase += 1
   await import(pathToFileURL(join(copies, 'popup.mjs')).href + `?case=${popupCase}`)
   await settle()
-  return { element, ...storage }
+  return { element, session, messages, ...storage }
 }
 
 const DRAFT = {
@@ -511,4 +532,46 @@ test('a submit whose target vanished is refused and reloads the targets', async 
   assert.deepEqual(element('target').children.map((option) => option.textContent), ['Site'])
   assert.equal(element('target').value, 't1')
   assert.deepEqual(store.chosenTargets, {})
+})
+
+test('a finding with nothing in What happened is refused before any request', async () => {
+  const { element, store } = await openPopup({ ...DRAFT, fields: { title: 'Broken link', description: '' } })
+  element('description').value = '  \n '
+  const calls = fakeGitHub([])
+  await fire(element('report'), 'submit')
+  assert.equal(calls.length, 0)
+  assert.equal(element('status').textContent, 'Say what happened.')
+  assert.equal(typeof store.draft, 'object')
+})
+
+test('with no title the issue is titled by the first line of what happened, and the body carries only the lean sections', async () => {
+  const { element } = await openPopup({ ...DRAFT, fields: { title: '', description: 'The link 404s\non every page' } })
+  const calls = fakeGitHub([
+    { method: 'GET', path: /\/git\/ref\/heads\/docs-shots$/, reply: { json: {} } },
+    { method: 'PUT', path: /\/contents\//, reply: { json: { commit: { sha: 's1' } } } },
+    { method: 'POST', path: /\/issues$/, reply: { status: 201, json: { id: 1, number: 8, html_url: 'https://github.com/acme/docs/issues/8' } } },
+    { method: 'POST', path: /\/sub_issues$/, reply: { status: 201, json: {} } }
+  ])
+  await fire(element('report'), 'submit')
+  const issue = calls.find((call) => call.path === '/repos/acme/docs/issues').body
+  assert.equal(issue.title, 'The link 404s')
+  assert.deepEqual(issue.body.match(/^## .*/gm), ['## What happened', '## Where', '## Screenshots'])
+})
+
+test('selected text from the right-click menu starts a new draft as a quote, and is appended to one in progress', async () => {
+  const tab = { id: 7, windowId: 2, url: 'https://acme.example/matches/42', title: 'Match' }
+  const fresh = await openPopup(undefined, [TARGET, DOCS], {}, { session: { pendingSelection: { text: 'Arsenal 2\n1 Chelsea', tabId: 7 } }, tabs: [tab] })
+  assert.equal(fresh.element('description').value, '> Arsenal 2\n> 1 Chelsea\n\n')
+  assert.equal(fresh.store.draft.fields.description, '> Arsenal 2\n> 1 Chelsea\n\n')
+  assert.deepEqual(fresh.store.draft.page.viewport, { w: 800, h: 600, dpr: 2 })
+  assert.equal('pendingSelection' in fresh.session, false)
+  const going = await openPopup(DRAFT, [TARGET, DOCS], {}, { session: { pendingSelection: { text: 'Page not found', tabId: 3 } } })
+  assert.equal(going.store.draft.fields.description, 'It 404s\n\n> Page not found')
+})
+
+test('a toolbar click on a new draft leaves What happened empty', async () => {
+  const tab = { id: 7, windowId: 2, url: 'https://acme.example/', title: 'Home' }
+  const { store } = await openPopup(undefined, [TARGET, DOCS], {}, { tabs: [tab] })
+  assert.equal(store.draft.fields.description, '')
+  assert.equal(store.draft.screenshots.length, 1)
 })
