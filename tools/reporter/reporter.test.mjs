@@ -22,7 +22,9 @@ const settingsModule = await load('settings')
 const { DEFAULT_SETTINGS, normalizeSettings, checkTargets, chooseTarget, originOf } = settingsModule
 const { emptyFields, createDraft, normalizeDraft } = await load('draft')
 
-const MODULES = ['background', 'draft', 'github', 'options', 'popup', 'report-body', 'settings']
+const area = await load('capture-area')
+
+const MODULES = ['background', 'capture-area', 'draft', 'github', 'options', 'popup', 'report-body', 'settings']
 
 test('every module of the extension parses as an ES module', () => {
   assert.deepEqual(readdirSync(copies).sort(), MODULES.map((name) => `${name}.mjs`))
@@ -574,4 +576,65 @@ test('a toolbar click on a new draft leaves What happened empty', async () => {
   const { store } = await openPopup(undefined, [TARGET, DOCS], {}, { tabs: [tab] })
   assert.equal(store.draft.fields.description, '')
   assert.equal(store.draft.screenshots.length, 1)
+})
+
+const SELECTION = { x: 10.5, y: 20.25, width: 100, height: 50, devicePixelRatio: 2, innerWidth: 800, innerHeight: 600 }
+
+test('an area is cropped in device pixels, clamped to the captured image', () => {
+  assert.deepEqual(area.cropRect(SELECTION, { width: 1600, height: 1200 }), { x: 21, y: 40, width: 200, height: 101 })
+  assert.deepEqual(area.cropRect({ ...SELECTION, x: 750, y: 580 }, { width: 1600, height: 1200 }), { x: 1500, y: 1160, width: 100, height: 40 })
+  assert.deepEqual(area.cropRect({ ...SELECTION, x: -5, y: 0, width: 20, height: 10 }, { width: 1600, height: 1200 }), { x: 0, y: 0, width: 30, height: 20 })
+  assert.deepEqual(area.cropRect({ ...SELECTION, innerWidth: undefined, innerHeight: undefined, x: 1, y: 1, width: 4, height: 4 }, { width: 1600, height: 1200 }), { x: 2, y: 2, width: 8, height: 8 })
+})
+
+test('an area smaller than 4 by 4 CSS pixels, or off the image, captures nothing', () => {
+  const image = { width: 1600, height: 1200 }
+  assert.equal(area.cropRect({ ...SELECTION, width: 3.9 }, image), null)
+  assert.equal(area.cropRect({ ...SELECTION, height: 0 }, image), null)
+  assert.equal(area.cropRect({ ...SELECTION, x: 900 }, image), null)
+  assert.equal(area.cropRect(null, image), null)
+  assert.equal(area.cropRect(SELECTION, { width: 0, height: 0 }), null)
+})
+
+test('bytes become base64, in chunks for a large image', () => {
+  assert.equal(area.base64FromBytes(new Uint8Array([])), '')
+  assert.equal(area.base64FromBytes(new Uint8Array([137, 80, 78, 71, 255])), Buffer.from([137, 80, 78, 71, 255]).toString('base64'))
+  const large = new Uint8Array(100000).map((_, index) => index % 256)
+  assert.equal(area.base64FromBytes(large), Buffer.from(large).toString('base64'))
+})
+
+test('an area screenshot is added to the stored draft, never past the limit', async () => {
+  const { store } = fakeStorage({ draft: DRAFT })
+  assert.equal(await area.storeAreaScreenshot('data:image/png;base64,DDDD', 9), null)
+  assert.equal(store.draft.screenshots.length, 2)
+  assert.deepEqual({ ...store.draft.screenshots[1], id: undefined }, { id: undefined, dataUrl: 'data:image/png;base64,DDDD', mime: 'image/png', caption: '', source: 'area', addedAt: 9 })
+  assert.equal(normalizeDraft(store.draft).screenshots[1].source, 'area')
+  const full = Array.from({ length: 10 }, (_, index) => ({ ...DRAFT.screenshots[0], id: `s${index}` }))
+  const capped = fakeStorage({ draft: { ...DRAFT, screenshots: full } })
+  assert.equal(await area.storeAreaScreenshot('data:image/png;base64,DDDD'), area.FULL_NOTICE)
+  assert.equal(capped.store.draft.screenshots.length, 10)
+  fakeStorage({})
+  assert.equal(await area.storeAreaScreenshot('data:image/png;base64,DDDD'), area.NO_DRAFT_NOTICE)
+})
+
+test('Capture area saves the draft, asks the background for the tab and closes the popup', async () => {
+  let closed = 0
+  globalThis.window = { close: () => { closed += 1 } }
+  const tab = { id: 3, windowId: 4, url: 'https://docs.acme.example/guide', title: 'Guide' }
+  const messages = []
+  const { element, store } = await openPopup(DRAFT, [TARGET, DOCS], {}, { tabs: [tab], messages })
+  element('title').value = 'Changed before the drag'
+  await fire(element('capture-area'), 'click')
+  assert.deepEqual(messages, [{ type: 'captureArea', tabId: 3, windowId: 4 }])
+  assert.equal(store.draft.fields.title, 'Changed before the drag')
+  assert.equal(closed, 1)
+  delete globalThis.window
+})
+
+test('a reason the background left is shown once when the popup reopens', async () => {
+  const { element, session } = await openPopup(DRAFT, [TARGET, DOCS], {}, { session: { areaNotice: area.REFUSED_NOTICE } })
+  assert.equal(element('status').textContent, 'This page does not allow area capture; use Capture or paste an image.')
+  assert.equal('areaNotice' in session, false)
+  const again = await openPopup(DRAFT)
+  assert.equal(again.element('status').textContent, '')
 })

@@ -3,7 +3,7 @@ export const MAX_SCREENSHOTS = 10;
 export const MAX_FILE_BYTES = 10 * 1024 * 1024;
 export const SAVE_DELAY_MS = 300;
 
-const SOURCES = ['capture', 'file', 'paste'];
+const SOURCES = ['capture', 'area', 'file', 'paste'];
 
 export function emptyFields() {
   return { title: '', description: '' };

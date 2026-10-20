@@ -54,9 +54,10 @@ The result line links the new finding, names the repository it went to and says 
 
 The finding in progress is a draft kept in `chrome.storage.local`, so it survives the popup closing when you click the page, its target included. If that target has since been removed from the options, the popup says so and selects another; the draft keeps its old target until you file or choose one. Scroll, open the popup again and press Capture to add another screenshot; nothing is captured automatically when a draft is restored. The line above the form says when the draft started, and Discard throws it away and starts a new one from the current tab. Submitting clears the draft.
 
-A finding takes up to 10 screenshots, at least one. Add them three ways:
+A finding takes up to 10 screenshots, at least one. Add them four ways:
 
 - Capture: the visible part of the current tab, as PNG.
+- Capture area: a rectangle of the tab you drag out, as PNG, the way ⌘⇧4 works on a Mac. The popup saves the draft and closes, since it would close anyway the moment you click the page; drag on the page, and the popup opens again with the new screenshot. Escape, or a click without a drag, cancels and changes nothing. It reaches only the page area of the tab, because an extension sees nothing else: not the browser's own bar, another window or another app. For those, ⌃⌘⇧4 on a Mac copies any region of the screen to the clipboard, and pasting in the popup adds it. A page that refuses scripts (Chrome's own pages, the Web Store) refuses area capture too, and the popup says so when it reopens. If Chrome will not reopen the popup by itself, the reporter opens in a window of its own instead.
 - Add files: PNG, JPEG, WebP or GIF, up to 10 MB each.
 - Paste: an image on the clipboard, anywhere in the popup.
 

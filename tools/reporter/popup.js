@@ -12,6 +12,7 @@ import {
   clearDraft,
   relativeTime
 } from './draft.js';
+import { takeAreaNotice } from './capture-area.js';
 
 const PENDING_KEY = 'pendingSelection';
 const CAP_MESSAGE = `Limit of ${MAX_SCREENSHOTS} screenshots reached. Remove one to add another.`;
@@ -27,6 +28,7 @@ const elements = {
   shotsState: document.getElementById('shots-state'),
   shotsCount: document.getElementById('shots-count'),
   capture: document.getElementById('capture'),
+  captureArea: document.getElementById('capture-area'),
   addFiles: document.getElementById('add-files'),
   fileInput: document.getElementById('file-input'),
   pageTitle: document.getElementById('page-title'),
@@ -100,19 +102,19 @@ async function resolveTargetTab(pending) {
   return active || null;
 }
 
-async function resolveCaptureWindowId() {
+async function resolveCaptureTab() {
   const [active] = await chrome.tabs.query({ active: true, currentWindow: true });
-  if (active && !isOwnPage(active)) return active.windowId;
+  if (active && !isOwnPage(active)) return active;
   const remembered = [state.draft && state.draft.page.tabId, state.pendingTabId];
   for (const tabId of remembered) {
     if (tabId === null || tabId === undefined) continue;
     try {
-      return (await chrome.tabs.get(tabId)).windowId;
+      return await chrome.tabs.get(tabId);
     } catch {
       continue;
     }
   }
-  return active ? active.windowId : undefined;
+  return active || null;
 }
 
 async function inspectPage(tabId) {
@@ -220,6 +222,7 @@ function refreshControls() {
   const locked = state.submitted || state.busy || !state.draft;
   const full = count >= MAX_SCREENSHOTS;
   elements.capture.disabled = locked || full;
+  elements.captureArea.disabled = locked || full;
   elements.addFiles.disabled = locked || full;
   elements.target.disabled = locked;
   elements.shotsCount.textContent = `${count} of ${MAX_SCREENSHOTS}`;
@@ -333,7 +336,7 @@ async function captureAndAdd(knownWindowId) {
   refreshControls();
   setStatus('');
   try {
-    const windowId = knownWindowId === undefined ? await resolveCaptureWindowId() : knownWindowId;
+    const windowId = knownWindowId === undefined ? (await resolveCaptureTab())?.windowId : knownWindowId;
     const dataUrl = await captureTab(windowId);
     if (state.draft !== draft) return;
     await addScreenshots([{ dataUrl, mime: 'image/png', source: 'capture' }]);
@@ -343,6 +346,24 @@ async function captureAndAdd(knownWindowId) {
     state.busy = false;
     refreshControls();
   }
+}
+
+async function captureArea() {
+  if (!state.draft || state.submitted || state.busy) return;
+  setStatus('');
+  const tab = await resolveCaptureTab();
+  if (!tab || tab.id === undefined) {
+    setStatus('No tab to capture.', true);
+    return;
+  }
+  await persistDraft();
+  try {
+    await chrome.runtime.sendMessage({ type: 'captureArea', tabId: tab.id, windowId: tab.windowId });
+  } catch (error) {
+    setStatus(`Area capture failed: ${error.message}`, true);
+    return;
+  }
+  window.close();
 }
 
 function readAsDataUrl(file) {
@@ -464,6 +485,8 @@ async function start() {
   } finally {
     await clearPending();
   }
+  const notice = await takeAreaNotice();
+  if (notice) setStatus(notice, true);
 }
 
 async function dropStoredDraft() {
@@ -496,6 +519,7 @@ for (const name of FIELD_NAMES) {
 elements.target.addEventListener('change', chooseTargetFromSelect);
 elements.discard.addEventListener('click', discardDraft);
 elements.capture.addEventListener('click', () => captureAndAdd());
+elements.captureArea.addEventListener('click', captureArea);
 elements.addFiles.addEventListener('click', () => elements.fileInput.click());
 
 elements.fileInput.addEventListener('change', async () => {
