@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { mkdtempSync, readdirSync, readFileSync, writeFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { spawnSync } from 'node:child_process'
+import vm from 'node:vm'
 import { join, dirname } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
@@ -22,7 +23,9 @@ const settingsModule = await load('settings')
 const { DEFAULT_SETTINGS, normalizeSettings, checkTargets, chooseTarget, originOf } = settingsModule
 const { emptyFields, createDraft, normalizeDraft } = await load('draft')
 
-const MODULES = ['background', 'draft', 'github', 'options', 'popup', 'report-body', 'settings']
+const area = await load('capture-area')
+
+const MODULES = ['background', 'capture-area', 'draft', 'github', 'options', 'popup', 'report-body', 'settings']
 
 test('every module of the extension parses as an ES module', () => {
   assert.deepEqual(readdirSync(copies).sort(), MODULES.map((name) => `${name}.mjs`))
@@ -39,12 +42,7 @@ const DOCS = { id: 't2', name: 'Docs', repo: 'acme/docs', branch: 'docs-shots', 
 
 const REPORT = {
   title: 'Score overlaps the crest',
-  type: 'bug',
-  priority: 'high',
   description: '  The   score\noverlaps the crest on narrow screens  ',
-  steps: '1. Open the match page\n2. Narrow the window',
-  expected: 'The score sits beside the crest',
-  selection: 'Arsenal 2\n1 Chelsea',
   url: 'https://acme.example/matches/42?tab=live#top',
   pageTitle: 'Arsenal v Chelsea',
   viewport: { w: 390, h: 844, dpr: 3 },
@@ -135,19 +133,7 @@ test('the issue body has the finding shape, fingerprint first', () => {
       '## Where',
       '',
       'https://acme.example/matches/42?tab=live#top — Arsenal v Chelsea, viewport 390×844, Mozilla/5.0 Test',
-      'Type: bug; priority: high; finding id: 20261018-101500-abcd',
-      '',
-      '## Steps',
-      '',
-      '1. Open the match page\n2. Narrow the window',
-      '',
-      '## Expected',
-      '',
-      'The score sits beside the crest',
-      '',
-      '## Selected text',
-      '',
-      '> Arsenal 2\n> 1 Chelsea',
+      'finding id: 20261018-101500-abcd',
       '',
       '## Screenshots',
       '',
@@ -157,10 +143,24 @@ test('the issue body has the finding shape, fingerprint first', () => {
   )
 })
 
-test('empty Steps and Expected say none, and no selection leaves its section out', () => {
-  const text = body.buildIssueBody(TARGET, { ...REPORT, steps: ' ', expected: '', selection: '' }, 'id', UPLOADS)
-  assert.match(text, /## Steps\n\n_none_\n\n## Expected\n\n_none_\n\n## Screenshots\n/)
-  assert.doesNotMatch(text, /## Selected text/)
+test('the body has no Steps, Expected or Selected text, and no type or priority', () => {
+  const text = body.buildIssueBody(TARGET, { ...REPORT, type: 'bug', priority: 'high', steps: '1. go', expected: 'x', selection: 'y' }, 'id', UPLOADS)
+  assert.deepEqual(text.match(/^## .*/gm), ['## What happened', '## Where', '## Screenshots'])
+  assert.doesNotMatch(text, /Type:|priority/)
+})
+
+test('an empty title is the first line of what happened, clipped at a word boundary, else the page title', () => {
+  const page = { title: 'Arsenal v Chelsea' }
+  assert.equal(body.issueTitle({ title: '  Typed  ', description: 'ignored' }, page), 'Typed')
+  assert.equal(body.issueTitle({ title: ' ', description: '\n  The score overlaps  \nsecond line' }, page), 'The score overlaps')
+  const long = 'The score overlaps the crest on narrow screens and the main menu covers the league table below it'
+  const clipped = body.issueTitle({ title: '', description: long }, page)
+  assert.equal(clipped, 'The score overlaps the crest on narrow screens and the main menu covers the…')
+  assert.ok(clipped.length <= body.TITLE_LENGTH)
+  assert.equal(body.issueTitle({ title: '', description: 'x'.repeat(100) }, page), `${'x'.repeat(79)}…`)
+  assert.equal(body.issueTitle({ title: '', description: 'y'.repeat(80) }, page), 'y'.repeat(80))
+  assert.equal(body.issueTitle({ title: '', description: ' \n ' }, page), 'Arsenal v Chelsea')
+  assert.equal(body.issueTitle({ title: '', description: '' }, { title: '' }), '')
 })
 
 test('the epic option takes an issue number, with or without #, or nothing', () => {
@@ -193,7 +193,7 @@ test('old settings with one repository become one target named after it', () => 
   assert.deepEqual(normalizeSettings(normalizeSettings(old)), normalizeSettings(old))
 })
 
-function fakeStorage(initial, extra = {}) {
+function fakeStorage(initial, extra = {}, session = {}) {
   const store = { ...initial }
   const writes = []
   globalThis.chrome = {
@@ -208,7 +208,13 @@ function fakeStorage(initial, extra = {}) {
           delete store[key]
         }
       },
-      session: { get: async () => ({}), remove: async () => {} }
+      session: {
+        get: async (key) => (key in session ? { [key]: structuredClone(session[key]) } : {}),
+        set: async (items) => Object.assign(session, structuredClone(items)),
+        remove: async (key) => {
+          delete session[key]
+        }
+      }
     },
     ...extra
   }
@@ -281,11 +287,11 @@ test('the body and paths are the same for any target with the same repository', 
   assert.doesNotMatch(body.buildIssueBody(DOCS, REPORT, 'id', UPLOADS), /acme\/site\/blob/)
 })
 
-test('a draft keeps Steps and Expected, and an older draft gets them empty', () => {
-  assert.deepEqual(Object.keys(emptyFields()), ['title', 'type', 'priority', 'description', 'steps', 'expected', 'selection'])
-  const restored = normalizeDraft({ screenshots: [], fields: { title: 'x', steps: '1. go' } })
-  assert.equal(restored.fields.steps, '1. go')
-  assert.equal(restored.fields.expected, '')
+test('a draft holds a title and what happened, and a draft of the previous version loses its other fields', () => {
+  assert.deepEqual(Object.keys(emptyFields()), ['title', 'description'])
+  const old = { title: 'x', type: 'change', priority: 'high', description: 'It broke', steps: '1. go', expected: 'y', selection: 'z' }
+  assert.deepEqual(normalizeDraft({ screenshots: [], fields: old }).fields, { title: 'x', description: 'It broke' })
+  assert.deepEqual(normalizeDraft({ screenshots: [] }).fields, { title: '', description: '' })
 })
 
 function fakeGitHub(answers) {
@@ -426,6 +432,7 @@ function fakeElement(tag = 'div') {
 
 function fakePopupPage() {
   const elements = new Map()
+  if (typeof navigator === 'undefined') globalThis.navigator = { userAgent: 'UA' }
   globalThis.document = {
     getElementById(id) {
       if (!elements.has(id)) elements.set(id, fakeElement(['unconfigured'].includes(id) ? 'section' : id === 'report' ? 'form' : 'div'))
@@ -443,20 +450,38 @@ const settle = async () => {
 }
 
 let popupCase = 0
-async function openPopup(draft, targets = [TARGET, DOCS], chosen = {}) {
+async function openPopup(draft, targets = [TARGET, DOCS], chosen = {}, { session = {}, tabs = [], messages = [] } = {}) {
   const element = fakePopupPage()
+  const local = { settings: { token: TOKEN, label: 'flow:found', targets }, chosenTargets: chosen }
+  if (draft) local.draft = draft
   const storage = fakeStorage(
-    { settings: { token: TOKEN, label: 'flow:found', targets }, chosenTargets: chosen, draft },
+    local,
     {
-      runtime: { getURL: () => 'chrome-extension://reporter/', openOptionsPage() {}, sendMessage: async () => ({}) },
-      tabs: { query: async () => [], get: async () => { throw new Error('no tab') }, create: async () => {} },
-      scripting: { executeScript: async () => [] }
-    }
+      runtime: {
+        getURL: () => 'chrome-extension://reporter/',
+        openOptionsPage() {},
+        sendMessage: async (message) => {
+          messages.push(message)
+          return message.type === 'captureTab' ? { dataUrl: 'data:image/png;base64,CCCC' } : {}
+        }
+      },
+      tabs: {
+        query: async () => tabs,
+        get: async (id) => {
+          const tab = tabs.find((candidate) => candidate.id === id)
+          if (!tab) throw new Error('no tab')
+          return tab
+        },
+        create: async () => {}
+      },
+      scripting: { executeScript: async () => [{ result: { w: 800, h: 600, dpr: 2 } }] }
+    },
+    session
   )
   popupCase += 1
   await import(pathToFileURL(join(copies, 'popup.mjs')).href + `?case=${popupCase}`)
   await settle()
-  return { element, ...storage }
+  return { element, session, messages, ...storage }
 }
 
 const DRAFT = {
@@ -511,4 +536,223 @@ test('a submit whose target vanished is refused and reloads the targets', async 
   assert.deepEqual(element('target').children.map((option) => option.textContent), ['Site'])
   assert.equal(element('target').value, 't1')
   assert.deepEqual(store.chosenTargets, {})
+})
+
+test('a finding with nothing in What happened is refused before any request', async () => {
+  const { element, store } = await openPopup({ ...DRAFT, fields: { title: 'Broken link', description: '' } })
+  element('description').value = '  \n '
+  const calls = fakeGitHub([])
+  await fire(element('report'), 'submit')
+  assert.equal(calls.length, 0)
+  assert.equal(element('status').textContent, 'Say what happened.')
+  assert.equal(typeof store.draft, 'object')
+})
+
+test('with no title the issue is titled by the first line of what happened, and the body carries only the lean sections', async () => {
+  const { element } = await openPopup({ ...DRAFT, fields: { title: '', description: 'The link 404s\non every page' } })
+  const calls = fakeGitHub([
+    { method: 'GET', path: /\/git\/ref\/heads\/docs-shots$/, reply: { json: {} } },
+    { method: 'PUT', path: /\/contents\//, reply: { json: { commit: { sha: 's1' } } } },
+    { method: 'POST', path: /\/issues$/, reply: { status: 201, json: { id: 1, number: 8, html_url: 'https://github.com/acme/docs/issues/8' } } },
+    { method: 'POST', path: /\/sub_issues$/, reply: { status: 201, json: {} } }
+  ])
+  await fire(element('report'), 'submit')
+  const issue = calls.find((call) => call.path === '/repos/acme/docs/issues').body
+  assert.equal(issue.title, 'The link 404s')
+  assert.deepEqual(issue.body.match(/^## .*/gm), ['## What happened', '## Where', '## Screenshots'])
+})
+
+test('selected text from the right-click menu starts a new draft as a quote, and is appended to one in progress', async () => {
+  const tab = { id: 7, windowId: 2, url: 'https://acme.example/matches/42', title: 'Match' }
+  const fresh = await openPopup(undefined, [TARGET, DOCS], {}, { session: { pendingSelection: { text: 'Arsenal 2\n1 Chelsea', tabId: 7 } }, tabs: [tab] })
+  assert.equal(fresh.element('description').value, '> Arsenal 2\n> 1 Chelsea\n\n')
+  assert.equal(fresh.store.draft.fields.description, '> Arsenal 2\n> 1 Chelsea\n\n')
+  assert.deepEqual(fresh.store.draft.page.viewport, { w: 800, h: 600, dpr: 2 })
+  assert.equal('pendingSelection' in fresh.session, false)
+  const going = await openPopup(DRAFT, [TARGET, DOCS], {}, { session: { pendingSelection: { text: 'Page not found', tabId: 3 } } })
+  assert.equal(going.store.draft.fields.description, 'It 404s\n\n> Page not found')
+})
+
+test('a toolbar click on a new draft leaves What happened empty', async () => {
+  const tab = { id: 7, windowId: 2, url: 'https://acme.example/', title: 'Home' }
+  const { store } = await openPopup(undefined, [TARGET, DOCS], {}, { tabs: [tab] })
+  assert.equal(store.draft.fields.description, '')
+  assert.equal(store.draft.screenshots.length, 1)
+})
+
+const SELECTION = { x: 10.5, y: 20.25, width: 100, height: 50, devicePixelRatio: 2, innerWidth: 800, innerHeight: 600 }
+
+test('an area is cropped in device pixels, clamped to the captured image', () => {
+  assert.deepEqual(area.cropRect(SELECTION, { width: 1600, height: 1200 }), { x: 21, y: 40, width: 200, height: 101 })
+  assert.deepEqual(area.cropRect({ ...SELECTION, x: 750, y: 580 }, { width: 1600, height: 1200 }), { x: 1500, y: 1160, width: 100, height: 40 })
+  assert.deepEqual(area.cropRect({ ...SELECTION, x: -5, y: 0, width: 20, height: 10 }, { width: 1600, height: 1200 }), { x: 0, y: 0, width: 30, height: 20 })
+  assert.deepEqual(area.cropRect({ ...SELECTION, innerWidth: undefined, innerHeight: undefined, x: 1, y: 1, width: 4, height: 4 }, { width: 1600, height: 1200 }), { x: 2, y: 2, width: 8, height: 8 })
+})
+
+test('an area smaller than 4 by 4 CSS pixels, or off the image, captures nothing', () => {
+  const image = { width: 1600, height: 1200 }
+  assert.equal(area.cropRect({ ...SELECTION, width: 3.9 }, image), null)
+  assert.equal(area.cropRect({ ...SELECTION, height: 0 }, image), null)
+  assert.equal(area.cropRect({ ...SELECTION, x: 900 }, image), null)
+  assert.equal(area.cropRect(null, image), null)
+  assert.equal(area.cropRect(SELECTION, { width: 0, height: 0 }), null)
+})
+
+test('bytes become base64, in chunks for a large image', () => {
+  assert.equal(area.base64FromBytes(new Uint8Array([])), '')
+  assert.equal(area.base64FromBytes(new Uint8Array([137, 80, 78, 71, 255])), Buffer.from([137, 80, 78, 71, 255]).toString('base64'))
+  const large = new Uint8Array(3 * 1024 * 1024).map((_, index) => (index * 31) % 256)
+  assert.equal(area.base64FromBytes(large), Buffer.from(large).toString('base64'))
+})
+
+test('an area screenshot is added to the stored draft, never past the limit', async () => {
+  const { store } = fakeStorage({ draft: DRAFT })
+  assert.equal(await area.storeAreaScreenshot('data:image/png;base64,DDDD', 9), null)
+  assert.equal(store.draft.screenshots.length, 2)
+  assert.deepEqual({ ...store.draft.screenshots[1], id: undefined }, { id: undefined, dataUrl: 'data:image/png;base64,DDDD', mime: 'image/png', caption: '', source: 'area', addedAt: 9 })
+  assert.equal(normalizeDraft(store.draft).screenshots[1].source, 'area')
+  const full = Array.from({ length: 10 }, (_, index) => ({ ...DRAFT.screenshots[0], id: `s${index}` }))
+  const capped = fakeStorage({ draft: { ...DRAFT, screenshots: full } })
+  assert.equal(await area.storeAreaScreenshot('data:image/png;base64,DDDD'), area.FULL_NOTICE)
+  assert.equal(capped.store.draft.screenshots.length, 10)
+  fakeStorage({})
+  assert.equal(await area.storeAreaScreenshot('data:image/png;base64,DDDD'), area.NO_DRAFT_NOTICE)
+})
+
+test('Capture area saves the draft, asks the background for the tab and closes the popup', async () => {
+  const closedWith = []
+  let stored = null
+  globalThis.window = { close: () => { closedWith.push(stored.draft.fields.title) } }
+  const tab = { id: 3, windowId: 4, url: 'https://docs.acme.example/guide', title: 'Guide' }
+  const messages = []
+  const { element, store } = await openPopup(DRAFT, [TARGET, DOCS], {}, { tabs: [tab], messages })
+  stored = store
+  element('title').value = 'Changed before the drag'
+  await fire(element('capture-area'), 'click')
+  assert.deepEqual(messages, [{ type: 'captureArea', tabId: 3, windowId: 4 }])
+  assert.deepEqual(closedWith, ['Changed before the drag'])
+  delete globalThis.window
+})
+
+test('a reason the background left is shown once when the popup reopens', async () => {
+  const { element, session } = await openPopup(DRAFT, [TARGET, DOCS], {}, { session: { areaNotice: area.refusedNotice('Cannot access contents of the page') } })
+  assert.equal(element('status').textContent, 'This page does not allow area capture (Cannot access contents of the page); use Capture or paste an image.')
+  assert.equal('areaNotice' in session, false)
+  const again = await openPopup(DRAFT)
+  assert.equal(again.element('status').textContent, '')
+})
+
+test('the refusal names the browser\'s reason when there is one', () => {
+  assert.equal(area.refusedNotice(''), 'This page does not allow area capture; use Capture or paste an image.')
+  assert.equal(area.refusedNotice('Frame with ID 0 was removed.'), 'This page does not allow area capture (Frame with ID 0 was removed.); use Capture or paste an image.')
+})
+
+function fakeNode(tag) {
+  return {
+    tag,
+    id: '',
+    style: {},
+    children: [],
+    parent: null,
+    listeners: [],
+    focused: false,
+    append(child) { child.parent = this; this.children.push(child) },
+    remove() {
+      if (!this.parent) return
+      this.parent.children = this.parent.children.filter((child) => child !== this)
+      this.parent = null
+    },
+    addEventListener(type, handler, capture) { this.listeners.push({ type, handler, capture: Boolean(capture) }) },
+    removeEventListener(type, handler, capture) {
+      this.listeners = this.listeners.filter((entry) => !(entry.type === type && entry.handler === handler && entry.capture === Boolean(capture)))
+    },
+    dispatch(type, event = {}) {
+      for (const entry of this.listeners.filter((candidate) => candidate.type === type)) {
+        entry.handler({ button: 0, pointerId: 1, preventDefault() {}, stopPropagation() {}, ...event })
+      }
+    },
+    setPointerCapture() {},
+    focus() { this.focused = true }
+  }
+}
+
+function areaPage() {
+  const root = fakeNode('html')
+  const win = fakeNode('window')
+  Object.assign(win, { devicePixelRatio: 2, innerWidth: 800, innerHeight: 600 })
+  const documentStub = {
+    documentElement: root,
+    createElement: (tag) => fakeNode(tag),
+    getElementById: (id) => root.children.find((child) => child.id === id) || null
+  }
+  const context = vm.createContext({
+    document: documentStub,
+    window: win,
+    requestAnimationFrame: (callback) => setTimeout(callback, 0)
+  })
+  const inject = () => vm.runInContext(`(${area.pickArea.toString()})()`, context)
+  const layer = () => root.children.find((child) => child.id === 'flow-reporter-area')
+  return { root, win, inject, layer }
+}
+
+const plain = (value) => JSON.parse(JSON.stringify(value))
+
+function assertGone(page) {
+  assert.equal(page.layer(), undefined)
+  assert.equal(page.win.listeners.some((entry) => entry.type === 'keydown'), false)
+}
+
+test('the area overlay, run with nothing of the module, answers a drag in CSS pixels and removes itself', async () => {
+  const page = areaPage()
+  const answer = page.inject()
+  const layer = page.layer()
+  assert.equal(layer.focused, true)
+  assert.equal(layer.tabIndex, -1)
+  layer.dispatch('pointerdown', { clientX: 100, clientY: 50 })
+  layer.dispatch('pointermove', { clientX: 40, clientY: 90 })
+  layer.dispatch('pointerup')
+  assert.deepEqual(plain(await answer), { x: 40, y: 50, width: 60, height: 40, devicePixelRatio: 2, innerWidth: 800, innerHeight: 600 })
+  assertGone(page)
+})
+
+test('a click, a drag under 4 by 4, Escape on the window or the layer, and a second injection each cancel', async () => {
+  const click = areaPage()
+  const clicked = click.inject()
+  click.layer().dispatch('pointerdown', { clientX: 5, clientY: 5 })
+  click.layer().dispatch('pointerup')
+  assert.equal(await clicked, null)
+  assertGone(click)
+
+  const thin = areaPage()
+  const thinAnswer = thin.inject()
+  thin.layer().dispatch('pointerdown', { clientX: 10, clientY: 10 })
+  thin.layer().dispatch('pointermove', { clientX: 13, clientY: 20 })
+  thin.layer().dispatch('pointerup')
+  assert.equal(await thinAnswer, null)
+  assertGone(thin)
+
+  const escape = areaPage()
+  const escaped = escape.inject()
+  escape.win.dispatch('keydown', { key: 'Escape' })
+  assert.equal(await escaped, null)
+  assertGone(escape)
+
+  const framed = areaPage()
+  const framedAnswer = framed.inject()
+  const framedLayer = framed.layer()
+  framedLayer.dispatch('keydown', { key: 'a' })
+  assert.ok(framed.layer())
+  framedLayer.dispatch('keydown', { key: 'Escape' })
+  assert.equal(await framedAnswer, null)
+  assertGone(framed)
+  assert.equal(framedLayer.listeners.some((entry) => entry.type === 'keydown'), false)
+
+  const twice = areaPage()
+  const first = twice.inject()
+  const second = twice.inject()
+  assert.equal(await first, null)
+  assert.equal(twice.root.children.length, 1)
+  twice.win.dispatch('keydown', { key: 'Escape' })
+  assert.equal(await second, null)
+  assertGone(twice)
 })

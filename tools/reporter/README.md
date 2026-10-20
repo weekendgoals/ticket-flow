@@ -44,25 +44,32 @@ Settings saved before targets existed (one repository, epic and branch) become o
 
 ## Use it
 
-Click the toolbar button on any page, or select text and choose Report a finding from the right-click menu. The first time, the popup captures the tab as screenshot 1. Choose where the finding goes in File to, above the title: the popup remembers the target you last filed to on each site (by origin, such as `https://staging.example.com`) and picks it next time, or the first target on a site where you have filed nothing; choosing a target without filing remembers nothing. Fill in the title, type, priority, what happened, the steps, what should have happened (optional) and the selected text (prefilled, editable), then submit. The result line links the new finding, names the repository it went to and says whether it was filed under the epic.
+Click the toolbar button on any page, or select text and choose Report a finding from the right-click menu. The first time, the popup captures the tab as screenshot 1. Choose where the finding goes in File to, above the title: the popup remembers the target you last filed to on each site (by origin, such as `https://staging.example.com`) and picks it next time, or the first target on a site where you have filed nothing; choosing a target without filing remembers nothing. Then write what happened and submit; that is the whole form.
+
+- What happened is required, because Flow tells a finding filed twice apart by its first words; with it empty the popup says "Say what happened." and files nothing.
+- The title is optional. Left empty, the issue is titled by the first line of what happened, cut at a word before 80 characters with `…`, so a list of findings still reads as sentences; with nothing written at all, by the page's title.
+- Text selected when you choose Report a finding from the right-click menu is quoted (`> ` before each line) at the start of what happened in a new draft, or added after a blank line to the draft in progress. A plain toolbar click reads no selection, so nothing lands in the description you did not choose.
+
+The result line links the new finding, names the repository it went to and says whether it was filed under the epic.
 
 The finding in progress is a draft kept in `chrome.storage.local`, so it survives the popup closing when you click the page, its target included. If that target has since been removed from the options, the popup says so and selects another; the draft keeps its old target until you file or choose one. Scroll, open the popup again and press Capture to add another screenshot; nothing is captured automatically when a draft is restored. The line above the form says when the draft started, and Discard throws it away and starts a new one from the current tab. Submitting clears the draft.
 
-A finding takes up to 10 screenshots, at least one. Add them three ways:
+A finding takes up to 10 screenshots, at least one. Add them four ways:
 
 - Capture: the visible part of the current tab, as PNG.
+- Capture area: a rectangle of the tab you drag out, as PNG, the way ⌘⇧4 works on a Mac. The popup saves the draft and closes, since it would close anyway the moment you click the page; drag on the page, and the popup opens again with the new screenshot. Escape, or a click without a drag, cancels and changes nothing. The tab you started from is brought to the front first, because only the visible tab can be captured. It reaches only the page area of the tab, because an extension sees nothing else: not the browser's own bar, another window or another app. For those, ⌃⌘⇧4 on a Mac copies any region of the screen to the clipboard, and pasting in the popup adds it. A page that refuses scripts (Chrome's own pages, the Web Store) refuses area capture too, and the popup says so when it reopens, with the browser's reason, since a tab that has navigated since you opened the reporter refuses for the same reason as a page that never allows it. If Chrome will not reopen the popup by itself, the reporter opens in a window of its own instead.
 - Add files: PNG, JPEG, WebP or GIF, up to 10 MB each.
 - Paste: an image on the clipboard, anywhere in the popup.
 
 Each thumbnail has a caption field and a remove button; click the thumbnail to open it full size.
 
-Chrome's own pages (`chrome://`, the Web Store) refuse script injection, so on those the selected text and viewport are left empty.
+Chrome's own pages (`chrome://`, the Web Store) refuse script injection, so on those the viewport is filed as unknown.
 
 ## What gets filed
 
 - If the findings branch does not exist it is created as an orphan branch holding only a `README.md`: "Screenshots for findings filed from the reporter extension and by Flow; never merged."
 - Screenshots are committed one at a time to `findings/<id>/screenshot-<n>.<ext>` on that branch, `n` counting from 1 and `ext` one of `png`, `jpg`, `webp`, `gif`. The finding id is `YYYYMMDD-HHMMSS-xxxx` in UTC.
-- An issue is created with the label. Its first line is `<!-- flow:finding fingerprint=<page URL path>|<first 60 characters of what happened, lowercased, spaces collapsed> -->` (a `--` in it becomes `-`, so the comment cannot end early), which Flow reads to spot the same finding filed twice; the extension itself does not check it. Then come `## What happened`, `## Where` (page URL and title, viewport, user agent, then type, priority and finding id), `## Steps`, `## Expected` (an empty one is written as `_none_`), `## Selected text` when there is any, and `## Screenshots`: a numbered list linking each image by the commit that added it, so the link keeps working when the branch moves, followed by its caption when it has one. Each link ends in `?raw=true`, so it opens the image itself, the way Flow's own `screenshots` command writes them.
+- An issue is created with the label. Its first line is `<!-- flow:finding fingerprint=<page URL path>|<first 60 characters of what happened, lowercased, spaces collapsed> -->` (a `--` in it becomes `-`, so the comment cannot end early), which Flow reads to spot the same finding filed twice; the extension itself does not check it. Then come `## What happened`, `## Where` (page URL and title, viewport and user agent, then the finding id on a line of its own) and `## Screenshots`: a numbered list linking each image by the commit that added it, so the link keeps working when the branch moves, followed by its caption when it has one. Each link ends in `?raw=true`, so it opens the image itself, the way Flow's own `screenshots` command writes them.
 - Everything goes to the chosen target: its repository, its screenshots branch and its epic.
 - When the target's Epic is set, the issue is made a sub-issue of that epic. If that fails (no such issue, or the token lacks Issues write), the result line says why and the finding stays filed with no epic; add it under the epic by hand.
 

@@ -1,5 +1,6 @@
 export const FINDINGS_README = 'Screenshots for findings filed from the reporter extension and by Flow; never merged.\n';
 export const FINGERPRINT_DESCRIPTION_LENGTH = 60;
+export const TITLE_LENGTH = 80;
 
 const NONE = '_none_';
 const EXTENSIONS = {
@@ -101,6 +102,18 @@ export function quoteLines(text) {
   return trimmed.split(/\r?\n/).map((line) => `> ${line}`).join('\n');
 }
 
+export function issueTitle(fields, page) {
+  const typed = (fields.title || '').trim();
+  if (typed) return typed;
+  const line = (fields.description || '').split(/\r?\n/).map((text) => text.trim()).find(Boolean) || '';
+  if (!line) return (page && page.title ? page.title : '').trim();
+  if (line.length <= TITLE_LENGTH) return line;
+  const room = line.slice(0, TITLE_LENGTH);
+  const space = room.lastIndexOf(' ');
+  const cut = space > 0 ? room.slice(0, space) : room.slice(0, TITLE_LENGTH - 1);
+  return `${cut.trimEnd()}…`;
+}
+
 export function whereLine(report) {
   const viewport = formatViewport(report.viewport);
   const page = report.pageTitle ? `${report.url} — ${report.pageTitle}` : report.url;
@@ -123,16 +136,11 @@ export function buildIssueBody(target, report, findingId, uploads) {
     const link = screenshotLink(target.repo, upload.commitSha, upload.path);
     return `${position + 1}. [${upload.path}](${link})${caption ? ` — ${caption}` : ''}`;
   });
-  const selection = quoteLines(report.selection);
-  const details = `Type: ${report.type}; priority: ${report.priority}; finding id: ${findingId}`;
   return [
     fingerprintLine(report.url, report.description),
     '',
     ...section('What happened', textOrNone(report.description)),
-    ...section('Where', `${whereLine(report)}\n${details}`),
-    ...section('Steps', textOrNone(report.steps)),
-    ...section('Expected', textOrNone(report.expected)),
-    ...(selection ? section('Selected text', selection) : []),
+    ...section('Where', `${whereLine(report)}\nfinding id: ${findingId}`),
     '## Screenshots',
     '',
     ...lines

@@ -1,6 +1,6 @@
 import { loadSettings, loadChosenTargets, rememberTarget, chooseTarget, originOf } from './settings.js';
 import { fileFinding } from './github.js';
-import { SCREENSHOT_MIMES } from './report-body.js';
+import { SCREENSHOT_MIMES, issueTitle, quoteLines } from './report-body.js';
 import {
   MAX_SCREENSHOTS,
   MAX_FILE_BYTES,
@@ -12,10 +12,11 @@ import {
   clearDraft,
   relativeTime
 } from './draft.js';
+import { takeAreaNotice } from './capture-area.js';
 
 const PENDING_KEY = 'pendingSelection';
 const CAP_MESSAGE = `Limit of ${MAX_SCREENSHOTS} screenshots reached. Remove one to add another.`;
-const FIELD_NAMES = ['title', 'type', 'priority', 'description', 'steps', 'expected', 'selection'];
+const FIELD_NAMES = ['title', 'description'];
 
 const elements = {
   unconfigured: document.getElementById('unconfigured'),
@@ -27,18 +28,14 @@ const elements = {
   shotsState: document.getElementById('shots-state'),
   shotsCount: document.getElementById('shots-count'),
   capture: document.getElementById('capture'),
+  captureArea: document.getElementById('capture-area'),
   addFiles: document.getElementById('add-files'),
   fileInput: document.getElementById('file-input'),
   pageTitle: document.getElementById('page-title'),
   pageUrl: document.getElementById('page-url'),
   target: document.getElementById('target'),
   title: document.getElementById('title'),
-  type: document.getElementById('type'),
-  priority: document.getElementById('priority'),
   description: document.getElementById('description'),
-  steps: document.getElementById('steps'),
-  expected: document.getElementById('expected'),
-  selection: document.getElementById('selection'),
   submit: document.getElementById('submit'),
   status: document.getElementById('status')
 };
@@ -105,34 +102,38 @@ async function resolveTargetTab(pending) {
   return active || null;
 }
 
-async function resolveCaptureWindowId() {
+async function resolveCaptureTab() {
   const [active] = await chrome.tabs.query({ active: true, currentWindow: true });
-  if (active && !isOwnPage(active)) return active.windowId;
+  if (active && !isOwnPage(active)) return active;
   const remembered = [state.draft && state.draft.page.tabId, state.pendingTabId];
   for (const tabId of remembered) {
     if (tabId === null || tabId === undefined) continue;
     try {
-      return (await chrome.tabs.get(tabId)).windowId;
+      return await chrome.tabs.get(tabId);
     } catch {
       continue;
     }
   }
-  return active ? active.windowId : undefined;
+  return active || null;
 }
 
 async function inspectPage(tabId) {
   try {
     const [injection] = await chrome.scripting.executeScript({
       target: { tabId },
-      func: () => ({
-        selection: window.getSelection().toString(),
-        viewport: { w: window.innerWidth, h: window.innerHeight, dpr: window.devicePixelRatio }
-      })
+      func: () => ({ w: window.innerWidth, h: window.innerHeight, dpr: window.devicePixelRatio })
     });
-    return injection && injection.result ? injection.result : { selection: '', viewport: null };
+    return injection && injection.result ? injection.result : null;
   } catch {
-    return { selection: '', viewport: null };
+    return null;
   }
+}
+
+function withSelection(description, text) {
+  const quoted = quoteLines(text);
+  if (!quoted) return description;
+  const written = description.trimEnd();
+  return written ? `${written}\n\n${quoted}` : `${quoted}\n\n`;
 }
 
 async function captureTab(windowId) {
@@ -221,6 +222,7 @@ function refreshControls() {
   const locked = state.submitted || state.busy || !state.draft;
   const full = count >= MAX_SCREENSHOTS;
   elements.capture.disabled = locked || full;
+  elements.captureArea.disabled = locked || full;
   elements.addFiles.disabled = locked || full;
   elements.target.disabled = locked;
   elements.shotsCount.textContent = `${count} of ${MAX_SCREENSHOTS}`;
@@ -334,7 +336,7 @@ async function captureAndAdd(knownWindowId) {
   refreshControls();
   setStatus('');
   try {
-    const windowId = knownWindowId === undefined ? await resolveCaptureWindowId() : knownWindowId;
+    const windowId = knownWindowId === undefined ? (await resolveCaptureTab())?.windowId : knownWindowId;
     const dataUrl = await captureTab(windowId);
     if (state.draft !== draft) return;
     await addScreenshots([{ dataUrl, mime: 'image/png', source: 'capture' }]);
@@ -344,6 +346,24 @@ async function captureAndAdd(knownWindowId) {
     state.busy = false;
     refreshControls();
   }
+}
+
+async function captureArea() {
+  if (!state.draft || state.submitted || state.busy) return;
+  setStatus('');
+  const tab = await resolveCaptureTab();
+  if (!tab || tab.id === undefined) {
+    setStatus('No tab to capture.', true);
+    return;
+  }
+  await persistDraft();
+  try {
+    await chrome.runtime.sendMessage({ type: 'captureArea', tabId: tab.id, windowId: tab.windowId });
+  } catch (error) {
+    setStatus(`Area capture failed: ${error.message}`, true);
+    return;
+  }
+  window.close();
 }
 
 function readAsDataUrl(file) {
@@ -414,11 +434,12 @@ async function beginDraft(pending) {
   renderScreenshots();
 
   const capturing = captureAndAdd(tab.windowId);
-  const inspected = await inspectPage(tab.id);
+  const viewport = await inspectPage(tab.id);
   if (state.draft !== draft) return;
-  draft.page.viewport = inspected.viewport;
-  const pendingText = pending && pending.tabId === tab.id && pending.text ? pending.text : '';
-  elements.selection.value = pendingText || inspected.selection;
+  draft.page.viewport = viewport;
+  if (pending && pending.tabId === tab.id && pending.text) {
+    elements.description.value = withSelection(elements.description.value, pending.text);
+  }
   await capturing;
   await persistDraft();
 }
@@ -434,9 +455,7 @@ async function restoreDraft(draft, pending) {
   const note = lostTargetNote(draft, target);
   if (note) setStatus(note);
   if (pending && pending.text) {
-    elements.selection.value = elements.selection.value
-      ? `${elements.selection.value}\n${pending.text}`
-      : pending.text;
+    elements.description.value = withSelection(elements.description.value, pending.text);
     await persistDraft();
   }
 }
@@ -466,6 +485,8 @@ async function start() {
   } finally {
     await clearPending();
   }
+  const notice = await takeAreaNotice();
+  if (notice) setStatus(notice, true);
 }
 
 async function dropStoredDraft() {
@@ -498,6 +519,7 @@ for (const name of FIELD_NAMES) {
 elements.target.addEventListener('change', chooseTargetFromSelect);
 elements.discard.addEventListener('click', discardDraft);
 elements.capture.addEventListener('click', () => captureAndAdd());
+elements.captureArea.addEventListener('click', captureArea);
 elements.addFiles.addEventListener('click', () => elements.fileInput.click());
 
 elements.fileInput.addEventListener('change', async () => {
@@ -519,6 +541,10 @@ elements.form.addEventListener('submit', async (event) => {
   event.preventDefault();
   const draft = state.draft;
   if (!draft || state.submitted || state.busy) return;
+  if (!elements.description.value.trim()) {
+    setStatus('Say what happened.', true);
+    return;
+  }
   if (draft.screenshots.length === 0) {
     setStatus('Add at least one screenshot.', true);
     return;
@@ -538,13 +564,8 @@ elements.form.addEventListener('submit', async (event) => {
       throw new Error('The chosen target is no longer on the options page. Choose another.');
     }
     const issue = await fileFinding(settings, target, {
-      title: draft.fields.title.trim(),
-      type: draft.fields.type,
-      priority: draft.fields.priority,
+      title: issueTitle(draft.fields, draft.page),
       description: draft.fields.description,
-      steps: draft.fields.steps,
-      expected: draft.fields.expected,
-      selection: draft.fields.selection,
       url: draft.page.url,
       pageTitle: draft.page.title,
       viewport: draft.page.viewport,
