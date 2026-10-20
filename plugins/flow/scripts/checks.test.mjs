@@ -52,6 +52,29 @@ test('a nonzero exit fails with the exit code and the output as evidence', () =>
   assert.match(report.checks[0].evidence, /boom/)
 })
 
+test('a failed check carries the end of its output: twenty lines at most, two thousand characters at most, and a passed one carries none', () => {
+  const report = reportFor(`- fails loudly
+  CHECK: node -e "for (let n = 1; n <= 30; n++) console.log('line ' + n); console.error('boom'); process.exit(2)"
+- fails with long lines
+  CHECK: node -e "for (let n = 1; n <= 5; n++) console.log(String(n).repeat(900)); process.exit(1)"
+- fails an EXPECT
+  CHECK: ${say('no')}
+  EXPECT: yes
+- passes
+  CHECK: ${say('fine')}`)
+  const [loud, long, expect, passed] = report.checks
+  assert.equal(loud.tail.split('\n').length, 20)
+  assert.match(loud.tail, /^line 12\n[\s\S]*line 30\nboom$/)
+  assert.equal(long.tail.length, 2000)
+  assert.ok(long.tail.endsWith('5'.repeat(900)))
+  assert.equal(expect.tail, 'no')
+  assert.equal(passed.tail, '')
+  const printed = formatCheckReport(report)
+  assert.match(printed, /✗ 1\/4 fails loudly\n {4}\$ node -e .*\n {4}exit 2 — line 29 \/ line 30 \/ boom\n {4}the end of its output:\n {6}line 12\n {6}line 13\n/)
+  assert.match(printed, / {6}line 30\n {6}boom\n✗ 2\/4/)
+  assert.doesNotMatch(printed, /✓ 4\/4 passes\n {4}\$ .*\n {4}.*\n {4}the end of its output/)
+})
+
 test('the runner alone passes an empty list; refusing a ticket with no criteria is the body parser\'s job', () => {
   const report = reportFor('- prose criterion, verified by hand')
   assert.equal(report.total, 0)

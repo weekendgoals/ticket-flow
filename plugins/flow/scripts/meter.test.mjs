@@ -5,7 +5,7 @@ import { mkdtempSync, rmSync, writeFileSync, realpathSync, mkdirSync } from 'nod
 import { join, dirname } from 'node:path'
 import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
-import { meterTranscripts, meterComment, readMeterComment, loadSources, assignStreamRoles, workflowSources, workflowAgents } from './meter.mjs'
+import { meterTranscripts, meterComment, readMeterComment, loadSources, assignStreamRoles, workflowSources, workflowAgents, workflowRuns } from './meter.mjs'
 import { installFakeGh } from './tracker/fake-gh.mjs'
 
 const FLOW = join(dirname(fileURLToPath(import.meta.url)), 'flow.mjs')
@@ -327,4 +327,26 @@ test('a workflow run is metered per ticket from its journal: worker, reviewer an
   assert.deepEqual([roles.worker.input, roles.reviewer.input, roles.fixes.input], [100, 200, 30])
   assert.deepEqual(workflowAgents('{"type":"started","agentId":"z","label":"check-epic:#8"}', 8), [])
   assert.throws(() => workflowSources(directory, 8), /no journal\.jsonl/)
+})
+
+test('every run of the same workflows directory whose journal names the ticket is found, in run-id order, and the rest are left out', () => {
+  const parent = join(directory, 'workflows')
+  const runOf = (id, labels) => {
+    mkdirSync(join(parent, id), { recursive: true })
+    writeFileSync(join(parent, id, 'journal.jsonl'), jsonl(labels.map((label, index) => ({ type: 'started', agentId: `${id}-${index}`, label }))))
+  }
+  runOf('wf-2', ['worker:#8', 'reviewer:#8'])
+  runOf('wf-1', ['worker:#8'])
+  runOf('wf-3', ['worker:#80', 'next:#8', 'check-epic:#8'])
+  runOf('wf-4', ['fixes:#8:2'])
+  runOf('wf-5', ['worker:#9'])
+  mkdirSync(join(parent, 'not-a-run'))
+  writeFileSync(join(parent, 'stray.jsonl'), '')
+  assert.deepEqual(workflowRuns(join(parent, 'wf-2'), 8).map((run) => [run.id, run.given]), [['wf-1', false], ['wf-2', true], ['wf-4', false]])
+  assert.deepEqual(workflowRuns(join(parent, 'wf-5'), 8).map((run) => run.id), ['wf-1', 'wf-2', 'wf-4', 'wf-5'], 'the run given is read even when it did not build the ticket')
+  assert.throws(() => workflowRuns(join(parent, 'not-a-run'), 8), /no journal\.jsonl/)
+  const body = meterComment({ ticket: 8, sourceCount: 3, meter: meterTranscripts([]), runs: ['wf-1', 'wf-2'] })
+  assert.match(body, /^<!-- flow:meter -->\n\*\*Cost of #8\*\*, read from 3 transcript file\(s\) of 2 workflow run\(s\) \(wf-1, wf-2\)\. /)
+  assert.deepEqual(readMeterComment(body).runs, ['wf-1', 'wf-2'])
+  assert.equal(readMeterComment(meterComment({ ticket: 8, sourceCount: 1, meter: meterTranscripts([]) })).runs, undefined, 'transcripts alone name no run')
 })

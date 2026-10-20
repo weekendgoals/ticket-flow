@@ -1,5 +1,5 @@
 import { readFileSync, readdirSync, statSync, existsSync } from 'node:fs'
-import { join } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { METER_MARKER } from './ticket-steps.mjs'
 
 export const ROLES = ['worker', 'reviewer', 'fixes']
@@ -272,6 +272,21 @@ export function workflowSources(directory, ticket) {
   return sources
 }
 
+export function workflowRuns(directory, ticket) {
+  const given = resolve(directory)
+  if (!existsSync(join(given, 'journal.jsonl'))) throw new Error(`no journal.jsonl in ${directory}; give the directory of one workflow run (…/subagents/workflows/<run id>/)`)
+  const parent = dirname(given)
+  const runs = []
+  const names = readdirSync(parent, { withFileTypes: true }).filter((entry) => entry.isDirectory()).map((entry) => entry.name)
+  for (const name of names.sort()) {
+    const run = join(parent, name)
+    const journal = join(run, 'journal.jsonl')
+    if (!existsSync(journal)) continue
+    if (run === given || workflowAgents(readFileSync(journal, 'utf8'), ticket).length) runs.push({ id: name, directory: run, given: run === given })
+  }
+  return runs
+}
+
 export function loadSources(values) {
   const sources = []
   for (const value of values) {
@@ -293,8 +308,9 @@ function seconds(value) {
   return value === null ? 'unknown' : `${value}s`
 }
 
-export function meterComment({ ticket, sourceCount, meter }) {
-  const lines = [METER_MARKER, `**Cost of #${ticket}**, read from ${sourceCount} transcript file(s). "unknown" means the transcript did not record that figure; nothing here is estimated.`, '']
+export function meterComment({ ticket, sourceCount, meter, runs = null }) {
+  const across = runs ? ` of ${runs.length} workflow run(s) (${runs.join(', ')})` : ''
+  const lines = [METER_MARKER, `**Cost of #${ticket}**, read from ${sourceCount} transcript file(s)${across}. "unknown" means the transcript did not record that figure; nothing here is estimated.`, '']
   lines.push('| Step | Models | Effort | Input | Output | Cache writes | Cache reads | Largest context | Compactions | Time |', '|---|---|---|---|---|---|---|---|---|---|')
   for (const [role, figures] of Object.entries(meter.roles))
     lines.push(`| ${role} | ${Object.keys(figures.models).join(', ') || 'unknown'} | ${effortText(figures.effort)} | ${shown(figures.input)} | ${shown(figures.output)} | ${shown(figures.cacheCreation)} | ${shown(figures.cacheReads)} | ${shown(figures.peakContext)} | ${figures.compactions} | ${seconds(figures.wallSeconds)} |`)
@@ -310,7 +326,7 @@ export function meterComment({ ticket, sourceCount, meter }) {
     for (const [model, figures] of Object.entries(meter.reported.models))
       lines.push(`| ${model} | ${shown(figures.input)} | ${shown(figures.output)} | ${shown(figures.cacheCreation)} | ${shown(figures.cacheReads)} |`)
   }
-  lines.push('', '```json', JSON.stringify({ flowMeter: METER_FORMAT_VERSION, ticket, ...meter }), '```')
+  lines.push('', '```json', JSON.stringify({ flowMeter: METER_FORMAT_VERSION, ticket, ...(runs ? { runs } : {}), ...meter }), '```')
   return lines.join('\n')
 }
 

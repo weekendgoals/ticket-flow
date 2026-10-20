@@ -276,7 +276,11 @@ Rules for tickets, each with its reason:
     user journey across routing, APIs, sign-in, browser behaviour and several
     screens — never one per feature. Name the journey in the ticket that adds
     it. End-to-end tests that do exist use the Page Object Model.
-  - The builder posts screenshots of the built UI on the ticket.
+  - When `.flow.json` at the repository root has a `screenshots` command:
+    the builder posts screenshots of the built UI on the ticket
+    (`FLOW screenshots` runs it). When it has none, write no screenshots
+    rule, because a rule nobody can carry out is broken on every ticket, and
+    put the missing command in the questions for the user.
 - **Translations come last.** If the project has translation catalogs, the
   final ticket is "Translations", waiting for every other ticket: strings
   settle only when the rest is built, and translating earlier means

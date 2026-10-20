@@ -57,8 +57,9 @@ necessary; then judge the explanation.
   fail, and whether the test contains it. Where the instruction files say how
   to run the suite, the decisive check is to undo the behaviour in a scratch
   copy, re-run the test, and see whether it notices. You keep nothing you
-  changed; you report what the run showed. Important when nothing else pins
-  the behaviour.
+  changed; you report what the run showed. Important always, even when
+  another test pins the behaviour: a test that cannot fail is evidence that
+  lies, and carried as a nit it ships.
 - **A regression the change introduced** is Important, never a nit, even
   outside the ticket's scope: something that worked before and visibly does
   not now (a missing or duplicated control, a broken layout, a removed way to
@@ -70,9 +71,11 @@ necessary; then judge the explanation.
   to…", "in ticket #n we…"), is a finding: the file holds only what cannot
   be derived, and each rule carries its reason in a clause. A rule the
   ticket broke that the file states is Important.
-- **Code comments.** The project's rule is that names carry the meaning. A
-  comment in the change is a nit; one that explains away a workaround the
-  code should not need is Important when the workaround is wrong.
+- **Code comments.** Where the instruction files or the ground rules say
+  there are none (names carry the meaning), a comment the change adds breaks
+  a stated rule and is Important. Where they say nothing, a comment is a
+  nit; one that explains away a workaround the code should not need is
+  Important when the workaround is wrong.
 - **UI testing.** Logic, rendering, state or edge cases in a component with
   no component test (react-testing-library) is a finding. An end-to-end
   browser test added for a single feature, rather than for a user journey the
@@ -118,7 +121,14 @@ clean range with one nit is a clean range; say so plainly.
 ## Severity
 
 - **Important**: breaks behaviour, loses data, widens an exposure, or is a
-  regression the change introduced. Must be fixed before the merge.
+  regression the change introduced; breaks a rule the project's instruction
+  files or the epic's ground rules state (a comment where the rule is no
+  comments, a dependency left with nothing importing it, a document the rule
+  says changes in the same commit and did not); or is a test shown unable to
+  fail (its input cannot produce the case it names, it reads a constant
+  instead of the result, or undoing the behaviour leaves it green). Must be
+  fixed before the merge: a broken written rule is broken on every later
+  ticket that copies it, and a test that cannot fail is evidence that lies.
 - **Nit**: real but small. At most five.
 - **Already there**: a real defect in surrounding code this change did not
   cause. Report it separately; it does not block this ticket.

@@ -88,7 +88,18 @@ round the script:
 
 It posts each wave and its end on the epic issue. When the separate
 working copies cannot be set up, that wave runs one ticket at a time and
-the epic gets a comment saying so; the run does not stop for it.
+the epic gets a comment saying why for each copy (the step that failed and
+how long it ran against the setup's budget, or that no readable answer came
+back); the run does not stop for it.
+
+The script has no shell: a small agent runs each command and returns its
+exit code and output, and the script parses that output itself, because an
+agent's summary of a command is not what GitHub said. Before it halts over
+the board (the epic not approved, or not every ticket done at the end), it
+reads the board once more and halts only when both readings agree; a stop
+over a command that answered nothing readable quotes its exit code and last
+line. `worktree` and `check-epic` are never asked for twice, because a
+second copy would run beside the first.
 
 A ticket stops only for what `/flow:ticket` stops for (a gate still failing
 after two rounds of fixes: the acceptance checks, an Important review
@@ -110,7 +121,9 @@ by hand on GitHub, from any account) once you know it is gone.
 When nothing is ready and nothing is in progress, the script runs every
 done ticket's checks at the epic head, opens the release pull request
 (`FLOW release-pr`: outcome, walkthrough, each ticket's merge commit, the
-cost), answers its review bot and CI for up to two rounds, and posts the
+cost; it refuses unless that check passed at the head the pull request
+carries, so run `FLOW check-epic <e>` first when you open it by hand),
+answers its review bot and CI for up to two rounds, and posts the
 pull request on the epic.
 
 ## 3. Report
@@ -120,7 +133,10 @@ When the workflow returns:
 1. Post what each ticket cost, from the run's own records. The run
    directory is the one the Workflow result names
    (`…/subagents/workflows/<run id>/`); once for every ticket number in its
-   `tickets`: `FLOW meter <n> --workflow <run dir>`. A figure the records lack reads
+   `tickets`: `FLOW meter <n> --workflow <run dir>`. It reads every run of
+   that workflows directory that built the ticket (a ticket that halted and
+   resumed spans two) and skips a run a cost comment already covers, so
+   running it again posts nothing twice. A figure the records lack reads
    `unknown`; never estimate one.
 2. Tell the person, in a few lines: built or stopped, the release pull
    request's URL, and every ticket that needs a person with the one-line

@@ -463,7 +463,14 @@ per model; the comment shows those beside the per-step figures, and times
 the run by them, since the messages alone miss the time before the first
 answer. `--workflow <run dir>` reads one ticket's agents out of a
 `/flow:run` workflow run, by their labels (`worker:#12`, `reviewer:#12`,
-`fixes:#12`).
+`fixes:#12`), and out of every other run in the same workflows directory
+that built the ticket, in run-id order, because a ticket that halted and
+was built again spans two runs. The comment says how many runs it read and
+its JSON lists them (`runs`). A run some cost comment on the ticket already
+lists is left out, so the sums over the comments count each run once; when
+every run is covered it posts nothing. A cost comment from before runs were
+listed cannot say which run it covered, so beside one only the run given is
+read, and `meter` says so.
 
 The comment is the record; on a linked project board, `meter` also copies
 its figures into the [cost fields](#the-cost-on-the-board), the board's copy.
@@ -500,9 +507,25 @@ Each round it:
    order, and runs those tickets' checks again at the new epic head
    (`flow check-epic`), because two tickets that pass alone can break each
    other. If the copies cannot be set up, that round runs one ticket at a
-   time and the epic gets a comment saying so; the run never stops for it.
+   time and the epic gets a comment saying why, for each copy: the step
+   that failed and how long it ran against the setup's budget, or that no
+   readable answer came back. The run never stops for it, and it removes
+   every copy of that round. A copy left behind by an earlier attempt that
+   was killed is replaced, never reused, since nothing in it was built yet.
    One at a time, each ticket merges itself and is checked at the epic head
    the same way.
+
+A workflow script has no shell, so a small agent runs each `flow` command
+for it and hands back the exit code and what the command printed. The
+script parses that output itself and never takes the agent's summary of it,
+because a retelling is not the record. A short command that prints JSON
+and brought none back is run once more by a fresh agent; `flow worktree`
+and `flow check-epic`, which can run for many minutes, are run once only,
+because a second copy would run beside the first. A stop over an answer
+nobody could read quotes the exit code and the last line that came back. Before it halts over
+what GitHub said (the epic is not approved, or at the end not every ticket
+is done), it reads the board a second time and halts only when both
+readings agree.
 
 Every merge takes the commit the acceptance comment names, never one an
 agent reported. A builder that died after its ticket passed acceptance is
@@ -515,7 +538,10 @@ comment starting `<!-- flow:local-run-end -->`, posted from any account,
 clears it.
 When nothing is ready and nothing is in progress, it checks every ticket at
 the epic head, opens the release pull request (`flow release-pr`: the
-outcome, the walkthrough, each ticket's merge commit, the cost), answers its
+outcome, the walkthrough, each ticket's merge commit, the cost; it opens
+only at the head that check passed at, whatever the helper said of the
+check, and an answer that names no pull request is asked for once more
+before the run gives up, quoting the refusal), answers its
 review and CI for up to two rounds, and posts the link on the epic. Then the
 session posts each ticket's cost from the run's records
 (`flow meter <n> --workflow <run dir>`).
@@ -687,7 +713,10 @@ titled `Bugs` when there is exactly one.
 ## The `flow` command
 
 `node <plugin root>/scripts/flow.mjs <command>`. It stores nothing locally:
-every answer is read from GitHub (through `gh`) and git.
+every answer is read from GitHub (through `gh`) and git. JSON is printed
+indented for people; `FLOW_JSON=compact` prints it on one line, which is how
+`/flow:run` reads it, since its helper agent hands back a long output whole
+only when told to.
 
 | Command | What it does |
 |---|---|
@@ -697,7 +726,7 @@ every answer is read from GitHub (through `gh`) and git.
 | `board [<epic>] [--json]` | The default branch, then open epics with approval, progress and branch; or one epic's tickets with tier, state and blockers. Either way, how many findings wait or are approved |
 | `next <epic>` | JSON: `approved`, `ready`, `waiting`, `inProgress`, `done`, `needsHuman`, `planned`, `problems`. Exits 1 when the epic is not approved, has no tickets, or is stuck (unfinished tickets, none ready, none in progress) |
 | `ticket <n>` | One ticket parsed, as JSON, including who edited its body and when, and the latest handoff of each done ticket of its epic (`handoffs`, blockers first, read from at most twenty done tickets; `handoffsLeftOut` counts the ones not read), which it also prints on stderr under `handoffs:` |
-| `check <n> [--cwd <dir>]` | Runs the ticket's criteria from the repository root (or `--cwd`). JSON results on stdout, with every edit of the issue body (who, when); a readable table on stderr. Exits 1 unless every check passed, and when the ticket has no criteria |
+| `check <n> [--cwd <dir>]` | Runs the ticket's criteria from the repository root (or `--cwd`). JSON results on stdout, with every edit of the issue body (who, when) and the last 20 lines of each failed check's output (`tail`); a readable table on stderr, the tail indented under each failed check. Exits 1 unless every check passed, and when the ticket has no criteria |
 | `check --file <md> [--epic-file <md>]` | The same for a draft that is not on GitHub yet |
 | `post <n> --file <md>` or `--text "<md>"` | Adds a comment |
 | `post <n> --review --important <k> --head <sha> --file <md>` | Posts a reviewer's report as the next numbered review round over `<sha>`, with how many Important findings it leaves open; refuses a count the report's Important section contradicts |
@@ -718,7 +747,7 @@ every answer is read from GitHub (through `gh`) and git.
 | `deliver <n>` | Merges the accepted commit into the epic branch (release) or opens its pull request (incremental) |
 | `screenshots <n>` | Runs `.flow.json`'s `screenshots` command, commits and posts the images |
 | `meter <n> --transcripts [<role>=]<path> ... [--print]` | Posts what the ticket cost, read from transcripts, a headless run's output or the GitHub Action's, then copies the figures to the project board's cost fields |
-| `meter <n> --workflow <run dir> [--print]` | The same, for one ticket of a `/flow:run` workflow run |
+| `meter <n> --workflow <run dir> [--print]` | The same, for one ticket, over every `/flow:run` workflow run beside `<run dir>` that built it; leaves out a run a cost comment already lists, and posts nothing when that is all of them |
 | `pr-review-request <pr>` | Asks Copilot to review; prints `copilot`, `coderabbit` or `none` |
 | `pr-wait <pr> [--bot …] [--timeout <s>] [--interval <s>]` | Waits for the bot's review of the current head |
 | `pr-threads <pr> [--all]` | Unresolved review threads as JSON; `--all` adds the resolved ones |
@@ -727,10 +756,10 @@ every answer is read from GitHub (through `gh`) and git.
 | `reset <n> [--once]` | Puts a ticket whose run died back to planned; its branch keeps its commits. On a planned ticket whose `flow:start` request never started, takes the label off. Refuses a ticket that passed acceptance (it is waiting to be merged), answering in JSON either way. `--once`: if it was reset (or its request withdrawn) before, asks a person instead |
 | `merge <n> [--sha <sha>]` | Merges the accepted commit into the epic branch; with `--sha`, refuses unless that is the accepted commit |
 | `merge --epic <epic>` | Merges every accepted ticket of the epic, in the epic's order |
-| `check-epic <epic> [--tickets <n>,<n>] [--mark]` | Runs the done tickets' checks (or the listed ones') at the epic branch's head, in a clean copy set up from `.flow.json`, and posts the result on the epic. `--mark` hands each failing ticket to a person; it stays merged |
-| `worktree <n> [--remove]` | A separate working copy for one ticket, at `../.flow-worktrees/<repository>/ticket-<n>`, set up from `.flow.json` |
+| `check-epic <epic> [--tickets <n>,<n>] [--mark]` | Runs the done tickets' checks (or the listed ones') at the epic branch's head, in a clean copy set up from `.flow.json`, and posts the result on the epic, marked with the head, whether it passed and whether it judged every done ticket, which `release-pr` reads. A failed check reads `` `cmd` (exit N — <evidence>) ``. `--mark` hands each failing ticket to a person, with the end of each failed check's output; it stays merged |
+| `worktree <n> [--remove]` | A separate working copy for one ticket, at `../.flow-worktrees/<repository>/ticket-<n>`, set up from `.flow.json`. A copy an earlier attempt left there is removed and made again (`replaced: true`). The JSON says how long it ran (`elapsedSeconds`) and, on a failure, the setup's budget (`budgetSeconds`) |
 | `dispatch <epic>` | Adds `flow:start` to up to `Parallel:` ready tickets; says whether the epic is `running`, `built`, `stopped`, or `empty` (approved with no tickets yet, such as a standing epic before triage fills it). Refuses while a `/flow:run` is building the epic |
-| `release-pr <epic>` | Opens the epic's pull request once every ticket is done, and posts it on the epic |
+| `release-pr <epic> [--cwd <dir>]` | Opens the epic's pull request once every ticket is done, and posts it on the epic. Run in the repository: it refuses, naming `flow check-epic <epic>`, unless the latest epic check from the running account judged every done ticket, passed, and is at the head of `origin/<epic branch>`, because the pull request carries that head and nothing else checked it. Reusing an open pull request goes through the same gate. By hand: `flow check-epic <epic>`, then `flow release-pr <epic>` |
 | `design-map <epic> [--out <file>]` | Writes the epic's design map for the design comparison |
 | `stats [<epic>] [--since <date>] [--json] [--cwd <dir>]` | How the work went, per ticket, per epic and across epics; see [Looking back](#looking-back) |
 | `report --out <dir> [--since <date>] [--cwd <dir>]` | Writes `<dir>/index.html`, the figures of every epic as one page for GitHub Pages; see [The report page](#the-report-page) |

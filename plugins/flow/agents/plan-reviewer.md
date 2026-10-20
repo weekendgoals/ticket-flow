@@ -102,7 +102,11 @@ plan quotes its words.
 - **UI testing that does not follow the rule.** Component tests with
   react-testing-library are the default; a browser end-to-end test only for a
   user journey the outcome depends on, named, using the Page Object Model;
-  screenshots posted. An end-to-end test per feature is a finding.
+  screenshots posted when `.flow.json` has a `screenshots` command. An
+  end-to-end test per feature is a finding. So is a screenshots ground rule
+  in a project whose `.flow.json` has no `screenshots` command: no builder
+  can carry it out, so it is broken on every ticket; the missing command is
+  a question for the user.
 - **The design, when one is declared.** A ticket that builds something the
   design draws with no `COMPARE` line; no final whole-page comparison (a
   `COMPARE` with no `LANDMARKS`) at every width the design draws; a scope or
@@ -111,7 +115,16 @@ plan quotes its words.
   no landmark, a `LANDMARKS` name the map does not declare, a landmark
   whose `design` selector matches nothing in its source, and an element the
   plan drops that is missing from `removed` are all findings, because the
-  comparison judges only what the map names.
+  comparison judges only what the map names. A selector that matches in one
+  width's source and not in another's is a finding too, because the
+  comparison runs at every width. Every number and name the plan takes from
+  the design (how many sections a page has, what a label says, which
+  elements a width draws) is read back from the design source: report each
+  difference with the plan's words and the source's line.
+- **A criterion that contradicts its own CHECK**: one that cannot be true
+  while its CHECK passes, because the command's success is what the words
+  rule out, or the EXPECT line is what the criterion says must not appear.
+  Quote both lines.
 - **A missing or hollow "Not in scope"** where the nearby temptation is
   obvious.
 - **Work the request implies that no ticket owns**, and tickets for problems
