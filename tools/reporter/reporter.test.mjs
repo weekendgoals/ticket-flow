@@ -432,6 +432,7 @@ function fakeElement(tag = 'div') {
 
 function fakePopupPage() {
   const elements = new Map()
+  if (typeof navigator === 'undefined') globalThis.navigator = { userAgent: 'UA' }
   globalThis.document = {
     getElementById(id) {
       if (!elements.has(id)) elements.set(id, fakeElement(['unconfigured'].includes(id) ? 'section' : id === 'report' ? 'form' : 'div'))
