@@ -2,7 +2,10 @@ import { MAX_SCREENSHOTS, loadDraft, saveDraft } from './draft.js';
 
 export const MIN_AREA_CSS_PIXELS = 4;
 export const AREA_NOTICE_KEY = 'areaNotice';
-export const REFUSED_NOTICE = 'This page does not allow area capture; use Capture or paste an image.';
+export function refusedNotice(reason) {
+  const detail = reason ? ` (${reason})` : '';
+  return `This page does not allow area capture${detail}; use Capture or paste an image.`;
+}
 export const FULL_NOTICE = `Limit of ${MAX_SCREENSHOTS} screenshots reached. Remove one to add another.`;
 export const NO_DRAFT_NOTICE = 'The draft was gone when the area was captured; capture it again.';
 
@@ -62,7 +65,10 @@ export function pickArea() {
   const LAYER_ID = 'flow-reporter-area';
   const MIN = 4;
   const previous = document.getElementById(LAYER_ID);
-  if (previous) previous.remove();
+  if (previous) {
+    if (typeof previous.flowCancel === 'function') previous.flowCancel();
+    previous.remove();
+  }
   return new Promise((resolve) => {
     const layer = document.createElement('div');
     layer.id = LAYER_ID;
@@ -74,9 +80,13 @@ export function pickArea() {
     layer.append(box);
     let origin = null;
     let area = null;
+    let settled = false;
 
     const finish = (answer) => {
+      if (settled) return;
+      settled = true;
       window.removeEventListener('keydown', onKey, true);
+      layer.removeEventListener('keydown', onKey, true);
       layer.remove();
       requestAnimationFrame(() => requestAnimationFrame(() => resolve(answer)));
     };
@@ -86,6 +96,7 @@ export function pickArea() {
       event.stopPropagation();
       finish(null);
     };
+    layer.flowCancel = () => finish(null);
     layer.addEventListener('pointerdown', (event) => {
       if (event.button !== 0) return;
       event.preventDefault();
@@ -120,6 +131,9 @@ export function pickArea() {
       });
     });
     window.addEventListener('keydown', onKey, true);
+    layer.addEventListener('keydown', onKey, true);
     document.documentElement.append(layer);
+    layer.tabIndex = -1;
+    layer.focus({ preventScroll: true });
   });
 }

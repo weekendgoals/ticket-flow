@@ -1,6 +1,6 @@
 import {
   AREA_NOTICE_KEY,
-  REFUSED_NOTICE,
+  refusedNotice,
   cropRect,
   base64FromBytes,
   storeAreaScreenshot,
@@ -64,11 +64,12 @@ async function cropCapture(dataUrl, selection) {
 
 async function captureArea(tabId, windowId) {
   await chrome.windows.update(windowId, { focused: true }).catch(() => {});
+  await chrome.tabs.update(tabId, { active: true }).catch(() => {});
   let selection;
   try {
     selection = await askForArea(tabId);
-  } catch {
-    return REFUSED_NOTICE;
+  } catch (error) {
+    return refusedNotice(error && error.message);
   }
   if (!selection) return null;
   try {

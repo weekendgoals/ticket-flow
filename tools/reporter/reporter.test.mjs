@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { mkdtempSync, readdirSync, readFileSync, writeFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { spawnSync } from 'node:child_process'
+import vm from 'node:vm'
 import { join, dirname } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
@@ -599,7 +600,7 @@ test('an area smaller than 4 by 4 CSS pixels, or off the image, captures nothing
 test('bytes become base64, in chunks for a large image', () => {
   assert.equal(area.base64FromBytes(new Uint8Array([])), '')
   assert.equal(area.base64FromBytes(new Uint8Array([137, 80, 78, 71, 255])), Buffer.from([137, 80, 78, 71, 255]).toString('base64'))
-  const large = new Uint8Array(100000).map((_, index) => index % 256)
+  const large = new Uint8Array(3 * 1024 * 1024).map((_, index) => (index * 31) % 256)
   assert.equal(area.base64FromBytes(large), Buffer.from(large).toString('base64'))
 })
 
@@ -618,23 +619,139 @@ test('an area screenshot is added to the stored draft, never past the limit', as
 })
 
 test('Capture area saves the draft, asks the background for the tab and closes the popup', async () => {
-  let closed = 0
-  globalThis.window = { close: () => { closed += 1 } }
+  const closedWith = []
+  let stored = null
+  globalThis.window = { close: () => { closedWith.push(stored.draft.fields.title) } }
   const tab = { id: 3, windowId: 4, url: 'https://docs.acme.example/guide', title: 'Guide' }
   const messages = []
   const { element, store } = await openPopup(DRAFT, [TARGET, DOCS], {}, { tabs: [tab], messages })
+  stored = store
   element('title').value = 'Changed before the drag'
   await fire(element('capture-area'), 'click')
   assert.deepEqual(messages, [{ type: 'captureArea', tabId: 3, windowId: 4 }])
-  assert.equal(store.draft.fields.title, 'Changed before the drag')
-  assert.equal(closed, 1)
+  assert.deepEqual(closedWith, ['Changed before the drag'])
   delete globalThis.window
 })
 
 test('a reason the background left is shown once when the popup reopens', async () => {
-  const { element, session } = await openPopup(DRAFT, [TARGET, DOCS], {}, { session: { areaNotice: area.REFUSED_NOTICE } })
-  assert.equal(element('status').textContent, 'This page does not allow area capture; use Capture or paste an image.')
+  const { element, session } = await openPopup(DRAFT, [TARGET, DOCS], {}, { session: { areaNotice: area.refusedNotice('Cannot access contents of the page') } })
+  assert.equal(element('status').textContent, 'This page does not allow area capture (Cannot access contents of the page); use Capture or paste an image.')
   assert.equal('areaNotice' in session, false)
   const again = await openPopup(DRAFT)
   assert.equal(again.element('status').textContent, '')
+})
+
+test('the refusal names the browser\'s reason when there is one', () => {
+  assert.equal(area.refusedNotice(''), 'This page does not allow area capture; use Capture or paste an image.')
+  assert.equal(area.refusedNotice('Frame with ID 0 was removed.'), 'This page does not allow area capture (Frame with ID 0 was removed.); use Capture or paste an image.')
+})
+
+function fakeNode(tag) {
+  return {
+    tag,
+    id: '',
+    style: {},
+    children: [],
+    parent: null,
+    listeners: [],
+    focused: false,
+    append(child) { child.parent = this; this.children.push(child) },
+    remove() {
+      if (!this.parent) return
+      this.parent.children = this.parent.children.filter((child) => child !== this)
+      this.parent = null
+    },
+    addEventListener(type, handler, capture) { this.listeners.push({ type, handler, capture: Boolean(capture) }) },
+    removeEventListener(type, handler, capture) {
+      this.listeners = this.listeners.filter((entry) => !(entry.type === type && entry.handler === handler && entry.capture === Boolean(capture)))
+    },
+    dispatch(type, event = {}) {
+      for (const entry of this.listeners.filter((candidate) => candidate.type === type)) {
+        entry.handler({ button: 0, pointerId: 1, preventDefault() {}, stopPropagation() {}, ...event })
+      }
+    },
+    setPointerCapture() {},
+    focus() { this.focused = true }
+  }
+}
+
+function areaPage() {
+  const root = fakeNode('html')
+  const win = fakeNode('window')
+  Object.assign(win, { devicePixelRatio: 2, innerWidth: 800, innerHeight: 600 })
+  const documentStub = {
+    documentElement: root,
+    createElement: (tag) => fakeNode(tag),
+    getElementById: (id) => root.children.find((child) => child.id === id) || null
+  }
+  const context = vm.createContext({
+    document: documentStub,
+    window: win,
+    requestAnimationFrame: (callback) => setTimeout(callback, 0)
+  })
+  const inject = () => vm.runInContext(`(${area.pickArea.toString()})()`, context)
+  const layer = () => root.children.find((child) => child.id === 'flow-reporter-area')
+  return { root, win, inject, layer }
+}
+
+const plain = (value) => JSON.parse(JSON.stringify(value))
+
+function assertGone(page) {
+  assert.equal(page.layer(), undefined)
+  assert.equal(page.win.listeners.some((entry) => entry.type === 'keydown'), false)
+}
+
+test('the area overlay, run with nothing of the module, answers a drag in CSS pixels and removes itself', async () => {
+  const page = areaPage()
+  const answer = page.inject()
+  const layer = page.layer()
+  assert.equal(layer.focused, true)
+  assert.equal(layer.tabIndex, -1)
+  layer.dispatch('pointerdown', { clientX: 100, clientY: 50 })
+  layer.dispatch('pointermove', { clientX: 40, clientY: 90 })
+  layer.dispatch('pointerup')
+  assert.deepEqual(plain(await answer), { x: 40, y: 50, width: 60, height: 40, devicePixelRatio: 2, innerWidth: 800, innerHeight: 600 })
+  assertGone(page)
+})
+
+test('a click, a drag under 4 by 4, Escape on the window or the layer, and a second injection each cancel', async () => {
+  const click = areaPage()
+  const clicked = click.inject()
+  click.layer().dispatch('pointerdown', { clientX: 5, clientY: 5 })
+  click.layer().dispatch('pointerup')
+  assert.equal(await clicked, null)
+  assertGone(click)
+
+  const thin = areaPage()
+  const thinAnswer = thin.inject()
+  thin.layer().dispatch('pointerdown', { clientX: 10, clientY: 10 })
+  thin.layer().dispatch('pointermove', { clientX: 13, clientY: 20 })
+  thin.layer().dispatch('pointerup')
+  assert.equal(await thinAnswer, null)
+  assertGone(thin)
+
+  const escape = areaPage()
+  const escaped = escape.inject()
+  escape.win.dispatch('keydown', { key: 'Escape' })
+  assert.equal(await escaped, null)
+  assertGone(escape)
+
+  const framed = areaPage()
+  const framedAnswer = framed.inject()
+  const framedLayer = framed.layer()
+  framedLayer.dispatch('keydown', { key: 'a' })
+  assert.ok(framed.layer())
+  framedLayer.dispatch('keydown', { key: 'Escape' })
+  assert.equal(await framedAnswer, null)
+  assertGone(framed)
+  assert.equal(framedLayer.listeners.some((entry) => entry.type === 'keydown'), false)
+
+  const twice = areaPage()
+  const first = twice.inject()
+  const second = twice.inject()
+  assert.equal(await first, null)
+  assert.equal(twice.root.children.length, 1)
+  twice.win.dispatch('keydown', { key: 'Escape' })
+  assert.equal(await second, null)
+  assertGone(twice)
 })
