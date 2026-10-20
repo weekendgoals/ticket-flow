@@ -2,10 +2,12 @@ import { readFileSync, readdirSync, statSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { METER_MARKER } from './ticket-steps.mjs'
 
-const ROLES = ['worker', 'reviewer', 'fixes']
+export const ROLES = ['worker', 'reviewer', 'fixes']
+export const UNNAMED_MODEL = 'unknown'
 export const METER_FORMAT_VERSION = 1
 const SYNTHETIC_MODEL = '<synthetic>'
-const MODEL_NAME = /^[A-Za-z](?:[A-Za-z0-9._:\/-]*[A-Za-z0-9])?$/
+export const MODEL_NAME = /^[A-Za-z](?:[A-Za-z0-9._:\/-]*[A-Za-z0-9])?$/
+export const EFFORT_NAME = /^[a-z][a-z0-9-]{0,31}$/
 const AGENT_TOOLS = new Set(['Agent', 'Task'])
 const REVIEWER_AGENT = /ticket-reviewer/
 const USAGE_FIELDS = {
@@ -79,7 +81,7 @@ export function assignStreamRoles(lines) {
 }
 
 function emptyGroup() {
-  return { usages: new Map(), anonymous: 0, models: [], boundaries: 0, summaries: 0, first: null, last: null, durationMs: null, reported: null }
+  return { usages: new Map(), anonymous: 0, models: [], efforts: new Set(), boundaries: 0, summaries: 0, first: null, last: null, durationMs: null, reported: null }
 }
 
 const REPORTED_FIELDS = { input: 'inputTokens', output: 'outputTokens', cacheCreation: 'cacheCreationInputTokens', cacheReads: 'cacheReadInputTokens' }
@@ -108,6 +110,7 @@ function addLine(group, line) {
     if (reported) group.reported = [...(group.reported || []), reported]
   }
   if (line.type !== 'assistant' || !line.message) return
+  if (typeof line.effort === 'string' && EFFORT_NAME.test(line.effort)) group.efforts.add(line.effort)
   const model = line.message.model
   const usage = line.message.usage
   if (usage && typeof usage === 'object') {
@@ -136,7 +139,7 @@ function summarizeGroup(group) {
   const byModel = {}
   for (const model of group.models) byModel[model] = figuresOf(entries.filter((entry) => entry.model === model).map((entry) => entry.usage))
   const unnamed = entries.filter((entry) => entry.model === null)
-  if (unnamed.length) byModel.unknown = figuresOf(unnamed.map((entry) => entry.usage))
+  if (unnamed.length) byModel[UNNAMED_MODEL] = figuresOf(unnamed.map((entry) => entry.usage))
   return {
     ...figuresOf(entries.map((entry) => entry.usage)),
     compactions: Math.max(group.boundaries, group.summaries),
@@ -146,6 +149,7 @@ function summarizeGroup(group) {
     durationMs: group.durationMs,
     reported: group.reported,
     models: byModel,
+    effort: group.efforts.size ? [...group.efforts].sort() : null,
   }
 }
 
@@ -281,17 +285,21 @@ function shown(value) {
   return value === null || value === undefined ? 'unknown' : value.toLocaleString('en-US')
 }
 
+export function effortText(effort) {
+  return Array.isArray(effort) && effort.length ? effort.join(', ') : 'unknown'
+}
+
 function seconds(value) {
   return value === null ? 'unknown' : `${value}s`
 }
 
 export function meterComment({ ticket, sourceCount, meter }) {
   const lines = [METER_MARKER, `**Cost of #${ticket}**, read from ${sourceCount} transcript file(s). "unknown" means the transcript did not record that figure; nothing here is estimated.`, '']
-  lines.push('| Step | Models | Input | Output | Cache writes | Cache reads | Largest context | Compactions | Time |', '|---|---|---|---|---|---|---|---|---|')
+  lines.push('| Step | Models | Effort | Input | Output | Cache writes | Cache reads | Largest context | Compactions | Time |', '|---|---|---|---|---|---|---|---|---|---|')
   for (const [role, figures] of Object.entries(meter.roles))
-    lines.push(`| ${role} | ${Object.keys(figures.models).join(', ') || 'unknown'} | ${shown(figures.input)} | ${shown(figures.output)} | ${shown(figures.cacheCreation)} | ${shown(figures.cacheReads)} | ${shown(figures.peakContext)} | ${figures.compactions} | ${seconds(figures.wallSeconds)} |`)
+    lines.push(`| ${role} | ${Object.keys(figures.models).join(', ') || 'unknown'} | ${effortText(figures.effort)} | ${shown(figures.input)} | ${shown(figures.output)} | ${shown(figures.cacheCreation)} | ${shown(figures.cacheReads)} | ${shown(figures.peakContext)} | ${figures.compactions} | ${seconds(figures.wallSeconds)} |`)
   const total = meter.total
-  lines.push(`| **total** | | ${shown(total.input)} | ${shown(total.output)} | ${shown(total.cacheCreation)} | ${shown(total.cacheReads)} | ${shown(total.peakContext)} | ${total.compactions} | ${seconds(total.wallSeconds)} |`)
+  lines.push(`| **total** | | | ${shown(total.input)} | ${shown(total.output)} | ${shown(total.cacheCreation)} | ${shown(total.cacheReads)} | ${shown(total.peakContext)} | ${total.compactions} | ${seconds(total.wallSeconds)} |`)
   if (Object.keys(meter.models).length) {
     lines.push('', '| Model | Input | Output | Cache writes | Cache reads | Largest context |', '|---|---|---|---|---|---|')
     for (const [model, figures] of Object.entries(meter.models))

@@ -19,10 +19,11 @@ const usage = (input, output, cacheCreation = 0, cacheRead = 0) => ({
   cache_read_input_tokens: cacheRead,
 })
 
-const assistant = (id, model, figures, timestamp, content = [{ type: 'text', text: 'ok' }]) => ({
+const assistant = (id, model, figures, timestamp, content = [{ type: 'text', text: 'ok' }], effort = undefined) => ({
   type: 'assistant',
   timestamp,
   requestId: `req-${id}`,
+  ...(effort === undefined ? {} : { effort, requestedModel: model }),
   message: { id, model, role: 'assistant', content, usage: figures },
 })
 
@@ -82,6 +83,22 @@ test('one role that used two models reports each', () => {
   assert.equal(roles.worker.models['claude-sonnet-5'].input, 20)
 })
 
+test('effort is the set of values the role\'s assistant lines carried, sorted, and null when no line carried one', () => {
+  const text = (role, efforts) => ({ role, text: jsonl(efforts.map((effort, index) => assistant(`${role}-${index}`, 'claude-opus-5-5', usage(1, 1), `2026-10-14T10:0${index}:00Z`, undefined, effort))) })
+  const meter = meterTranscripts([text('worker', ['high', 'high']), text('reviewer', ['medium', 'high', 'low']), text('fixes', [undefined, 'not | a value'])])
+  assert.deepEqual(meter.roles.worker.effort, ['high'])
+  assert.deepEqual(meter.roles.reviewer.effort, ['high', 'low', 'medium'])
+  assert.equal(meter.roles.fixes.effort, null, 'a line without the key, or with a value that is not a plain word, records nothing')
+  assert.deepEqual(Object.keys(meter.roles.worker.models), ['claude-opus-5-5'])
+  const body = meterComment({ ticket: 7, sourceCount: 3, meter })
+  assert.match(body, /\| Step \| Models \| Effort \| Input \|/)
+  assert.match(body, /\| worker \| claude-opus-5-5 \| high \| 2 \|/)
+  assert.match(body, /\| reviewer \| claude-opus-5-5 \| high, low, medium \| 3 \|/)
+  assert.match(body, /\| fixes \| claude-opus-5-5 \| unknown \| 2 \|/)
+  const parsed = readMeterComment(body)
+  assert.deepEqual([parsed.roles.worker.effort, parsed.roles.reviewer.effort, parsed.roles.fixes.effort], [['high'], ['high', 'low', 'medium'], null])
+})
+
 test('compactions count the compaction marker lines, and a summary beside its marker is the same compaction', () => {
   const text = jsonl([
     assistant('a', 'claude-opus-5', usage(10, 1), '2026-10-14T10:00:00Z'),
@@ -121,7 +138,7 @@ test('a figure the transcript does not record is unknown, never zero and never a
   const untimed = meterTranscripts([{ role: 'worker', text: jsonl([{ type: 'assistant', message: { id: 'x', model: 'claude-opus-5', usage: usage(1, 1) } }]) }])
   assert.equal(untimed.roles.worker.wallSeconds, null)
   assert.equal(untimed.total.wallSeconds, null)
-  assert.match(meterComment({ ticket: 4, sourceCount: 1, meter: untimed }), /\| worker \| claude-opus-5 \| 1 \| 1 \| 0 \| 0 \| 1 \| 0 \| unknown \|/)
+  assert.match(meterComment({ ticket: 4, sourceCount: 1, meter: untimed }), /\| worker \| claude-opus-5 \| unknown \| 1 \| 1 \| 0 \| 0 \| 1 \| 0 \| unknown \|/)
 })
 
 test('a torn or foreign line is skipped without losing the rest', () => {
@@ -182,8 +199,8 @@ test('the comment carries readable tables and the same figures as JSON for later
   const meter = meterTranscripts([{ role: null, text: headlessStream() }])
   const body = meterComment({ ticket: 12, sourceCount: 1, meter })
   assert.match(body, /^<!-- flow:meter -->\n\*\*Cost of #12\*\*/)
-  assert.match(body, /\| reviewer \| claude-fable-5 \| 300 \| 31 \| 0 \| 0 \| 300 \| 0 \| unknown \|/)
-  assert.match(body, /\| \*\*total\*\* \| \| 690 \|/)
+  assert.match(body, /\| reviewer \| claude-fable-5 \| unknown \| 300 \| 31 \| 0 \| 0 \| 300 \| 0 \| unknown \|/)
+  assert.match(body, /\| \*\*total\*\* \| \| \| 690 \|/)
   assert.match(body, /\| claude-sonnet-5 \| 40 \| 4 \|/)
   const parsed = readMeterComment(body)
   assert.equal(parsed.flowMeter, 1)

@@ -139,6 +139,7 @@ test('init creates the twelve labels, and a second run creates none', () => {
   const posted = fake.calls().filter((call) => call.key === `POST ${R}/labels`).map((call) => JSON.parse(call.stdin))
   assert.equal(posted.length, 11)
   assert.ok(posted.every((label) => /^[0-9a-f]{6}$/.test(label.color) && label.description.length > 0))
+  assert.ok(LABELS.every((label) => label.description.length <= 100), 'GitHub refuses a label description over 100 characters, and init would stop at it')
   assert.match(first.stdout, /11 label\(s\) created, 1 already there/)
   assert.equal(LABELS.length, 12)
   assert.ok(!LABELS.some((label) => label.name === 'flow:ready'), 'ready is worked out, never a label')

@@ -1,4 +1,4 @@
-import { duration } from './stats.mjs'
+import { duration, shownRoles } from './stats.mjs'
 import { releaseStage, isReleaseEpic, RELEASE_STAGES } from './epic-state.mjs'
 
 const UNKNOWN = 'unknown'
@@ -57,10 +57,28 @@ export function epicRelease(epic) {
   })
 }
 
+const MODEL_PREFIX = /^claude-/
+
+function perRole(ticket, valuesOf) {
+  const roles = shownRoles(ticket).map((role) => [role, valuesOf(role)])
+  if (roles.every(([, values]) => !values)) return UNKNOWN
+  return roles.map(([role, values]) => `${role} ${values ? values.join('/') : UNKNOWN}`).join(' · ')
+}
+
+export function modelsText(ticket) {
+  return perRole(ticket, (role) => ticket.roleModels && ticket.roleModels[role] && ticket.roleModels[role].map((name) => name.replace(MODEL_PREFIX, '')))
+}
+
+export function effortText(ticket) {
+  return perRole(ticket, (role) => ticket.effort && ticket.effort[role])
+}
+
 export const TICKET_COLUMNS = [
   { key: 'number', label: '#', value: (ticket) => ticket.number },
   { key: 'title', label: 'title', value: (ticket) => ticket.title || '' },
   { key: 'tier', label: 'tier', value: (ticket) => ticket.tier || '' },
+  { key: 'modelsText', label: 'models', value: modelsText, sortsByText: true },
+  { key: 'effortText', label: 'effort', value: effortText, sortsByText: true },
   { key: 'state', label: 'state', value: (ticket) => ticket.state || '' },
   ...STEP_COLUMNS.map(([step, label]) => ({ key: `steps.${step}`, label, value: (ticket) => ticket.steps[step], show: time })),
   { key: 'tokens.input', label: 'tokens in', value: (ticket) => ticket.tokens.input, show: count },
@@ -157,14 +175,21 @@ th button{all:unset;cursor:pointer;color:var(--quiet);font-size:.8rem}th button:
 
 const SCRIPT = `(function(){var data=JSON.parse(document.getElementById('flow-data').textContent);var tickets={};
 data.stats.epics.forEach(function(epic){epic.tickets.forEach(function(ticket){tickets[epic.number+'/'+ticket.number]=ticket})});
-function pick(ticket,key){if(key==='cache'){var t=ticket.tokens;return typeof t.cacheCreation==='number'&&typeof t.cacheReads==='number'?t.cacheCreation+t.cacheReads:null}
+function pick(ticket,key,id){var text=data.text[id];if(text&&key in text)return text[key]==='${UNKNOWN}'?null:text[key];if(key==='cache'){var t=ticket.tokens;return typeof t.cacheCreation==='number'&&typeof t.cacheReads==='number'?t.cacheCreation+t.cacheReads:null}
 if(key==='stops')return ticket.stops?ticket.stops.length:null;if(key==='handoff')return ticket.handoff?1:0;
 return key.split('.').reduce(function(value,part){return value==null?null:value[part]},ticket)}
 document.querySelectorAll('table[data-epic]').forEach(function(table){var body=table.tBodies[0];var last=null;var up=true;
 table.querySelectorAll('th button').forEach(function(button){button.addEventListener('click',function(){var key=button.getAttribute('data-key');up=last===key?!up:true;last=key;
-var rows=Array.prototype.slice.call(body.rows);rows.sort(function(a,b){var x=pick(tickets[a.dataset.epic+'/'+a.dataset.ticket],key);var y=pick(tickets[b.dataset.epic+'/'+b.dataset.ticket],key);
+var rows=Array.prototype.slice.call(body.rows);rows.sort(function(a,b){var ida=a.dataset.epic+'/'+a.dataset.ticket;var idb=b.dataset.epic+'/'+b.dataset.ticket;var x=pick(tickets[ida],key,ida);var y=pick(tickets[idb],key,idb);
 if(x==null&&y==null)return 0;if(x==null)return 1;if(y==null)return -1;var order=typeof x==='number'&&typeof y==='number'?x-y:String(x).localeCompare(String(y));return up?order:-order});
 rows.forEach(function(row){body.appendChild(row)})})})})})()`
+
+function sortText(stats) {
+  const text = {}
+  for (const epic of stats.epics)
+    for (const ticket of epic.tickets) text[`${epic.number}/${ticket.number}`] = Object.fromEntries(TICKET_COLUMNS.filter((column) => column.sortsByText).map((column) => [column.key, column.value(ticket)]))
+  return text
+}
 
 function embedded(value) {
   return JSON.stringify(value).replace(/</g, '\\u003c')
@@ -191,7 +216,7 @@ export function renderReport({ repository, generatedAt, version, stats }) {
 </header>
 ${body}
 </main>
-<script type="application/json" id="flow-data">${embedded({ repository, generatedAt, version, stats })}</script>
+<script type="application/json" id="flow-data">${embedded({ repository, generatedAt, version, stats, text: sortText(stats) })}</script>
 <script>${SCRIPT}</script>
 </body>
 </html>

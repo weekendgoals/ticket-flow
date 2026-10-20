@@ -70,7 +70,7 @@ epic). "Direct" or "without Flow" always overrides it.
 
 Every suite needs Node ≥ 20 and nothing else unless noted; pass each test
 file path explicitly (`node --test <directory>` finds nothing here). Counts
-as of 2026-10-18; the pass count grows, the fail line stays `# fail 0`.
+as of 2026-10-19; the pass count grows, the fail line stays `# fail 0`.
 
 - `node --test plugins/flow/scripts/flow.test.mjs` — `# pass 78`. The CLI
   end to end against the fake `gh`; one case needs `git` on PATH.
@@ -81,9 +81,9 @@ as of 2026-10-18; the pass count grows, the fail line stays `# fail 0`.
 - `pull-request.test.mjs` `# pass 20`, `issue-body.test.mjs` `# pass 29`,
   `checks.test.mjs` `# pass 26` (real shell commands in a temp dir),
   `tracker/github.test.mjs` `# pass 37`, `fidelity.test.mjs` `# pass 54`,
-  `stats.test.mjs` `# pass 13` (needs `git`), `project-sync.test.mjs`
+  `stats.test.mjs` `# pass 15` (needs `git`), `project-sync.test.mjs`
   `# pass 34`, under `plugins/flow/scripts/`.
-- `node --test plugins/flow/scripts/meter.test.mjs` — `# pass 16`. Builds
+- `node --test plugins/flow/scripts/meter.test.mjs` — `# pass 17`. Builds
   its transcripts; no test reads a real one (they belong to whoever ran them).
 - `node --test plugins/flow/scripts/worktree-setup.test.mjs` — `# pass 18`;
   needs `git`, POSIX `sh` and `sleep`.
@@ -98,7 +98,7 @@ as of 2026-10-18; the pass count grows, the fail line stays `# fail 0`.
   asserts no call reached it); needs `git`.
   `node --test plugins/flow/github/qa.test.mjs` — `# pass 5`, the nightly
   QA template, read with `github/workflow-yaml.mjs` like `flow.yml`.
-- `node --test plugins/flow/scripts/report.test.mjs` — `# pass 8`. The
+- `node --test plugins/flow/scripts/report.test.mjs` — `# pass 9`. The
   report page from fixture data, no `gh`; its sort script runs against a
   stubbed document. `node --test plugins/flow/github/report.test.mjs` —
   `# pass 5`, the Pages template.
