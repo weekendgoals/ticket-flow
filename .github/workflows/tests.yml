@@ -21,6 +21,7 @@ jobs:
           node --check plugins/flow/scripts/flow.mjs
           node --check plugins/flow/scripts/issue-body.mjs
           node --check plugins/flow/scripts/checks.mjs
+          node --check plugins/flow/scripts/check-group.mjs
           node --check plugins/flow/scripts/epic-state.mjs
           node --check plugins/flow/scripts/delivery.mjs
           node --check plugins/flow/scripts/ticket-steps.mjs

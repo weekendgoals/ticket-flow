@@ -1668,22 +1668,41 @@ function failedTailsText(failedChecks) {
     .join('\n\n')
 }
 
-function rerunFailing(criteria, report, cwd) {
+function sharedRuns() {
+  return { ran: new Map(), ranBy: new Map() }
+}
+
+function runShared(checks, runs, ticket) {
+  const owners = checks.map((check) => runs.ranBy.get(check.check.trim()))
+  for (const check of checks) if (!runs.ranBy.has(check.check.trim())) runs.ranBy.set(check.check.trim(), ticket)
+  return owners.map((owner) => (owner === undefined || owner === ticket ? null : owner))
+}
+
+function rerunFailing(criteria, report, cwd, again, ticket) {
   const failing = report.checks.map((check, index) => (check.status === 'passed' ? -1 : index)).filter((index) => index >= 0)
-  if (!failing.length || report.problems.length) return { report, passedOnSecondRun: [] }
-  const again = runChecks(failing.map((index) => criteria.checks[index]), { cwd })
+  if (!failing.length || report.problems.length) return { report, passedOnSecondRun: [], reusedFrom: [] }
+  const retried = failing.map((index) => criteria.checks[index])
+  const owners = runShared(retried, again, ticket)
+  const rerun = runChecks(retried, { cwd, ran: again.ran })
   const checks = [...report.checks]
-  failing.forEach((index, position) => (checks[index] = { ...again[position], n: index + 1, ranTwice: true }))
+  failing.forEach((index, position) => (checks[index] = { ...rerun[position], n: index + 1, ranTwice: true }))
   const passed = checks.filter((check) => check.passed).length
   const passedOnSecondRun = failing.filter((index) => checks[index].passed).map((index) => index + 1)
   return {
     report: { ...report, checks, passed, skipped: checks.filter((check) => check.status === 'skipped').length, allPassed: passed === checks.length && !report.problems.length },
     passedOnSecondRun,
+    reusedFrom: failing.map((index, position) => [index, owners[position]]),
   }
 }
 
 function secondRunNote(result) {
   return result.passedOnSecondRun.length ? ` (check ${result.passedOnSecondRun.join(', ')} passed on the second run)` : ''
+}
+
+function sameRunNote(result) {
+  const byTicket = new Map()
+  for (const { check, ticket } of result.sameRunAs) byTicket.set(ticket, [...(byTicket.get(ticket) || []), check])
+  return [...byTicket].map(([ticket, checks]) => ` (check ${checks.join(', ')}: same run as #${ticket})`).join('')
 }
 
 function commandCheckEpic(positional, flags) {
@@ -1713,6 +1732,8 @@ function commandCheckEpic(positional, flags) {
     return 1
   }
   const results = []
+  const firstRuns = sharedRuns()
+  const secondRuns = sharedRuns()
   let setupFailure = null
   try {
     try {
@@ -1726,7 +1747,11 @@ function commandCheckEpic(positional, flags) {
       for (const ticket of chosen) {
         const issue = github.getIssue(ticket.number)
         const criteria = parseTicketBody(issue.body, epic.settings.designSources).criteria
-        const { report, passedOnSecondRun } = rerunFailing(criteria, runCriteria({ ticket: ticket.number, ...criteria }, { cwd: path }), path)
+        const owners = runShared(criteria.checks, firstRuns, ticket.number)
+        const firstReport = runCriteria({ ticket: ticket.number, ...criteria }, { cwd: path, ran: firstRuns.ran })
+        const { report, passedOnSecondRun, reusedFrom } = rerunFailing(criteria, firstReport, path, secondRuns, ticket.number)
+        for (const [index, owner] of reusedFrom) owners[index] = owner
+        const sameRunAs = owners.flatMap((owner, index) => (owner === null ? [] : [{ check: index + 1, ticket: owner }]))
         const failed = report.checks.filter((check) => check.status !== 'passed')
         results.push({
           ticket: ticket.number,
@@ -1736,6 +1761,7 @@ function commandCheckEpic(positional, flags) {
           skipped: report.skipped,
           allPassed: report.allPassed,
           passedOnSecondRun,
+          sameRunAs,
           failures: report.allPassed ? '' : failedChecksText(report),
           failedChecks: failed.map((check) => ({ check: check.check, exitCode: check.exitCode, evidence: check.evidence })),
           tails: failed.map((check) => ({ check: check.check, tail: check.tail })),
@@ -1752,7 +1778,7 @@ function commandCheckEpic(positional, flags) {
     lines.push(`**Epic check** at \`${head.slice(0, 12)}\` of \`${epicBranch}\`: ${results.length - failing.length} of ${results.length} ticket(s) still pass their checks.`)
     if (results.length) {
       lines.push('', '| Ticket | Checks | Result |', '|---|---|---|')
-      for (const result of results) lines.push(`| #${result.ticket} ${result.title.replace(/\|/g, '\\|')} | ${result.passed} of ${result.total} | ${result.allPassed ? 'pass' : `FAIL: ${result.failures.replace(/\|/g, '\\|').replace(/\n/g, ' ')}`}${secondRunNote(result)} |`)
+      for (const result of results) lines.push(`| #${result.ticket} ${result.title.replace(/\|/g, '\\|')} | ${result.passed} of ${result.total} | ${result.allPassed ? 'pass' : `FAIL: ${result.failures.replace(/\|/g, '\\|').replace(/\n/g, ' ')}`}${secondRunNote(result)}${sameRunNote(result)} |`)
     }
   }
   github.comment(epicNumber, lines.join('\n'))

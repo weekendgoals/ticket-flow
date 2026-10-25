@@ -929,6 +929,81 @@ test('check-epic runs a failing check once more at the same head, and a check th
   assert.match(posted(1)[0], /\| #3 Export file \| 0 of 1 \| FAIL: `false` \(exit 1\) \|/)
 })
 
+test('check-epic runs a check two done tickets share once in the clean copy, and reports its result under both', () => {
+  const repo = repository()
+  const shared = 'echo ran >> runs.txt && test -f button.txt'
+  world({
+    tickets: {
+      2: { labels: ['flow:ticket', 'flow:done'], criteria: `- the button builds\n  CHECK: ${shared}` },
+      3: { labels: ['flow:ticket', 'flow:done'], criteria: `- the export builds too\n  CHECK:   ${shared}  \n- only the export\n  CHECK: cat runs.txt` },
+    },
+  })
+  const result = flow(repo.work, ['check-epic', '1'])
+  assert.equal(result.status, 1)
+  const report = JSON.parse(result.stdout)
+  assert.deepEqual(report.tickets.map((ticket) => [ticket.ticket, ticket.passed, ticket.total, ticket.sameRunAs]), [[2, 0, 1, []], [3, 1, 2, [{ check: 1, ticket: 2 }]]])
+  assert.equal(report.tickets[0].failures, report.tickets[1].failures.split('; ')[0])
+  assert.deepEqual(report.tickets.map((ticket) => ticket.failedChecks.map((check) => check.exitCode)), [[1], [1]])
+  assert.match(posted(1)[0], /\| #3 Export file \| 1 of 2 \| FAIL: `echo ran >> runs\.txt && test -f button\.txt` \(exit 1\) \(check 1: same run as #2\) \|/)
+  assert.doesNotMatch(posted(1)[0].split('\n').find((line) => line.startsWith('| #2')), /same run/)
+})
+
+test('check-epic counts a shared check\'s first run once: the file it appends to in the clean copy holds one line', () => {
+  const repo = repository()
+  const shared = 'echo ran >> runs.txt && echo ok 1 passed'
+  world({
+    tickets: {
+      2: { labels: ['flow:ticket', 'flow:done'], criteria: `- the button\n  CHECK: ${shared}\n- one run\n  CHECK: test $(wc -l < runs.txt) -eq 1` },
+      3: { labels: ['flow:ticket', 'flow:done'], criteria: `- the export\n  CHECK: ${shared}\n- still one run\n  CHECK: test $(wc -l < runs.txt) -eq 1 && echo still one` },
+    },
+  })
+  const result = flow(repo.work, ['check-epic', '1'])
+  assert.equal(result.status, 0, result.stdout)
+  assert.deepEqual(JSON.parse(result.stdout).tickets.map((ticket) => [ticket.ticket, ticket.allPassed, ticket.passed]), [[2, true, 2], [3, true, 2]])
+})
+
+test('check-epic retries a failing shared check once, not once per ticket, and shares what the second run said', () => {
+  const repo = repository()
+  const counter = join(repo.root, 'shared-runs')
+  writeFileSync(counter, '')
+  const flaky = `echo x >> ${counter} && test $(wc -l < ${counter}) -ge 2`
+  const always = `echo y >> ${counter}.failing && false`
+  world({
+    tickets: {
+      2: { labels: ['flow:ticket', 'flow:done'], criteria: `- flaky\n  CHECK: ${flaky}\n- broken\n  CHECK: ${always}` },
+      3: { labels: ['flow:ticket', 'flow:done'], criteria: `- flaky too\n  CHECK: ${flaky}\n- broken too\n  CHECK: ${always}` },
+    },
+  })
+  const result = flow(repo.work, ['check-epic', '1', '--mark'])
+  assert.equal(result.status, 1)
+  const report = JSON.parse(result.stdout)
+  assert.deepEqual(report.tickets.map((ticket) => [ticket.ticket, ticket.passed, ticket.passedOnSecondRun]), [[2, 1, [1]], [3, 1, [1]]])
+  assert.equal(readFileSync(counter, 'utf8').split('\n').filter(Boolean).length, 2, 'the flaky check ran twice in all')
+  assert.equal(readFileSync(`${counter}.failing`, 'utf8').split('\n').filter(Boolean).length, 2, 'the broken check ran twice in all')
+  assert.deepEqual(report.tickets[1].sameRunAs, [{ check: 1, ticket: 2 }, { check: 2, ticket: 2 }])
+  assert.deepEqual([added(2), added(3)], [['flow:needs-human'], ['flow:needs-human']], 'a shared failure marks every ticket that has it')
+  assert.match(posted(1)[0], /\| #3 Export file \| 1 of 2 \| FAIL: .* \(check 1 passed on the second run\) \(check 1, 2: same run as #2\) \|/)
+})
+
+test('check-epic judges one shared command against each ticket\'s own EXPECT', () => {
+  const repo = repository()
+  const counter = join(repo.root, 'expect-runs')
+  writeFileSync(counter, '')
+  const shared = `echo x >> ${counter}; echo 'export ready'`
+  world({
+    tickets: {
+      2: { labels: ['flow:ticket', 'flow:done'], criteria: `- says ready\n  CHECK: ${shared}\n  EXPECT: export ready` },
+      3: { labels: ['flow:ticket', 'flow:done'], criteria: `- says done\n  CHECK: ${shared}\n  EXPECT: export done` },
+    },
+  })
+  const result = flow(repo.work, ['check-epic', '1'])
+  assert.equal(result.status, 1)
+  const report = JSON.parse(result.stdout)
+  assert.deepEqual(report.tickets.map((ticket) => [ticket.ticket, ticket.allPassed]), [[2, true], [3, false]])
+  assert.match(report.tickets[1].failures, /the output does not contain "export done"/)
+  assert.equal(readFileSync(counter, 'utf8').split('\n').filter(Boolean).length, 2, 'once, then once more for the ticket it failed for')
+})
+
 test('under Stops: none a check still failing at the epic head after its second run parks the ticket, which stays merged', () => {
   const repo = repository()
   world({ epic: NO_STOPS_EPIC, tickets: { 2: { labels: ['flow:ticket', 'flow:done'], assignees: ['ana'] }, 3: { labels: ['flow:ticket', 'flow:planned'] }, 4: { labels: ['flow:ticket', 'flow:planned'] } } })
