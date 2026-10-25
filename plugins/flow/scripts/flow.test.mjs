@@ -936,6 +936,16 @@ test('create-ticket refuses a parent that is not an epic', () => {
   assert.match(result.stderr, /#30 is not an epic/)
 })
 
+test('create-ticket refuses a closed epic, creating nothing: its release pull request was merged, so nothing would build the ticket', () => {
+  const file = join(directory, 'late.md')
+  writeFileSync(file, '## Acceptance criteria\n\n```criteria\n- x\n  CHECK: false\n```\n')
+  world({ others: [{ ...issue(31, { labels: ['flow:epic', 'flow:approved'] }), state: 'closed' }] })
+  const result = flow('create-ticket', '31', '--file', file, '--title', 'x')
+  assert.equal(result.status, 1)
+  assert.equal(result.stderr, 'epic #31 is closed, so a ticket under it would never be built\n')
+  assert.ok(!fake.calls().some((call) => !call.key.startsWith('GET')), 'nothing was written')
+})
+
 test('needs-human swaps the state label and mentions the assignee', () => {
   world({
     epics: [{ epic: issue(1, { body: epicBody([3]), labels: epicLabels(), author: 'owner' }), tickets: [ticket(3, 1, 'in-progress', { assignees: ['ana'] })] }],

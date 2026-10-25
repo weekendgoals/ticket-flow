@@ -84,9 +84,11 @@ plan quotes its words.
   no criterion reaches is a finding. Then the other way: a ticket no scene
   needs is either work a user never sees (say so) or a scene nobody wrote.
 - **A shape of the change that does not match the tickets or the code.**
-  Every path and shape it shows is in some ticket's scope, and every file a
-  ticket's scope plainly edits is in it; a "before" side the code does not
-  have today is a finding with the `file:line` that differs. The person
+  Every path and shape it shows is in some ticket's scope; a data shape,
+  table, route or contract a ticket changes that it leaves out is a finding
+  (an ordinary file it leaves out is not: it shows only what helps a
+  decision); a "before" side the code does not have today is a finding with
+  the `file:line` that differs. The person
   approves the structure from this picture, so a wrong one is approved
   without anyone reading the tickets.
 - **Jargon in the walkthrough or the outcome.** Ticket numbers, file names,

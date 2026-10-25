@@ -878,6 +878,10 @@ function commandCreateTicket(positional, flags) {
   const blockers = parseBlockerList(flags['blocked-by'])
   const epic = github.getIssue(epicNumber)
   if (!epic.labels.includes(EPIC_LABEL)) throw new UsageError(`#${epicNumber} is not an epic (it has no ${EPIC_LABEL} label)`)
+  if (epic.state === 'closed') {
+    process.stderr.write(`epic #${epicNumber} is closed, so a ticket under it would never be built\n`)
+    return 1
+  }
   const epicPlan = parseEpicBody(epic.body)
   if (epicPlan.problems.length) {
     for (const problem of epicPlan.problems) process.stderr.write(`epic #${epicNumber}: ${problem}\n`)

@@ -473,7 +473,7 @@ test('release-pr rewrites an open release pull request whose body does not close
   assert.match(body, /\| #4 Export name \| not recorded \|/)
   assert.match(body, /Closes #2\nCloses #3\nCloses #4\nCloses #1\n/)
   assert.ok(!fake.calls().some((call) => /markPullRequestReadyForReview|convertPullRequestToDraft/.test(call.stdin || '')), 'a ready pull request stays ready')
-  assert.match(posted(1)[0], /^<!-- flow:release-pr number=40 -->\n\*\*Release pull request updated:\*\* https:\/\/github\.com\/o\/r\/pull\/40 .*A ticket was done after it opened/)
+  assert.match(posted(1)[0], /^<!-- flow:release-pr number=40 -->\n\*\*Release pull request updated:\*\* https:\/\/github\.com\/o\/r\/pull\/40 .*did not close every done ticket/)
 })
 
 test('release-pr opens only at a head the latest epic check from this account passed for every done ticket, and names check-epic as the way on', () => {

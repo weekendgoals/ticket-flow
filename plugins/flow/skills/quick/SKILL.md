@@ -29,11 +29,14 @@ plan review and the human sign-off.
 If either test fails, say which and stop.
 
 With an epic, run `FLOW board <epic>` too. Stop and say why when the epic
-is not approved (its tickets cannot start), when one of its tickets is in
-progress or in review (a run is building it, and would pick the new ticket
-up while you build it here), or when the epic is closed (its release pull
-request was merged, so the change goes to the default branch: run the quick
-path without the epic).
+is not approved (its tickets cannot start), or while a run may be building
+it: one of its tickets is in progress or in review, or the person says a
+`/flow:run` or the Action is still going on it (nothing on the board shows
+a run between tickets). A run picks the new ticket up as soon as it is
+ready, so building it here too would be a second builder. A closed epic
+(its release pull request was merged) is refused by `create-ticket`: the
+change goes to the default branch, so run the quick path without the
+epic.
 
 ## 2. Check the request against the code
 
@@ -67,9 +70,10 @@ Write the body to a file outside the repository:
 
 Every ticket needs at least one CHECK: a ticket nothing can decide fails its
 check. Write the EXPECT so a skipped test run cannot satisfy it (a pass count,
-not just "passed"). Prove the CHECK fails today; with an epic, run it with
-the epic branch checked out (`git fetch origin`, then `git switch --detach
-origin/<Branch>`), since that is the code the ticket changes:
+not just "passed"). Prove the CHECK fails today; with a release epic, run
+it with the epic branch checked out (`git fetch origin`, then `git switch
+--detach origin/<Branch>`), since that is the code the ticket changes. An
+incremental epic's tickets start from the default branch, so run it there:
 
 ```bash
 FLOW check --file <draft>
@@ -94,8 +98,9 @@ the epic's other tickets are.
 
 When the project has Flow's GitHub Action (`.github/workflows/flow.yml`) and
 the ticket has an epic, run `FLOW label <n> +flow:start` and stop: the
-Action builds it, then checks the epic and updates the release pull request,
-and a build here as well would be a second builder on the same ticket.
+Action builds and delivers it (for a release epic it then checks the epic
+and updates the release pull request), and a build here as well would be a
+second builder on the same ticket.
 
 Otherwise run `/flow:ticket #<n>` and follow it to the end: start, build,
 check, review, accept, then deliver. With no epic, or an incremental epic,

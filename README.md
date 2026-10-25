@@ -688,10 +688,11 @@ payments, data migrations, deletion or shared infrastructure goes through
 
 With an epic, it is the light path for what you ask after reading an
 epic's work, say on its release pull request: the ticket joins that
-approved epic (refused while a run is building it, or once the epic is
-closed), its check is proven red on the epic branch, and it is built and
-merged into that branch like the others; then `flow check-epic` and
-`flow release-pr` add it to the open release pull request. With the GitHub
+approved epic (not while a run is building it; `flow create-ticket`
+refuses a closed epic), its check is proven red on the code it changes, and
+it is built and delivered like the epic's other tickets; for a release epic,
+`flow check-epic` and `flow release-pr` then add it to the open release pull
+request. With the GitHub
 Action, it adds `flow:start` instead and the Action does the rest.
 
 ## `/flow:review [range]`
@@ -826,7 +827,7 @@ only when told to.
 | `post <n> --review --important <k> --head <sha> --file <md>` | Posts a reviewer's report as the next numbered review round over `<sha>`, with how many Important findings it leaves open; refuses a count the report's Important section contradicts |
 | `label <n> +<label> -<label> …` | Adds and removes labels; refuses to leave two state labels on one issue |
 | `create-epic --file <md> --title "<t>"` | Creates the epic issue; prints its number |
-| `create-ticket <epic> --file <md> --title "<t>" [--tier easy\|hard] [--blocked-by <n>,<n>]` | Creates the ticket, writes its `Epic:` and `Blocked by:` lines, links it as a sub-issue and adds it to the epic's task list; prints its number |
+| `create-ticket <epic> --file <md> --title "<t>" [--tier easy\|hard] [--blocked-by <n>,<n>]` | Creates the ticket, writes its `Epic:` and `Blocked by:` lines, links it as a sub-issue and adds it to the epic's task list; prints its number. Refuses a closed epic, since nothing would build the ticket |
 | `link <epic> <n>` | Finishes a `create-ticket` that created the issue but could not link it. Safe to repeat |
 | `create-ticket --no-epic --file <md> --title "<t>" [--tier easy\|hard] [--repo <owner>/<name>]` | Creates a ticket that belongs to no epic (counts as approved); `--repo` files it in another repository, such as the plugin's |
 | `needs-human <n> --text "<why>"` | Marks the ticket `flow:needs-human` and asks a person, by mention; under `Stops: none` in an unattended run it parks the ticket instead, mentioning nobody |
