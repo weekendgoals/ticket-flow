@@ -77,7 +77,7 @@ as of 2026-10-19; the pass count grows, the fail line stays `# fail 0`.
   end to end against the fake `gh`; one case needs `git` on PATH.
 - `node --test plugins/flow/scripts/lifecycle.test.mjs` — `# pass 44`. The
   ticket steps in throwaway repositories with a bare remote; needs `git`, `sh`.
-- `node --test plugins/flow/scripts/epic-run.test.mjs` — `# pass 51`. The
+- `node --test plugins/flow/scripts/epic-run.test.mjs` — `# pass 53`. The
   whole-epic commands, the same way.
 - `pull-request.test.mjs` `# pass 20`, `issue-body.test.mjs` `# pass 30`,
   `checks.test.mjs` `# pass 31` (real shell commands in a temp dir; needs `sh`, `sleep`),

@@ -62,6 +62,8 @@ import {
   handoffComment,
   lastHandoff,
   lastStop,
+  EPIC_CHECK_FAILURE_LEAD,
+  handedOverByEpicCheck,
   lastReleasePullRequest,
   lastPullRequestRound,
   departureComment,
@@ -1705,6 +1707,12 @@ function sameRunNote(result) {
   return [...byTicket].map(([ticket, checks]) => ` (check ${checks.join(', ')}: same run as #${ticket})`).join('')
 }
 
+function markedEarlierNote(result, marking) {
+  if (!result.markedEarlier) return ''
+  if (!result.allPassed) return ' (handed to a person by an earlier epic check, and left with them)'
+  return marking ? ' (back to done)' : ' (handed to a person by an earlier epic check; `--mark` puts it back to done)'
+}
+
 function commandCheckEpic(positional, flags) {
   const epicNumber = issueNumber(positional[0], 'an epic number')
   const root = requireRepository(flags)
@@ -1718,7 +1726,11 @@ function commandCheckEpic(positional, flags) {
   const listed = flags.tickets === undefined ? null : parseBlockerList(flags.tickets)
   const outside = (listed || []).filter((number) => !epic.tickets.some((ticket) => ticket.number === number))
   if (outside.length) throw new UsageError(`${outside.map((number) => `#${number}`).join(', ')} is not a ticket of epic #${epicNumber}`)
-  const chosen = listed ? epic.tickets.filter((ticket) => listed.includes(ticket.number)) : epic.tickets.filter((ticket) => ticket.state === 'done')
+  const candidates = listed ? epic.tickets.filter((ticket) => listed.includes(ticket.number)) : epic.tickets.filter((ticket) => ticket.state === 'done' || ticket.state === 'needs-human')
+  const waiting = candidates.filter((ticket) => ticket.state === 'needs-human')
+  const account = waiting.length ? github.viewerLogin() : null
+  const markedEarlier = new Set(waiting.filter((ticket) => handedOverByEpicCheck(github.listComments(ticket.number), account)).map((ticket) => ticket.number))
+  const chosen = listed ? candidates : candidates.filter((ticket) => ticket.state === 'done' || markedEarlier.has(ticket.number))
   fetchOrigin(root)
   const head = resolveCommit(root, `origin/${epicBranch}`)
   if (!head) {
@@ -1756,6 +1768,8 @@ function commandCheckEpic(positional, flags) {
         results.push({
           ticket: ticket.number,
           title: ticket.title,
+          labels: issue.labels,
+          markedEarlier: markedEarlier.has(ticket.number),
           passed: report.passed,
           total: report.total,
           skipped: report.skipped,
@@ -1770,7 +1784,8 @@ function commandCheckEpic(positional, flags) {
   } finally {
     removeWorktree(root, path)
   }
-  const failing = results.filter((result) => !result.allPassed)
+  const failing = results.filter((result) => !result.allPassed && !result.markedEarlier)
+  const passingAgain = results.filter((result) => result.allPassed && result.markedEarlier)
   const allPassed = !setupFailure && !failing.length
   const lines = [releaseCheckMarker({ head, passed: allPassed, all: listed === null })]
   if (setupFailure) lines.push(`**The epic check could not run** at \`${head.slice(0, 12)}\` of \`${epicBranch}\`: setting up a clean copy failed (${setupFailure}). Nothing was judged.`)
@@ -1778,7 +1793,7 @@ function commandCheckEpic(positional, flags) {
     lines.push(`**Epic check** at \`${head.slice(0, 12)}\` of \`${epicBranch}\`: ${results.length - failing.length} of ${results.length} ticket(s) still pass their checks.`)
     if (results.length) {
       lines.push('', '| Ticket | Checks | Result |', '|---|---|---|')
-      for (const result of results) lines.push(`| #${result.ticket} ${result.title.replace(/\|/g, '\\|')} | ${result.passed} of ${result.total} | ${result.allPassed ? 'pass' : `FAIL: ${result.failures.replace(/\|/g, '\\|').replace(/\n/g, ' ')}`}${secondRunNote(result)}${sameRunNote(result)} |`)
+      for (const result of results) lines.push(`| #${result.ticket} ${result.title.replace(/\|/g, '\\|')} | ${result.passed} of ${result.total} | ${result.allPassed ? 'pass' : `FAIL: ${result.failures.replace(/\|/g, '\\|').replace(/\n/g, ' ')}`}${secondRunNote(result)}${sameRunNote(result)}${markedEarlierNote(result, flags.mark)} |`)
     }
   }
   github.comment(epicNumber, lines.join('\n'))
@@ -1786,10 +1801,16 @@ function commandCheckEpic(positional, flags) {
     for (const result of failing)
       markNeedsHuman(
         result.ticket,
-        `This ticket's checks fail on the epic branch \`${epicBranch}\` at \`${head.slice(0, 12)}\`, after it was merged: ${result.failures}. It stays merged; whether it needs a fix ticket is a person's call.`,
+        `${EPIC_CHECK_FAILURE_LEAD} \`${epicBranch}\` at \`${head.slice(0, 12)}\`, after it was merged: ${result.failures}. It stays merged; whether it needs a fix ticket is a person's call.`,
         failedTailsText(result.tails),
       )
-  printJson({ epic: epicNumber, branch: epicBranch, head, setupFailure, tickets: results.map(({ tails, ...shown }) => shown), allPassed })
+  if (flags.mark)
+    for (const result of passingAgain) {
+      changeState(result.ticket, { add: ['flow:done'], remove: result.labels.filter((label) => (STATE_LABELS.includes(label) && label !== 'flow:done') || label === START_LABEL), state: 'done', close: true })
+      github.comment(result.ticket, `**Back to done.** This ticket's checks pass again on the epic branch \`${epicBranch}\` at \`${head.slice(0, 12)}\`, so the earlier epic check that handed it to a person no longer holds.`)
+    }
+  const backToDone = flags.mark ? passingAgain.map((result) => result.ticket) : []
+  printJson({ epic: epicNumber, branch: epicBranch, head, setupFailure, tickets: results.map(({ tails, labels, ...shown }) => shown), backToDone, allPassed })
   return allPassed ? 0 : 1
 }
 

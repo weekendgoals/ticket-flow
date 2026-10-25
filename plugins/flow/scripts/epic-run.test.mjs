@@ -1004,6 +1004,59 @@ test('check-epic judges one shared command against each ticket\'s own EXPECT', (
   assert.equal(readFileSync(counter, 'utf8').split('\n').filter(Boolean).length, 2, 'once, then once more for the ticket it failed for')
 })
 
+const handedOverByCheck = comment("<!-- flow:needs-human -->\n**This ticket needs a person.** @ana This ticket's checks fail on the epic branch `epic/trip-export` at `aaaaaaaaaaaa`, after it was merged: `false` (exit 1). It stays merged; whether it needs a fix ticket is a person's call.", '2026-10-14T13:00:00Z')
+const handedOverForPlan = comment('<!-- flow:needs-human -->\n**This ticket needs a person.** @ana The plan and the code disagree about the export name.', '2026-10-14T13:00:00Z')
+const NEEDS_HUMAN_REMOVAL = { [`DELETE ${R}/issues/3/labels/${encodeURIComponent('flow:needs-human')}`]: null }
+
+test('check-epic judges again a ticket an earlier epic check handed to a person, and --mark puts it back to done once it passes', () => {
+  const repo = repository()
+  const tickets = {
+    2: { labels: ['flow:ticket', 'flow:done'], criteria: '- the button\n  CHECK: true' },
+    3: { labels: ['flow:ticket', 'flow:needs-human'], criteria: '- the file\n  CHECK: test -d .' },
+    4: { labels: ['flow:ticket', 'flow:needs-human'], criteria: '- the name\n  CHECK: test -d .' },
+  }
+  const comments = { 3: [STARTED, handedOverByCheck], 4: [STARTED, handedOverForPlan] }
+  world({ tickets, comments })
+  const looked = flow(repo.work, ['check-epic', '1'])
+  assert.equal(looked.status, 0, looked.stdout)
+  const report = JSON.parse(looked.stdout)
+  assert.deepEqual(report.tickets.map((ticket) => [ticket.ticket, ticket.allPassed, ticket.markedEarlier]), [[2, true, false], [3, true, true]], 'a ticket a person holds for another reason is not judged')
+  assert.deepEqual(report.backToDone, [])
+  assert.match(posted(1)[0], /\| #3 Export file \| 1 of 1 \| pass \(handed to a person by an earlier epic check; `--mark` puts it back to done\) \|/)
+  assert.deepEqual([added(3), removed(3), posted(3)], [[], [], []], 'without --mark nothing changes on the ticket')
+  fake.clearCalls()
+  world({ tickets, comments, closesOrReopens: [3], extra: NEEDS_HUMAN_REMOVAL })
+  const marked = flow(repo.work, ['check-epic', '1', '--mark'])
+  assert.equal(marked.status, 0, marked.stderr)
+  assert.deepEqual(JSON.parse(marked.stdout).backToDone, [3])
+  assert.match(posted(1)[0], new RegExp('passed=true all=true'))
+  assert.match(posted(1)[0], /\| #3 Export file \| 1 of 1 \| pass \(back to done\) \|/)
+  assert.deepEqual(added(3), ['flow:done'])
+  assert.deepEqual(removed(3), ['flow:needs-human'])
+  assert.match(posted(3)[0], /^\*\*Back to done\.\*\* This ticket's checks pass again on the epic branch `epic\/trip-export` at `[0-9a-f]{12}`/)
+  assert.deepEqual(fake.calls().filter((call) => call.key === `PATCH ${R}/issues/3`).map((call) => JSON.parse(call.stdin).state), ['closed'])
+  assert.deepEqual([added(4), posted(4)], [[], []])
+})
+
+test('a ticket an earlier epic check handed to a person that still fails is reported, left with that person, and does not fail the check', () => {
+  const repo = repository()
+  world({
+    tickets: {
+      2: { labels: ['flow:ticket', 'flow:done'], criteria: '- the button\n  CHECK: true' },
+      3: { labels: ['flow:ticket', 'flow:needs-human'], criteria: '- the file\n  CHECK: false' },
+    },
+    comments: { 3: [STARTED, handedOverByCheck] },
+  })
+  const result = flow(repo.work, ['check-epic', '1', '--mark'])
+  assert.equal(result.status, 0, result.stdout)
+  const report = JSON.parse(result.stdout)
+  assert.equal(report.allPassed, true)
+  assert.deepEqual(report.tickets.map((ticket) => [ticket.ticket, ticket.allPassed]), [[2, true], [3, false]])
+  assert.match(posted(1)[0], /passed=true all=true/)
+  assert.match(posted(1)[0], /\| #3 Export file \| 0 of 1 \| FAIL: `false` \(exit 1\) \(handed to a person by an earlier epic check, and left with them\) \|/)
+  assert.deepEqual([added(3), removed(3), posted(3)], [[], [], []], 'it is not handed over a second time')
+})
+
 test('under Stops: none a check still failing at the epic head after its second run parks the ticket, which stays merged', () => {
   const repo = repository()
   world({ epic: NO_STOPS_EPIC, tickets: { 2: { labels: ['flow:ticket', 'flow:done'], assignees: ['ana'] }, 3: { labels: ['flow:ticket', 'flow:planned'] }, 4: { labels: ['flow:ticket', 'flow:planned'] } } })
