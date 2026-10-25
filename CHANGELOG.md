@@ -5,7 +5,7 @@ a behaviour change in every project that installs it. Entries land in the same
 commit as the change; the pull request that brings them to the default branch
 stamps the version and date and bumps `plugin.json` in the same commit.
 
-## Unreleased
+## 3.6.0 — 2026-10-25
 
 - **The plan shows the shape of the change.** The epic body gains `## Shape of the change`, after `## Walkthrough`: a small file tree of what is added, changed and removed, and a before-and-after `diff` block of each data shape, table, route or contract that changes. `/flow:epic` shows it at both stops (agreeing the shape, and approval), and the plan reviewer reports a shape that does not match the tickets or a "before" the code does not have. Nothing parses it; an epic without it is read as before.
 - **`/flow:quick #<epic> "<change>"`: a small change to an epic's work.** The light path for what a person asks after reading an epic's release pull request: the ticket joins the approved epic (the skill stops when the epic is not approved or while a run may be building it), its CHECK is proven red on the code it changes (the epic branch for a release epic), `/flow:ticket` builds and delivers it like the epic's other tickets, and for a release epic `flow check-epic --mark` and `flow release-pr` then add it to the release pull request. On a project with the Action it adds `flow:start` instead and stops.
