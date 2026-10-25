@@ -1861,6 +1861,11 @@ function releaseBody({ epic, plan, tickets, notBuilt = [] }) {
   return lines.join('\n')
 }
 
+function closesEveryTicket(pullRequestBody, tickets) {
+  const lines = new Set(normalizeNewlines(pullRequestBody || '').split('\n').map((line) => line.trim()))
+  return tickets.every((ticket) => lines.has(`Closes #${ticket.number}`))
+}
+
 function releasePrRefusal(epic, epicNumber, draft) {
   if (!epic.approved) return `epic #${epicNumber} is not approved`
   if (deliveryFor(epic) !== 'release') return `epic #${epicNumber} is not a release epic; each of its tickets has its own pull request`
@@ -1921,6 +1926,7 @@ function commandReleasePr(positional, flags) {
   let pullRequest
   let markedReady = false
   let convertedToDraft = false
+  let rewritten = false
   if (!existing) pullRequest = github.createPullRequest({ title: epic.title, head: epic.settings.branch, base, body, draft })
   else if (existing.draft) {
     pullRequest = github.updatePullRequest(existing.number, { body, ready: !draft })
@@ -1928,13 +1934,16 @@ function commandReleasePr(positional, flags) {
   } else if (draft) {
     pullRequest = github.updatePullRequest(existing.number, { body, draft: true })
     convertedToDraft = true
+  } else if (!closesEveryTicket(existing.body, tickets)) {
+    pullRequest = github.updatePullRequest(existing.number, { body })
+    rewritten = true
   } else pullRequest = existing
   github.comment(
     epicNumber,
-    releasePrComment({ number: pullRequest.number, url: pullRequest.url, existing: Boolean(existing), epicBranch: epic.settings.branch, base, draft, markedReady, convertedToDraft }),
+    releasePrComment({ number: pullRequest.number, url: pullRequest.url, existing: Boolean(existing), epicBranch: epic.settings.branch, base, draft, markedReady, convertedToDraft, rewritten }),
   )
   syncProjectRelease(epicNumber, draft ? RELEASE_STAGES.building : RELEASE_STAGES.open)
-  printJson({ epic: epicNumber, pullRequest: pullRequest.number, url: pullRequest.url, base, existing: Boolean(existing), draft, markedReady, convertedToDraft, notBuilt: notBuilt.map((ticket) => ticket.number) })
+  printJson({ epic: epicNumber, pullRequest: pullRequest.number, url: pullRequest.url, base, existing: Boolean(existing), draft, markedReady, convertedToDraft, rewritten, notBuilt: notBuilt.map((ticket) => ticket.number) })
   return 0
 }
 

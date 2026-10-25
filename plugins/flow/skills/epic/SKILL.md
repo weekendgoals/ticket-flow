@@ -100,12 +100,19 @@ chat, compactly:
    them, of what someone will be able to do once this ships and what happens
    today instead. **No ticket numbers and no file names**: the reader is the
    person who asked for the work.
-3. **Tickets**, one line each, in order: title — what it builds or proves —
+3. **Shape of the change**, for whoever approves the plan: what the code
+   will look like. A small file tree of what is added (`+`), changed (`~`)
+   and removed (`-`), grouped under shared directories, and, for each data
+   shape, table, route or contract that changes, a `diff` block of it before
+   and after. Show only what helps a decision: a reader approves the
+   structure faster from its picture than from ticket prose, and spots a
+   wrong one sooner. It is the one part of the plan that names files.
+4. **Tickets**, one line each, in order: title — what it builds or proves —
    tier (`easy` or `hard`, see step 4) — which earlier tickets it must wait
    for, if any. Say why the first ticket is first: it should make the first
    scene work end to end, thinly, rather than build one layer (database, then
    API, then screen) that nobody can see until the last ticket.
-4. **What runs side by side**: which tickets can be built at the same time,
+5. **What runs side by side**: which tickets can be built at the same time,
    and the `Parallel:` setting you propose (1, 2 or 3). Two tickets can run
    together only if neither waits for the other and they do not edit the same
    files. In the same breath, ask which `Stops:` they want for a run
@@ -113,11 +120,11 @@ chat, compactly:
    mentions them) or `none` (nothing stops: an agent decides where it may
    and records it, the rest is parked, and the release pull request is
    where they read what was decided).
-5. **Delivery**: `release` (the default: every ticket merges into one epic
+6. **Delivery**: `release` (the default: every ticket merges into one epic
    branch, and one pull request goes to the default branch at the end) or
    `incremental` (each ticket opens its own pull request to the default
    branch). One line on why.
-6. **Questions**, as one plain list, **each with your recommended answer**, so
+7. **Questions**, as one plain list, **each with your recommended answer**, so
    the user can reply in a word per question.
 
 **Wait for the user to agree the shape** before writing tickets. This is a
@@ -154,6 +161,10 @@ Consequence paths: <globs where a mistake is expensive, e.g. src/auth/**, migrat
 ## Walkthrough
 
 <the scenes from step 3, in plain language, no ticket numbers or file names>
+
+## Shape of the change
+
+<the file tree and the before-and-after diff blocks from step 3>
 
 ## Ground rules
 
@@ -331,13 +342,14 @@ reject**, and **carry its questions for the user forward unchanged**.
 Show the user, in this order:
 
 1. The walkthrough.
-2. The tickets, one line each, in order, with tier and waits, and what runs
+2. The shape of the change.
+3. The tickets, one line each, in order, with tier and waits, and what runs
    side by side.
-3. One other way you considered splitting the work, and why you did not.
-4. Which CHECKs you saw fail, and which could not run here and why.
-5. What the plan review found, what you changed, what you rejected and why,
+4. One other way you considered splitting the work, and why you did not.
+5. Which CHECKs you saw fail, and which could not run here and why.
+6. What the plan review found, what you changed, what you rejected and why,
    and its questions.
-6. With `Delivery: release`, say plainly: "after your approval, the tickets
+7. With `Delivery: release`, say plainly: "after your approval, the tickets
    are built, reviewed and merged into the epic branch without asking you;
    your next decision is the pull request at the end." With `Stops: none`,
    add: "nothing stops for you while it runs; what an agent decided and

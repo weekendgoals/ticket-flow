@@ -1,13 +1,17 @@
 ---
 name: quick
-description: Turn one small, low-risk change (a bug fix, a tweak, a chore) into a single Flow ticket on GitHub with no epic, then build it with /flow:ticket through to its own pull request. Work that touches sign-in, payments, data migrations, deletion or shared infrastructure goes through /flow:epic instead. Use only when the user runs /flow:quick "<description>" or asks for the Flow quick path by name.
+description: Turn one small, low-risk change (a bug fix, a tweak, a chore) into a single Flow ticket on GitHub and build it with /flow:ticket. With no epic it ends at its own pull request; with an epic (/flow:quick #<epic> "<change>", for example a person's feedback on the epic's release pull request) it is built into that epic's branch and the release pull request is updated to include it. Work that touches sign-in, payments, data migrations, deletion or shared infrastructure goes through /flow:epic instead. Use only when the user runs /flow:quick or asks for the Flow quick path by name.
 ---
 
 # Quick ticket: $ARGUMENTS
 
 One small change, written down as a ticket and built like any other, without
-an epic. `FLOW` below means `node "${CLAUDE_PLUGIN_ROOT}/scripts/flow.mjs"`,
+planning an epic. `FLOW` below means `node "${CLAUDE_PLUGIN_ROOT}/scripts/flow.mjs"`,
 run from the repository root.
+
+`$ARGUMENTS` is `"<description>"`, or `#<epic> "<description>"` for a
+change to the work of an epic that is built but not yet merged by a person,
+such as what they asked for after reading its release pull request.
 
 ## 1. Is it small, and is it safe?
 
@@ -24,10 +28,24 @@ plan review and the human sign-off.
 
 If either test fails, say which and stop.
 
-## 2. Write the ticket
+With an epic, run `FLOW board <epic>` too. Stop and say why when the epic
+is not approved (its tickets cannot start), when one of its tickets is in
+progress or in review (a run is building it, and would pick the new ticket
+up while you build it here), or when the epic is closed (its release pull
+request was merged, so the change goes to the default branch: run the quick
+path without the epic).
 
-Read the project's instruction files and the code the change touches. Write
-the body to a file outside the repository:
+## 2. Check the request against the code
+
+Read the project's instruction files and the code the change touches. When
+the request says something the code contradicts (a thing missing that
+exists, a value or a behaviour the code does not have), show the person
+what the code does, with `file:line`, and ask before writing anything: a
+ticket written from a wrong premise gets a CHECK that tests the premise.
+
+## 3. Write the ticket
+
+Write the body to a file outside the repository:
 
 ~~~markdown
 ## Scope
@@ -49,7 +67,9 @@ the body to a file outside the repository:
 
 Every ticket needs at least one CHECK: a ticket nothing can decide fails its
 check. Write the EXPECT so a skipped test run cannot satisfy it (a pass count,
-not just "passed"). Prove the CHECK fails today:
+not just "passed"). Prove the CHECK fails today; with an epic, run it with
+the epic branch checked out (`git fetch origin`, then `git switch --detach
+origin/<Branch>`), since that is the code the ticket changes:
 
 ```bash
 FLOW check --file <draft>
@@ -62,13 +82,35 @@ change in familiar code, `hard` otherwise. Then create it:
 
 ```bash
 FLOW create-ticket --no-epic --file <draft> --title "<short title>" --tier easy|hard
+FLOW create-ticket <epic> --file <draft> --title "<short title>" --tier easy|hard
 ```
 
 It prints the issue number `<n>`. A ticket with no epic counts as approved
-and is delivered as its own pull request into the default branch.
+and is delivered as its own pull request into the default branch. A ticket
+of an epic is ready at once, since the epic is approved, and is delivered as
+the epic's other tickets are.
 
-## 3. Build it
+## 4. Build it
 
-Run `/flow:ticket #<n>` and follow it to the end: start, build, check,
-review, accept, open the pull request and run its review loop. A person
-merges the pull request.
+When the project has Flow's GitHub Action (`.github/workflows/flow.yml`) and
+the ticket has an epic, run `FLOW label <n> +flow:start` and stop: the
+Action builds it, then checks the epic and updates the release pull request,
+and a build here as well would be a second builder on the same ticket.
+
+Otherwise run `/flow:ticket #<n>` and follow it to the end: start, build,
+check, review, accept, then deliver. With no epic, or an incremental epic,
+that ends at the ticket's own pull request, which a person merges.
+
+With a release epic it ends merged into the epic branch. Then check the
+epic at its new head and update the release pull request, which lists and
+closes the new ticket once its body is rewritten:
+
+```bash
+FLOW check-epic <epic> --mark
+FLOW release-pr <epic>
+```
+
+When `check-epic` hands a ticket to a person, say which and stop:
+`release-pr` opens only at a head every check passed at. Under `Stops:
+none` with tickets still parked, add `--draft` to `release-pr`. Then print
+the release pull request's URL.

@@ -95,8 +95,9 @@ export function startWithdrawnComment() {
   return `${START_WITHDRAWN_MARKER}\n**Start request withdrawn.** The job asked to build this ticket stopped before the ticket started, so \`flow:start\` is taken off; the ticket is planned, and the next start request builds it.`
 }
 
-export function releasePrComment({ number, url, existing, epicBranch, base, draft = false, markedReady = false, convertedToDraft = false }) {
+export function releasePrComment({ number, url, existing, epicBranch, base, draft = false, markedReady = false, convertedToDraft = false, rewritten = false }) {
   const marker = `<!-- flow:release-pr number=${number} -->`
+  if (rewritten) return `${marker}\n**Release pull request updated:** ${url} (\`${epicBranch}\` into \`${base}\`). A ticket was done after it opened, so its body was rewritten in full to list and close it. A person reviews and merges it.`
   if (convertedToDraft) return `${marker}\n**Release pull request converted back to a draft:** ${url} (\`${epicBranch}\` into \`${base}\`). A ticket is no longer done, so the body was rewritten to list what is not built; it is marked ready again once every ticket is done.`
   if (markedReady) return `${marker}\n**Release pull request marked ready for review:** ${url} (\`${epicBranch}\` into \`${base}\`). Every ticket is built now, so its body was rewritten in full. A person reviews and merges it.`
   if (draft) return `${marker}\n**Release pull request ${existing ? 'updated, still a draft' : 'opened as a draft'}:** ${url} (\`${epicBranch}\` into \`${base}\`). Some tickets are parked or not built, and its body lists them; it is marked ready once every ticket is done.`
