@@ -352,6 +352,13 @@ export function isParkedComment(body) {
   return withoutMarker.startsWith(PARKED_LEAD)
 }
 
+export const EPIC_CHECK_FAILURE_LEAD = "This ticket's checks fail on the epic branch"
+
+export function handedOverByEpicCheck(comments, author) {
+  const stop = lastStop(comments, author)
+  return Boolean(stop && stop.reason.startsWith(EPIC_CHECK_FAILURE_LEAD))
+}
+
 export function lastStop(comments, author) {
   const found = byAuthor(comments, author).filter((comment) => isStopComment(comment.body))
   if (!found.length) return null
