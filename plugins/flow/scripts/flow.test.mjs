@@ -1816,3 +1816,59 @@ test('run-report says the release pull request is a draft while it is one', () =
   assert.match(flow('run-report', '1').stdout, /\*\*Release pull request:\*\* https:\/\/github\.com\/o\/r\/pull\/40, a draft while anything is not built; it is marked ready once every ticket is done\./)
 })
 
+
+const RELEASE_HEAD = 'c0ffee1234567890c0ffee1234567890c0ffee12'
+const releaseCheckBody = (head, passed = true, all = true) => `<!-- flow:release-check head=${head} passed=${passed} all=${all} -->\n**Epic check.**`
+const handOpened = (overrides = {}) => ({
+  number: 61,
+  html_url: 'https://github.com/o/r/pull/61',
+  state: 'closed',
+  head: { ref: 'release/trip-export', sha: RELEASE_HEAD },
+  base: { ref: 'main' },
+  merged_at: '2026-10-26T06:53:00Z',
+  merge_commit_sha: 'af99f88d9',
+  ...overrides,
+})
+
+test('release-pr --record posts the release marker for a pull request a person opened at the head the epic check passed at', () => {
+  reportWorld({
+    settings: 'Delivery: release\nBranch: epic/trip-export',
+    states: { 2: 'done', 3: 'done' },
+    epicComments: [rawComment(1, 11, releaseCheckBody(RELEASE_HEAD))],
+    extra: { [`GET ${R}/pulls/61`]: handOpened() },
+  })
+  const result = flow('release-pr', '1', '--record', '61')
+  assert.equal(result.status, 0, result.stderr)
+  assert.deepEqual(JSON.parse(result.stdout), { epic: 1, pullRequest: 61, url: 'https://github.com/o/r/pull/61', base: 'main', recorded: true, merged: true })
+  const body = JSON.parse(fake.calls().find((call) => call.key === `POST ${R}/issues/1/comments`).stdin).body
+  assert.equal(body, '<!-- flow:release-pr number=61 -->\n**Release pull request recorded:** https://github.com/o/r/pull/61 (`release/trip-export` into `main`), opened by a person. Its head `c0ffee123456` is the head the latest epic check passed at. It is merged.')
+  assert.ok(!fake.calls().some((call) => call.key === `POST ${R}/pulls`), 'it opens no pull request')
+})
+
+test('release-pr --record refuses a pull request the epic check did not pass at, one into another branch, or one closed unmerged, and posts nothing', () => {
+  const cases = [
+    [[releaseCheckBody('deadbeef12345678')], handOpened(), /the latest epic check is of `deadbeef1234`, not of the head of pull request #61 \(`c0ffee123456`\)/],
+    [[releaseCheckBody(RELEASE_HEAD, false)], handOpened(), /did not pass/],
+    [[releaseCheckBody(RELEASE_HEAD, true, false)], handOpened(), /judged only the tickets it was given/],
+    [[releaseCheckBody(RELEASE_HEAD)], handOpened(), /has no epic check posted by this account/],
+    [[releaseCheckBody(RELEASE_HEAD)], handOpened({ base: { ref: 'develop' } }), /goes into `develop`, not the default branch `main`/],
+    [[releaseCheckBody(RELEASE_HEAD)], handOpened({ merged_at: null, merge_commit_sha: null }), /was closed without merging/],
+  ]
+  for (const [bodies, pull, reason] of cases) {
+    fake.clearCalls()
+    const author = reason.source.includes('this account') ? 'someone' : 'flow-bot'
+    reportWorld({
+      settings: 'Delivery: release\nBranch: epic/trip-export',
+      states: { 2: 'done', 3: 'done' },
+      epicComments: bodies.map((body, index) => rawComment(1, 11 + index, body, { author })),
+      extra: { [`GET ${R}/pulls/61`]: pull },
+    })
+    const result = flow('release-pr', '1', '--record', '61')
+    assert.equal(result.status, 1, reason.source)
+    assert.match(result.stderr, reason)
+    assert.ok(fake.calls().every((call) => call.key.startsWith('GET') || call.key === 'graphql'), 'nothing is posted')
+  }
+  reportWorld({ settings: 'Delivery: release\nBranch: epic/trip-export', states: { 2: 'done', 3: 'in-review' } })
+  assert.match(flow('release-pr', '1', '--record', '61').stderr, /not every ticket of epic #1 is done/)
+  assert.equal(flow('release-pr', '1', '--record', '61', '--draft').status, 2)
+})

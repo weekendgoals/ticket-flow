@@ -62,7 +62,12 @@ plan quotes its words.
   - a CHECK that picks a file by modification time (`ls -t … | head -1`):
     a fresh clone or worktree scrambles mtimes, so it passes or fails by
     checkout order; suggest picking by git history instead, such as
-    `git log -1 --diff-filter=A --name-only -- <glob>`.
+    `git log -1 --diff-filter=A --name-only -- <glob>`;
+  - an EXPECT that is a test's title, or text the command does not print
+    when you run it: a rename or a guessed wording fails correct code;
+    suggest the count the tool prints or `&& echo <marker>`;
+  - a CHECK that needs a credential, key or live service the run will not
+    have: the run cannot pass it, so it belongs to a person's step.
   Say which CHECKs you did not run and why.
 - **A dependency hiding in prose.** Ticket three's scope quietly needs ticket
   five's output, or two tickets edit the same file, and neither waits for the
@@ -140,6 +145,14 @@ plan quotes its words.
   Quote both lines.
 - **A missing or hollow "Not in scope"** where the nearby temptation is
   obvious.
+- **An outside name nothing proves**: a model id, endpoint, region, account
+  or credential the plan calls by, with no probe and its answer in the plan
+  and no first ticket that proves it. Name it and the smallest call that
+  would answer.
+- **A ticket that leaves the epic head red for a later ticket**, such as
+  text waiting for a person's approval whose translations come in another
+  ticket: every epic check in between fails, and reopens tickets that
+  changed nothing. Say which ticket should carry the rest.
 - **Work the request implies that no ticket owns**, and tickets for problems
   the code shows do not exist.
 - **The wrong delivery.** `release` for weeks of work or a final diff nobody

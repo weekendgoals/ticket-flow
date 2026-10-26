@@ -173,3 +173,19 @@ mention while the run builds everything else, and the person is told once,
 at the end. A project that wants a person in the loop keeps `ask`, and an
 attended session always asks, because a question in the chat costs
 nothing.
+
+## A plan that leaves the epic head red by design pays for it at every later merge
+
+2026-10-23, epic #572 in weekendgoals. The plan had one ticket add an
+English privacy paragraph for the person's approval and left its 17
+translations to a ticket two places later. Every check of the epic head in
+between failed on that one text, and the first such check reopened a ticket
+that had changed nothing about it; the person spent a re-check and a
+comment five hours later to close it again. An earlier ticket of the same
+epic met the same approval inside itself, stopping for the copy and
+translating after the answer, and never went red.
+
+What it teaches: a wait for a person belongs inside the ticket that waits,
+with the work that follows it. Split across tickets, the wait moves from one
+ticket's stop to every later ticket's check, where it is read as that
+ticket's failure.

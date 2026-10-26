@@ -82,6 +82,7 @@ import {
   runReport,
   MAX_HANDOFF_LENGTH,
   deliveredPullRequests,
+  releasePrRecordedComment,
 } from './ticket-steps.mjs'
 import { loadSources, workflowSources, workflowRuns, meterTranscripts, meterComment, readMeterComment } from './meter.mjs'
 import { ticketStats, readEpicComments, summarize, overallStats, formatStats, combineMeters, firstStartBase } from './stats.mjs'
@@ -204,6 +205,8 @@ const USAGE = `usage: flow <command>
                                          check-epic passed at the epic branch's head (--draft, under Stops: none: with
                                          tickets parked and nothing in progress, open it as a draft listing what is not built;
                                          once every ticket is done, the draft is rewritten and marked ready)
+  release-pr <epic> --record <pr>        record a release pull request a person opened, once every ticket is done and
+                                         the latest check-epic passed at its head; its base must be the default branch
   design-map <epic> [--out <file>]       write the epic's design map for the design comparison
   run-report <epic> [--outcome built|stopped] [--text "<why it stopped>" | --file <md>] [--local] [--post]
                                          the run's closing report, from the epic and its tickets' comments (--post: also post it
@@ -223,7 +226,7 @@ const USAGE = `usage: flow <command>
                                          the pages to visit: same site only, deduplicated, no "deny" match, capped, as JSON
   qa-fingerprint <url> "<first line>"    the fingerprint a QA finding is filed with: the page's path and the normalised line`
 
-const VALUE_FLAGS = new Set(['--file', '--epic-file', '--text', '--title', '--tier', '--cwd', '--blocked-by', '--bot', '--timeout', '--interval', '--sha', '--epic', '--tickets', '--out', '--workflow', '--important', '--grace', '--since', '--repo', '--head', '--screenshots', '--fingerprint', '--routes', '--links', '--cap', '--widths', '--outcome', '--check'])
+const VALUE_FLAGS = new Set(['--file', '--epic-file', '--text', '--title', '--tier', '--cwd', '--blocked-by', '--bot', '--timeout', '--interval', '--sha', '--epic', '--tickets', '--out', '--workflow', '--important', '--grace', '--since', '--repo', '--head', '--screenshots', '--fingerprint', '--routes', '--links', '--cap', '--widths', '--outcome', '--check', '--record'])
 const REPEATABLE_FLAGS = new Set(['--transcripts', '--sitemap'])
 const BOOLEAN_FLAGS = new Set(['--board', '--json', '--no-epic', '--print', '--wait', '--once', '--mark', '--remove', '--review', '--all', '--local', '--post', '--draft'])
 const DEFAULT_WAIT_SECONDS = 1800
@@ -1982,9 +1985,36 @@ function releasePrRefusal(epic, epicNumber, draft) {
   return null
 }
 
+function recordReleasePullRequest({ epicNumber, epicIssue, epic, number }) {
+  const pullRequest = github.getPullRequest(number)
+  const base = github.defaultBranch()
+  let refusal = null
+  if (pullRequest.base !== base) refusal = `pull request #${number} goes into \`${pullRequest.base}\`, not the default branch \`${base}\`, so it is not a release`
+  else if (pullRequest.state === 'closed' && !pullRequest.merged) refusal = `pull request #${number} was closed without merging, so it released nothing`
+  else
+    refusal = releaseCheckRefusal({
+      check: lastReleaseCheck(github.listComments(epicNumber), github.viewerLogin()),
+      head: pullRequest.headSha,
+      epic: epicNumber,
+      epicBranch: epic.settings.branch,
+      headOf: `pull request #${number}`,
+    })
+  if (refusal) {
+    process.stderr.write(`${refusal}\n`)
+    return 1
+  }
+  github.comment(epicNumber, releasePrRecordedComment({ number, url: pullRequest.url, head: pullRequest.head, headSha: pullRequest.headSha, base, merged: pullRequest.merged }))
+  const stage = releaseStageOf({ issue: epicIssue, settings: epic.settings })
+  if (stage) syncProjectRelease(epicNumber, stage)
+  printJson({ epic: epicNumber, pullRequest: number, url: pullRequest.url, base, recorded: true, merged: pullRequest.merged })
+  return 0
+}
+
 function commandReleasePr(positional, flags) {
   const epicNumber = issueNumber(positional[0], 'an epic number')
-  const root = requireRepository(flags)
+  const recording = flags.record !== undefined
+  if (recording && flags.draft) throw new UsageError('give --record or --draft, not both')
+  const root = recording ? null : requireRepository(flags)
   const epicIssue = github.getIssue(epicNumber)
   if (!epicIssue.labels.includes(EPIC_LABEL)) throw new UsageError(`#${epicNumber} is not an epic (it has no ${EPIC_LABEL} label)`)
   const epic = deriveEpic(epicIssue, github.listSubIssues(epicNumber))
@@ -1993,6 +2023,7 @@ function commandReleasePr(positional, flags) {
     process.stderr.write(`${refusal}\n`)
     return 1
   }
+  if (recording) return recordReleasePullRequest({ epicNumber, epicIssue, epic, number: issueNumber(flags.record, 'a pull request number') })
   fetchOrigin(root)
   const head = resolveCommit(root, `origin/${epic.settings.branch}`)
   if (!head) {

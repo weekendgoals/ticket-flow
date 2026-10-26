@@ -70,7 +70,9 @@ Write the body to a file outside the repository:
 
 Every ticket needs at least one CHECK: a ticket nothing can decide fails its
 check. Write the EXPECT so a skipped test run cannot satisfy it (a pass count,
-not just "passed"). Prove the CHECK fails today; with a release epic, run
+not just "passed"), and copy it from the command's own output, never a
+test's title or a wording from memory, because a rename or a guessed phrase
+fails the fix once it is right. Prove the CHECK fails today; with a release epic, run
 it with the epic branch checked out (`git fetch origin`, then `git switch
 --detach origin/<Branch>`), since that is the code the ticket changes. An
 incremental epic's tickets start from the default branch, so run it there:

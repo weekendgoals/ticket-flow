@@ -108,7 +108,9 @@ One verdict per finding:
   fails for the wrong reason (a typo, a missing tool, a skip) has not been
   proven either: read its evidence line. Write the EXPECT so a skipped test
   run cannot satisfy it (a pass count, not just "passed"), and never a
-  whole-suite run: it is green before the fix exists. When the finding is
+  whole-suite run: it is green before the fix exists. Copy the EXPECT from
+  the command's own output, never a test's title or a wording from memory,
+  because a rename or a guessed phrase fails the fix once it is right. When the finding is
   visual and the epic has `Design sources:`, add a `COMPARE:` line too, since
   a picture of the bug is a claim about what the design draws.
 
