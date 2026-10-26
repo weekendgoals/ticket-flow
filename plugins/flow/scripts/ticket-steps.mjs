@@ -463,6 +463,12 @@ export function resolveRequested(comments, author) {
 }
 
 const PULL_REQUEST_ROUND = /^\*\*Pull request round (\d+):\*\*\s*(.*)$/
+const PULL_REQUEST_DELIVERED = /^\*\*Pull request (?:opened|already open):\*\* https:\/\/\S+\/pull\/(\d+)\b/
+
+export function deliveredPullRequests(comments) {
+  const numbers = comments.map((comment) => comment.body.match(PULL_REQUEST_DELIVERED)).filter(Boolean).map((match) => Number(match[1]))
+  return [...new Set(numbers.reverse())]
+}
 
 export function lastPullRequestRound(comments, author) {
   const rounds = byAuthor(comments, author)

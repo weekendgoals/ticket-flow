@@ -133,6 +133,13 @@ exception differently. What it teaches: the line worth holding is code
 work, not any work, and an exception is stated once, where the rule is
 (CLAUDE.md), so the copies cannot drift.
 
+2026-10-26. Three tickets delivered by their own pull requests stayed in
+review after a person merged them: done was the build's last step, after
+a pull request loop that can wait half an hour a round, and nothing else
+set it. A state that only a remembered last step sets is lost whenever
+the run ends early; the fact it stands for (the pull request merged) was on
+GitHub all along, so a second job after the merge now reads it.
+
 ## Replacing a field's options gives every option a new id
 
 2026-10-18, Flow 3.1. `flow init --board` added the `Status` options a

@@ -96,6 +96,7 @@ function world(extra = {}) {
     [`GET ${R}`]: { full_name: 'o/r', default_branch: 'main', has_issues: true },
     [`GET ${R}/labels?per_page=100`]: LABELS.map((label) => ({ name: label.name, color: 'ededed', description: '' })),
     [`GET ${R}/issues?labels=flow%3Aepic&state=open&per_page=100`]: [],
+    [`GET ${R}/issues?labels=flow%3Ain-review&state=closed&per_page=100`]: [],
     [`GET ${R}/issues/3`]: issue(3, { labels: ['flow:ticket', 'flow:in-progress'] }),
     [`POST ${R}/issues/3/labels`]: [],
     [`DELETE ${R}/issues/3/labels/flow%3Ain-progress`]: null,

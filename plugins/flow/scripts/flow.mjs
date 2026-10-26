@@ -81,6 +81,7 @@ import {
   MAX_CLAIM_LENGTH,
   runReport,
   MAX_HANDOFF_LENGTH,
+  deliveredPullRequests,
 } from './ticket-steps.mjs'
 import { loadSources, workflowSources, workflowRuns, meterTranscripts, meterComment, readMeterComment } from './meter.mjs'
 import { ticketStats, readEpicComments, summarize, overallStats, formatStats, combineMeters, firstStartBase } from './stats.mjs'
@@ -180,6 +181,7 @@ const USAGE = `usage: flow <command>
   start <n> [--cwd <dir>]                start a ready ticket: its branch, label and first comment (JSON)
   accept <n> [--cwd <dir>]               run the criteria on the committed head and post the result
   deliver <n> [--cwd <dir>]              merge the accepted commit into the epic branch, or open its pull request
+  delivered <n>                          mark a ticket done once a person merged its pull request into the default branch
   screenshots <n> [--cwd <dir>]          run the screenshots command from .flow.json, commit the images, link them
   merge <n> [--sha <sha>] | merge --epic <epic>
                                          merge the accepted commit into the epic branch (--epic: every accepted ticket, in order)
@@ -557,6 +559,9 @@ function commandDoctor() {
       const epic = deriveEpic(epicIssue, github.listSubIssues(epicIssue.number))
       for (const problem of epic.problems) problems.push(`${problem}.`)
     }
+  if (repo.hasIssues)
+    for (const stuck of github.listIssues({ label: 'flow:in-review', state: 'closed' }))
+      problems.push(`#${stuck.number} is closed but still labelled flow:in-review, so Flow reads it as unfinished; when a person merged its pull request, \`flow delivered ${stuck.number}\` marks it done.`)
   return finish()
 }
 
@@ -1552,6 +1557,50 @@ function commandDeliver(positional, flags) {
   return 0
 }
 
+function mergedTicketPullRequest(number, candidates, base) {
+  const branch = ticketBranchName(number)
+  for (const candidate of candidates) {
+    const pullRequest = github.getPullRequest(candidate)
+    if (pullRequest.merged && pullRequest.head === branch && pullRequest.base === base) return pullRequest
+  }
+  return null
+}
+
+function commandDelivered(positional) {
+  const number = issueNumber(positional[0], 'a ticket number')
+  const { issue } = loadTicket(number)
+  const { state } = ticketState(issue.labels)
+  if (state === 'done') {
+    printJson({ ticket: number, outcome: 'already-done' })
+    return 0
+  }
+  if (!ACCEPTABLE_STATES.has(state)) {
+    process.stderr.write(`#${number} is ${state}; only a ticket in progress or in review is marked done by its merged pull request\n`)
+    return 1
+  }
+  const candidates = deliveredPullRequests(github.listComments(number))
+  if (!candidates.length) {
+    process.stderr.write(`#${number} has no "**Pull request opened:**" comment, so no pull request of its own to read; \`flow deliver ${number}\` opens one\n`)
+    return 1
+  }
+  const base = github.defaultBranch()
+  const pullRequest = mergedTicketPullRequest(number, candidates, base)
+  if (!pullRequest) {
+    const named = candidates.map((candidate) => `#${candidate}`).join(', ')
+    process.stderr.write(`#${number} stays ${state}: none of its pull requests (${named}) was merged from \`${ticketBranchName(number)}\` into \`${base}\`\n`)
+    return 1
+  }
+  changeState(number, {
+    add: ['flow:done'],
+    remove: issue.labels.filter((label) => (STATE_LABELS.includes(label) && label !== 'flow:done') || label === START_LABEL),
+    state: 'done',
+    close: issue.state !== 'closed',
+  })
+  github.comment(number, `**Pull request merged:** ${pullRequest.url} into \`${base}\` at ${pullRequest.mergeCommitSha}. The ticket is done.`)
+  printJson({ ticket: number, outcome: 'done', pullRequest: pullRequest.number, merge: pullRequest.mergeCommitSha, base })
+  return 0
+}
+
 function commandMerge(positional, flags) {
   const root = requireRepository(flags)
   if (flags.epic !== undefined) {
@@ -1878,7 +1927,7 @@ function shownCount(value) {
 }
 
 const NO_CODE_WORK_AFTER_MERGE =
-  "After a person merges into the default branch, no code work runs: what runs is the GitHub Action's `board` job, which closes `flow:done` tickets left open and writes the project board (Status, Release, figures), and the report page's rebuild, which only reads."
+  "After a person merges into the default branch, no code work runs: what runs is the GitHub Action's `delivered` job, which marks done a ticket whose own pull request a person merged, its `board` job, which closes `flow:done` tickets left open and writes the project board (Status, Release, figures), and the report page's rebuild, which only reads."
 
 function claimSection(heading, tickets, linesOf) {
   const found = tickets.flatMap((ticket) => linesOf(ticket).map((line) => `- #${ticket.number} ${ticket.title}: ${line}`))
@@ -2586,6 +2635,8 @@ function main(argv) {
       return commandAccept(positional, flags)
     case 'deliver':
       return commandDeliver(positional, flags)
+    case 'delivered':
+      return commandDelivered(positional)
     case 'screenshots':
       return commandScreenshots(positional, flags)
     case 'meter':

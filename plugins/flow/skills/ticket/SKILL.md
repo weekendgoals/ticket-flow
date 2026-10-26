@@ -354,8 +354,9 @@ get its first one only.
 
 No agent ever merges into the default branch: a person merges every pull
 request there. After a person merges into the default branch, no code work
-runs: what runs is the GitHub Action's `board` job, which closes
-`flow:done` tickets left open and writes the project board (Status,
+runs: what runs is the GitHub Action's `delivered` job, which marks done a
+ticket whose own pull request a person merged, its `board` job, which
+closes `flow:done` tickets left open and writes the project board (Status,
 Release, figures), and the report page's rebuild, which only reads.
 
 ## The pull request loop

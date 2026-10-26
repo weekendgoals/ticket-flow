@@ -223,7 +223,7 @@ test('approving a finding starts nothing: the route job runs on flow:approved on
   assert.equal(workflow.jobs.epic.if, "always() && needs.route.outputs.epic != ''", 'with route skipped the scheduler has no epic and does not run')
 })
 
-test('a closed epic runs only board-sync for that epic, and a closed ticket or finding runs nothing', () => {
+test('a closed epic runs only board-sync for that epic, a ticket closed as completed in review runs only delivered, and a closed finding runs nothing', () => {
   const board = workflow.jobs.board
   assert.equal(board.if, "github.event_name == 'issues' && github.event.action == 'closed' && contains(github.event.issue.labels.*.name, 'flow:epic')")
   assert.equal(board.env.EPIC, '${{ github.event.issue.number }}')
@@ -232,6 +232,12 @@ test('a closed epic runs only board-sync for that epic, and a closed ticket or f
   assert.ok(!board.steps.some((entry) => String(entry.uses || '').startsWith('anthropics/')), 'no agent runs after a merge')
   for (const job of ['ticket', 'route']) assert.match(workflow.jobs[job].if, /github\.event\.label\.name ==/, `${job} needs a label event, so a close starts nothing there`)
   assert.deepEqual(board.permissions, { contents: 'read', issues: 'write', 'pull-requests': 'read' }, 'it closes issues and reads the release pull request, nothing more')
+  const delivered = workflow.jobs.delivered
+  assert.equal(delivered.if, "github.event_name == 'issues' && github.event.action == 'closed' && github.event.issue.state_reason == 'completed' && contains(github.event.issue.labels.*.name, 'flow:ticket') && contains(github.event.issue.labels.*.name, 'flow:in-review')")
+  assert.equal(delivered.env.TICKET, '${{ github.event.issue.number }}')
+  assert.deepEqual(delivered.steps.filter((entry) => entry.run).map((entry) => entry.run), ['$FLOW delivered "$TICKET"'])
+  assert.ok(!delivered.steps.some((entry) => String(entry.uses || '').startsWith('anthropics/')), 'no agent runs after a merge')
+  assert.deepEqual(delivered.permissions, { contents: 'read', issues: 'write', 'pull-requests': 'read' }, 'it labels and closes the ticket and reads its pull request, nothing more')
   const rule = readFileSync(join(dirname(templatePath), '..', '..', '..', 'CLAUDE.md'), 'utf8').replace(/\s+/g, ' ')
   const stated = text.match(/# (After a person merges into the default branch, no code work runs: [^\n]*?which only reads\.)/)[1]
   assert.ok(rule.includes(stated), 'the template quotes the rule as CLAUDE.md states it')
