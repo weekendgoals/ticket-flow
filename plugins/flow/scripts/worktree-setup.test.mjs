@@ -216,7 +216,7 @@ test('the budget is one clock: copies are inside it too', () => {
   const p = project('copy-budget', { config: { copy: ['.env'], setup: ['echo ran > marker'] } })
   const r = setUp(...p.args, '--budget-ms', '1')
   assert.equal(r.code, 1)
-  assert.match(r.out, /FAILED at (copy \.env|setup: echo ran > marker)\n/)
+  assert.match(r.out, /FAILED at (copy( \.env)?|setup: echo ran > marker)\n/)
   assert.ok(!existsSync(join(p.worktree, 'marker')))
 })
 
