@@ -270,8 +270,15 @@ Rules for tickets, each with its reason:
   itself (no database, no credentials) exits 0 and still prints test titles.
   Point EXPECT at a line that proves the run, such as a pass count
   (`12 passed`). Under `node --test --test-name-pattern`, `# pass 1` is
-  printed even when nothing matches, so expect two matching tests or grep the
-  test's own line.
+  printed even when nothing matches, so expect two matching tests.
+- **An EXPECT is text you have seen the command print.** Run the CHECK once
+  and copy the line, because a wording recalled from memory (a linter's
+  "0 errors", a phrase the generated report does not use) fails on correct
+  code; when no printed line proves the result, add `&& echo <marker>`
+  after the command. Never expect a test's title, which a later rename or a
+  merge of the default branch changes.
+- **A CHECK never picks a file by modification time** (`ls -t`), because a
+  fresh checkout scrambles it; pick by git history instead.
 - **A whole-suite run is not a criterion.** `npm test` with `EXPECT: passed`
   is green before the ticket exists. Name the one test or fact this ticket
   turns green.
@@ -280,7 +287,19 @@ Rules for tickets, each with its reason:
   specified (built by the strongest model). When unsure, `hard`.
 - **The first ticket proves what the plan assumes.** If the plan rests on
   something unproven, the first ticket proves or kills it, and its Notes say
-  what happens if it fails.
+  what happens if it fails. An outside name the plan calls by (a model id,
+  an endpoint, a region, an account or a credential) counts as unproven:
+  probe it now with the smallest call that answers and write the call and
+  its answer into the plan, or give it to the first ticket, because a
+  wrong one stops the run halfway with the person away. A criterion that
+  needs a credential or a live service the run will not have is a person's
+  step in the plan, never a CHECK: the run cannot pass it, so it stops.
+- **A ticket that waits for a person's approval carries the work that
+  follows it.** `check-epic` runs every done ticket's checks at each new
+  epic head, so work left red until a later ticket (an English-only text
+  waiting for its translations) fails every ticket merged in between and
+  reopens tickets that changed nothing. Stop for the approval inside the
+  ticket, then finish it there.
 - **A design gets compared.** When the epic has `Design sources:`, every
   ticket that builds something the design draws carries a `COMPARE:` line
   naming its landmarks, and the last building ticket compares each whole page

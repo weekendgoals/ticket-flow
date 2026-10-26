@@ -92,6 +92,7 @@ function world({ epics = [], others = [], findings = [], labels = LABELS.map((la
     [`GET ${R}/labels?per_page=100`]: labels.map((name) => ({ name, color: 'ededed', description: '' })),
     [`GET ${R}/issues?labels=flow%3Aepic&state=open&per_page=100`]: epics.map(({ epic }) => epic),
     [`GET ${R}/issues?labels=flow%3Afound&state=open&per_page=100`]: findings,
+    [`GET ${R}/issues?labels=flow%3Ain-review&state=closed&per_page=100`]: [],
     [PROJECT_LOOKUP]: { data: { repository: { projectsV2: { nodes: [] } } } },
   }
   const noEdits = { data: { repository: { issue: { userContentEdits: { pageInfo: { hasNextPage: false, endCursor: null }, nodes: [] } } } } }
@@ -720,6 +721,92 @@ test('needs-human on a closed done ticket reopens it and says so in the comment'
   const posted = JSON.parse(fake.calls().find((call) => call.key === `POST ${R}/issues/3/comments`).stdin).body
   assert.match(posted, /@owner The export fails at the epic head\. It was closed as done and is open again, since a closed ticket carries no work\.$/)
   assert.deepEqual(JSON.parse(fake.calls().find((call) => call.key === `PATCH ${R}/issues/3`).stdin), { state: 'open' })
+})
+
+const loneTicket = (number, state) =>
+  issue(number, { title: `ticket ${number}`, body: ticketBody(0).replace(/^Epic: #0\n/, ''), labels: ['flow:ticket', `flow:${state}`] })
+
+const pullRequest = (number, { head = 'ticket/3', base = 'main', merged = true } = {}) => ({
+  number,
+  html_url: `https://github.com/o/r/pull/${number}`,
+  state: 'closed',
+  head: { ref: head, sha: 'abc' },
+  base: { ref: base },
+  merged_at: merged ? '2026-10-26T09:00:00Z' : null,
+  merge_commit_sha: merged ? 'f00dfeed' : null,
+})
+
+const openedComment = (id, number, author = 'flow-bot') => rawComment(3, id, `**Pull request opened:** https://github.com/o/r/pull/${number} (into \`main\`). A person merges it.`, { author })
+
+test('delivered marks a closed ticket done when a person merged its own pull request into the default branch, whoever posted the delivery comment', () => {
+  world({
+    others: [closed(loneTicket(3, 'in-review'))],
+    extra: {
+      [`GET ${R}/issues/3/comments?per_page=100`]: [openedComment(1, 39), openedComment(2, 40, 'someone'), openedComment(3, 41)],
+      [`GET ${R}/pulls/41`]: pullRequest(41, { head: 'feature/other' }),
+      [`GET ${R}/pulls/40`]: pullRequest(40),
+      [`POST ${R}/issues/3/labels`]: [],
+      [`DELETE ${R}/issues/3/labels/flow%3Ain-review`]: null,
+      [`POST ${R}/issues/3/comments`]: { id: 9, html_url: null },
+    },
+  })
+  const result = flow('delivered', '3')
+  assert.equal(result.status, 0, result.stderr)
+  assert.deepEqual(JSON.parse(result.stdout), { ticket: 3, outcome: 'done', pullRequest: 40, merge: 'f00dfeed', base: 'main' })
+  const writes = fake.calls().filter((call) => !call.key.startsWith('GET'))
+  assert.deepEqual(fake.calls().filter((call) => call.key.startsWith(`GET ${R}/pulls/`)).map((call) => call.key), [`GET ${R}/pulls/41`, `GET ${R}/pulls/40`], 'newest first, and the merged one ends the search before #39')
+  assert.deepEqual(writes.map((call) => call.key), [`POST ${R}/issues/3/labels`, `DELETE ${R}/issues/3/labels/flow%3Ain-review`, PROJECT_LOOKUP, `POST ${R}/issues/3/comments`])
+  assert.deepEqual(JSON.parse(writes[0].stdin), { labels: ['flow:done'] })
+  assert.equal(JSON.parse(writes[3].stdin).body, '**Pull request merged:** https://github.com/o/r/pull/40 into `main` at f00dfeed. The ticket is done.')
+})
+
+test('delivered closes a ticket still open once its pull request merged', () => {
+  world({
+    others: [loneTicket(3, 'in-review')],
+    extra: {
+      [`GET ${R}/issues/3/comments?per_page=100`]: [openedComment(1, 40)],
+      [`GET ${R}/pulls/40`]: pullRequest(40),
+      [`POST ${R}/issues/3/labels`]: [],
+      [`DELETE ${R}/issues/3/labels/flow%3Ain-review`]: null,
+      [`PATCH ${R}/issues/3`]: closed(loneTicket(3, 'done')),
+      [`POST ${R}/issues/3/comments`]: { id: 9, html_url: null },
+    },
+  })
+  assert.equal(flow('delivered', '3').status, 0)
+  assert.deepEqual(JSON.parse(fake.calls().find((call) => call.key === `PATCH ${R}/issues/3`).stdin), { state: 'closed', state_reason: 'completed' })
+})
+
+test('delivered changes nothing unless a pull request of the ticket branch was merged into the default branch', () => {
+  for (const [shape, reason] of [
+    [{ merged: false }, /#3 stays in-review: none of its pull requests \(#40\) was merged from `ticket\/3` into `main`/],
+    [{ head: 'ticket/4' }, /none of its pull requests \(#40\)/],
+    [{ base: 'epic/trip-export' }, /none of its pull requests \(#40\)/],
+  ]) {
+    fake.clearCalls()
+    world({ others: [closed(loneTicket(3, 'in-review'))], extra: { [`GET ${R}/issues/3/comments?per_page=100`]: [openedComment(1, 40)], [`GET ${R}/pulls/40`]: pullRequest(40, shape) } })
+    const result = flow('delivered', '3')
+    assert.equal(result.status, 1)
+    assert.match(result.stderr, reason)
+    assert.ok(fake.calls().every((call) => call.key.startsWith('GET')), 'nothing is written')
+  }
+  fake.clearCalls()
+  world({ others: [closed(loneTicket(3, 'in-review'))], extra: { [`GET ${R}/issues/3/comments?per_page=100`]: [] } })
+  assert.match(flow('delivered', '3').stderr, /#3 has no "\*\*Pull request opened:\*\*" comment/)
+  world({ others: [loneTicket(3, 'planned')] })
+  assert.equal(flow('delivered', '3').status, 1)
+  fake.clearCalls()
+  world({ others: [closed(loneTicket(3, 'done'))] })
+  const again = flow('delivered', '3')
+  assert.equal(again.status, 0)
+  assert.deepEqual(JSON.parse(again.stdout), { ticket: 3, outcome: 'already-done' })
+  assert.ok(fake.calls().every((call) => call.key.startsWith('GET')), 'a done ticket is left as it is')
+})
+
+test('doctor names a closed ticket still labelled in review, and the command that marks it done', () => {
+  world({ extra: { [`GET ${R}/issues?labels=flow%3Ain-review&state=closed&per_page=100`]: [closed(loneTicket(3, 'in-review'))] } })
+  const result = flow('doctor')
+  assert.equal(result.status, 1)
+  assert.match(result.stdout, /^#3 is closed but still labelled flow:in-review, so Flow reads it as unfinished; when a person merged its pull request, `flow delivered 3` marks it done\.$/m)
 })
 
 test('label refuses a change that would leave two state labels', () => {
@@ -1729,3 +1816,59 @@ test('run-report says the release pull request is a draft while it is one', () =
   assert.match(flow('run-report', '1').stdout, /\*\*Release pull request:\*\* https:\/\/github\.com\/o\/r\/pull\/40, a draft while anything is not built; it is marked ready once every ticket is done\./)
 })
 
+
+const RELEASE_HEAD = 'c0ffee1234567890c0ffee1234567890c0ffee12'
+const releaseCheckBody = (head, passed = true, all = true) => `<!-- flow:release-check head=${head} passed=${passed} all=${all} -->\n**Epic check.**`
+const handOpened = (overrides = {}) => ({
+  number: 61,
+  html_url: 'https://github.com/o/r/pull/61',
+  state: 'closed',
+  head: { ref: 'release/trip-export', sha: RELEASE_HEAD },
+  base: { ref: 'main' },
+  merged_at: '2026-10-26T06:53:00Z',
+  merge_commit_sha: 'af99f88d9',
+  ...overrides,
+})
+
+test('release-pr --record posts the release marker for a pull request a person opened at the head the epic check passed at', () => {
+  reportWorld({
+    settings: 'Delivery: release\nBranch: epic/trip-export',
+    states: { 2: 'done', 3: 'done' },
+    epicComments: [rawComment(1, 11, releaseCheckBody(RELEASE_HEAD))],
+    extra: { [`GET ${R}/pulls/61`]: handOpened() },
+  })
+  const result = flow('release-pr', '1', '--record', '61')
+  assert.equal(result.status, 0, result.stderr)
+  assert.deepEqual(JSON.parse(result.stdout), { epic: 1, pullRequest: 61, url: 'https://github.com/o/r/pull/61', base: 'main', recorded: true, merged: true })
+  const body = JSON.parse(fake.calls().find((call) => call.key === `POST ${R}/issues/1/comments`).stdin).body
+  assert.equal(body, '<!-- flow:release-pr number=61 -->\n**Release pull request recorded:** https://github.com/o/r/pull/61 (`release/trip-export` into `main`), opened by a person. Its head `c0ffee123456` is the head the latest epic check passed at. It is merged.')
+  assert.ok(!fake.calls().some((call) => call.key === `POST ${R}/pulls`), 'it opens no pull request')
+})
+
+test('release-pr --record refuses a pull request the epic check did not pass at, one into another branch, or one closed unmerged, and posts nothing', () => {
+  const cases = [
+    [[releaseCheckBody('deadbeef12345678')], handOpened(), /the latest epic check is of `deadbeef1234`, not of the head of pull request #61 \(`c0ffee123456`\)/],
+    [[releaseCheckBody(RELEASE_HEAD, false)], handOpened(), /did not pass/],
+    [[releaseCheckBody(RELEASE_HEAD, true, false)], handOpened(), /judged only the tickets it was given/],
+    [[releaseCheckBody(RELEASE_HEAD)], handOpened(), /has no epic check posted by this account/],
+    [[releaseCheckBody(RELEASE_HEAD)], handOpened({ base: { ref: 'develop' } }), /goes into `develop`, not the default branch `main`/],
+    [[releaseCheckBody(RELEASE_HEAD)], handOpened({ merged_at: null, merge_commit_sha: null }), /was closed without merging/],
+  ]
+  for (const [bodies, pull, reason] of cases) {
+    fake.clearCalls()
+    const author = reason.source.includes('this account') ? 'someone' : 'flow-bot'
+    reportWorld({
+      settings: 'Delivery: release\nBranch: epic/trip-export',
+      states: { 2: 'done', 3: 'done' },
+      epicComments: bodies.map((body, index) => rawComment(1, 11 + index, body, { author })),
+      extra: { [`GET ${R}/pulls/61`]: pull },
+    })
+    const result = flow('release-pr', '1', '--record', '61')
+    assert.equal(result.status, 1, reason.source)
+    assert.match(result.stderr, reason)
+    assert.ok(fake.calls().every((call) => call.key.startsWith('GET') || call.key === 'graphql'), 'nothing is posted')
+  }
+  reportWorld({ settings: 'Delivery: release\nBranch: epic/trip-export', states: { 2: 'done', 3: 'in-review' } })
+  assert.match(flow('release-pr', '1', '--record', '61').stderr, /not every ticket of epic #1 is done/)
+  assert.equal(flow('release-pr', '1', '--record', '61', '--draft').status, 2)
+})

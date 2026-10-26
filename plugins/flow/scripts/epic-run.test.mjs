@@ -436,7 +436,7 @@ test('release-pr opens the epic\'s one pull request with its outcome, walkthroug
   assert.match(request.body, /^Epic: #1\n\n## Outcome\n\nTravellers can export a trip\.\n\n## Walkthrough\n\nA traveller opens a trip/)
   assert.match(request.body, /\| #2 Export button \| `111111111111` \|\n\| #3 Export file \| `222222222222` \|\n\| #4 Export name \| not recorded \|/)
   assert.match(request.body, /Over 2 of 3 ticket\(s\) with a cost comment: 4,000 input, 30 output, 15 cache writes and 300 cache reads/, 'a cost comment posted twice counts once; a second run of a ticket adds')
-  assert.match(request.body, /Closes #2\nCloses #3\nCloses #4\nCloses #1\n\nA person reviews and merges this pull request\. After a person merges into the default branch, no code work runs: what runs is the GitHub Action's `board` job, which closes `flow:done` tickets left open and writes the project board \(Status, Release, figures\), and the report page's rebuild, which only reads\./)
+  assert.match(request.body, /Closes #2\nCloses #3\nCloses #4\nCloses #1\n\nA person reviews and merges this pull request\. After a person merges into the default branch, no code work runs: what runs is the GitHub Action's `delivered` job, which marks done a ticket whose own pull request a person merged, its `board` job, which closes `flow:done` tickets left open and writes the project board \(Status, Release, figures\), and the report page's rebuild, which only reads\./)
   assert.match(posted(1)[0], /^<!-- flow:release-pr number=40 -->\n\*\*Release pull request opened:\*\* https:\/\/github\.com\/o\/r\/pull\/40/)
 })
 

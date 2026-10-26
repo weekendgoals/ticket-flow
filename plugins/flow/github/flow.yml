@@ -212,7 +212,7 @@ jobs:
             $FLOW run-report "$EPIC" --post --outcome stopped --text "nothing is ready and nothing is in progress"
           fi
 
-  # After a person merges into the default branch, no code work runs: what runs is the GitHub Action's `board` job, which closes `flow:done` tickets left open and writes the project board (Status, Release, figures), and the report page's rebuild, which only reads. It builds, merges and pushes nothing, and changes no label.
+  # After a person merges into the default branch, no code work runs: what runs is the GitHub Action's `delivered` job, which marks done a ticket whose own pull request a person merged, its `board` job, which closes `flow:done` tickets left open and writes the project board (Status, Release, figures), and the report page's rebuild, which only reads. They build, merge and push nothing.
   board:
     if: github.event_name == 'issues' && github.event.action == 'closed' && contains(github.event.issue.labels.*.name, 'flow:epic')
     runs-on: ubuntu-latest
@@ -235,6 +235,29 @@ jobs:
           node-version: 20
       - name: bring the project board up to date for the closed epic
         run: $FLOW board-sync "$EPIC" || true
+
+  delivered:
+    if: github.event_name == 'issues' && github.event.action == 'closed' && github.event.issue.state_reason == 'completed' && contains(github.event.issue.labels.*.name, 'flow:ticket') && contains(github.event.issue.labels.*.name, 'flow:in-review')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: read
+    env:
+      TICKET: ${{ github.event.issue.number }}
+      GH_TOKEN: ${{ secrets.FLOW_TOKEN || github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ env.FLOW_PLUGIN_REPOSITORY }}
+          ref: ${{ env.FLOW_PLUGIN_REF }}
+          path: .flow-plugin
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: mark the ticket done when a person merged its pull request
+        run: $FLOW delivered "$TICKET"
 
   pr:
     if: >-

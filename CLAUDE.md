@@ -24,7 +24,7 @@ epic). "Direct" or "without Flow" always overrides it.
 - `scripts/flow.mjs` — the CLI: planning (`init [--board]`, `doctor`,
   `board`, `next`, `ticket`, `check`, `post`, `label`, `create-epic`,
   `create-ticket`, `link`, `needs-human`), one ticket's steps (`start`,
-  `accept`, `handoff`, `depart`, `dispute`, `deliver`, `screenshots`, `meter`, `reset`), the pull-request
+  `accept`, `handoff`, `depart`, `dispute`, `deliver`, `delivered`, `screenshots`, `meter`, `reset`), the pull-request
   loop (`pr-*`) and a whole epic (`dispatch`, `worktree`, `merge`,
   `check-epic`, `release-pr`, `design-map`, `run-report`), findings before they are
   tickets (`create-finding`, `found`, `promote`, `reject`,
@@ -152,10 +152,12 @@ CI (`.github/workflows/tests.yml`) runs every suite and check above.
   silently never running.
 - **A person merges into the default branch, and no code work runs after.**
   After a person merges into the default branch, no code work runs: what
-  runs is the GitHub Action's `board` job, which closes `flow:done` tickets
-  left open and writes the project board (Status, Release, figures), and
-  the report page's rebuild, which only reads. No agent merges or pushes
-  toward the default branch; both hosts end at the release pull request.
+  runs is the GitHub Action's `delivered` job, which marks done a ticket
+  whose own pull request a person merged, its `board` job, which closes
+  `flow:done` tickets left open and writes the project board (Status,
+  Release, figures), and the report page's rebuild, which only reads. No
+  agent merges or pushes toward the default branch; both hosts end at the
+  release pull request.
   `Branch:` must start with `epic/`, refused everywhere otherwise.
   The one agent merge is a ticket into its epic branch, by the accepted
   commit, never by a name that could move.

@@ -136,6 +136,9 @@ with tickets parked, and opens the pull request as a draft
 section and no line closing the epic. When a check at the epic head parks a
 ticket there, the done ones are checked once more first. A later run that
 builds the parked tickets marks the draft ready for review.
+A release pull request a person opens from another branch at that head is
+not the script's: record it with `FLOW release-pr <e> --record <pr>`, so
+`stats` and the retro see it.
 
 ## 3. Report
 

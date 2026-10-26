@@ -104,6 +104,10 @@ export function releasePrComment({ number, url, existing, epicBranch, base, draf
   return `${marker}\n**Release pull request ${existing ? 'already open' : 'opened'}:** ${url} (\`${epicBranch}\` into \`${base}\`). A person reviews and merges it.`
 }
 
+export function releasePrRecordedComment({ number, url, head, headSha, base, merged }) {
+  return `<!-- flow:release-pr number=${number} -->\n**Release pull request recorded:** ${url} (\`${head}\` into \`${base}\`), opened by a person. Its head \`${headSha.slice(0, 12)}\` is the head the latest epic check passed at.${merged ? ' It is merged.' : ' A person reviews and merges it.'}`
+}
+
 export function localRunLive(comments) {
   const marks = comments.filter((comment) => comment.body.startsWith(LOCAL_RUN_MARKER) || comment.body.startsWith(LOCAL_RUN_END_MARKER))
   return marks.length > 0 && marks[marks.length - 1].body.startsWith(LOCAL_RUN_MARKER)
@@ -147,10 +151,10 @@ export function lastReleaseCheck(comments, author) {
   return found ? { head: found.match[1], passed: found.match[2] === 'true', all: found.match[3] === 'true' } : null
 }
 
-export function releaseCheckRefusal({ check, head, epic, epicBranch }) {
+export function releaseCheckRefusal({ check, head, epic, epicBranch, headOf = `origin/${epicBranch}` }) {
   const rerun = `run \`flow check-epic ${epic}\` first, because the release pull request carries only a head where every done ticket's checks passed`
   if (!check) return `epic #${epic} has no epic check posted by this account; ${rerun}`
-  if (!sameCommit(check.head, head)) return `the latest epic check is of \`${check.head.slice(0, 12)}\`, not of the head of origin/${epicBranch} (\`${head.slice(0, 12)}\`); ${rerun}`
+  if (!sameCommit(check.head, head)) return `the latest epic check is of \`${check.head.slice(0, 12)}\`, not of the head of ${headOf} (\`${head.slice(0, 12)}\`); ${rerun}`
   if (!check.passed) return `the latest epic check, at \`${head.slice(0, 12)}\`, did not pass; fix what it names, then ${rerun}`
   if (!check.all) return `the latest epic check, at \`${head.slice(0, 12)}\`, judged only the tickets it was given; ${rerun}`
   return null
@@ -463,6 +467,12 @@ export function resolveRequested(comments, author) {
 }
 
 const PULL_REQUEST_ROUND = /^\*\*Pull request round (\d+):\*\*\s*(.*)$/
+const PULL_REQUEST_DELIVERED = /^\*\*Pull request (?:opened|already open):\*\* https:\/\/\S+\/pull\/(\d+)\b/
+
+export function deliveredPullRequests(comments) {
+  const numbers = comments.map((comment) => comment.body.match(PULL_REQUEST_DELIVERED)).filter(Boolean).map((match) => Number(match[1]))
+  return [...new Set(numbers.reverse())]
+}
 
 export function lastPullRequestRound(comments, author) {
   const rounds = byAuthor(comments, author)

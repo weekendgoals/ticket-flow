@@ -546,8 +546,19 @@ test('an unreadable release check does not stop the run: release-pr reads the ch
   })
   assert.deepEqual(refused.labels.filter((label) => /^(check-epic|release-pr):/.test(label)), ['check-epic:#1:release', 'release-pr:#1', 'release-pr:#1:again'])
   assert.equal(refused.out.outcome, 'stopped')
-  assert.ok(refused.out.stopReason.endsWith(`(exit 1): ${refusal}`), refused.out.stopReason)
+  assert.ok(
+    refused.out.stopReason.endsWith(
+      `(exit 1): ${refusal} The epic check before it gave no readable answer (no readable answer from \`flow check-epic\` (exit -1): The shell call was killed.) and is not run a second time, since a second copy would run beside the first: once no check is running, \`flow check-epic 1\` and then \`flow release-pr 1\`, or the run started again, opens it.`,
+    ),
+    refused.out.stopReason,
+  )
   assert.ok(!refused.labels.some((label) => label.endsWith(':retry')))
+  const readable = await drive((label) => {
+    if (label.startsWith('next:')) return board({ done: [2] })
+    if (label.startsWith('release-pr:')) return { exitCode: 1, output: refusal }
+    return releaseSteps(label)
+  })
+  assert.ok(readable.out.stopReason.endsWith(`(exit 1): ${refusal}`), 'a readable check adds nothing to the refusal')
   const failed = await drive((label) => (label.startsWith('next:') ? board({ done: [2] }) : label === 'check-epic:#1:release' ? { exitCode: 1, output: '{"allPassed":false}' } : releaseSteps(label)))
   assert.ok(!failed.labels.includes('release-pr:#1'), 'a readable failed check still stops before the release')
 })

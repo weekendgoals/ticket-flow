@@ -560,7 +560,11 @@ if ((built || parkedAtEnd) && final.delivery !== 'incremental') {
       }
     } else {
       outcome = 'stopped'
-      stopReason = `the release pull request could not be opened: \`flow release-pr\` was asked twice and neither answer named one (exit ${opened.exitCode}): ${opened.lastLine}`
+      const unread =
+        check.answer === 'unreadable'
+          ? ` The epic check before it gave no readable answer (${unreadableText(check)}) and is not run a second time, since a second copy would run beside the first: once no check is running, \`flow check-epic ${epic}\` and then \`flow release-pr ${epic}\`, or the run started again, opens it.`
+          : ''
+      stopReason = `the release pull request could not be opened: \`flow release-pr\` was asked twice and neither answer named one (exit ${opened.exitCode}): ${opened.lastLine}${unread}`
     }
   }
 }
