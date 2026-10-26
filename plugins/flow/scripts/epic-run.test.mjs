@@ -430,7 +430,7 @@ test('release-pr opens the epic\'s one pull request with its outcome, walkthroug
   })
   const result = flow(repo.work, ['release-pr', '1'])
   assert.equal(result.status, 0, result.stderr)
-  assert.deepEqual(JSON.parse(result.stdout), { epic: 1, pullRequest: 40, url: 'https://github.com/o/r/pull/40', base: 'main', existing: false, draft: false, markedReady: false, convertedToDraft: false, notBuilt: [] })
+  assert.deepEqual(JSON.parse(result.stdout), { epic: 1, pullRequest: 40, url: 'https://github.com/o/r/pull/40', base: 'main', existing: false, draft: false, markedReady: false, convertedToDraft: false, rewritten: false, notBuilt: [] })
   const request = JSON.parse(fake.calls().find((call) => call.key === `POST ${R}/pulls`).stdin)
   assert.deepEqual([request.title, request.head, request.base], ['Trip export', 'epic/trip-export', 'main'])
   assert.match(request.body, /^Epic: #1\n\n## Outcome\n\nTravellers can export a trip\.\n\n## Walkthrough\n\nA traveller opens a trip/)
@@ -440,18 +440,40 @@ test('release-pr opens the epic\'s one pull request with its outcome, walkthroug
   assert.match(posted(1)[0], /^<!-- flow:release-pr number=40 -->\n\*\*Release pull request opened:\*\* https:\/\/github\.com\/o\/r\/pull\/40/)
 })
 
-test('release-pr reuses a release pull request that is already open', () => {
+test('release-pr reuses a release pull request that is already open and leaves a body that closes every done ticket as it is', () => {
   const repo = repository()
+  const open = { number: 40, html_url: 'https://github.com/o/r/pull/40', head: { ref: 'epic/trip-export', sha: 'c' }, base: { ref: 'main' }, body: 'A note a person added.\r\n\r\nCloses #2\r\nCloses #3\r\nCloses #4\r\nCloses #1' }
   world({
     tickets: { 2: { labels: ['flow:ticket', 'flow:done'] }, 3: { labels: ['flow:ticket', 'flow:done'] }, 4: { labels: ['flow:ticket', 'flow:done'] } },
     comments: { 1: [epicCheck(epicHead(repo))] },
-    extra: { [`GET ${R}/pulls?head=o%3Aepic%2Ftrip-export&state=open&per_page=100`]: [{ number: 40, html_url: 'https://github.com/o/r/pull/40', head: { ref: 'epic/trip-export', sha: 'c' }, base: { ref: 'main' } }] },
+    extra: { [`GET ${R}/pulls?head=o%3Aepic%2Ftrip-export&state=open&per_page=100`]: [open] },
   })
   const result = flow(repo.work, ['release-pr', '1'])
   assert.equal(result.status, 0, result.stderr)
-  assert.equal(JSON.parse(result.stdout).existing, true)
-  assert.ok(!fake.calls().some((call) => call.key === `POST ${R}/pulls`))
+  assert.deepEqual(['existing', 'rewritten'].map((key) => JSON.parse(result.stdout)[key]), [true, false])
+  assert.ok(!fake.calls().some((call) => call.key === `POST ${R}/pulls` || call.key === `PATCH ${R}/pulls/40`))
   assert.match(posted(1)[0], /already open/)
+})
+
+test('release-pr rewrites an open release pull request whose body does not close a ticket done after it opened, and says so on the epic', () => {
+  const repo = repository()
+  const open = { number: 40, html_url: 'https://github.com/o/r/pull/40', head: { ref: 'epic/trip-export', sha: 'c' }, base: { ref: 'main' }, body: 'Closes #2\nCloses #3\nCloses #1' }
+  world({
+    tickets: { 2: { labels: ['flow:ticket', 'flow:done'] }, 3: { labels: ['flow:ticket', 'flow:done'] }, 4: { labels: ['flow:ticket', 'flow:done'] } },
+    comments: { 1: [epicCheck(epicHead(repo))] },
+    extra: {
+      [`GET ${R}/pulls?head=o%3Aepic%2Ftrip-export&state=open&per_page=100`]: [open],
+      [`PATCH ${R}/pulls/40`]: open,
+    },
+  })
+  const result = flow(repo.work, ['release-pr', '1'])
+  assert.equal(result.status, 0, result.stderr)
+  assert.deepEqual(['existing', 'draft', 'markedReady', 'rewritten'].map((key) => JSON.parse(result.stdout)[key]), [true, false, false, true])
+  const { body } = JSON.parse(fake.calls().find((call) => call.key === `PATCH ${R}/pulls/40`).stdin)
+  assert.match(body, /\| #4 Export name \| not recorded \|/)
+  assert.match(body, /Closes #2\nCloses #3\nCloses #4\nCloses #1\n/)
+  assert.ok(!fake.calls().some((call) => /markPullRequestReadyForReview|convertPullRequestToDraft/.test(call.stdin || '')), 'a ready pull request stays ready')
+  assert.match(posted(1)[0], /^<!-- flow:release-pr number=40 -->\n\*\*Release pull request updated:\*\* https:\/\/github\.com\/o\/r\/pull\/40 .*did not close every done ticket/)
 })
 
 test('release-pr opens only at a head the latest epic check from this account passed for every done ticket, and names check-epic as the way on', () => {
@@ -1101,7 +1123,7 @@ test('release-pr --draft under Stops: none opens a draft with the done tickets, 
   })
   const result = flow(repo.work, ['release-pr', '1', '--draft'])
   assert.equal(result.status, 0, result.stderr)
-  assert.deepEqual(JSON.parse(result.stdout), { epic: 1, pullRequest: 40, url: 'https://github.com/o/r/pull/40', base: 'main', existing: false, draft: true, markedReady: false, convertedToDraft: false, notBuilt: [3, 4] })
+  assert.deepEqual(JSON.parse(result.stdout), { epic: 1, pullRequest: 40, url: 'https://github.com/o/r/pull/40', base: 'main', existing: false, draft: true, markedReady: false, convertedToDraft: false, rewritten: false, notBuilt: [3, 4] })
   const request = JSON.parse(fake.calls().find((call) => call.key === `POST ${R}/pulls`).stdin)
   assert.equal(request.draft, true)
   assert.match(request.body, /## Tickets\n\n\| Ticket \| Merged as \|\n\|---\|---\|\n\| #2 Export button \| `111111111111` \|\n\n## Departures/)

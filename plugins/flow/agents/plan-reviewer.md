@@ -18,7 +18,8 @@ and answers for what it rejects.
 ## What you are given
 
 - **The plan as it will be posted**, as text: the epic body (`## Outcome`,
-  `## Sources`, `## Settings`, `## Walkthrough`, `## Ground rules`) and each
+  `## Sources`, `## Settings`, `## Walkthrough`, `## Shape of the change`,
+  `## Ground rules`) and each
   ticket body (`## Scope`, `## Not in scope`, `## Acceptance criteria` with
   one ```` ```criteria ```` block, optional `## Notes`), each with its title,
   tier (`easy` or `hard`) and which earlier tickets it waits for.
@@ -86,6 +87,14 @@ plan quotes its words.
   tickets whose scope and criteria produce what the scene promises; a promise
   no criterion reaches is a finding. Then the other way: a ticket no scene
   needs is either work a user never sees (say so) or a scene nobody wrote.
+- **A shape of the change that does not match the tickets or the code.**
+  Every path and shape it shows is in some ticket's scope; a data shape,
+  table, route or contract a ticket changes that it leaves out is a finding
+  (an ordinary file it leaves out is not: it shows only what helps a
+  decision); a "before" side the code does not have today is a finding with
+  the `file:line` that differs. The person
+  approves the structure from this picture, so a wrong one is approved
+  without anyone reading the tickets.
 - **Jargon in the walkthrough or the outcome.** Ticket numbers, file names,
   internal terms or abbreviations the person who asked for the work would
   have to ask about. The walkthrough is the one part of the plan written for
