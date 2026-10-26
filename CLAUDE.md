@@ -33,7 +33,8 @@ epic). "Direct" or "without Flow" always overrides it.
 - `scripts/tracker/github.mjs` — every `gh` call, as plain functions (a Jira
   tracker can sit behind them); `tracker/fake-gh.mjs` is the tests' `gh`.
 - `issue-body.mjs` (epic and ticket bodies, the design map), `checks.mjs`
-  (the criteria grammar and runner), `epic-state.mjs` (labels, derived
+  (the criteria grammar and runner; `check-group.mjs` runs each CHECK in its
+  own process group and kills the group when it ends), `epic-state.mjs` (labels, derived
   state, cycles, stuck), `ticket-steps.mjs` (the comments steps post and read
   back), `delivery.mjs` (every git call), `review-bots.mjs`, `meter.mjs`,
   `stats.mjs` (the figures `flow stats` reads back out of those comments),
@@ -76,10 +77,10 @@ as of 2026-10-19; the pass count grows, the fail line stays `# fail 0`.
   end to end against the fake `gh`; one case needs `git` on PATH.
 - `node --test plugins/flow/scripts/lifecycle.test.mjs` — `# pass 44`. The
   ticket steps in throwaway repositories with a bare remote; needs `git`, `sh`.
-- `node --test plugins/flow/scripts/epic-run.test.mjs` — `# pass 47`. The
+- `node --test plugins/flow/scripts/epic-run.test.mjs` — `# pass 53`. The
   whole-epic commands, the same way.
 - `pull-request.test.mjs` `# pass 20`, `issue-body.test.mjs` `# pass 30`,
-  `checks.test.mjs` `# pass 27` (real shell commands in a temp dir),
+  `checks.test.mjs` `# pass 31` (real shell commands in a temp dir; needs `sh`, `sleep`),
   `tracker/github.test.mjs` `# pass 38`, `fidelity.test.mjs` `# pass 54`,
   `stats.test.mjs` `# pass 17` (needs `git`), `project-sync.test.mjs`
   `# pass 35` (needs `git`), under `plugins/flow/scripts/`.

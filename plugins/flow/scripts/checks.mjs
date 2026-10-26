@@ -1,4 +1,8 @@
 import { spawnSync } from 'node:child_process'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+const CHECK_GROUP = join(dirname(fileURLToPath(import.meta.url)), 'check-group.mjs')
 
 export const CHECK_LINE = /^\s*CHECK:\s*(\S.*)$/
 export const EXPECT_LINE = /^\s*EXPECT:\s*(\S.*)$/
@@ -138,10 +142,11 @@ function describeRunError(error, timeoutMs) {
 }
 
 export function runCheck(check, { cwd, ran = null, timeoutMs = CHECK_TIMEOUT_MS } = {}) {
+  const key = check.check.trim()
   const result =
-    (ran && ran.get(check.check)) ||
-    spawnSync(check.check, { cwd, shell: true, encoding: 'utf8', timeout: timeoutMs, maxBuffer: CHECK_MAX_BUFFER })
-  if (ran) ran.set(check.check, result)
+    (ran && ran.get(key)) ||
+    spawnSync(process.execPath, [CHECK_GROUP, key], { cwd, encoding: 'utf8', timeout: timeoutMs, maxBuffer: CHECK_MAX_BUFFER })
+  if (ran) ran.set(key, result)
   const output = `${result.stdout || ''}${result.stderr || ''}`
   const lines = output.split('\n')
   const exitCode = result.status === null ? -1 : result.status

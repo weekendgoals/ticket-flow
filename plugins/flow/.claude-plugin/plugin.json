@@ -1,7 +1,7 @@
 {
   "name": "flow",
   "displayName": "Ticket Flow",
-  "version": "3.5.1",
+  "version": "3.5.2",
   "description": "Plan work as epics and tickets kept in GitHub Issues: an epic issue holds the plan, sub-issues hold the tickets with their acceptance checks, labels hold the state. Each ticket is built, reviewed by a separate agent, checked and merged, with every step posted on its issue.",
   "author": {
     "name": "Vadim Tarasov"

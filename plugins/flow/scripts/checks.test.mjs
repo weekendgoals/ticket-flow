@@ -3,6 +3,8 @@ import assert from 'node:assert/strict'
 import { mkdtempSync, rmSync, writeFileSync, readFileSync, realpathSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
+import { spawn } from 'node:child_process'
+import { setTimeout as wait } from 'node:timers/promises'
 import { parseChecks, runChecks, runCriteria, formatCheckReport } from './checks.mjs'
 
 const workdir = realpathSync(mkdtempSync(join(tmpdir(), 'flow-checks-')))
@@ -139,6 +141,62 @@ test('a command that outlives its timeout fails with the timeout as evidence', (
   assert.equal(result.passed, false)
   assert.equal(result.evidence, 'command could not run: timed out after 0.3s')
 })
+
+function alive(pid) {
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch {
+    return false
+  }
+}
+
+async function goneWithin(pid, ms) {
+  for (const deadline = Date.now() + ms; Date.now() < deadline; await wait(50)) if (!alive(pid)) return true
+  return !alive(pid)
+}
+
+async function fileWithin(path, ms) {
+  for (const deadline = Date.now() + ms; Date.now() < deadline; await wait(50)) {
+    const text = (() => {
+      try {
+        return readFileSync(path, 'utf8').trim()
+      } catch {
+        return ''
+      }
+    })()
+    if (text) return text
+  }
+  throw new Error(`${path} never appeared`)
+}
+
+test('a check cut off by its timeout takes the processes it started with it', async () => {
+  const pidFile = join(workdir, 'timeout-child.pid')
+  const [result] = runChecks([{ criterion: 'hangs', check: `sleep 30 & echo $! > ${pidFile}; wait`, expect: null }], { cwd: workdir, timeoutMs: 500 })
+  assert.equal(result.evidence, 'command could not run: timed out after 0.5s')
+  assert.ok(await goneWithin(Number(readFileSync(pidFile, 'utf8')), 3000), 'the background sleep was killed')
+})
+
+test('a check leaves nothing running once it exits', async () => {
+  const pidFile = join(workdir, 'leftover.pid')
+  const started = Date.now()
+  const [result] = runChecks([{ criterion: 'starts a server and returns', check: `sleep 30 & echo $! > ${pidFile}`, expect: null }], { cwd: workdir })
+  assert.equal(result.passed, true)
+  assert.ok(Date.now() - started < 10_000)
+  assert.ok(await goneWithin(Number(readFileSync(pidFile, 'utf8')), 3000))
+})
+
+for (const signal of ['SIGTERM', 'SIGINT']) {
+  test(`a check whose caller gets ${signal} is killed with everything it started`, async () => {
+    const pidFile = join(workdir, `caller-${signal}.pid`)
+    const checksModule = new URL('./checks.mjs', import.meta.url).href
+    const check = JSON.stringify({ criterion: 'runs long', check: `sleep 30 & echo $! > ${pidFile}; wait`, expect: null })
+    const caller = spawn(process.execPath, ['--input-type=module', '-e', `import { runChecks } from ${JSON.stringify(checksModule)}; runChecks([${check}], { cwd: ${JSON.stringify(workdir)} })`], { stdio: 'ignore' })
+    const pid = Number(await fileWithin(pidFile, 5000))
+    caller.kill(signal)
+    assert.ok(await goneWithin(pid, 4000), 'the check outlived its caller')
+  })
+}
 
 test('a passing check is not killed by more than 1 MB of output', () => {
   const report = reportFor(`- passes underneath two megabytes of logging

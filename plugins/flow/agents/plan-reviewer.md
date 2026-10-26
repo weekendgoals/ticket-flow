@@ -57,7 +57,11 @@ plan quotes its words.
     will not run;
   - a CHECK marked skipped, or whose EXPECT a skipped run could satisfy:
     name the line that would prove the run instead, such as a pass count;
-  - any problem line `flow check` prints for a malformed criterion.
+  - any problem line `flow check` prints for a malformed criterion;
+  - a CHECK that picks a file by modification time (`ls -t … | head -1`):
+    a fresh clone or worktree scrambles mtimes, so it passes or fails by
+    checkout order; suggest picking by git history instead, such as
+    `git log -1 --diff-filter=A --name-only -- <glob>`.
   Say which CHECKs you did not run and why.
 - **A dependency hiding in prose.** Ticket three's scope quietly needs ticket
   five's output, or two tickets edit the same file, and neither waits for the
