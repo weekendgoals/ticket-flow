@@ -169,8 +169,8 @@ test('a wave whose working copies cannot be set up falls back to one ticket at a
   const next = boards(board({ ready: [2, 3], parallel: 2 }), board({ done: [2, 3], parallel: 2 }))
   const run = await drive((label) => {
     if (label.startsWith('next:')) return next()
-    if (label === 'worktree:#2') return ok(JSON.stringify({ path: '/wt/ticket-2', failure: null }))
-    if (label === 'worktree:#3') return { exitCode: 1, output: JSON.stringify({ path: '/wt/ticket-3', failure: { step: 'setup: npm ci', detail: 'exited 1\nregistry down' } }) }
+    if (label === 'worktree:#2') return ok(JSON.stringify({ ticket: 2, path: '/wt/ticket-2', failure: null }))
+    if (label === 'worktree:#3') return { exitCode: 1, output: JSON.stringify({ ticket: 3, path: '/wt/ticket-3', failure: { step: 'setup: npm ci', detail: 'exited 1\nregistry down' } }) }
     if (label.startsWith('worktree-remove:')) return ok('{}')
     return happyTicket(label) ?? releaseSteps(label)
   })
@@ -185,6 +185,25 @@ test('a wave whose working copies cannot be set up falls back to one ticket at a
     assert.doesNotMatch(worker.prompt, /--no-merge/)
   }
   assert.ok(run.labels.indexOf('fixes:#2') < run.labels.indexOf('worker:#3'), 'one at a time')
+})
+
+test('a working copy answer that names another ticket is never used for this one: the wave falls back to one ticket at a time', async () => {
+  const next = boards(board({ ready: [2, 3], parallel: 2 }), board({ done: [2, 3], parallel: 2 }))
+  const run = await drive((label) => {
+    if (label.startsWith('next:')) return next()
+    if (label.startsWith('worktree:#')) return ok(JSON.stringify({ ticket: 3, path: '/wt/ticket-3', failure: null }))
+    if (label.startsWith('worktree-remove:')) return ok('{}')
+    return happyTicket(label) ?? releaseSteps(label)
+  })
+  assert.equal(run.out.outcome, 'built')
+  assert.match(run.calls.find((call) => call.label === 'post:#1:fallback:1').prompt, /#2: `flow worktree` answered for 3, not this ticket/)
+  for (const ticket of [2, 3]) assert.match(run.calls.find((call) => call.label === `worker:#${ticket}`).prompt, /The repository is \/repo: run every command there\./)
+})
+
+test('every proxy keeps its output files in a directory of its own, because proxies run side by side', async () => {
+  const next = boards(board({ ready: [2] }), board({ done: [2] }))
+  const run = await drive((label) => (label.startsWith('next:') ? next() : happyTicket(label) ?? releaseSteps(label)))
+  for (const call of run.calls.filter((entry) => /^(next|post|check-epic|release-pr):/.test(entry.label))) assert.match(call.prompt, /a new directory made with `mktemp -d` for it alone/, call.label)
 })
 
 test('a worker that stops without a result is reset once and built again; a second death asks a person, and the run goes on with the rest', async () => {
