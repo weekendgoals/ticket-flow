@@ -5,7 +5,7 @@ a behaviour change in every project that installs it. Entries land in the same
 commit as the change; the pull request that brings them to the default branch
 stamps the version and date and bumps `plugin.json` in the same commit.
 
-## Unreleased
+## 3.7.1 — 2026-11-04
 
 - **Side-by-side tickets no longer read each other's working copy.** The run's command proxies were told to send a long command's output "to a file" and chose the same fixed names in the session's shared scratchpad, so the two `flow worktree` commands of a `Parallel: 2` wave raced on one file and one ticket was handed the other's copy: it was built and reviewed there, and stopped before accepting the wrong commit. Each proxy now writes only in a directory it makes with `mktemp -d`, and the run uses a `flow worktree` answer only when the `ticket` it names is the ticket asked for; any other answer is a failed copy, so the wave runs one ticket at a time and says why on the epic.
 
