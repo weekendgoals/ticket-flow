@@ -53,6 +53,7 @@ const LONG_RUN = [
   'Run it once, in the background so no shell timeout cuts it, with its output sent to a file; wait until it has exited, looking every minute or so; then read the file.',
   'Never run it a second time, because a second copy would run beside the first.',
 ].join(' ')
+const OWN_FILES = 'Other commands run beside this one, and their proxies write files too: put any file this command writes to in a new directory made with `mktemp -d` for it alone, never under a fixed name in a shared folder such as the scratchpad, where another command\'s output would be read as this one\'s.'
 const NEXT_WHAT = 'It prints JSON, and exits 1 when the epic is not approved, has no tickets or is stuck; that is an answer, not a failure.'
 const BOARD_LISTS = ['ready', 'inProgress', 'done', 'needsHuman', 'planned']
 
@@ -69,6 +70,7 @@ function commandPrompt(command, what, { json, long }) {
     '',
     `${what} ${json ? `Return its exit code. ${WHOLE_JSON}` : OUTPUT_TAIL}`,
     long ? LONG_RUN : SHORT_RUN,
+    OWN_FILES,
   ].join('\n')
 }
 
@@ -253,6 +255,7 @@ function worktreeFailure(ticket, result) {
   if (!result || !result.json) return `#${ticket}: ${result ? unreadableText(result) : 'no readable answer from `flow worktree`: the step that asked for it failed'}`
   const { failure } = result.json
   if (failure) return `#${ticket}: ${failure.step} — ${String(failure.detail).split('\n')[0]} (${timeAgainstBudget(result.json)})`
+  if (result.json.ticket !== ticket) return `#${ticket}: \`flow worktree\` answered for ${JSON.stringify(result.json.ticket ?? null)}, not this ticket, so the path it printed is not this ticket's copy`
   if (result.exitCode === 0) return `#${ticket}: \`flow worktree\` printed a path that cannot be used in a command: ${JSON.stringify(result.json.path)}`
   return `#${ticket}: \`flow worktree\` exited ${result.exitCode} without naming a failure: ${result.lastLine}`
 }
@@ -265,7 +268,7 @@ async function makeWorktrees(tickets, wave) {
   const roots = new Map()
   made.forEach((result, index) => {
     const ticket = tickets[index].n
-    if (result && result.exitCode === 0 && result.json && !result.json.failure && SAFE_PATH(result.json.path)) roots.set(ticket, result.json.path)
+    if (result && result.exitCode === 0 && result.json && !result.json.failure && result.json.ticket === ticket && SAFE_PATH(result.json.path)) roots.set(ticket, result.json.path)
     else failures.push(worktreeFailure(ticket, result))
   })
   if (!failures.length) return { roots, failures }
