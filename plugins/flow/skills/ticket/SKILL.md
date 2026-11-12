@@ -185,11 +185,12 @@ FLOW screenshots <n>
 ```
 
 When `.flow.json` at the repository root has a `screenshots` command, this
-runs it (with `FLOW_TICKET` and `FLOW_SCREENSHOTS_DIR` set), commits the
-PNGs on the ticket branch, pushes the branch and posts them on the issue.
-The command writes into the directory it prints last, or into
-`screenshotsDir` from `.flow.json` (`{n}` becomes the ticket number; the
-default is `.flow/screenshots/{n}`).
+runs it (with `FLOW_TICKET` and `FLOW_SCREENSHOTS_DIR` set), uploads each
+PNG as a GitHub attachment, posts them on the issue and deletes them; it
+commits and pushes nothing. The command writes into the directory it prints
+last, or into `FLOW_SCREENSHOTS_DIR`: `screenshotsDir` from `.flow.json`
+(`{n}` becomes the ticket number), else a fresh directory outside the
+repository.
 When it prints that there is no command and the ticket changed something a
 person sees, post one line saying the project has no screenshots command, so
 the gap is visible rather than silent.

@@ -1,6 +1,6 @@
 import { test, after, beforeEach } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, rmSync, realpathSync } from 'node:fs'
+import { mkdtempSync, rmSync, realpathSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { installFakeGh, fixtureKey } from './fake-gh.mjs'
@@ -179,10 +179,24 @@ test('listComments and listLabels return plain records', () => {
 })
 
 test('repoInfo, repoSlug and defaultBranch read the repository record', () => {
-  fake.setFixtures({ [`GET ${R}`]: { full_name: 'o/r', default_branch: 'main', has_issues: true } })
-  assert.deepEqual(github.repoInfo(), { slug: 'o/r', defaultBranch: 'main', hasIssues: true })
+  fake.setFixtures({ [`GET ${R}`]: { id: 42, full_name: 'o/r', default_branch: 'main', has_issues: true } })
+  assert.deepEqual(github.repoInfo(), { id: 42, slug: 'o/r', defaultBranch: 'main', hasIssues: true })
   assert.equal(github.repoSlug(), 'o/r')
   assert.equal(github.defaultBranch(), 'main')
+})
+
+test('uploadAttachment posts the file to the attachments endpoint as bytes and returns the url GitHub answers', () => {
+  const file = join(directory, 'home page.png')
+  writeFileSync(file, 'png')
+  const key = 'POST https://uploads.github.com/user-attachments/assets?content_type=image%2Fpng&name=home%20page.png&repository_id=42'
+  fake.setFixtures({ [key]: { url: 'https://github.com/user-attachments/assets/abc' } })
+  assert.equal(github.uploadAttachment({ repositoryId: 42, file, name: 'home page.png', contentType: 'image/png' }), 'https://github.com/user-attachments/assets/abc')
+  const [call] = fake.calls()
+  assert.equal(call.key, key)
+  assert.equal(call.file, 'png')
+  assert.ok(call.args.includes('Content-Type: application/octet-stream'))
+  fake.setFixtures({ [key]: {} })
+  assert.throws(() => github.uploadAttachment({ repositoryId: 42, file, name: 'home page.png', contentType: 'image/png' }), /GitHub took home page\.png but answered no attachment url/)
 })
 
 test('bodyEditHistory asks GraphQL for the edits and returns them oldest first', () => {

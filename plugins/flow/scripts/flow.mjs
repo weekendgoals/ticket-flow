@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-import { readFileSync, writeFileSync, existsSync, readdirSync, statSync, mkdirSync } from 'node:fs'
+import { readFileSync, writeFileSync, existsSync, readdirSync, statSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { spawnSync } from 'node:child_process'
 import { join, resolve, relative, isAbsolute, extname, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -183,7 +184,7 @@ const USAGE = `usage: flow <command>
   accept <n> [--cwd <dir>]               run the criteria on the committed head and post the result
   deliver <n> [--cwd <dir>]              merge the accepted commit into the epic branch, or open its pull request
   delivered <n>                          mark a ticket done once a person merged its pull request into the default branch
-  screenshots <n> [--cwd <dir>]          run the screenshots command from .flow.json, commit the images, link them
+  screenshots <n> [--cwd <dir>]          run the screenshots command from .flow.json, attach the images to the issue
   merge <n> [--sha <sha>] | merge --epic <epic>
                                          merge the accepted commit into the epic branch (--epic: every accepted ticket, in order)
   meter <n> (--transcripts [<role>=]<path> ... | --workflow <run dir>) [--print]
@@ -231,7 +232,6 @@ const REPEATABLE_FLAGS = new Set(['--transcripts', '--sitemap'])
 const BOOLEAN_FLAGS = new Set(['--board', '--json', '--no-epic', '--print', '--wait', '--once', '--mark', '--remove', '--review', '--all', '--local', '--post', '--draft'])
 const DEFAULT_WAIT_SECONDS = 1800
 const DEFAULT_POLL_SECONDS = 30
-const DEFAULT_SCREENSHOTS_DIR = '.flow/screenshots/{n}'
 const CHECKS_PENDING_EXIT = 3
 const NO_CHECKS_EXIT = 4
 const DEFAULT_NO_CHECKS_GRACE_SECONDS = 90
@@ -2220,10 +2220,19 @@ function commandScreenshots(positional, flags) {
   }
   const branch = ticketBranchName(number)
   if (currentBranch(root) !== branch) {
-    process.stderr.write(`check out ${branch} first: the screenshots are committed on the ticket branch\n`)
+    process.stderr.write(`check out ${branch} first: the screenshots show the ticket branch's head\n`)
     return 1
   }
-  const configuredDirectory = resolve(root, String(config.screenshotsDir || DEFAULT_SCREENSHOTS_DIR).replaceAll('{n}', String(number)))
+  const temporary = config.screenshotsDir ? null : mkdtempSync(join(tmpdir(), `flow-screenshots-${number}-`))
+  const configuredDirectory = temporary || resolve(root, String(config.screenshotsDir).replaceAll('{n}', String(number)))
+  try {
+    return postScreenshots({ number, root, config, configuredDirectory })
+  } finally {
+    if (temporary) rmSync(temporary, { recursive: true, force: true })
+  }
+}
+
+function postScreenshots({ number, root, config, configuredDirectory }) {
   const run = spawnSync(config.screenshots, {
     cwd: root,
     shell: true,
@@ -2240,29 +2249,17 @@ function commandScreenshots(positional, flags) {
   const printed = (run.stdout || '').trim().split('\n').filter(Boolean).pop()
   const printedDirectory = printed ? resolve(root, printed.trim()) : null
   const directory = printedDirectory && existsSync(printedDirectory) && statSync(printedDirectory).isDirectory() ? printedDirectory : configuredDirectory
-  if (!insideDirectory(root, directory)) {
-    process.stderr.write(`the screenshots are in ${directory}, outside the repository, so they cannot be committed\n`)
-    return 1
-  }
   const images = existsSync(directory) ? readdirSync(directory).filter((name) => name.toLowerCase().endsWith('.png')).sort() : []
   if (!images.length) {
-    process.stderr.write(`the screenshots command wrote no PNG into ${relative(root, directory)}\n`)
+    process.stderr.write(`the screenshots command wrote no PNG into ${insideDirectory(root, directory) ? relative(root, directory) : directory}\n`)
     return 1
   }
-  const paths = images.map((name) => relative(root, join(directory, name)))
-  git(root, ['add', '--force', '--', ...paths])
-  const staged = git(root, ['diff', '--cached', '--name-only', '--', ...paths]).stdout
-  if (staged) git(root, ['commit', '--quiet', '-m', `#${number}: screenshots of the built screens`, '--', ...paths])
   const sha = resolveCommit(root, 'HEAD')
-  const pushed = git(root, ['push', '--quiet', 'origin', `HEAD:refs/heads/${branch}`], { allowFailure: true })
-  if (!pushed.ok) {
-    process.stderr.write(`the screenshots are committed, but pushing ${branch} failed: ${pushed.stderr}\n`)
-    return 1
-  }
-  const slug = github.repoSlug()
-  const links = paths.map((path) => ({ path, url: `https://github.com/${slug}/blob/${sha}/${path.split('/').map(encodeURIComponent).join('/')}?raw=true` }))
-  github.comment(number, [`**Screenshots** of the built screens, at \`${sha.slice(0, 12)}\`:`, '', ...links.map((link) => `![${link.path}](${link.url})`)].join('\n'))
-  printJson({ ticket: number, commit: sha, screenshots: links })
+  const repositoryId = github.repoInfo().id
+  const screenshots = images.map((name) => ({ name, url: github.uploadAttachment({ repositoryId, file: join(directory, name), name, contentType: 'image/png' }) }))
+  github.comment(number, [`**Screenshots** of the built screens, at \`${sha.slice(0, 12)}\`:`, '', ...screenshots.map((shot) => `![${shot.name}](${shot.url})`)].join('\n'))
+  for (const name of images) rmSync(join(directory, name), { force: true })
+  printJson({ ticket: number, commit: sha, screenshots })
   return 0
 }
 

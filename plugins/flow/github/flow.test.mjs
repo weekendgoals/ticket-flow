@@ -51,10 +51,9 @@ test('the ticket job installs the plugin from this marketplace and runs the tick
   assert.match(step('ticket', (entry) => entry.id === 'read').run, /jq -r '\.model'/)
 })
 
-test('the ticket job meters the run, keeps the screenshots, and resets a run that died', () => {
+test('the ticket job meters the run, keeps no screenshots of its own (they are attached to the issue), and resets a run that died', () => {
   assert.match(step('ticket', (entry) => /cost/.test(entry.name || '')).run, /\$FLOW meter "\$TICKET" --transcripts "\$\{\{ steps\.claude\.outputs\.execution_file \}\}"/)
-  const upload = step('ticket', (entry) => String(entry.uses || '').startsWith('actions/upload-artifact@'))
-  assert.equal(upload.with.path, '.flow/screenshots/')
+  assert.equal(step('ticket', (entry) => String(entry.uses || '').startsWith('actions/upload-artifact@')), undefined)
   const recovery = step('ticket', (entry) => /reset/.test(entry.name || ''))
   assert.equal(recovery.if, 'always()')
   assert.match(recovery.run, /\$FLOW reset "\$TICKET" --once/)
