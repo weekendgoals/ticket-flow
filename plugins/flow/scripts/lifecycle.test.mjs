@@ -1,7 +1,7 @@
 import { test, after, beforeEach } from 'node:test'
 import assert from 'node:assert/strict'
 import { spawnSync, execFileSync } from 'node:child_process'
-import { mkdtempSync, rmSync, writeFileSync, realpathSync, mkdirSync, existsSync } from 'node:fs'
+import { mkdtempSync, rmSync, writeFileSync, readFileSync, realpathSync, mkdirSync, existsSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
@@ -109,7 +109,7 @@ function world({ epicLabels = ['flow:epic', 'flow:approved'], settings, ticket2 
   const two = issue(2, { title: 'Export button', body: ticketBody(1, ticket2), labels: ticket2.labels || ['flow:ticket', 'flow:planned', 'tier:easy'] })
   const three = issue(3, { title: 'Export file', body: ticketBody(1, { blockedBy: 'Blocked by: #2\n', ...ticket3 }), labels: ticket3.labels || ['flow:ticket', 'flow:planned'] })
   fake.setFixtures({
-    [`GET ${R}`]: { full_name: 'o/r', default_branch: 'main', has_issues: true },
+    [`GET ${R}`]: { id: 42, full_name: 'o/r', default_branch: 'main', has_issues: true },
     graphql: { data: { viewer: { login: 'flow-bot' } } },
     [`GET ${R}/issues/1`]: epic,
     [`GET ${R}/issues/2`]: two,
@@ -133,6 +133,10 @@ function world({ epicLabels = ['flow:epic', 'flow:approved'], settings, ticket2 
 
 const posted = (number) => fake.calls().filter((call) => call.key === `POST ${R}/issues/${number}/comments`).map((call) => JSON.parse(call.stdin).body)
 const labelCalls = () => fake.calls().filter((call) => /labels/.test(call.key)).map((call) => (call.stdin ? `${call.key} ${call.stdin}` : call.key))
+const ASSETS = 'https://github.com/user-attachments/assets'
+const uploadKey = (name) => `POST https://uploads.github.com/user-attachments/assets?content_type=image%2Fpng&name=${encodeURIComponent(name)}&repository_id=42`
+const attachments = (...names) => Object.fromEntries(names.map((name) => [uploadKey(name), { url: `${ASSETS}/${encodeURIComponent(name)}` }]))
+const uploaded = () => fake.calls().filter((call) => call.key.startsWith('POST https://uploads.github.com/'))
 
 beforeEach(() => fake.clearCalls())
 
@@ -449,32 +453,45 @@ test('screenshots does nothing without a command in .flow.json, and says so', ()
   assert.deepEqual(fake.calls(), [])
 })
 
-test('screenshots runs the command, commits the PNGs on the ticket branch, pushes, and links each by commit', () => {
+test('screenshots runs the command in a directory outside the repository, attaches each PNG to the issue, and commits and pushes nothing', () => {
   const { work, remote } = startedTicket()
-  commitFile(work, '.flow.json', JSON.stringify({ screenshots: 'mkdir -p "$FLOW_SCREENSHOTS_DIR" && printf png > "$FLOW_SCREENSHOTS_DIR/home page.png" && printf png > "$FLOW_SCREENSHOTS_DIR/a.png"' }), '#2: screenshots config')
-  world()
-  const result = flow(work, ['screenshots', '2'])
+  const seen = join(directory, 'screenshots-directory.txt')
+  const head = commitFile(work, '.flow.json', JSON.stringify({ screenshots: 'mkdir -p "$FLOW_SCREENSHOTS_DIR" && printf png > "$FLOW_SCREENSHOTS_DIR/home page.png" && printf png > "$FLOW_SCREENSHOTS_DIR/a.png" && echo "$FLOW_SCREENSHOTS_DIR" > "$SEEN"' }), '#2: screenshots config')
+  world({ extra: attachments('a.png', 'home page.png') })
+  const result = flow(work, ['screenshots', '2'], { SEEN: seen })
   assert.equal(result.status, 0, result.stderr)
   const { commit, screenshots } = JSON.parse(result.stdout)
-  assert.deepEqual(screenshots.map((shot) => shot.path), ['.flow/screenshots/2/a.png', '.flow/screenshots/2/home page.png'])
-  assert.equal(git(remote, 'rev-parse', 'ticket/2'), commit)
-  assert.equal(git(work, 'log', '-1', '--format=%s'), '#2: screenshots of the built screens')
-  const [body] = posted(2)
-  assert.match(body, new RegExp(`!\\[\\.flow/screenshots/2/home page\\.png\\]\\(https://github\\.com/o/r/blob/${commit}/\\.flow/screenshots/2/home%20page\\.png\\?raw=true\\)`))
+  assert.equal(commit, head)
+  assert.deepEqual(screenshots, [
+    { name: 'a.png', url: `${ASSETS}/a.png` },
+    { name: 'home page.png', url: `${ASSETS}/home%20page.png` },
+  ])
+  assert.deepEqual(uploaded().map((call) => call.file), ['png', 'png'])
+  assert.ok(uploaded().every((call) => call.args.includes('Content-Type: application/octet-stream')))
+  assert.deepEqual(posted(2), [`**Screenshots** of the built screens, at \`${head.slice(0, 12)}\`:\n\n![a.png](${ASSETS}/a.png)\n![home page.png](${ASSETS}/home%20page.png)`])
+  assert.equal(git(work, 'rev-parse', 'HEAD'), head)
+  assert.equal(git(remote, 'branch', '--list', 'ticket/2'), '')
+  assert.equal(git(work, 'status', '--porcelain', '--untracked-files=all'), '')
+  const used = readFileSync(seen, 'utf8').trim()
+  assert.ok(!used.startsWith(work))
+  assert.ok(!existsSync(used))
 })
 
-test('screenshots uses the directory the command prints, and fails when no PNG appears', () => {
+test('screenshots uses the directory the command prints, removes the PNGs it attached, and fails when no PNG appears', () => {
   const { work } = startedTicket()
   commitFile(work, '.flow.json', JSON.stringify({ screenshots: 'mkdir -p shots && printf png > shots/x.png && echo shots' }), '#2: config')
-  world()
+  world({ extra: attachments('x.png') })
   const result = flow(work, ['screenshots', '2'])
   assert.equal(result.status, 0, result.stderr)
-  assert.deepEqual(JSON.parse(result.stdout).screenshots.map((shot) => shot.path), ['shots/x.png'])
+  assert.deepEqual(JSON.parse(result.stdout).screenshots.map((shot) => shot.name), ['x.png'])
+  assert.ok(!existsSync(join(work, 'shots', 'x.png')))
   commitFile(work, '.flow.json', JSON.stringify({ screenshots: 'true' }), '#2: config')
+  fake.clearCalls()
   const empty = flow(work, ['screenshots', '2'])
   assert.equal(empty.status, 1)
-  assert.match(empty.stderr, /wrote no PNG into \.flow\/screenshots\/2/)
-  assert.ok(!existsSync(join(work, '.flow', 'screenshots', '2')))
+  assert.match(empty.stderr, /wrote no PNG into \S*flow-screenshots-2-/)
+  assert.ok(!existsSync(join(work, '.flow')))
+  assert.deepEqual(posted(2), [])
 })
 
 test('deliver gives up after the first try and two retries all lose the race, and asks a person', () => {
@@ -691,21 +708,21 @@ test('the Done comment says when the merge was made again on a moved epic branch
   assert.match(posted(2)[0], /`epic\/trip-export` moved while this was merging, so the merge was made again on its new head \(2 tries\)/)
 })
 
-test('screenshots commits only the images, never something else that was already staged', () => {
+test('screenshots writes into screenshotsDir when it is set, and leaves the index and the working tree as they were', () => {
   const { work, remote } = startedTicket()
-  commitFile(work, '.flow.json', JSON.stringify({ screenshots: 'mkdir -p "$FLOW_SCREENSHOTS_DIR" && printf png > "$FLOW_SCREENSHOTS_DIR/a.png"' }), '#2: config')
+  commitFile(work, '.flow.json', JSON.stringify({ screenshots: 'mkdir -p "$FLOW_SCREENSHOTS_DIR" && printf png > "$FLOW_SCREENSHOTS_DIR/a.png"', screenshotsDir: 'out/{n}' }), '#2: config')
   writeFileSync(join(work, 'secrets.env'), 'TOKEN=1\n')
   git(work, 'add', 'secrets.env')
-  world()
+  world({ extra: attachments('a.png') })
   const result = flow(work, ['screenshots', '2'])
   assert.equal(result.status, 0, result.stderr)
-  const files = git(remote, 'ls-tree', '-r', '--name-only', 'ticket/2')
-  assert.match(files, /\.flow\/screenshots\/2\/a\.png/)
-  assert.doesNotMatch(files, /secrets\.env/)
-  assert.equal(git(work, 'diff', '--cached', '--name-only'), 'secrets.env', 'what was staged stays staged, uncommitted')
+  assert.deepEqual(uploaded().map((call) => call.file), ['png'])
+  assert.ok(!existsSync(join(work, 'out', '2', 'a.png')))
+  assert.equal(git(work, 'status', '--porcelain', '--untracked-files=all'), 'A  secrets.env')
+  assert.equal(git(remote, 'branch', '--list', 'ticket/2'), '')
 })
 
-test('screenshots fails on a failing command and on a directory outside the repository, posting nothing', () => {
+test('screenshots fails on a failing command or a failed upload, posting nothing, and reads a directory outside the repository', () => {
   const { work, root } = startedTicket()
   commitFile(work, '.flow.json', JSON.stringify({ screenshots: 'echo broken >&2; exit 3' }), '#2: config')
   world()
@@ -713,11 +730,19 @@ test('screenshots fails on a failing command and on a directory outside the repo
   assert.equal(failed.status, 1)
   assert.match(failed.stderr, /the screenshots command failed \(exit 3\):\nbroken/)
   const outside = join(root, 'shots')
-  commitFile(work, '.flow.json', JSON.stringify({ screenshots: `mkdir -p "${outside}" && printf png > "${outside}/a.png" && echo "${outside}"` }), '#2: config')
-  const escaped = flow(work, ['screenshots', '2'])
-  assert.equal(escaped.status, 1)
-  assert.match(escaped.stderr, /outside the repository, so they cannot be committed/)
+  commitFile(work, '.flow.json', JSON.stringify({ screenshots: `mkdir -p "${outside}" && printf png > "${outside}/a.png" && printf png > "${outside}/b.png" && echo "${outside}"` }), '#2: config')
+  world({ extra: { ...attachments('a.png'), [uploadKey('b.png')]: { $exit: 1, $stderr: 'gh: Something went wrong (HTTP 502)' } } })
+  const refused = flow(work, ['screenshots', '2'])
+  assert.equal(refused.status, 1)
+  assert.match(refused.stderr, /HTTP 502/)
   assert.deepEqual(posted(2), [])
+  assert.ok(existsSync(join(outside, 'a.png')))
+  world({ extra: attachments('a.png', 'b.png') })
+  const read = flow(work, ['screenshots', '2'])
+  assert.equal(read.status, 0, read.stderr)
+  assert.deepEqual(JSON.parse(read.stdout).screenshots.map((shot) => shot.name), ['a.png', 'b.png'])
+  assert.ok(!existsSync(join(outside, 'a.png')))
+  assert.equal(posted(2).length, 1)
 })
 
 test('an unattended start on a dirty working tree exits nonzero without touching the ticket: the host is at fault, not the ticket', () => {
