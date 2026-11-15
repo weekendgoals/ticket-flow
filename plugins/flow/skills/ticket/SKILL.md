@@ -91,7 +91,8 @@ and stop. Unattended, it has already asked a person on the issue; exit
 nonzero.
 
 On success it has cut `ticket/<n>` from the epic branch on origin (release
-delivery) or from the default branch (incremental delivery, or a ticket with
+delivery; an epic branch not on origin yet is cut first from the default
+branch) or from the default branch (incremental delivery, or a ticket with
 no epic), labelled the ticket `flow:in-progress`, and posted the start
 comment. Its JSON gives `branch`, `base`, `baseSha`, `delivery` and `model`.
 **Keep `baseSha`**: the review range starts there.

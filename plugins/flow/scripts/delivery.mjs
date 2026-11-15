@@ -90,6 +90,20 @@ export function ticketBranchName(number) {
   return `ticket/${number}`
 }
 
+export function epicBranchOnOrigin(cwd, branch) {
+  fetchOrigin(cwd)
+  return resolveCommit(cwd, `refs/remotes/origin/${branch}`)
+}
+
+export function cutEpicBranch(cwd, { branch, from }) {
+  const fromSha = resolveCommit(cwd, `refs/remotes/origin/${from}`)
+  if (!fromSha) return { ok: false, reason: `origin/${branch} does not exist, and neither does origin/${from} to cut it from` }
+  const pushed = git(cwd, ['push', '--quiet', `--force-with-lease=refs/heads/${branch}:`, 'origin', `${fromSha}:refs/heads/${branch}`], { allowFailure: true })
+  const sha = epicBranchOnOrigin(cwd, branch)
+  if (!sha) return { ok: false, reason: `origin/${branch} does not exist and could not be cut from origin/${from}: ${pushed.stderr || `exit ${pushed.status}`}` }
+  return { ok: true, sha, created: pushed.ok }
+}
+
 export function cutTicketBranch(cwd, { branch, base }) {
   fetchOrigin(cwd)
   const baseSha = resolveCommit(cwd, `origin/${base}`)
