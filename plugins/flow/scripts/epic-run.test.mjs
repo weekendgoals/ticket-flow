@@ -34,7 +34,7 @@ function commitFile(cwd, path, text, subject) {
   return git(cwd, 'rev-parse', 'HEAD')
 }
 
-function repository() {
+function repository({ epicBranch = true } = {}) {
   const root = join(directory, `case-${++repositoryCount}`)
   const remote = join(root, 'origin.git')
   const work = join(root, 'work')
@@ -44,7 +44,7 @@ function repository() {
   git(work, 'checkout', '-q', '-b', 'main')
   commitFile(work, 'README.md', 'trip planner\n', 'start')
   git(work, 'push', '-q', 'origin', 'main')
-  git(work, 'push', '-q', 'origin', 'main:refs/heads/epic/trip-export')
+  if (epicBranch) git(work, 'push', '-q', 'origin', 'main:refs/heads/epic/trip-export')
   return { root, remote, work }
 }
 
@@ -703,6 +703,33 @@ test('dispatch refuses while a local run is building the epic, and says how to e
   assert.equal(flow(directory, ['dispatch', '1']).status, 0, 'anyone can clear the mark')
   world({ comments: { 1: [comment('> <!-- flow:local-run -->\n> quoted')] } })
   assert.equal(flow(directory, ['dispatch', '1']).status, 0, 'only a mark at the start of a comment counts')
+})
+
+test('worktree cuts a missing epic branch from the default branch on origin before making the copy', () => {
+  const repo = repository({ epicBranch: false })
+  const mainHead = git(repo.work, 'rev-parse', 'origin/main')
+  world()
+  const made = flow(repo.work, ['worktree', '2'])
+  assert.equal(made.status, 0, made.stderr + made.stdout)
+  const result = JSON.parse(made.stdout)
+  assert.equal(result.base, 'epic/trip-export')
+  assert.equal(git(repo.remote, 'rev-parse', 'refs/heads/epic/trip-export'), mainHead)
+  assert.equal(git(result.path, 'rev-parse', 'HEAD'), mainHead)
+  const said = fake.calls().filter((call) => call.key === `POST ${R}/issues/1/comments`).map((call) => JSON.parse(call.stdin).body)
+  assert.deepEqual(said, [`**Epic branch cut.** \`epic/trip-export\` did not exist on origin, so starting #2 cut it from \`main\` at \`${mainHead.slice(0, 12)}\`.`])
+  flow(repo.work, ['worktree', '2', '--remove'])
+})
+
+test('cutting an epic branch never moves one that appeared meanwhile', async () => {
+  const { cutEpicBranch } = await import('./delivery.mjs')
+  const repo = repository()
+  const epicHead = git(repo.remote, 'rev-parse', 'refs/heads/epic/trip-export')
+  commitFile(repo.work, 'later.txt', 'later\n', 'main moves on')
+  git(repo.work, 'push', '-q', 'origin', 'main')
+  git(repo.work, 'fetch', '-q', 'origin')
+  const result = cutEpicBranch(repo.work, { branch: 'epic/trip-export', from: 'main' })
+  assert.deepEqual(result, { ok: true, sha: epicHead, created: false })
+  assert.equal(git(repo.remote, 'rev-parse', 'refs/heads/epic/trip-export'), epicHead)
 })
 
 test('the git step itself refuses to merge into a branch outside epic/, whatever a caller passes', async () => {

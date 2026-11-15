@@ -18,6 +18,8 @@ import {
   resolveCommit,
   fetchOrigin,
   ticketBranchName,
+  epicBranchOnOrigin,
+  cutEpicBranch,
   cutTicketBranch,
   pushTicketBranch,
   mergeIntoEpic,
@@ -288,6 +290,17 @@ function epicBranchRefusal(epic) {
   if (epic.settings.branch && epic.settings.branch === github.defaultBranch())
     return `epic #${epic.number}'s "Branch: ${epic.settings.branch}" is the default branch, and nothing in Flow merges or pushes into the default branch`
   return null
+}
+
+function readyEpicBranch(root, epic, ticket) {
+  const branch = epic.settings.branch
+  if (epicBranchOnOrigin(root, branch)) return { ok: true }
+  const from = github.defaultBranch()
+  if (!from) return { ok: false, reason: `origin/${branch} does not exist, and the default branch of this repository is unknown, so there is nothing to cut it from` }
+  const cut = cutEpicBranch(root, { branch, from })
+  if (cut.ok && cut.created)
+    github.comment(epic.number, `**Epic branch cut.** \`${branch}\` did not exist on origin, so starting #${ticket} cut it from \`${from}\` at \`${cut.sha.slice(0, 12)}\`.`)
+  return cut
 }
 
 function loadEpic(number) {
@@ -1370,6 +1383,10 @@ function commandStart(positional, flags) {
   }
   const base = delivery === 'release' ? epic.settings.branch : github.defaultBranch()
   if (!base) return refuse(number, state, 'the default branch of this repository is unknown, so there is nothing to start the ticket from')
+  if (delivery === 'release') {
+    const epicBranch = readyEpicBranch(root, epic, number)
+    if (!epicBranch.ok) return refuse(number, state, `#${number} cannot start: ${epicBranch.reason}`)
+  }
   const branch = ticketBranchName(number)
   const cut = cutTicketBranch(root, { branch, base })
   if (!cut.ok) return refuse(number, state, `#${number} cannot start: ${cut.reason}`)
@@ -1893,7 +1910,13 @@ function commandWorktree(positional, flags) {
     process.stderr.write(`#${number} has no branch to start from (no epic branch, or the default branch is unknown)\n`)
     return 1
   }
-  fetchOrigin(root)
+  if (deliveryFor(epic) === 'release') {
+    const epicBranch = readyEpicBranch(root, epic, number)
+    if (!epicBranch.ok) {
+      printJson({ ticket: number, path, base, replaced: false, configured: false, failure: { step: 'epic branch', detail: epicBranch.reason }, elapsedSeconds: elapsedSeconds() })
+      return 1
+    }
+  } else fetchOrigin(root)
   const replaced = existsSync(path)
   if (replaced) removeWorktree(root, path)
   const made = createWorktree(root, { path, ref: `origin/${base}` })

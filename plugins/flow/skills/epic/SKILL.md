@@ -390,7 +390,8 @@ git ls-remote origin refs/heads/epic/<short-name>
 ```
 
 If `ls-remote` prints a line, the branch already exists, possibly left over
-from older work: **stop**, tell the user, and ask for another short name (then
+from older work, and the first ticket to start would build on it as the epic
+branch: **stop**, tell the user, and ask for another short name (then
 change `Branch:` in `epic.md`) or for them to delete the old branch by hand.
 Never force-push over it: its commits would ride into, or vanish from,
 somebody's work.
@@ -419,17 +420,10 @@ names, which is safe to repeat, until it succeeds. For any other failure,
 stop and tell the user which tickets exist, because a half-created epic must
 not be mistaken for a whole one.
 
-Cut and push the epic branch from the default branch on the remote, never
-from whatever is checked out (a stale local branch would ride into every
-ticket):
-
-```bash
-git fetch origin
-git push origin origin/<default-branch>:refs/heads/epic/<short-name>
-```
-
-If the push is rejected, stop and show the user git's message; do not retry
-with `--force`.
+Do not push the epic branch. The first `flow start` (or `flow worktree`) of
+a release epic cuts it from the default branch on origin and says so on the
+epic, so an epic approved days after it was planned starts from the code as
+it is then.
 
 Then approve the epic (skip this when a teammate approves on GitHub):
 

@@ -37,7 +37,7 @@ function commitFile(cwd, path, text, subject) {
   return lastCommit
 }
 
-function repository() {
+function repository({ epicBranch = true } = {}) {
   const root = join(directory, `case-${++repositoryCount}`)
   const remote = join(root, 'origin.git')
   const work = join(root, 'work')
@@ -47,7 +47,7 @@ function repository() {
   git(work, 'checkout', '-q', '-b', 'main')
   commitFile(work, 'README.md', 'trip planner\n', 'start')
   git(work, 'push', '-q', 'origin', 'main')
-  git(work, 'push', '-q', 'origin', 'main:refs/heads/epic/trip-export')
+  if (epicBranch) git(work, 'push', '-q', 'origin', 'main:refs/heads/epic/trip-export')
   return { root, remote, work }
 }
 
@@ -153,6 +153,32 @@ test('start cuts ticket/<n> from the epic branch on origin, labels it in progres
   assert.deepEqual(labelCalls(), [`POST ${R}/issues/2/labels {"labels":["flow:in-progress"]}`, `DELETE ${R}/issues/2/labels/flow%3Aplanned`])
   const [body] = posted(2)
   assert.match(body, /^<!-- flow:started -->\n\*\*Started\*\* in an attended session · worker model sonnet · branch `ticket\/2` from `epic\/trip-export`/)
+  assert.deepEqual(posted(1), [], 'an epic branch that exists is used as it is, and nothing is said on the epic')
+})
+
+test('start cuts a missing epic branch from the default branch on origin, says so once on the epic, and starts the ticket from it', () => {
+  const { work, remote } = repository({ epicBranch: false })
+  const mainHead = git(work, 'rev-parse', 'origin/main')
+  commitFile(work, 'local.txt', 'not pushed\n', 'a local commit nobody else has')
+  world({ extra: { [`POST ${R}/issues/1/comments`]: { id: 11, html_url: 'https://github.com/o/r/issues/1#issuecomment-11' } } })
+  const result = flow(work, ['start', '2'])
+  assert.equal(result.status, 0, result.stderr)
+  assert.equal(git(remote, 'rev-parse', 'refs/heads/epic/trip-export'), mainHead, 'cut from origin/main, not from the local commit')
+  const started = JSON.parse(result.stdout)
+  assert.deepEqual([started.base, started.baseSha], ['epic/trip-export', mainHead])
+  assert.equal(git(work, 'rev-parse', 'HEAD'), mainHead)
+  assert.deepEqual(posted(1), [`**Epic branch cut.** \`epic/trip-export\` did not exist on origin, so starting #2 cut it from \`main\` at \`${mainHead.slice(0, 12)}\`.`])
+})
+
+test('start refuses when the epic branch is missing and the default branch is not on origin to cut it from, and pushes nothing', () => {
+  const { work, remote } = repository({ epicBranch: false })
+  world({ extra: { [`GET ${R}`]: { full_name: 'o/r', default_branch: 'trunk', has_issues: true } } })
+  const result = flow(work, ['start', '2'])
+  assert.equal(result.status, 1)
+  assert.match(result.stderr, /#2 cannot start: origin\/epic\/trip-export does not exist, and neither does origin\/trunk to cut it from/)
+  assert.equal(git(remote, 'for-each-ref', 'refs/heads/epic/'), '')
+  assert.deepEqual(labelCalls(), [])
+  assert.deepEqual(posted(1), [])
 })
 
 test('start says it is an unattended run when FLOW_UNATTENDED=1, and a hard ticket names opus', () => {
