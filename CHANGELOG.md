@@ -5,7 +5,7 @@ a behaviour change in every project that installs it. Entries land in the same
 commit as the change; the pull request that brings them to the default branch
 stamps the version and date and bumps `plugin.json` in the same commit.
 
-## Unreleased
+## 3.8.0 — 2026-11-15
 
 - **The first ticket to start cuts the epic branch.** A release epic whose `Branch:` was not on origin stopped every ticket with "origin/epic/<name> does not exist, so there is nothing to start the ticket from", and a whole run ended with nothing built, because only `/flow:epic` pushed the branch and an epic created without it (planned before the work it builds on had merged, for one) never got it. `flow start` and `flow worktree` now cut a missing epic branch from the default branch on origin, never from what is checked out, and post `**Epic branch cut.**` on the epic with the commit. The push carries a lease that the branch must not exist, so one that appeared meanwhile (another ticket of the same wave) is used as it is and never moved. `/flow:epic` no longer pushes the branch, so an epic approved days after it was planned starts from the code as it is then; it still checks the name is free, since a branch left over under that name would be taken as the epic branch. A missing default branch on origin is still a refusal.
 
