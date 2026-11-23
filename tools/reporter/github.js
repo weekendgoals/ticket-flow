@@ -1,23 +1,19 @@
 import {
-  FINDINGS_README,
   splitRepo,
   parseEpic,
   generateFindingId,
-  screenshotPaths,
-  stripDataUrlPrefix,
+  screenshotNames,
+  bytesFromDataUrl,
   buildIssueBody
 } from './report-body.js';
 
 const API_ORIGIN = 'https://api.github.com';
+const UPLOADS_ORIGIN = 'https://uploads.github.com';
 const API_VERSION = '2022-11-28';
 
 function repoPath(target) {
   const { owner, name } = splitRepo(target.repo);
   return `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}`;
-}
-
-function branchPath(branch) {
-  return branch.split('/').map(encodeURIComponent).join('/');
 }
 
 async function request(settings, method, path, body) {
@@ -51,47 +47,40 @@ export function getRepository(settings, target) {
   return request(settings, 'GET', repoPath(target));
 }
 
-export async function ensureFindingsBranch(settings, target) {
-  const base = repoPath(target);
+async function uploadAttachment(settings, repositoryId, name, mime, bytes) {
+  if (!settings.token) throw new Error('No GitHub token configured');
+  const query = new URLSearchParams({ content_type: mime, name, repository_id: String(repositoryId) });
+  const response = await fetch(`${UPLOADS_ORIGIN}/user-attachments/assets?${query}`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${settings.token}`,
+      'Content-Type': 'application/octet-stream'
+    },
+    body: bytes
+  });
+  let payload = null;
   try {
-    await request(settings, 'GET', `${base}/git/ref/heads/${branchPath(target.branch)}`);
-    return false;
-  } catch (error) {
-    if (error.status !== 404) throw error;
+    payload = await response.json();
+  } catch {
+    payload = null;
   }
-  const blob = await request(settings, 'POST', `${base}/git/blobs`, {
-    content: FINDINGS_README,
-    encoding: 'utf-8'
-  });
-  const tree = await request(settings, 'POST', `${base}/git/trees`, {
-    tree: [{ path: 'README.md', mode: '100644', type: 'blob', sha: blob.sha }]
-  });
-  const commit = await request(settings, 'POST', `${base}/git/commits`, {
-    message: 'Start findings branch',
-    tree: tree.sha,
-    parents: []
-  });
-  await request(settings, 'POST', `${base}/git/refs`, {
-    ref: `refs/heads/${target.branch}`,
-    sha: commit.sha
-  });
-  return true;
+  if (!response.ok) {
+    const detail = payload && payload.message ? `: ${payload.message}` : '';
+    throw new Error(`GitHub upload of ${name} failed with ${response.status}${detail}`);
+  }
+  if (!payload || typeof payload.url !== 'string') throw new Error(`GitHub took ${name} but gave no attachment url`);
+  return payload.url;
 }
 
 export async function uploadScreenshots(settings, target, findingId, screenshots) {
-  const paths = screenshotPaths(findingId, screenshots);
-  const contents = screenshots.map((screenshot) => stripDataUrlPrefix(screenshot.dataUrl));
+  const names = screenshotNames(findingId, screenshots);
+  const repository = await getRepository(settings, target);
+  if (!repository || !repository.id) throw new Error(`GitHub gave no id for ${target.repo}`);
   const uploads = [];
-  for (const [position, path] of paths.entries()) {
-    const response = await request(settings, 'PUT', `${repoPath(target)}/contents/${path}`, {
-      message: `Finding ${findingId}: screenshot ${position + 1} of ${paths.length}`,
-      content: contents[position],
-      branch: target.branch
-    });
-    if (!response || !response.commit || !response.commit.sha) {
-      throw new Error(`GitHub gave no commit for ${path}`);
-    }
-    uploads.push({ path, commitSha: response.commit.sha });
+  for (const [position, name] of names.entries()) {
+    const screenshot = screenshots[position];
+    const url = await uploadAttachment(settings, repository.id, name, screenshot.mime, bytesFromDataUrl(screenshot.dataUrl));
+    uploads.push({ name, url });
   }
   return uploads;
 }
@@ -100,7 +89,7 @@ export async function createIssue(settings, target, report, findingId, uploads) 
   const issue = await request(settings, 'POST', `${repoPath(target)}/issues`, {
     title: report.title,
     labels: [settings.label],
-    body: buildIssueBody(target, report, findingId, uploads)
+    body: buildIssueBody(report, findingId, uploads)
   });
   return { id: issue.id, number: issue.number, html_url: issue.html_url };
 }
@@ -121,7 +110,6 @@ export async function fileFinding(settings, target, report, now = new Date(), ra
   splitRepo(target.repo);
   const epic = parseEpic(target.epic);
   const findingId = generateFindingId(now, random);
-  await ensureFindingsBranch(settings, target);
   const uploads = await uploadScreenshots(settings, target, findingId, report.screenshots);
   const issue = await createIssue(settings, target, report, findingId, uploads);
   const epicProblem = epic === null ? null : await fileUnderEpic(settings, target, epic, issue.id);
@@ -131,6 +119,6 @@ export async function fileFinding(settings, target, report, now = new Date(), ra
     findingId,
     epic,
     epicProblem,
-    paths: uploads.map((upload) => upload.path)
+    screenshots: uploads.map((upload) => upload.url)
   };
 }

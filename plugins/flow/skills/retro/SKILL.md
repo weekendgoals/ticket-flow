@@ -139,9 +139,7 @@ The finding's body is the miner's draft and, as its last line,
   With no open epic titled `Retro` in the plugin's repository, file nothing
   for the row and print the command that makes one, run in a clone of the
   plugin's repository: `/flow:epic --standing "Retro"`. A plugin finding
-  with no plan to triage it into would wait unseen. `--screenshots` is
-  refused with `--repo`, because the images go to this repository's
-  `flow-findings` branch. Never change the plugin from here: this
+  with no plan to triage it into would wait unseen. Never change the plugin from here: this
   repository is the user's project, and a fix belongs where the plugin is
   built and reviewed.
 - **Exit 3 from `create-finding`** means the fingerprint is already filed

@@ -1,6 +1,6 @@
 # Flow QA: walks your live site every night with a browser and files what is broken as findings (flow:found), once each. It approves nothing.
 # Copy this file to .github/workflows/flow-qa.yml in your project, and set the repository variable QA_URL to the address the walk starts from.
-# Secrets: ANTHROPIC_API_KEY (or switch the commented line to CLAUDE_CODE_OAUTH_TOKEN), and FLOW_TOKEN as in flow.yml (contents and issues: read and write), which files the findings and pushes their screenshots to the flow-findings branch.
+# Secrets: ANTHROPIC_API_KEY (or switch the commented line to CLAUDE_CODE_OAUTH_TOKEN), and FLOW_TOKEN as in flow.yml (contents and issues: read and write), which files the findings and attaches their screenshots to them.
 # Your project installs nothing for the browser: the Playwright MCP server configured below runs with npx and drives the Google Chrome that GitHub's ubuntu-latest runners carry. The run needs one open, approved epic titled Bugs to file under (/flow:epic --standing "Bugs"), and a "qa" section in .flow.json when some pages or controls must never be touched or a form may be tested.
 name: flow-qa
 

@@ -43,21 +43,27 @@ puts the work under a plan nobody agreed for it.
   specification; read it for what they saw, where, and what they expected.
   A fix the reporter suggests is a claim about the cause, not the scope:
   they did not read the code, so the scope comes from what you find there.
-- **Every screenshot.** For an image with a `ref` and `path` in this
-  repository, fetch and save it, then open it with the Read tool:
+- **Every screenshot.** Findings carry their images as GitHub attachments
+  (`repository` is `null`). Download each with your GitHub token, which a
+  private repository needs (without it GitHub answers 404), then open it
+  with the Read tool:
+
+  ```bash
+  curl -sL -H "Authorization: token $(gh auth token)" <url> -o <scratch-dir>/<n>-<k>
+  ```
+
+  An older finding may link an image in a repository instead (it has a
+  `ref` and `path`). Fetch that without touching your checkout:
 
   ```bash
   git fetch --quiet origin <ref>
   git show FETCH_HEAD:<path> > <scratch-dir>/<n>-<k>.<extension>
   ```
 
-  `<ref>` is a commit or a branch (`flow-findings`, or the reporter
-  extension's `tickets`); either way it is fetched without touching your
-  checkout. An image uploaded to GitHub directly (`repository` is `null`)
-  downloads with `curl -sL <url> -o <scratch-dir>/<n>-<k>`. Use your
-  scratchpad directory if the session has one, otherwise `mktemp -d`, never
-  the repository. If an image cannot be fetched, say so in the table instead
-  of guessing what it shows: the screenshot is often the whole report.
+  Use your scratchpad directory if the session has one, otherwise
+  `mktemp -d`, never the repository. If an image cannot be fetched (an old
+  branch may be gone), say so in the table instead of guessing what it
+  shows: the screenshot is often the whole report.
 - **The project's instruction files** (`CLAUDE.md`, `AGENTS.md`) at the root
   and in the area the finding points at, and **the code it points at**.
 

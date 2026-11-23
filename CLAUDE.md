@@ -63,8 +63,8 @@ epic). "Direct" or "without Flow" always overrides it.
 - `workflows/run-epic.mjs` — the `/flow:run` loop as a workflow script.
   `github/flow.yml` — the Action a project copies; it calls the same CLI.
 - `tools/reporter/` — the reporter Chrome extension: plain browser modules,
-  no build step; it files findings labelled `flow:found` with screenshots on
-  `flow-findings`. `report-body.js` holds its pure parts (paths, the body,
+  no build step; it files findings labelled `flow:found` with screenshots
+  attached inline. `report-body.js` holds its pure parts (names, the body,
   the fingerprint), `capture-area.js` the area crop, `github.js` its REST calls.
 
 ## Commands
@@ -77,7 +77,7 @@ as of 2026-10-19; the pass count grows, the fail line stays `# fail 0`.
   end to end against the fake `gh`; one case needs `git` on PATH.
 - `node --test plugins/flow/scripts/lifecycle.test.mjs` — `# pass 47`. The
   ticket steps in throwaway repositories with a bare remote; needs `git`, `sh`.
-- `node --test plugins/flow/scripts/epic-run.test.mjs` — `# pass 54`. The
+- `node --test plugins/flow/scripts/epic-run.test.mjs` — `# pass 57`. The
   whole-epic commands, the same way.
 - `pull-request.test.mjs` `# pass 20`, `issue-body.test.mjs` `# pass 30`,
   `checks.test.mjs` `# pass 31` (real shell commands in a temp dir; needs `sh`, `sleep`),

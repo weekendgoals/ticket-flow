@@ -37,8 +37,8 @@ test('every module of the extension parses as an ES module', () => {
 
 const TOKEN = 'github_pat_reporter_test_token'
 const SETTINGS = { token: TOKEN, label: 'flow:found' }
-const TARGET = { id: 't1', name: 'Site', repo: 'acme/site', branch: 'flow-findings', epic: '' }
-const DOCS = { id: 't2', name: 'Docs', repo: 'acme/docs', branch: 'docs-shots', epic: '9' }
+const TARGET = { id: 't1', name: 'Site', repo: 'acme/site', epic: '' }
+const DOCS = { id: 't2', name: 'Docs', repo: 'acme/docs', epic: '9' }
 
 const REPORT = {
   title: 'Score overlaps the crest',
@@ -54,28 +54,23 @@ const REPORT = {
 }
 
 const UPLOADS = [
-  { path: 'findings/20261018-101500-abcd/screenshot-1.png', commitSha: 'c1' },
-  { path: 'findings/20261018-101500-abcd/screenshot-2.jpg', commitSha: 'c2' }
+  { name: '20261018-101500-abcd-1.png', url: 'https://github.com/user-attachments/assets/u1' },
+  { name: '20261018-101500-abcd-2.jpg', url: 'https://github.com/user-attachments/assets/u2' }
 ]
 
-test('a screenshot goes to findings/<id>/screenshot-<n>.<ext>', () => {
-  assert.equal(body.screenshotPath('20261018-101500-abcd', 3, 'webp'), 'findings/20261018-101500-abcd/screenshot-3.webp')
+test('a screenshot is named <finding id>-<n>.<ext>', () => {
+  assert.equal(body.screenshotName('20261018-101500-abcd', 3, 'webp'), '20261018-101500-abcd-3.webp')
 })
 
-test('screenshot paths count from 1 and take the extension from the mime type', () => {
+test('screenshot names count from 1 and take the extension from the mime type', () => {
   const shots = ['image/png', 'image/jpeg', 'image/webp', 'image/gif'].map((mime) => ({ mime }))
-  assert.deepEqual(body.screenshotPaths('id', shots), [
-    'findings/id/screenshot-1.png',
-    'findings/id/screenshot-2.jpg',
-    'findings/id/screenshot-3.webp',
-    'findings/id/screenshot-4.gif'
-  ])
+  assert.deepEqual(body.screenshotNames('id', shots), ['id-1.png', 'id-2.jpg', 'id-3.webp', 'id-4.gif'])
 })
 
 test('an unsupported mime type and an empty screenshot list are refused', () => {
   assert.throws(() => body.extensionForMime('image/bmp'), /Unsupported screenshot type: image\/bmp/)
   assert.throws(() => body.extensionForMime(undefined), /Unsupported screenshot type: unknown/)
-  assert.throws(() => body.screenshotPaths('id', []), /at least one screenshot/)
+  assert.throws(() => body.screenshotNames('id', []), /at least one screenshot/)
   assert.deepEqual(body.SCREENSHOT_MIMES, ['image/png', 'image/jpeg', 'image/webp', 'image/gif'])
 })
 
@@ -113,16 +108,14 @@ test('the Where line names the page, the viewport and the user agent', () => {
   )
 })
 
-test('screenshot links point at the commit that added them', () => {
-  assert.equal(
-    body.screenshotLink('acme/site', 'abc123', 'findings/id/home page.png'),
-    'https://github.com/acme/site/blob/abc123/findings/id/home%20page.png?raw=true'
-  )
+test('a data URL becomes the bytes it carries, and anything else is refused', () => {
+  assert.deepEqual(Array.from(body.bytesFromDataUrl('data:image/png;base64,AAEC/w==')), [0, 1, 2, 255])
+  assert.throws(() => body.bytesFromDataUrl('AAEC'), /not a base64 data URL/)
 })
 
 test('the issue body has the finding shape, fingerprint first', () => {
   assert.equal(
-    body.buildIssueBody(TARGET, REPORT, '20261018-101500-abcd', UPLOADS),
+    body.buildIssueBody(REPORT, '20261018-101500-abcd', UPLOADS),
     [
       '<!-- flow:finding fingerprint=/matches/42|the score overlaps the crest on narrow screens -->',
       '',
@@ -137,14 +130,14 @@ test('the issue body has the finding shape, fingerprint first', () => {
       '',
       '## Screenshots',
       '',
-      '1. [findings/20261018-101500-abcd/screenshot-1.png](https://github.com/acme/site/blob/c1/findings/20261018-101500-abcd/screenshot-1.png?raw=true) — the crest',
-      '2. [findings/20261018-101500-abcd/screenshot-2.jpg](https://github.com/acme/site/blob/c2/findings/20261018-101500-abcd/screenshot-2.jpg?raw=true)'
+      '1. ![20261018-101500-abcd-1.png](https://github.com/user-attachments/assets/u1) — the crest',
+      '2. ![20261018-101500-abcd-2.jpg](https://github.com/user-attachments/assets/u2)'
     ].join('\n')
   )
 })
 
 test('the body has no Steps, Expected or Selected text, and no type or priority', () => {
-  const text = body.buildIssueBody(TARGET, { ...REPORT, type: 'bug', priority: 'high', steps: '1. go', expected: 'x', selection: 'y' }, 'id', UPLOADS)
+  const text = body.buildIssueBody({ ...REPORT, type: 'bug', priority: 'high', steps: '1. go', expected: 'x', selection: 'y' }, 'id', UPLOADS)
   assert.deepEqual(text.match(/^## .*/gm), ['## What happened', '## Where', '## Screenshots'])
   assert.doesNotMatch(text, /Type:|priority/)
 })
@@ -172,22 +165,22 @@ test('the epic option takes an issue number, with or without #, or nothing', () 
   assert.throws(() => body.parseEpic('0'), /Epic must be an issue number/)
 })
 
-test('settings default to the flow:found label and no targets, and a target to the flow-findings branch', () => {
+test('settings default to the flow:found label and no targets', () => {
   assert.deepEqual(DEFAULT_SETTINGS, { token: '', label: 'flow:found', targets: [] })
   assert.deepEqual(normalizeSettings(undefined), DEFAULT_SETTINGS)
   assert.deepEqual(normalizeSettings({ label: '', targets: [{ id: 'a', repo: ' acme/site ', epic: ' 7 ' }, { name: 'empty' }] }), {
     token: '',
     label: 'flow:found',
-    targets: [{ id: 'a', name: 'acme/site', repo: 'acme/site', epic: '7', branch: 'flow-findings' }]
+    targets: [{ id: 'a', name: 'acme/site', repo: 'acme/site', epic: '7' }]
   })
 })
 
-test('old settings with one repository become one target named after it', () => {
+test('old settings with one repository become one target named after it, and a screenshots branch is dropped', () => {
   const old = { token: ' tok ', repo: ' acme/site ', branch: 'shots', label: 'found', epic: '#7' }
   assert.deepEqual(normalizeSettings(old), {
     token: 'tok',
     label: 'found',
-    targets: [{ id: 'target-1', name: 'acme/site', repo: 'acme/site', epic: '#7', branch: 'shots' }]
+    targets: [{ id: 'target-1', name: 'acme/site', repo: 'acme/site', epic: '#7' }]
   })
   assert.deepEqual(normalizeSettings({ token: 'tok', repo: '', branch: '', label: '', epic: '' }).targets, [])
   assert.deepEqual(normalizeSettings(normalizeSettings(old)), normalizeSettings(old))
@@ -225,7 +218,7 @@ test('loading old settings stores them migrated, once', async () => {
   const { store, writes } = fakeStorage({ settings: { token: 'tok', repo: 'acme/site', branch: '', label: '', epic: '7' } })
   const loaded = await settingsModule.loadSettings()
   assert.deepEqual(store.settings, loaded)
-  assert.deepEqual(loaded.targets, [{ id: 'target-1', name: 'acme/site', repo: 'acme/site', epic: '7', branch: 'flow-findings' }])
+  assert.deepEqual(loaded.targets, [{ id: 'target-1', name: 'acme/site', repo: 'acme/site', epic: '7' }])
   assert.equal('repo' in store.settings, false)
   assert.deepEqual(await settingsModule.loadSettings(), loaded)
   assert.equal(writes.length, 1)
@@ -280,13 +273,6 @@ test('a draft keeps its target, and an older draft has none', () => {
   assert.deepEqual([normalizeDraft({ screenshots: [] }).targetId, normalizeDraft({ screenshots: [] }).targetName], ['', ''])
 })
 
-test('the body and paths are the same for any target with the same repository', () => {
-  const renamed = { ...TARGET, id: 'other', name: 'Renamed', epic: '3', branch: 'elsewhere' }
-  assert.equal(body.buildIssueBody(renamed, REPORT, 'id', UPLOADS), body.buildIssueBody(TARGET, REPORT, 'id', UPLOADS))
-  assert.match(body.buildIssueBody(DOCS, REPORT, 'id', UPLOADS), /https:\/\/github\.com\/acme\/docs\/blob\/c1\//)
-  assert.doesNotMatch(body.buildIssueBody(DOCS, REPORT, 'id', UPLOADS), /acme\/site\/blob/)
-})
-
 test('a draft holds a title and what happened, and a draft of the previous version loses its other fields', () => {
   assert.deepEqual(Object.keys(emptyFields()), ['title', 'description'])
   const old = { title: 'x', type: 'change', priority: 'high', description: 'It broke', steps: '1. go', expected: 'y', selection: 'z' }
@@ -297,12 +283,13 @@ test('a draft holds a title and what happened, and a draft of the previous versi
 function fakeGitHub(answers) {
   const calls = []
   globalThis.fetch = async (url, options) => {
-    assert.ok(url.startsWith('https://api.github.com/'), `request left api.github.com: ${url}`)
+    assert.ok(url.startsWith('https://api.github.com/') || url.startsWith('https://uploads.github.com/'), `request left GitHub's API: ${url}`)
     assert.equal(options.headers.Authorization, `Bearer ${TOKEN}`)
     const elsewhere = { url, body: options.body, headers: { ...options.headers, Authorization: undefined } }
     assert.equal(JSON.stringify(elsewhere).includes(TOKEN), false, 'the token travelled outside the Authorization header')
-    const path = url.replace('https://api.github.com', '')
-    const call = { method: options.method, path, body: options.body ? JSON.parse(options.body) : undefined }
+    const upload = url.startsWith('https://uploads.github.com/')
+    const path = url.replace(upload ? 'https://uploads.github.com' : 'https://api.github.com', '')
+    const call = { method: options.method, path, body: !options.body ? undefined : upload ? Array.from(options.body) : JSON.parse(options.body) }
     calls.push(call)
     const answer = answers.find((candidate) => candidate.method === call.method && candidate.path.test(path))
     if (!answer) throw new Error(`unexpected ${call.method} ${path}`)
@@ -312,54 +299,53 @@ function fakeGitHub(answers) {
   return calls
 }
 
-function branchAndUploads(subIssueReply) {
+function uploadsAndIssue(subIssueReply, repo = 'acme/site', id = 4242) {
   let upload = 0
   return [
-    { method: 'GET', path: /\/git\/ref\/heads\/flow-findings$/, reply: { status: 404, json: { message: 'Not Found' } } },
-    { method: 'POST', path: /\/git\/blobs$/, reply: { json: { sha: 'blob' } } },
-    { method: 'POST', path: /\/git\/trees$/, reply: { json: { sha: 'tree' } } },
-    { method: 'POST', path: /\/git\/commits$/, reply: { json: { sha: 'root' } } },
-    { method: 'POST', path: /\/git\/refs$/, reply: { json: {} } },
-    { method: 'PUT', path: /\/contents\//, reply: () => ({ json: { commit: { sha: `sha${(upload += 1)}` } } }) },
-    { method: 'POST', path: /\/issues$/, reply: { status: 201, json: { id: 987654, number: 31, html_url: 'https://github.com/acme/site/issues/31' } } },
-    { method: 'POST', path: /\/issues\/5\/sub_issues$/, reply: subIssueReply }
+    { method: 'GET', path: new RegExp(`^/repos/${repo}$`), reply: { json: { id, full_name: repo } } },
+    { method: 'POST', path: /^\/user-attachments\/assets\?/, reply: () => ({ status: 201, json: { url: `https://github.com/user-attachments/assets/a${(upload += 1)}` } }) },
+    { method: 'POST', path: new RegExp(`^/repos/${repo}/issues$`), reply: { status: 201, json: { id: 987654, number: 31, html_url: `https://github.com/${repo}/issues/31` } } },
+    { method: 'POST', path: /\/sub_issues$/, reply: subIssueReply }
   ]
 }
 
 const NOW = new Date(Date.UTC(2026, 9, 18, 10, 15, 0))
 
-test('filing a finding starts the orphan branch, uploads, files the issue and puts it under the epic by id', async () => {
-  const calls = fakeGitHub(branchAndUploads({ status: 201, json: {} }))
+test('filing a finding attaches each screenshot to the repository, files the issue with them inline and puts it under the epic by id', async () => {
+  const calls = fakeGitHub(uploadsAndIssue({ status: 201, json: {} }))
   const result = await fileFinding(SETTINGS, { ...TARGET, epic: '#5' }, REPORT, NOW, () => 0)
   assert.deepEqual(calls.map((call) => `${call.method} ${call.path}`), [
-    'GET /repos/acme/site/git/ref/heads/flow-findings',
-    'POST /repos/acme/site/git/blobs',
-    'POST /repos/acme/site/git/trees',
-    'POST /repos/acme/site/git/commits',
-    'POST /repos/acme/site/git/refs',
-    'PUT /repos/acme/site/contents/findings/20261018-101500-aaaa/screenshot-1.png',
-    'PUT /repos/acme/site/contents/findings/20261018-101500-aaaa/screenshot-2.jpg',
+    'GET /repos/acme/site',
+    'POST /user-attachments/assets?content_type=image%2Fpng&name=20261018-101500-aaaa-1.png&repository_id=4242',
+    'POST /user-attachments/assets?content_type=image%2Fjpeg&name=20261018-101500-aaaa-2.jpg&repository_id=4242',
     'POST /repos/acme/site/issues',
     'POST /repos/acme/site/issues/5/sub_issues'
   ])
-  assert.equal(calls[1].body.content, 'Screenshots for findings filed from the reporter extension and by Flow; never merged.\n')
-  assert.deepEqual(calls[3].body.parents, [])
-  assert.equal(calls[4].body.ref, 'refs/heads/flow-findings')
-  assert.equal(calls[5].body.branch, 'flow-findings')
-  assert.equal(calls[5].body.content, 'AAAA')
-  const issue = calls[7].body
+  assert.deepEqual(calls[1].body, [0, 0, 0])
+  assert.deepEqual(calls[2].body, [4, 16, 65])
+  const issue = calls[3].body
   assert.deepEqual(issue.labels, ['flow:found'])
   assert.match(issue.body, /^<!-- flow:finding fingerprint=\/matches\/42\|/)
-  assert.match(issue.body, /blob\/sha1\/findings\/20261018-101500-aaaa\/screenshot-1\.png/)
-  assert.match(issue.body, /blob\/sha2\/findings\/20261018-101500-aaaa\/screenshot-2\.jpg/)
-  assert.deepEqual(calls[8].body, { sub_issue_id: 987654 })
+  assert.match(issue.body, /^1\. !\[20261018-101500-aaaa-1\.png\]\(https:\/\/github\.com\/user-attachments\/assets\/a1\) — the crest$/m)
+  assert.match(issue.body, /^2\. !\[20261018-101500-aaaa-2\.jpg\]\(https:\/\/github\.com\/user-attachments\/assets\/a2\)$/m)
+  assert.doesNotMatch(issue.body, /blob\/|contents\/|findings\//)
+  assert.deepEqual(calls[4].body, { sub_issue_id: 987654 })
   assert.equal(result.number, 31)
   assert.equal(result.epic, 5)
   assert.equal(result.epicProblem, null)
+  assert.deepEqual(result.screenshots, ['https://github.com/user-attachments/assets/a1', 'https://github.com/user-attachments/assets/a2'])
+})
+
+test('a failed upload files nothing and says which screenshot', async () => {
+  const answers = uploadsAndIssue({ status: 201, json: {} })
+  answers[1] = { method: 'POST', path: /^\/user-attachments\/assets\?/, reply: { status: 422, json: { message: 'Bad Size' } } }
+  const calls = fakeGitHub(answers)
+  await assert.rejects(fileFinding(SETTINGS, TARGET, REPORT, NOW, () => 0), /GitHub upload of 20261018-101500-aaaa-1\.png failed with 422: Bad Size/)
+  assert.equal(calls.some((call) => call.path.endsWith('/issues')), false)
 })
 
 test('a failed sub-issue call is reported and leaves the issue filed', async () => {
-  const calls = fakeGitHub(branchAndUploads({ status: 422, json: { message: 'Validation Failed' } }))
+  const calls = fakeGitHub(uploadsAndIssue({ status: 422, json: { message: 'Validation Failed' } }))
   const result = await fileFinding(SETTINGS, { ...TARGET, epic: '5' }, REPORT, NOW, () => 0)
   assert.equal(result.number, 31)
   assert.match(result.epicProblem, /sub_issues failed with 422: Validation Failed/)
@@ -368,13 +354,10 @@ test('a failed sub-issue call is reported and leaves the issue filed', async () 
 })
 
 test('with no epic set, no sub-issue call is made', async () => {
-  const answers = branchAndUploads({ status: 500, json: {} })
-  answers[0] = { method: 'GET', path: /\/git\/ref\/heads\/flow-findings$/, reply: { json: { object: { sha: 'x' } } } }
-  const calls = fakeGitHub(answers)
+  const calls = fakeGitHub(uploadsAndIssue({ status: 500, json: {} }))
   const result = await fileFinding(SETTINGS, TARGET, REPORT, NOW, () => 0)
   assert.equal(result.epic, null)
   assert.equal(calls.some((call) => call.path.endsWith('/sub_issues')), false)
-  assert.equal(calls.some((call) => call.path.endsWith('/git/blobs')), false)
 })
 
 test('an epic that is not a number is refused before anything is uploaded', async () => {
@@ -383,19 +366,11 @@ test('an epic that is not a number is refused before anything is uploaded', asyn
   assert.equal(calls.length, 0)
 })
 
-test('a finding goes to the chosen target\'s repository, branch and epic', async () => {
-  let upload = 0
-  const calls = fakeGitHub([
-    { method: 'GET', path: /^\/repos\/acme\/docs\/git\/ref\/heads\/docs-shots$/, reply: { json: { object: { sha: 'x' } } } },
-    { method: 'PUT', path: /^\/repos\/acme\/docs\/contents\//, reply: () => ({ json: { commit: { sha: `sha${(upload += 1)}` } } }) },
-    { method: 'POST', path: /^\/repos\/acme\/docs\/issues$/, reply: { status: 201, json: { id: 55, number: 4, html_url: 'https://github.com/acme/docs/issues/4' } } },
-    { method: 'POST', path: /^\/repos\/acme\/docs\/issues\/9\/sub_issues$/, reply: { status: 201, json: {} } }
-  ])
+test('a finding goes to the chosen target\'s repository and epic', async () => {
+  const calls = fakeGitHub(uploadsAndIssue({ status: 201, json: {} }, 'acme/docs', 55))
   const result = await fileFinding(SETTINGS, DOCS, REPORT, NOW, () => 0)
-  assert.equal(calls.length, 5)
-  assert.equal(calls.every((call) => call.path.startsWith('/repos/acme/docs/')), true)
-  assert.equal(calls[1].body.branch, 'docs-shots')
-  assert.match(calls[3].body.body, /github\.com\/acme\/docs\/blob\/sha1\//)
+  assert.deepEqual(calls.map((call) => call.path.replace(/\?.*/, '')), ['/repos/acme/docs', '/user-attachments/assets', '/user-attachments/assets', '/repos/acme/docs/issues', '/repos/acme/docs/issues/9/sub_issues'])
+  assert.ok(calls.filter((call) => call.path.startsWith('/user-attachments/')).every((call) => call.path.endsWith('&repository_id=55')))
   assert.equal(result.repo, 'acme/docs')
   assert.equal(result.epic, 9)
   assert.equal(result.epicProblem, null)
@@ -506,12 +481,7 @@ test('the popup restores a draft on its own target and remembers nothing until a
   await fire(element('target'), 'change')
   assert.deepEqual(store.chosenTargets, {})
   assert.deepEqual([store.draft.targetId, store.draft.targetName], ['t1', 'Site'])
-  let upload = 0
-  fakeGitHub([
-    { method: 'GET', path: /^\/repos\/acme\/site\/git\/ref\/heads\/flow-findings$/, reply: { json: {} } },
-    { method: 'PUT', path: /^\/repos\/acme\/site\/contents\//, reply: () => ({ json: { commit: { sha: `s${(upload += 1)}` } } }) },
-    { method: 'POST', path: /^\/repos\/acme\/site\/issues$/, reply: { status: 201, json: { id: 1, number: 8, html_url: 'https://github.com/acme/site/issues/8' } } }
-  ])
+  fakeGitHub(uploadsAndIssue({ status: 500, json: {} }))
   await fire(element('report'), 'submit')
   assert.deepEqual(store.chosenTargets, { 'https://docs.acme.example': 't1' })
   assert.equal('draft' in store, false)
@@ -550,12 +520,7 @@ test('a finding with nothing in What happened is refused before any request', as
 
 test('with no title the issue is titled by the first line of what happened, and the body carries only the lean sections', async () => {
   const { element } = await openPopup({ ...DRAFT, fields: { title: '', description: 'The link 404s\non every page' } })
-  const calls = fakeGitHub([
-    { method: 'GET', path: /\/git\/ref\/heads\/docs-shots$/, reply: { json: {} } },
-    { method: 'PUT', path: /\/contents\//, reply: { json: { commit: { sha: 's1' } } } },
-    { method: 'POST', path: /\/issues$/, reply: { status: 201, json: { id: 1, number: 8, html_url: 'https://github.com/acme/docs/issues/8' } } },
-    { method: 'POST', path: /\/sub_issues$/, reply: { status: 201, json: {} } }
-  ])
+  const calls = fakeGitHub(uploadsAndIssue({ status: 201, json: {} }, 'acme/docs', 55))
   await fire(element('report'), 'submit')
   const issue = calls.find((call) => call.path === '/repos/acme/docs/issues').body
   assert.equal(issue.title, 'The link 404s')

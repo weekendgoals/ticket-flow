@@ -25,10 +25,7 @@ import {
   pushTicketBranch,
   mergeIntoEpic,
   commitSubjects,
-  commitToSideBranch,
   instructionFileSizes,
-  FINDINGS_BRANCH,
-  FINDINGS_BRANCH_README,
 } from './delivery.mjs'
 import {
   isUnattended,
@@ -1072,7 +1069,7 @@ function commandDispute(positional, flags) {
   return postClaim(number, refusal, disputeComment(check, text))
 }
 
-const IMAGE_TYPES = new Set(['.png', '.jpg', '.jpeg', '.webp'])
+const IMAGE_TYPES = new Map([['.png', 'image/png'], ['.jpg', 'image/jpeg'], ['.jpeg', 'image/jpeg'], ['.webp', 'image/webp']])
 const FINGERPRINT_EXISTS_EXIT = 3
 
 function readFingerprint(flags) {
@@ -1090,17 +1087,13 @@ function screenshotFiles(directory) {
   const others = names.filter((name) => !IMAGE_TYPES.has(extname(name).toLowerCase()))
   if (others.length) throw new UsageError(`${directory} holds ${others.join(', ')}, which is not a PNG, JPEG or WebP image; a finding carries images only, so move it out first`)
   if (!names.length) throw new UsageError(`${directory} holds no image to attach`)
-  return names.map((name) => ({ name, source: join(directory, name) }))
+  return names.map((name) => ({ name, source: join(directory, name), contentType: IMAGE_TYPES.get(extname(name).toLowerCase()) }))
 }
 
 function carriesMarker(body, marker) {
   return normalizeNewlines(body)
     .split('\n')
     .some((line) => line.trim() === marker)
-}
-
-function blobLink(slug, sha, path) {
-  return `https://github.com/${slug}/blob/${sha}/${path.split('/').map(encodeURIComponent).join('/')}?raw=true`
 }
 
 function withScreenshots(body, links) {
@@ -1123,15 +1116,10 @@ function commandCreateFinding(positional, flags) {
   if (positional.length) throw new UsageError('create-finding takes no issue number; give the epic with --epic')
   if (!flags.title) throw new UsageError('create-finding needs --title')
   if (flags.file === undefined) throw new UsageError('create-finding needs --file')
-  if (flags.repo !== undefined) {
-    if (flags.screenshots !== undefined)
-      throw new UsageError('--screenshots goes without --repo: the images are committed to the flow-findings branch of this repository, and a finding in another one could not link them')
-    useRepository(flags.repo)
-  }
+  if (flags.repo !== undefined) useRepository(flags.repo)
   const fingerprint = readFingerprint(flags)
   const epicNumber = flags.epic === undefined ? null : issueNumber(flags.epic, 'an epic number')
   const shots = flags.screenshots === undefined ? [] : screenshotFiles(resolve(flags.screenshots))
-  const root = shots.length ? requireRepository(flags) : null
   const text = normalizeNewlines(readFileSync(flags.file === '-' ? 0 : flags.file, 'utf8'))
   if (epicNumber !== null) {
     const epic = github.getIssue(epicNumber)
@@ -1167,29 +1155,21 @@ function commandCreateFinding(positional, flags) {
       problems.push(`filed #${created.number}, but could not make it a sub-issue of epic #${epicNumber}: ${error.message}; add it under the epic's sub-issues on GitHub, or leave it: \`flow promote\` puts it under its epic`)
     }
   if (shots.length) {
-    let committed
+    let links = null
     try {
-      committed = commitToSideBranch(root, {
-        branch: FINDINGS_BRANCH,
-        files: shots.map((shot) => ({ source: shot.source, path: `findings/${created.number}/${shot.name}` })),
-        readme: FINDINGS_BRANCH_README,
-        message: `#${created.number}: screenshots of the finding`,
-      })
+      const repositoryId = github.repoInfo().id
+      links = shots.map((shot) => ({ name: shot.name, url: github.uploadAttachment({ repositoryId, file: shot.source, name: shot.name, contentType: shot.contentType }) }))
     } catch (error) {
-      if (!(error instanceof GitError)) throw error
-      committed = { ok: false, reason: error.message }
+      if (!(error instanceof TrackerError)) throw error
+      problems.push(`filed #${created.number}, but its screenshots were not attached: ${error.message}; attach them to the issue by hand`)
     }
-    if (!committed.ok) problems.push(`filed #${created.number}, but its screenshots were not attached: ${committed.reason}; attach them to the issue by hand`)
-    else {
-      const slug = github.repoSlug()
-      const links = shots.map((shot) => ({ name: shot.name, url: blobLink(slug, committed.sha, `findings/${created.number}/${shot.name}`) }))
+    if (links)
       try {
         github.updateIssueBody(created.number, withScreenshots(body, links))
       } catch (error) {
         if (!(error instanceof TrackerError)) throw error
-        problems.push(`filed #${created.number} and committed its screenshots to ${FINDINGS_BRANCH} at ${committed.sha.slice(0, 12)}, but could not link them in the issue: ${error.message}`)
+        problems.push(`filed #${created.number} and uploaded its screenshots, but could not link them in the issue: ${error.message}; attach them to the issue by hand`)
       }
-    }
   }
   for (const problem of problems) process.stderr.write(`${problem}; running create-finding again would file it twice\n`)
   console.log(created.number)

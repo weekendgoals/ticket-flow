@@ -749,11 +749,10 @@ flow create-finding --title "<t>" --file <body> [--epic <e>] \
 ```
 
 `--epic` makes it a sub-issue of that epic, which must be open.
-`--screenshots` takes a directory of PNG, JPEG or WebP images: once the issue exists, they are committed to the
-branch `flow-findings` under `findings/<issue number>/` (the branch is
-created with only a `README.md` when it is missing, holds no code and is
-never merged), pushed, and listed under `## Screenshots` in the issue, each
-linked by its commit so the link never moves. `--fingerprint` files a bug
+`--screenshots` takes a directory of PNG, JPEG or WebP images: once the issue exists, each is
+uploaded as a GitHub attachment and shown inline under `## Screenshots` in
+the issue. Nothing is committed or pushed. If an upload fails, the finding
+stays filed and the command says to attach the images by hand. `--fingerprint` files a bug
 once: when an open finding, or a ticket promoted from one, already carries
 the same `<!-- flow:finding fingerprint=<text> -->` line, nothing is filed
 and the command exits 3 printing that issue's number; otherwise the line is
@@ -768,9 +767,8 @@ findings, and says so when there were more, since an older rejection would
 not be found. A finding closed as completed does not count: what it
 reported was dealt with, so the same fingerprint is a new bug.
 `--repo <owner>/<name>` files the finding in another repository, such as the
-plugin's: `--epic` and the fingerprint search are looked up there, and
-`--screenshots` is refused, because the images go to this repository's
-`flow-findings` branch.
+plugin's: `--epic`, the fingerprint search and the screenshots' attachments
+all go there.
 
 **A person approves a finding** by adding `flow:approved` to it, and rejects
 it by closing it. `flow found [<epic>] [--json]` lists the open ones: epic or
@@ -841,7 +839,7 @@ only when told to.
 | `depart <n> --text "<facts>"` or `--file <md>` | Under `Stops: none`, unattended: records a departure from the plan on a ticket in progress or in review (at most 600 characters); refuses otherwise, naming `flow needs-human` under `Stops: ask` |
 | `dispute <n> --check <k> --text "<facts>"` or `--file <md>` | Under `Stops: none`, unattended: records that check `<k>` (in `flow check`'s order) cannot pass as written; refuses a `<k>` the ticket does not have, and as `depart` does |
 | `handoff <n> --text "<lines>"` or `--file <md>` | Posts the ticket's handoff for the tickets after it; refuses one that is not in review or done, a done one that already has a handoff, and a text over 1,200 characters. The latest one counts |
-| `create-finding --title "<t>" --file <md> [--epic <e>] [--screenshots <dir>] [--fingerprint "<text>"] [--repo <owner>/<name>]` | Files a finding (`flow:found`), its images on the `flow-findings` branch; prints its number, or exits 3 with the existing one when the fingerprint was filed before or rejected. `--repo` files it in another repository (no `--screenshots` there) |
+| `create-finding --title "<t>" --file <md> [--epic <e>] [--screenshots <dir>] [--fingerprint "<text>"] [--repo <owner>/<name>]` | Files a finding (`flow:found`) with its images attached inline; prints its number, or exits 3 with the existing one when the fingerprint was filed before or rejected. `--repo` files it in another repository |
 | `retro-fingerprint <epic> --text "<line>"` | Prints the fingerprint a retro files a proposal with: this repository, the epic, and the line in lower case with only letters and digits |
 | `found [<epic>] [--json]` | The open findings: epic, who filed them and when, approved or waiting, image count (with `--json`, the body and every image link too). Always exits 0 |
 | `promote <n> --file <md> --tier easy\|hard --epic <e> [--blocked-by <n>,<n>]` | Turns an approved finding into a planned ticket of the epic, keeping its text under `## Report`; refuses with exit 2 otherwise |
@@ -999,8 +997,7 @@ comment on the epic says what was filed and why each rejected row was not.
 you are looking at: you capture or paste screenshots, say what happened
 and optionally give a title, and it files a GitHub issue
 labelled `flow:found` under the epic you set in its options (usually the
-open Bugs epic), with the screenshots committed to the `flow-findings`
-branch and linked by commit. It has no build step: open
+open Bugs epic), with the screenshots attached to the issue inline. It has no build step: open
 `chrome://extensions`, turn on Developer mode, choose Load unpacked and
 select the folder. A person then approves the finding with `flow:approved`
 or closes it, and `/flow:triage` turns approved findings into tickets. The

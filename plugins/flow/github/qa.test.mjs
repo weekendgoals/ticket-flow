@@ -28,7 +28,7 @@ test('it files with FLOW_TOKEN, falls back to the Actions token, and trusts comm
   assert.equal(workflow.jobs.qa.env.GH_TOKEN, '${{ secrets.FLOW_TOKEN || github.token }}')
   assert.equal(claude.env.GH_TOKEN, '${{ secrets.FLOW_TOKEN || github.token }}')
   assert.equal(claude.with.github_token, '${{ secrets.FLOW_TOKEN || github.token }}')
-  assert.equal(steps[0].with.token, '${{ secrets.FLOW_TOKEN || github.token }}', 'the checkout pushes the screenshots to flow-findings with the same token')
+  assert.equal(steps[0].with.token, '${{ secrets.FLOW_TOKEN || github.token }}', 'the checkout uses the same token as the run')
   assert.equal(claude.with.anthropic_api_key, '${{ secrets.ANTHROPIC_API_KEY }}')
   assert.match(text, /# claude_code_oauth_token: \$\{\{ secrets\.CLAUDE_CODE_OAUTH_TOKEN \}\}/)
   const flowYml = parseYaml(readFileSync(join(dirname(templatePath), 'flow.yml'), 'utf8'))

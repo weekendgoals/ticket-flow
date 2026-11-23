@@ -1,4 +1,4 @@
-import { DEFAULT_SETTINGS, DEFAULT_BRANCH, loadStoredSettings, saveSettings, normalizeSettings, checkTargets } from './settings.js';
+import { DEFAULT_SETTINGS, loadStoredSettings, saveSettings, normalizeSettings, checkTargets } from './settings.js';
 import { getRepository } from './github.js';
 
 const token = document.getElementById('token');
@@ -9,8 +9,7 @@ const status = document.getElementById('status');
 const TARGET_FIELDS = [
   { key: 'name', text: 'Name', help: 'Shown in the popup. Defaults to the repository.' },
   { key: 'repo', text: 'Repository (owner/name)' },
-  { key: 'epic', text: 'Epic', help: 'An issue number, usually the open Bugs epic. Leave it empty to file with no epic.' },
-  { key: 'branch', text: 'Screenshots branch', placeholder: DEFAULT_BRANCH }
+  { key: 'epic', text: 'Epic', help: 'An issue number, usually the open Bugs epic. Leave it empty to file with no epic.' }
 ];
 
 function setStatus(message, isError = false) {
