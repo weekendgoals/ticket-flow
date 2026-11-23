@@ -90,7 +90,17 @@ export function authStatus() {
 
 export function repoInfo() {
   const raw = apiGet(REPO)
-  return { slug: raw.full_name, defaultBranch: raw.default_branch || null, hasIssues: raw.has_issues !== false }
+  return { id: raw.id ?? null, slug: raw.full_name, defaultBranch: raw.default_branch || null, hasIssues: raw.has_issues !== false }
+}
+
+export function uploadAttachment({ repositoryId, file, name, contentType }) {
+  const query = `content_type=${encodeURIComponent(contentType)}&name=${encodeURIComponent(name)}&repository_id=${encodeURIComponent(repositoryId)}`
+  const raw = parseJson(
+    runGh(['api', '-X', 'POST', `https://uploads.github.com/user-attachments/assets?${query}`, '-H', 'Content-Type: application/octet-stream', '--input', file]),
+    'user-attachments/assets',
+  )
+  if (!raw || typeof raw.url !== 'string') throw new TrackerError(`GitHub took ${name} but answered no attachment url`)
+  return raw.url
 }
 
 export function repoSlug() {

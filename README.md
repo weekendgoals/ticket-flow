@@ -425,16 +425,18 @@ Optional, at the repository root:
 ```json
 {
   "screenshots": "npm run screenshots",
-  "screenshotsDir": ".flow/screenshots/{n}",
   "copy": [".env"],
   "setup": ["npm ci"]
 }
 ```
 
 `screenshots` is a shell command that writes PNGs of the built screens. It
-gets `FLOW_TICKET` and `FLOW_SCREENSHOTS_DIR`, and may print another
-directory as its last line. The images are committed on the ticket branch
-and posted on the issue.
+gets `FLOW_TICKET` and `FLOW_SCREENSHOTS_DIR` (a fresh directory outside the
+repository, or `screenshotsDir` when set, `{n}` the ticket number), and may
+print another directory as its last line. Each PNG is uploaded as a GitHub
+attachment and posted on the issue, then deleted (one an earlier version
+committed goes back to its committed content): nothing is committed, so
+no image reaches the ticket branch, the epic branch or the default branch.
 
 `copy` and `setup` say what a fresh working copy needs before anything can
 be built or checked in it: a copy has only what git tracks. `copy` lists
@@ -848,7 +850,7 @@ only when told to.
 | `accept <n>` | Runs the criteria on `ticket/<n>`'s committed head and posts the results with the commit; refuses an issue body edited after the start. Under `Stops: none`, unattended, passes when every failing check is disputed (`passed, with N disputed check(s)`; the marker carries `disputed=N`) |
 | `deliver <n>` | Merges the accepted commit into the epic branch (release) or opens its pull request (incremental) |
 | `delivered <n>` | Marks a ticket done (and closes it) once a person merged its own pull request from `ticket/<n>` into the default branch, read from GitHub, not from who posted the delivery comment; exit 1 changing nothing otherwise, exit 0 when it is already done |
-| `screenshots <n>` | Runs `.flow.json`'s `screenshots` command, commits and posts the images |
+| `screenshots <n>` | Runs `.flow.json`'s `screenshots` command and posts the images on the issue as attachments, committing nothing |
 | `meter <n> --transcripts [<role>=]<path> ... [--print]` | Posts what the ticket cost, read from transcripts, a headless run's output or the GitHub Action's, then copies the figures to the project board's cost fields |
 | `meter <n> --workflow <run dir> [--print]` | The same, for one ticket, over every `/flow:run` workflow run beside `<run dir>` that built it; leaves out a run a cost comment already lists, and posts nothing when that is all of them |
 | `pr-review-request <pr>` | Asks Copilot to review; prints `copilot`, `coderabbit` or `none` |

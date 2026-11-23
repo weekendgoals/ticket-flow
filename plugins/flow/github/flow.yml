@@ -92,13 +92,6 @@ jobs:
       - name: post what it cost
         if: always() && steps.claude.outputs.execution_file != ''
         run: $FLOW meter "$TICKET" --transcripts "${{ steps.claude.outputs.execution_file }}" || true
-      - name: keep the screenshots
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: screenshots-${{ env.TICKET }}
-          path: .flow/screenshots/
-          if-no-files-found: ignore
       - name: a run that stopped without a result is reset once, a start request that never started is withdrawn, and a second time goes to a person
         id: recover
         if: always()
