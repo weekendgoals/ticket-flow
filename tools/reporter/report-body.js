@@ -1,4 +1,3 @@
-export const FINDINGS_README = 'Screenshots for findings filed from the reporter extension and by Flow; never merged.\n';
 export const FINGERPRINT_DESCRIPTION_LENGTH = 60;
 export const TITLE_LENGTH = 80;
 
@@ -45,16 +44,16 @@ export function extensionForMime(mime) {
   return ext;
 }
 
-export function screenshotPath(findingId, index, ext) {
-  return `findings/${findingId}/screenshot-${index}.${ext}`;
+export function screenshotName(findingId, index, ext) {
+  return `${findingId}-${index}.${ext}`;
 }
 
-export function screenshotPaths(findingId, screenshots) {
+export function screenshotNames(findingId, screenshots) {
   if (!Array.isArray(screenshots) || screenshots.length === 0) {
     throw new Error('Attach at least one screenshot');
   }
   return screenshots.map((screenshot, position) =>
-    screenshotPath(findingId, position + 1, extensionForMime(screenshot.mime))
+    screenshotName(findingId, position + 1, extensionForMime(screenshot.mime))
   );
 }
 
@@ -67,10 +66,11 @@ export function stripDataUrlPrefix(dataUrl) {
   return dataUrl.slice(index + marker.length);
 }
 
-export function screenshotLink(repo, commitSha, path) {
-  const { owner, name } = splitRepo(repo);
-  const encoded = path.split('/').map(encodeURIComponent).join('/');
-  return `https://github.com/${owner}/${name}/blob/${commitSha}/${encoded}?raw=true`;
+export function bytesFromDataUrl(dataUrl) {
+  const binary = atob(stripDataUrlPrefix(dataUrl));
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
+  return bytes;
 }
 
 export function urlPath(url) {
@@ -130,11 +130,10 @@ function section(heading, body) {
   return [`## ${heading}`, '', body, ''];
 }
 
-export function buildIssueBody(target, report, findingId, uploads) {
+export function buildIssueBody(report, findingId, uploads) {
   const lines = uploads.map((upload, position) => {
     const caption = (report.screenshots[position].caption || '').trim();
-    const link = screenshotLink(target.repo, upload.commitSha, upload.path);
-    return `${position + 1}. [${upload.path}](${link})${caption ? ` — ${caption}` : ''}`;
+    return `${position + 1}. ![${upload.name}](${upload.url})${caption ? ` — ${caption}` : ''}`;
   });
   return [
     fingerprintLine(report.url, report.description),

@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 
@@ -163,57 +163,6 @@ function attemptMerge(cwd, { sha, epicBranch, subject }) {
     rmSync(worktree, { recursive: true, force: true })
     git(cwd, ['worktree', 'prune'], { allowFailure: true })
   }
-}
-
-export const FINDINGS_BRANCH = 'flow-findings'
-export const FINDINGS_BRANCH_README = `# flow-findings
-
-This branch holds only the screenshots of Flow findings, one folder per issue:
-\`findings/<issue number>/\`. \`flow create-finding --screenshots\` commits them
-here so the links in the issue point at the commit they were filed in. It is
-never merged anywhere and holds no code.
-`
-
-function remoteBranchHead(cwd, branch) {
-  const listed = git(cwd, ['ls-remote', '--exit-code', 'origin', `refs/heads/${branch}`], { allowFailure: true })
-  if (listed.status === 2) return { ok: true, sha: null }
-  if (!listed.ok) return { ok: false, reason: `origin could not be read: ${listed.stderr || `exit ${listed.status}`}` }
-  const fetched = git(cwd, ['fetch', '--quiet', 'origin', `+refs/heads/${branch}:refs/remotes/origin/${branch}`], { allowFailure: true })
-  if (!fetched.ok) return { ok: false, reason: `${branch} could not be fetched from origin: ${fetched.stderr}` }
-  return { ok: true, sha: resolveCommit(cwd, `refs/remotes/origin/${branch}`) }
-}
-
-function commitFiles(cwd, { parent, files, readme, message }) {
-  const scratch = mkdtempSync(join(tmpdir(), 'flow-side-branch-'))
-  const env = { GIT_INDEX_FILE: join(scratch, 'index') }
-  const stage = (source, path) => {
-    const blob = git(cwd, ['hash-object', '-w', '--', source]).stdout
-    git(cwd, ['update-index', '--add', '--cacheinfo', '100644', blob, path], { env })
-  }
-  try {
-    if (parent) git(cwd, ['read-tree', parent], { env })
-    else {
-      writeFileSync(join(scratch, 'README.md'), readme)
-      stage(join(scratch, 'README.md'), 'README.md')
-    }
-    for (const file of files) stage(file.source, file.path)
-    const tree = git(cwd, ['write-tree'], { env }).stdout
-    return git(cwd, ['commit-tree', tree, ...(parent ? ['-p', parent] : []), '-m', message]).stdout
-  } finally {
-    rmSync(scratch, { recursive: true, force: true })
-  }
-}
-
-export function commitToSideBranch(cwd, { branch, files, readme, message, retries = PUSH_RETRIES }) {
-  for (let attempt = 0; attempt <= retries; attempt++) {
-    const head = remoteBranchHead(cwd, branch)
-    if (!head.ok) return head
-    const sha = commitFiles(cwd, { parent: head.sha, files, readme, message })
-    const pushed = git(cwd, ['push', '--quiet', 'origin', `${sha}:refs/heads/${branch}`], { allowFailure: true })
-    if (pushed.ok) return { ok: true, sha, created: !head.sha }
-    if (!pushRejectedAsStale(pushed.stderr)) return { ok: false, reason: `pushing ${branch} failed: ${pushed.stderr}` }
-  }
-  return { ok: false, reason: `${branch} on origin moved under every one of ${retries + 1} attempts to push` }
 }
 
 export function mergeIntoEpic(cwd, {sha, epicBranch, subject, retries = PUSH_RETRIES }) {

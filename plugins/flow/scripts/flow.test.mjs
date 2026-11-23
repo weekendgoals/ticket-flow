@@ -1278,16 +1278,20 @@ test('create-finding --fingerprint searches at most the 500 most recently update
   assert.equal(fake.calls().filter((call) => call.key.includes('state=closed')).length, 5)
 })
 
-test('create-finding --repo files the finding, its epic and its fingerprint search in another repository, and refuses --screenshots there', () => {
+test('create-finding --repo files the finding, its epic, its fingerprint search and its screenshots in another repository', () => {
   const file = join(directory, 'plugin-finding.md')
   writeFileSync(file, '## What happened\n\nThe retro asked a question a command answers.\n')
+  const upload = 'POST https://uploads.github.com/user-attachments/assets?content_type=image%2Fpng&name=a.png&repository_id=77'
   world({
     epics: [{ epic: issue(4, { title: 'Retro', body: epicBody([], 'Delivery: incremental'), labels: epicLabels() }), tickets: [] }],
+    repo: { id: 77 },
     extra: {
       [`GET ${R}/issues?labels=flow%3Aticket&state=open&per_page=100`]: [],
       [CLOSED_FINDINGS]: [],
       [`POST ${R}/issues`]: finding(95),
       [`POST ${R}/issues/4/sub_issues`]: {},
+      [upload]: { url: 'https://github.com/user-attachments/assets/a-png' },
+      [`PATCH ${R}/issues/95`]: finding(95),
     },
   })
   const result = flow('create-finding', '--repo', 'weekendgoals/ticket-flow', '--epic', '4', '--title', 'Answer it', '--file', file, '--fingerprint', 'retro o/r#1: answer it')
@@ -1303,8 +1307,10 @@ test('create-finding --repo files the finding, its epic and its fingerprint sear
   mkdirSync(join(directory, 'shots-repo'), { recursive: true })
   writeFileSync(join(directory, 'shots-repo', 'a.png'), 'png')
   const shots = flow('create-finding', '--repo', 'weekendgoals/ticket-flow', '--screenshots', join(directory, 'shots-repo'), '--title', 'x', '--file', file)
-  assert.equal(shots.status, 2)
-  assert.match(shots.stderr, /--screenshots goes without --repo: the images are committed to the flow-findings branch of this repository/)
+  assert.equal(shots.status, 0, shots.stderr)
+  assert.ok(fake.calls().every((call) => call.repo === 'weekendgoals/ticket-flow'), 'the screenshots go to the named repository too')
+  assert.deepEqual(writesMade().map((call) => call.key), [`POST ${R}/issues`, upload, `PATCH ${R}/issues/95`])
+  fake.clearCalls()
   assert.equal(flow('create-finding', '--repo', 'not a slug', '--title', 'x', '--file', file).status, 2)
   assert.deepEqual(fake.calls(), [])
 })

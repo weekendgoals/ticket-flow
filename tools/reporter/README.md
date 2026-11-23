@@ -16,8 +16,7 @@ GitHub, Settings, Developer settings, Fine-grained personal access tokens, Gener
 
 - Repository access: only the repositories the findings go to. One token serves every target on the options page, so give it each target's repository.
 - Permissions:
-  - Contents read and write, to commit the screenshots to the findings branch.
-  - Issues read and write, to file the finding and put it under its epic.
+  - Issues read and write, to file the finding, attach its screenshots and put it under its epic.
   - Metadata read, which GitHub adds on its own.
 
 ## Fill in the options page
@@ -36,11 +35,10 @@ Then one or more **targets**, each a place a finding can go. Add target adds one
 | Name | the repository | What the popup's File to list shows, such as "Site" or "Docs". |
 | Repository | none | `owner/name` that receives the finding and its screenshots. |
 | Epic | none | The epic the finding is filed under, usually the open Bugs epic. An issue number; leave it empty to file the finding with no epic. |
-| Screenshots branch | `flow-findings` | Branch the screenshots are committed to. Flow's own `flow create-finding` uses the same branch. |
 
 Save, then Test token to check the token can read every target's repository.
 
-Settings saved before targets existed (one repository, epic and branch) become one target named after the repository the first time the extension loads them.
+Settings saved before targets existed (one repository and epic) become one target named after the repository the first time the extension loads them. A screenshots branch saved by an earlier version is dropped.
 
 ## Use it
 
@@ -67,10 +65,9 @@ Chrome's own pages (`chrome://`, the Web Store) refuse script injection, so on t
 
 ## What gets filed
 
-- If the findings branch does not exist it is created as an orphan branch holding only a `README.md`: "Screenshots for findings filed from the reporter extension and by Flow; never merged."
-- Screenshots are committed one at a time to `findings/<id>/screenshot-<n>.<ext>` on that branch, `n` counting from 1 and `ext` one of `png`, `jpg`, `webp`, `gif`. The finding id is `YYYYMMDD-HHMMSS-xxxx` in UTC.
-- An issue is created with the label. Its first line is `<!-- flow:finding fingerprint=<page URL path>|<first 60 characters of what happened, lowercased, spaces collapsed> -->` (a `--` in it becomes `-`, so the comment cannot end early), which Flow reads to spot the same finding filed twice; the extension itself does not check it. Then come `## What happened`, `## Where` (page URL and title, viewport and user agent, then the finding id on a line of its own) and `## Screenshots`: a numbered list linking each image by the commit that added it, so the link keeps working when the branch moves, followed by its caption when it has one. Each link ends in `?raw=true`, so it opens the image itself, the way Flow's own `screenshots` command writes them.
-- Everything goes to the chosen target: its repository, its screenshots branch and its epic.
+- Each screenshot is uploaded to the target repository as a GitHub attachment named `<id>-<n>.<ext>`, `n` counting from 1 and `ext` one of `png`, `jpg`, `webp`, `gif`. The finding id is `YYYYMMDD-HHMMSS-xxxx` in UTC. Nothing is committed to the repository. If an upload fails, nothing is filed and the result line names the screenshot.
+- An issue is created with the label. Its first line is `<!-- flow:finding fingerprint=<page URL path>|<first 60 characters of what happened, lowercased, spaces collapsed> -->` (a `--` in it becomes `-`, so the comment cannot end early), which Flow reads to spot the same finding filed twice; the extension itself does not check it. Then come `## What happened`, `## Where` (page URL and title, viewport and user agent, then the finding id on a line of its own) and `## Screenshots`: a numbered list showing each image inline, followed by its caption when it has one, the way Flow's own `screenshots` and `create-finding` commands post them.
+- Everything goes to the chosen target: its repository and its epic.
 - When the target's Epic is set, the issue is made a sub-issue of that epic. If that fails (no such issue, or the token lacks Issues write), the result line says why and the finding stays filed with no epic; add it under the epic by hand.
 
 ## How a finding becomes work

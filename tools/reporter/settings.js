@@ -2,7 +2,6 @@ import { splitRepo, parseEpic } from './report-body.js';
 
 export const SETTINGS_KEY = 'settings';
 export const CHOSEN_TARGETS_KEY = 'chosenTargets';
-export const DEFAULT_BRANCH = 'flow-findings';
 
 export const DEFAULT_SETTINGS = {
   token: '',
@@ -20,8 +19,7 @@ export function normalizeTarget(stored, fallbackId) {
     id: text(stored && stored.id) || fallbackId,
     name: text(stored && stored.name) || repo,
     repo,
-    epic: text(stored && stored.epic),
-    branch: text(stored && stored.branch) || DEFAULT_BRANCH
+    epic: text(stored && stored.epic)
   };
 }
 
@@ -29,7 +27,7 @@ export function migrateTargets(stored) {
   if (stored && Array.isArray(stored.targets)) return stored.targets;
   const repo = text(stored && stored.repo);
   if (!repo) return [];
-  return [{ id: 'target-1', name: repo, repo, epic: stored.epic, branch: stored.branch }];
+  return [{ id: 'target-1', name: repo, repo, epic: stored.epic }];
 }
 
 export function normalizeSettings(stored) {

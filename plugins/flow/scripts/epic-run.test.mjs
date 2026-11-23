@@ -745,7 +745,7 @@ test('the git step itself refuses to merge into a branch outside epic/, whatever
 const finding = (number, { approved = false, body = '## What happened\n\nThe button does nothing.\n' } = {}) =>
   issue(number, { title: `finding ${number}`, body, labels: ['flow:found', ...(approved ? ['flow:approved'] : [])], author: 'reporter' })
 
-test('create-finding --screenshots commits the images to the orphan flow-findings branch, pushes it and links each by commit, leaving the checkout alone', () => {
+test('create-finding --screenshots attaches each image to the issue and links it inline, committing and pushing nothing', () => {
   const repo = repository()
   const shots = join(repo.root, 'shots')
   mkdirSync(shots)
@@ -755,38 +755,53 @@ test('create-finding --screenshots commits the images to the orphan flow-finding
   const body = join(repo.root, 'finding.md')
   writeFileSync(body, '## What happened\n\nThe cart is empty.\n')
   const head = git(repo.work, 'rev-parse', 'HEAD')
-  const fixtures = (number) => ({
-    [`GET ${R}`]: { full_name: 'o/r', default_branch: 'main', has_issues: true },
-    [`POST ${R}/issues`]: finding(number),
-    [`PATCH ${R}/issues/${number}`]: finding(number),
+  const remoteBranches = git(repo.remote, 'branch', '--list')
+  const upload = (name, type) => `POST https://uploads.github.com/user-attachments/assets?content_type=${encodeURIComponent(type)}&name=${encodeURIComponent(name)}&repository_id=42`
+  fake.setFixtures({
+    [`GET ${R}`]: { id: 42, full_name: 'o/r', default_branch: 'main', has_issues: true },
+    [`POST ${R}/issues`]: finding(95),
+    [upload('cart page.png', 'image/png')]: { url: 'https://github.com/user-attachments/assets/cart' },
+    [upload('menu.webp', 'image/webp')]: { url: 'https://github.com/user-attachments/assets/menu' },
+    [`PATCH ${R}/issues/95`]: finding(95),
   })
-  fake.setFixtures(fixtures(95))
-  const first = flow(repo.work, ['create-finding', '--title', 'Empty cart', '--file', body, '--screenshots', shots])
-  assert.equal(first.status, 0, first.stderr)
-  assert.equal(first.stdout.trim(), '95')
-  const tip = git(repo.remote, 'rev-parse', 'flow-findings')
-  assert.equal(git(repo.remote, 'rev-list', '--count', 'flow-findings'), '1', 'an orphan branch: nothing of the code rides along')
-  assert.deepEqual(git(repo.remote, 'ls-tree', '-r', '--name-only', 'flow-findings').split('\n'), ['README.md', 'findings/95/cart page.png', 'findings/95/menu.webp'])
-  assert.match(git(repo.remote, 'show', 'flow-findings:README.md'), /holds only the screenshots of Flow findings/)
-  assert.equal(git(repo.remote, 'show', 'flow-findings:findings/95/cart page.png'), 'png bytes')
+  const filed = flow(repo.work, ['create-finding', '--title', 'Empty cart', '--file', body, '--screenshots', shots])
+  assert.equal(filed.status, 0, filed.stderr)
+  assert.equal(filed.stdout.trim(), '95')
+  assert.deepEqual(
+    fake.calls().filter((call) => call.key.startsWith('POST https://uploads.github.com/')).map((call) => call.file),
+    ['png bytes', 'webp bytes'],
+  )
   const patched = JSON.parse(fake.calls().find((call) => call.key === `PATCH ${R}/issues/95`).stdin).body
   assert.equal(
     patched,
-    `## What happened\n\nThe cart is empty.\n\n## Screenshots\n\n1. ![cart page.png](https://github.com/o/r/blob/${tip}/findings/95/cart%20page.png?raw=true)\n2. ![menu.webp](https://github.com/o/r/blob/${tip}/findings/95/menu.webp?raw=true)\n`,
+    '## What happened\n\nThe cart is empty.\n\n## Screenshots\n\n1. ![cart page.png](https://github.com/user-attachments/assets/cart)\n2. ![menu.webp](https://github.com/user-attachments/assets/menu)\n',
   )
+  assert.equal(git(repo.remote, 'branch', '--list'), remoteBranches, 'no branch is created or moved')
   assert.deepEqual([git(repo.work, 'rev-parse', 'HEAD'), git(repo.work, 'symbolic-ref', '--short', 'HEAD'), git(repo.work, 'status', '--porcelain')], [head, 'main', ''])
-  fake.clearCalls()
-  fake.setFixtures(fixtures(96))
-  const second = flow(repo.work, ['create-finding', '--title', 'Menu', '--file', body, '--screenshots', shots])
-  assert.equal(second.status, 0, second.stderr)
-  assert.equal(git(repo.remote, 'rev-parse', 'flow-findings^'), tip, 'the next finding adds a commit on top')
-  assert.ok(git(repo.remote, 'ls-tree', '-r', '--name-only', 'flow-findings').split('\n').includes('findings/95/menu.webp'), 'earlier findings keep their images')
   writeFileSync(join(shots, 'notes.txt'), 'not an image')
   fake.clearCalls()
   const refused = flow(repo.work, ['create-finding', '--title', 'x', '--file', body, '--screenshots', shots])
   assert.equal(refused.status, 2)
   assert.match(refused.stderr, /holds notes\.txt, which is not a PNG, JPEG or WebP image/)
   assert.deepEqual(fake.calls(), [], 'nothing is filed before the images are known to be images')
+})
+
+test('create-finding keeps the finding when an upload fails and says to attach the images by hand', () => {
+  const repo = repository()
+  const shots = join(repo.root, 'shots')
+  mkdirSync(shots)
+  writeFileSync(join(shots, 'a.png'), 'png bytes')
+  const body = join(repo.root, 'finding.md')
+  writeFileSync(body, '## What happened\n\nBroken.\n')
+  fake.setFixtures({
+    [`GET ${R}`]: { id: 42, full_name: 'o/r', default_branch: 'main', has_issues: true },
+    [`POST ${R}/issues`]: finding(96),
+  })
+  const result = flow(repo.work, ['create-finding', '--title', 'Broken', '--file', body, '--screenshots', shots])
+  assert.equal(result.status, 1)
+  assert.equal(result.stdout.trim(), '96')
+  assert.match(result.stderr, /filed #96, but its screenshots were not attached: .*attach them to the issue by hand; running create-finding again would file it twice/)
+  assert.ok(!fake.calls().some((call) => call.key.startsWith('PATCH')), 'the issue body is left as filed')
 })
 
 test('start refuses a finding without asking a person, even unattended: it is not a ticket yet', () => {
