@@ -748,6 +748,21 @@ test('screenshots writes into screenshotsDir when it is set, and leaves the inde
   assert.equal(git(remote, 'branch', '--list', 'ticket/2'), '')
 })
 
+test('screenshots puts back a PNG an earlier version committed, so the working tree stays clean for accept', () => {
+  const { work } = startedTicket()
+  mkdirSync(join(work, 'out', '2'), { recursive: true })
+  writeFileSync(join(work, 'out', '2', 'old.png'), 'committed')
+  git(work, 'add', 'out/2/old.png')
+  commitFile(work, '.flow.json', JSON.stringify({ screenshots: 'printf png > "$FLOW_SCREENSHOTS_DIR/old.png" && printf png > "$FLOW_SCREENSHOTS_DIR/new.png"', screenshotsDir: 'out/{n}' }), '#2: config and an old screenshot')
+  world({ extra: attachments('new.png', 'old.png') })
+  const result = flow(work, ['screenshots', '2'])
+  assert.equal(result.status, 0, result.stderr)
+  assert.deepEqual(uploaded().map((call) => call.file), ['png', 'png'])
+  assert.ok(!existsSync(join(work, 'out', '2', 'new.png')))
+  assert.equal(readFileSync(join(work, 'out', '2', 'old.png'), 'utf8'), 'committed')
+  assert.equal(git(work, 'status', '--porcelain', '--untracked-files=all'), '')
+})
+
 test('screenshots fails on a failing command or a failed upload, posting nothing, and reads a directory outside the repository', () => {
   const { work, root } = startedTicket()
   commitFile(work, '.flow.json', JSON.stringify({ screenshots: 'echo broken >&2; exit 3' }), '#2: config')

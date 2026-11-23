@@ -2281,9 +2281,18 @@ function postScreenshots({ number, root, config, configuredDirectory }) {
   const repositoryId = github.repoInfo().id
   const screenshots = images.map((name) => ({ name, url: github.uploadAttachment({ repositoryId, file: join(directory, name), name, contentType: 'image/png' }) }))
   github.comment(number, [`**Screenshots** of the built screens, at \`${sha.slice(0, 12)}\`:`, '', ...screenshots.map((shot) => `![${shot.name}](${shot.url})`)].join('\n'))
-  for (const name of images) rmSync(join(directory, name), { force: true })
+  const tracked = trackedImages(root, directory, images)
+  for (const name of images) if (!tracked.has(name)) rmSync(join(directory, name), { force: true })
+  if (tracked.size) git(root, ['--literal-pathspecs', 'checkout', '--', ...[...tracked].map((name) => relative(root, join(directory, name)))])
   printJson({ ticket: number, commit: sha, screenshots })
   return 0
+}
+
+function trackedImages(root, directory, names) {
+  if (!insideDirectory(root, directory)) return new Set()
+  const paths = names.map((name) => relative(root, join(directory, name)))
+  const listed = git(root, ['--literal-pathspecs', 'ls-files', '-z', '--', ...paths]).stdout
+  return new Set(listed.split('\0').filter(Boolean).map((path) => relative(directory, join(root, path))))
 }
 
 function runsNotMetered(number, found) {

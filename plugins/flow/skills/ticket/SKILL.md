@@ -187,7 +187,8 @@ FLOW screenshots <n>
 
 When `.flow.json` at the repository root has a `screenshots` command, this
 runs it (with `FLOW_TICKET` and `FLOW_SCREENSHOTS_DIR` set), uploads each
-PNG as a GitHub attachment, posts them on the issue and deletes them; it
+PNG as a GitHub attachment, posts them on the issue and deletes them (a
+PNG git already tracks goes back to its committed content instead); it
 commits and pushes nothing. The command writes into the directory it prints
 last, or into `FLOW_SCREENSHOTS_DIR`: `screenshotsDir` from `.flow.json`
 (`{n}` becomes the ticket number), else a fresh directory outside the

@@ -434,7 +434,8 @@ Optional, at the repository root:
 gets `FLOW_TICKET` and `FLOW_SCREENSHOTS_DIR` (a fresh directory outside the
 repository, or `screenshotsDir` when set, `{n}` the ticket number), and may
 print another directory as its last line. Each PNG is uploaded as a GitHub
-attachment and posted on the issue, then deleted: nothing is committed, so
+attachment and posted on the issue, then deleted (one an earlier version
+committed goes back to its committed content): nothing is committed, so
 no image reaches the ticket branch, the epic branch or the default branch.
 
 `copy` and `setup` say what a fresh working copy needs before anything can
